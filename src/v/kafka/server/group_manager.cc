@@ -51,7 +51,8 @@ group_manager::group_manager(
   , _serializer_factory(std::move(serializer_factory))
   , _conf(config::shard_local_cfg())
   , _self(cluster::make_self_broker(config::node()))
-  , _enable_group_metrics(enable_metrics) {}
+  , _enable_group_metrics(enable_metrics)
+  , _offset_retention_check(_conf.group_offset_retention_check_ms.bind()) {}
 
 ss::future<> group_manager::start() {
     /*
@@ -97,6 +98,80 @@ ss::future<> group_manager::start() {
         });
 
     return ss::make_ready_future<>();
+}
+/*
+ * Compute if retention is enabled.
+ *
+ * legacy? | retention_ms | legacy_enabled |>> enabled
+ * ===================================================
+ * no        nullopt        false (n/a)        no
+ * no        nullopt        true  (n/a)        no
+ * no        val (default)  false (n/a)        yes
+ * no        val (default)  true  (n/a)        yes
+ * yes       nullopt        false              no
+ * yes       nullopt        true               no
+ * yes       val (default)  false              no
+ * yes       val (default)  true               yes
+ *
+ * legacy: system is pre-v23.1 (or indeterminate in early bootup)
+ */
+std::optional<std::chrono::seconds> group_manager::offset_retention_enabled() {
+    const auto enabled = [this] {
+        /*
+         * check if retention is disabled in all scenarios. this corresponds to
+         * the setting `group_offset_retention_sec = null`.
+         */
+        if (!config::shard_local_cfg()
+               .group_offset_retention_sec()
+               .has_value()) {
+            return false;
+        }
+
+        /*
+         * in non-legacy clusters (i.e. original version >= v23.1) offset
+         * retention is on by default (group_offset_retention_sec defaults to 7
+         * days).
+         */
+        if (
+          _feature_table.local().get_original_version()
+          >= cluster::cluster_version(9)) {
+            return true;
+        }
+
+        /*
+         * this is a legacy / pre-v23.1 cluster. retention will only be enabled
+         * if explicitly requested for legacy systems in order to retain the
+         * effective behavior of infinite retention.
+         *
+         * this case also handles the early boot-up ambiguity in which the
+         * original version is indeterminate.
+         */
+        return config::shard_local_cfg()
+          .legacy_group_offset_retention_enabled();
+    }();
+
+    /*
+     * log change to effective value of offset_retention_enabled flag since its
+     * value cannot easily be determiend by examining the current configuration.
+     */
+    if (_prev_offset_retention_enabled != enabled) {
+        vlog(
+          klog.info,
+          "Group offset retention is now {} (prev {}). Legacy enabled {} "
+          "retention_sec {} original version {}.",
+          enabled ? "enabled" : "disabled",
+          _prev_offset_retention_enabled,
+          config::shard_local_cfg().legacy_group_offset_retention_enabled(),
+          config::shard_local_cfg().group_offset_retention_sec(),
+          _feature_table.local().get_original_version());
+        _prev_offset_retention_enabled = enabled;
+    }
+
+    if (!enabled) {
+        return std::nullopt;
+    }
+
+    return config::shard_local_cfg().group_offset_retention_sec().value();
 }
 
 ss::future<> group_manager::stop() {
