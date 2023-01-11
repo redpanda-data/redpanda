@@ -11,7 +11,7 @@ import time
 import json
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize, ok_to_fail
+from ducktape.mark import matrix, parametrize, ok_to_fail
 from requests.exceptions import HTTPError
 
 from rptest.services.cluster import cluster
@@ -21,7 +21,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings
 from rptest.util import wait_for_local_storage_truncate, firewall_blocked
 from rptest.services.admin import Admin
 
@@ -312,9 +312,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         return empty
 
     @cluster(num_nodes=3)
-    @parametrize(disable_delete=False)
-    @parametrize(disable_delete=True)
-    def topic_delete_cloud_storage_test(self, disable_delete):
+    @matrix(disable_delete=[False, True],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def topic_delete_cloud_storage_test(self, disable_delete,
+                                        cloud_storage_type):
         if disable_delete:
             # Set remote.delete=False before deleting: objects in
             # S3 should not be removed.
@@ -363,7 +364,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # manifest.
 
     @cluster(num_nodes=4)
-    def partition_movement_test(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def partition_movement_test(self, cloud_storage_type):
         """
         The unwary programmer might do S3 deletion from the
         remove_persistent_state function in Redpanda, but

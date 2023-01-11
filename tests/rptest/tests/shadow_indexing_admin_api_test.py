@@ -9,7 +9,7 @@ import re
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings
 
 from rptest.services.admin import Admin
 from rptest.clients.types import TopicSpec
@@ -19,6 +19,7 @@ from rptest.util import (
     produce_until_segments,
     wait_for_segments_removal,
 )
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 # Log errors expected when connectivity between redpanda and the S3
@@ -72,7 +73,9 @@ class SIAdminApiTest(RedpandaTest):
         super().tearDown()
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_bucket_validation(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_bucket_validation(self, cloud_storage_type):
         """
         The test produces to the partition and waits untils the
         data is uploaded to S3 and the oldest segments are picked

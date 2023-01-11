@@ -18,7 +18,7 @@ from rptest.util import expect_exception
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import CloudStorageType, RedpandaService
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
@@ -171,8 +171,10 @@ class TestReadReplicaService(EndToEndTest):
             return None
 
     @cluster(num_nodes=7)
-    @matrix(partition_count=[10])
-    def test_writes_forbidden(self, partition_count: int) -> None:
+    @matrix(partition_count=[10],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_writes_forbidden(self, partition_count: int,
+                              cloud_storage_type: CloudStorageType) -> None:
         """
         Verify that the read replica cluster does not permit writes,
         and does not perform other data-modifying actions such as
@@ -206,9 +208,11 @@ class TestReadReplicaService(EndToEndTest):
             assert len(objects_after) >= len(objects_before)
 
     @cluster(num_nodes=9)
-    @matrix(partition_count=[10], min_records=[10000])
-    def test_simple_end_to_end(self, partition_count: int,
-                               min_records: int) -> None:
+    @matrix(partition_count=[10],
+            min_records=[10000],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_simple_end_to_end(self, partition_count: int, min_records: int,
+                               cloud_storage_type: CloudStorageType) -> None:
 
         self._setup_read_replica(num_messages=min_records,
                                  partition_count=partition_count)
