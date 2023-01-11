@@ -79,6 +79,23 @@ class topic_table {
 public:
     enum class topic_state { exists, not_exists, indeterminate };
 
+    // Guide to various partition revisions (i.e. offsets of the corresponding
+    // commands in the controller log), presented in the chronological order:
+    // * topic creation revision
+    // * revision of the command (topic creation or partition movement) that
+    //   caused a partition replica to appear on a given node (note that the
+    //   partition can move away from a node and come back again and each time
+    //   revision will be different). This revision appears in:
+    //   * replicas_revision_map
+    //   * partition::get_ntp_config().get_revision()
+    //   * the partition directory name
+    // * revision of the last applied command that caused raft reconfiguration
+    //   (can be reconfiguration itself or cancellation). This revision appears
+    //   in:
+    //   * in_progress_update::get_last_cmd_revision()
+    //   * partition::get_revision_id()
+    //   * raft::group_configuration::revision_id()
+
     class in_progress_update {
     public:
         explicit in_progress_update(
