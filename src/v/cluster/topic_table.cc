@@ -1012,4 +1012,19 @@ void topic_table::change_partition_replicas(
       revisions_it->second);
 }
 
+size_t topic_table::get_node_partition_count(model::node_id id) const {
+    size_t cnt = 0;
+    // NOTE: if this loop will cause reactor stalls with large partition counts
+    // we may consider making this method asynchronous
+    for (const auto& [_, tp_md] : _topics) {
+        cnt += std::count_if(
+          tp_md.get_assignments().begin(),
+          tp_md.get_assignments().end(),
+          [id](const partition_assignment& p_as) {
+              return contains_node(p_as.replicas, id);
+          });
+    }
+    return cnt;
+}
+
 } // namespace cluster

@@ -368,6 +368,11 @@ public:
 
     size_t partition_count() const { return _partition_count; }
 
+    /**
+     * Returns number of partitions allocated on given node
+     */
+    size_t get_node_partition_count(model::node_id) const;
+
 private:
     friend topic_table_probe;
 
