@@ -37,6 +37,8 @@ public:
       ss::sharded<topic_table>&,
       ss::sharded<shard_table>&,
       ss::sharded<rpc::connection_cache>&,
+      ss::sharded<health_monitor_frontend>&,
+      ss::sharded<members_table>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<result<std::vector<ntp_reconciliation_state>>>
@@ -65,6 +67,14 @@ public:
     ss::future<std::error_code> wait_for_topic(
       model::topic_namespace_view, model::timeout_clock::time_point);
 
+    ss::future<result<std::vector<partition_reconfiguration_state>>>
+      get_partitions_reconfiguration_state(
+        std::vector<model::ntp>, model::timeout_clock::time_point);
+
+    ss::future<result<node_decommission_progress>>
+      get_node_decommission_progress(
+        model::node_id, model::timeout_clock::time_point);
+
 private:
     ss::future<result<bool>> are_ntps_ready(
       absl::node_hash_map<model::node_id, std::vector<model::ntp>>,
@@ -78,6 +88,8 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<rpc::connection_cache>& _connections;
+    ss::sharded<health_monitor_frontend>& _health_monitor;
+    ss::sharded<members_table>& _members;
     ss::sharded<ss::abort_source>& _as;
 };
 } // namespace cluster

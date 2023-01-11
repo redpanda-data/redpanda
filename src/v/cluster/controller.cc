@@ -320,6 +320,8 @@ ss::future<> controller::start(cluster_discovery& discovery) {
             std::ref(_tp_state),
             std::ref(_shard_table),
             std::ref(_connections),
+            std::ref(_hm_frontend),
+            std::ref(_members_table),
             std::ref(_as));
       })
       .then([this] {
