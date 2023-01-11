@@ -344,7 +344,6 @@ ss::future<upload_result> remote::upload_segment(
         if (res) {
             _probe.successful_upload();
             _probe.register_upload_size(content_length);
-            co_await reader_handle->close();
             co_return upload_result::success;
         }
 
