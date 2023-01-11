@@ -309,23 +309,23 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         co_return errc::no_update_in_progress;
     }
     switch (in_progress_it->second.get_state()) {
-    case in_progress_state::update_requested:
+    case reconfiguration_state::in_progress:
         break;
-    case in_progress_state::cancel_requested:
+    case reconfiguration_state::cancelled:
         // partition reconfiguration already cancelled, only allow force
         // cancelling it
         if (cmd.value.force == force_abort_update::no) {
             co_return errc::no_update_in_progress;
         }
         break;
-    case in_progress_state::force_cancel_requested:
+    case reconfiguration_state::force_cancelled:
         // partition reconfiguration already cancelled forcibly
         co_return errc::no_update_in_progress;
     }
 
     in_progress_it->second.set_state(
-      cmd.value.force ? in_progress_state::force_cancel_requested
-                      : in_progress_state::cancel_requested);
+      cmd.value.force ? reconfiguration_state::force_cancelled
+                      : reconfiguration_state::cancelled);
 
     auto replicas = current_assignment_it->replicas;
     // replace replica set with set from in progress operation
@@ -939,7 +939,7 @@ void topic_table::change_partition_replicas(
       in_progress_update(
         current_assignment.replicas,
         new_assignment,
-        in_progress_state::update_requested,
+        reconfiguration_state::in_progress,
         model::revision_id(o),
         // snapshot replicas revisions
         revisions_it->second,
@@ -975,7 +975,7 @@ void topic_table::change_partition_replicas(
               in_progress_update(
                 current_assignment.replicas,
                 new_assignment,
-                in_progress_state::update_requested,
+                reconfiguration_state::in_progress,
                 model::revision_id(o),
                 // empty replicas revisions
                 {},
@@ -1013,19 +1013,6 @@ void topic_table::change_partition_replicas(
       delta::op_type::update,
       std::move(previous_assignment),
       revisions_it->second);
-}
-
-std::ostream&
-operator<<(std::ostream& o, topic_table::in_progress_state update) {
-    switch (update) {
-    case topic_table::in_progress_state::update_requested:
-        return o << "update_requested";
-    case topic_table::in_progress_state::cancel_requested:
-        return o << "cancel_requested";
-    case topic_table::in_progress_state::force_cancel_requested:
-        return o << "force_cancel_requested";
-    }
-    __builtin_unreachable();
 }
 
 } // namespace cluster

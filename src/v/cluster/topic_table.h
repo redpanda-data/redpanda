@@ -39,12 +39,6 @@ namespace cluster {
 
 class topic_table {
 public:
-    enum class in_progress_state {
-        update_requested,
-        cancel_requested,
-        force_cancel_requested
-    };
-
     enum class topic_state { exists, not_exists, indeterminate };
     /**
      * Replicas revision map is used to track revision of brokers in a replica
@@ -58,7 +52,7 @@ public:
         explicit in_progress_update(
           std::vector<model::broker_shard> previous_replicas,
           std::vector<model::broker_shard> result_replicas,
-          in_progress_state state,
+          reconfiguration_state state,
           model::revision_id update_revision,
           replicas_revision_map replicas_revisions,
           topic_table_probe& probe)
@@ -74,8 +68,8 @@ public:
         ~in_progress_update() {
             _probe.handle_update_finish(_previous_replicas, _result_replicas);
             if (
-              _state == in_progress_state::cancel_requested
-              || _state == in_progress_state::force_cancel_requested) {
+              _state == reconfiguration_state::cancelled
+              || _state == reconfiguration_state::force_cancelled) {
                 _probe.handle_update_cancel_finish(
                   _previous_replicas, _result_replicas);
                 ;
@@ -87,12 +81,12 @@ public:
         in_progress_update& operator=(const in_progress_update&) = delete;
         in_progress_update& operator=(in_progress_update&&) = delete;
 
-        const in_progress_state& get_state() const { return _state; }
+        const reconfiguration_state& get_state() const { return _state; }
 
-        void set_state(in_progress_state state) {
+        void set_state(reconfiguration_state state) {
             if (
-              _state == in_progress_state::update_requested
-              && (state == in_progress_state::cancel_requested || state == in_progress_state::force_cancel_requested)) {
+              _state == reconfiguration_state::in_progress
+              && (state == reconfiguration_state::cancelled || state == reconfiguration_state::force_cancelled)) {
                 _probe.handle_update_cancel(
                   _previous_replicas, _result_replicas);
             }
@@ -114,7 +108,7 @@ public:
     private:
         std::vector<model::broker_shard> _previous_replicas;
         std::vector<model::broker_shard> _result_replicas;
-        in_progress_state _state;
+        reconfiguration_state _state;
         model::revision_id _update_revision;
         replicas_revision_map _replicas_revisions;
         topic_table_probe& _probe;
@@ -418,5 +412,4 @@ private:
     topic_table_probe _probe;
 };
 
-std::ostream& operator<<(std::ostream&, topic_table::in_progress_state);
 } // namespace cluster
