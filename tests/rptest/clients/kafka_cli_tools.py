@@ -10,6 +10,8 @@
 import subprocess
 import tempfile
 from rptest.clients.types import TopicSpec
+import json
+from ducktape.utils.util import wait_until
 
 
 class AuthenticationError(Exception):
@@ -247,6 +249,51 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         return self._run("kafka-run-class.sh", [],
                          "kafka.admin.BrokerApiVersionsCommand")
 
+    def reassign_partitions(self,
+                            reassignments: dict,
+                            operation: str,
+                            write_reassignments_to_disk: bool = True):
+        assert "version" in reassignments
+        assert reassignments["version"] == 1
+        assert "partitions" in reassignments
+
+        json_filename = "reassignments.json"
+        if write_reassignments_to_disk:
+            with open(json_filename, "w") as outfile:
+                json.dump(reassignments, outfile)
+
+        args = ["--reassignment-json-file", json_filename]
+        if operation == "execute":
+            args.append("--execute")
+        elif operation == "verify":
+            args.append("--verify")
+        else:
+            raise NotImplementedError(f"Unknown operation: {operation}")
+
+        return self._run("kafka-reassign-partitions.sh", args)
+
+    def execute_reassign_partitions(self, reassignments: dict):
+        output = self.reassign_partitions(reassignments=reassignments,
+                                          operation="execute")
+        return output.splitlines()
+
+    def verify_reassign_partitions(self, reassignments: dict):
+        output = None
+
+        def do_reassign_partitions():
+            nonlocal output
+            output = self.reassign_partitions(
+                reassignments=reassignments,
+                operation="verify",
+                write_reassignments_to_disk=False)
+
+            # Retry the script if there is reassignment still in progress
+            return "is still in progress." not in output
+
+        wait_until(do_reassign_partitions, timeout_sec=20, backoff_sec=1)
+
+        return output.splitlines()
+
     def _run(self, script, args, classname=None):
         cmd = [self._script(script)]
         if classname is not None:
@@ -277,6 +324,8 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
                 raise AuthenticationError(e.output)
             if "ClusterAuthorizationException: Cluster authorization failed" in e.output:
                 raise ClusterAuthorizationError(e.output)
+            if e.output.startswith("Status of partition reassignment:"):
+                return e.output
             raise
 
     def _script(self, script):
