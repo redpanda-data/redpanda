@@ -1937,6 +1937,73 @@ ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
     co_return ss::json::json_void();
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_decommission_progress_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    model::node_id id = parse_broker_id(*req);
+    auto res
+      = co_await _controller->get_api().local().get_node_decommission_progress(
+        id, 5s + model::timeout_clock::now());
+    if (!res) {
+        if (res.error() == cluster::errc::node_does_not_exists) {
+            throw ss::httpd::base_exception(
+              fmt::format("Node {} does not exists", id),
+              ss::httpd::reply::status_type::not_found);
+        } else if (res.error() == cluster::errc::invalid_node_operation) {
+            throw ss::httpd::base_exception(
+              fmt::format("Node {} is not decommissioning", id),
+              ss::httpd::reply::status_type::bad_request);
+        }
+
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Unable to get decommission status for {} - {}",
+            id,
+            res.error().message()),
+          ss::httpd::reply::status_type::internal_server_error);
+    }
+    ss::httpd::broker_json::decommission_status ret;
+    auto& decommission_progress = res.value();
+
+    ret.replicas_left = decommission_progress.replicas_left;
+    ret.finished = decommission_progress.finished;
+
+    for (auto& p : decommission_progress.current_reconfigurations) {
+        ss::httpd::broker_json::partition_reconfiguration_status status;
+        status.ns = p.ntp.ns;
+        status.topic = p.ntp.tp.topic;
+        status.partition = p.ntp.tp.partition;
+        auto added_replicas = cluster::subtract_replica_sets(
+          p.previous_assignment, p.current_assignment);
+        // we are only interested in reconfigurations where one replica was
+        // added to the node
+        if (added_replicas.size() != 1) {
+            continue;
+        }
+        ss::httpd::broker_json::broker_shard moving_to{};
+        moving_to.node_id = added_replicas.front().node_id();
+        moving_to.core = added_replicas.front().shard;
+        status.moving_to = moving_to;
+        size_t left_to_move = 0;
+        size_t already_moved = 0;
+        for (auto replica_status : p.already_transferred_bytes) {
+            left_to_move += (p.current_partition_size - replica_status.bytes);
+            already_moved += replica_status.bytes;
+        }
+        status.bytes_left_to_move = left_to_move;
+        status.bytes_moved = already_moved;
+        status.partition_size = p.current_partition_size;
+        // if no information from partitions is present yet, we may indicate
+        // that everything have to be moved
+        if (already_moved == 0 && left_to_move == 0) {
+            status.bytes_left_to_move = p.current_partition_size;
+        }
+        ret.partitions.push(status);
+    }
+
+    co_return ret;
+}
+
 ss::future<ss::json::json_return_type> admin_server::recomission_broker_handler(
   std::unique_ptr<ss::httpd::request> req) {
     model::node_id id = parse_broker_id(*req);
@@ -2018,6 +2085,12 @@ void admin_server::register_broker_routes() {
       ss::httpd::broker_json::get_broker,
       [this](std::unique_ptr<ss::httpd::request> req) {
           return get_broker_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::broker_json::get_decommission,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return get_decommission_progress_handler(std::move(req));
       });
 
     register_route<superuser>(
