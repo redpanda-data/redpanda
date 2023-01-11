@@ -137,6 +137,13 @@ func (r *Cluster) Default() {
 			r.Spec.Configuration.KafkaAPI[i].AuthenticationMethod = noneAuthorizationMechanism
 		}
 	}
+
+	if r.Spec.RestartConfig == nil {
+		r.Spec.RestartConfig = &RestartConfig{
+			DisableMaintenanceModeHooks:       nil,
+			UnderReplicatedPartitionThreshold: 0,
+		}
+	}
 }
 
 var defaultAdditionalConfiguration = map[string]int{
@@ -148,7 +155,7 @@ var defaultAdditionalConfiguration = map[string]int{
 // setDefaultAdditionalConfiguration sets additional configuration fields based
 // on the best practices
 func (r *Cluster) setDefaultAdditionalConfiguration() {
-	if *r.Spec.Replicas >= minimumReplicas {
+	if r.Spec.Replicas != nil && *r.Spec.Replicas >= minimumReplicas {
 		if r.Spec.AdditionalConfiguration == nil {
 			r.Spec.AdditionalConfiguration = make(map[string]string)
 		}

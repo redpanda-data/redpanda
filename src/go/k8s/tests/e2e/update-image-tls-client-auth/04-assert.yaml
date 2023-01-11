@@ -3,7 +3,7 @@ kind: StatefulSet
 metadata:
   name: up-img
 status:
-  readyReplicas: 2
+  readyReplicas: 3
 
 ---
 
@@ -15,22 +15,6 @@ spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -44,22 +28,19 @@ spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/tls/certs/admin/ca
-      name: tlsadminca
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: up-img-2
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
 status:
   phase: "Running"
 
@@ -71,3 +52,19 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
   tail: -1
+
+---
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: up-img
+status:
+  version: "dev"
+  readyReplicas: 3
+  replicas: 3
+  upgrading: false
+  restarting: false
+  conditions:
+  - type: ClusterConfigured
+    status: "True"

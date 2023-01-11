@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kminion
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: kminion
+      app.kubernetes.io/name: kminion
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: kminion
+        app.kubernetes.io/name: kminion
+    spec:
+      containers:
+        - env:
+            - name: CONFIG_FILEPATH
+              value: /etc/kminion/config.yaml
+          image: quay.io/cloudhut/kminion:v2.2.0
+          imagePullPolicy: IfNotPresent
+          name: kminion
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /ready
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: 100m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          securityContext: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+            - mountPath: /etc/kminion
+              name: config
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        fsGroup: 99
+        runAsUser: 99
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            defaultMode: 420
+            name: kminion
+          name: config
+---
+apiVersion: v1
+data:
+  config.yaml: |
+    exporter:
+      host: ""
+      namespace: test_sla
+      port: 8080
+    kafka:
+      brokers:
+        - update-image-cluster-and-node-port-0.update-image-cluster-and-node-port:9092
+        - update-image-cluster-and-node-port-1.update-image-cluster-and-node-port:9092
+        - update-image-cluster-and-node-port-2.update-image-cluster-and-node-port:9092
+      clientId: kminion
+      rackId: ""
+      sasl:
+        enabled: false
+      tls:
+        caFilepath: ""
+        certFilepath: ""
+        enabled: false
+        insecureSkipTlsVerify: false
+        keyFilepath: ""
+        passphrase: ""
+    logger:
+      level: info
+    minion:
+      consumerGroups:
+        allowedGroups: []
+        enabled: false
+        granularity: partition
+        ignoredGroups: []
+        scrapeMode: adminApi
+      endToEnd:
+        consumer:
+          commitSla: 2s
+          deleteStaleConsumerGroups: false
+          groupIdPrefix: test
+          roundtripSla: 2s
+        enabled: true
+        probeInterval: 3ns
+        producer:
+          ackSla: 1s
+          requiredAcks: all
+        topicManagement:
+          enabled: true
+          name: test_e2e_probe
+          partitionsPerBroker: 5
+          reconciliationInterval: 1m
+          replicationFactor: 3
+      logDirs:
+        enabled: false
+      topics:
+        allowedTopics: []
+        granularity: partition
+        ignoredTopics: []
+        infoMetric:
+          configKeys:
+            - cleanup.policy
+kind: ConfigMap
+metadata:
+  name: kminion

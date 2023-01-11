@@ -11,6 +11,12 @@ package resources //nolint:testpackage // needed to test private method
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
 	"testing"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -146,4 +152,108 @@ func TestPutInMaintenanceMode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEvaluateRedpandaUnderReplicatedPartition(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f, err := os.Open("testdata/metrics.golden.txt")
+		require.NoError(t, err)
+
+		_, err = io.Copy(w, f)
+		require.NoError(t, err)
+	}))
+	defer ts.Close()
+
+	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
+		Spec: redpandav1alpha1.ClusterSpec{
+			RestartConfig: &redpandav1alpha1.RestartConfig{},
+		},
+	}}
+
+	adminURL := url.URL{
+		Scheme: "http",
+		Host:   ts.Listener.Addr().String(),
+		Path:   "metrics",
+	}
+
+	err := ssres.evaluateUnderReplicatedPartitions(context.Background(), &adminURL)
+	require.NoError(t, err)
+}
+
+func TestEvaluateAboveThresholdRedpandaUnderReplicatedPartition(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `
+# HELP vectorized_cluster_partition_under_replicated_replicas Number of under replicated replicas
+# TYPE vectorized_cluster_partition_under_replicated_replicas gauge
+vectorized_cluster_partition_under_replicated_replicas{namespace="kafka",partition="0",shard="0",topic="test"} 1.000000
+`)
+	}))
+	defer ts.Close()
+
+	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
+		Spec: redpandav1alpha1.ClusterSpec{
+			RestartConfig: &redpandav1alpha1.RestartConfig{},
+		},
+	}}
+
+	adminURL := url.URL{
+		Scheme: "http",
+		Host:   ts.Listener.Addr().String(),
+		Path:   "metrics",
+	}
+
+	err := ssres.evaluateUnderReplicatedPartitions(context.Background(), &adminURL)
+	require.Error(t, err)
+}
+
+func TestEvaluateEqualThresholdInUnderReplicatedPartition(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `
+# HELP vectorized_cluster_partition_under_replicated_replicas Number of under replicated replicas
+# TYPE vectorized_cluster_partition_under_replicated_replicas gauge
+vectorized_cluster_partition_under_replicated_replicas{namespace="kafka",partition="0",shard="0",topic="test"} 1.000000
+`)
+	}))
+	defer ts.Close()
+
+	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
+		Spec: redpandav1alpha1.ClusterSpec{
+			RestartConfig: &redpandav1alpha1.RestartConfig{
+				UnderReplicatedPartitionThreshold: 1,
+			},
+		},
+	}}
+
+	adminURL := url.URL{
+		Scheme: "http",
+		Host:   ts.Listener.Addr().String(),
+		Path:   "metrics",
+	}
+
+	err := ssres.evaluateUnderReplicatedPartitions(context.Background(), &adminURL)
+	require.NoError(t, err)
+}
+
+func TestEvaluateWithoutRestartConfigInUnderReplicatedPartition(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `
+# HELP vectorized_cluster_partition_under_replicated_replicas Number of under replicated replicas
+# TYPE vectorized_cluster_partition_under_replicated_replicas gauge
+vectorized_cluster_partition_under_replicated_replicas{namespace="kafka",partition="0",shard="0",topic="test"} 1.000000
+`)
+	}))
+	defer ts.Close()
+
+	ssres := StatefulSetResource{pandaCluster: &redpandav1alpha1.Cluster{
+		Spec: redpandav1alpha1.ClusterSpec{},
+	}}
+
+	adminURL := url.URL{
+		Scheme: "http",
+		Host:   ts.Listener.Addr().String(),
+		Path:   "metrics",
+	}
+
+	err := ssres.evaluateUnderReplicatedPartitions(context.Background(), &adminURL)
+	require.NoError(t, err)
 }
