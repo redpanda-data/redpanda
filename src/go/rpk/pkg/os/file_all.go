@@ -14,6 +14,8 @@ package os
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"regexp"
 	"syscall"
 
 	"github.com/spf13/afero"
@@ -31,4 +33,26 @@ func PreserveUnixOwnership(fs afero.Fs, stat os.FileInfo, file string) error {
 		}
 	}
 	return nil
+}
+
+// DirSize returns the size of a directory. It will exclude the size of the
+// files that match the 'exclude' regexp.
+func DirSize(path string, exclude *regexp.Regexp) (int64, error) {
+	var size int64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if exclude != nil {
+				if !exclude.MatchString(info.Name()) {
+					size += info.Size()
+				}
+			} else {
+				size += info.Size()
+			}
+		}
+		return err
+	})
+	return size, err
 }

@@ -9,30 +9,21 @@
 
 //go:build !linux
 
-package debug
+package bundle
 
 import (
 	"context"
 	"errors"
-	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func executeBundle(
-	context.Context,
-	afero.Fs,
-	*config.Config,
-	*kgo.Client,
-	*admin.AdminAPI,
-	string, string,
-	int,
-	time.Duration,
-) error {
-	return errors.New("rpk debug bundle is not supported on your operating system")
+func executeBundle(ctx context.Context, b bundleParams) error {
+	return errors.New("rpk debug bundle is unsupported on your operating system")
+}
+
+func executeK8SBundle(ctx context.Context, bp bundleParams) error {
+	return errors.New("rpk debug bundle is unsupported on your operating system")
 }
 
 func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string, err error) {

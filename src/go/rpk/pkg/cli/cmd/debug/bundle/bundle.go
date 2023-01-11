@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package debug
+package bundle
 
 import (
 	"fmt"
@@ -22,6 +22,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/twmb/franz-go/pkg/kgo"
 )
 
 // Use the same date specs as journalctl (see `man journalctl`).
@@ -30,7 +31,20 @@ const (
 	outputFlag   = "output"
 )
 
-func newBundleCommand(fs afero.Fs) *cobra.Command {
+type bundleParams struct {
+	fs                      afero.Fs
+	cfg                     *config.Config
+	cl                      *kgo.Client
+	admin                   *admin.AdminAPI
+	logsSince               string
+	logsUntil               string
+	path                    string
+	logsLimitBytes          int
+	controllerLogLimitBytes int
+	timeout                 time.Duration
+}
+
+func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
 		outFile    string
@@ -53,6 +67,8 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		logsSince     string
 		logsUntil     string
 		logsSizeLimit string
+
+		controllerLogsSizeLimit string
 
 		timeout time.Duration
 	)
@@ -84,14 +100,29 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 			logsLimit, err := units.FromHumanSize(logsSizeLimit)
 			out.MaybeDie(err, "unable to parse --logs-size-limit: %v", err)
 
+			controllerLogsLimit, err := units.FromHumanSize(controllerLogsSizeLimit)
+			out.MaybeDie(err, "unable to parse --controller-logs-size-limit: %v", err)
+			bp := bundleParams{
+				fs:                      fs,
+				cfg:                     cfg,
+				cl:                      cl,
+				admin:                   admin,
+				logsSince:               logsSince,
+				logsUntil:               logsUntil,
+				path:                    path,
+				logsLimitBytes:          int(logsLimit),
+				controllerLogLimitBytes: int(controllerLogsLimit),
+				timeout:                 timeout,
+			}
+
 			// to execute the appropriate bundle we look for
 			// kubernetes_service_* env variables as an indicator that we are
 			// in a k8s environment
 			host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
 			if len(host) == 0 || len(port) == 0 {
-				err = executeBundle(cmd.Context(), fs, cfg, cl, admin, logsSince, logsUntil, int(logsLimit), timeout, path)
+				err = executeBundle(cmd.Context(), bp)
 			} else {
-				err = executeK8SBundle(cmd.Context(), fs, cfg, cl, admin, timeout, path)
+				err = executeK8SBundle(cmd.Context(), bp)
 			}
 			out.MaybeDie(err, "unable to create bundle: %v", err)
 		},
@@ -136,6 +167,12 @@ func newBundleCommand(fs afero.Fs) *cobra.Command {
 		"100MiB",
 		"Read the logs until the given size is reached. Multipliers are also supported, e.g. 3MB, 1GiB",
 	)
+	command.Flags().StringVar(
+		&controllerLogsSizeLimit,
+		"controller-logs-size-limit",
+		"20MB",
+		"Sets the limit of the controller log size that can be stored in the bundle. Multipliers are also supported, e.g. 3MB, 1GiB",
+	)
 
 	common.AddKafkaFlags(
 		command,
@@ -167,6 +204,9 @@ The following are the data sources that are bundled in the compressed file:
 
  - Kafka metadata: Broker configs, topic configs, start/committed/end offsets,
    groups, group commits.
+
+ - Controller logs: The controller logs directory up to a limit set by
+   --controller-logs-size-limit flag
 
  - Data directory structure: A file describing the data directory's contents.
 

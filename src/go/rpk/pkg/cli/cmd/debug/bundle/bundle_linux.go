@@ -9,7 +9,7 @@
 
 //go:build linux
 
-package debug
+package bundle
 
 import (
 	"archive/zip"
@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,21 +95,11 @@ func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string,
 	return finalPath, nil
 }
 
-func executeBundle(
-	ctx context.Context,
-	fs afero.Fs,
-	conf *config.Config,
-	cl *kgo.Client,
-	admin *admin.AdminAPI,
-	logsSince, logsUntil string,
-	logsLimitBytes int,
-	timeout time.Duration,
-	path string,
-) error {
+func executeBundle(ctx context.Context, bp bundleParams) error {
 	fmt.Println("Creating bundle file...")
 	mode := os.FileMode(0o755)
-	f, err := fs.OpenFile(
-		path,
+	f, err := bp.fs.OpenFile(
+		bp.path,
 		os.O_CREATE|os.O_WRONLY,
 		mode,
 	)
@@ -123,30 +114,31 @@ func executeBundle(
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:      fs,
+		fs:      bp.fs,
 		w:       w,
-		timeout: timeout,
+		timeout: bp.timeout,
 	}
 
 	steps := []step{
-		saveKafkaMetadata(ctx, ps, cl),
-		saveDataDirStructure(ps, conf),
-		saveConfig(ps, conf),
+		saveKafkaMetadata(ctx, ps, bp.cl),
+		saveDataDirStructure(ps, bp.cfg),
+		saveConfig(ps, bp.cfg),
 		saveCPUInfo(ps),
 		saveInterrupts(ps),
-		saveResourceUsageData(ps, conf),
+		saveResourceUsageData(ps, bp.cfg),
 		saveNTPDrift(ps),
 		saveSyslog(ps),
-		savePrometheusMetrics(ctx, ps, admin),
+		savePrometheusMetrics(ctx, ps, bp.admin),
 		saveDNSData(ctx, ps),
-		saveDiskUsage(ctx, ps, conf),
-		saveLogs(ctx, ps, logsSince, logsUntil, logsLimitBytes),
+		saveDiskUsage(ctx, ps, bp.cfg),
+		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
 		saveSocketData(ctx, ps),
 		saveTopOutput(ctx, ps),
 		saveVmstat(ctx, ps),
 		saveIP(ctx, ps),
 		saveLspci(ctx, ps),
 		saveDmidecode(ctx, ps),
+		saveControllerLogDir(ps, bp.cfg, bp.controllerLogLimitBytes),
 	}
 
 	for _, s := range steps {
@@ -162,7 +154,7 @@ func executeBundle(
 		log.Info(errs.Error())
 	}
 
-	log.Infof("Debug bundle saved to '%s'", path)
+	log.Infof("Debug bundle saved to '%s'", bp.path)
 	return nil
 }
 
@@ -225,6 +217,32 @@ func writeFileToZip(ps *stepParams, filename string, contents []byte) error {
 		return fmt.Errorf("couldn't save '%s': %w", filename, err)
 	}
 	return nil
+}
+
+// writeDirToZip walks the 'srcDir' and writes the content in 'destDir'
+// directory in the zip writer. It will exclude the files that match the
+// 'exclude' regexp.
+func writeDirToZip(ps *stepParams, srcDir, destDir string, exclude *regexp.Regexp) error {
+	return filepath.WalkDir(srcDir, func(_ string, f fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !f.IsDir() {
+			filename := f.Name()
+			if exclude != nil && exclude.MatchString(filename) {
+				return nil
+			}
+			file, err := os.ReadFile(filepath.Join(srcDir, filename))
+			if err != nil {
+				return err
+			}
+			err = writeFileToZip(ps, filepath.Join(destDir, filename), file)
+			if err != nil {
+				return err
+			}
+		}
+		return err
+	})
 }
 
 // Runs a command and pipes its output to a new file in the zip writer.
@@ -711,6 +729,26 @@ func saveDmidecode(ctx context.Context, ps *stepParams) step {
 			"dmidecode.txt",
 			"dmidecode",
 		)
+	}
+}
+
+func saveControllerLogDir(ps *stepParams, cfg *config.Config, logLimitBytes int) step {
+	return func() error {
+		controllerDir := filepath.Join(cfg.Redpanda.Directory, "redpanda", "controller", "0_0")
+
+		// We don't need the .base_index files to parse out the messages.
+		exclude := regexp.MustCompile(`^*.base_index$`)
+		size, err := osutil.DirSize(controllerDir, exclude)
+		if err != nil {
+			return err
+		}
+
+		if int(size) > logLimitBytes {
+			// TODO: This will be changed to a custom truncation of the logs.
+			return fmt.Errorf("controller logs not stored, size is too big (%v). You can adjust the limit by changing --controller-logs-size-limit flag", units.HumanSize(float64(size)))
+		}
+
+		return writeDirToZip(ps, controllerDir, "controller", exclude)
 	}
 }
 

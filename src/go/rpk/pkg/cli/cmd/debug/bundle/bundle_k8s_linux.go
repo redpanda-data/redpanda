@@ -9,35 +9,22 @@
 
 //go:build linux
 
-package debug
+package bundle
 
 import (
 	"archive/zip"
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/spf13/afero"
-	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func executeK8SBundle(
-	ctx context.Context,
-	fs afero.Fs,
-	conf *config.Config,
-	cl *kgo.Client,
-	admin *admin.AdminAPI,
-	timeout time.Duration,
-	path string,
-) error {
+func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	fmt.Println("Creating bundle file...")
 	mode := os.FileMode(0o755)
-	f, err := fs.OpenFile(
-		path,
+	f, err := bp.fs.OpenFile(
+		bp.path,
 		os.O_CREATE|os.O_WRONLY,
 		mode,
 	)
@@ -52,21 +39,22 @@ func executeK8SBundle(
 	defer w.Close()
 
 	ps := &stepParams{
-		fs:      fs,
+		fs:      bp.fs,
 		w:       w,
-		timeout: timeout,
+		timeout: bp.timeout,
 	}
 
 	steps := []step{
-		saveKafkaMetadata(ctx, ps, cl),
-		saveDataDirStructure(ps, conf),
-		saveConfig(ps, conf),
+		saveKafkaMetadata(ctx, ps, bp.cl),
+		saveDataDirStructure(ps, bp.cfg),
+		saveConfig(ps, bp.cfg),
 		saveCPUInfo(ps),
 		saveInterrupts(ps),
-		saveResourceUsageData(ps, conf),
+		saveResourceUsageData(ps, bp.cfg),
 		saveNTPDrift(ps),
-		savePrometheusMetrics(ctx, ps, admin),
-		saveDiskUsage(ctx, ps, conf),
+		savePrometheusMetrics(ctx, ps, bp.admin),
+		saveDiskUsage(ctx, ps, bp.cfg),
+		saveControllerLogDir(ps, bp.cfg, bp.controllerLogLimitBytes),
 	}
 	for _, s := range steps {
 		grp.Go(s)
