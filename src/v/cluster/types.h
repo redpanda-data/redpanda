@@ -2994,7 +2994,13 @@ struct node_metadata {
       = default;
     friend std::ostream& operator<<(std::ostream&, const node_metadata&);
 };
+/**
+ * Reconfiguration state indicates if ongoing reconfiguration is a result of
+ * partition movement, cancellation or forced cancellation
+ */
+enum class reconfiguration_state { in_progress, cancelled, force_cancelled };
 
+std::ostream& operator<<(std::ostream&, reconfiguration_state);
 /*
  * Partition Allocation Domains is the way to make certain partition replicas
  * distributed evenly across the nodes of the cluster. When partition allocation

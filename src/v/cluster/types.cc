@@ -969,6 +969,17 @@ std::ostream& operator<<(std::ostream& o, const node_metadata& nm) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
+    switch (update) {
+    case reconfiguration_state::in_progress:
+        return o << "in_progress";
+    case reconfiguration_state::cancelled:
+        return o << "cancelled";
+    case reconfiguration_state::force_cancelled:
+        return o << "force_cancelled";
+    }
+    __builtin_unreachable();
+}
 } // namespace cluster
 
 namespace reflection {
