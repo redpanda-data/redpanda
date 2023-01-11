@@ -12,6 +12,7 @@ v_cc_library(
     vint.cc
     directory_walker.cc
     uuid.cc
+    request_auth.cc
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram

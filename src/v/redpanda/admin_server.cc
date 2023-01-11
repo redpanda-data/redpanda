@@ -70,7 +70,6 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
-#include "redpanda/request_auth.h"
 #include "rpc/errc.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
