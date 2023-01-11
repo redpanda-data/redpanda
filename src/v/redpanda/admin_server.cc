@@ -2937,32 +2937,86 @@ void admin_server::register_transaction_routes() {
       });
 }
 
+static json::validator make_self_test_start_validator() {
+    const std::string schema = R"(
+{
+    "type": "object",
+    "properties": {
+        "nodes": {
+            "type": "array",
+            "items": {
+                "type": "number"
+            }
+        },
+        "tests": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string"
+                    }
+                },
+                "required": ["type"]
+            }
+        }
+    },
+    "required": [],
+    "additionalProperties": false
+}
+)";
+    return json::validator(schema);
+}
+
 ss::future<ss::json::json_return_type>
 admin_server::self_test_start_handler(std::unique_ptr<ss::httpd::request> req) {
+    static thread_local json::validator self_test_start_validator(
+      make_self_test_start_validator());
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         vlog(logger.debug, "Need to redirect self_test_start request");
         throw co_await redirect_to_leader(*req, model::controller_ntp);
     }
     auto doc = parse_json_body(*req);
-    std::optional<cluster::diskcheck_opts> dto;
-    std::optional<cluster::netcheck_opts> nto;
-    if (!doc.HasMember("tests")) {
-        dto = cluster::diskcheck_opts::from_json(doc);
-        nto = cluster::netcheck_opts::from_json(doc);
-    } else {
-        for (const auto& name : doc["tests"].GetArray()) {
-            if (name == "disk") {
-                dto = cluster::diskcheck_opts::from_json(doc);
-            } else if (name == "network") {
-                nto = cluster::netcheck_opts::from_json(doc);
+    apply_validator(self_test_start_validator, doc);
+    std::vector<model::node_id> ids;
+    cluster::start_test_request r;
+    if (!doc.IsNull()) {
+        if (doc.HasMember("nodes")) {
+            const auto& node_ids = doc["nodes"].GetArray();
+            for (const auto& element : node_ids) {
+                ids.emplace_back(element.GetInt());
             }
+        } else {
+            /// If not provided, default is to start the test on all nodes
+            ids = _controller->get_members_table().local().node_ids();
+        }
+        if (doc.HasMember("tests")) {
+            const auto& params = doc["tests"].GetArray();
+            for (const auto& element : params) {
+                const auto& obj = element.GetObject();
+                const ss::sstring test_type(obj["type"].GetString());
+                if (test_type == "disk") {
+                    r.dtos.push_back(cluster::diskcheck_opts::from_json(obj));
+                } else if (test_type == "network") {
+                    r.ntos.push_back(cluster::netcheck_opts::from_json(obj));
+                } else {
+                    throw ss::httpd::bad_param_exception(
+                      "Unknown self_test 'type', valid options are 'disk' or "
+                      "'network'");
+                }
+            }
+        } else {
+            /// Default test run is to start 1 disk and 1 network test with
+            /// default arguments
+            r.dtos.push_back(cluster::diskcheck_opts{});
+            r.ntos.push_back(cluster::netcheck_opts{});
         }
     }
     try {
         auto tid = co_await _self_test_frontend.invoke_on(
           cluster::self_test_frontend::shard,
-          [dto, nto](auto& self_test_frontend) {
-              return self_test_frontend.start_test(dto, nto);
+          [r, ids](auto& self_test_frontend) {
+              return self_test_frontend.start_test(r, ids);
           });
         vlog(logger.info, "Request to start self test succeeded: {}", tid);
         co_return ss::json::json_return_type(tid);
@@ -3012,6 +3066,7 @@ self_test_result_to_json(const cluster::self_test_result& str) {
     r.bps = str.bps;
     r.test_id = ss::sstring(str.test_id);
     r.name = str.name;
+    r.info = str.info;
     r.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                    str.duration)
                    .count();

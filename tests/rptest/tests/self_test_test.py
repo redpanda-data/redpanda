@@ -36,8 +36,13 @@ class SelfTestTest(RedpandaTest):
     def test_self_test(self):
         """Assert the self test starts/completes with success."""
         test_options = {
-            'disk_test_execution_time': 1,
-            'network_test_execution_time': 1
+            'tests': [{
+                'type': 'disk',
+                'disk_test_execution_time': 1
+            }, {
+                'type': 'network',
+                'network_test_execution_time': 1
+            }]
         }
 
         # Launch the self test with the options above
@@ -55,14 +60,20 @@ class SelfTestTest(RedpandaTest):
                 assert 'error' not in report
                 assert 'warning' not in report
                 assert 'duration' in report
-                assert report['duration'] >= 1000, report['duration']
+                assert report['duration'] >= 1000 and report[
+                    'duration'] <= 2000, report['duration']
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_self_test_node_crash(self):
         """Assert the self test starts/completes with success."""
         test_options = {
-            'disk_test_execution_time': 3,
-            'network_test_execution_time': 3
+            'tests': [{
+                'type': 'disk',
+                'disk_test_execution_time': 3
+            }, {
+                'type': 'network',
+                'network_test_execution_time': 3
+            }]
         }
 
         # Launch the self test with the options above
@@ -101,9 +112,16 @@ class SelfTestTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_self_test_cancellable(self):
         """Assert the self test can cancel an action on command."""
+        disk_test_time = 5
+        network_test_time = 5
         test_options = {
-            'disk_test_execution_time': 5,
-            'network_test_execution_time': 5
+            'tests': [{
+                'type': 'disk',
+                'disk_test_execution_time': disk_test_time
+            }, {
+                'type': 'network',
+                'network_test_execution_time': network_test_time
+            }]
         }
 
         # Launch the self test with the options above
@@ -120,8 +138,7 @@ class SelfTestTest(RedpandaTest):
         # passed between start & stop calls
         stop = time.time()
         total_time_sec = stop - start
-        assert total_time_sec < (test_options['disk_test_execution_time'] +
-                                 test_options['network_test_execution_time'])
+        assert total_time_sec < (disk_test_time + network_test_time)
 
         # Ensure system is in an idle state and contains expected report
         node_reports = self._admin.self_test_status()

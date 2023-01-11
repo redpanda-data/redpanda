@@ -126,11 +126,29 @@ ss::future<> self_test_frontend::start() { return ss::now(); }
 ss::future<> self_test_frontend::stop() { co_await _gate.close(); }
 
 ss::future<uuid_t> self_test_frontend::start_test(
-  std::optional<diskcheck_opts> dto, std::optional<netcheck_opts> nto) {
+  start_test_request req, std::vector<model::node_id> ids) {
     auto gate_holder = _gate.hold();
-    if (!dto && !nto) {
+    if (ids.empty()) {
+        throw self_test_exception("No node ids provided");
+    }
+    if (req.dtos.empty() && req.ntos.empty()) {
         throw self_test_exception("No tests specified to run");
     }
+    /// Validate input
+    const auto brokers = _members.local().node_ids();
+    using nid_set_t = absl::flat_hash_set<model::node_id>;
+    const nid_set_t ids_set{ids.begin(), ids.end()};
+    const nid_set_t brokers_set{brokers.begin(), brokers.end()};
+    if (std::any_of(
+          ids_set.begin(),
+          ids_set.end(),
+          [&brokers_set](const model::node_id& id) {
+              return !brokers_set.contains(id);
+          })) {
+        throw self_test_exception("Request to start self test contained "
+                                  "node_ids that aren't part of the cluster");
+    }
+
     const auto stopped_results = co_await stop_test();
     if (!stopped_results.finished()) {
         vlog(
@@ -140,11 +158,17 @@ ss::future<uuid_t> self_test_frontend::start_test(
     }
 
     /// Invoke command to start test on all nodes, using the same test id
-    const auto id = uuid_t::create();
-    start_test_request req{.id = id, .dto = dto, .nto = nto};
+    const auto test_id = uuid_t::create();
     auto state = co_await invoke_on_all_nodes(
-      [req](auto& handle) { return handle->start_test(req); });
-    co_return id;
+      [test_id, ids_set, req](model::node_id nid, auto& handle) {
+          /// Clear last results of nodes who don't participate in this run
+          if (!ids_set.contains(nid)) {
+              return handle->start_test(start_test_request{.id = test_id});
+          } else {
+              return handle->start_test(req);
+          }
+      });
+    co_return test_id;
 }
 
 ss::future<self_test_frontend::global_test_state>
@@ -157,7 +181,7 @@ self_test_frontend::stop_test() {
         /// from its participants list, retries (if occur) will only occur
         /// on previously unreachable nodes
         test_state = co_await invoke_on_all_nodes(
-          [](auto& handle) { return handle->stop_test(); });
+          [](model::node_id, auto& handle) { return handle->stop_test(); });
         if (!test_state.finished()) {
             vlog(
               clusterlog.warn,
@@ -174,7 +198,7 @@ self_test_frontend::stop_test() {
 ss::future<self_test_frontend::global_test_state> self_test_frontend::status() {
     auto gate_holder = _gate.hold();
     co_return co_await invoke_on_all_nodes(
-      [](auto& handle) { return handle->get_status(); });
+      [](model::node_id, auto& handle) { return handle->get_status(); });
 }
 
 template<typename Func>
@@ -193,7 +217,9 @@ self_test_frontend::invoke_on_all_nodes(Func f) {
           }
           return ss::do_with(
                    std::move(handle),
-                   [f = std::move(f)](auto& handle) { return f(handle); })
+                   [node_id, f = std::move(f)](auto& handle) {
+                       return f(node_id, handle);
+                   })
             .then([node_id](node_test_state result) {
                 return std::pair<const model::node_id, node_test_state>(
                   node_id, std::move(result));

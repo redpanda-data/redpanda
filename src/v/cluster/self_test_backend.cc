@@ -23,6 +23,9 @@
 
 namespace cluster {
 
+self_test_backend::self_test_backend(ss::scheduling_group sg)
+  : _st_sg(sg) {}
+
 ss::future<> self_test_backend::start() { return ss::now(); }
 
 ss::future<> self_test_backend::stop() {
@@ -33,28 +36,29 @@ ss::future<> self_test_backend::stop() {
 }
 
 ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
-  std::optional<diskcheck_opts> dto, std::optional<netcheck_opts> nto) {
+  std::vector<diskcheck_opts> dtos, std::vector<netcheck_opts> ntos) {
     auto gate_holder = _gate.hold();
     std::vector<self_test_result> results;
-    if (dto) {
-        /// Disk
+    for (auto& dto : dtos) {
         try {
             vlog(clusterlog.info, "Starting disk self test...");
-            results.push_back(
-              co_await _disk_test.run(*dto).then([](auto result) {
-                  vlog(clusterlog.info, "Disk self test finished with success");
-                  return result;
-              }));
+            dto.sg = _st_sg;
+            auto dtr = co_await _disk_test.run(dto).then([](auto result) {
+                vlog(clusterlog.info, "Disk self test finished with success");
+                return result;
+            });
+            std::copy(dtr.begin(), dtr.end(), std::back_inserter(results));
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Disk self test finished with error");
-            results.push_back(self_test_result{.error = ex.what()});
+            results.push_back(
+              self_test_result{.name = dto.name, .error = ex.what()});
         }
     }
-    if (nto) {
-        /// Network
+    for (auto& nto : ntos) {
         try {
             vlog(clusterlog.info, "Starting network self test...");
-            auto ntr = co_await _network_test.run(*nto).then([](auto results) {
+            nto.sg = _st_sg;
+            auto ntr = co_await _network_test.run(nto).then([](auto results) {
                 vlog(
                   clusterlog.info, "Network self test finished with success");
                 return results;
@@ -62,7 +66,8 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             std::copy(ntr.begin(), ntr.end(), std::back_inserter(results));
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Network self test finished with error");
-            results.push_back(self_test_result{.error = ex.what()});
+            results.push_back(
+              self_test_result{.name = nto.name, .error = ex.what()});
         }
     }
     co_return results;
@@ -75,7 +80,7 @@ get_status_response self_test_backend::start_test(start_test_request req) {
         _id = req.id;
         vlog(
           clusterlog.info, "Starting redpanda self-tests with id: {}", req.id);
-        (void)do_start_test(req.dto, req.nto)
+        (void)do_start_test(req.dtos, req.ntos)
           .then([this, id = req.id](auto results) {
               _prev_run = get_status_response{
                 .id = id,
