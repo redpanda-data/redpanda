@@ -11,6 +11,7 @@ import random
 import threading
 
 from ducktape.mark import matrix
+from ducktape.mark import ok_to_fail
 from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
@@ -47,6 +48,7 @@ class RandomNodeOperationsTest(EndToEndTest):
 
         self.topic = random.choice(topics).name
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8142
     @skip_debug_mode
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
