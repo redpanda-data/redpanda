@@ -427,14 +427,15 @@ func unixMilli(nano int64) int64 { return nano / 1e6 }
 // The expressions below all end in (?::|$), meaning, a non capturing group for
 // the first time followed by a colon or the second time at the end.
 func parseConsumeTimestamp(
-	half string,
-) (length int, at time.Time, end bool, err error) {
+	half string, baseTimestamp time.Time,
+) (length int, at time.Time, end bool, fromTimestamp bool, err error) {
 	switch {
 	// 13 digits is a millisecond.
 	case regexp.MustCompile(`^\d{13}(?::|$)`).MatchString(half):
 		length = 13
 		n, _ := strconv.ParseInt(half[:length], 10, 64)
 		at = time.Unix(0, n*1e6)
+		fromTimestamp = true
 		return
 
 	// 10 digits is a unix second.
@@ -442,12 +443,14 @@ func parseConsumeTimestamp(
 		length = 10
 		n, _ := strconv.ParseInt(half[:length], 10, 64)
 		at = time.Unix(n, 0)
+		fromTimestamp = true
 		return
 
 	// YYYY-MM-DD
 	case regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(?::|$)`).MatchString(half):
 		length = 10
 		at, _ = time.ParseInLocation("2006-01-02", half[:length], time.UTC)
+		fromTimestamp = true
 		return
 
 	// Z marks the end of an RFC3339; we try to parse it and if it
@@ -463,6 +466,7 @@ func parseConsumeTimestamp(
 		if err != nil {
 			err = fmt.Errorf("unable to parse RFC3339 timestamp in %q: %v", half, err)
 		}
+		fromTimestamp = true
 		return
 
 	case half == "end": // t2
@@ -488,7 +492,7 @@ func parseConsumeTimestamp(
 		if negate {
 			rel = -rel
 		}
-		at = time.Now().Add(rel)
+		at = baseTimestamp.Add(rel).UTC()
 		return
 	}
 }
@@ -496,12 +500,24 @@ func parseConsumeTimestamp(
 // parseTimeOffset is a bit more complicated, because our start & end
 // timestamps can have colons in them (RFC3339). Rather than parse the
 // whole string at a time, we parse each half individually.
+//
+// If the first half is a timestamp, then if the second half is a duration,
+// we parse relative to the first half. If both are durations, we parse
+// relative to now.
 func (c *consumer) parseTimeOffset(
 	offset string, topics []string, adm *kadm.Client,
 ) error {
 	c.resetOffset = kgo.NewOffset().AtStart() // default to start; likely overridden below
+	var (
+		length        int
+		startAt       time.Time
+		endAt         time.Time
+		end           bool
+		fromTimestamp bool
+		err           error
+	)
 	if !strings.HasPrefix(offset, ":") {
-		length, startAt, end, err := parseConsumeTimestamp(offset)
+		length, startAt, end, fromTimestamp, err = parseConsumeTimestamp(offset, time.Now())
 		if err != nil {
 			return err
 		} else if end {
@@ -524,7 +540,12 @@ func (c *consumer) parseTimeOffset(
 	}
 	offset = offset[1:] // strip start:end delimiting colon
 
-	length, endAt, end, err := parseConsumeTimestamp(offset)
+	if fromTimestamp {
+		length, endAt, end, _, err = parseConsumeTimestamp(offset, startAt)
+	} else {
+		length, endAt, end, _, err = parseConsumeTimestamp(offset, time.Now())
+	}
+
 	if err != nil {
 		return err
 	} else if len(offset) != length {
