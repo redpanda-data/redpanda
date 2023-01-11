@@ -128,7 +128,7 @@ public:
 
 private:
     using deferred_actions
-      = std::vector<ss::deferred_action<std::function<void()>>>;
+      = std::deque<ss::deferred_action<std::function<void()>>>;
 
     // Constructs services across shards required to get bootstrap metadata.
     void wire_up_bootstrap_services();
