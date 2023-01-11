@@ -68,7 +68,8 @@ bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
     if (!delta.previous_replica_set) {
         return false;
     }
-    return contains_node(self, *delta.previous_replica_set)
+    return has_local_replicas(self, delta.new_assignment.replicas)
+           && contains_node(self, *delta.previous_replica_set)
            && !has_local_replicas(self, *delta.previous_replica_set);
 }
 
@@ -554,74 +555,29 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
         return ss::now();
     }
 
-    auto& first_meta = bootstrap_deltas.front();
+    auto& first_delta = bootstrap_deltas.front().delta;
     vlog(
       clusterlog.info,
       "[{}] Bootstrapping deltas: first - {}, last - {}",
       ntp,
-      first_meta.delta,
+      first_delta,
       bootstrap_deltas.back());
+
     // if first operation is a cross core update, find initial revision on
     // current node and store it in bootstrap map
-    using op_t = topic_table::delta::op_type;
-    if (is_cross_core_update(_self, first_meta.delta)) {
+    if (is_cross_core_update(_self, first_delta)) {
+        auto rev = first_delta.get_replica_revision(_self);
         vlog(
           clusterlog.trace,
-          "[{}] first bootstrap delta is a cross core update, looking for "
-          "initial revision",
-          ntp);
-
-        // find operation that created current partition on this node
-        auto it = std::find_if(
-          deltas.rbegin(), deltas.rend(), [this](const delta_metadata& md) {
-              if (md.delta.type == op_t::add) {
-                  return true;
-              }
-              return md.delta.type == op_t::update_finished
-                     && !contains_node(md.delta.new_assignment.replicas, _self);
-          });
-
-        vassert(
-          it != deltas.rend(),
-          "if partition {} was moved from different core it had to exists "
-          "on "
-          "current node previously",
-          ntp);
-        // if we found update finished operation it is preceding operation
-        // that created partition on current node
-        vlog(
-          clusterlog.trace,
-          "[{}] first operation that doesn't contain current node - {}",
+          "[{}] first bootstrap delta is a cross core update, initial "
+          "revision: {}",
           ntp,
-          *it);
-        /**
-         * At this point we may have two situations
-         * 1. replica was created on current node shard when partition was
-         *    created, with addition delta, in this case `it` contains this
-         *    addition delta.
-         *
-         * 2. replica was moved to this node with `update` delta type, in
-         * this case `it` contains either `update_finished` delta from
-         * previous operation or `add` delta from previous operation. In
-         * this case operation does not contain current node and we need to
-         * execute operation that is following the found one as this is the
-         * first operation that created replica on current node
-         *
-         */
-        if (!contains_node(it->delta.new_assignment.replicas, _self)) {
-            vassert(
-              it != deltas.rbegin(),
-              "operation {} must have following operation that created a "
-              "replica on current node",
-              *it);
-            it = std::prev(it);
-        }
-        vlog(
-          clusterlog.trace, "[{}] initial revision source delta: {}", ntp, *it);
+          rev);
         // persist revision in order to create partition with correct
         // revision
-        _bootstrap_revisions[ntp] = model::revision_id(it->delta.offset());
+        _bootstrap_revisions[ntp] = rev;
     }
+
     // apply all deltas following the one found previously
     deltas = std::move(bootstrap_deltas);
     return reconcile_ntp(deltas);
@@ -884,24 +840,14 @@ ss::future<> controller_backend::reconcile_topics() {
 ss::future<std::error_code>
 controller_backend::execute_partition_op(const delta_metadata& metadata) {
     using op_t = topic_table::delta::op_type;
-    /**
-     * Revision is derived from delta offset, i.e. offset of a command that
-     * the delta is derived from. The offset is always monotonically
-     * increasing together with cluster state evolution hence it is perfect
-     * as a source of revision_id
-     */
+    const topic_table_delta& delta = metadata.delta;
     vlog(
       clusterlog.trace,
-      "[{}] (retry {}) executing operation: {{type: {}, revision: {}, "
-      "assignment: {}, "
-      "previous assignment: {}}}",
-      metadata.delta.ntp,
+      "[{}] (retry {}) executing operation: {}}}",
+      delta.ntp,
       metadata.retries,
-      metadata.delta.type,
-      metadata.delta.offset,
-      metadata.delta.new_assignment,
-      metadata.delta.previous_replica_set);
-    const model::revision_id rev(metadata.delta.offset());
+      delta);
+    const model::revision_id cmd_rev(delta.offset());
     // new partitions
 
     // only create partitions for this backend
@@ -913,12 +859,12 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
             return ss::make_ready_future<std::error_code>(errc::success);
         }
         return create_partition(
-          metadata.delta.ntp,
-          metadata.delta.new_assignment.group,
-          rev,
-          rev,
+          delta.ntp,
+          delta.new_assignment.group,
+          delta.get_replica_revision(_self),
+          cmd_rev,
           create_brokers_set(
-            metadata.delta.new_assignment.replicas, _members_table.local()));
+            delta.new_assignment.replicas, _members_table.local()));
     case op_t::add_non_replicable:
         [[fallthrough]];
     case op_t::del_non_replicable:
@@ -928,7 +874,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           "be handled by coproc::reconciliation_backend");
     case op_t::del:
         return delete_partition(
-                 metadata.delta.ntp, rev, partition_removal_mode::global)
+                 delta.ntp, cmd_rev, partition_removal_mode::global)
           .then([] { return std::error_code(errc::success); });
     case op_t::update:
     case op_t::force_abort_update:
@@ -945,15 +891,14 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           metadata.delta);
         return process_partition_reconfiguration(
           metadata.retries,
-          metadata.delta.type,
-          metadata.delta.ntp,
-          metadata.delta.new_assignment,
-          *metadata.delta.previous_replica_set,
-          *metadata.delta.replica_revisions,
-          rev);
+          delta.type,
+          delta.ntp,
+          delta.new_assignment,
+          *delta.previous_replica_set,
+          *delta.replica_revisions,
+          cmd_rev);
     case op_t::update_finished:
-        return finish_partition_update(
-                 metadata.delta.ntp, metadata.delta.new_assignment, rev)
+        return finish_partition_update(delta.ntp, delta.new_assignment, cmd_rev)
           .then([] { return std::error_code(errc::success); });
     case op_t::update_properties:
         return process_partition_properties_update(

@@ -1922,10 +1922,9 @@ struct topic_table_delta {
                || type == op_type::force_abort_update;
     }
 
-    bool is_reconfiguration_interrupt() const {
-        return type == op_type::cancel_update
-               || type == op_type::force_abort_update;
-    }
+    /// Preconditions: delta is of type that has replica_revisions and the node
+    /// is in the new assignment.
+    model::revision_id get_replica_revision(model::node_id) const;
 
     friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
     friend std::ostream& operator<<(std::ostream&, const op_type&);
