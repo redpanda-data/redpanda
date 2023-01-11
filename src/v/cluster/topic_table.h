@@ -91,6 +91,7 @@ public:
           , _target_replicas(std::move(target_replicas))
           , _state(state)
           , _update_revision(update_revision)
+          , _last_cmd_revision(update_revision)
           , _probe(probe) {
             _probe.handle_update(_previous_replicas, _target_replicas);
         }
@@ -113,7 +114,7 @@ public:
 
         const reconfiguration_state& get_state() const { return _state; }
 
-        void set_state(reconfiguration_state state) {
+        void set_state(reconfiguration_state state, model::revision_id rev) {
             if (
               _state == reconfiguration_state::in_progress
               && (state == reconfiguration_state::cancelled || state == reconfiguration_state::force_cancelled)) {
@@ -121,6 +122,7 @@ public:
                   _previous_replicas, _target_replicas);
             }
             _state = state;
+            _last_cmd_revision = rev;
         }
 
         const std::vector<model::broker_shard>& get_previous_replicas() const {
@@ -134,8 +136,8 @@ public:
             return _update_revision;
         }
 
-        void swap_replica_revisions(replicas_revision_map& revisions) {
-            std::swap(_replicas_revisions, revisions);
+        const model::revision_id& get_last_cmd_revision() const {
+            return _last_cmd_revision;
         }
 
     private:
@@ -143,6 +145,7 @@ public:
         std::vector<model::broker_shard> _target_replicas;
         reconfiguration_state _state;
         model::revision_id _update_revision;
+        model::revision_id _last_cmd_revision;
         topic_table_probe& _probe;
     };
 

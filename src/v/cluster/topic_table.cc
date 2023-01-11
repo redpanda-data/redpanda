@@ -374,7 +374,8 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
 
     in_progress_it->second.set_state(
       cmd.value.force ? reconfiguration_state::force_cancelled
-                      : reconfiguration_state::cancelled);
+                      : reconfiguration_state::cancelled,
+      model::revision_id{o});
 
     auto replicas = current_assignment_it->replicas;
     // replace replica set with set from in progress operation
