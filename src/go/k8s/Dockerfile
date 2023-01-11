@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.19.2 as builder
+FROM --platform=$BUILDPLATFORM public.ecr.aws/docker/library/golang:1.19.2 as builder
 
 ARG TARGETARCH
 
