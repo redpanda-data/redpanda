@@ -1024,6 +1024,23 @@ static json::validator make_cluster_config_validator() {
     return json::validator(schema);
 }
 
+ss::sstring
+join_properties(const std::vector<std::reference_wrapper<
+                  const config::property<std::optional<ss::sstring>>>>& props) {
+    ss::sstring result = "";
+    for (size_t idx = 0; const auto& prop : props) {
+        if (idx == props.size() - 1) {
+            result += ss::sstring{prop.get().name()};
+        } else {
+            result += ssx::sformat("{}, ", prop.get().name());
+        }
+
+        ++idx;
+    };
+
+    return result;
+}
+
 /**
  * This function provides special case validation for configuration
  * properties that need to check other properties' values as well
@@ -1078,23 +1095,53 @@ void config_multi_property_validation(
         if (
           updated_config.cloud_storage_credentials_source
           == model::cloud_credentials_source::config_file) {
-            properties = {
+            config_properties_seq s3_properties = {
               std::ref(updated_config.cloud_storage_region),
               std::ref(updated_config.cloud_storage_bucket),
               std::ref(updated_config.cloud_storage_access_key),
               std::ref(updated_config.cloud_storage_secret_key),
             };
+
+            config_properties_seq abs_properties = {
+              std::ref(updated_config.cloud_storage_azure_storage_account),
+              std::ref(updated_config.cloud_storage_azure_container),
+              std::ref(updated_config.cloud_storage_azure_shared_key),
+            };
+
+            std::array<config_properties_seq, 2> valid_configurations = {
+              s3_properties, abs_properties};
+
+            bool is_valid_configuration = std::any_of(
+              valid_configurations.begin(),
+              valid_configurations.end(),
+              [](const auto& config) {
+                  return std::none_of(
+                    config.begin(), config.end(), [](const auto& prop) {
+                        return prop() == std::nullopt;
+                    });
+              });
+
+            if (!is_valid_configuration) {
+                errors["cloud_storage_enabled"] = ssx::sformat(
+                  "To enable cloud storage you need to configure S3 or Azure "
+                  "Blob Storage access. For S3 {} must be set. For ABS {} "
+                  "must be set",
+                  join_properties(s3_properties),
+                  join_properties(abs_properties));
+            }
         } else {
-            properties = {
+            // TODO(vlad): When we add support for non-config file auth
+            // methods for ABS, handling here should be updated too.
+            config_properties_seq properties = {
               std::ref(updated_config.cloud_storage_region),
               std::ref(updated_config.cloud_storage_bucket),
             };
-        }
 
-        for (auto& p : properties) {
-            if (p() == std::nullopt) {
-                errors[ss::sstring(p.get().name())]
-                  = "Must be set when cloud storage enabled";
+            for (auto& p : properties) {
+                if (p() == std::nullopt) {
+                    errors[ss::sstring(p.get().name())]
+                      = "Must be set when cloud storage enabled";
+                }
             }
         }
     }
