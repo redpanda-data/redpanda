@@ -7,9 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
 import time
-import datetime
 
 from rptest.utils.rpenv import sample_license
 from rptest.services.admin import Admin
@@ -22,19 +20,25 @@ from ducktape.errors import TimeoutError as DucktapeTimeoutError
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 
-CURRENT_LOGICAL_VERSION = 8
-
-# The upgrade tests defined below rely on having a logical version lower than
-# CURRENT_LOGICAL_VERSION. For the sake of these tests, the exact version
-# shouldn't matter.
-OLD_VERSION = (22, 1, 4)
-
 
 class FeaturesTestBase(RedpandaTest):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.admin = Admin(self.redpanda)
+        self.installer = self.redpanda._installer
+
+    def setUp(self):
+        super().setUp()
+        self.head_logical_version = self.admin.get_features(
+        )["cluster_version"]
+        self.previous_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+
     """
     Test cases defined in this parent class are executed as part
     of subclasses that define node count below.
     """
+
     def _get_features_map(self, feature_response=None, node=None):
         if feature_response is None:
             feature_response = self.admin.get_features(node=node)
@@ -53,8 +57,8 @@ class FeaturesTestBase(RedpandaTest):
         # of `latest_version` in the redpanda source.  Update it when
         # that happens.
         initial_version = features_response["cluster_version"]
-        assert initial_version == CURRENT_LOGICAL_VERSION, \
-            f"Version mismatch: {initial_version} vs {CURRENT_LOGICAL_VERSION}"
+        assert initial_version == self.head_logical_version, \
+            f"Version mismatch: {initial_version} vs {self.head_logical_version}"
 
         assert self._get_features_map(
             features_response)['central_config']['state'] == 'active'
@@ -86,8 +90,6 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
-
-        self.admin = Admin(self.redpanda)
 
     @cluster(num_nodes=3)
     def test_get_features(self):
@@ -217,12 +219,12 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=3, **kwargs)
-        self.admin = Admin(self.redpanda)
-        self.installer = self.redpanda._installer
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, OLD_VERSION)
         super().setUp()
+        # setup an old version as start condition
+        self.installer.install(self.redpanda.nodes, self.previous_version)
+        self.redpanda.start()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_upgrade(self):
@@ -231,7 +233,7 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         version does not increment until all nodes are up to date.
         """
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < CURRENT_LOGICAL_VERSION, \
+        assert initial_version < self.head_logical_version, \
             f"downgraded logical version {initial_version}"
 
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -251,16 +253,15 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         # Node logical versions are transmitted as part of health messages, so we may
         # have to wait for the next health tick (health_monitor_tick_interval=10s) before
         # the controller leader fetches health from the last restarted peer.
-        self._wait_for_version_everywhere(CURRENT_LOGICAL_VERSION)
+        self._wait_for_version_everywhere(self.head_logical_version)
 
         # Check that initial version and current version are properly reflected
         # across all nodes.
         def complete():
             for n in self.redpanda.nodes:
                 features = self.admin.get_features(node=n)
-                if features[
-                        'cluster_version'] != CURRENT_LOGICAL_VERSION or features[
-                            'original_cluster_version'] != initial_version:
+                if features['cluster_version'] != self.head_logical_version \
+                        or features['original_cluster_version'] != initial_version:
                     return False
             return True
 
@@ -277,7 +278,7 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         version does not increment.
         """
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < CURRENT_LOGICAL_VERSION, \
+        assert initial_version < self.head_logical_version, \
             f"downgraded logical version {initial_version}"
 
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -292,7 +293,7 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         time.sleep(5)
         assert initial_version == self.admin.get_features()['cluster_version']
 
-        self.installer.install(self.redpanda.nodes, OLD_VERSION)
+        self.installer.install(self.redpanda.nodes, self.previous_version)
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
         self.redpanda.restart_nodes([self.redpanda.nodes[1]])
         _ = wait_for_num_versions(self.redpanda, 1)
@@ -308,8 +309,6 @@ class FeaturesSingleNodeTest(FeaturesTestBase):
         # Skip immediate parent constructor
         super().__init__(*args, num_brokers=1, **kwargs)
 
-        self.admin = Admin(self.redpanda)
-
     @cluster(num_nodes=1)
     def test_get_features(self):
         self._assert_default_features()
@@ -321,12 +320,11 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=1, **kwargs)
-        self.admin = Admin(self.redpanda)
-        self.installer = self.redpanda._installer
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, OLD_VERSION)
         super().setUp()
+        self.installer.install(self.redpanda.nodes, self.previous_version)
+        self.redpanda.start()
 
     @cluster(num_nodes=1, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_upgrade(self):
@@ -335,15 +333,15 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
         version does not increment until all nodes are up to date.
         """
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < CURRENT_LOGICAL_VERSION, \
+        assert initial_version < self.head_logical_version, \
             f"downgraded logical version {initial_version}"
 
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
         self.installer.install([self.redpanda.nodes[0]],
                                RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
-        wait_until(lambda: CURRENT_LOGICAL_VERSION == self.admin.get_features(
-        )['cluster_version'],
+        wait_until(lambda: self.head_logical_version == self.admin.
+                   get_features()['cluster_version'],
                    timeout_sec=5,
                    backoff_sec=1)
 
@@ -355,16 +353,14 @@ OLD_NODE_JOIN_LOG_ALLOW_LIST = [
 ]
 
 
-class FeaturesNodeJoinTest(RedpandaTest):
+class FeaturesNodeJoinTest(FeaturesTestBase):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, num_brokers=4, **kwargs)
 
-        self.admin = Admin(self.redpanda)
-        self.installer = self.redpanda._installer
-
     def setUp(self):
+        super().setUp()
         # We will start nodes by hand during test.
-        pass
+        self.redpanda.stop()
 
     @cluster(num_nodes=4, log_allow_list=OLD_NODE_JOIN_LOG_ALLOW_LIST)
     def test_old_node_join(self):
@@ -375,7 +371,7 @@ class FeaturesNodeJoinTest(RedpandaTest):
 
         # Pick a node to roleplay an old version of redpanda
         old_node = self.redpanda.nodes[-1]
-        self.installer.install([old_node], OLD_VERSION)
+        self.installer.install([old_node], (22, 1))
 
         # Start first three nodes
         self.redpanda.start(self.redpanda.nodes[0:-1])
@@ -385,8 +381,8 @@ class FeaturesNodeJoinTest(RedpandaTest):
         self.redpanda.clean_node(old_node, preserve_current_install=True)
 
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version == CURRENT_LOGICAL_VERSION, \
-            f"Version mismatch: {initial_version} vs {CURRENT_LOGICAL_VERSION}"
+        assert initial_version == self.head_logical_version, \
+            f"Version mismatch: {initial_version} vs {self.head_logical_version}"
 
         try:
             self.redpanda.start_node(old_node)

@@ -43,7 +43,8 @@ class UpgradeToLicenseChecks(RedpandaTest):
         self.admin = Admin(self.redpanda)
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, (22, 1, 4))
+        _, self.oldversion_str = self.installer.install(
+            self.redpanda.nodes, (22, 1))
         super(UpgradeToLicenseChecks, self).setUp()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -61,14 +62,13 @@ class UpgradeToLicenseChecks(RedpandaTest):
             return
 
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert 'v22.1.4' in unique_versions, unique_versions
+        assert self.oldversion_str in unique_versions, unique_versions
 
         # These logs can't exist in v22.1.4 but double check anyway...
         assert self.redpanda.search_log_any("Enterprise feature(s).*") is False
 
         # Update one node to newest version
-        self.installer.install([self.redpanda.nodes[0]],
-                               RedpandaInstaller.HEAD)
+        self.installer.install([self.redpanda.nodes[0]], (22, 2))
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
 
@@ -85,7 +85,7 @@ class UpgradeToLicenseChecks(RedpandaTest):
         assert self.redpanda.search_log_any("Enterprise feature(s).*") is False
 
         # Install new version on all nodes
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 2))
 
         # Restart nodes 2 and 3
         self.redpanda.restart_nodes(
@@ -124,7 +124,7 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
 
     def setUp(self):
         # 22.2.x is when license went live
-        self.installer.install(self.redpanda.nodes, (22, 2, 7))
+        self.installer.install(self.redpanda.nodes, (22, 2))
         super(UpgradeMigratingLicenseVersion, self).setUp()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -139,7 +139,7 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
         assert self.admin.put_license(license).status_code == 200
 
         # Update all nodes to newest version
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 3))
         self.redpanda.restart_nodes(self.redpanda.nodes)
         _ = wait_for_num_versions(self.redpanda, 1)
 

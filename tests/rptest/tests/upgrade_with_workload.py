@@ -16,7 +16,7 @@ class MixedVersionWorkloadRunner():
 
     # For testing RPC compatibility, pick a version that doesn't have serde
     # enabled.
-    PRE_SERDE_VERSION = (22, 1, 4)
+    PRE_SERDE_VERSION = (22, 1)
 
     @staticmethod
     def upgrade_with_workload(redpanda: RedpandaService, initial_version,
@@ -41,14 +41,14 @@ class MixedVersionWorkloadRunner():
         node1 = nodes[1]
 
         # Upgrade one node and send RPCs in both directions.
-        installer.install([node0], RedpandaInstaller.HEAD)
+        installer.install([node0], (22, 2))
         redpanda.restart_nodes([node0])
         workload_fn(node0, node1)
         workload_fn(node1, node0)
 
         # Continue on with the upgrade. The versions are identical at this
         # point so just run the workload in one direction.
-        installer.install([node1], RedpandaInstaller.HEAD)
+        installer.install([node1], (22, 2))
         redpanda.restart_nodes([node1])
         workload_fn(node0, node1)
 
@@ -60,6 +60,6 @@ class MixedVersionWorkloadRunner():
 
         # Complete the upgrade. The versions are identical again so just run
         # through the workload in one direction.
-        installer.install(nodes, RedpandaInstaller.HEAD)
+        installer.install(nodes, (22, 2))
         redpanda.restart_nodes(nodes)
         workload_fn(node0, node1)

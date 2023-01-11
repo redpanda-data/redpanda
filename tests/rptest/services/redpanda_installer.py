@@ -11,6 +11,9 @@ import errno
 import json
 import os
 import re
+import typing
+from typing import Tuple
+
 import requests
 
 from ducktape.utils.util import wait_until
@@ -297,6 +300,17 @@ class RedpandaInstaller:
             raise
         self._released_versions.sort(reverse=True)
 
+    def _avail_for_download(self, version: tuple[int, int, int]):
+        """
+        validate that it is really downloadable: this avoids tests being upset by ongoing releases
+        which might exist in github but not yet fave all their artifacts
+        """
+        r = requests.head(self._version_package_url(version))
+        if r.status_code not in (200, 404):
+            r.raise_for_status()
+
+        return r.status_code == 200
+
     def highest_from_prior_feature_version(self, version):
         """
         Returns the highest version that is of a lower feature version than the
@@ -324,14 +338,11 @@ class RedpandaInstaller:
                 # Before selecting version, validate that it is really downloadable: this avoids
                 # tests being upset by ongoing releases which might exist in github but not yet
                 # have all their artifacts.
-                r = requests.head(self._version_package_url(v))
-                if r.status_code == 404 and skip_versions > 0:
+                if not self._avail_for_download(v) and skip_versions > 0:
                     self._redpanda.logger.warn(
                         f"Skipping version {v}, no download available")
                     skip_versions -= 1
                     continue
-                elif r.status_code != 200:
-                    r.raise_for_status()
 
                 result = v
                 break
@@ -341,10 +352,55 @@ class RedpandaInstaller:
         )
         return result
 
-    def install(self, nodes, version):
+    def latest_for_line(self, release_line: tuple[int, int]):
+        """
+        Returns the most recent version of redpanda from a release line, or HEAD if asking for a yet-to-be released version
+        the return type is a tuple (version, is_head), where is_head is True if the version is from dev tip
+        e.g: latest_for_line((22, 2)) -> ((22, 2, 7), False)
+        latest_for_line((23, 1)) -> (self._head_version, True) (as of 2022 dec (23, 1, 0))
+        """
+        # NOTE: _released_versions are in descending order.
+
+        self.start()
+        self._initialize_released_versions()
+
+        # if requesting current (or future) release line, return _head_version
+        if release_line >= self._head_version[0:2]:
+            self._redpanda.logger.info(
+                f"selecting HEAD={self._head_version} for {release_line=}")
+            return (self._head_version, True)
+
+        versions_in_line = [
+            v for v in self._released_versions if release_line == v[0:2]
+        ]
+        assert len(versions_in_line) > 0,\
+            f"could not find a line for {release_line=} in {self._released_versions=}"
+
+        # Only checks these many version before giving up. one missing version is fine in a transient state,
+        # but more would indicate a systemic issues in package download
+        for v in versions_in_line[0:2]:
+            # check actual availability
+            if self._avail_for_download(v):
+                self._redpanda.logger.info(
+                    f"selecting {v=} for {release_line=}")
+                return (v, False)
+            else:
+                self._redpanda.logger.warn(
+                    f"skipping {v=} for {release_line=} because it's not available for downloading"
+                )
+
+        assert False, f"no downloadable versions in {versions_in_line[0:2]} for {release_line=}"
+
+    def install(self, nodes, version: typing.Union[str, tuple[int, int],
+                                                   tuple[int, int, int]]):
         """
         Installs the release on the given nodes such that the next time the
         nodes are restarted, they will use the newly installed bits.
+
+        accepts either RedpandaInstaller.HEAD, a specific version as a 3-tuple, or a feature line as a 2-tuple.
+        the latter will be converted to the latest specific version available (or HEAD)
+
+        returns installed version, useful if a feature line was requested
 
         TODO: abstract 'version' into a more generic installation that doesn't
         necessarily correspond to a released version. E.g. a custom build
@@ -353,17 +409,32 @@ class RedpandaInstaller:
         if not self._started:
             self.start()
 
+        # version can be HEAD, a specific release, or a release_line. first two will go through, last one will be converted to a specific release
+        install_target = version
+        actual_version = version if version != RedpandaInstaller.HEAD else self._head_version
+        # requested a line, find the most recent release
+        if version != RedpandaInstaller.HEAD and len(version) == 2:
+            actual_version, is_head = self.latest_for_line(install_target)
+            # update install_target only if is not head. later code handles HEAD as a special case
+            install_target = actual_version if not is_head else RedpandaInstaller.HEAD
+
+        self._redpanda.logger.info(
+            f"got {version=} will install {actual_version=}")
+
         try:
             self._acquire_install_lock()
-            self._install_unlocked(nodes, version)
-            self._installed_version = version
+            self._install_unlocked(nodes, install_target)
+            self._installed_version = install_target
         finally:
             self._release_install_lock()
+
+        return actual_version, f"v{actual_version[0]}.{actual_version[1]}.{actual_version[2]}"
 
     def _install_unlocked(self, nodes, version):
         """
         Like above but expects the install lock to have been taken before
         calling.
+        version should be either a 3-tuple specific release, or RedpandaInstaller.HEAD
         """
         version_root = self.root_for_version(version)
 
