@@ -34,7 +34,8 @@ class ShadowIndexingTxTest(RedpandaTest):
             group_initial_rebalance_delay=300,
         )
 
-        si_settings = SISettings(cloud_storage_max_connections=5,
+        si_settings = SISettings(test_context,
+                                 cloud_storage_max_connections=5,
                                  log_segment_size=self.segment_size)
 
         super(ShadowIndexingTxTest, self).__init__(test_context=test_context,

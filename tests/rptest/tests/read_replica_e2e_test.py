@@ -41,6 +41,7 @@ class TestReadReplicaService(EndToEndTest):
         super(TestReadReplicaService, self).__init__(
             test_context=test_context,
             si_settings=SISettings(
+                test_context,
                 cloud_storage_max_connections=5,
                 log_segment_size=TestReadReplicaService.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
@@ -50,6 +51,7 @@ class TestReadReplicaService(EndToEndTest):
         # We're adding 'none' as a bucket name without creating
         # an actual bucket with such name.
         self.rr_settings = SISettings(
+            test_context,
             bypass_bucket_creation=True,
             cloud_storage_max_connections=5,
             log_segment_size=TestReadReplicaService.log_segment_size,

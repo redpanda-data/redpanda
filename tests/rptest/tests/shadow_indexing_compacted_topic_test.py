@@ -20,7 +20,8 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
     def __init__(self, test_context):
         super().__init__(test_context)
         self.num_brokers = 3
-        self.si_settings = SISettings(cloud_storage_max_connections=5)
+        self.si_settings = SISettings(test_context,
+                                      cloud_storage_max_connections=5)
         extra_rp_conf = dict(
             enable_leader_balancer=False,
             partition_autobalancing_mode="off",

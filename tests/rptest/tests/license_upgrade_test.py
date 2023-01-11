@@ -36,9 +36,10 @@ class UpgradeToLicenseChecks(RedpandaTest):
         # Setting 'si_settings' enables a licensed feature, however at v22.1.4 there
         # are no license checks present. This test verifies behavior between versions
         # of redpanda that do and do not have the licensing feature built-in.
-        super(UpgradeToLicenseChecks, self).__init__(test_context=test_context,
-                                                     num_brokers=3,
-                                                     si_settings=SISettings())
+        super(UpgradeToLicenseChecks,
+              self).__init__(test_context=test_context,
+                             num_brokers=3,
+                             si_settings=SISettings(test_context))
         self.installer = self.redpanda._installer
         self.admin = Admin(self.redpanda)
 
@@ -118,7 +119,7 @@ class UpgradeMigratingLicenseVersion(RedpandaTest):
         super(UpgradeMigratingLicenseVersion,
               self).__init__(test_context=test_context,
                              num_brokers=3,
-                             si_settings=SISettings())
+                             si_settings=SISettings(test_context))
         self.installer = self.redpanda._installer
         self.admin = Admin(self.redpanda)
 

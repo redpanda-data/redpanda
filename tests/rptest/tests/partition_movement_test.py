@@ -770,6 +770,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # Force shadow indexing to be used by most reads
         # in one test
         si_settings = SISettings(
+            ctx,
             cloud_storage_max_connections=5,
             log_segment_size=10240,  # 10KiB
             cloud_storage_enable_remote_read=True,

@@ -202,7 +202,8 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                              retention_local_target_bytes_default=self.
                              default_retention_segments * self.segment_size)
 
-        si_settings = SISettings(log_segment_size=self.segment_size)
+        si_settings = SISettings(test_context,
+                                 log_segment_size=self.segment_size)
         super(ShadowIndexingLocalRetentionTest,
               self).__init__(test_context=test_context,
                              num_brokers=1,
@@ -352,7 +353,8 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
     def __init__(self, test_context):
         extra_rp_conf = dict(log_compaction_interval_ms=1000)
 
-        si_settings = SISettings(log_segment_size=self.segment_size)
+        si_settings = SISettings(test_context,
+                                 log_segment_size=self.segment_size)
         super(ShadowIndexingCloudRetentionTest,
               self).__init__(test_context=test_context,
                              si_settings=si_settings,

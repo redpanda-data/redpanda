@@ -194,6 +194,7 @@ class CreateTopicsTest(RedpandaTest):
 
     def __init__(self, test_context):
         si_settings = SISettings(
+            test_context,
             cloud_storage_max_connections=5,
             cloud_storage_segment_max_upload_interval_sec=10,
             log_segment_size=100 * 1024 * 1024)
@@ -221,9 +222,10 @@ class CreateTopicsTest(RedpandaTest):
 
 class CreateSITopicsTest(RedpandaTest):
     def __init__(self, test_context):
-        super(CreateSITopicsTest, self).__init__(test_context=test_context,
-                                                 num_brokers=1,
-                                                 si_settings=SISettings())
+        super(CreateSITopicsTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=1,
+                             si_settings=SISettings(test_context))
 
     def _to_bool(self, x: str) -> bool:
         return True if x == "true" else False
@@ -462,7 +464,8 @@ class RecreateTopicMetadataTest(RedpandaTest):
 
 class CreateTopicUpgradeTest(RedpandaTest):
     def __init__(self, test_context):
-        si_settings = SISettings(cloud_storage_enable_remote_write=False,
+        si_settings = SISettings(test_context,
+                                 cloud_storage_enable_remote_write=False,
                                  cloud_storage_enable_remote_read=False)
         self._s3_bucket = si_settings.cloud_storage_bucket
 

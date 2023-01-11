@@ -41,6 +41,7 @@ class EndToEndTopicRecovery(RedpandaTest):
             group_initial_rebalance_delay=300,
         )
         si_settings = SISettings(
+            test_context,
             log_segment_size=1024 * 1024,
             cloud_storage_segment_max_upload_interval_sec=5,
             cloud_storage_enable_remote_read=True,

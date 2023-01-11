@@ -56,6 +56,7 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.topic = self.s3_topic_name
 
         self.si_settings = SISettings(
+            test_context,
             cloud_storage_max_connections=5,
             log_segment_size=self.segment_size,  # 1MB
         )
@@ -434,7 +435,8 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
     topics = [TopicSpec()]
 
     def __init__(self, test_context: TestContext):
-        si_settings = SISettings(log_segment_size=self.segment_size,
+        si_settings = SISettings(test_context,
+                                 log_segment_size=self.segment_size,
                                  cloud_storage_cache_size=20 * 2**30,
                                  cloud_storage_enable_remote_read=False,
                                  cloud_storage_enable_remote_write=False)

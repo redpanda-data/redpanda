@@ -43,7 +43,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         test_name = test_context.test_name
         si_params = self.test_defaults.get(
             test_name) or self.test_defaults.get('default')
-        si_settings = SISettings(**si_params)
+        si_settings = SISettings(test_context, **si_params)
         self._segment_size = si_params['log_segment_size']
         extra_rp_conf = {
             'disable_metrics': True,

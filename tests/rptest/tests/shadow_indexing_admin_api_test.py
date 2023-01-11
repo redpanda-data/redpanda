@@ -38,6 +38,7 @@ class SIAdminApiTest(RedpandaTest):
 
     def __init__(self, test_context):
         si_settings = SISettings(
+            test_context,
             cloud_storage_max_connections=5,
             log_segment_size=self.log_segment_size,
             cloud_storage_enable_remote_read=True,

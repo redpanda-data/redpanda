@@ -34,7 +34,8 @@ class CloudRetentionTest(PreallocNodesTest):
             test_context=test_context,
             node_prealloc_count=1,
             num_brokers=3,
-            si_settings=SISettings(log_segment_size=self.segment_size),
+            si_settings=SISettings(test_context,
+                                   log_segment_size=self.segment_size),
             extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=4)

@@ -361,7 +361,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         super().__init__(
             test_context=test_context,
             num_brokers=3,
-            si_settings=SISettings(),
+            si_settings=SISettings(test_context),
             extra_rp_conf={
                 # We will exercise storage/cloud_storage read paths, get the
                 # batch cache out of the way to ensure reads hit storage layer.
@@ -537,7 +537,8 @@ class UpgradeFrom22_2_7VerifyMigratedRetentionSettings(RedpandaTest):
     segment_size = 1000000  # 1MB
 
     def __init__(self, test_context):
-        si_settings = SISettings(log_segment_size=self.segment_size)
+        si_settings = SISettings(test_context,
+                                 log_segment_size=self.segment_size)
         super().__init__(
             test_context=test_context,
             num_brokers=3,

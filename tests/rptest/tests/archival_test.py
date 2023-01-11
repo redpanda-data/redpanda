@@ -146,7 +146,8 @@ class ArchivalTest(RedpandaTest):
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        si_settings = SISettings(cloud_storage_max_connections=5,
+        si_settings = SISettings(test_context,
+                                 cloud_storage_max_connections=5,
                                  log_segment_size=self.log_segment_size)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 
