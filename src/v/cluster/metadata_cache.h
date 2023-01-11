@@ -162,6 +162,9 @@ public:
     void reset_leaders();
     cluster::partition_leaders_table::leaders_info_t get_leaders() const;
 
+    void set_is_node_isolated_status(bool is_node_isolated);
+    bool is_node_isolated();
+
     model::compression get_default_compression() const;
     model::cleanup_policy_bitflags get_default_cleanup_policy_bitflags() const;
     model::compaction_strategy get_default_compaction_strategy() const;
@@ -188,5 +191,7 @@ private:
     ss::sharded<members_table>& _members_table;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<health_monitor_frontend>& _health_monitor;
+
+    bool _is_node_isolated{false};
 };
 } // namespace cluster
