@@ -12,7 +12,7 @@
 #pragma once
 #include "config/rest_authn_endpoint.h"
 #include "pandaproxy/types.h"
-#include "redpanda/request_auth.h"
+#include "utils/request_auth.h"
 
 #include <seastar/http/request.hh>
 

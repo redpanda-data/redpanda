@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "request_auth.h"
+#include "utils/request_auth.h"
 
 #include "cluster/controller.h"
 #include "config/configuration.h"
