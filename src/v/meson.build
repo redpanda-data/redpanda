@@ -80,3 +80,10 @@ add_project_dependencies(common, language: 'cpp')
 add_project_arguments(
   '-Wno-deprecated-experimental-coroutine',
   language: 'cpp')
+
+# the timeout multiplier and the timeout settings per test need some tuning to
+# account for debug vs release builds as well as desktop vs CI environments.
+add_test_setup('redpanda',
+  exe_wrapper: [test_runner, '--meson', '--default_cores', '4'],
+  is_default: true,
+  timeout_multiplier: get_option('buildtype').startswith('debug') ? 5 : 2)

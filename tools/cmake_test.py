@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import threading
 import re
+import enum
 from string import Template
 
 sys.path.append(os.path.dirname(__file__))
@@ -30,6 +31,22 @@ for h in logging.getLogger().handlers:
     h.setFormatter(formatter)
 
 COMMON_TEST_ARGS = ["--blocked-reactor-notify-ms 2000000"]
+
+class TestType(enum.Enum):
+    Unit = enum.auto()
+    Fixture = enum.auto()
+    Benchmark = enum.auto()
+    Plain = enum.auto()
+
+    @staticmethod
+    def from_binary_name(name):
+        if "rpunit" in name:
+            return TestType.Unit
+        if "rpfixture" in name:
+            return TestType.Fixture
+        if "rpbench" in name:
+            return TestType.Benchmark
+        return None
 
 
 class BacktraceCapture(threading.Thread):
@@ -177,13 +194,14 @@ class BacktraceCapture(threading.Thread):
 
 class TestRunner():
     def __init__(self, prepare_command, post_command, binary, repeat,
-                 copy_files, *args):
+                 copy_files, test_type, *args):
         self.prepare_command = prepare_command
         self.post_command = post_command
         self.binary = binary
         self.repeat = repeat if repeat is not None else 1
         self.copy_files = copy_files
         self.root = "/dev/shm/vectorized_io"
+        self.test_type = test_type
         os.makedirs(self.root, exist_ok=True)
 
         # make args a list
@@ -203,7 +221,7 @@ class TestRunner():
             all_flags = [flag] + list(synonyms)
             return any(any(a.startswith(f) for f in all_flags) for a in args)
 
-        if "rpunit" in binary or "rpfixture" in binary:
+        if self.test_type in (TestType.Unit, TestType.Fixture):
             unit_args = [
                 "--unsafe-bypass-fsync 1", f"--default-log-level={log_level}",
                 "--logger-log-level='io=debug'",
@@ -215,10 +233,10 @@ class TestRunner():
 
             # Unit tests should never need all the node's memory.  Set a fixed
             # memory size if one was not already provided
-            if "rpunit" in binary and not has_flag("-m", "--memory"):
+            if self.test_type == TestType.Unit and not has_flag("-m", "--memory"):
                 args.append("-m1G")
 
-            if "rpunit" in binary and not has_flag("-c", "--smp"):
+            if self.test_type == TestType.Unit and not has_flag("-c", "--smp"):
                 raise RuntimeError(
                     f"Test {self.binary} run without -c flag: set it in CMakeLists for the test"
                 )
@@ -227,7 +245,7 @@ class TestRunner():
                 args = args + unit_args
             else:
                 args = args + ["--"] + unit_args
-        elif "rpbench" in binary:
+        elif self.test_type == TestType.Benchmark:
             args = args + COMMON_TEST_ARGS
         # aggregated args for test
         self.test_args = " ".join(args)
@@ -373,10 +391,40 @@ def main():
                             type=str,
                             action="append",
                             help='copy file to test execution directory')
+        parser.add_argument('--meson', action='store_true')
+        parser.add_argument('--default_cores',
+                            type=int,
+                            default=None,
+                            help='default number of cores to use')
         return parser
 
     parser = generate_options()
     options, program_options = parser.parse_known_args()
+
+    if options.meson:
+        assert not options.binary
+        options.binary, *program_options = program_options
+        program_options = [args for arg in program_options for args in arg.split()]
+        if os.environ.get("PLAIN") == "1":
+            test_type = TestType.Plain
+        else:
+            test_type = TestType.from_binary_name(options.binary)
+            if test_type is None:
+                test_type = TestType.Unit
+    else:
+        test_type = TestType.from_binary_name(options.binary)
+
+    # apply smp limit if one has not provided explicitly
+    if options.default_cores and test_type != TestType.Plain:
+        has_sep = False
+        has_smp = False
+        for args in program_options:
+            has_sep = has_sep or "--" in args
+            has_smp = has_smp or "-c" in args or "--smp" in args
+        if not has_smp:
+            if not has_sep:
+                program_options.append("--")
+            program_options.append(f"-c{options.default_cores}")
 
     if not options.binary:
         parser.print_help()
@@ -388,7 +436,7 @@ def main():
     logger.info("%s *args=%s" % (options, program_options))
 
     runner = TestRunner(options.pre, options.post, options.binary,
-                        options.repeat, options.copy_file, *program_options)
+                        options.repeat, options.copy_file, test_type, *program_options)
     runner.run()
     return 0
 
