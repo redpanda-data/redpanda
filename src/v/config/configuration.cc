@@ -81,6 +81,34 @@ configuration::configuration()
       "Duration after which inactive readers will be evicted from cache",
       {.visibility = visibility::tunable},
       30s)
+  , log_segment_ms(
+      *this,
+      "log_segment_ms",
+      "Default log segment lifetime in ms for topics which do not set "
+      "segment.ms",
+      {.needs_restart = needs_restart::no,
+       .example = "3600000",
+       .visibility = visibility::user},
+      std::nullopt,
+      {.min = 60s})
+  , log_segment_ms_min(
+      *this,
+      "log_segment_ms_min",
+      "Lower bound on topic segment.ms: lower values will be clamped to this "
+      "value",
+      {.needs_restart = needs_restart::no,
+       .example = "60000",
+       .visibility = visibility::tunable},
+      60s)
+  , log_segment_ms_max(
+      *this,
+      "log_segment_ms_max",
+      "Upper bound on topic segment.ms: higher values will be clamped to this "
+      "value",
+      {.needs_restart = needs_restart::no,
+       .example = "31536000000",
+       .visibility = visibility::tunable},
+      24h * 365)
   , rpc_server_listen_backlog(
       *this,
       "rpc_server_listen_backlog",
