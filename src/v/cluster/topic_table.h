@@ -457,8 +457,6 @@ private:
     std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
       _notifications;
     uint64_t _waiter_id{0};
-    model::offset _last_consumed_by_notifier{
-      model::model_limits<model::offset>::min()};
     std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;
 };

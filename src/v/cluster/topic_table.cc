@@ -803,8 +803,6 @@ void topic_table::notify_waiters() {
         for (auto& cb : _notifications) {
             cb.second(changes);
         }
-
-        _last_consumed_by_notifier = changes.back().offset;
     }
 
     _last_consumed_by_notifier_offset = _pending_deltas.end()
@@ -933,7 +931,7 @@ bool topic_table::contains(
 
 topic_table::topic_state topic_table::get_topic_state(
   model::topic_namespace_view tp, model::revision_id id) const {
-    if (id > _last_consumed_by_notifier) {
+    if (id > _last_applied_revision_id) {
         // Cache is not sufficiently up to date to give a
         // reliable result.
         return topic_state::indeterminate;
