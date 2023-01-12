@@ -24,6 +24,7 @@ from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import SISettings
 from rptest.util import wait_for_segments_removal
 from rptest.services.admin import Admin
+from rptest.services.failure_injector import FailureInjector, FailureSpec
 
 
 def get_kvstore_topic_key_counts(redpanda):
@@ -127,16 +128,16 @@ class TopicDeleteTest(RedpandaTest):
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
+    def produce_until_partitions(self):
+        self.kafka_tools.produce(self.topic, 1024, 1024)
+        storage = self.redpanda.storage()
+        return len(list(storage.partitions("kafka", self.topic))) == 9
+
     @cluster(num_nodes=3)
     @parametrize(with_restart=False)
     @parametrize(with_restart=True)
     def topic_delete_test(self, with_restart):
-        def produce_until_partitions():
-            self.kafka_tools.produce(self.topic, 1024, 1024)
-            storage = self.redpanda.storage()
-            return len(list(storage.partitions("kafka", self.topic))) == 9
-
-        wait_until(lambda: produce_until_partitions(),
+        wait_until(lambda: self.produce_until_partitions(),
                    timeout_sec=30,
                    backoff_sec=2,
                    err_msg="Expected partition did not materialize")
@@ -159,6 +160,80 @@ class TopicDeleteTest(RedpandaTest):
                        backoff_sec=2,
                        err_msg="Topic storage was not removed")
 
+        except:
+            # On errors, dump listing of the storage location
+            for node in self.redpanda.nodes:
+                self.logger.error(f"Storage listing on {node.name}:")
+                for line in node.account.ssh_capture(
+                        f"find {self.redpanda.DATA_DIR}"):
+                    self.logger.error(line.strip())
+
+            raise
+
+    @cluster(num_nodes=3, log_allow_list=[r'filesystem error: remove failed'])
+    def topic_delete_orphan_files_test(self):
+        wait_until(lambda: self.produce_until_partitions(),
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Expected partition did not materialize")
+
+        # Sanity check the kvstore checks: there should be at least one kvstore entry
+        # per partition while the topic exists.
+        assert sum(get_kvstore_topic_key_counts(
+            self.redpanda).values()) >= self.topics[0].partition_count
+
+        down_node = self.redpanda.nodes[-1]
+        try:
+            down_node.account.ssh(
+                f"chattr +i {self.redpanda.DATA_DIR}/kafka/{self.topic}")
+
+            self.kafka_tools.delete_topic(self.topic)
+
+            def topic_deleted_on_all_nodes_except_one(redpanda, down_node,
+                                                      topic_name):
+                storage = redpanda.storage()
+                log_not_removed_on_down = topic_name in next(
+                    filter(lambda x: x.name == down_node.name,
+                           storage.nodes)).ns["kafka"].topics
+                logs_removed_on_others = all(
+                    map(
+                        lambda n: topic_name not in n.ns["kafka"].topics,
+                        filter(lambda x: x.name != down_node.name,
+                               storage.nodes)))
+                return log_not_removed_on_down and logs_removed_on_others
+
+            try:
+                wait_until(
+                    lambda: topic_deleted_on_all_nodes_except_one(
+                        self.redpanda, down_node, self.topic),
+                    timeout_sec=30,
+                    backoff_sec=2,
+                    err_msg=
+                    "Topic storage was not removed from running nodes or removed from down node"
+                )
+            except:
+                # On errors, dump listing of the storage location
+                for node in self.redpanda.nodes:
+                    self.logger.error(f"Storage listing on {node.name}:")
+                    for line in node.account.ssh_capture(
+                            f"find {self.redpanda.DATA_DIR}"):
+                        self.logger.error(line.strip())
+                raise
+
+            self.redpanda.stop_node(down_node)
+            down_node.account.ssh(
+                f"chattr -i {self.redpanda.DATA_DIR}/kafka/{self.topic}")
+        finally:
+            down_node.account.ssh(
+                f"chattr -i {self.redpanda.DATA_DIR}/kafka/{self.topic}")
+
+        self.redpanda.start_node(down_node)
+
+        try:
+            wait_until(lambda: topic_storage_purged(self.redpanda, self.topic),
+                       timeout_sec=30,
+                       backoff_sec=2,
+                       err_msg="Topic storage was not removed")
         except:
             # On errors, dump listing of the storage location
             for node in self.redpanda.nodes:
