@@ -1184,14 +1184,6 @@ if ({{ cond }}) {
 {%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
     return reader.{{ decoder }};
-{%- elif field.nullable() %}
-    {
-        auto tmp = reader.{{ decoder }};
-        if (tmp) {
-            return {{ named_type }}(std::move(*tmp));
-        }
-        return std::nullopt;
-    }
 {%- else %}
     return {{ named_type }}(reader.{{ decoder }});
 {%- endif %}
