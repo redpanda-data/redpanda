@@ -11,7 +11,11 @@
 
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
+#include "prometheus/prometheus_sanitize.h"
 #include "vlog.h"
+
+#include <seastar/core/metrics.hh>
+#include <seastar/core/thread.hh>
 
 #include <fmt/chrono.h>
 
@@ -22,6 +26,37 @@ using namespace std::chrono_literals;
 namespace kafka {
 using clock = quota_manager::clock;
 using throttle_delay = quota_manager::throttle_delay;
+
+void throughput_quotas_probe::setup_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka:tpquotas"),
+      {
+        sm::make_counter(
+          "balancer_runs",
+          [this] { return _balancer_runs; },
+          sm::description(
+            "{}: Number of times throughput quota balancer has been run"))
+          .aggregate(aggregate_labels),
+      });
+}
+
+std::ostream& operator<<(std::ostream& o, const throughput_quotas_probe& p) {
+    o << "{"
+      << "balancer_runs: " << p._balancer_runs << "}";
+    return o;
+}
+
+struct abort_on_configuration_change {};
+struct abort_on_stop {};
 
 quota_manager::quota_manager()
   : _default_num_windows(config::shard_local_cfg().default_num_windows.bind())
@@ -42,6 +77,8 @@ quota_manager::quota_manager()
       config::shard_local_cfg().kafka_throughput_limit_node_out_bps.bind())
   , _kafka_quota_balancer_window(
       config::shard_local_cfg().kafka_quota_balancer_window.bind())
+  , _kafka_quota_balancer_node_period(
+      config::shard_local_cfg().kafka_quota_balancer_node_period.bind())
   , _shard_ingress_quota(
       get_shard_ingress_quota_default(), _kafka_quota_balancer_window())
   , _shard_egress_quota(
@@ -52,6 +89,14 @@ quota_manager::quota_manager()
         auto full_window = _default_num_windows() * _default_window_width();
         gc(full_window);
     });
+    // _balancer_timer.set_callback([this] {
+    //     if (_as.abort_requested()) {
+    //         return;
+    //     }
+    //     maybe_arm_balancer_timer();
+    //     quota_balancer_step();
+    // });
+
     _kafka_throughput_limit_node_in_bps.watch([this] {
         _shard_ingress_quota.set_quota(get_shard_ingress_quota_default());
     });
@@ -64,17 +109,36 @@ quota_manager::quota_manager()
         _shard_ingress_quota.set_width(v);
         _shard_egress_quota.set_width(v);
     });
+    _kafka_quota_balancer_node_period.watch([this] {
+        notify_kafka_quota_balancer_node_period_change();
+        // if (_balancer_timer.armed() || _as.abort_requested()) {
+        //     return;
+        // }
+        // maybe_arm_balancer_timer();
+    });
+next steps: bisect the crash, wait for the balancer thread to join in stop
+    //_probe.setup_metrics();
 }
 
-quota_manager::~quota_manager() { _gc_timer.cancel(); }
+quota_manager::~quota_manager() {
+    _gc_timer.cancel();
+    _balancer_timer.cancel();
+}
 
 ss::future<> quota_manager::stop() {
+    _as.request_abort_ex(abort_on_stop{});
     _gc_timer.cancel();
+    _balancer_timer.cancel();
     return ss::make_ready_future<>();
 }
 
 ss::future<> quota_manager::start() {
+    static constexpr ss::shard_id balancer_shard = 0;
     _gc_timer.arm_periodic(_gc_freq);
+    if (ss::this_shard_id() == balancer_shard) {
+        ssx::background = ss::async([this] { quota_balancer(); });
+    }
+    // maybe_arm_balancer_timer();
     return ss::make_ready_future<>();
 }
 
@@ -405,6 +469,69 @@ void quota_manager::record_request_tp(
 void quota_manager::record_response_tp(
   const size_t request_size, const clock::time_point now) noexcept {
     _shard_egress_quota.use(request_size, now);
+}
+
+void quota_manager::maybe_arm_balancer_timer() {
+    if (
+      _kafka_quota_balancer_node_period()
+      != std::chrono::milliseconds::zero()) {
+        _balancer_timer.arm(
+          ss::steady_clock_type::now() + _kafka_quota_balancer_node_period());
+    }
+}
+
+void quota_manager::notify_kafka_quota_balancer_node_period_change() {
+    _as.request_abort_ex(abort_on_configuration_change{});
+    // replace abort source immediately so that only subscribers are aborted now
+    // and to enable future aborts
+    _as = ss::abort_source();
+}
+
+void quota_manager::quota_balancer() {
+    vlog(klog.debug, "Quota balancer started");
+    using clock = ss::steady_clock_type;
+    static constexpr auto min_sleep_time = 1ms; // TBD config?
+
+    clock::time_point next_invocation = clock::now()
+                                        + _kafka_quota_balancer_node_period();
+    try {
+        for (;;) {
+            auto sleep_time = next_invocation - clock::now();
+            if (sleep_time < min_sleep_time) {
+                vlog(
+                  klog.warn,
+                  "Quota balancer is invoked too often ({}), enforcing minimum "
+                  "sleep time",
+                  sleep_time);
+                sleep_time = min_sleep_time;
+            }
+            const bool sleep_succeeded
+              = ss::sleep_abortable(sleep_time, _as)
+                  .then([] { return true; })
+                  .handle_exception_type(
+                    [](const abort_on_configuration_change&) { return false; })
+                  .get0();
+            next_invocation = clock::now()
+                              + _kafka_quota_balancer_node_period();
+
+            if (sleep_succeeded) {
+                quota_balancer_step().get0();
+            }
+        }
+    } catch (const abort_on_stop&) {
+        // TBD: remove
+        vlog(klog.debug, "Quota balancer stopped by aborting the sleep");
+    }
+    vlog(klog.info, "Quota balancer stopped");
+}
+
+ss::future<> quota_manager::quota_balancer_step() {
+    vlog(klog.trace, "Quota balancer step");
+    _probe.balancer_run();
+
+    // determine the borrowers and whether any balancing is needed now
+    //_quota_manager.invoke_on_all
+    return ss::make_ready_future();
 }
 
 } // namespace kafka

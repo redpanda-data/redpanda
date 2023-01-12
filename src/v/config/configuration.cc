@@ -1630,7 +1630,16 @@ configuration::configuration()
       "balancer, in milliseconds",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       5000ms,
-      {.min = 1ms, .max = bottomless_token_bucket::max_width}) {}
+      {.min = 1ms, .max = bottomless_token_bucket::max_width})
+  , kafka_quota_balancer_node_period(
+      *this,
+      "kafka_quota_balancer_node_period_ms",
+      "Intra-node throughput quota balancer invocation period, in "
+      "milliseconds. Value of 0 disables the balancer and makes all the "
+      "thoughput quotas immutable.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      750ms,
+      {.min = 0ms}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

@@ -34,6 +34,21 @@ namespace kafka {
 // Shard on which partition mutation rate metrics are aggregated on
 static constexpr ss::shard_id quota_manager_shard = 0;
 
+class throughput_quotas_probe {
+public:
+    void balancer_run() { ++_balancer_runs; }
+
+    void setup_metrics();
+    // void setup_public_metrics();
+
+    uint32_t get_balancer_runs() const noexcept { return _balancer_runs; }
+private:
+    ss::metrics::metric_groups _metrics;
+    uint32_t _balancer_runs = 0;
+    friend std::ostream& operator<<(std::ostream& o, const throughput_quotas_probe& p);
+};
+
+
 // quota_manager tracks quota usage
 //
 // TODO:
@@ -128,6 +143,11 @@ public:
     void record_response_tp(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
+    const throughput_quotas_probe&
+    get_throughput_quotas_probe() const noexcept {
+        return _probe;
+    };
+
 private:
     std::chrono::milliseconds do_record_partition_mutations(
       std::optional<std::string_view> client_id,
@@ -171,6 +191,11 @@ private:
     shard_quota_t get_shard_ingress_quota_default() const;
     shard_quota_t get_shard_egress_quota_default() const;
 
+    void maybe_arm_balancer_timer();
+    void notify_kafka_quota_balancer_node_period_change();
+    void quota_balancer();
+    ss::future<> quota_balancer_step();
+
 private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
@@ -188,6 +213,8 @@ private:
     config::binding<std::optional<uint64_t>>
       _kafka_throughput_limit_node_out_bps;
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
+    config::binding<std::chrono::milliseconds>
+      _kafka_quota_balancer_node_period;
 
     client_quotas_t _client_quotas;
     bottomless_token_bucket _shard_ingress_quota;
@@ -196,6 +223,10 @@ private:
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
     config::binding<std::chrono::milliseconds> _max_delay;
+    ss::timer<> _balancer_timer;
+    ss::abort_source _as;
+    //ss::sharded<quota_manager>& _quota_manager;
+    throughput_quotas_probe _probe;
 };
 
 } // namespace kafka

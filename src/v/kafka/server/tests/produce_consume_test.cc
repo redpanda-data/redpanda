@@ -13,6 +13,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/handlers/produce.h"
+#include "kafka/server/quota_manager.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
@@ -314,4 +315,43 @@ FIXTURE_TEST(test_node_throughput_limits, prod_consume_fixture) {
 
     // otherwise test is not valid:
     BOOST_REQUIRE_GT(kafka_in_data_len, kafka_out_data_len);
+}
+
+FIXTURE_TEST(test_quota_balancer_1, prod_consume_fixture) {
+    namespace ch = std::chrono;
+
+    auto get_balancer_runs = [this] {
+        return app.quota_mgr
+          .map_reduce0(
+            [](const kafka::quota_manager& qm) {
+                return qm.get_throughput_quotas_probe().get_balancer_runs();
+            },
+            0,
+            [](uint32_t lhs, uint32_t rhs) { return lhs + rhs; })
+          .get0();
+    };
+
+    ss::smp::invoke_on_all([&] {
+        auto& config = config::shard_local_cfg();
+        config.get("kafka_quota_balancer_node_period_ms")
+          .set_value(250ms);
+    }).get0();
+    wait_for_controller_leadership().get();
+    start();
+    ss::sleep(1s).get0();
+    int br = get_balancer_runs();
+    BOOST_TEST_CHECK(
+      abs(br-5)<=1, "Expected 5±1 balancer runs");
+    int br_last = br;
+
+    ss::smp::invoke_on_all([&] {
+        auto& config = config::shard_local_cfg();
+        config.get("kafka_quota_balancer_node_period_ms")
+          .set_value(150ms);
+    }).get0();
+    ss::sleep(1s).get0();
+    br = get_balancer_runs();
+    BOOST_TEST_CHECK(
+      abs(br-br_last-7)<=1, "Expected 7±1 balancer runs");
+
 }
