@@ -32,12 +32,16 @@ void client_pool::shutdown_connections() {
 
 /// \brief Acquire http client from the pool.
 ///
+/// as: An abort source which must outlive the lease, that will
+///     be used to shutdown the client's connections when it fires.
+///
 /// \note it's guaranteed that the client can only be acquired once
 ///       before it gets released (release happens implicitly, when
 ///       the lifetime of the pointer ends).
 /// \return client pointer (via future that can wait if all clients
 ///         are in use)
-ss::future<client_pool::client_lease> client_pool::acquire() {
+ss::future<client_pool::client_lease>
+client_pool::acquire(ss::abort_source& as) {
     gate_guard guard(_gate);
     try {
         // If credentials have not yet been acquired, wait for them. It is
@@ -66,6 +70,7 @@ ss::future<client_pool::client_lease> client_pool::acquire() {
     _pool.pop_back();
     client_lease lease(
       client,
+      as,
       ss::make_deleter([pool = weak_from_this(), client, g = std::move(guard)] {
           if (pool) {
               pool->release(client);

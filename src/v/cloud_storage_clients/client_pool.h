@@ -38,21 +38,40 @@ public:
     struct client_lease {
         http_client_ptr client;
         ss::deleter deleter;
+        ss::abort_source::subscription as_sub;
         intrusive_list_hook _hook;
 
-        client_lease(http_client_ptr p, ss::deleter deleter)
+        client_lease(
+          http_client_ptr p, ss::abort_source& as, ss::deleter deleter)
           : client(std::move(p))
-          , deleter(std::move(deleter)) {}
+          , deleter(std::move(deleter)) {
+            auto as_sub_opt = as.subscribe(
+              // Lifetimes:
+              // - Object referred to by `client` must stay alive until this
+              //   lease is dropped.  This is guaranteed because lease carries
+              //   a shared_ptr reference to it.
+              // - Abort source must stay alive until this lease is dropped.
+              // This
+              //   is by convention, that Redpanda subsystems shut down their
+              //   inner objects first before the enclosing parent (and its
+              //   abort source) are destroyed.
+              [client = &(*client)]() noexcept { client->shutdown(); });
+            if (as_sub_opt) {
+                as_sub = std::move(*as_sub_opt);
+            }
+        }
 
         client_lease(client_lease&& other) noexcept
           : client(std::move(other.client))
-          , deleter(std::move(other.deleter)) {
+          , deleter(std::move(other.deleter))
+          , as_sub(std::move(other.as_sub)) {
             _hook.swap_nodes(other._hook);
         }
 
         client_lease& operator=(client_lease&& other) noexcept {
             client = std::move(other.client);
             deleter = std::move(other.deleter);
+            as_sub = std::move(other.as_sub);
             _hook.swap_nodes(other._hook);
             return *this;
         }
@@ -83,7 +102,7 @@ public:
     ///       the lifetime of the pointer ends).
     /// \return client pointer (via future that can wait if all clients
     ///         are in use)
-    ss::future<client_lease> acquire();
+    ss::future<client_lease> acquire(ss::abort_source& as);
 
     /// \brief Get number of connections
     size_t size() const noexcept;

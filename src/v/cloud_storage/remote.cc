@@ -125,7 +125,7 @@ ss::future<download_result> remote::do_download_manifest(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(key().native());
-    auto lease = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire(fib.root_abort_source());
     auto retry_permit = fib.retry();
     std::optional<download_result> result;
     vlog(ctxlog.debug, "Download manifest {}", key());
@@ -216,7 +216,7 @@ ss::future<upload_result> remote::upload_manifest(
     retry_chain_logger ctxlog(cst_log, fib);
     auto key = manifest.get_manifest_path();
     auto path = cloud_storage_clients::object_key(key());
-    auto lease = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     std::optional<upload_result> result;
@@ -311,7 +311,7 @@ ss::future<upload_result> remote::upload_segment(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto lease = co_await _pool.acquire();
+        auto lease = co_await _pool.acquire(fib.root_abort_source());
 
         // Client acquisition can take some time. Do a check before starting
         // the upload if we can still continue.
@@ -325,21 +325,6 @@ ss::future<upload_result> remote::upload_segment(
             _probe.failed_upload();
             co_return upload_result::cancelled;
         }
-
-        // If the uploading partition wishes to stop while an upload is in
-        // progress, enable this by forcefully shutting down the HTTP client.
-        auto as_sub = fib.root_abort_source().subscribe(
-          // Lifetimes:
-          // - `lease` is scoped to this function, as is the
-          // abort source subscription: as will always be deregistered
-          // before lease is destroyed.
-          // - `ctxlog` is also function scoped.
-          [&lease, &ctxlog]() noexcept {
-              vlog(
-                ctxlog.debug,
-                "Cancelling in-flight requests on partition shutdown");
-              lease.client->shutdown();
-          });
 
         auto reader_handle = co_await reset_str();
         auto path = cloud_storage_clients::object_key(segment_path());
@@ -425,20 +410,7 @@ ss::future<download_result> remote::download_segment(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
-    auto lease = co_await _pool.acquire();
-
-    auto as_sub = parent.root_abort_source().subscribe(
-      // Lifetimes:
-      // - `lease` is scoped to this function, as is the
-      // abort source subscription: as will always be deregistered
-      // before lease is destroyed.
-      // - `ctxlog` is also function scoped.
-      [&lease, &ctxlog]() noexcept {
-          vlog(
-            ctxlog.debug,
-            "Cancelling in-flight requests on partition shutdown");
-          lease.client->shutdown();
-      });
+    auto lease = co_await _pool.acquire(fib.root_abort_source());
 
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);
@@ -515,7 +487,7 @@ ss::future<download_result> remote::segment_exists(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
-    auto lease = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Check segment {}", path);
     std::optional<download_result> result;
@@ -587,7 +559,7 @@ ss::future<upload_result> remote::delete_object(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto lease = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
@@ -662,7 +634,7 @@ ss::future<upload_result> remote::delete_objects(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto lease = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete objects count {}", keys.size());
     std::optional<upload_result> result;
@@ -732,7 +704,7 @@ ss::future<remote::list_result> remote::list_objects(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto lease = co_await _pool.acquire();
+    auto lease = co_await _pool.acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "List objects {}", bucket);
     std::optional<list_result> result;
@@ -834,7 +806,7 @@ ss::future<upload_result> remote::upload_object(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto lease = co_await _pool.acquire();
+        auto lease = co_await _pool.acquire(fib.root_abort_source());
 
         auto path = cloud_storage_clients::object_key(object_path());
         vlog(ctxlog.debug, "Uploading object to path {}", object_path);
