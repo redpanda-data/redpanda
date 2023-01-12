@@ -177,6 +177,7 @@ ss::future<> controller::start(cluster_discovery& discovery) {
             std::ref(_connections),
             std::ref(_partition_leaders),
             std::ref(_feature_table),
+            std::ref(_members_table),
             std::ref(_as));
       })
       .then([this] {
