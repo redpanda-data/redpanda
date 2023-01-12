@@ -168,3 +168,20 @@ SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_3) {
     BOOST_REQUIRE(n1.get_timeout() == 500ms);
     BOOST_REQUIRE(n2.get_timeout() == 500ms);
 }
+
+SEASTAR_THREAD_TEST_CASE(check_node_comparison) {
+    ss::abort_source as;
+    retry_chain_node r1(as);
+    retry_chain_node r2(as);
+    retry_chain_node c11(&r1);
+    retry_chain_node c111(&c11);
+    retry_chain_node c12(&r1);
+    retry_chain_node c21(&r2);
+    BOOST_REQUIRE(r1.same_root(r1));
+    BOOST_REQUIRE(r1.same_root(c11));
+    BOOST_REQUIRE(r1.same_root(c111));
+    BOOST_REQUIRE(c11.same_root(c12));
+    BOOST_REQUIRE(!r1.same_root(r2));
+    BOOST_REQUIRE(!r1.same_root(c21));
+    BOOST_REQUIRE(!c11.same_root(c21));
+}
