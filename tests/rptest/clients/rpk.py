@@ -16,6 +16,7 @@ from ducktape.cluster.cluster import ClusterNode
 from rptest.util import wait_until_result
 from rptest.services import tls
 from ducktape.errors import TimeoutError
+from dataclasses import dataclass
 
 DEFAULT_TIMEOUT = 30
 
@@ -105,6 +106,63 @@ class RpkMaintenanceStatus(typing.NamedTuple):
     eligible: int
     transferring: int
     failed: int
+
+
+@dataclass
+class RpkColumnHeader:
+    name: str
+    padding: int = 0
+
+    def width(self):
+        return len(self.name) + self.padding
+
+
+@dataclass
+class RpkTable:
+    columns: list[RpkColumnHeader]
+    rows: list[list[str]]
+
+
+def parse_rpk_table(out):
+    lines = out.splitlines()
+    header = lines[0]
+    columns = []
+    while len(header) > 0:
+        m = re.match("^([^ ]+)( *)", header)
+        if not m:
+            raise RpkException(f"can't parse header: '{lines[0]}'")
+        columns.append(RpkColumnHeader(m.group(1), len(m.group(2))))
+        header = header[columns[-1].width():]
+
+    rows = []
+    for line in lines[1:]:
+        row = []
+        position = 0
+        for column in columns:
+            value = None
+            if column.padding == 0:
+                assert column == columns[-1]
+                if position < len(line):
+                    value = line[position:]
+                else:
+                    value = ""
+            else:
+                if position + column.width() < len(line):
+                    if line[position + column.width() - 1] != ' ':
+                        raise RpkException(
+                            f"can't parse '{line}': value at {column.name} must end with padding"
+                        )
+                    value = line[position:position + column.width()]
+                elif position >= len(line):
+                    value = ""
+                else:
+                    value = line[position:]
+                value = value.rstrip()
+                position += column.width()
+            row.append(value)
+        rows.append(row)
+
+    return RpkTable(columns, rows)
 
 
 class RpkTool:
@@ -806,6 +864,24 @@ class RpkTool:
             "--cluster",
         ] + self._kafka_conn_settings()
         output = self._execute(cmd)
+        table = parse_rpk_table(output)
+        expected_columns = [
+            "PRINCIPAL", "HOST", "RESOURCE-TYPE", "RESOURCE-NAME",
+            "RESOURCE-PATTERN-TYPE", "OPERATION", "PERMISSION", "ERROR"
+        ]
+
+        expected = ",".join(expected_columns)
+        found = ",".join(map(lambda x: x.name, table.columns))
+        if expected != found:
+            raise RpkException(f"expected: {expected}; found: {found}")
+
+        if len(table.rows) != 1:
+            raise RpkException(f"expected one row; found {len(table.rows)}")
+
+        if table.rows[0][-1] != "":
+            raise RpkException(
+                f"acl_create_allow_cluster failed with {table.rows[0][-1]}")
+
         return output
 
     def cluster_metadata_id(self):
