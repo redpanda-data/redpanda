@@ -335,7 +335,7 @@ private:
     /// Deadline for retry attempts
     ss::lowres_clock::time_point _deadline;
     /// optional parent node or (if root) abort source for all fibers
-    std::variant<std::monostate, retry_chain_node*, ss::abort_source*> _parent;
+    std::variant<retry_chain_node*, ss::abort_source*> _parent;
 };
 
 /// Logger that adds context from retry_chain_node to the output
