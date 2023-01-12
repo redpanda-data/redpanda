@@ -283,9 +283,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self.logger.info(f"decommissioning node: {node_id}", )
         admin.decommission_broker(id=node_id)
 
-        wait_until(lambda: self._node_removed(node_id, survivor_node),
-                   timeout_sec=120,
-                   backoff_sec=2)
+        self._wait_for_node_removed(node_id)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
@@ -335,14 +333,10 @@ class NodesDecommissioningTest(EndToEndTest):
         self.logger.info(f"decommissioning node: {to_decommission}", )
         admin.decommission_broker(to_decommission)
 
-        survivor_node = self._not_decommissioned_node(to_decommission)
         # adjust recovery throttle to make sure moves will finish
         self._set_recovery_rate(2 << 30)
 
-        wait_until(lambda: self._node_removed(to_decommission, survivor_node),
-                   timeout_sec=120,
-                   backoff_sec=2)
-
+        self._wait_for_node_removed(to_decommission)
         # stop decommissioned node
         self.redpanda.stop_node(self.redpanda.get_node(to_decommission))
 
@@ -419,9 +413,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self._wait_until_status(to_decommission, 'draining')
         self._set_recovery_rate(1024 * 1024 * 1024)
 
-        survivor_node = self._not_decommissioned_node(to_decommission)
-        wait_until(lambda: self._node_removed(to_decommission, survivor_node),
-                   60, 2)
+        self._wait_for_node_removed(to_decommission)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_recommissioning_do_not_stop_all_moves_node(self):
@@ -608,9 +600,7 @@ class NodesDecommissioningTest(EndToEndTest):
         # cancel all reconfigurations
         admin.cancel_all_reconfigurations()
         self._set_recovery_rate(2 << 30)
-        wait_until(lambda: self._node_removed(node_id, survivor_node),
-                   timeout_sec=120,
-                   backoff_sec=2)
+        self._wait_for_node_removed(node_id)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
@@ -691,9 +681,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
                 decom_node = node_by_id(id)
                 admin.decommission_broker(id)
-                survivor_node = self._not_decommissioned_node(id)
-                wait_until(lambda: self._node_removed(id, survivor_node), 240,
-                           2)
+                self._wait_for_node_removed(id)
 
                 def has_partitions():
                     id = self.redpanda.node_id(node=decom_node,
