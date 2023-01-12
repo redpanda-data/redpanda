@@ -2451,6 +2451,12 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
     info("produce_done");
     truncate.get();
     info("truncate_done");
+
+    // Ensure we've cleaned up all our staging segments such that a removal of
+    // the log results in nothing leftover.
+    auto dir_path = log.config().work_directory();
+    mgr.remove(ntp).get();
+    BOOST_REQUIRE_EQUAL(false, ss::file_exists(dir_path).get());
 };
 
 FIXTURE_TEST(compaction_truncation_corner_cases, storage_test_fixture) {
