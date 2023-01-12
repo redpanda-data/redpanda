@@ -456,6 +456,8 @@ class NodesDecommissioningTest(EndToEndTest):
         self.start_consumer(1)
         self.await_startup(min_records=self.records_to_wait(), timeout_sec=120)
         # throttle recovery
+        self.redpanda.clean_node(self.redpanda.nodes[-1],
+                                 preserve_current_install=True)
         self.redpanda.start_node(self.redpanda.nodes[-1])
         self._set_recovery_rate(10)
         # wait for rebalancing to start
