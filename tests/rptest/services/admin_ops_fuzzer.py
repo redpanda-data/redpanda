@@ -386,7 +386,8 @@ class AdminOperationsFuzzer():
                  operations_interval=1,
                  max_partitions=10,
                  min_replication=1,
-                 max_replication=3):
+                 max_replication=3,
+                 allowed_operations=None):
         self.redpanda = redpanda
         self.operation_ctx = OperationCtx(self.redpanda)
         self.initial_entities = initial_entities
@@ -397,6 +398,10 @@ class AdminOperationsFuzzer():
         self.max_partitions = max_partitions
         self.min_replication = min_replication
         self.max_replication = max_replication
+        if allowed_operations is None:
+            self.allowed_operations = [o for o in RedpandaAdminOperation]
+        else:
+            self.allowed_operations = allowed_operations
 
         self.prefix = f'fuzzy-operator-{random.randint(0,10000)}'
         self._stopping = Event()
@@ -512,7 +517,7 @@ class AdminOperationsFuzzer():
         raise error
 
     def make_random_operation(self) -> Operation:
-        op = random.choice([o for o in RedpandaAdminOperation])
+        op = random.choice(self.allowed_operations)
         actions = {
             RedpandaAdminOperation.CREATE_TOPIC:
             lambda:
