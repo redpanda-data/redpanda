@@ -345,16 +345,17 @@ FIXTURE_TEST(
       "max.message.bytes",
       "retention.local.target.bytes",
       "retention.local.target.ms",
-      "redpanda.remote.delete"};
+      "redpanda.remote.delete",
+      "segment.ms"};
 
-    // All properies_request
+    // All properties_request
     auto all_describe_resp = describe_configs(test_tp);
     assert_properties_amount(test_tp, all_describe_resp, all_properties.size());
     for (const auto& property : all_properties) {
         assert_property_presented(test_tp, property, all_describe_resp, true);
     }
 
-    // Single properies_request
+    // Single properties_request
     for (const auto& request_property : all_properties) {
         std::vector<ss::sstring> request_properties = {request_property};
         auto single_describe_resp = describe_configs(

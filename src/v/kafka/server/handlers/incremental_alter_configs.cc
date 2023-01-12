@@ -232,13 +232,18 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   update.custom_properties.replication_factor, cfg.value, op);
                 continue;
             }
+            if (cfg.name == topic_property_segment_ms) {
+                parse_and_set_tristate(
+                  update.properties.segment_ms, cfg.value, op);
+                continue;
+            }
             if (
               std::find(
                 std::begin(allowlist_topic_noop_confs),
                 std::end(allowlist_topic_noop_confs),
                 cfg.name)
               != std::end(allowlist_topic_noop_confs)) {
-                // Skip unusupported Kafka config
+                // Skip unsupported Kafka config
                 continue;
             }
 
@@ -284,6 +289,7 @@ inline std::string_view map_config_name(std::string_view input) {
       .match("log.cleanup.policy", "log_cleanup_policy")
       .match("log.message.timestamp.type", "log_message_timestamp_type")
       .match("log.compression.type", "log_compression_type")
+      .match("log.roll.ms", "log_segment_ms")
       .default_match(input);
 }
 

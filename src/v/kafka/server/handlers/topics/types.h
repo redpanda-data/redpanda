@@ -65,6 +65,7 @@ static constexpr std::string_view topic_property_replication_factor
   = "replication.factor";
 static constexpr std::string_view topic_property_remote_delete
   = "redpanda.remote.delete";
+static constexpr std::string_view topic_property_segment_ms = "segment.ms";
 
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
@@ -73,7 +74,6 @@ static constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {
   // Not used in Redpanda
   "unclean.leader.election.enable",
   "message.downconversion.enable",
-  "segment.ms",
   "segment.index.bytes",
   "segment.jitter.ms",
   "min.insync.replicas",

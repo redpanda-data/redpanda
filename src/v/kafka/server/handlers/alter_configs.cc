@@ -139,6 +139,13 @@ create_topic_properties_update(alter_configs_resource& resource) {
                   storage::ntp_config::default_remote_delete);
                 continue;
             }
+            if (cfg.name == topic_property_segment_ms) {
+                parse_and_set_tristate(
+                  update.properties.segment_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
             if (cfg.name == topic_property_remote_write) {
                 auto set_value = update.properties.shadow_indexing.value
                                    ? model::add_shadow_indexing_flag(

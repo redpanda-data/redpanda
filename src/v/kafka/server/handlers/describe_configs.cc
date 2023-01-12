@@ -796,6 +796,17 @@ ss::future<response_ptr> describe_configs_handler::handle(
                   [](const bool& b) { return b ? "true" : "false"; });
             }
 
+            add_topic_config_if_requested(
+              resource,
+              result,
+              topic_property_segment_ms,
+              ctx.metadata_cache().get_default_segment_ms(),
+              topic_property_segment_ms,
+              topic_config->properties.segment_ms,
+              request.data.include_synonyms,
+              maybe_make_documentation(
+                request.data.include_documentation,
+                config::shard_local_cfg().log_segment_ms.desc()));
             break;
         }
 
