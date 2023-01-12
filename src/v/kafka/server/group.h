@@ -155,6 +155,8 @@ public:
         model::offset offset;
         ss::sstring metadata;
         kafka::leader_epoch committed_leader_epoch;
+        model::timestamp commit_timestamp;
+        std::optional<model::timestamp> expiry_timestamp;
 
         friend std::ostream& operator<<(std::ostream&, const offset_metadata&);
     };
