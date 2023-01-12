@@ -177,6 +177,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_connections),
             std::ref(_partition_leaders),
             std::ref(_feature_table),
+            std::ref(_members_table),
             std::ref(_as));
       })
       .then([this] {
