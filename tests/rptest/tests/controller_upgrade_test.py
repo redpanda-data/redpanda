@@ -67,7 +67,8 @@ class ControllerUpgradeTest(EndToEndTest):
 
         self.redpanda.start()
         admin_fuzz = AdminOperationsFuzzer(self.redpanda,
-                                           allowed_operations=admin_operations)
+                                           allowed_operations=admin_operations,
+                                           min_replication=3)
         self._client = DefaultClient(self.redpanda)
 
         spec = TopicSpec(partition_count=6, replication_factor=3)
