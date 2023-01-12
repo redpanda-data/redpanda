@@ -254,12 +254,18 @@ configuration::configuration()
   , target_quota_byte_rate(
       *this,
       "target_quota_byte_rate",
-      "Target quota byte rate (bytes per second) - 2GB default",
+      "Target request size quota byte rate (bytes per second) - 2GB default",
       {.needs_restart = needs_restart::no,
        .example = "1073741824",
        .visibility = visibility::user},
       2_GiB,
       {.min = 1_MiB})
+  , target_fetch_quota_byte_rate(
+      *this,
+      "target_fetch_quota_byte_rate",
+      "Target fetch size quota byte rate (bytes per second) - disabled default",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt)
   , kafka_admin_topic_api_rate(
       *this,
       "kafka_admin_topic_api_rate",
@@ -942,7 +948,19 @@ configuration::configuration()
   , kafka_client_group_byte_rate_quota(
       *this,
       "kafka_client_group_byte_rate_quota",
-      "Per-group target quota byte rate (bytes per second). "
+      "Per-group target produce quota byte rate (bytes per second). "
+      "Client is considered part of the group if client_id contains "
+      "clients_prefix",
+      {.needs_restart = needs_restart::no,
+       .example
+       = R"([{'group_name': 'first_group','clients_prefix': 'group_1','quota': 10240}])",
+       .visibility = visibility::user},
+      {},
+      validate_client_groups_byte_rate_quota)
+  , kafka_client_group_fetch_byte_rate_quota(
+      *this,
+      "kafka_client_group_fetch_byte_rate_quota",
+      "Per-group target fetch quota byte rate (bytes per second). "
       "Client is considered part of the group if client_id contains "
       "clients_prefix",
       {.needs_restart = needs_restart::no,

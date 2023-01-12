@@ -15,7 +15,9 @@
 #include "bytes/scattered_message.h"
 #include "config/configuration.h"
 #include "kafka/protocol/sasl_authenticate.h"
+#include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/handler_interface.h"
+#include "kafka/server/handlers/produce.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/request_context.h"
@@ -204,11 +206,20 @@ ss::future<session_resources> connection_context::throttle_request(
     // distinguish throttling delays from real delays. delays
     // applied to subsequent messages allow backpressure to take
     // affect.
-    auto delay = _server.quota_mgr().record_tp_and_throttle(
-      hdr.client_id, request_size);
+    quota_manager::throttle_delay delay{};
+    if (hdr.key == fetch_api::key) {
+        delay = _server.quota_mgr().throttle_fetch_tp(hdr.client_id);
+    } else if (hdr.key == produce_api::key) {
+        delay = _server.quota_mgr().record_produce_tp_and_throttle(
+          hdr.client_id, request_size);
+    }
+    request_data r_data = request_data{
+      .request_key = hdr.key,
+      .client_id = ss::sstring{hdr.client_id.value_or("")}};
     auto tracker = std::make_unique<request_tracker>(_server.probe());
     auto fut = ss::now();
-    if (!delay.first_violation) {
+    if (
+      delay.duration > std::chrono::milliseconds(0) && !delay.first_violation) {
         fut = ss::sleep_abortable(delay.duration, _server.abort_source());
     }
     auto track = track_latency(hdr.key);
@@ -216,10 +227,14 @@ ss::future<session_resources> connection_context::throttle_request(
       .then([this, key = hdr.key, request_size] {
           return reserve_request_units(key, request_size);
       })
-      .then([this, delay, track, tracker = std::move(tracker)](
-              ssx::semaphore_units units) mutable {
+      .then([this,
+             r_data = std::move(r_data),
+             delay,
+             track,
+             tracker = std::move(tracker)](ssx::semaphore_units units) mutable {
           return server().get_request_unit().then(
             [this,
+             r_data = std::move(r_data),
              delay,
              mem_units = std::move(units),
              track,
@@ -230,7 +245,7 @@ ss::future<session_resources> connection_context::throttle_request(
                   .memlocks = std::move(mem_units),
                   .queue_units = std::move(qd_units),
                   .tracker = std::move(tracker),
-                };
+                  .request_data = std::move(r_data)};
                 if (track) {
                     r.method_latency = _server.hist().auto_measure();
                 }
@@ -439,6 +454,11 @@ ss::future<> connection_context::maybe_process_responses() {
         }
 
         auto msg = response_as_scattered(std::move(resp_and_res.response));
+        if (
+          resp_and_res.resources->request_data.request_key == fetch_api::key) {
+            _server.quota_mgr().record_fetch_tp(
+              resp_and_res.resources->request_data.client_id, msg.size());
+        }
         try {
             return conn->write(std::move(msg))
               .then([] {

@@ -84,6 +84,7 @@ struct configuration final : public config_store {
     bounded_property<std::chrono::milliseconds> default_window_sec;
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     bounded_property<uint32_t> target_quota_byte_rate;
+    property<std::optional<uint32_t>> target_fetch_quota_byte_rate;
     bounded_property<std::optional<uint32_t>> kafka_admin_topic_api_rate;
     property<std::optional<ss::sstring>> cluster_id;
     property<bool> disable_metrics;
@@ -199,6 +200,8 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> kafka_connections_max_overrides;
     one_or_many_map_property<client_group_quota>
       kafka_client_group_byte_rate_quota;
+    one_or_many_map_property<client_group_quota>
+      kafka_client_group_fetch_byte_rate_quota;
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_recv_buf;
     bounded_property<std::optional<int>> kafka_rpc_server_tcp_send_buf;
     bounded_property<std::optional<size_t>> kafka_rpc_server_stream_recv_buf;

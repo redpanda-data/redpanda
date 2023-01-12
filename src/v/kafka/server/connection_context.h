@@ -64,6 +64,11 @@ private:
     net::server_probe& _probe;
 };
 
+struct request_data {
+    api_key request_key;
+    ss::sstring client_id;
+};
+
 // Used to hold resources associated with a given request until
 // the response has been send, as well as to track some statistics
 // about the request.
@@ -79,6 +84,7 @@ struct session_resources {
     ssx::semaphore_units queue_units;
     std::unique_ptr<hdr_hist::measurement> method_latency;
     std::unique_ptr<request_tracker> tracker;
+    request_data request_data;
 };
 
 class connection_context final
