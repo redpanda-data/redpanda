@@ -80,7 +80,11 @@ void group_stm::commit(model::producer_identity pid) {
           .leader_epoch
           = kafka::invalid_leader_epoch, // we never use leader_epoch down the
                                          // stack
-          .metadata = md.metadata};
+          .metadata = md.metadata,
+          .commit_timestamp = md.commit_timestamp,
+          .expiry_timestamp = md.expiry_timestamp.value_or(
+            model::timestamp(-1)),
+        };
 
         _offsets[tp] = logged_metadata{
           .log_offset = md.log_offset, .metadata = std::move(val)};
