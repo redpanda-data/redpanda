@@ -125,7 +125,17 @@ class RpkTable:
 
 def parse_rpk_table(out):
     lines = out.splitlines()
-    header = lines[0]
+
+    h_idx = 0
+    for line in lines:
+        m = re.match("^\(.+\)$", line)
+        if not m:
+            break
+        h_idx += 1
+
+    header = lines[h_idx]
+
+    seen_names = set()
     columns = []
     while len(header) > 0:
         m = re.match("^([^ ]+)( *)", header)
@@ -133,15 +143,18 @@ def parse_rpk_table(out):
             raise RpkException(f"can't parse header: '{lines[0]}'")
         columns.append(RpkColumnHeader(m.group(1), len(m.group(2))))
         header = header[columns[-1].width():]
+        if columns[-1].name in seen_names:
+            raise RpkException(
+                f"rpk table have duplicated column: '{columns[-1].name}'")
+        seen_names.add(columns[-1].name)
 
     rows = []
-    for line in lines[1:]:
+    for line in lines[h_idx + 1:]:
         row = []
         position = 0
         for column in columns:
             value = None
-            if column.padding == 0:
-                assert column == columns[-1]
+            if column == columns[-1]:
                 if position < len(line):
                     value = line[position:]
                 else:
@@ -315,47 +328,74 @@ class RpkTool:
                          fields set to None, as long as the leader field is present.
         :return:
         """
+        def int_or_none(value):
+            m = re.match("^-?\d+$", value)
+            if m:
+                return int(value)
+            return None
+
         cmd = ['describe', topic, '-p']
         output = self._run_topic(cmd)
-        if "not found" in output:
-            raise Exception(f"Topic not found: {topic}")
-        lines = output.splitlines()[1:]
+        table = parse_rpk_table(output)
 
-        def partition_line(line):
-            m = re.match(
-                r" *(?P<id>\d+) +(?P<leader>\d+) +(?P<epoch>\d+) +\[(?P<replicas>.+?)\] +(?P<logstart>\d+?) +(?P<lso>\d+?)? +(?P<hw>\d+) *",
-                line)
-            if m is None and tolerant:
-                m = re.match(r" *(?P<id>\d+) +(?P<leader>\d+) .*", line)
-                if m is None:
-                    self._redpanda.logger.info(f"No match on '{line}'")
-                    return None
+        expected_columns = set([
+            "PARTITION", "LEADER", "EPOCH", "REPLICAS", "LOG-START-OFFSET",
+            "HIGH-WATERMARK", "LAST-STABLE-OFFSET"
+        ])
+        received_columns = set()
 
-                return RpkPartition(id=int(m.group('id')),
-                                    leader=int(m.group('leader')),
-                                    leader_epoch=None,
-                                    replicas=None,
-                                    lso=None,
-                                    hw=None,
-                                    start_offset=None)
+        for column in table.columns:
+            if column.name not in expected_columns:
+                self._redpanda.logger.error(
+                    f"Unexpected column: {column.name}")
+                raise RpkException(f"Unexpected column: {column.name}")
+            received_columns.add(column.name)
 
-            elif m is None:
-                return None
-            elif m:
-                replicas = list(
-                    map(lambda r: int(r),
-                        m.group('replicas').split()))
-                return RpkPartition(
-                    id=int(m.group('id')),
-                    leader=int(m.group('leader')),
-                    leader_epoch=int(m.group('epoch')),
-                    replicas=replicas,
-                    # lso is not always returned by describe.
-                    lso=int(m.group('lso')) if m.group('lso') else 0,
-                    hw=int(m.group('hw')),
-                    start_offset=int(m.group("logstart")))
+        missing_columns = expected_columns - received_columns
+        # sometimes LSO is present, sometimes it isn't
+        missing_columns = missing_columns - {"LAST-STABLE-OFFSET"}
 
-        return filter(None, map(partition_line, lines))
+        if len(missing_columns) != 0:
+            missing_columns = ",".join(missing_columns)
+            self._redpanda.logger.error(f"Missing columns: {missing_columns}")
+            raise RpkException(f"Missing columns: {missing_columns}")
+
+        partitions = []
+        for row in table.rows:
+            obj = dict()
+            obj["LAST-STABLE-OFFSET"] = "-"
+            for i in range(0, len(table.columns)):
+                obj[table.columns[i].name] = row[i]
+
+            obj["PARTITION"] = int(obj["PARTITION"])
+            obj["LEADER"] = int(obj["LEADER"])
+            obj["EPOCH"] = int(obj["EPOCH"])
+            m = re.match("^\[(.+)\]$", obj["REPLICAS"])
+            if m:
+                obj["REPLICAS"] = list(map(int, m.group(1).split(" ")))
+            else:
+                obj["REPLICAS"] = None
+            obj["LOG-START-OFFSET"] = int_or_none(obj["LOG-START-OFFSET"])
+            obj["HIGH-WATERMARK"] = int_or_none(obj["HIGH-WATERMARK"])
+            obj["LAST-STABLE-OFFSET"] = int_or_none(obj["LAST-STABLE-OFFSET"])
+
+            initialized = obj["LEADER"] >= 0 and obj["EPOCH"] >= 0 and obj[
+                "REPLICAS"] != None and obj["LOG-START-OFFSET"] != None and obj[
+                    "LOG-START-OFFSET"] >= 0 and obj[
+                        "HIGH-WATERMARK"] != None and obj["HIGH-WATERMARK"] >= 0
+
+            partition = RpkPartition(id=obj["PARTITION"],
+                                     leader=obj["LEADER"],
+                                     leader_epoch=obj["EPOCH"],
+                                     replicas=obj["REPLICAS"],
+                                     lso=None,
+                                     hw=obj["HIGH-WATERMARK"],
+                                     start_offset=obj["LOG-START-OFFSET"])
+
+            if initialized or tolerant:
+                partitions.append(partition)
+
+        return iter(partitions)
 
     def describe_topic_configs(self, topic):
         cmd = ['describe', topic, '-c']
