@@ -175,6 +175,7 @@ public:
     std::chrono::milliseconds get_default_retention_local_target_ms() const;
     model::shadow_indexing_mode get_default_shadow_indexing_mode() const;
     uint32_t get_default_batch_max_bytes() const;
+    std::optional<std::chrono::milliseconds> get_default_segment_ms() const;
     topic_properties get_default_properties() const;
     std::optional<partition_assignment>
     get_partition_assignment(const model::ntp& ntp) const;
