@@ -45,6 +45,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
+#include <seastar/util/file.hh>
 
 #include <fmt/format.h>
 
@@ -397,6 +398,69 @@ ss::future<> log_manager::remove(model::ntp ntp) {
           })
           .finally([lg] {});
     });
+}
+
+/// Parse partition directory name
+static std::optional<std::pair<model::partition_id, model::revision_id>>
+parse_partition_directory(const ss::sstring& name) {
+    const std::regex re(R"(^(\d+)_(\d+)$)");
+    std::cmatch match;
+    if (!std::regex_match(name.c_str(), match, re)) {
+        return std::nullopt;
+    }
+    return std::make_pair(
+      model::partition_id(boost::lexical_cast<uint64_t>(match[1].str())),
+      model::revision_id(boost::lexical_cast<uint64_t>(match[2].str())));
+}
+
+ss::future<> log_manager::remove_orphan(
+  ss::sstring topic_directory_path, model::ntp ntp, model::revision_id rev) {
+    vlog(stlog.info, "Asked to remove orphan for: {} revision: {}", ntp, rev);
+    if (_logs.contains(ntp)) {
+        return ss::now();
+    }
+    return ss::file_exists(topic_directory_path)
+      .then([this,
+             topic_directory_path = std::move(topic_directory_path),
+             ntp = std::move(ntp),
+             rev](bool exist) {
+          if (!exist) {
+              return ss::now();
+          }
+          return ss::open_directory(topic_directory_path)
+            .then([topic_directory_path, ntp, rev](ss::file topic_dir) {
+                return topic_dir
+                  .list_directory([topic_directory_path, ntp, rev](
+                                    const ss::directory_entry& entry) {
+                      auto ntp_directory_data = parse_partition_directory(
+                        entry.name);
+                      if (!ntp_directory_data) {
+                          return ss::now();
+                      }
+                      if (
+                        ntp_directory_data->first == ntp.tp.partition
+                        && ntp_directory_data->second <= rev) {
+                          vlog(
+                            stlog.debug,
+                            "Cleaning up ntp [{}] rev {} directory {} ",
+                            ntp,
+                            ntp_directory_data->second,
+                            topic_directory_path);
+
+                          auto ntp_directory
+                            = std::filesystem::path(topic_directory_path)
+                              / std::filesystem::path(entry.name);
+                          return ss::recursive_remove_directory(ntp_directory);
+                      }
+                      return ss::now();
+                  })
+                  .done()
+                  .finally([topic_dir]() mutable { return topic_dir.close(); });
+            })
+            .then([this, topic_directory_path]() {
+                return dispatch_topic_dir_deletion(topic_directory_path);
+            });
+      });
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {

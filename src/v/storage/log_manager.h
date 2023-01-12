@@ -172,6 +172,9 @@ public:
      */
     ss::future<> remove(model::ntp);
 
+    ss::future<> remove_orphan(
+      ss::sstring topic_directory_path, model::ntp, model::revision_id);
+
     ss::future<> stop();
 
     ss::future<ss::lw_shared_ptr<segment>> make_log_segment(
@@ -203,6 +206,8 @@ public:
 
     storage_resources& resources() { return _resources; }
 
+    ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
+
 private:
     using logs_type
       = absl::flat_hash_map<model::ntp, std::unique_ptr<log_housekeeping_meta>>;
@@ -221,7 +226,6 @@ private:
 
     std::optional<batch_cache_index> create_cache(with_cache);
 
-    ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
     ss::future<> recover_log_state(const ntp_config&);
     ss::future<> async_clear_logs();
 

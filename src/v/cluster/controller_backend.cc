@@ -39,10 +39,13 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/util/file.hh>
 #include <seastar/util/later.hh>
 
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 #include <algorithm>
 #include <exception>
@@ -798,6 +801,8 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "be handled by coproc::reconciliation_backend");
     case op_t::del:
         return delete_partition(delta.ntp, rev, partition_removal_mode::global)
+          .then(
+            [this, &delta, rev]() { return cleanup_orphan_files(delta, rev); })
           .then([] { return std::error_code(errc::success); });
     case op_t::update:
     case op_t::force_abort_update:
@@ -1567,6 +1572,18 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
     }
 }
 
+ss::future<> controller_backend::cleanup_orphan_files(
+  const topic_table::delta& delta, model::revision_id rev) {
+    if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
+        return ss::now();
+    }
+    auto topic_directory_path = (std::filesystem::path(_data_directory)
+                                 / delta.ntp.topic_path())
+                                  .string();
+    return _storage.local().log_mgr().remove_orphan(
+      topic_directory_path, delta.ntp, rev);
+}
+
 ss::future<> controller_backend::delete_partition(
   model::ntp ntp, model::revision_id rev, partition_removal_mode mode) {
     auto part = _partition_manager.local().get(ntp);
@@ -1574,8 +1591,9 @@ ss::future<> controller_backend::delete_partition(
 
     // The partition leaders table contains partition leaders for all
     // partitions accross the cluster. For this reason, when deleting a
-    // partition (i.e. removal mode is global), we need to delete from the table
-    // regardless of whether a replica of 'ntp' is present on the node.
+    // partition (i.e. removal mode is global), we need to delete from the
+    // table regardless of whether a replica of 'ntp' is present on the
+    // node.
     if (
       mode == partition_removal_mode::global
       || is_partition_replicated_locally) {
