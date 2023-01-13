@@ -77,6 +77,7 @@ public:
           .max = (double)_hist.get_value_at(100.0),
           .rps = iops(),
           .bps = throughput_bytes_sec(),
+          .timeouts = (uint32_t)_number_of_timeouts,
           .duration = std::chrono::duration_cast<std::chrono::milliseconds>(
             _total_time)};
     }

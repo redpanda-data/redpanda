@@ -114,6 +114,7 @@ struct self_test_result
     double max;
     uint64_t rps;
     uint64_t bps;
+    uint32_t timeouts;
     uuid_t test_id;
     ss::sstring name;
     ss::sstring info;
@@ -125,8 +126,9 @@ struct self_test_result
     operator<<(std::ostream& o, const self_test_result& r) {
         fmt::print(
           o,
-          "{{p50: {} p90: {} p99: {} p999: {} max: {} rps: {} bps: {} test_id: "
-          "{} name: {} info: {} duration: {}ms warning: {} error: {}}}",
+          "{{p50: {} p90: {} p99: {} p999: {} max: {} rps: {} bps: {} "
+          "timeouts: {} test_id: {} name: {} info: {} duration: {}ms warning: "
+          "{} error: {}}}",
           r.p50,
           r.p90,
           r.p99,
@@ -134,6 +136,7 @@ struct self_test_result
           r.max,
           r.rps,
           r.bps,
+          r.timeouts,
           r.test_id,
           r.name,
           r.info,

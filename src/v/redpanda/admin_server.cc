@@ -3140,6 +3140,7 @@ self_test_result_to_json(const cluster::self_test_result& str) {
     r.max_latency = str.max;
     r.rps = str.rps;
     r.bps = str.bps;
+    r.timeouts = str.timeouts;
     r.test_id = ss::sstring(str.test_id);
     r.name = str.name;
     r.info = str.info;
