@@ -16,6 +16,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "security/credential_store.h"
 
 namespace cluster {
@@ -35,10 +36,12 @@ namespace cluster {
 bootstrap_backend::bootstrap_backend(
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<storage::api>& storage,
-  ss::sharded<members_manager>& members_manager)
+  ss::sharded<members_manager>& members_manager,
+  ss::sharded<features::feature_table>& feature_table)
   : _credentials(credentials)
   , _storage(storage)
-  , _members_manager(members_manager) {}
+  , _members_manager(members_manager)
+  , _feature_table(feature_table) {}
 
 namespace {
 
