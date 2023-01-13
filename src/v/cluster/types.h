@@ -2994,6 +2994,40 @@ struct node_metadata {
       = default;
     friend std::ostream& operator<<(std::ostream&, const node_metadata&);
 };
+/**
+ * Reconfiguration state indicates if ongoing reconfiguration is a result of
+ * partition movement, cancellation or forced cancellation
+ */
+enum class reconfiguration_state { in_progress, cancelled, force_cancelled };
+
+std::ostream& operator<<(std::ostream&, reconfiguration_state);
+
+struct replica_bytes {
+    model::node_id node;
+    size_t bytes{0};
+};
+
+struct partition_reconfiguration_state {
+    model::ntp ntp;
+    // assignments
+    std::vector<model::broker_shard> previous_assignment;
+    std::vector<model::broker_shard> current_assignment;
+    // state indicating if reconfiguration was cancelled or requested
+    reconfiguration_state state;
+    // amount of bytes already transferred to new replicas
+    std::vector<replica_bytes> already_transferred_bytes;
+    // current size of partition
+    size_t current_partition_size{0};
+};
+
+struct node_decommission_progress {
+    // indicate if node decommissioning finished
+    bool finished = false;
+    // number of replicas left on decommissioned node
+    size_t replicas_left{0};
+    // list of currently ongoing partition reconfigurations
+    std::vector<partition_reconfiguration_state> current_reconfigurations;
+};
 
 /*
  * Partition Allocation Domains is the way to make certain partition replicas

@@ -468,6 +468,13 @@ class Admin:
         self.redpanda.logger.debug(f"decommissioning {path}")
         return self._request('put', path, node=node)
 
+    def get_decommission_status(self, id, node=None):
+        """
+        Get broker decommission status
+        """
+        path = f"brokers/{id}/decommission"
+        return self._request('get', path, node=node).json()
+
     def recommission_broker(self, id, node=None):
         """
         Recommission broker i.e. abort ongoing decommissioning
