@@ -164,6 +164,7 @@ SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_short_hdr) {
       std::move(ctx.record_set));
 
     BOOST_REQUIRE_EXCEPTION(
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
       kafka::exception,
       [](const kafka::exception& e) {
@@ -180,6 +181,7 @@ SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_crc) {
       std::move(ctx.record_set));
 
     BOOST_REQUIRE_EXCEPTION(
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
       kafka::exception,
       [](const kafka::exception& e) {
@@ -197,6 +199,7 @@ SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_lod) {
       std::move(ctx.record_set));
 
     BOOST_REQUIRE_EXCEPTION(
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
       kafka::exception,
       [](const kafka::exception& e) {
@@ -213,6 +216,7 @@ SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_magic) {
       std::move(ctx.record_set));
 
     BOOST_REQUIRE_EXCEPTION(
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
       kafka::exception,
       [](const kafka::exception& e) {

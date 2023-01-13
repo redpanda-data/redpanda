@@ -520,6 +520,7 @@ SEASTAR_THREAD_TEST_CASE(compat_test_half_field_1) {
     };
 
     auto b = serde::to_iobuf(half_field_1{.a = 1, .b = 2, .c = 3});
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     BOOST_CHECK_THROW(serde::from_iobuf<small>(std::move(b)), std::exception);
 }
 
@@ -539,6 +540,7 @@ SEASTAR_THREAD_TEST_CASE(compat_test_half_field_2) {
 
     auto b1 = serde::to_iobuf(
       half_field_2{.a = 1, .b = 2, .c = 3, .d = 0x1234});
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     BOOST_CHECK_THROW(serde::from_iobuf<big>(std::move(b1)), std::exception);
 }
 
@@ -741,11 +743,16 @@ SEASTAR_THREAD_TEST_CASE(serde_tristate_test) {
 
     BOOST_CHECK_EQUAL(
       disabled,
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       serde::from_iobuf<tristate<ss::sstring>>(std::move(disabled_buf)));
     BOOST_CHECK_EQUAL(
-      empty, serde::from_iobuf<tristate<ss::sstring>>(std::move(empty_buf)));
+      empty,
+      // NOLINTNEXTLINE(bugprone-use-after-move)
+      serde::from_iobuf<tristate<ss::sstring>>(std::move(empty_buf)));
     BOOST_CHECK_EQUAL(
-      set, serde::from_iobuf<tristate<ss::sstring>>(std::move(set_buf)));
+      set,
+      // NOLINTNEXTLINE(bugprone-use-after-move)
+      serde::from_iobuf<tristate<ss::sstring>>(std::move(set_buf)));
 }
 
 SEASTAR_THREAD_TEST_CASE(seastar_inet_address_test) {
@@ -754,9 +761,13 @@ SEASTAR_THREAD_TEST_CASE(seastar_inet_address_test) {
     iobuf ipv4_buf = serde::to_iobuf(ipv4);
     iobuf ipv6_buf = serde::to_iobuf(ipv6);
     BOOST_CHECK_EQUAL(
-      ipv4, serde::from_iobuf<ss::net::inet_address>(std::move(ipv4_buf)));
+      ipv4,
+      // NOLINTNEXTLINE(bugprone-use-after-move)
+      serde::from_iobuf<ss::net::inet_address>(std::move(ipv4_buf)));
     BOOST_CHECK_EQUAL(
-      ipv6, serde::from_iobuf<ss::net::inet_address>(std::move(ipv6_buf)));
+      ipv6,
+      // NOLINTNEXTLINE(bugprone-use-after-move)
+      serde::from_iobuf<ss::net::inet_address>(std::move(ipv6_buf)));
 }
 
 template<template<class...> class T>
