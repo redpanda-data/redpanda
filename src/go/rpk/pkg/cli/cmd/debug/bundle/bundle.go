@@ -39,6 +39,7 @@ type bundleParams struct {
 	logsSince               string
 	logsUntil               string
 	path                    string
+	namespace               string
 	logsLimitBytes          int
 	controllerLogLimitBytes int
 	timeout                 time.Duration
@@ -69,6 +70,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		logsSizeLimit string
 
 		controllerLogsSizeLimit string
+		namespace               string
 
 		timeout time.Duration
 	)
@@ -110,6 +112,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 				logsSince:               logsSince,
 				logsUntil:               logsUntil,
 				path:                    path,
+				namespace:               namespace,
 				logsLimitBytes:          int(logsLimit),
 				controllerLogLimitBytes: int(controllerLogsLimit),
 				timeout:                 timeout,
@@ -173,6 +176,8 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		"20MB",
 		"Sets the limit of the controller log size that can be stored in the bundle. Multipliers are also supported, e.g. 3MB, 1GiB",
 	)
+
+	command.Flags().StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
 
 	common.AddKafkaFlags(
 		command,
