@@ -396,6 +396,11 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
               cs,
               cmd.key);
 
+            child_it->second.set_state(
+              cmd.value.force ? reconfiguration_state::force_cancelled
+                              : reconfiguration_state::cancelled,
+              model::revision_id{o});
+
             auto sfound = _topics.find(cs);
             vassert(
               sfound != _topics.end(),
