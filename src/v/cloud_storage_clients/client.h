@@ -81,7 +81,7 @@ public:
     get_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout,
+      ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false)
       = 0;
 
@@ -99,7 +99,7 @@ public:
     virtual ss::future<result<head_object_result, error_outcome>> head_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout)
+      ss::lowres_clock::duration timeout)
       = 0;
 
     /// Upload object to cloud storage
@@ -115,9 +115,9 @@ public:
       bucket_name const& name,
       object_key const& key,
       size_t payload_size,
-      ss::input_stream<char>&& body,
+      ss::input_stream<char> body,
       const object_tag_formatter& tags,
-      const ss::lowres_clock::duration& timeout)
+      ss::lowres_clock::duration timeout)
       = 0;
 
     struct list_bucket_item {
@@ -147,7 +147,7 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      const ss::lowres_clock::duration& timeout = http::default_connect_timeout)
+      ss::lowres_clock::duration timeout = http::default_connect_timeout)
       = 0;
 
     /// Delete object from cloud storage
@@ -159,7 +159,7 @@ public:
     virtual ss::future<result<no_response, error_outcome>> delete_object(
       const bucket_name& bucket,
       const object_key& key,
-      const ss::lowres_clock::duration& timeout)
+      ss::lowres_clock::duration timeout)
       = 0;
 
     struct delete_objects_result {

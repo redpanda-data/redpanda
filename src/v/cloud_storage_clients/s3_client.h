@@ -138,7 +138,7 @@ public:
     get_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout,
+      ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false) override;
 
     /// HeadObject request.
@@ -148,7 +148,7 @@ public:
     ss::future<result<head_object_result, error_outcome>> head_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout) override;
+      ss::lowres_clock::duration timeout) override;
 
     /// Put object to S3 bucket.
     /// \param name is a bucket name
@@ -160,9 +160,9 @@ public:
       bucket_name const& name,
       object_key const& key,
       size_t payload_size,
-      ss::input_stream<char>&& body,
+      ss::input_stream<char> body,
       const object_tag_formatter& tags,
-      const ss::lowres_clock::duration& timeout) override;
+      ss::lowres_clock::duration timeout) override;
 
     ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const bucket_name& name,
@@ -170,13 +170,13 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      const ss::lowres_clock::duration& timeout
+      ss::lowres_clock::duration timeout
       = http::default_connect_timeout) override;
 
     ss::future<result<no_response, error_outcome>> delete_object(
       const bucket_name& bucket,
       const object_key& key,
-      const ss::lowres_clock::duration& timeout) override;
+      ss::lowres_clock::duration timeout) override;
 
     ss::future<result<delete_objects_result, error_outcome>> delete_objects(
       const bucket_name& bucket,
@@ -187,21 +187,21 @@ private:
     ss::future<head_object_result> do_head_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout);
+      ss::lowres_clock::duration timeout);
 
     ss::future<http::client::response_stream_ref> do_get_object(
       bucket_name const& name,
       object_key const& key,
-      const ss::lowres_clock::duration& timeout,
+      ss::lowres_clock::duration timeout,
       bool expect_no_such_key = false);
 
     ss::future<> do_put_object(
       bucket_name const& name,
       object_key const& key,
       size_t payload_size,
-      ss::input_stream<char>&& body,
+      ss::input_stream<char> body,
       const object_tag_formatter& tags,
-      const ss::lowres_clock::duration& timeout);
+      ss::lowres_clock::duration timeout);
 
     ss::future<list_bucket_result> do_list_objects_v2(
       const bucket_name& name,
@@ -209,13 +209,12 @@ private:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      const ss::lowres_clock::duration& timeout
-      = http::default_connect_timeout);
+      ss::lowres_clock::duration timeout = http::default_connect_timeout);
 
     ss::future<> do_delete_object(
       const bucket_name& bucket,
       const object_key& key,
-      const ss::lowres_clock::duration& timeout);
+      ss::lowres_clock::duration timeout);
 
     ss::future<delete_objects_result> do_delete_objects(
       const bucket_name& bucket,
