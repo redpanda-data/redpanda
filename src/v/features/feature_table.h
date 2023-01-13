@@ -23,6 +23,7 @@
 namespace cluster {
 class feature_backend;
 class feature_manager;
+class bootstrap_backend;
 } // namespace cluster
 
 namespace features {
@@ -319,7 +320,8 @@ public:
     model::offset get_applied_offset() const { return _applied_offset; }
 
 private:
-    // Only for use by our friends feature backend & manager
+    // Only for use by our friends feature backend & manager, and during
+    // bootstrap by bootstrap_backend.
     void set_active_version(cluster::cluster_version);
     void bootstrap_active_version(cluster::cluster_version);
     void apply_action(const cluster::feature_update_action& fua);
@@ -363,6 +365,10 @@ private:
     // feature_backend is a friend for routine updates when
     // applying raft0 log events.
     friend class cluster::feature_backend;
+
+    // bootstrap_backend is a friend for using set_active_version during
+    // bootstrap, thereby fast-forwarding past the usual version negotiation.
+    friend class cluster::bootstrap_backend;
 
     // Unit testing hook.
     friend class feature_table_fixture;
