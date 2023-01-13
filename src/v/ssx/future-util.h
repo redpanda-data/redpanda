@@ -283,6 +283,7 @@ inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
       .handle_exception_type([](const seastar::abort_requested_exception&) {})
       .handle_exception_type([](const seastar::gate_closed_exception&) {})
       .handle_exception_type([](const seastar::broken_semaphore&) {})
+      .handle_exception_type([](const seastar::broken_promise&) {})
       .handle_exception_type([](const seastar::broken_condition_variable&) {});
 }
 
