@@ -238,6 +238,7 @@ validate_protobuf_schema(sharded_store& store, canonical_schema schema) {
 
 ss::future<canonical_schema>
 make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
+    // NOLINTBEGIN(bugprone-use-after-move)
     canonical_schema temp{
       std::move(schema).sub(),
       {canonical_schema_definition::raw_string{schema.def().raw()()},
@@ -247,6 +248,7 @@ make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
     auto validated = co_await validate_protobuf_schema(store, temp);
     co_return canonical_schema{
       std::move(temp).sub(), std::move(validated), std::move(temp).refs()};
+    // NOLINTEND(bugprone-use-after-move)
 }
 
 namespace {

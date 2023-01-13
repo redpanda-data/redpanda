@@ -379,6 +379,7 @@ ss::future<collected_schema> collect_schema(
               std::move(ss.schema));
         }
     }
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     collected.insert(std::move(name), std::move(schema).def());
     co_return std::move(collected);
 }

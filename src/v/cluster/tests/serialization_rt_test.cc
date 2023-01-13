@@ -2163,6 +2163,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         // append_entries_request -> iobuf
         iobuf serde_out;
+        const auto node_id = data.node_id;
+        const auto target_node_id = data.target_node_id;
+        const auto meta = data.meta;
+        const auto flush = data.flush;
         serde::write_async(serde_out, std::move(data)).get();
 
         // iobuf -> append_entries_request
@@ -2170,10 +2174,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto from_serde
           = serde::read_async<raft::append_entries_request>(serde_in).get0();
 
-        BOOST_REQUIRE(from_serde.node_id == data.node_id);
-        BOOST_REQUIRE(from_serde.target_node_id == data.target_node_id);
-        BOOST_REQUIRE(from_serde.meta == data.meta);
-        BOOST_REQUIRE(from_serde.flush == data.flush);
+        BOOST_REQUIRE(from_serde.node_id == node_id);
+        BOOST_REQUIRE(from_serde.target_node_id == target_node_id);
+        BOOST_REQUIRE(from_serde.meta == meta);
+        BOOST_REQUIRE(from_serde.flush == flush);
 
         auto batches_from_serde = model::consume_reader_to_memory(
                                     std::move(from_serde.batches()),
