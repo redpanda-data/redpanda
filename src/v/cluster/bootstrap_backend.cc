@@ -150,6 +150,19 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
     _members_manager.local().apply_initial_node_uuid_map(
       cmd.value.node_ids_by_uuid);
 
+    // Apply cluster version to feature table: this activates features without
+    // waiting for feature_manager to come up.  This only applies if this node
+    // does not already have some established feature table state (e.g. from
+    // a snapshot).
+    if (
+      cmd.value.founding_version != invalid_version
+      && _feature_table.local().get_active_version() == invalid_version) {
+        co_await _feature_table.invoke_on_all(
+          [v = cmd.value.founding_version](features::feature_table& ft) {
+              ft.bootstrap_active_version(v);
+          });
+    }
+
     // Apply cluster_uuid
     co_await _storage.invoke_on_all(
       [&new_cluster_uuid = cmd.value.uuid](storage::api& storage) {
