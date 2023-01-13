@@ -78,7 +78,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	}
 
 	stepErrs := grp.Wait()
-	if stepErrs != nil {
+	if stepErrs != nil || errs != nil {
 		errs = multierror.Append(errs, stepErrs.ErrorOrNil())
 		err := writeFileToZip(ps, "errors.txt", []byte(errs.Error()))
 		if err != nil {
