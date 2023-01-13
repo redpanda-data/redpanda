@@ -32,6 +32,7 @@ class TopicSpec:
     PROPERTY_RETENTION_LOCAL_TARGET_BYTES = "retention.local.target.bytes"
     PROPERTY_RETENTION_LOCAL_TARGET_MS = "retention.local.target.ms"
     PROPERTY_REMOTE_DELETE = "redpanda.remote.delete"
+    PROPERTY_SEGMENT_MS = "segment.ms"
 
     # compression types
     COMPRESSION_NONE = "none"
@@ -59,7 +60,8 @@ class TopicSpec:
                  redpanda_datapolicy=None,
                  redpanda_remote_read=None,
                  redpanda_remote_write=None,
-                 redpanda_remote_delete=None):
+                 redpanda_remote_delete=None,
+                 segment_ms=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -73,6 +75,7 @@ class TopicSpec:
         self.redpanda_remote_read = redpanda_remote_read
         self.redpanda_remote_write = redpanda_remote_write
         self.redpanda_remote_delete = redpanda_remote_delete
+        self.segment_ms = segment_ms
 
     def __str__(self):
         return self.name
