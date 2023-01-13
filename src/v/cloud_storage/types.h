@@ -168,5 +168,6 @@ struct segment_meta {
 
     auto operator<=>(const segment_meta&) const = default;
 };
+std::ostream& operator<<(std::ostream& o, const segment_meta& r);
 
 } // namespace cloud_storage
