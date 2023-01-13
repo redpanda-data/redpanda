@@ -54,6 +54,8 @@ ss::sstring gen_alphanum_max_distinct(size_t max_cardinality);
 // Makes an random alphanumeric string, encoded in an iobuf.
 iobuf make_iobuf(size_t n = 128);
 
+void fill_buffer_randomchars(char* start, size_t amount);
+
 template<typename T>
 T get_int() {
     std::uniform_int_distribution<T> dist;
