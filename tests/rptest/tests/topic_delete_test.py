@@ -308,7 +308,6 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         return empty
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8046
     @cluster(num_nodes=3)
     @parametrize(disable_delete=False)
     @parametrize(disable_delete=True)
