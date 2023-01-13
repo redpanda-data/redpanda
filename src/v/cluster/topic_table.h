@@ -151,6 +151,9 @@ public:
         /// updates* (i.e. it only gets updated when the update_finished command
         /// is processed).
         replicas_revision_map replicas_revisions;
+        /// Revision id of the last applied update_finished controller command
+        /// (or of addition command if none)
+        model::revision_id last_update_finished_revision;
     };
 
     struct topic_metadata_item {

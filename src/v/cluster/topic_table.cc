@@ -71,7 +71,10 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
             replica_revisions[r.node_id] = rev_id;
         }
         md.partitions.emplace(
-          pas.id, partition_meta{.replicas_revisions = replica_revisions});
+          pas.id,
+          partition_meta{
+            .replicas_revisions = replica_revisions,
+            .last_update_finished_revision = rev_id});
         _pending_deltas.emplace_back(
           std::move(ntp),
           pas,
@@ -170,7 +173,8 @@ topic_table::apply(create_partition_cmd cmd, model::offset offset) {
             replicas_revisions[bs.node_id] = rev_id;
         }
         tp->second.partitions[p_as.id] = partition_meta{
-          .replicas_revisions = replicas_revisions};
+          .replicas_revisions = replicas_revisions,
+          .last_update_finished_revision = rev_id};
         _pending_deltas.emplace_back(
           std::move(ntp),
           std::move(p_as),
@@ -282,6 +286,7 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
           cmd.value,
           it->second.get_update_revision());
     }
+    p_meta_it->second.last_update_finished_revision = model::revision_id{o};
 
     _updates_in_progress.erase(it);
 
