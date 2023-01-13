@@ -1415,6 +1415,12 @@ class RedpandaService(Service):
         any_restarts = any(n['restart'] for n in config_status)
         if any_restarts and expect_restart:
             self.restart_nodes(self.nodes)
+            # Having disrupted the cluster with a restart, wait for the controller
+            # to be available again before returning to the caller, so that they do
+            # not have to worry about subsequent configuration actions failing.
+            self._admin.await_stable_leader(namespace="redpanda",
+                                            topic="controller",
+                                            partition=0)
         elif any_restarts:
             raise AssertionError(
                 "Nodes report restart required but expect_restart is False")
