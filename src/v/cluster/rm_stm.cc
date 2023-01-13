@@ -2504,13 +2504,13 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       std::make_move_iterator(data.abort_indexes.begin()),
       std::make_move_iterator(data.abort_indexes.end()));
     for (auto& entry : data.seqs) {
-        auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
-          entry.pid, seq_entry_wrapper{.entry = std::move(entry)});
-        // try_emplace does not move from r-value reference if the insertion
-        // didn't take place so the clang-tidy warning is a false positive
-        // NOLINTNEXTLINE(hicpp-invalid-access-moved)
-        if (!inserted && seq_it->second.entry.seq < entry.seq) {
-            seq_it->second.entry = std::move(entry);
+        const auto pid = entry.pid;
+        auto it = _log_state.seq_table.find(pid);
+        if (it == _log_state.seq_table.end()) {
+            _log_state.seq_table.try_emplace(
+              it, pid, seq_entry_wrapper{.entry = std::move(entry)});
+        } else if (it->second.entry.seq < entry.seq) {
+            it->second.entry = std::move(entry);
         }
     }
 
