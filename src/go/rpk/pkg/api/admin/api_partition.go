@@ -32,6 +32,11 @@ type Partition struct {
 	Replicas    []Replica `json:"replicas"`
 }
 
+// Reconfiguration is the detail of a partition reconfiguration. There are
+// many keys returned, so the raw response is just unmarshalled into an
+// interface.
+type Reconfiguration map[string]interface{}
+
 // GetPartition returns detailed partition information.
 func (a *AdminAPI) GetPartition(
 	ctx context.Context, namespace, topic string, partition int,
@@ -43,4 +48,10 @@ func (a *AdminAPI) GetPartition(
 		fmt.Sprintf("/v1/partitions/%s/%s/%d", namespace, topic, partition),
 		nil,
 		&pa)
+}
+
+// Reconfigurations returns the list of ongoing partition reconfigurations.
+func (a *AdminAPI) Reconfigurations(ctx context.Context) ([]Reconfiguration, error) {
+	var response []Reconfiguration
+	return response, a.sendAny(ctx, http.MethodGet, "/v1/partitions/reconfigurations", nil, &response)
 }

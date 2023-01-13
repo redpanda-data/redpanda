@@ -129,6 +129,7 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveNTPDrift(ps),
 		saveSyslog(ps),
 		savePrometheusMetrics(ctx, ps, bp.admin),
+		savePublicMetrics(ctx, ps, bp.admin),
 		saveDNSData(ctx, ps),
 		saveDiskUsage(ctx, ps, bp.cfg),
 		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
@@ -621,6 +622,16 @@ func savePrometheusMetrics(ctx context.Context, ps *stepParams, admin *admin.Adm
 			return fmt.Errorf("unable to fetch metrics from the admin API: %w", err)
 		}
 		return writeFileToZip(ps, "prometheus-metrics.txt", raw)
+	}
+}
+
+func savePublicMetrics(ctx context.Context, ps *stepParams, admin *admin.AdminAPI) step {
+	return func() error {
+		raw, err := admin.PublicMetrics(ctx)
+		if err != nil {
+			return fmt.Errorf("unable to fetch public metrics from the admin API: %w", err)
+		}
+		return writeFileToZip(ps, "public-metrics.txt", raw)
 	}
 }
 

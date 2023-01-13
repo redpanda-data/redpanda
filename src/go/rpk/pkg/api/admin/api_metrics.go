@@ -16,6 +16,10 @@ import (
 
 func (a *AdminAPI) PrometheusMetrics(ctx context.Context) ([]byte, error) {
 	var res []byte
-	err := a.sendOne(ctx, http.MethodGet, "/metrics", nil, &res, false)
-	return res, err
+	return res, a.sendOne(ctx, http.MethodGet, "/metrics", nil, &res, false)
+}
+
+func (a *AdminAPI) PublicMetrics(ctx context.Context) ([]byte, error) {
+	var res []byte
+	return res, a.sendOne(ctx, http.MethodGet, "/public_metrics", nil, &res, false)
 }
