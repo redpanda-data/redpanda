@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
+#include "utils/tracking_allocator.h"
 
 #include <deque>
 
@@ -101,7 +102,7 @@ public:
     /// Segment key in the maifest
     using key = model::offset;
     using value = segment_meta;
-    using segment_map = absl::btree_map<key, value>;
+    using segment_map = util::mem_tracked::map_t<absl::btree_map, key, value>;
     using replaced_segments_list = std::vector<lw_segment_meta>;
     using const_iterator = segment_map::const_iterator;
     using const_reverse_iterator = segment_map::const_reverse_iterator;
@@ -118,13 +119,18 @@ public:
     /// Create empty manifest that supposed to be updated later
     partition_manifest();
 
-    /// Create manifest for specific ntp
-    explicit partition_manifest(model::ntp ntp, model::initial_revision_id rev);
+    /// Create manifest for specific ntp with memory tracked on a child tracker
+    /// of `partition_mem_tracker`.
+    explicit partition_manifest(
+      model::ntp ntp,
+      model::initial_revision_id rev,
+      ss::shared_ptr<util::mem_tracker> partition_mem_tracker = nullptr);
 
     template<class segment_t>
     partition_manifest(
       model::ntp ntp,
       model::initial_revision_id rev,
+      ss::shared_ptr<util::mem_tracker> manifest_mem_tracker,
       model::offset so,
       model::offset lo,
       model::offset lco,
@@ -133,6 +139,9 @@ public:
       const std::vector<segment_t>& replaced)
       : _ntp(std::move(ntp))
       , _rev(rev)
+      , _mem_tracker(std::move(manifest_mem_tracker))
+      , _segments(
+          util::mem_tracked::map<absl::btree_map, key, value>(_mem_tracker))
       , _last_offset(lo)
       , _start_offset(so)
       , _last_uploaded_compacted_offset(lco)
@@ -206,6 +215,10 @@ public:
     const_reverse_iterator rend() const;
     size_t size() const;
 
+    // Return the tracked amount of memory associated with the segments in this
+    // manifest, or 0 if the memory is not being tracked.
+    size_t segments_metadata_bytes() const;
+
     // Computes the size in bytes of all segments available to clients
     // (i.e. all segments after and including the segment that starts at
     // the current _start_offset).
@@ -259,8 +272,16 @@ public:
     /// \param out output stream that should be used to output the json
     void serialize(std::ostream& out) const;
 
-    /// Compare two manifests for equality
-    bool operator==(const partition_manifest& other) const = default;
+    /// Compare two manifests for equality. Don't compare the mem_tracker.
+    bool operator==(const partition_manifest& other) const {
+        return _ntp == other._ntp && _rev == other._rev
+               && _segments == other._segments
+               && _last_offset == other._last_offset
+               && _start_offset == other._start_offset
+               && _last_uploaded_compacted_offset
+                    == other._last_uploaded_compacted_offset
+               && _insync_offset == other._insync_offset;
+    }
 
     /// Remove segment record from manifest
     ///
@@ -292,6 +313,8 @@ public:
     /// after the call.
     void delete_replaced_segments();
 
+    ss::shared_ptr<util::mem_tracker> mem_tracker() { return _mem_tracker; }
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
@@ -303,6 +326,11 @@ private:
 
     model::ntp _ntp;
     model::initial_revision_id _rev;
+
+    // Tracker of memory for this manifest.
+    // Currently only tracks memory allocated for `_segments`.
+    ss::shared_ptr<util::mem_tracker> _mem_tracker;
+
     segment_map _segments;
     /// Collection of replaced but not yet removed segments
     replaced_segments_list _replaced;

@@ -314,6 +314,7 @@ public:
 
 private:
     consensus_ptr _raft;
+    ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;

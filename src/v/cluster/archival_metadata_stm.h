@@ -82,7 +82,8 @@ public:
       raft::consensus*,
       cloud_storage::remote& remote,
       features::feature_table&,
-      ss::logger& logger);
+      ss::logger& logger,
+      ss::shared_ptr<util::mem_tracker> partition_mem_tracker = nullptr);
 
     /// Add segments to the raft log, replicate them and
     /// wait until it is applied to the STM.
