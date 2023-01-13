@@ -64,7 +64,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveControllerLogDir(ps, bp.cfg, bp.controllerLogLimitBytes),
 	}
 
-	adminAddresses, err := adminAddressesFromK8S(ctx)
+	adminAddresses, err := adminAddressesFromK8S(ctx, bp.namespace)
 	if err != nil {
 		errs = multierror.Append(errs, fmt.Errorf("skipping admin API calls, unable to get admin API addresses: %v", err))
 	} else {
@@ -93,7 +93,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 
 // adminAddressesFromK8S returns the admin API host:port list by querying the
 // K8S Api.
-func adminAddressesFromK8S(ctx context.Context) ([]string, error) {
+func adminAddressesFromK8S(ctx context.Context, namespace string) ([]string, error) {
 	// This is intended to run only in a k8s cluster:
 	k8sCfg, err := rest.InClusterConfig()
 	if err != nil {
@@ -105,8 +105,8 @@ func adminAddressesFromK8S(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("unable to create kubernetes client: %v", err)
 	}
 
-	// Get pods in the 'redpanda' namespace.
-	pods, err := clientset.CoreV1().Pods("redpanda").List(ctx, v1.ListOptions{})
+	// Get pods in the namespace.
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, v1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes pods: %v", err)
 	}
@@ -120,6 +120,10 @@ func adminAddressesFromK8S(ctx context.Context) ([]string, error) {
 				adminAddresses = append(adminAddresses, a)
 			}
 		}
+	}
+
+	if len(adminAddresses) == 0 {
+		return nil, fmt.Errorf("could not find any exposed 'admin' container port for the pods in the %q namespace", namespace)
 	}
 
 	return adminAddresses, nil
