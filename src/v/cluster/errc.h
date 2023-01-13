@@ -64,6 +64,7 @@ enum class errc : int16_t {
     unknown_update_interruption_error,
     throttling_quota_exceeded,
     cluster_already_exists,
+    no_partition_assignments,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -183,6 +184,8 @@ struct errc_category final : public std::error_category {
         case errc::cluster_already_exists:
             return "Node is a part of a cluster already, new cluster is not "
                    "created";
+        case errc::no_partition_assignments:
+            return "No replica assignments for the requested partition";
         }
         return "cluster::errc::unknown";
     }

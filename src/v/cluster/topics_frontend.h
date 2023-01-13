@@ -67,6 +67,17 @@ public:
       model::timeout_clock::time_point,
       std::optional<model::term_id> = std::nullopt);
 
+    /**
+     * This overload of move_partition_replicas will use the partition allocator
+     * to generate a new replica set (i.e., a vector<broker_shard>) based on the
+     * given ntp and list of node ids.
+     */
+    ss::future<std::error_code> move_partition_replicas(
+      model::ntp,
+      std::vector<model::node_id>,
+      model::timeout_clock::time_point,
+      std::optional<model::term_id> = std::nullopt);
+
     ss::future<std::error_code> finish_moving_partition_replicas(
       model::ntp,
       std::vector<model::broker_shard>,
@@ -199,6 +210,11 @@ private:
 
     ss::future<capacity_info> get_health_info(
       model::topic_namespace topic, int32_t partition_count) const;
+
+    // Generates a new partition assignment for a single partition
+    ss::future<result<std::vector<partition_assignment>>>
+    generate_reassignments(
+      model::ntp, std::vector<model::node_id> new_replicas);
 
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
