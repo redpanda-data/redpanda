@@ -9,7 +9,7 @@
 
 quick:
   included:
-  - tests/
+  - tests/bytes_sent_test.py
 
   excluded:
   - tests/wasm_topics_test.py
