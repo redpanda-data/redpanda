@@ -5,6 +5,15 @@ on:
 - pull_request_target
 
 jobs:
+  merge-queue-pr-labeler:
+    if: ${{ startsWith(github.event.pull_request.title, 'merge-queue') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: add label to merge-queue PR
+        env:
+          PR_NUM: ${{ github.event.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr -R "$GITHUB_REPOSITORY_OWNER/redpanda" edit "$PR_NUM" --add-label=ci-repeat-5
   triage:
     runs-on: ubuntu-latest
     steps:
