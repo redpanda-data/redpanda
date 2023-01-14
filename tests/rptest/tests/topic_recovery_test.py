@@ -19,6 +19,7 @@ from typing import NamedTuple, Optional, Callable, Sequence, Tuple
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
+import requests
 
 from rptest.archival.s3_client import S3Client
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -43,9 +44,10 @@ from rptest.utils.si_utils import (
     MISSING_DATA_ERRORS,
     TRANSIENT_ERRORS,
     PathMatcher,
-    BLOCK_SIZE,
     S3Snapshot,
 )
+from rptest.services.admin import Admin
+from rptest.util import wait_until_result
 
 CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC = 10
 
@@ -942,6 +944,53 @@ class TimeBasedRetention(BaseCase):
             self._produce_and_verify(topic)
 
 
+class AdminApiBasedRestore(FastCheck):
+    def __init__(self, s3_client, kafka_tools, rpk_client: RpkTool, s3_bucket,
+                 logger, rpk_producer_maker, topics, admin: Admin):
+        super().__init__(s3_client, kafka_tools, rpk_client, s3_bucket, logger,
+                         rpk_producer_maker, topics)
+        self.admin = admin
+
+    def _assert_duplicate_request_is_rejected(self):
+        try:
+            # A duplicate request should be rejected as a recovery is already running.
+            response = self.admin.initiate_topic_scan_and_recovery()
+        except requests.exceptions.HTTPError as e:
+            assert e.response.status_code == requests.status_codes.codes[
+                'conflict'], f'request status code: {response.status_code}'
+
+    def _assert_retention(self, value):
+        def wait_for_topic():
+            try:
+                return self._kafka_tools.describe_topic_config(
+                    self.topics[0].name)
+            except:
+                return None
+
+        topic_config = wait_until_result(wait_for_topic, timeout_sec=60)
+        assert topic_config[
+            'retention.local.target.bytes'] == value, f'failed: {topic_config}'
+
+    def _assert_temporary_retention_is_reverted(self):
+        self._assert_retention('-1')
+
+    def restore_redpanda(self, *_):
+        payload = {'retention_ms': 500000}
+        response = self.admin.initiate_topic_scan_and_recovery(payload=payload)
+        assert response.status_code == requests.status_codes.codes[
+            'ok'], f'request status code: {response.status_code}'
+        self._assert_duplicate_request_is_rejected()
+
+    def after_restart_validation(self):
+        super().after_restart_validation()
+        self._assert_temporary_retention_is_reverted()
+        items_in_bucket = self._s3.list_objects(self._bucket)
+
+        # All temporary result files should have been removed
+        for item in items_in_bucket:
+            assert not item.key.startswith('recovery_state/kafka')
+
+
 class TopicRecoveryTest(RedpandaTest):
     def __init__(self,
                  test_context: TestContext,
@@ -961,10 +1010,12 @@ class TopicRecoveryTest(RedpandaTest):
             # Open more connections when running on real servers.
             si_settings.cloud_storage_max_connections = 20
 
-        super(TopicRecoveryTest, self).__init__(test_context=test_context,
-                                                num_brokers=num_brokers,
-                                                si_settings=si_settings,
-                                                extra_rp_conf=extra_rp_conf)
+        super(TopicRecoveryTest, self).__init__(
+            test_context=test_context,
+            num_brokers=num_brokers,
+            si_settings=si_settings,
+            extra_rp_conf=extra_rp_conf,
+            environment={'__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS': 5000})
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self._started = True
@@ -1144,6 +1195,9 @@ class TopicRecoveryTest(RedpandaTest):
                 f'size in cloud: {size_in_cloud}')
 
             delta = size_on_disk - size_in_cloud
+            # If sizes match, we can stop
+            if not delta:
+                return True
             deltas.append(delta)
             # We want to make sure the diff between disk and s3 is stable
             # IE unchanging for last N iterations, and also the diff is less than
@@ -1423,4 +1477,18 @@ class TopicRecoveryTest(RedpandaTest):
                                        self.kafka_tools, self.rpk,
                                        self.s3_bucket, self.logger,
                                        self.rpk_producer_maker, topics, True)
+        self.do_run(test_case)
+
+    @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
+    def test_admin_api_recovery(self):
+        topics = [
+            TopicSpec(name='panda-topic',
+                      partition_count=1,
+                      replication_factor=3)
+        ]
+        test_case = AdminApiBasedRestore(self.cloud_storage_client,
+                                         self.kafka_tools, self.rpk,
+                                         self.s3_bucket, self.logger,
+                                         self.rpk_producer_maker, topics,
+                                         Admin(self.redpanda))
         self.do_run(test_case)
