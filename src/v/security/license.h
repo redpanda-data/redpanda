@@ -86,11 +86,7 @@ struct license
 private:
     friend struct fmt::formatter<license>;
 
-    friend bool operator==(const license& a, const license& b) {
-        return a.format_version == b.format_version && a.type == b.type
-               && a.organization == b.organization && a.expiry == b.expiry
-               && a.checksum == b.checksum;
-    }
+    friend bool operator==(const license& a, const license& b) = default;
 
     friend std::ostream& operator<<(std::ostream& os, const license& lic);
 };
