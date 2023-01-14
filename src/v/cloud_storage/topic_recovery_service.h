@@ -1,0 +1,186 @@
+/*
+ * Copyright 2022 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#pragma once
+
+#include "cloud_storage/recovery_errors.h"
+#include "cloud_storage/recovery_request.h"
+#include "cloud_storage/remote.h"
+#include "cloud_storage/topic_manifest.h"
+#include "cluster/types.h"
+#include "model/fundamental.h"
+
+#include <seastar/core/gate.hh>
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/http/reply.hh>
+#include <seastar/http/request.hh>
+
+namespace cluster {
+class topics_frontend;
+class topic_recovery_status_frontend;
+class topic_table;
+} // namespace cluster
+
+namespace cloud_storage {
+
+struct init_recovery_result {
+    ss::httpd::reply::status_type status_code;
+    ss::sstring message;
+
+    bool operator==(const init_recovery_result&) const = default;
+};
+
+std::ostream& operator<<(std::ostream&, const init_recovery_result&);
+
+struct recovery_task_config {
+    cloud_storage_clients::bucket_name bucket;
+    ss::lowres_clock::duration operation_timeout_ms;
+    ss::lowres_clock::duration backoff_ms;
+    static recovery_task_config make_config();
+};
+
+struct topic_download_status {
+    int pending_downloads;
+    int successful_downloads;
+    int failed_downloads;
+};
+
+std::ostream& operator<<(std::ostream&, const topic_download_status&);
+
+struct topic_recovery_service
+  : ss::peering_sharded_service<topic_recovery_service> {
+    enum class state {
+        inactive,
+        starting,
+        scanning_bucket,
+        creating_topics,
+        recovering_data,
+    };
+
+    using recovery_status
+      = absl::flat_hash_map<model::topic_namespace, topic_download_status>;
+
+    topic_recovery_service(
+      ss::sharded<remote>& remote,
+      ss::sharded<cluster::topic_table>& topic_state,
+      ss::sharded<cluster::topics_frontend>& topics_frontend,
+      ss::sharded<cluster::topic_recovery_status_frontend>&
+        topic_recovery_status_frontend);
+
+    /// \brief A quick check if the recovery task is currently running. If true,
+    /// no other recovery task should be launched.
+    /// \return If a recovery task is already active on any shard in this node
+    bool is_active() const { return _state != state::inactive; }
+
+    ss::future<> stop();
+
+    /// \brief Starts the recovery process as a background task. The incoming
+    /// HTTP request is validated synchronously. Validation errors, if any, are
+    /// returned immediately. If the request validation succeeds, a background
+    /// recovery process is initiated.
+    /// \return A result object with an HTTP status code and a message string,
+    /// suitable for being returned as response to an HTTP call.
+    init_recovery_result start_recovery(ss::httpd::request req);
+
+    /// \brief Stops the download check task. Intended to be stopped before the
+    /// cloud storage API is stopped, so that any HTTP calls are not made using
+    /// a non function remote.
+    ss::future<> shutdown_recovery();
+
+    state current_state() const { return _state; }
+
+    const recovery_status& current_recovery_status() const {
+        return _recovery_status;
+    }
+
+private:
+    /// \brief The recovery process runs on a single shard. The status of the
+    /// process is always propagated to all other shards on the node, so that
+    /// admin API requests coming in on any other shard are able to respond with
+    /// the status of the process. This also enables us to reject any incoming
+    /// requests quickly if a recovery is already in process, without making
+    /// calls to the cloud storage API.
+    /// \param state The state to propagate to all shards.
+    ss::future<> propagate_state(state);
+
+    /// \brief Returns a list of manifests for topics to create, filtering
+    /// against existing topics in cluster. The manifests are downloaded from
+    /// the bucket, and the downloads which fail are skipped from the recovery
+    /// process.
+    ss::future<std::vector<cloud_storage::topic_manifest>>
+    filter_existing_topics(
+      const remote::list_bucket_items& items,
+      const recovery_request& request,
+      std::optional<model::ns> filter_ns);
+
+    /// \brief Try to download a manifest JSON file, parse it and return the
+    /// parsed manifest
+    ss::future<result<cloud_storage::topic_manifest, recovery_error_ctx>>
+    download_manifest(ss::sstring path);
+
+    ss::future<std::vector<cluster::topic_result>>
+    create_topics(const recovery_request& request);
+
+    /// \brief Starts the background recovery process. This involves acquiring
+    /// a lock, scanning the bucket for topic manifests, and finally creating
+    /// the topics with the required parameters. \param The validated request
+    /// received on the admin API
+    ss::future<result<void, recovery_error_ctx>>
+    start_bg_recovery_task(recovery_request request);
+
+    /// \brief assigns a background task to the _pending_status_timer and exits
+    /// immediately.
+    void start_download_bg_tracker();
+
+    /// \brief Acquires a lock before checking for downloads, to ensure that
+    /// parallel checks are not running.
+    ss::future<> check_for_downloads();
+
+    /// \brief Scans the bucket for result files. Compares them against the
+    /// pending downloads. If all downloads are finished, then clears the state
+    /// and exits. If downloads are pending, rearms the timer so the check
+    /// happens after some time.
+    ss::future<> do_check_for_downloads();
+
+    void populate_recovery_status();
+
+    ss::future<> reset_topic_configurations();
+
+private:
+    ss::gate _gate;
+    ss::abort_source _as;
+    ssx::semaphore _download_check_sem{1, "cst/topic_rec_dl_check"};
+
+    // The state is used to ensure that recovery is only started if it is not
+    // already running.
+    state _state{state::inactive};
+    recovery_task_config _config;
+    ss::sharded<remote>& _remote;
+    ss::sharded<cluster::topic_table>& _topic_state;
+    ss::sharded<cluster::topics_frontend>& _topics_frontend;
+    ss::sharded<cluster::topic_recovery_status_frontend>&
+      _topic_recovery_status_frontend;
+    // A map of the number of downloads expected per NTP. As downloads finish,
+    // the number goes down. Once all downloads for all NTPs are finished
+    // (whether successful or failures) the current recovery attempt ends.
+    recovery_status _recovery_status;
+
+    // Used to schedule the download check periodically.
+    ss::timer<ss::lowres_clock> _pending_status_timer;
+
+    // Maintains a list of manifests downloaded when recovery started, so that
+    // any overrides per topic made for the recovery to progress can be reset
+    // once the recovery has ended. One example is the topic retention which
+    // could be set to some small value during recovery and restored back to
+    // original value from manifest once recovery has ended.
+    std::optional<std::vector<topic_manifest>> _downloaded_manifests;
+};
+
+} // namespace cloud_storage
