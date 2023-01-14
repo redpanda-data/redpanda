@@ -425,7 +425,8 @@ void partition::maybe_construct_archiver() {
       && _raft->log().config().is_archival_enabled()) {
         _archiver = std::make_unique<archival::ntp_archiver>(
           log().config(), _archival_conf, _cloud_storage_api.local(), *this);
-        _upload_housekeeping.local().register_archiver(*_archiver);
+        _upload_housekeeping.local().register_jobs(
+          _archiver->get_housekeeping_jobs());
     }
 }
 

@@ -57,8 +57,6 @@ std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind);
 /// topic was assigned when it was just created.
 class ntp_archiver {
 public:
-    friend class upload_housekeeping_service;
-
     /// Iterator type used to retrieve candidates for upload
     using back_insert_iterator
       = std::back_insert_iterator<std::vector<segment_name>>;
@@ -165,6 +163,16 @@ public:
      * then signal _leader_cond to prompt the upload loop to stop waiting.
      */
     void notify_leadership(std::optional<model::node_id>);
+
+    /**
+     * Get list of all housekeeping jobs for the ntp
+     *
+     * The list includes adjacent segment merging but may be extended in
+     * the future. The references are guaranteed to have the same lifetime
+     * as ntp_archiver_service object itself.
+     */
+    std::vector<std::reference_wrapper<housekeeping_job>>
+    get_housekeeping_jobs();
 
 private:
     /// Information about started upload
@@ -345,7 +353,8 @@ private:
     const cloud_storage_clients::object_tag_formatter _manifest_tags;
     const cloud_storage_clients::object_tag_formatter _tx_tags;
 
-    intrusive_list_hook _list_hook{};
+    // NTP level adjacent segment merging job
+    std::unique_ptr<housekeeping_job> _segment_merging;
 };
 
 } // namespace archival

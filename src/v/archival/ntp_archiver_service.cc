@@ -13,6 +13,7 @@
 #include "archival/archival_policy.h"
 #include "archival/logger.h"
 #include "archival/retention_calculator.h"
+#include "archival/types.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
@@ -1365,6 +1366,14 @@ ntp_archiver::get_bucket_name() const {
     } else {
         return _conf->bucket_name;
     }
+}
+
+std::vector<std::reference_wrapper<housekeeping_job>>
+ntp_archiver::get_housekeeping_jobs() {
+    if (!_segment_merging) {
+        return {};
+    }
+    return {std::ref(*_segment_merging)};
 }
 
 } // namespace archival
