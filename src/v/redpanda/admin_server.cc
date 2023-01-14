@@ -1766,6 +1766,10 @@ admin_server::put_license_handler(std::unique_ptr<ss::httpd::request> req) {
         if (loaded_license && (*loaded_license == license)) {
             /// Loaded license is idential to license in request, do
             /// nothing and return 200(OK)
+            vlog(
+              logger.info,
+              "Attempted to load identical license, doing nothing: {}",
+              license);
             co_return ss::json::json_void();
         }
         auto& fm = _controller->get_feature_manager();
