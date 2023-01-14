@@ -1235,6 +1235,14 @@ configuration::configuration()
       "Interval for cloud storage housekeeping tasks",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
+  , cloud_storage_idle_timeout_ms(
+      *this,
+      "cloud_storage_idle_timeout_ms",
+      "Timeout used to detect idle state of the cloud storage API. If no API "
+      "requests are made for at least idle timeout milliseconds the cloud "
+      "storage is considered idle.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , cloud_storage_max_segments_pending_deletion_per_partition(
       *this,
       "cloud_storage_max_segments_pending_deletion_per_partition",
