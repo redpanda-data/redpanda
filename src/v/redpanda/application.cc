@@ -9,6 +9,7 @@
 
 #include "redpanda/application.h"
 
+#include "archival/fwd.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/upload_controller.h"
 #include "archival/upload_housekeeping_service.h"
@@ -1018,6 +1019,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
         construct_service(
           _archival_upload_housekeeping, std::ref(cloud_storage_api))
+          .get();
+        _archival_upload_housekeeping
+          .invoke_on_all(&archival::upload_housekeeping_service::start)
           .get();
     }
 
