@@ -22,6 +22,7 @@ v_cc_library(
     segment_state.cc
     recovery_errors.cc
     recovery_request.cc
+    recovery_utils.cc
   DEPS
     Seastar::seastar
     v::bytes
