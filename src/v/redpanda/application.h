@@ -20,6 +20,7 @@
 #include "cluster/node_status_table.h"
 #include "cluster/self_test_backend.h"
 #include "cluster/self_test_frontend.h"
+#include "cluster/topic_recovery_status_frontend.h"
 #include "config/node_config.h"
 #include "coproc/fwd.h"
 #include "features/fwd.h"
@@ -95,6 +96,9 @@ public:
     ss::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;
     ss::sharded<cloud_storage::remote> cloud_storage_api;
+    ss::sharded<cluster::topic_recovery_status_frontend>
+      topic_recovery_status_frontend;
+    ss::sharded<cloud_storage::topic_recovery_service> topic_recovery_service;
 
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
     ss::sharded<cluster::metadata_cache> metadata_cache;

@@ -12,6 +12,7 @@
 
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote.h"
+#include "cluster/topic_recovery_status_frontend.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/ntp_config.h"
@@ -69,9 +70,24 @@ public:
       model::initial_revision_id remote_revsion,
       int32_t remote_partition_count);
 
+    void set_topic_recovery_components(
+      ss::sharded<cluster::topic_recovery_status_frontend>&
+        topic_recovery_status_frontend,
+      ss::sharded<cloud_storage::topic_recovery_service>&
+        topic_recovery_service);
+
 private:
+    ss::future<bool> is_topic_recovery_active() const;
+
     cloud_storage_clients::bucket_name _bucket;
     ss::sharded<remote>& _remote;
+    // Late initialized objects
+    std::optional<std::reference_wrapper<
+      ss::sharded<cluster::topic_recovery_status_frontend>>>
+      _topic_recovery_status_frontend;
+    std::optional<std::reference_wrapper<
+      ss::sharded<cloud_storage::topic_recovery_service>>>
+      _topic_recovery_service;
     ss::gate _gate;
     retry_chain_node _root;
     ss::abort_source _as;
