@@ -103,7 +103,7 @@ private:
           allocation_state& state,
           size_t res,
           const partition_allocation_domain domain)
-          : _state(state)
+          : _state(state.weak_from_this())
           , _domain(domain) {
             _partial.reserve(res);
         }
@@ -125,11 +125,15 @@ private:
         intermediate_allocation&
         operator=(const intermediate_allocation&) noexcept = delete;
 
-        ~intermediate_allocation() { _state.rollback(_partial, _domain); }
+        ~intermediate_allocation() {
+            if (_state) {
+                _state->rollback(_partial, _domain);
+            }
+        }
 
     private:
         std::vector<T> _partial;
-        allocation_state& _state;
+        ss::weak_ptr<allocation_state> _state;
         partition_allocation_domain _domain;
     };
 

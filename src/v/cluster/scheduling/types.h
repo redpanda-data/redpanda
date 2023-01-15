@@ -16,6 +16,7 @@
 #include "model/fundamental.h"
 #include "vassert.h"
 
+#include <seastar/core/weak_ptr.hh>
 #include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/node_hash_set.h>
@@ -155,12 +156,12 @@ struct allocation_units {
 
     allocation_units(
       std::vector<partition_assignment>,
-      allocation_state*,
+      allocation_state&,
       partition_allocation_domain);
     allocation_units(
       std::vector<partition_assignment>,
       std::vector<model::broker_shard>,
-      allocation_state*,
+      allocation_state&,
       partition_allocation_domain);
     allocation_units& operator=(allocation_units&&) = default;
     allocation_units& operator=(const allocation_units&) = delete;
@@ -179,7 +180,7 @@ private:
     // goes out of scope
     absl::node_hash_set<model::broker_shard> _previous;
     // keep the pointer to make this type movable
-    allocation_state* _state;
+    ss::weak_ptr<allocation_state> _state;
     partition_allocation_domain _domain;
     // oncore checker to ensure destruction happens on the same core
     [[no_unique_address]] oncore _oncore;
