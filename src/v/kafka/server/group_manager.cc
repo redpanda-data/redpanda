@@ -454,9 +454,9 @@ ss::future<> group_manager::do_recover_group(
             group->try_upsert_offset(
               tp,
               group::offset_metadata{
-                meta.log_offset,
-                meta.metadata.offset,
-                meta.metadata.metadata,
+                .log_offset = meta.log_offset,
+                .offset = meta.metadata.offset,
+                .metadata = meta.metadata.metadata,
               });
         }
 
