@@ -95,6 +95,8 @@ public:
     allocation_state& state() { return *_state; }
     const allocation_state& state() const { return *_state; }
 
+    ss::future<> apply_snapshot(const controller_snapshot&);
+
 private:
     template<typename T>
     class intermediate_allocation {

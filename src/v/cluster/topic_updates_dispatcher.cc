@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
@@ -545,7 +546,9 @@ void topic_updates_dispatcher::update_allocations(
 
 ss::future<>
 topic_updates_dispatcher::fill_snapshot(controller_snapshot& snap) const {
-    return _topic_table.local().fill_snapshot(snap);
+    co_await _topic_table.local().fill_snapshot(snap);
+    snap.topics.highest_group_id
+      = _partition_allocator.local().state().last_group_id();
 }
 
 ss::future<> topic_updates_dispatcher::apply_snapshot(
@@ -553,6 +556,8 @@ ss::future<> topic_updates_dispatcher::apply_snapshot(
     co_await _topic_table.invoke_on_all([&snap, offset](topic_table& topics) {
         return topics.apply_snapshot(offset, snap);
     });
+
+    co_await _partition_allocator.local().apply_snapshot(snap);
 }
 
 } // namespace cluster

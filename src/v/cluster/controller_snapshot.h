@@ -171,6 +171,7 @@ struct topics_t
     };
 
     absl::node_hash_map<model::topic_namespace, topic_t> topics;
+    raft::group_id highest_group_id;
 
     friend bool operator==(const topics_t&, const topics_t&) = default;
 

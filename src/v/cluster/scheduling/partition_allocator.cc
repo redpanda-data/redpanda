@@ -9,6 +9,8 @@
 
 #include "cluster/scheduling/partition_allocator.h"
 
+#include "cluster/cluster_utils.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/scheduling/constraints.h"
@@ -378,6 +380,62 @@ void partition_allocator::remove_allocations(
     for (const auto& bs : to_remove) {
         _state->deallocate(bs, domain);
     }
+}
+
+ss::future<>
+partition_allocator::apply_snapshot(const controller_snapshot& snap) {
+    auto new_state = std::make_unique<allocation_state>(
+      _partitions_per_shard, _partitions_reserve_shard0);
+
+    for (const auto& [id, node] : snap.members.nodes) {
+        allocation_node::state state;
+        switch (node.state.get_membership_state()) {
+        case model::membership_state::active:
+            state = allocation_node::state::active;
+            break;
+        case model::membership_state::draining:
+            state = allocation_node::state::decommissioned;
+            break;
+        case model::membership_state::removed:
+            state = allocation_node::state::deleted;
+            break;
+        default:
+            vassert(
+              false, "unknown membership state: {}", static_cast<int>(state));
+        }
+
+        new_state->register_node(node.broker, state);
+    }
+
+    const auto& topics_snap = snap.topics.topics;
+    for (const auto& [ns_tp, topic] : topics_snap) {
+        auto domain = get_allocation_domain(ns_tp);
+        for (const auto& [p_id, partition] : topic.partitions) {
+            new_state->apply_update(
+              partition.replicas, partition.group, domain);
+
+            if (auto it = topic.updates.find(p_id); it != topic.updates.end()) {
+                const auto& update = it->second;
+                // Both old and new replicas contribute to allocator weights
+                // regardless of the update state.
+                auto additional_replicas = subtract_replica_sets(
+                  update.target_assignment, partition.replicas);
+                new_state->apply_update(
+                  std::move(additional_replicas), partition.group, domain);
+            }
+
+            co_await ss::coroutine::maybe_yield();
+        }
+    }
+
+    new_state->set_last_group_id(snap.topics.highest_group_id);
+
+    // we substitute the state object for the new one so that in the unlikely
+    // case there are in-flight allocation_units objects and they are destroyed,
+    // they don't accidentally update the new state.
+    _state = std::move(new_state);
+
+    co_return;
 }
 
 } // namespace cluster
