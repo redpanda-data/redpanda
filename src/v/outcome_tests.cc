@@ -57,7 +57,7 @@ public:
     default_error_condition(int c) const noexcept override final {
         switch (static_cast<conversion_errc>(c)) {
         case conversion_errc::empty_string:
-            return make_error_condition(std::errc::invalid_argument);
+            [[fallthrough]];
         case conversion_errc::illegal_char:
             return make_error_condition(std::errc::invalid_argument);
         case conversion_errc::too_long:
