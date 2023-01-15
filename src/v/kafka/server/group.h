@@ -743,7 +743,8 @@ private:
         metadata.generation = generation();
         metadata.protocol = protocol();
         metadata.leader = leader();
-        metadata.state_timestamp = _state_timestamp;
+        metadata.state_timestamp = _state_timestamp.value_or(
+          model::timestamp(-1));
 
         for (const auto& [id, member] : _members) {
             auto state = member->state().copy();
@@ -841,7 +842,7 @@ private:
 
     kafka::group_id _id;
     group_state _state;
-    model::timestamp _state_timestamp;
+    std::optional<model::timestamp> _state_timestamp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;

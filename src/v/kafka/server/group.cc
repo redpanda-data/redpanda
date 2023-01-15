@@ -88,7 +88,10 @@ group::group(
   enable_group_metrics group_metrics)
   : _id(std::move(id))
   , _state(md.members.empty() ? group_state::empty : group_state::stable)
-  , _state_timestamp(md.state_timestamp)
+  , _state_timestamp(
+      md.state_timestamp == model::timestamp(-1)
+        ? std::optional<model::timestamp>(std::nullopt)
+        : md.state_timestamp)
   , _generation(md.generation)
   , _num_members_joining(0)
   , _protocol_type(md.protocol_type)
