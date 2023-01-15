@@ -506,6 +506,7 @@ public:
       const model::topic_partition& tp, const offset_metadata& md);
 
     void reset_tx_state(model::term_id);
+    model::term_id term() const { return _term; }
 
     ss::future<cluster::commit_group_tx_reply>
     commit_tx(cluster::commit_group_tx_request r);
