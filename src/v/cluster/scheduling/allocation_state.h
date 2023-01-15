@@ -15,11 +15,13 @@
 #include "cluster/scheduling/allocation_node.h"
 #include "model/metadata.h"
 
+#include <seastar/core/weak_ptr.hh>
+
 namespace cluster {
 /**
  * Partition allocator state
  */
-class allocation_state {
+class allocation_state : public ss::weakly_referencable<allocation_state> {
 public:
     using node_t = allocation_node;
     using node_ptr = std::unique_ptr<node_t>;

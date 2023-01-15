@@ -291,7 +291,7 @@ partition_allocator::allocate(allocation_request request) {
     }
 
     co_return ss::make_foreign(std::make_unique<allocation_units>(
-      std::move(assignments).finish(), _state.get(), request.domain));
+      std::move(assignments).finish(), *_state, request.domain));
 }
 
 result<std::vector<model::broker_shard>>
@@ -343,10 +343,7 @@ result<allocation_units> partition_allocator::reallocate_partition(
     };
 
     return allocation_units(
-      {std::move(assignment)},
-      current_assignment.replicas,
-      _state.get(),
-      domain);
+      {std::move(assignment)}, current_assignment.replicas, *_state, domain);
 }
 
 void partition_allocator::deallocate(
