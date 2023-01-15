@@ -61,19 +61,19 @@ void allocation_constraints::add(allocation_constraints other) {
 
 allocation_units::allocation_units(
   std::vector<partition_assignment> assignments,
-  allocation_state* state,
+  allocation_state& state,
   const partition_allocation_domain domain)
   : _assignments(std::move(assignments))
-  , _state(state)
+  , _state(state.weak_from_this())
   , _domain(domain) {}
 
 allocation_units::allocation_units(
   std::vector<partition_assignment> assignments,
   std::vector<model::broker_shard> previous_allocations,
-  allocation_state* state,
+  allocation_state& state,
   const partition_allocation_domain domain)
   : _assignments(std::move(assignments))
-  , _state(state)
+  , _state(state.weak_from_this())
   , _domain(domain) {
     _previous.reserve(previous_allocations.size());
     for (auto& prev : previous_allocations) {
@@ -85,7 +85,7 @@ allocation_units::~allocation_units() {
     oncore_debug_verify(_oncore);
     for (auto& pas : _assignments) {
         for (auto& replica : pas.replicas) {
-            if (!_previous.contains(replica)) {
+            if (!_previous.contains(replica) && _state) {
                 _state->deallocate(replica, _domain);
             }
         }
