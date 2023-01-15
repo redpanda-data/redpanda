@@ -312,13 +312,10 @@ static void add_topic_config_if_requested(
 
 template<typename T>
 static ss::sstring maybe_print_tristate(const tristate<T>& tri) {
-    if (tri.is_disabled()) {
-        return "-1";
-    } else if (tri.has_value()) {
-        return ssx::sformat("{}", tri.value());
-    } else {
+    if (tri.is_disabled() || !tri.has_value()) {
         return "-1";
     }
+    return ssx::sformat("{}", tri.value());
 }
 
 template<typename T>
