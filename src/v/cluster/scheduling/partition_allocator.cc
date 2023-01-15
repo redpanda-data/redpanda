@@ -349,39 +349,6 @@ result<allocation_units> partition_allocator::reallocate_partition(
       domain);
 }
 
-result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
-  const partition_assignment& current_assignment,
-  const partition_allocation_domain domain) {
-    uint16_t replication_factor = current_assignment.replicas.size();
-    auto current_replicas = current_assignment.replicas;
-    std::erase_if(current_replicas, [this](const model::broker_shard& bs) {
-        auto it = _state->allocation_nodes().find(bs.node_id);
-        return it == _state->allocation_nodes().end()
-               || it->second->is_decommissioned();
-    });
-
-    auto req = default_constraints(domain);
-    req.add(distinct_from(current_replicas));
-
-    auto replicas = do_reallocate_partition(
-      partition_constraints(current_assignment.id, replication_factor),
-      domain,
-      current_replicas);
-
-    if (!replicas) {
-        return replicas.error();
-    }
-
-    partition_assignment assignment{
-      current_assignment.group,
-      current_assignment.id,
-      std::move(replicas.value()),
-    };
-
-    return allocation_units(
-      {std::move(assignment)}, current_replicas, _state.get(), domain);
-}
-
 void partition_allocator::deallocate(
   const std::vector<model::broker_shard>& replicas,
   const partition_allocation_domain domain) {
