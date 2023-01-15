@@ -154,4 +154,6 @@ enum class describe_configs_type : int8_t {
 
 std::ostream& operator<<(std::ostream&, describe_configs_type t);
 
+inline const kafka::protocol_type consumer_group_protocol_type("consumer");
+
 } // namespace kafka

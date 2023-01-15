@@ -160,7 +160,7 @@ ss::future<> consumer::join() {
           .session_timeout_ms = cfg.consumer_session_timeout(),
           .rebalance_timeout_ms = cfg.consumer_rebalance_timeout(),
           .member_id = me->_member_id,
-          .protocol_type = protocol_type{"consumer"},
+          .protocol_type = consumer_group_protocol_type,
           .protocols = make_join_group_request_protocols(me->_topics)};
         return req;
     };

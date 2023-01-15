@@ -3302,7 +3302,7 @@ group::decode_consumer_subscriptions(iobuf data) {
 }
 
 void group::update_subscriptions() {
-    if (_protocol_type != "consumer") {
+    if (_protocol_type != consumer_group_protocol_type) {
         _subscriptions.reset();
         return;
     }
