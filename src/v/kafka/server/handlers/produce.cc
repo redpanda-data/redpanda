@@ -143,7 +143,7 @@ static error_code map_produce_error_code(std::error_code ec) {
         // map shutting down error code to timeout since replication result may
         // be not determined, it may succeed or be aborted earlier and abandoned
         case raft::errc::shutting_down:
-            return error_code::request_timed_out;
+            [[fallthrough]];
         default:
             return error_code::request_timed_out;
         }
