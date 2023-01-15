@@ -86,11 +86,14 @@ topics_t::topic_t::serde_async_read(iobuf_parser& in, serde::header const h) {
 
 ss::future<> topics_t::serde_async_write(iobuf& out) {
     co_await write_map_async(out, std::move(topics));
+    serde::write(out, highest_group_id);
 }
 
 ss::future<>
 topics_t::serde_async_read(iobuf_parser& in, serde::header const h) {
     topics = co_await read_map_async_nested<decltype(topics)>(
+      in, h._bytes_left_limit);
+    highest_group_id = serde::read_nested<decltype(highest_group_id)>(
       in, h._bytes_left_limit);
 
     if (in.bytes_left() > h._bytes_left_limit) {

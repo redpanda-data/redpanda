@@ -36,6 +36,7 @@ public:
 
     // Allocation nodes
     void register_node(node_ptr);
+    void register_node(const model::broker&, allocation_node::state);
     void update_allocation_nodes(const std::vector<model::broker>&);
     void upsert_allocation_node(const model::broker&);
     void remove_allocation_node(model::node_id);
@@ -65,6 +66,7 @@ public:
     // Raft group id
     raft::group_id next_group_id();
     raft::group_id last_group_id() const { return _highest_group; }
+    void set_last_group_id(raft::group_id id) { _highest_group = id; }
 
     // Get rack information
     //

@@ -95,6 +95,23 @@ void allocation_state::register_node(allocation_state::node_ptr n) {
     _nodes.emplace(id, std::move(n));
 }
 
+void allocation_state::register_node(
+  const model::broker& broker, allocation_node::state state) {
+    auto node = std::make_unique<allocation_node>(
+      broker.id(),
+      broker.properties().cores,
+      broker.rack(),
+      _partitions_per_shard,
+      _partitions_reserve_shard0);
+
+    if (state == allocation_node::state::decommissioned) {
+        node->decommission();
+    }
+
+    auto inserted = _nodes.emplace(broker.id(), std::move(node)).second;
+    vassert(inserted, "node {}: double registration", broker.id());
+}
+
 void allocation_state::update_allocation_nodes(
   const std::vector<model::broker>& brokers) {
     verify_shard();
