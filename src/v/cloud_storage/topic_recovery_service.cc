@@ -33,8 +33,6 @@ const std::regex manifest_path_expr{
 constexpr size_t list_api_timeout_multiplier{10};
 
 constexpr ss::lowres_clock::duration downloads_check_interval{60s};
-constexpr std::chrono::milliseconds default_retention_ms_on_topic_create{
-  3600000};
 
 ss::lowres_clock::duration load_downloads_check_interval() {
     auto tick = std::getenv("__REDPANDA_TOPIC_REC_DL_CHECK_MILLIS");
@@ -319,11 +317,12 @@ static cluster::topic_configuration make_topic_config(
       = manifest_props.cleanup_policy_bitflags;
     topic_properties.compaction_strategy = manifest_props.compaction_strategy;
 
-    topic_properties.retention_duration = tristate<std::chrono::milliseconds>{
-      default_retention_ms_on_topic_create};
-    topic_properties.retention_local_target_ms
-      = tristate<std::chrono::milliseconds>{
-        default_retention_ms_on_topic_create};
+    topic_properties.retention_bytes = manifest_props.retention_bytes;
+    topic_properties.retention_duration = manifest_props.retention_duration;
+
+    topic_properties.retention_local_target_bytes = tristate<size_t>{
+      config::shard_local_cfg()
+        .cloud_storage_recovery_temporary_retention_bytes_default};
 
     topic_properties.segment_size = manifest_props.segment_size;
     topic_properties.timestamp_type = manifest_props.timestamp_type;
@@ -333,15 +332,11 @@ static cluster::topic_configuration make_topic_config(
     if (request.retention_bytes().has_value()) {
         topic_properties.retention_local_target_bytes = tristate<size_t>{
           request.retention_bytes()};
-        topic_properties.retention_bytes = tristate<size_t>{
-          request.retention_bytes()};
-    }
-
-    if (request.retention_ms().has_value()) {
+        topic_properties.retention_local_target_ms = {};
+    } else if (request.retention_ms().has_value()) {
         topic_properties.retention_local_target_ms
           = tristate<std::chrono::milliseconds>{request.retention_ms()};
-        topic_properties.retention_duration
-          = tristate<std::chrono::milliseconds>{request.retention_ms()};
+        topic_properties.retention_local_target_bytes = {};
     }
 
     return topic_to_create_cfg;
@@ -478,18 +473,19 @@ ss::future<> topic_recovery_service::reset_topic_configurations() {
       [](auto&& tm) {
           auto update = cluster::topic_properties_update{
             tm.get_topic_config()->tp_ns};
-          update.properties.retention_bytes.op
-            = cluster::incremental_update_operation::set;
-          update.properties.retention_bytes.value
-            = tm.get_topic_config()->properties.retention_bytes;
-          update.properties.retention_duration.op
-            = cluster::incremental_update_operation::set;
-          update.properties.retention_duration.value
-            = tm.get_topic_config()->properties.retention_duration;
+
           update.properties.retention_local_target_ms.op
             = cluster::incremental_update_operation::set;
           update.properties.retention_local_target_ms.value
-            = tm.get_topic_config()->properties.retention_duration;
+            = tristate<std::chrono::milliseconds>{
+              config::shard_local_cfg().retention_local_target_ms_default()};
+
+          update.properties.retention_local_target_bytes.op
+            = cluster::incremental_update_operation::set;
+          update.properties.retention_local_target_bytes.value
+            = tristate<size_t>{
+              config::shard_local_cfg().retention_local_target_bytes_default()};
+
           vlog(
             cst_log.debug,
             "resetting topic properties for {} using update: {}",

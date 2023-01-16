@@ -1209,6 +1209,12 @@ configuration::configuration()
       "Enable re-uploading data for compacted topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_recovery_temporary_retention_bytes_default(
+      *this,
+      "cloud_storage_recovery_temporary_retention_bytes_default",
+      "Retention in bytes for topics created during automated recovery",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_GiB)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
