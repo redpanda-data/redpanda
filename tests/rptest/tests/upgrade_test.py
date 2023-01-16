@@ -459,13 +459,11 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
             produce(p, n_records)
 
         # Wait for archiver to upload to S3
-        for p in range(0, n_partitions):
-            wait_for_local_storage_truncate(self.redpanda,
-                                            topic,
-                                            p,
-                                            local_retention_bytes +
-                                            segment_bytes,
-                                            timeout_sec=30)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        topic,
+                                        target_bytes=local_retention_bytes +
+                                        segment_bytes,
+                                        timeout_sec=30)
 
         # Restart 2/3 nodes, leave last node on old version
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -502,12 +500,12 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         else:
             # In the general case, S3 PUTs are permitted during upgrade, so we should
             # see local storage getting truncated
-            wait_for_local_storage_truncate(self.redpanda,
-                                            topic,
-                                            newdata_p,
-                                            local_retention_bytes +
-                                            segment_bytes,
-                                            timeout_sec=30)
+            wait_for_local_storage_truncate(
+                self.redpanda,
+                topic,
+                partition_idx=newdata_p,
+                target_bytes=local_retention_bytes + segment_bytes,
+                timeout_sec=30)
 
         # Move leadership to the old version node and check the partition is readable
         # from there.
@@ -535,8 +533,9 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
 
         wait_for_local_storage_truncate(self.redpanda,
                                         topic,
-                                        newdata_p,
-                                        local_retention_bytes + segment_bytes,
+                                        partition_idx=newdata_p,
+                                        target_bytes=local_retention_bytes +
+                                        segment_bytes,
                                         timeout_sec=30)
 
 

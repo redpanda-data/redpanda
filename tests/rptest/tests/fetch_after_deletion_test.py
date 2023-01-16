@@ -18,7 +18,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.util import (
     produce_until_segments,
-    wait_for_segments_removal,
+    wait_for_local_storage_truncate,
 )
 
 
@@ -83,15 +83,15 @@ class FetchAfterDeleteTest(RedpandaTest):
         offset = last['offset']
 
         # change retention time
+        retention_bytes = 2 * self.segment_size
         kafka_tools.alter_topic_config(
             topic.name, {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 2 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_BYTES: retention_bytes,
             })
 
-        wait_for_segments_removal(self.redpanda,
-                                  topic.name,
-                                  partition_idx=0,
-                                  count=5)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        topic.name,
+                                        target_bytes=retention_bytes)
 
         partitions = list(rpk.describe_topic(topic.name))
         p = partitions[0]

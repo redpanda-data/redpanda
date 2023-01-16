@@ -17,7 +17,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.util import (
     segments_count,
-    wait_for_segments_removal,
+    wait_for_local_storage_truncate,
 )
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 
@@ -81,17 +81,14 @@ class ShadowIndexingTxTest(RedpandaTest):
         traffic_node = producer.nodes[0]
 
         kafka_tools = KafkaCliTools(self.redpanda)
+        local_retention = 3 * self.segment_size
         kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                3 * self.segment_size,
-            },
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
 
         consumer = KgoVerifierSeqConsumer(self.test_context,
                                           self.redpanda,

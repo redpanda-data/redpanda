@@ -21,7 +21,7 @@ from rptest.services.redpanda import CloudStorageType, SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     produce_until_segments,
-    wait_for_segments_removal,
+    wait_for_local_storage_truncate,
 )
 from random import choice
 
@@ -38,6 +38,7 @@ CONNECTION_ERROR_LOGS = [
 class SIAdminApiTest(RedpandaTest):
 
     log_segment_size = 1048576  # 1MB
+    local_retention = log_segment_size * 2  # Retain 2 segments
 
     topics = (TopicSpec(), )
 
@@ -94,7 +95,8 @@ class SIAdminApiTest(RedpandaTest):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 1024,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                self.local_retention,
             },
         )
 
@@ -104,11 +106,9 @@ class SIAdminApiTest(RedpandaTest):
                                count=10,
                                acks=-1)
 
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=5)
-
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=self.local_retention)
         rpk = RpkTool(self.redpanda)
 
         for partition in rpk.describe_topic(self.topic):

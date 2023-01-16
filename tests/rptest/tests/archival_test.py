@@ -17,7 +17,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.util import (
     segments_count,
     produce_until_segments,
-    wait_for_segments_removal,
+    wait_for_local_storage_truncate,
     firewall_blocked,
 )
 
@@ -28,7 +28,6 @@ import time
 import os
 import json
 import traceback
-import uuid
 import sys
 import re
 
@@ -398,11 +397,12 @@ class ArchivalTest(RedpandaTest):
         Test that only archived segments can be evicted and that eviction
         restarts once the segments have been archived.
         """
+        local_retention = 5 * self.log_segment_size
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
                 TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.log_segment_size,
+                local_retention,
             },
         )
 
@@ -425,10 +425,9 @@ class ArchivalTest(RedpandaTest):
 
         # Check that eviction restarts after we restored the connection to cloud
         # storage.
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                        topic=self.topic,
+                                        target_bytes=local_retention)
 
     def _check_bucket_is_emtpy(self):
         allobj = self._list_objects()

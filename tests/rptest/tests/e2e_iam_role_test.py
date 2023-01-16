@@ -4,7 +4,7 @@ from rptest.clients.types import TopicSpec
 from rptest.services.mock_iam_roles_server import MockIamRolesServer
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST
 from rptest.tests.e2e_shadow_indexing_test import EndToEndShadowIndexingBase
-from rptest.util import produce_until_segments, wait_for_segments_removal
+from rptest.util import produce_until_segments, wait_for_local_storage_truncate
 
 
 class AWSRoleFetchTests(EndToEndShadowIndexingBase):
@@ -43,17 +43,17 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        local_retention = 5 * self.segment_size
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
                 TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
+                local_retention,
             },
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                        topic=self.topic,
+                                        target_bytes=local_retention)
         self.start_consumer()
         self.run_validation()
 
@@ -117,17 +117,14 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        local_retention = 5 * self.segment_size
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
-            },
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
         self.start_consumer()
         self.run_validation()
 
@@ -188,17 +185,14 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
             count=10,
         )
 
+        local_retention = 5 * self.segment_size
         self.kafka_tools.alter_topic_config(
             self.topic,
-            {
-                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
-                5 * self.segment_size,
-            },
+            {TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: local_retention},
         )
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.topic,
-                                  partition_idx=0,
-                                  count=6)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        self.topic,
+                                        target_bytes=local_retention)
         self.start_consumer()
         self.run_validation()
 

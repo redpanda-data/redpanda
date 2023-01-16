@@ -213,14 +213,19 @@ def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
 
 def wait_for_local_storage_truncate(redpanda,
                                     topic: str,
-                                    partition_idx: Optional[int],
+                                    *,
                                     target_bytes: int,
+                                    partition_idx: Optional[int] = None,
                                     timeout_sec: Optional[int] = None,
                                     nodes: Optional[list] = None):
     """
     For use in tiered storage tests: wait until the locally etained data
     size for this partition is below a threshold on all nodes.
     """
+
+    if timeout_sec is None:
+        timeout_sec = 120
+
     def is_truncated():
         storage = redpanda.storage(sizes=True)
         sizes = []
@@ -254,40 +259,6 @@ def wait_for_local_storage_truncate(redpanda,
         return all(s <= threshold for s in sizes)
 
     wait_until(is_truncated, timeout_sec=timeout_sec, backoff_sec=1)
-
-
-def wait_for_segments_removal(redpanda,
-                              topic,
-                              partition_idx,
-                              count,
-                              timeout_sec: Optional[int] = None):
-    """
-    Wait until only given number of segments will left in a partitions
-    """
-    def done():
-        topic_partitions = segments_count(redpanda, topic, partition_idx)
-        partitions = []
-        for p in topic_partitions:
-            partitions.append(p <= count)
-        return all(partitions)
-
-    if timeout_sec is None:
-        timeout_sec = 120
-
-    try:
-        wait_until(done,
-                   timeout_sec=timeout_sec,
-                   backoff_sec=5,
-                   err_msg="Segments were not removed")
-    except Exception as e:
-        # On errors, dump listing of the storage location
-        redpanda.logger.error(f"Error waiting for segments removal: {e}")
-        for node in redpanda.nodes:
-            redpanda.logger.error(f"Storage listing on {node.name}:")
-            for line in node.account.ssh_capture(f"find {redpanda.DATA_DIR}"):
-                redpanda.logger.error(line.strip())
-
-        raise
 
 
 @contextmanager
