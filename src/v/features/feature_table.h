@@ -49,7 +49,8 @@ enum class feature : std::uint64_t {
     tm_stm_cache = 1ULL << 16U,
 
     // Dummy features for testing only
-    test_alpha = 1ULL << 63U,
+    test_alpha = 1ULL << 62U,
+    test_bravo = 1ULL << 63U,
 };
 
 /**
@@ -201,12 +202,23 @@ constexpr static std::array feature_schema{
     feature::tm_stm_cache,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
+
+  // For testing, a feature that does not auto-activate
   feature_spec{
     cluster::cluster_version{2001},
     "__test_alpha",
     feature::test_alpha,
     feature_spec::available_policy::explicit_only,
-    feature_spec::prepare_policy::always}};
+    feature_spec::prepare_policy::always},
+
+  // For testing, a feature that auto-activates
+  feature_spec{
+    cluster::cluster_version{2001},
+    "__test_bravo",
+    feature::test_bravo,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+};
 
 std::string_view to_string_view(feature);
 std::string_view to_string_view(feature_state::state);
@@ -298,6 +310,7 @@ public:
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(cluster::cluster_version);
+    void bootstrap_active_version(cluster::cluster_version);
     void apply_action(const cluster::feature_update_action& fua);
 
     // The controller log offset of last batch applied to this state machine
