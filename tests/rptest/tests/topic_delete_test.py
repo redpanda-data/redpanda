@@ -269,7 +269,6 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8071
     @cluster(
         num_nodes=3,
         log_allow_list=[
