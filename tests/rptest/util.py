@@ -9,11 +9,9 @@
 
 import os
 import pprint
-import time
 from contextlib import contextmanager
 from typing import Optional
 
-from ducktape.errors import TimeoutError
 from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
@@ -213,9 +211,10 @@ def wait_for_local_storage_truncate(redpanda,
                                     topic: str,
                                     partition_idx: int,
                                     target_bytes: int,
-                                    timeout_sec: Optional[int] = None):
+                                    timeout_sec: Optional[int] = None,
+                                    nodes: Optional[list] = None):
     """
-    For use in tiered storage tests: wait until the locally retained data
+    For use in tiered storage tests: wait until the locally etained data
     size for this partition is below a threshold on all nodes.
     """
     def is_truncated():
@@ -224,6 +223,9 @@ def wait_for_local_storage_truncate(redpanda,
         for node_partition in storage.partitions("kafka", topic):
             if node_partition.num != partition_idx:
                 continue
+            if nodes is not None and node_partition.node not in nodes:
+                continue
+
             total_size = sum(s.size if s.size else 0
                              for s in node_partition.segments.values())
             redpanda.logger.debug(
@@ -240,6 +242,9 @@ def wait_for_local_storage_truncate(redpanda,
         # nearest page).  Since our filesystem view may over-estimate the size of
         # the log by a page, adjust the target size by that much.
         threshold = target_bytes + 4096
+
+        # We expect to have measured size on at least one node, or this isn't meaningful
+        assert len(sizes) > 0
 
         return all(s <= threshold for s in sizes)
 
