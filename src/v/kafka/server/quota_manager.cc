@@ -116,8 +116,7 @@ quota_manager::quota_manager()
         // }
         // maybe_arm_balancer_timer();
     });
-next steps: bisect the crash, wait for the balancer thread to join in stop
-    //_probe.setup_metrics();
+    _probe.setup_metrics();
 }
 
 quota_manager::~quota_manager() {
@@ -129,14 +128,17 @@ ss::future<> quota_manager::stop() {
     _as.request_abort_ex(abort_on_stop{});
     _gc_timer.cancel();
     _balancer_timer.cancel();
-    return ss::make_ready_future<>();
+    if (ss::this_shard_id() == quota_manager_shard) {
+      return _balancer_thread.join();
+    } else {
+      return ss::make_ready_future<>();
+    }
 }
 
 ss::future<> quota_manager::start() {
-    static constexpr ss::shard_id balancer_shard = 0;
     _gc_timer.arm_periodic(_gc_freq);
-    if (ss::this_shard_id() == balancer_shard) {
-        ssx::background = ss::async([this] { quota_balancer(); });
+    if (ss::this_shard_id() == quota_manager_shard) {
+        _balancer_thread = ss::thread([this] { quota_balancer(); });
     }
     // maybe_arm_balancer_timer();
     return ss::make_ready_future<>();

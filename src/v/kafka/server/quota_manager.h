@@ -22,6 +22,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/core/thread.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -227,6 +228,7 @@ private:
     ss::abort_source _as;
     //ss::sharded<quota_manager>& _quota_manager;
     throughput_quotas_probe _probe;
+    ss::thread _balancer_thread;
 };
 
 } // namespace kafka
