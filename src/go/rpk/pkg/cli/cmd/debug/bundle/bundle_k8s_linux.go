@@ -22,7 +22,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -62,9 +63,10 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 		saveNTPDrift(ps),
 		saveDiskUsage(ctx, ps, bp.cfg),
 		saveControllerLogDir(ps, bp.cfg, bp.controllerLogLimitBytes),
+		saveK8SResources(ctx, ps, bp.namespace),
 	}
 
-	adminAddresses, err := adminAddressesFromK8S(ctx)
+	adminAddresses, err := adminAddressesFromK8S(ctx, bp.namespace)
 	if err != nil {
 		errs = multierror.Append(errs, fmt.Errorf("skipping admin API calls, unable to get admin API addresses: %v", err))
 	} else {
@@ -78,7 +80,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	}
 
 	stepErrs := grp.Wait()
-	if stepErrs != nil {
+	if stepErrs != nil || errs != nil {
 		errs = multierror.Append(errs, stepErrs.ErrorOrNil())
 		err := writeFileToZip(ps, "errors.txt", []byte(errs.Error()))
 		if err != nil {
@@ -91,24 +93,34 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	return nil
 }
 
-// adminAddressesFromK8S returns the admin API host:port list by querying the
-// K8S Api.
-func adminAddressesFromK8S(ctx context.Context) ([]string, error) {
-	// This is intended to run only in a k8s cluster:
+// k8sPodList will create a clientset using the config object which uses the
+// service account kubernetes gives to pods (InClusterConfig) and the list of
+// pods in the given namespace.
+func k8sPodList(ctx context.Context, namespace string) (*kubernetes.Clientset, *v1.PodList, error) {
 	k8sCfg, err := rest.InClusterConfig()
 	if err != nil {
-		return nil, fmt.Errorf("unable to get kubernetes cluster configuration: %v", err)
+		return nil, nil, fmt.Errorf("unable to get kubernetes cluster configuration: %v", err)
 	}
 
 	clientset, err := kubernetes.NewForConfig(k8sCfg)
 	if err != nil {
-		return nil, fmt.Errorf("unable to create kubernetes client: %v", err)
+		return nil, nil, fmt.Errorf("unable to create kubernetes client: %v", err)
 	}
 
-	// Get pods in the 'redpanda' namespace.
-	pods, err := clientset.CoreV1().Pods("redpanda").List(ctx, v1.ListOptions{})
+	pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("unable to get kubernetes pods: %v", err)
+		return nil, nil, fmt.Errorf("unable to get pods in the %q namespace: %v", namespace, err)
+	}
+	return clientset, pods, nil
+}
+
+// adminAddressesFromK8S returns the admin API host:port list by querying the
+// K8S Api.
+func adminAddressesFromK8S(ctx context.Context, namespace string) ([]string, error) {
+	// This is intended to run only in a k8s cluster:
+	_, pods, err := k8sPodList(ctx, namespace)
+	if err != nil {
+		return nil, err
 	}
 
 	// Get the admin addresses from ContainerPort.
@@ -120,6 +132,10 @@ func adminAddressesFromK8S(ctx context.Context) ([]string, error) {
 				adminAddresses = append(adminAddresses, a)
 			}
 		}
+	}
+
+	if len(adminAddresses) == 0 {
+		return nil, fmt.Errorf("could not find any exposed 'admin' container port for the pods in the %q namespace", namespace)
 	}
 
 	return adminAddresses, nil
@@ -218,6 +234,50 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, c
 			rerrs = multierror.Append(rerrs, errs)
 		}
 		return rerrs.ErrorOrNil()
+	}
+}
+
+// saveK8SResources will issue a GET request to the K8S API to a set of fixed
+// resources that we want to include in the bundle.
+func saveK8SResources(ctx context.Context, ps *stepParams, namespace string) step {
+	return func() error {
+		clientset, pods, err := k8sPodList(ctx, namespace)
+		if err != nil {
+			return err
+		}
+		// This is a safeguard, so we don't end up saving empty request for
+		// namespace who don't have any pods.
+		if len(pods.Items) == 0 {
+			return fmt.Errorf("skipping resource collection, no pods found in the %q namespace", namespace)
+		}
+
+		// We use the restInterface because it's the most straightforward
+		// approach to get namespaced resources already parsed as json.
+		restInterface := clientset.CoreV1().RESTClient()
+
+		var grp multierror.Group
+		for _, r := range []string{
+			"configmaps",
+			"endpoints",
+			"events",
+			"limitranges",
+			"persistentvolumeclaims",
+			"pods",
+			"replicationcontrollers",
+			"resourcequotas",
+			"serviceaccounts",
+			"services",
+		} {
+			r := r
+			cb := func(ctx context.Context) ([]byte, error) {
+				request := restInterface.Get().Namespace(namespace)
+				return request.Name(r).Do(ctx).Raw()
+			}
+			grp.Go(func() error { return requestAndSave(ctx, ps, fmt.Sprintf("k8s/%v.json", r), cb) })
+		}
+
+		errs := grp.Wait()
+		return errs.ErrorOrNil()
 	}
 }
 
