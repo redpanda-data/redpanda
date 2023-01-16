@@ -501,40 +501,34 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
     using op_t = topic_table::delta::op_type;
     auto it = deltas.rbegin();
 
-    while (it != deltas.rend()) {
-        // if current update was finished and we have no broker/core local
-        // replicas, just stop
-        if (
-          it->delta.type == op_t::update_finished
-          && !has_local_replicas(self, it->delta.new_assignment.replicas)) {
-            break;
+    auto related_to_cur_shard = [self](const topic_table::delta& delta) {
+        switch (delta.type) {
+        case op_t::add:
+        case op_t::add_non_replicable:
+        case op_t::update_finished:
+        case op_t::update_properties:
+            return has_local_replicas(self, delta.new_assignment.replicas);
+        case op_t::update:
+        case op_t::cancel_update:
+        case op_t::force_abort_update:
+            vassert(
+              delta.previous_replica_set,
+              "previous replica set must be present for delta {}",
+              delta);
+            return has_local_replicas(self, delta.new_assignment.replicas)
+                   || has_local_replicas(self, *delta.previous_replica_set);
+        case op_t::del:
+        case op_t::del_non_replicable:
+            return false;
         }
-        // if next operation doesn't contain local replicas we terminate lookup,
-        // i.e. we have to execute current operation as it has to create
-        // partition with correct offset
-        if (auto next = std::next(it); next != deltas.rend()) {
-            if (
-              (next->delta.type == op_t::update_finished
-               || next->delta.type == op_t::add)
-              && !has_local_replicas(
-                self, next->delta.new_assignment.replicas)) {
-                break;
-            }
-        }
-        // if partition have to be created deleted locally that is the last
-        // operation
-        if (it->delta.type == op_t::add || it->delta.type == op_t::del) {
-            break;
-        }
+    };
+
+    while (it != deltas.rend() && related_to_cur_shard(it->delta)) {
         ++it;
     }
 
-    // if there are no deltas to reconcile, return empty vector
-    if (it == deltas.rend()) {
-        return result_delta;
-    }
-
-    auto start = std::next(it).base();
+    // *it is not included
+    auto start = it.base();
     result_delta.reserve(std::distance(start, deltas.end()));
     std::move(start, deltas.end(), std::back_inserter(result_delta));
     return result_delta;
@@ -543,26 +537,21 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
 ss::future<>
 controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     // find last delta that has to be applied
-    auto bootstrap_deltas = calculate_bootstrap_deltas(_self, deltas);
-    vlog(
-      clusterlog.trace,
-      "[{}] bootstrapping with deltas {}",
-      ntp,
-      bootstrap_deltas);
+    deltas = calculate_bootstrap_deltas(_self, deltas);
+    vlog(clusterlog.trace, "[{}] bootstrapping with deltas {}", ntp, deltas);
 
     // if empty do nothing
-    if (bootstrap_deltas.empty()) {
+    if (deltas.empty()) {
         return ss::now();
     }
 
-    auto& first_delta = bootstrap_deltas.front().delta;
+    auto& first_delta = deltas.front().delta;
     vlog(
       clusterlog.info,
       "[{}] Bootstrapping deltas: first - {}, last - {}",
       ntp,
       first_delta,
-      bootstrap_deltas.back());
-
+      deltas.back());
     // if first operation is a cross core update, find initial revision on
     // current node and store it in bootstrap map
     if (is_cross_core_update(_self, first_delta)) {
@@ -579,7 +568,6 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
     }
 
     // apply all deltas following the one found previously
-    deltas = std::move(bootstrap_deltas);
     return reconcile_ntp(deltas);
 }
 
