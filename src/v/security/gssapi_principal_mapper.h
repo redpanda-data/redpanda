@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "config/property.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -104,6 +105,26 @@ private:
     repeat _repeat{false};
     case_change_operation _case_change{case_change_operation::noop};
 };
+
+class gssapi_principal_mapper {
+public:
+    gssapi_principal_mapper(
+      std::string_view default_realm,
+      config::binding<std::optional<std::vector<ss::sstring>>>
+        principal_to_local_rules_cb);
+    std::optional<ss::sstring> apply(gssapi_name name) const;
+
+private:
+    friend struct fmt::formatter<gssapi_principal_mapper>;
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const gssapi_principal_mapper& p);
+
+    ss::sstring _default_realm;
+    config::binding<std::optional<std::vector<ss::sstring>>>
+      _principal_to_local_rules_binding;
+    std::vector<gssapi_rule> _rules;
+};
 } // namespace security
 
 template<>
@@ -120,6 +141,17 @@ struct fmt::formatter<security::gssapi_name> {
 template<>
 struct fmt::formatter<security::gssapi_rule> {
     using type = security::gssapi_rule;
+
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    typename FormatContext::iterator
+    format(const type& r, FormatContext& ctx) const;
+};
+
+template<>
+struct fmt::formatter<security::gssapi_principal_mapper> {
+    using type = security::gssapi_principal_mapper;
 
     constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
 

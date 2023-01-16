@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "config/property.h"
 #include "security/gssapi_principal_mapper.h"
 
 #include <boost/test/data/test_case.hpp>
@@ -23,15 +24,18 @@ struct gssapi_test_record {
       std::string_view gssapi_principal_name,
       std::string_view expected_primary,
       std::string_view expected_host_name,
-      std::string_view expected_realm)
+      std::string_view expected_realm,
+      std::string_view expected_name)
       : gssapi_principal_name(gssapi_principal_name)
       , expected_primary(expected_primary)
       , expected_host_name(expected_host_name)
-      , expected_realm(expected_realm) {}
+      , expected_realm(expected_realm)
+      , expected_name(expected_name) {}
     std::string_view gssapi_principal_name;
     std::string_view expected_primary;
     std::string_view expected_host_name;
     std::string_view expected_realm;
+    std::string_view expected_name;
 
     friend std::ostream&
     operator<<(std::ostream& os, const gssapi_test_record& r) {
@@ -39,7 +43,8 @@ struct gssapi_test_record {
           os, "gssapi_principal_name: '{}', ", r.gssapi_principal_name);
         fmt::print(os, "expected_primary: '{}', ", r.expected_primary);
         fmt::print(os, "expected_host_name: '{}', ", r.expected_host_name);
-        fmt::print(os, "expected_realm: '{}'", r.expected_realm);
+        fmt::print(os, "expected_realm: '{}', ", r.expected_realm);
+        fmt::print(os, "expected_name: '{}'", r.expected_name);
 
         return os;
     }
@@ -50,16 +55,139 @@ static std::array<gssapi_test_record, 3> gssapi_name_test_data{
     "App.service-name/example.com@REALM.com",
     "App.service-name",
     "example.com",
-    "REALM.com"},
-  {"App.service-name@REALM.com", "App.service-name", "", "REALM.com"},
-  {"user/host@REALM.com", "user", "host", "REALM.com"}};
+    "REALM.com",
+    "service-name"},
+  {"App.service-name@REALM.com",
+   "App.service-name",
+   "",
+   "REALM.com",
+   "service-name"},
+  {"user/host@REALM.com", "user", "host", "REALM.com", "user"}};
 
 BOOST_DATA_TEST_CASE(test_gssapi_name, bdata::make(gssapi_name_test_data), c) {
+    static const std::vector<ss::sstring> rules = {
+      "RULE:[1:$1](App\\..*)s/App\\.(.*)/$1/g",
+      "RULE:[2:$1](App\\..*)s/App\\.(.*)/$1/g",
+      "DEFAULT"};
+    static constexpr const char* const DEFAULT_REALM = "REALM.com";
     BOOST_REQUIRE_NO_THROW(
-      auto name = gssapi_name::parse(c.gssapi_principal_name);
-      BOOST_REQUIRE_EQUAL(c.expected_primary, name.primary());
-      BOOST_REQUIRE_EQUAL(c.expected_host_name, name.host_name());
-      BOOST_REQUIRE_EQUAL(c.expected_realm, name.realm());
-      BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name)););
+      auto mapper = gssapi_principal_mapper(
+        DEFAULT_REALM,
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+
+      BOOST_REQUIRE_NO_THROW(
+        auto name = gssapi_name::parse(c.gssapi_principal_name);
+        BOOST_REQUIRE_EQUAL(c.expected_primary, name.primary());
+        BOOST_REQUIRE_EQUAL(c.expected_host_name, name.host_name());
+        BOOST_REQUIRE_EQUAL(c.expected_realm, name.realm());
+        BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
+        auto result_name = mapper.apply(name);
+        BOOST_REQUIRE(result_name.has_value());
+        BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
+}
+
+static std::array<gssapi_test_record, 5> gssapi_lower_case_test_data{
+  gssapi_test_record{"User@REALM.com", "User", "", "REALM.com", "user"},
+  {"TestABC/host@FOO.COM", "TestABC", "host", "FOO.COM", "test"},
+  {"ABC_User_ABC/host@FOO.COM",
+   "ABC_User_ABC",
+   "host",
+   "FOO.COM",
+   "xyz_user_xyz"},
+  {"App.SERVICE-name/example.com@REALM.COM",
+   "App.SERVICE-name",
+   "example.com",
+   "REALM.COM",
+   "service-name"},
+  {"User/root@REALM.COM", "User", "root", "REALM.COM", "user"}};
+
+BOOST_DATA_TEST_CASE(
+  test_gssapi_lower_case, bdata::make(gssapi_lower_case_test_data), c) {
+    static const std::vector<ss::sstring> rules = {
+      "RULE:[1:$1]/L",
+      "RULE:[2:$1](Test.*)s/ABC///L",
+      "RULE:[2:$1](ABC.*)s/ABC/XYZ/g/L",
+      "RULE:[2:$1](App\\..*)s/App\\.(.*)/$1/g/L",
+      "RULE:[2:$1]/L",
+      "DEFAULT"};
+    static constexpr const char* const DEFAULT_REALM = "REALM.COM";
+    BOOST_REQUIRE_NO_THROW(
+      auto mapper = gssapi_principal_mapper(
+        DEFAULT_REALM,
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+
+      BOOST_REQUIRE_NO_THROW(
+        auto name = gssapi_name::parse(c.gssapi_principal_name);
+        BOOST_REQUIRE_EQUAL(c.expected_primary, name.primary());
+        BOOST_REQUIRE_EQUAL(c.expected_host_name, name.host_name());
+        BOOST_REQUIRE_EQUAL(c.expected_realm, name.realm());
+        BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
+        auto result_name = mapper.apply(name);
+        BOOST_REQUIRE(result_name.has_value());
+        BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
+}
+
+static std::array<gssapi_test_record, 5> gssapi_upper_case_test_data{
+  gssapi_test_record{"User@REALM.com", "User", "", "REALM.com", "USER"},
+  {"TestABC/host@FOO.COM", "TestABC", "host", "FOO.COM", "TEST"},
+  {"ABC_User_ABC/host@FOO.COM",
+   "ABC_User_ABC",
+   "host",
+   "FOO.COM",
+   "XYZ_USER_XYZ"},
+  {"App.SERVICE-name/example.com@REALM.COM",
+   "App.SERVICE-name",
+   "example.com",
+   "REALM.COM",
+   "SERVICE-NAME"},
+  {"User/root@REALM.COM", "User", "root", "REALM.COM", "USER"}};
+
+BOOST_DATA_TEST_CASE(
+  test_gssapi_upper_case, bdata::make(gssapi_upper_case_test_data), c) {
+    static const std::vector<ss::sstring> rules = {
+      "RULE:[1:$1]/U",
+      "RULE:[2:$1](Test.*)s/ABC///U",
+      "RULE:[2:$1](ABC.*)s/ABC/XYZ/g/U",
+      "RULE:[2:$1](App\\..*)s/App\\.(.*)/$1/g/U",
+      "RULE:[2:$1]/U",
+      "DEFAULT"};
+    static constexpr const char* const DEFAULT_REALM = "REALM.COM";
+    BOOST_REQUIRE_NO_THROW(
+      auto mapper = gssapi_principal_mapper(
+        DEFAULT_REALM,
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+
+      BOOST_REQUIRE_NO_THROW(
+        auto name = gssapi_name::parse(c.gssapi_principal_name);
+        BOOST_REQUIRE_EQUAL(c.expected_primary, name.primary());
+        BOOST_REQUIRE_EQUAL(c.expected_host_name, name.host_name());
+        BOOST_REQUIRE_EQUAL(c.expected_realm, name.realm());
+        BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
+        auto result_name = mapper.apply(name);
+        BOOST_REQUIRE(result_name.has_value());
+        BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
+}
+
+std::array<ss::sstring, 11> gssapi_invalid_rules{
+  "default",
+  "DEFAUL",
+  "DEFAULT/L",
+  "DEFAULT/g",
+  "rule:[1:$1]",
+  "rule:[1:$1]/L/U",
+  "rule:[1:$1]/U/L",
+  "rule:[1:$1]/LU",
+  "RULE:[1:$1/L",
+  "RULE:[1:$1]/l",
+  "RULE:[2:$1](ABC.*)s/ABC/XYZ/L/g"};
+
+BOOST_DATA_TEST_CASE(
+  test_gssapi_invalid_rules, bdata::make(gssapi_invalid_rules), c) {
+    static constexpr const char* const DEFAULT_REALM = "REALM.com";
+    BOOST_REQUIRE_THROW(
+      gssapi_principal_mapper(
+        DEFAULT_REALM,
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{{c}})),
+      std::runtime_error);
 }
 } // namespace security

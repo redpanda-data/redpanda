@@ -25,6 +25,90 @@ static constexpr std::string_view gssapi_name_pattern
   = R"(([^/@]*)(/([^/@]*))?@([^/@]*))";
 static constexpr std::string_view non_simple_pattern = R"([/@])";
 static constexpr std::string_view parameter_pattern = R"(([^$]*)(\$(\d*))?)";
+static constexpr std::string_view rule_pattern
+  = R"(((DEFAULT)|((RULE:\[(\d*):([^\]]*)](\(([^)]*)\))?(s\/([^\/]*)\/([^\/]*)\/(g)?)?\/?(L|U)?))))";
+
+namespace detail {
+std::vector<gssapi_rule> parse_rules(
+  std::string_view default_realm,
+  std::optional<std::vector<ss::sstring>> unparsed_rules) {
+    static thread_local const re2::RE2 rule_parser(
+      rule_pattern, re2::RE2::Quiet);
+
+    vassert(
+      rule_parser.ok(),
+      "Failed to build rule pattern regex: {}",
+      rule_parser.error());
+
+    if (!unparsed_rules || unparsed_rules.value().empty()) {
+        return {gssapi_rule(default_realm)};
+    }
+
+    std::vector<gssapi_rule> rv;
+    re2::StringPiece default_;
+    re2::StringPiece num_components_str;
+    re2::StringPiece format;
+    re2::StringPiece match_regex;
+    re2::StringPiece from_pattern;
+    re2::StringPiece to_pattern;
+    re2::StringPiece repeat;
+    re2::StringPiece upper_lower;
+    for (const auto& rule : *unparsed_rules) {
+        const re2::StringPiece rule_piece(rule.data(), rule.size());
+        if (!re2::RE2::FullMatch(
+              rule_piece,
+              rule_parser,
+              nullptr,
+              &default_,
+              nullptr,
+              nullptr,
+              &num_components_str,
+              &format,
+              nullptr,
+              &match_regex,
+              nullptr,
+              &from_pattern,
+              &to_pattern,
+              &repeat,
+              &upper_lower)) {
+            throw std::runtime_error("GSSAPI: Invalid rule: " + rule);
+        }
+        if (!default_.empty()) {
+            rv.emplace_back(default_realm);
+        } else {
+            int num_components = std::numeric_limits<int>::max();
+            auto conv_rc = std::from_chars(
+              num_components_str.begin(),
+              num_components_str.end(),
+              num_components);
+            if (conv_rc.ec != std::errc()) {
+                throw std::runtime_error(
+                  "Invalid rule - Invalid value for number of components: "
+                  + num_components_str.as_string());
+            }
+            gssapi_rule::case_change_operation case_change
+              = gssapi_rule::case_change_operation::noop;
+
+            if (upper_lower == "L") {
+                case_change = gssapi_rule::case_change_operation::make_lower;
+            } else if (upper_lower == "U") {
+                case_change = gssapi_rule::case_change_operation::make_upper;
+            }
+            rv.emplace_back(
+              default_realm,
+              num_components,
+              format,
+              match_regex,
+              from_pattern,
+              to_pattern,
+              gssapi_rule::repeat{repeat == "g"},
+              case_change);
+        }
+    }
+
+    return rv;
+}
+} // namespace detail
 
 gssapi_name::gssapi_name(
   std::string_view primary, std::string_view host_name, std::string_view realm)
@@ -292,6 +376,42 @@ ss::sstring gssapi_rule::replace_substitution(
     return replace_value;
 }
 
+gssapi_principal_mapper::gssapi_principal_mapper(
+  std::string_view default_realm,
+  config::binding<std::optional<std::vector<ss::sstring>>>
+    principal_to_local_rules_cb)
+  : _default_realm(default_realm)
+  , _principal_to_local_rules_binding(std::move(principal_to_local_rules_cb))
+  , _rules{detail::parse_rules(
+      _default_realm, _principal_to_local_rules_binding())} {
+    _principal_to_local_rules_binding.watch([this]() {
+        _rules = detail::parse_rules(
+          _default_realm, _principal_to_local_rules_binding());
+    });
+}
+
+std::optional<ss::sstring>
+gssapi_principal_mapper::apply(gssapi_name name) const {
+    std::vector<std::string_view> params;
+    if (name.host_name().empty()) {
+        if (name.realm().empty()) {
+            return name.primary();
+        }
+        params = {name.realm(), name.primary()};
+    } else {
+        params = {name.realm(), name.primary(), name.host_name()};
+    }
+
+    for (const auto& r : _rules) {
+        if (auto result = r.apply(params); result.has_value()) {
+            return result;
+        }
+    }
+
+    vlog(seclog.warn, "No rules apply to {}, rules: {}", name, _rules);
+    return std::nullopt;
+}
+
 std::ostream& operator<<(std::ostream& os, const gssapi_name& n) {
     fmt::print(os, "{}", n);
     return os;
@@ -299,6 +419,11 @@ std::ostream& operator<<(std::ostream& os, const gssapi_name& n) {
 
 std::ostream& operator<<(std::ostream& os, const gssapi_rule& r) {
     fmt::print(os, "{}", r);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const gssapi_principal_mapper& m) {
+    fmt::print(os, "{}", m);
     return os;
 }
 } // namespace security
@@ -354,4 +479,17 @@ fmt::formatter<security::gssapi_rule, char, void>::format<
     }
 
     return ctx.out();
+}
+
+template<>
+typename fmt::basic_format_context<fmt::appender, char>::iterator
+fmt::formatter<security::gssapi_principal_mapper, char, void>::format<
+  fmt::basic_format_context<fmt::appender, char>>(
+  security::gssapi_principal_mapper const& r,
+  fmt::basic_format_context<fmt::appender, char>& ctx) const {
+    return format_to(
+      ctx.out(),
+      "[{}] (default_realm: {})",
+      fmt::join(r._rules, ", "),
+      r._default_realm);
 }
