@@ -21,8 +21,56 @@
 #include <charconv>
 
 namespace security {
+static constexpr std::string_view gssapi_name_pattern
+  = R"(([^/@]*)(/([^/@]*))?@([^/@]*))";
 static constexpr std::string_view non_simple_pattern = R"([/@])";
 static constexpr std::string_view parameter_pattern = R"(([^$]*)(\$(\d*))?)";
+
+gssapi_name::gssapi_name(
+  std::string_view primary, std::string_view host_name, std::string_view realm)
+  : _primary(primary)
+  , _host_name(host_name)
+  , _realm(realm) {
+    if (_primary.empty()) {
+        throw std::invalid_argument("primary must be provided");
+    }
+}
+
+gssapi_name gssapi_name::parse(std::string_view principal_name) {
+    static thread_local const re2::RE2 gssapi_name_regex(
+      gssapi_name_pattern, re2::RE2::Quiet);
+    vassert(
+      gssapi_name_regex.ok(),
+      "Invalid name pattern: {}",
+      gssapi_name_regex.error());
+
+    re2::StringPiece primary, host_name, realm;
+
+    if (re2::RE2::FullMatch(
+          principal_name,
+          gssapi_name_regex,
+          &primary,
+          nullptr,
+          &host_name,
+          &realm)) {
+        return gssapi_name(
+          ss::sstring(primary), ss::sstring(host_name), ss::sstring(realm));
+    } else {
+        if (principal_name.find('@') != std::string_view::npos) {
+            throw std::invalid_argument("Malformed gssapi name");
+        } else {
+            return gssapi_name(ss::sstring(principal_name), "", "");
+        }
+    }
+}
+
+const ss::sstring& gssapi_name::primary() const noexcept { return _primary; }
+
+const ss::sstring& gssapi_name::host_name() const noexcept {
+    return _host_name;
+}
+
+const ss::sstring& gssapi_name::realm() const noexcept { return _realm; }
 
 gssapi_rule::gssapi_rule(std::string_view default_realm)
   : _default_realm(default_realm) {}
@@ -244,6 +292,11 @@ ss::sstring gssapi_rule::replace_substitution(
     return replace_value;
 }
 
+std::ostream& operator<<(std::ostream& os, const gssapi_name& n) {
+    fmt::print(os, "{}", n);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, const gssapi_rule& r) {
     fmt::print(os, "{}", r);
     return os;
@@ -251,7 +304,25 @@ std::ostream& operator<<(std::ostream& os, const gssapi_rule& r) {
 } // namespace security
 
 // explicit instantiations so as to avoid bringing in <fmt/ranges.h> in the
-// header, whch breaks compilation in another part of the codebase.
+// header, which breaks compilation in another part of the codebase.
+
+template<>
+typename fmt::basic_format_context<fmt::appender, char>::iterator
+fmt::formatter<security::gssapi_name, char, void>::format<
+  fmt::basic_format_context<fmt::appender, char>>(
+  security::gssapi_name const& r,
+  fmt::basic_format_context<fmt::appender, char>& ctx) const {
+    format_to(ctx.out(), "{}", r._primary);
+    if (!r._host_name.empty()) {
+        format_to(ctx.out(), "/{}", r._host_name);
+    }
+    if (!r._realm.empty()) {
+        format_to(ctx.out(), "@{}", r._realm);
+    }
+
+    return ctx.out();
+}
+
 template<>
 typename fmt::basic_format_context<fmt::appender, char>::iterator
 fmt::formatter<security::gssapi_rule, char, void>::format<

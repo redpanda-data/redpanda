@@ -22,6 +22,28 @@
 
 namespace security {
 
+class gssapi_name {
+public:
+    gssapi_name(
+      std::string_view primary,
+      std::string_view host_name,
+      std::string_view realm);
+    static gssapi_name parse(std::string_view principal_name);
+
+    const ss::sstring& primary() const noexcept;
+    const ss::sstring& host_name() const noexcept;
+    const ss::sstring& realm() const noexcept;
+
+private:
+    friend struct fmt::formatter<gssapi_name>;
+
+    friend std::ostream& operator<<(std::ostream& os, const gssapi_name& n);
+
+    ss::sstring _primary;
+    ss::sstring _host_name;
+    ss::sstring _realm;
+};
+
 class gssapi_rule {
 public:
     enum case_change_operation { noop, make_lower, make_upper };
@@ -83,6 +105,17 @@ private:
     case_change_operation _case_change{case_change_operation::noop};
 };
 } // namespace security
+
+template<>
+struct fmt::formatter<security::gssapi_name> {
+    using type = security::gssapi_name;
+
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    typename FormatContext::iterator
+    format(const type& r, FormatContext& ctx) const;
+};
 
 template<>
 struct fmt::formatter<security::gssapi_rule> {
