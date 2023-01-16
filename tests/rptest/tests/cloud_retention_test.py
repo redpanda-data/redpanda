@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
@@ -37,6 +38,7 @@ class CloudRetentionTest(PreallocNodesTest):
             si_settings=SISettings(log_segment_size=self.segment_size),
             extra_rp_conf=extra_rp_conf)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8251
     @cluster(num_nodes=4)
     def test_cloud_retention(self):
         """
