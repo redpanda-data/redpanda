@@ -769,6 +769,11 @@ ss::future<std::error_code> members_backend::reconcile() {
       meta.partition_reallocations.size(),
       meta.finished);
 
+    // if update is finished, exit early
+    if (meta.finished) {
+        co_return errc::success;
+    }
+
     // calculate necessary reallocations
     if (meta.partition_reallocations.empty()) {
         co_await calculate_reallocations(meta);
