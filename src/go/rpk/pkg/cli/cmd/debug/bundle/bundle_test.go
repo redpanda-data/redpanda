@@ -15,6 +15,7 @@ package bundle
 import (
 	"io"
 	"testing"
+	"time"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -112,6 +113,90 @@ func TestDetermineFilepath(t *testing.T) {
 				return
 			}
 			require.Contains(t, filepath, test.exp)
+		})
+	}
+}
+
+func TestParseJournalTime(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		inStr  string
+		inTime time.Time
+		exp    time.Time
+		expErr bool
+	}{
+		{
+			name:  "YYYY-MM-DD",
+			inStr: "2023-11-30",
+			exp:   time.Date(2023, 11, 30, 0, 0, 0, 0, time.Local),
+		}, {
+			name:  "YYYY-MM-DD with leading and trailing space",
+			inStr: " 2023-11-30 ",
+			exp:   time.Date(2023, 11, 30, 0, 0, 0, 0, time.Local),
+		}, {
+			name:  "YYYY-MM-DD HH:MM:SS",
+			inStr: "2023-11-30 12:13:14",
+			exp:   time.Date(2023, 11, 30, 12, 13, 14, 0, time.Local),
+		}, {
+			name:  "No seconds: YYYY-MM-DD HH:MM",
+			inStr: "2023-11-30 12:13",
+			exp:   time.Date(2023, 11, 30, 12, 13, 0, 0, time.Local),
+		}, {
+			name:   "YYYY-MM-DD HH No Minutes",
+			inStr:  "2023-11-30 12",
+			expErr: true, // This is not specified in man journalctl, so we err.
+		}, {
+			name:   "YYYY-MM-DD HH:MM:S With 1 second",
+			inStr:  "2023-11-30 12:13:1",
+			expErr: true, // This is not specified in man journalctl, so we err.
+		}, {
+			name:   "YYYY-MM-DD HH:MM: with extra :",
+			inStr:  "2023-11-30 12:13:",
+			expErr: true, // This is an error in journalctl too.
+		}, {
+			name:   "now",
+			inStr:  "now",
+			inTime: time.Date(2022, time.November, 8, 22, 15, 0, 0, time.Local),
+			exp:    time.Date(2022, time.November, 8, 22, 15, 0, 0, time.Local),
+		}, {
+			name:   "today",
+			inStr:  "today",
+			inTime: time.Date(2023, time.January, 18, 10, 50, 0, 0, time.Local),
+			exp:    time.Date(2023, time.January, 18, 0, 0, 0, 0, time.Local),
+		}, {
+			name:   "yesterday",
+			inStr:  "yesterday",
+			inTime: time.Date(2023, time.January, 0o1, 15, 45, 12, 0, time.Local),
+			exp:    time.Date(2022, time.December, 31, 0, 0, 0, 0, time.Local),
+		}, {
+			name:   "unrecognized text",
+			inStr:  "todayzz",
+			expErr: true,
+		}, {
+			name:   "+ relative time",
+			inStr:  "2h",
+			inTime: time.Date(2022, time.November, 8, 22, 15, 0, 0, time.Local),
+			exp:    time.Date(2022, time.November, 9, 0o0, 15, 0, 0, time.Local),
+		}, {
+			name:   "- relative time",
+			inStr:  "-5day",
+			inTime: time.Date(2022, time.February, 18, 8, 0, 0, 0, time.Local),
+			exp:    time.Date(2022, time.February, 13, 8, 0, 0, 0, time.Local),
+		}, {
+			name:   "unrecognized relative time",
+			inStr:  "-5trillions",
+			expErr: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			parsedTime, err := parseJournalTime(test.inStr, test.inTime)
+			if test.expErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			require.Equal(t, test.exp, parsedTime)
 		})
 	}
 }
