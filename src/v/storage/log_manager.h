@@ -206,6 +206,9 @@ public:
      */
     ss::future<> remove(model::ntp);
 
+    ss::future<> remove_orphan(
+      ss::sstring data_directory_path, model::ntp, model::revision_id);
+
     ss::future<> stop();
 
     ss::future<ss::lw_shared_ptr<segment>> make_log_segment(

@@ -45,6 +45,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
+#include <seastar/util/file.hh>
 
 #include <fmt/format.h>
 
@@ -330,6 +331,75 @@ ss::future<> log_manager::remove(model::ntp ntp) {
           })
           .finally([lg] {});
     });
+}
+
+ss::future<> log_manager::remove_orphan(
+  ss::sstring data_directory_path, model::ntp ntp, model::revision_id rev) {
+    vlog(stlog.info, "Asked to remove orphan for: {} revision: {}", ntp, rev);
+    if (_logs.contains(ntp)) {
+        co_return;
+    }
+
+    const auto topic_directory_path
+      = (std::filesystem::path(data_directory_path) / ntp.topic_path())
+          .string();
+
+    auto topic_directory_exist = co_await ss::file_exists(topic_directory_path);
+    if (!topic_directory_exist) {
+        co_return;
+    }
+
+    std::exception_ptr eptr;
+    try {
+        co_await directory_walker::walk(
+          topic_directory_path,
+          [&ntp, &topic_directory_path, &rev](ss::directory_entry entry) {
+              auto ntp_directory_data
+                = ntp_directory_path::parse_partition_directory(entry.name);
+              if (!ntp_directory_data) {
+                  return ss::now();
+              }
+              if (
+                ntp_directory_data->partition_id == ntp.tp.partition
+                && ntp_directory_data->revision_id <= rev) {
+                  auto ntp_directory = std::filesystem::path(
+                                         topic_directory_path)
+                                       / std::filesystem::path(entry.name);
+                  vlog(
+                    stlog.info,
+                    "Cleaning up ntp [{}] rev {} directory {} ",
+                    ntp,
+                    ntp_directory_data->revision_id,
+                    ntp_directory);
+                  return ss::recursive_remove_directory(ntp_directory);
+              }
+              return ss::now();
+          });
+    } catch (std::filesystem::filesystem_error const&) {
+        eptr = std::current_exception();
+    } catch (ss::broken_promise const&) {
+        // List directory can throw ss::broken_promise exception when directory
+        // was deleted while list directory is processing
+        eptr = std::current_exception();
+    }
+    if (eptr) {
+        topic_directory_exist = co_await ss::file_exists(topic_directory_path);
+        if (topic_directory_exist) {
+            std::rethrow_exception(eptr);
+        } else {
+            vlog(
+              stlog.debug,
+              "Cleaning orphan. Topic directory was deleted: {}",
+              topic_directory_path);
+            co_return;
+        }
+    }
+    vlog(
+      stlog.info,
+      "Trying to clean up orphan topic directory: {}",
+      topic_directory_path);
+    co_await dispatch_topic_dir_deletion(std::move(topic_directory_path));
+    co_return;
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {

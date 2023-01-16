@@ -294,6 +294,8 @@ private:
       model::ntp, raft::group_id, ss::shard_id, model::revision_id);
     ss::future<>
       remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
+    ss::future<>
+    cleanup_orphan_files(const topic_table::delta&, model::revision_id);
     ss::future<> delete_partition(model::ntp, model::revision_id);
     template<typename Func>
     ss::future<std::error_code> apply_configuration_change_on_leader(
