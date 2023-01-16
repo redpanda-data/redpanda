@@ -222,11 +222,17 @@ def wait_for_local_storage_truncate(redpanda,
         storage = redpanda.storage(sizes=True)
         sizes = []
         for node_partition in storage.partitions("kafka", topic):
+            if node_partition.num != partition_idx:
+                continue
             total_size = sum(s.size if s.size else 0
                              for s in node_partition.segments.values())
             redpanda.logger.debug(
                 f"  {topic}/{partition_idx} node {node_partition.node.name} local size {total_size} ({len(node_partition.segments)} segments)"
             )
+            for s in node_partition.segments.values():
+                redpanda.logger.debug(
+                    f"    {topic}/{partition_idx} node {node_partition.node.name} {s.name} {s.size}"
+                )
             sizes.append(total_size)
 
         return all(s <= target_bytes for s in sizes)
