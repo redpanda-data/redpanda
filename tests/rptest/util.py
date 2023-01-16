@@ -213,7 +213,7 @@ def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
 
 def wait_for_local_storage_truncate(redpanda,
                                     topic: str,
-                                    partition_idx: int,
+                                    partition_idx: Optional[int],
                                     target_bytes: int,
                                     timeout_sec: Optional[int] = None,
                                     nodes: Optional[list] = None):
@@ -225,8 +225,9 @@ def wait_for_local_storage_truncate(redpanda,
         storage = redpanda.storage(sizes=True)
         sizes = []
         for node_partition in storage.partitions("kafka", topic):
-            if node_partition.num != partition_idx:
+            if partition_idx is not None and node_partition.num != partition_idx:
                 continue
+
             if nodes is not None and node_partition.node not in nodes:
                 continue
 
