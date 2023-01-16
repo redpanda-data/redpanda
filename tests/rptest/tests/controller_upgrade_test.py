@@ -10,11 +10,10 @@
 import re
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import ok_to_fail
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
-from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer, RedpandaAdminOperation
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
 from rptest.services.redpanda_installer import RedpandaInstaller
@@ -41,21 +40,35 @@ ALLOWED_LOGS = [
 
 
 class ControllerUpgradeTest(EndToEndTest):
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8102
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST + ALLOWED_LOGS)
     def test_updating_cluster_when_executing_operations(self):
         '''
         Validates that cluster is operational when upgrading controller log
         '''
 
-        # set redpanda version to v22.2.5 - the latest previous major version
         self.redpanda = RedpandaService(self.test_context, 5)
-
         installer = self.redpanda._installer
-        installer.install(self.redpanda.nodes, (22, 2, 7))
+        prev_version = installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+
+        # for upgrades from v22.2.x to v22.3.x we disable setting topic
+        # configuration properties as during the upgrade phase setting
+        # topic properties is explicitly forbidden
+
+        if prev_version[0] == 22 and prev_version[1] == 2:
+            admin_operations = [
+                o for o in RedpandaAdminOperation
+                if o != RedpandaAdminOperation.UPDATE_TOPIC
+            ]
+        else:
+            admin_operations = [o for o in RedpandaAdminOperation]
+
+        installer.install(self.redpanda.nodes, prev_version)
 
         self.redpanda.start()
-        admin_fuzz = AdminOperationsFuzzer(self.redpanda)
+        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                           allowed_operations=admin_operations,
+                                           min_replication=3)
         self._client = DefaultClient(self.redpanda)
 
         spec = TopicSpec(partition_count=6, replication_factor=3)
