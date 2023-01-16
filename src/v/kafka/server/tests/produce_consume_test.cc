@@ -66,11 +66,10 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         return res;
     }
 
-    template<typename T>
-    ss::future<model::offset> produce(T&& batch_factory) {
+    ss::future<kafka::produce_response>
+    produce_raw(std::vector<kafka::produce_request::partition>&& partitions) {
         kafka::produce_request::topic tp;
-        size_t count = random_generators::get_int(1, 20);
-        tp.partitions = batch_factory(count);
+        tp.partitions = std::move(partitions);
         tp.name = test_topic;
         std::vector<kafka::produce_request::topic> topics;
         topics.push_back(std::move(tp));
@@ -78,7 +77,13 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         req.data.timeout_ms = std::chrono::seconds(2);
         req.has_idempotent = false;
         req.has_transactional = false;
-        return producer->dispatch(std::move(req))
+        return producer->dispatch(std::move(req));
+    }
+
+    template<typename T>
+    ss::future<model::offset> produce(T&& batch_factory) {
+        const size_t count = random_generators::get_int(1, 20);
+        return produce_raw(batch_factory(count))
           .then([count](kafka::produce_response r) {
               return r.data.responses.begin()->partitions.begin()->base_offset
                      + model::offset(count - 1);
@@ -178,4 +183,135 @@ FIXTURE_TEST(test_version_handler, prod_consume_fixture) {
           unsupported_version)
         .get(),
       kafka::client::kafka_request_disconnected_exception);
+}
+
+static std::vector<kafka::produce_request::partition>
+single_batch(const size_t volume) {
+    storage::record_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+    {
+        const ss::sstring data(volume, 's');
+        iobuf v{};
+        v.append(data.data(), data.size());
+        builder.add_raw_kv(iobuf{}, std::move(v));
+    }
+
+    kafka::produce_request::partition partition;
+    partition.partition_index = model::partition_id(0);
+    partition.records.emplace(std::move(builder).build());
+
+    std::vector<kafka::produce_request::partition> res;
+    res.push_back(std::move(partition));
+    return res;
+}
+
+FIXTURE_TEST(test_node_throughput_limits, prod_consume_fixture) {
+    namespace ch = std::chrono;
+
+    // configure
+    constexpr uint64_t pershard_rate_limit_in = 9_KiB;
+    constexpr uint64_t pershard_rate_limit_out = 7_KiB;
+    constexpr auto window_width = 200ms;
+    constexpr size_t batch_size = 256;
+    ss::smp::invoke_on_all([&] {
+        auto& config = config::shard_local_cfg();
+        config.get("kafka_throughput_limit_node_in_bps")
+          .set_value(
+            std::make_optional(pershard_rate_limit_in * ss::smp::count));
+        config.get("kafka_throughput_limit_node_out_bps")
+          .set_value(
+            std::make_optional(pershard_rate_limit_out * ss::smp::count));
+        config.get("kafka_quota_balancer_window_ms").set_value(window_width);
+        config.get("fetch_max_bytes").set_value(batch_size);
+        config.get("max_kafka_throttle_delay_ms").set_value(60'000ms);
+    }).get0();
+    wait_for_controller_leadership().get();
+    start();
+
+    // PRODUCE 10 KiB in smaller batches, check throttle but do not honour it,
+    // check that has to take 1 s
+    size_t kafka_in_data_len = 0;
+    {
+        constexpr size_t kafka_packet_overhead = 127;
+        const auto batches_cnt = pershard_rate_limit_in
+                                 / (batch_size + kafka_packet_overhead);
+        ch::steady_clock::time_point start;
+        ch::milliseconds throttle_time{};
+        // warmup is the number of iterations enough to exhaust the token bucket
+        // at least twice
+        const int warmup
+          = 2 * pershard_rate_limit_in
+              * ch::duration_cast<ch::milliseconds>(window_width).count() / 1000
+              / (batch_size + kafka_packet_overhead)
+            + 1;
+        for (int k = -warmup; k != batches_cnt; ++k) {
+            if (k == 0) {
+                start = ch::steady_clock::now();
+                throttle_time = {};
+            }
+            throttle_time += produce_raw(single_batch(batch_size))
+                               .then([](const kafka::produce_response& r) {
+                                   return r.data.throttle_time_ms;
+                               })
+                               .get0();
+            kafka_in_data_len += batch_size;
+        }
+        const auto stop = ch::steady_clock::now();
+        const auto wire_data_length = (batch_size + kafka_packet_overhead)
+                                      * batches_cnt;
+        const auto time_estimated = ch::milliseconds(
+          wire_data_length * 1000 / pershard_rate_limit_in);
+        BOOST_TEST_CHECK(
+          abs(stop - start - time_estimated) < time_estimated / 25,
+          "stop-start[" << stop - start << "] == time_estimated["
+                        << time_estimated << "] ±4%");
+    }
+
+    // CONSUME
+    size_t kafka_out_data_len = 0;
+    {
+        constexpr size_t kafka_packet_overhead = 62;
+        ch::steady_clock::time_point start;
+        size_t total_size{};
+        ch::milliseconds throttle_time{};
+        const int warmup
+          = 2 * pershard_rate_limit_out
+              * ch::duration_cast<ch::milliseconds>(window_width).count() / 1000
+              / (batch_size + kafka_packet_overhead)
+            + 1;
+        // consume cannot be measured by the number of fetches because the size
+        // of fetch payload is up to redpanda, "fetch_max_bytes" is merely a
+        // guidance. Therefore the consume test runs as long as there is data
+        // to fetch. We only can consume almost as much as have been produced:
+        const auto kafka_data_cap = kafka_in_data_len - batch_size * 2;
+        for (int k = -warmup; kafka_out_data_len < kafka_data_cap; ++k) {
+            if (k == 0) {
+                start = ch::steady_clock::now();
+                total_size = {};
+                throttle_time = {};
+            }
+            const auto fetch_resp = fetch_next().get0();
+            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics.size(), 1);
+            BOOST_REQUIRE_EQUAL(fetch_resp.data.topics[0].partitions.size(), 1);
+            BOOST_TEST_REQUIRE(
+              fetch_resp.data.topics[0].partitions[0].records.has_value());
+            const auto kafka_data_len = fetch_resp.data.topics[0]
+                                          .partitions[0]
+                                          .records.value()
+                                          .size_bytes();
+            total_size += kafka_data_len + kafka_packet_overhead;
+            throttle_time += fetch_resp.data.throttle_time_ms;
+            kafka_out_data_len += kafka_data_len;
+        }
+        const auto stop = ch::steady_clock::now();
+        const auto time_estimated = ch::milliseconds(
+          total_size * 1000 / pershard_rate_limit_out);
+        BOOST_TEST_CHECK(
+          abs(stop - start - time_estimated) < time_estimated / 25,
+          "stop-start[" << stop - start << "] == time_estimated["
+                        << time_estimated << "] ±4%");
+    }
+
+    // otherwise test is not valid:
+    BOOST_REQUIRE_GT(kafka_in_data_len, kafka_out_data_len);
 }

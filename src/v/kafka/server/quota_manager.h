@@ -10,10 +10,12 @@
  */
 
 #pragma once
-#include "config/configuration.h"
+#include "config/client_group_byte_rate_quota.h"
+#include "config/property.h"
 #include "kafka/server/token_bucket_rate_tracker.h"
 #include "resource_mgmt/rate.h"
 #include "seastarx.h"
+#include "utils/bottomless_token_bucket.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -54,40 +56,22 @@ public:
     using clock = ss::lowres_clock;
 
     struct throttle_delay {
-        bool first_violation{true};
-        clock::duration duration{std::chrono::milliseconds(0)};
+        bool enforce{false};
+        clock::duration duration{0};
+        clock::duration enforce_duration() const {
+            if (enforce) {
+                return duration;
+            } else {
+                return clock::duration::zero();
+            }
+        }
     };
 
-    quota_manager()
-      : _default_num_windows(
-        config::shard_local_cfg().default_num_windows.bind())
-      , _default_window_width(
-          config::shard_local_cfg().default_window_sec.bind())
-      , _default_target_produce_tp_rate(
-          config::shard_local_cfg().target_quota_byte_rate.bind())
-      , _default_target_fetch_tp_rate(
-          config::shard_local_cfg().target_fetch_quota_byte_rate.bind())
-      , _target_partition_mutation_quota(
-          config::shard_local_cfg().kafka_admin_topic_api_rate.bind())
-      , _target_produce_tp_rate_per_client_group(
-          config::shard_local_cfg().kafka_client_group_byte_rate_quota.bind())
-      , _target_fetch_tp_rate_per_client_group(
-          config::shard_local_cfg()
-            .kafka_client_group_fetch_byte_rate_quota.bind())
-      , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
-      , _max_delay(
-          config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
-        _gc_timer.set_callback([this] {
-            auto full_window = _default_num_windows() * _default_window_width();
-            gc(full_window);
-        });
-    }
-
+    quota_manager();
     quota_manager(const quota_manager&) = delete;
     quota_manager& operator=(const quota_manager&) = delete;
     quota_manager(quota_manager&&) = delete;
     quota_manager& operator=(quota_manager&&) = delete;
-
     ~quota_manager();
 
     ss::future<> stop();
@@ -122,6 +106,28 @@ public:
       uint32_t mutations,
       clock::time_point now = clock::now());
 
+    /// @p enforce delay to enforce in this call
+    /// @p request delay to request from the client via throttle_ms
+    struct shard_delays_t {
+        clock::duration enforce{0};
+        clock::duration request{0};
+    };
+
+    /// Determine throttling required by shard level TP quotas.
+    /// @param connection_throttle_until (in,out) until what time the client
+    /// on this conection should throttle until. If it does not, this throttling
+    /// will be enforced on the next call. In: value from the last call, out:
+    /// value saved until the next call.
+    shard_delays_t get_shard_delays(
+      clock::time_point& connection_throttle_until,
+      clock::time_point now) const;
+
+    void record_request_tp(
+      size_t request_size, clock::time_point now = clock::now()) noexcept;
+
+    void record_response_tp(
+      size_t request_size, clock::time_point now = clock::now()) noexcept;
+
 private:
     std::chrono::milliseconds do_record_partition_mutations(
       std::optional<std::string_view> client_id,
@@ -135,30 +141,35 @@ private:
       const clock::time_point& now,
       rate_tracker& rate_tracker);
 
+    // Accounting for quota on per-client and per-client-group basis
     // last_seen: used for gc keepalive
     // delay: last calculated delay
     // tp_rate: throughput tracking
     // pm_rate: partition mutation quota tracking - only on home shard
-    struct quota {
+    struct client_quota {
         clock::time_point last_seen;
         clock::duration delay;
         rate_tracker tp_produce_rate;
         rate_tracker tp_fetch_rate;
         std::optional<token_bucket_rate_tracker> pm_rate;
     };
-    using underlying_t = absl::flat_hash_map<ss::sstring, quota>;
+    using client_quotas_t = absl::flat_hash_map<ss::sstring, client_quota>;
 
 private:
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
     void gc(clock::duration full_window);
 
-    underlying_t::iterator maybe_add_and_retrieve_quota(
+    client_quotas_t::iterator maybe_add_and_retrieve_quota(
       const std::optional<std::string_view>&, const clock::time_point&);
     int64_t get_client_target_produce_tp_rate(
       const std::optional<std::string_view>& quota_id);
     std::optional<int64_t> get_client_target_fetch_tp_rate(
       const std::optional<std::string_view>& quota_id);
+
+    using shard_quota_t = bottomless_token_bucket::quota_t;
+    shard_quota_t get_shard_ingress_quota_default() const;
+    shard_quota_t get_shard_egress_quota_default() const;
 
 private:
     config::binding<int16_t> _default_num_windows;
@@ -172,7 +183,15 @@ private:
     config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
       _target_fetch_tp_rate_per_client_group;
 
-    underlying_t _quotas;
+    config::binding<std::optional<uint64_t>>
+      _kafka_throughput_limit_node_in_bps;
+    config::binding<std::optional<uint64_t>>
+      _kafka_throughput_limit_node_out_bps;
+    config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
+
+    client_quotas_t _client_quotas;
+    bottomless_token_bucket _shard_ingress_quota;
+    bottomless_token_bucket _shard_egress_quota;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
