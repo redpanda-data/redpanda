@@ -45,12 +45,15 @@ void group_stm::update_prepared(
         prepared_it->second.offsets.clear();
     }
 
+    const auto now = model::timestamp::now();
     for (const auto& tx_offset : val.offsets) {
         group::offset_metadata md{
           .log_offset = offset,
           .offset = tx_offset.offset,
           .metadata = tx_offset.metadata.value_or(""),
           .committed_leader_epoch = kafka::leader_epoch(tx_offset.leader_epoch),
+          .commit_timestamp = now,
+          .expiry_timestamp = std::nullopt,
         };
         prepared_it->second.offsets[tx_offset.tp] = md;
     }
@@ -77,7 +80,11 @@ void group_stm::commit(model::producer_identity pid) {
           .leader_epoch
           = kafka::invalid_leader_epoch, // we never use leader_epoch down the
                                          // stack
-          .metadata = md.metadata};
+          .metadata = md.metadata,
+          .commit_timestamp = md.commit_timestamp,
+          .expiry_timestamp = md.expiry_timestamp.value_or(
+            model::timestamp(-1)),
+        };
 
         _offsets[tp] = logged_metadata{
           .log_offset = md.log_offset, .metadata = std::move(val)};

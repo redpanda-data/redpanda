@@ -155,6 +155,8 @@ public:
         model::offset offset;
         ss::sstring metadata;
         kafka::leader_epoch committed_leader_epoch;
+        model::timestamp commit_timestamp;
+        std::optional<model::timestamp> expiry_timestamp;
 
         friend std::ostream& operator<<(std::ostream&, const offset_metadata&);
     };
@@ -806,7 +808,8 @@ private:
       model::offset commited_offset,
       leader_epoch commited_leader_epoch,
       const ss::sstring& metadata,
-      model::timestamp commited_timestemp);
+      model::timestamp commited_timestemp,
+      std::optional<model::timestamp> expiry_timestamp);
 
     ss::future<cluster::abort_group_tx_reply> do_abort(
       kafka::group_id group_id,

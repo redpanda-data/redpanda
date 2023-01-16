@@ -2203,12 +2203,16 @@ group::store_txn_offsets(txn_offset_commit_request r) {
 
     prepared_tx ptx;
     ptx.tx_seq = tx_seq;
+    const auto now = model::timestamp::now();
     for (const auto& [tp, offset] : offsets) {
         offset_metadata md{
           .log_offset = e.value().last_offset,
           .offset = offset.offset,
           .metadata = offset.metadata.value_or(""),
-          .committed_leader_epoch = kafka::leader_epoch(offset.leader_epoch)};
+          .committed_leader_epoch = kafka::leader_epoch(offset.leader_epoch),
+          .commit_timestamp = now,
+          .expiry_timestamp = std::nullopt,
+        };
         ptx.offsets[tp] = md;
     }
     _prepared_txs[pid] = ptx;
@@ -2265,7 +2269,8 @@ void group::update_store_offset_builder(
   model::offset committed_offset,
   leader_epoch committed_leader_epoch,
   const ss::sstring& metadata,
-  model::timestamp commit_timestamp) {
+  model::timestamp commit_timestamp,
+  std::optional<model::timestamp> expiry_timestamp) {
     offset_metadata_key key{
       .group_id = _id, .topic = name, .partition = partition};
 
@@ -2275,6 +2280,10 @@ void group::update_store_offset_builder(
       .metadata = metadata,
       .commit_timestamp = commit_timestamp,
     };
+
+    if (expiry_timestamp.has_value()) {
+        value.expiry_timestamp = expiry_timestamp.value();
+    }
 
     auto kv = _md_serializer.to_kv(
       offset_metadata_kv{.key = std::move(key), .value = std::move(value)});
@@ -2288,6 +2297,14 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
     std::vector<std::pair<model::topic_partition, offset_metadata>>
       offset_commits;
 
+    const auto expiry_timestamp = [&r]() -> std::optional<model::timestamp> {
+        if (r.data.retention_time_ms == -1) {
+            return std::nullopt;
+        }
+        return model::timestamp(
+          model::timestamp::now().value() + r.data.retention_time_ms);
+    }();
+
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
             update_store_offset_builder(
@@ -2297,13 +2314,16 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
               p.committed_offset,
               p.committed_leader_epoch,
               p.committed_metadata.value_or(""),
-              model::timestamp(p.commit_timestamp));
+              model::timestamp(p.commit_timestamp),
+              expiry_timestamp);
 
             model::topic_partition tp(t.name, p.partition_index);
             offset_metadata md{
               .offset = p.committed_offset,
               .metadata = p.committed_metadata.value_or(""),
               .committed_leader_epoch = p.committed_leader_epoch,
+              .commit_timestamp = model::timestamp(p.commit_timestamp),
+              .expiry_timestamp = expiry_timestamp,
             };
 
             offset_commits.emplace_back(std::make_pair(tp, md));
@@ -3026,7 +3046,8 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
           metadata.offset,
           metadata.committed_leader_epoch,
           metadata.metadata,
-          model::timestamp{-1});
+          metadata.commit_timestamp,
+          metadata.expiry_timestamp);
     }
 
     batches.push_back(std::move(store_offset_builder).build());
