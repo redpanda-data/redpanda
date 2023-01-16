@@ -50,7 +50,7 @@ struct gssapi_test_record {
     }
 };
 
-static std::array<gssapi_test_record, 3> gssapi_name_test_data{
+static std::array<gssapi_test_record, 4> gssapi_name_test_data{
   gssapi_test_record{
     "App.service-name/example.com@REALM.com",
     "App.service-name",
@@ -62,12 +62,18 @@ static std::array<gssapi_test_record, 3> gssapi_name_test_data{
    "",
    "REALM.com",
    "service-name"},
-  {"user/host@REALM.com", "user", "host", "REALM.com", "user"}};
+  {"user/host@REALM.com", "user", "host", "REALM.com", "user"},
+  {"redpanda/example.com@REALM.com",
+   "redpanda",
+   "example.com",
+   "REALM.com",
+   "redpandadataexample.com"}};
 
 BOOST_DATA_TEST_CASE(test_gssapi_name, bdata::make(gssapi_name_test_data), c) {
     static const std::vector<ss::sstring> rules = {
       "RULE:[1:$1](App\\..*)s/App\\.(.*)/$1/g",
       "RULE:[2:$1](App\\..*)s/App\\.(.*)/$1/g",
+      "RULE:[2:$1data$2](redpanda.*)",
       "DEFAULT"};
     static constexpr const char* const DEFAULT_REALM = "REALM.com";
     BOOST_REQUIRE_NO_THROW(
@@ -189,5 +195,36 @@ BOOST_DATA_TEST_CASE(
         DEFAULT_REALM,
         config::mock_binding(std::optional<std::vector<ss::sstring>>{{c}})),
       std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(test_invalid_index) {
+    static const std::vector<ss::sstring> rules = {"RULE:[2:$3]"};
+    static constexpr const char* const DEFAULT_REALM = "REALM.com";
+    static constexpr const char* const TEST_NAME = "test/host@REALM.com";
+    BOOST_REQUIRE_NO_THROW(
+      auto mapper = gssapi_principal_mapper(
+        DEFAULT_REALM,
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+      BOOST_REQUIRE_NO_THROW(auto name = gssapi_name::parse(TEST_NAME);
+                             auto result = mapper.apply(name);
+                             BOOST_REQUIRE(!result.has_value());););
+}
+
+BOOST_AUTO_TEST_CASE(test_only_primary) {
+    static const std::vector<ss::sstring> rules = {
+      "RULE:[1:$1data](redpanda.*)", "RULE:[2:$3]"};
+    static constexpr const char* const DEFAULT_REALM = "REALM.com";
+    static constexpr const char* const TEST_NAME = "redpanda";
+    BOOST_REQUIRE_NO_THROW(
+      auto mapper = gssapi_principal_mapper(
+        DEFAULT_REALM,
+        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+      BOOST_REQUIRE_NO_THROW(auto name = gssapi_name::parse(TEST_NAME);
+                             BOOST_REQUIRE(name.host_name().empty());
+                             BOOST_REQUIRE(name.realm().empty());
+                             BOOST_REQUIRE_EQUAL(TEST_NAME, name.primary());
+                             auto result = mapper.apply(name);
+                             BOOST_REQUIRE(result.has_value());
+                             BOOST_REQUIRE_EQUAL(TEST_NAME, *result);););
 }
 } // namespace security
