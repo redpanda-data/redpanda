@@ -201,6 +201,8 @@ void application::shutdown() {
     if (_kafka_server.local_is_initialized()) {
         _kafka_server.invoke_on_all(&net::server::wait_for_shutdown).get();
         _kafka_server.stop().get();
+    }
+    if (_kafka_conn_quotas.local_is_initialized()) {
         _kafka_conn_quotas.stop().get();
     }
     if (_rpc.local_is_initialized()) {
@@ -1125,6 +1127,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
     ss::sharded<net::server_configuration> kafka_cfg;
     kafka_cfg.start(ss::sstring("kafka_rpc")).get();
+    auto kafka_cfg_cleanup = ss::defer(
+      [&kafka_cfg]() { kafka_cfg.stop().get(); });
     kafka_cfg
       .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
@@ -1247,7 +1251,6 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(cp_partition_manager),
         qdc_config)
       .get();
-    kafka_cfg.stop().get();
     construct_service(
       fetch_session_cache,
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
