@@ -48,6 +48,11 @@ void bottomless_token_bucket::update_burst_tokens() noexcept {
     _tokens = std::min(_burst, _tokens);
 }
 
+bottomless_token_bucket::quota_t
+bottomless_token_bucket::get_current_rate() const noexcept {
+    return muldiv(_tokens, time_res_t::period::den, _width.count());
+}
+
 void bottomless_token_bucket::refill(const clock::time_point now) noexcept {
     const auto delta = std::chrono::duration_cast<time_res_t>(
       now - _last_check);

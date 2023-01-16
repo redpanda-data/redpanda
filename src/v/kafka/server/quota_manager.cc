@@ -18,6 +18,7 @@
 #include <seastar/core/thread.hh>
 
 #include <fmt/chrono.h>
+#include <fmt/ranges.h>
 
 #include <chrono>
 
@@ -79,10 +80,9 @@ quota_manager::quota_manager()
       config::shard_local_cfg().kafka_quota_balancer_window.bind())
   , _kafka_quota_balancer_node_period(
       config::shard_local_cfg().kafka_quota_balancer_node_period.bind())
-  , _shard_ingress_quota(
-      get_shard_ingress_quota_default(), _kafka_quota_balancer_window())
-  , _shard_egress_quota(
-      get_shard_egress_quota_default(), _kafka_quota_balancer_window())
+  , _shard_quota{{
+      {get_shard_ingress_quota_default(), _kafka_quota_balancer_window()},
+      {get_shard_egress_quota_default(), _kafka_quota_balancer_window()}}}
   , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
   , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
     _gc_timer.set_callback([this] {
@@ -98,16 +98,16 @@ quota_manager::quota_manager()
     // });
 
     _kafka_throughput_limit_node_in_bps.watch([this] {
-        _shard_ingress_quota.set_quota(get_shard_ingress_quota_default());
+        _shard_quota.in().set_quota(get_shard_ingress_quota_default());
     });
     _kafka_throughput_limit_node_out_bps.watch([this] {
-        _shard_egress_quota.set_quota(get_shard_egress_quota_default());
+        _shard_quota.out().set_quota(get_shard_egress_quota_default());
     });
     _kafka_quota_balancer_window.watch([this] {
         const auto v = _kafka_quota_balancer_window();
         vlog(klog.debug, "Set shard TP token bucket window {}", v);
-        _shard_ingress_quota.set_width(v);
-        _shard_egress_quota.set_width(v);
+        _shard_quota.in().set_width(v);
+        _shard_quota.out().set_width(v);
     });
     _kafka_quota_balancer_node_period.watch([this] {
         notify_kafka_quota_balancer_node_period_change();
@@ -129,9 +129,9 @@ ss::future<> quota_manager::stop() {
     _gc_timer.cancel();
     _balancer_timer.cancel();
     if (ss::this_shard_id() == quota_manager_shard) {
-      return _balancer_thread.join();
+        return _balancer_thread.join();
     } else {
-      return ss::make_ready_future<>();
+        return ss::make_ready_future<>();
     }
 }
 
@@ -456,8 +456,7 @@ quota_manager::shard_delays_t quota_manager::get_shard_delays(
     // this time
     res.request = std::min(
       _max_delay(),
-      std::max(
-        eval_delay(_shard_ingress_quota), eval_delay(_shard_egress_quota)));
+      std::max(eval_delay(_shard_quota.in()), eval_delay(_shard_quota.out())));
     connection_throttle_until = now + res.request;
 
     return res;
@@ -465,12 +464,12 @@ quota_manager::shard_delays_t quota_manager::get_shard_delays(
 
 void quota_manager::record_request_tp(
   const size_t request_size, const clock::time_point now) noexcept {
-    _shard_ingress_quota.use(request_size, now);
+    _shard_quota.in().use(request_size, now);
 }
 
 void quota_manager::record_response_tp(
   const size_t request_size, const clock::time_point now) noexcept {
-    _shard_egress_quota.use(request_size, now);
+    _shard_quota.out().use(request_size, now);
 }
 
 void quota_manager::maybe_arm_balancer_timer() {
@@ -527,13 +526,81 @@ void quota_manager::quota_balancer() {
     vlog(klog.info, "Quota balancer stopped");
 }
 
+} // namespace kafka
+
+template<class T>
+struct ::fmt::formatter<kafka::inoutpair<T>> {
+    constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
+        return ctx.begin();
+    }
+    template<typename FormatContext>
+    auto format(const kafka::inoutpair<T>& p, FormatContext& ctx) const
+      -> decltype(ctx.out()) {
+        // ctx.out() is an output iterator to write to.
+        return fmt::format_to(
+          ctx.out(), "{}", static_cast<const std::pair<T, T>&>(p));
+    }
+};
+
+namespace kafka {
+
 ss::future<> quota_manager::quota_balancer_step() {
     vlog(klog.trace, "Quota balancer step");
     _probe.balancer_run();
 
     // determine the borrowers and whether any balancing is needed now
-    //_quota_manager.invoke_on_all
-    return ss::make_ready_future();
+    using opt_shard_t = std::optional<ss::shard_id>;
+    std::vector<inoutpair<opt_shard_t>> borrowers = co_await container().map(
+      [](quota_manager& qm) -> inoutpair<opt_shard_t> {
+          const auto [din, deg] = qm.get_deficiency();
+          return {
+            {din > 0 ? opt_shard_t{ss::this_shard_id()} : opt_shard_t{},
+             deg > 0 ? opt_shard_t{ss::this_shard_id()} : opt_shard_t{}}};
+      });
+    // borrowers.erase(
+    //   std::partition(
+    //     borrowers.begin(),
+    //     borrowers.end(),
+    //     [](const opt_shard_t& v) noexcept { return t.has_value(); }),
+    //   borrowers.cend());
+    vlog(klog.trace, "Quota balancer: borrowers: {}", borrowers);
+
+    inoutpair<std::vector<ss::shard_id>> borrowers2;
+    borrowers2.in().reserve(ss::smp::count);
+    borrowers2.out().reserve(ss::smp::count);
+    for (const inoutpair<opt_shard_t>& v : borrowers) {
+        if (v.in().has_value()) {
+            borrowers2.in().push_back(*v.in());
+        }
+        if (v.out().has_value()) {
+            borrowers2.out().push_back(*v.out());
+        }
+    }
+    vlog(
+      klog.trace,
+      "Quota balancer: borrowers count: {}, {}",
+      borrowers2.in().size(),
+      borrowers2.out().size());
+
+    // collect quota from lenders
+    const inoutpair<int64_t> collected = co_await container().map_reduce0(
+      [ins = borrowers2.in().size(), outs = borrowers2.out().size()](
+        quota_manager& qm) -> inoutpair<int64_t> {
+          const inoutpair<int64_t> surplus = qm.get_surplus();
+          return qm.lend({{
+            ins > 0 ? surplus.in() / 2 : 0,
+            outs > 0 ? surplus.out() / 2 : 0,
+          }});
+      },
+      inoutpair<int64_t>{{0, 0}},
+      [](const inoutpair<int64_t>& s, const inoutpair<int64_t>& v)
+        -> inoutpair<int64_t> {
+          return {{s.in() + v.in(), s.out() + v.out()}};
+      }
+      // std::plus<int64_t>{}
+    );
+
+    vlog(klog.trace, "Quota balancer: collected: {}", collected);
 }
 
 } // namespace kafka

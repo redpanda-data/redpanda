@@ -70,16 +70,20 @@ public:
     }
 
     void set_quota(const quota_t quota) noexcept {
-        set_quota_impl(quota);
-        update_burst_tokens();
+        if (quota != _quota) {
+            set_quota_impl(quota);
+            update_burst_tokens();
+        }
     }
 
     /// @post 0 < return value <= max_quota
     quota_t quota() const noexcept { return _quota; }
 
     void set_width(const time_res_t width) noexcept {
-        set_width_impl(width);
-        update_burst_tokens();
+        if (width != _width) {
+            set_width_impl(width);
+            update_burst_tokens();
+        }
     }
 
     /// Record usage of tokens
@@ -89,6 +93,11 @@ public:
 
     /// Current amount of tokens
     tokens_t tokens() const noexcept { return _tokens; }
+
+    /// Current amount of tokens expressed in [tokens/s], i.e. how much of the
+    /// quota value is available after the last use.
+    /// @post return value <= quota()
+    quota_t get_current_rate() const noexcept;
 
 private:
     void set_quota_impl(const quota_t quota) noexcept;

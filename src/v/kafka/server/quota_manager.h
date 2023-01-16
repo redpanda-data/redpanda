@@ -21,8 +21,8 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
-#include <seastar/core/timer.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timer.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -43,12 +43,22 @@ public:
     // void setup_public_metrics();
 
     uint32_t get_balancer_runs() const noexcept { return _balancer_runs; }
+
 private:
     ss::metrics::metric_groups _metrics;
     uint32_t _balancer_runs = 0;
-    friend std::ostream& operator<<(std::ostream& o, const throughput_quotas_probe& p);
+    friend std::ostream&
+    operator<<(std::ostream& o, const throughput_quotas_probe& p);
 };
 
+template<class T>
+struct inoutpair : std::pair<T, T> {
+    using pair_t = std::pair<T, T>;
+    T& in() noexcept { return pair_t::first; }
+    const T& in() const noexcept { return pair_t::first; }
+    T& out() noexcept { return pair_t::second; }
+    const T& out() const noexcept { return pair_t::second; }
+};
 
 // quota_manager tracks quota usage
 //
@@ -171,6 +181,11 @@ private:
         clock::time_point last_seen;
         clock::duration delay;
         rate_tracker tp_produce_rate;
+        void maybe_arm_balancer_timer();
+        void notify_kafka_quota_balancer_node_period_change();
+        void quota_balancer();
+        ss::future<> quota_balancer_step();
+
         rate_tracker tp_fetch_rate;
         std::optional<token_bucket_rate_tracker> pm_rate;
     };
@@ -197,6 +212,31 @@ private:
     void quota_balancer();
     ss::future<> quota_balancer_step();
 
+    inoutpair<shard_quota_t> get_deficiency() const noexcept {
+        return {
+          {_shard_quota.in().tokens() < 0 ? 1 : 0,
+           _shard_quota.out().tokens() < 0 ? 1 : 0}};
+    }
+
+    inoutpair<shard_quota_t> get_surplus() const noexcept {
+        return {
+          {std::max<shard_quota_t>(
+             _shard_quota.in().get_current_rate() - _shard_quota_minimum.in(),
+             0),
+           std::max<shard_quota_t>(
+             _shard_quota.out().get_current_rate() - _shard_quota_minimum.out(),
+             0)}};
+    }
+
+    inoutpair<shard_quota_t> lend(inoutpair<shard_quota_t> tolend) noexcept {
+        _shard_quota.in().set_quota(std::max(
+          _shard_quota.in().quota() - tolend.in(), _shard_quota_minimum.in()));
+        _shard_quota.out().set_quota(std::max(
+          _shard_quota.out().quota() - tolend.out(),
+          _shard_quota_minimum.out()));
+        return {{0, 0}};
+    }
+
 private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
@@ -218,15 +258,14 @@ private:
       _kafka_quota_balancer_node_period;
 
     client_quotas_t _client_quotas;
-    bottomless_token_bucket _shard_ingress_quota;
-    bottomless_token_bucket _shard_egress_quota;
+    inoutpair<bottomless_token_bucket> _shard_quota;
+    inoutpair<shard_quota_t> _shard_quota_minimum;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
     config::binding<std::chrono::milliseconds> _max_delay;
     ss::timer<> _balancer_timer;
     ss::abort_source _as;
-    //ss::sharded<quota_manager>& _quota_manager;
     throughput_quotas_probe _probe;
     ss::thread _balancer_thread;
 };
