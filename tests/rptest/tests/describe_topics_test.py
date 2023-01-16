@@ -141,6 +141,13 @@ class DescribeTopicsTest(RedpandaTest):
                 value="1073741824",
                 doc_string=
                 "Default log segment size in bytes for topics which do not set segment.bytes"
+            ),
+            "segment.ms":
+            ConfigProperty(
+                config_type="LONG",
+                value="-1",
+                doc_string=
+                "Default log segment lifetime in ms for topics which do not set segment.ms"
             )
         }
 
