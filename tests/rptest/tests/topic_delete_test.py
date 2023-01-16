@@ -9,6 +9,7 @@
 
 import time
 import json
+from typing import Optional
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
@@ -248,7 +249,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
-    def _populate_topic(self):
+    def _populate_topic(self, topic_name, nodes: Optional[list] = None):
         """
         Get system into state where there is data in both local
         and remote storage for the topic.
@@ -263,13 +264,70 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                                  num_records=2560)
 
         # Wait for segments evicted from local storage
-        for i in range(0, 3):
-            wait_for_segments_removal(self.redpanda, self.topic, i, 5)
+        for i in range(0, self.partition_count):
+            wait_for_local_storage_truncate(self.redpanda,
+                                            topic_name,
+                                            i,
+                                            local_retention,
+                                            timeout_sec=30,
+                                            nodes=nodes)
 
         # Confirm objects in remote storage
-        before_objects = self.s3_client.list_objects(
-            self.si_settings.cloud_storage_bucket)
-        assert sum(1 for _ in before_objects) > 0
+        objects = self.s3_client.list_objects(
+            self.si_settings.cloud_storage_bucket, topic=topic_name)
+        assert sum(1 for _ in objects) > 0
+
+    @cluster(num_nodes=3)
+    def topic_delete_installed_snapshots_test(self):
+        """
+        Test the case where a partition had remote snapshots installed prior
+        to deletion: this aims to expose bugs in the snapshot code vs the
+        shutdown code.
+        """
+        victim_node = self.redpanda.nodes[-1]
+        other_nodes = self.redpanda.nodes[0:2]
+
+        self.logger.info(f"Stopping victim node {victim_node.name}")
+        self.redpanda.stop_node(victim_node)
+
+        # Before populating the topic + waiting for eviction from local
+        # disk, stop one node.  This node will later get a snapshot installed
+        # when it comes back online
+        self.logger.info(
+            f"Populating topic and waiting for nodes {[n.name for n in other_nodes]}"
+        )
+        self._populate_topic(self.topic, nodes=other_nodes)
+
+        self.logger.info(f"Starting victim node {victim_node.name}")
+        self.redpanda.start_node(victim_node)
+
+        # TODO wait for victim_node to see hwm catch up
+        time.sleep(10)
+
+        # Write more: this should prompt the victim node to do some prefix truncations
+        # after having installed a snapshot
+        self._populate_topic(self.topic)
+
+        self.kafka_tools.delete_topic(self.topic)
+        wait_until(lambda: topic_storage_purged(self.redpanda, self.topic),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        wait_until(lambda: self._topic_remote_deleted(self.topic),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+    def _topic_remote_deleted(self, topic_name: str):
+        """Return true if all objects removed from cloud storage"""
+        after_objects = self.s3_client.list_objects(
+            self.si_settings.cloud_storage_bucket, topic=topic_name)
+        self.logger.debug(f"Objects after topic {topic_name} deletion:")
+        empty = True
+        for i in after_objects:
+            self.logger.debug(f"  {i}")
+            empty = False
+
+        return empty
 
     @cluster(num_nodes=3)
     @parametrize(disable_delete=False)
