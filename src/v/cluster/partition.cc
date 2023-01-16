@@ -322,22 +322,6 @@ ss::future<> partition::stop() {
 
     auto f = ss::now();
 
-    if (_id_allocator_stm) {
-        return _id_allocator_stm->stop();
-    }
-
-    if (_log_eviction_stm) {
-        f = _log_eviction_stm->stop();
-    }
-
-    if (_rm_stm) {
-        f = f.then([this] { return _rm_stm->stop(); });
-    }
-
-    if (_tm_stm) {
-        f = f.then([this] { return _tm_stm->stop(); });
-    }
-
     if (_archiver) {
         f = f.then([this] { return _archiver->stop(); });
     }
@@ -348,6 +332,22 @@ ss::future<> partition::stop() {
 
     if (_cloud_storage_partition) {
         f = f.then([this] { return _cloud_storage_partition->stop(); });
+    }
+
+    if (_id_allocator_stm) {
+        f = f.then([this] { return _id_allocator_stm->stop(); });
+    }
+
+    if (_log_eviction_stm) {
+        f = f.then([this] { return _log_eviction_stm->stop(); });
+    }
+
+    if (_rm_stm) {
+        f = f.then([this] { return _rm_stm->stop(); });
+    }
+
+    if (_tm_stm) {
+        f = f.then([this] { return _tm_stm->stop(); });
     }
 
     // no state machine
