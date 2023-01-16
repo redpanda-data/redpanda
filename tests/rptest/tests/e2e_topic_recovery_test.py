@@ -17,6 +17,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer
 from rptest.utils.mode_checks import skip_debug_mode
+from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 import time
 import json
@@ -227,6 +228,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         assert produce_acked >= num_messages
         assert consume_valid >= produce_acked, f"produced {produce_acked}, consumed {consume_valid}"
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/7955
     @cluster(num_nodes=5, log_allow_list=ALLOWED_ERROR_LOG_LINES)
     @matrix(recovery_overrides=[{}, {
         'retention.local.target.bytes': 1024,
