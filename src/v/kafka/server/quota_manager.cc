@@ -552,29 +552,33 @@ ss::future<> quota_manager::quota_balancer_step() {
     using opt_shard_t = std::optional<ss::shard_id>;
     std::vector<inoutpair<opt_shard_t>> borrowers = co_await container().map(
       [](quota_manager& qm) -> inoutpair<opt_shard_t> {
-          const auto [din, deg] = qm.get_deficiency();
-          return {
-            {din > 0 ? opt_shard_t{ss::this_shard_id()} : opt_shard_t{},
-             deg > 0 ? opt_shard_t{ss::this_shard_id()} : opt_shard_t{}}};
+          return to_each([](const shard_quota_t d) -> opt_shard_t {
+            if ( d > 0 ) {
+              return ss::this_shard_id();
+            }
+            return {};
+          }, qm.get_deficiency() );
       });
-    // borrowers.erase(
-    //   std::partition(
-    //     borrowers.begin(),
-    //     borrowers.end(),
-    //     [](const opt_shard_t& v) noexcept { return t.has_value(); }),
-    //   borrowers.cend());
     vlog(klog.trace, "Quota balancer: borrowers: {}", borrowers);
 
     inoutpair<std::vector<ss::shard_id>> borrowers2;
+    inoutpair<bool> have_borrowers {{ false, false }};
     borrowers2.in().reserve(ss::smp::count);
     borrowers2.out().reserve(ss::smp::count);
     for (const inoutpair<opt_shard_t>& v : borrowers) {
-        if (v.in().has_value()) {
-            borrowers2.in().push_back(*v.in());
-        }
-        if (v.out().has_value()) {
-            borrowers2.out().push_back(*v.out());
-        }
+        to_each(
+          [](
+            std::vector<ss::shard_id>& borrowers2,
+            bool& have_borrowers,
+            const opt_shard_t& v) {
+              if (v.has_value()) {
+                  borrowers2.push_back(*v);
+                  have_borrowers = true;
+              }
+          },
+          borrowers2,
+          have_borrowers,
+          v);
     }
     vlog(
       klog.trace,
@@ -583,22 +587,19 @@ ss::future<> quota_manager::quota_balancer_step() {
       borrowers2.out().size());
 
     // collect quota from lenders
-    const inoutpair<int64_t> collected = co_await container().map_reduce0(
-      [ins = borrowers2.in().size(), outs = borrowers2.out().size()](
-        quota_manager& qm) -> inoutpair<int64_t> {
-          const inoutpair<int64_t> surplus = qm.get_surplus();
-          return qm.lend({{
-            ins > 0 ? surplus.in() / 2 : 0,
-            outs > 0 ? surplus.out() / 2 : 0,
-          }});
+    const inoutpair<shard_quota_t> collected = co_await container().map_reduce0(
+      [have_borrowers](quota_manager& qm) {
+          return qm.lend(to_each(
+            [](const shard_quota_t surplus, const bool have_borrowers) {
+                return have_borrowers ? surplus / 2 : 0;
+            },
+            qm.get_surplus(),
+            have_borrowers));
       },
-      inoutpair<int64_t>{{0, 0}},
-      [](const inoutpair<int64_t>& s, const inoutpair<int64_t>& v)
-        -> inoutpair<int64_t> {
-          return {{s.in() + v.in(), s.out() + v.out()}};
-      }
-      // std::plus<int64_t>{}
-    );
+      inoutpair<shard_quota_t>{{0, 0}},
+      [](const inoutpair<shard_quota_t>& s, const inoutpair<shard_quota_t>& v) {
+          return to_each ( std::plus{}, s, v );
+      });
 
     vlog(klog.trace, "Quota balancer: collected: {}", collected);
 }

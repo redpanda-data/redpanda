@@ -60,6 +60,64 @@ struct inoutpair : std::pair<T, T> {
     const T& out() const noexcept { return pair_t::second; }
 };
 
+template <typename T> concept arithmetic = std::is_arithmetic_v<T>;
+
+template<arithmetic T>
+struct inoutpair<T> : std::pair<T, T> {
+    using pair_t = std::pair<T, T>;
+    T& in() noexcept { return pair_t::first; }
+    T in() const noexcept { return pair_t::first; }
+    T& out() noexcept { return pair_t::second; }
+    T out() const noexcept { return pair_t::second; }
+};
+
+template<>
+struct inoutpair<void> {};
+
+namespace detail{
+template<class T> struct unwrap_inoutpair {};
+
+template<class U>
+struct unwrap_inoutpair<inoutpair<U>> {
+  using type = U;
+};
+
+template<class U>
+struct unwrap_inoutpair<const inoutpair<U>> {
+  using type = const U;
+};
+
+template<class U>
+struct unwrap_inoutpair<inoutpair<U>&> {
+  using type = U&;
+};
+
+template<class U>
+struct unwrap_inoutpair<const inoutpair<U>&> {
+  using type = const U&;
+};
+
+template<class T> using unwrap_inoutpair_t = typename unwrap_inoutpair<T>::type;
+
+}
+
+template<
+  class... T,
+  std::invocable<detail::unwrap_inoutpair_t<T>...> F,
+  class TRes = std::invoke_result_t<F,detail::unwrap_inoutpair_t<T>...>
+  >
+inoutpair<TRes> to_each(F f, /*const inoutpair<T>&... args*/ T&&... args) {
+  if constexpr (std::is_void_v<TRes>) {
+    std::invoke(f, args.in()...);
+    std::invoke(f, args.out()...);
+    return {};
+  } else {
+    return inoutpair<TRes>{
+      {std::invoke(f, args.in()...), 
+      std::invoke(f, args.out()...)}};
+  }
+}
+
 // quota_manager tracks quota usage
 //
 // TODO:
@@ -213,28 +271,34 @@ private:
     ss::future<> quota_balancer_step();
 
     inoutpair<shard_quota_t> get_deficiency() const noexcept {
-        return {
-          {_shard_quota.in().tokens() < 0 ? 1 : 0,
-           _shard_quota.out().tokens() < 0 ? 1 : 0}};
+      return to_each([] (const bottomless_token_bucket& b) -> shard_quota_t {
+          return b.tokens() < 0 ? 1 : 0;
+      }, _shard_quota );
     }
 
     inoutpair<shard_quota_t> get_surplus() const noexcept {
-        return {
-          {std::max<shard_quota_t>(
-             _shard_quota.in().get_current_rate() - _shard_quota_minimum.in(),
-             0),
-           std::max<shard_quota_t>(
-             _shard_quota.out().get_current_rate() - _shard_quota_minimum.out(),
-             0)}};
+        return to_each(
+          [](const bottomless_token_bucket& b, const shard_quota_t& quota_min) {
+              return std::max<shard_quota_t>(
+                b.get_current_rate() - quota_min, 0);
+          }, _shard_quota, _shard_quota_minimum);
     }
 
-    inoutpair<shard_quota_t> lend(inoutpair<shard_quota_t> tolend) noexcept {
-        _shard_quota.in().set_quota(std::max(
-          _shard_quota.in().quota() - tolend.in(), _shard_quota_minimum.in()));
-        _shard_quota.out().set_quota(std::max(
-          _shard_quota.out().quota() - tolend.out(),
-          _shard_quota_minimum.out()));
-        return {{0, 0}};
+    inoutpair<shard_quota_t> lend(inoutpair<shard_quota_t> quota_ask) noexcept {
+        return to_each(
+          [](
+            bottomless_token_bucket& b,
+            const shard_quota_t quota_ask,
+            const shard_quota_t quota_min) {
+              const auto can_lend = std::min<shard_quota_t>(
+                quota_ask, b.get_current_rate() - quota_min);
+              vassert(can_lend >= 0, "can_lend logic error");
+              b.set_quota(b.quota() - can_lend);
+              return can_lend;
+          },
+          _shard_quota,
+          quota_ask,
+          _shard_quota_minimum);
     }
 
 private:
