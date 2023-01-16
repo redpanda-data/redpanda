@@ -23,6 +23,7 @@
 #include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "security/mtls.h"
+#include "ssx/fwd.h"
 #include "utils/ema.h"
 
 #include <seastar/core/future.hh>
@@ -52,7 +53,8 @@ public:
       ss::sharded<cluster::controller_api>&,
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<coproc::partition_manager>&,
-      std::optional<qdc_monitor::config>) noexcept;
+      std::optional<qdc_monitor::config>,
+      ssx::thread_worker&) noexcept;
 
     ~server() noexcept override = default;
     server(const server&) = delete;
@@ -133,6 +135,8 @@ public:
 
     latency_probe& latency_probe() { return _probe; }
 
+    ssx::thread_worker& thread_worker() { return _thread_worker; }
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -158,6 +162,7 @@ private:
     security::tls::principal_mapper _mtls_principal_mapper;
 
     class latency_probe _probe;
+    ssx::thread_worker& _thread_worker;
 };
 
 } // namespace kafka

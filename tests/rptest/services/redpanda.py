@@ -393,6 +393,7 @@ class SecurityConfig:
     def __init__(self):
         self.enable_sasl = False
         self.kafka_enable_authorization: Optional[bool] = None
+        self.sasl_mechanisms: Optional[list[str]] = None
         self.endpoint_authn_method: Optional[str] = None
         self.tls_provider: Optional[TLSProvider] = None
         self.require_client_auth: bool = True
@@ -1955,6 +1956,11 @@ class RedpandaService(Service):
             conf.update(
                 dict(kafka_enable_authorization=self._security.
                      kafka_enable_authorization))
+        if self._security.sasl_mechanisms is not None:
+            self.logger.debug(
+                f"Setting sasl_mechanisms: {self._security.sasl_mechanisms} in cluster configuration"
+            )
+            conf.update(dict(sasl_mechanisms=self._security.sasl_mechanisms))
 
         conf_yaml = yaml.dump(conf)
         for node in self.nodes:

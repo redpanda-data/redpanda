@@ -68,6 +68,11 @@ class KafkaCat:
                     f"sasl.username={cfg['sasl_plain_username']}", "-X",
                     f"sasl.password={cfg['sasl_plain_password']}"
                 ]
+                if cfg['sasl_mechanism'] == "GSSAPI":
+                    cmd += [
+                        "-X", "sasl.kerberos.service.name=redpanda",
+                        '-Xsasl.kerberos.kinit.cmd=kinit client -t /var/lib/redpanda/client.keytab'
+                    ]
             try:
                 res = subprocess.check_output(
                     ["kcat", "-b", self._redpanda.brokers()] + cmd,

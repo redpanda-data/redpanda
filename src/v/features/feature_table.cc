@@ -55,6 +55,8 @@ std::string_view to_string_view(feature f) {
         return "seeds_driven_bootstrap_capable";
     case feature::tm_stm_cache:
         return "tm_stm_cache";
+    case feature::kafka_gssapi:
+        return "kafka_gssapi";
     case feature::test_alpha:
         return "__test_alpha";
     }

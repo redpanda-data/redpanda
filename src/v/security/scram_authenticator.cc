@@ -119,13 +119,14 @@ result<bytes> scram_authenticator<T>::handle_next(bytes_view auth_bytes) {
 }
 
 template<typename T>
-result<bytes> scram_authenticator<T>::authenticate(bytes_view auth_bytes) {
+ss::future<result<bytes>>
+scram_authenticator<T>::authenticate(bytes auth_bytes) {
     auto ret = handle_next(auth_bytes);
     if (!ret) {
         _state = state::failed;
         clear_credentials();
     }
-    return ret;
+    co_return ret;
 }
 
 template class scram_authenticator<scram_sha256>;

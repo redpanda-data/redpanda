@@ -27,7 +27,7 @@ public:
       : _state{state::client_first_message}
       , _credentials(credentials) {}
 
-    result<bytes> authenticate(bytes_view auth_bytes) override;
+    ss::future<result<bytes>> authenticate(bytes auth_bytes) override;
 
     bool complete() const override { return _state == state::complete; }
     bool failed() const override { return _state == state::failed; }

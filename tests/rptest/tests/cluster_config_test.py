@@ -559,6 +559,11 @@ class ClusterConfigTest(RedpandaTest):
             else:
                 raise NotImplementedError(p['type'])
 
+            if name == 'sasl_mechanisms':
+                # The default value is ['SCRAM'], but the array cannot contain
+                # arbitrary strings because the config system validates them.
+                valid_value = ['SCRAM', 'GSSAPI']
+
             if name == 'enable_coproc':
                 # Don't try enabling coproc, it has external dependencies
                 continue

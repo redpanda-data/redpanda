@@ -70,6 +70,7 @@
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/thread_worker.h"
 #include "storage/backlog_controller.h"
 #include "storage/chunk_cache.h"
 #include "storage/compaction_controller.h"
@@ -98,6 +99,7 @@
 
 #include <chrono>
 #include <exception>
+#include <memory>
 #include <vector>
 
 static void set_local_kafka_client_config(
@@ -808,6 +810,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         return storage::internal::chunks().start();
     }).get();
 
+    construct_single_service(thread_worker);
+
     // cluster
     syschecks::systemd_message("Initializing connection cache").get();
     construct_service(_connection_cache).get();
@@ -1247,7 +1251,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(controller->get_api()),
         std::ref(tx_gateway_frontend),
         std::ref(cp_partition_manager),
-        qdc_config)
+        qdc_config,
+        std::ref(*thread_worker))
       .get();
     kafka_cfg.stop().get();
     construct_service(
@@ -1581,6 +1586,8 @@ void application::start_runtime_services(
                 }
             });
       });
+
+    thread_worker->start().get();
 
     // single instance
     node_status_backend.invoke_on_all(&cluster::node_status_backend::start)

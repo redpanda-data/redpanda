@@ -13,7 +13,9 @@
 
 #include "config/client_group_byte_rate_quota.h"
 #include "net/inet_address_wrapper.h"
+#include "ssx/sformat.h"
 
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_set.h>
 #include <fmt/format.h>
 
@@ -98,6 +100,21 @@ std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
                   gal.second.clients_prefix,
                   another_group.second.clients_prefix);
             }
+        }
+    }
+
+    return std::nullopt;
+}
+
+std::optional<ss::sstring>
+validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
+    static const absl::flat_hash_set<std::string_view> supported{
+      "GSSAPI", "SCRAM"};
+
+    // Validate results
+    for (const auto& m : mechanisms) {
+        if (!supported.contains(m)) {
+            return ssx::sformat("'{}' is not a supported SASL mechanism", m);
         }
     }
 

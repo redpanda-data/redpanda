@@ -14,6 +14,7 @@
 #include "config/broker_authn_endpoint.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/errors.h"
@@ -42,10 +43,12 @@
 #include "net/connection.h"
 #include "security/errc.h"
 #include "security/exceptions.h"
+#include "security/gssapi_authenticator.h"
 #include "security/mtls.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/future-util.h"
+#include "ssx/thread_worker.h"
 #include "utils/utf8.h"
 #include "vlog.h"
 
@@ -56,16 +59,14 @@
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/log.hh>
 
+#include <absl/algorithm/container.h>
+#include <absl/container/flat_hash_map.h>
 #include <fmt/format.h>
 
 #include <chrono>
 #include <exception>
 #include <limits>
 #include <memory>
-
-static const std::vector<ss::sstring> supported_sasl_mechanisms = {
-  security::scram_sha256_authenticator::name,
-  security::scram_sha512_authenticator::name};
 
 namespace kafka {
 
@@ -88,7 +89,8 @@ server::server(
   ss::sharded<cluster::controller_api>& controller_api,
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<coproc::partition_manager>& coproc_partition_manager,
-  std::optional<qdc_monitor::config> qdc_config) noexcept
+  std::optional<qdc_monitor::config> qdc_config,
+  ssx::thread_worker& tw) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)
   , _topics_frontend(tf)
@@ -112,7 +114,8 @@ server::server(
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _coproc_partition_manager(coproc_partition_manager)
   , _mtls_principal_mapper(
-      config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind()) {
+      config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
+  , _thread_worker(tw) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }
@@ -297,14 +300,16 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
     log_request(ctx.header(), request);
     vlog(klog.debug, "Received SASL_AUTHENTICATE {}", request);
 
-    auto result = ctx.sasl()->authenticate(std::move(request.data.auth_bytes));
+    auto result = co_await ctx.sasl()->authenticate(
+      std::move(request.data.auth_bytes));
     if (likely(result)) {
         sasl_authenticate_response_data data{
           .error_code = error_code::none,
           .error_message = std::nullopt,
           .auth_bytes = std::move(result.value()),
         };
-        return ctx.respond(sasl_authenticate_response(std::move(data)));
+        co_return co_await ctx.respond(
+          sasl_authenticate_response(std::move(data)));
     }
 
     sasl_authenticate_response_data data{
@@ -312,7 +317,7 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
       .error_message = ssx::sformat(
         "SASL authentication failed: {}", result.error().message()),
     };
-    return ctx.respond(sasl_authenticate_response(std::move(data)));
+    co_return co_await ctx.respond(sasl_authenticate_response(std::move(data)));
 }
 
 template<>
@@ -395,29 +400,59 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
     log_request(ctx.header(), request);
     vlog(klog.debug, "Received SASL_HANDSHAKE {}", request);
 
+    const auto& configured = config::shard_local_cfg().sasl_mechanisms();
+    auto supports = [&configured](std::string_view value) {
+        return absl::c_find(configured, value) != configured.end();
+    };
+
     /*
      * configure sasl for the current connection context. see the sasl
      * authenticate request for the next phase of the auth process.
      */
     auto error = error_code::none;
 
-    if (request.data.mechanism == security::scram_sha256_authenticator::name) {
-        ctx.sasl()->set_mechanism(
-          std::make_unique<security::scram_sha256_authenticator::auth>(
-            ctx.credentials()));
+    std::vector<ss::sstring> supported_sasl_mechanisms;
+    if (supports("SCRAM")) {
+        supported_sasl_mechanisms.insert(
+          supported_sasl_mechanisms.end(),
+          {security::scram_sha256_authenticator::name,
+           security::scram_sha512_authenticator::name});
 
-    } else if (
-      request.data.mechanism == security::scram_sha512_authenticator::name) {
-        ctx.sasl()->set_mechanism(
-          std::make_unique<security::scram_sha512_authenticator::auth>(
-            ctx.credentials()));
+        if (
+          request.data.mechanism
+          == security::scram_sha256_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::scram_sha256_authenticator::auth>(
+                ctx.credentials()));
 
-    } else {
+        } else if (
+          request.data.mechanism
+          == security::scram_sha512_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::scram_sha512_authenticator::auth>(
+                ctx.credentials()));
+        }
+    }
+
+    const bool has_kafka_gssapi = ctx.feature_table().local().is_active(
+      features::feature::kafka_gssapi);
+    if (has_kafka_gssapi && supports("GSSAPI")) {
+        supported_sasl_mechanisms.emplace_back(
+          security::gssapi_authenticator::name);
+
+        if (request.data.mechanism == security::gssapi_authenticator::name) {
+            ctx.sasl()->set_mechanism(
+              std::make_unique<security::gssapi_authenticator>(
+                ctx.connection()->server().thread_worker()));
+        }
+    }
+
+    if (!ctx.sasl()->has_mechanism()) {
         error = error_code::unsupported_sasl_mechanism;
     }
 
     return ctx.respond(
-      sasl_handshake_response(error, supported_sasl_mechanisms));
+      sasl_handshake_response(error, std::move(supported_sasl_mechanisms)));
 }
 
 template<>
