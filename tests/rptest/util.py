@@ -235,7 +235,13 @@ def wait_for_local_storage_truncate(redpanda,
                 )
             sizes.append(total_size)
 
-        return all(s <= target_bytes for s in sizes)
+        # The segment which is open for appends will differ in Redpanda's internal
+        # sizing (exact) vs. what the filesystem reports for a falloc'd file (to the
+        # nearest page).  Since our filesystem view may over-estimate the size of
+        # the log by a page, adjust the target size by that much.
+        threshold = target_bytes + 4096
+
+        return all(s <= threshold for s in sizes)
 
     wait_until(is_truncated, timeout_sec=timeout_sec, backoff_sec=1)
 
