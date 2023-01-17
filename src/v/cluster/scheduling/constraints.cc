@@ -221,31 +221,29 @@ least_allocated_in_domain(const partition_allocation_domain domain) {
     return soft_constraint_evaluator(std::make_unique<impl>(domain));
 }
 
-soft_constraint_evaluator distinct_rack(
+hard_constraint_evaluator distinct_rack(
   const std::vector<model::broker_shard>& replicas,
   const allocation_state& state) {
-    class impl : public soft_constraint_evaluator::impl {
+    class impl : public hard_constraint_evaluator::impl {
     public:
         impl(
           const std::vector<model::broker_shard>& replicas,
           const allocation_state& state)
           : _replicas(replicas)
           , _state(state) {}
-        uint64_t score(const allocation_node& node) const final {
-            // score node as 1 if the rack of the node is different
-            // score as 0 otherwise
+        bool evaluate(const allocation_node& node) const final {
             for (auto [node_id, shard] : _replicas) {
                 auto rack = _state.get_rack_id(node_id);
+                // replica has no rack assigned, any node will match
                 if (!rack.has_value()) {
-                    return soft_constraint_evaluator::max_score
-                           / _state.available_nodes();
+                    return true;
                 }
+                // rack is already in replica set
                 if (rack.value() == node.rack()) {
-                    return 0;
+                    return false;
                 }
             }
-            return soft_constraint_evaluator::max_score
-                   / _state.available_nodes();
+            return true;
         }
 
         void print(std::ostream& o) const final {
@@ -256,7 +254,7 @@ soft_constraint_evaluator distinct_rack(
         const allocation_state& _state;
     };
 
-    return soft_constraint_evaluator(std::make_unique<impl>(replicas, state));
+    return hard_constraint_evaluator(std::make_unique<impl>(replicas, state));
 }
 
 soft_constraint_evaluator least_disk_filled(

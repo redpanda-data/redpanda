@@ -73,7 +73,13 @@ soft_constraint_evaluator least_disk_filled(
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
-soft_constraint_evaluator
+hard_constraint_evaluator
 distinct_rack(const std::vector<model::broker_shard>&, const allocation_state&);
+
+inline soft_constraint_evaluator distinct_rack_preferred(
+  const std::vector<model::broker_shard>& replicas,
+  const allocation_state& state) {
+    return make_soft_constraint(distinct_rack(replicas, state));
+}
 
 } // namespace cluster

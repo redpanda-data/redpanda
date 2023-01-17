@@ -103,7 +103,7 @@ partition_allocator::allocate_partition(
               not_changed_replicas.end());
             effective_constraints.soft_constraints.push_back(
               ss::make_lw_shared<soft_constraint_evaluator>(
-                distinct_rack(current_replicas, *_state)));
+                distinct_rack_preferred(current_replicas, *_state)));
         }
 
         effective_constraints.add(p_constraints.constraints);
