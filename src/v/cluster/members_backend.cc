@@ -1010,6 +1010,10 @@ ss::future<> members_backend::reallocate_replica_set(
               meta.current_replica_set,
               meta.new_replica_set,
               error.message());
+            if (error == errc::update_in_progress) {
+                // Skip meta for this partition as it as already moving
+                meta.state = reallocation_state::finished;
+            }
             co_return;
         }
         // success, update state and move on
