@@ -49,8 +49,8 @@ hard_constraint_evaluator disk_not_overflowed_by_partition(
 soft_constraint_evaluator least_allocated();
 
 /*
- * scores nodes based on allocation capacity used by priorty partitions
- * returning `0` for nodes fully allocated for priority partitons
+ * scores nodes based on allocation capacity used by priority partitions
+ * returning `0` for nodes fully allocated for priority partitions
  * and `max_capacity` for nodes without any priority partitions
  * non-priority partition allocations are ignored
  */
