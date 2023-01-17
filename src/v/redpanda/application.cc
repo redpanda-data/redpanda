@@ -56,6 +56,7 @@
 #include "coproc/api.h"
 #include "coproc/partition_manager.h"
 #include "features/feature_table_snapshot.h"
+#include "features/fwd.h"
 #include "features/migrators.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -1615,6 +1616,51 @@ void application::start_bootstrap_services() {
           })
           .get();
     }
+
+    // If the feature table is blank, and we have not yet joined a cluster,
+    // then assume we are about to join a cluster or form a new one, and
+    // fast-forward the feature table before we do any network operations:
+    // this way features like rpc_v2_by_default will be present before the
+    // first network I/O we do.
+    //
+    // Absence of a cluster_uuid is not evidence of not having joined a cluster,
+    // because we might have joined via an earlier version of redpanda, and
+    // just upgraded to a version that stores cluster and node UUIDs.  We must
+    // also check for an controller log state on disk.
+    //
+    // Ordering: bootstrap_backend writes a feature table snapshot _before_
+    // persisting the cluster UUID to kvstore, so if restart in the middle,
+    // we will hit this path again: this is important to avoid ever starting
+    // network requests before we have reached a defined cluster version.
+
+    auto controller_log_exists = storage.local()
+                                   .kvs()
+                                   .get(
+                                     storage::kvstore::key_space::consensus,
+                                     raft::details::serialize_group_key(
+                                       raft::group_id{0},
+                                       raft::metadata_key::config_map))
+                                   .has_value();
+
+    if (
+      feature_table.local().get_active_version() == cluster::invalid_version
+      && !storage.local().get_cluster_uuid().has_value()
+      && !controller_log_exists) {
+        feature_table
+          .invoke_on_all([](features::feature_table& ft) {
+              ft.bootstrap_active_version(
+                features::feature_table::get_earliest_logical_version());
+
+              // We do _not_ write a snapshot here: the persistent record of
+              // feature table state is only set for the first time in
+              // bootstrap_backend (or feature_backend).  This is important,
+              // so that someone who starts a too-new Redpanda that can't join
+              // their cluster can easily stop it and run an older version,
+              // before we've committed any version info to disk.
+          })
+          .get0();
+    }
+
     static const bytes invariants_key("configuration_invariants");
     auto configured_node_id = config::node().node_id();
     if (auto invariants_buf = storage.local().kvs().get(
