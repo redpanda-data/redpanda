@@ -18,8 +18,12 @@ KDC_CONF_TMPL = """
 		max_renewable_life = 7d 0h 0m 0s
 		supported_enctypes = {supported_encryption_types}
 		default_principal_flags = +preauth
-	}}
+}}
+[logging]
+    kdc = FILE = /var/log/kdc.log
+    admin_server = FILE:/var/log/kadmin.log
 """
+
 KDC_CONF_PATH = "/etc/krb5kdc/kdc.conf"
 
 KRB5_CONF_TMPL = """
@@ -42,6 +46,16 @@ KDC_DB_PATH = "/var/lib/krb5kdc/principal"
 
 
 class KrbKdc(Service):
+    logs = {
+        "kdc_log": {
+            "path": "/var/log/kdc.log",
+            "collect_default": True
+        },
+        "kadmin_log": {
+            "path": "/var/log/kadmin.log",
+            "collect_default": True
+        }
+    }
     """
     A Kerberos KDC implementation backed by krb5-kdc (MIT).
     """
