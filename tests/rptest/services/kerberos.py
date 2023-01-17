@@ -111,7 +111,7 @@ EOF
                     return [p]
 
             except (RemoteCommandError, ValueError):
-                self.logger.warn("pidfile not found: {path}")
+                self.logger.warn(f"pidfile not found: {path}")
 
             return []
 
