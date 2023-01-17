@@ -10,9 +10,19 @@
 
 #pragma once
 
-#include "cloud_storage/remote.h"
+#include "cloud_storage_clients/types.h"
+#include "model/fundamental.h"
+#include "model/metadata.h"
+
+class retry_chain_node;
+
+namespace storage {
+class ntp_config;
+}
 
 namespace cloud_storage {
+
+class remote;
 
 struct recovery_result {
     model::topic_namespace tp_ns;

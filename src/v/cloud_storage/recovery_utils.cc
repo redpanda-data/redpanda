@@ -11,6 +11,8 @@
 #include "cloud_storage/recovery_utils.h"
 
 #include "cloud_storage/logger.h"
+#include "cloud_storage/remote.h"
+#include "storage/ntp_config.h"
 
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>

@@ -15,6 +15,7 @@
 #include "cloud_storage/recovery_utils.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
+#include "cluster/topic_recovery_status_frontend.h"
 #include "hashing/xx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

@@ -11,8 +11,11 @@
 
 #pragma once
 
-#include "cloud_storage/topic_recovery_service.h"
 #include "cluster/topic_recovery_status_rpc.h"
+
+namespace cloud_storage {
+struct topic_recovery_service;
+}
 
 namespace cluster {
 

@@ -12,7 +12,6 @@
 
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote.h"
-#include "cluster/topic_recovery_status_frontend.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/ntp_config.h"
@@ -24,7 +23,13 @@
 
 #include <vector>
 
+namespace cluster {
+class topic_recovery_status_frontend;
+}
+
 namespace cloud_storage {
+
+struct topic_recovery_service;
 
 /// Log download result
 ///

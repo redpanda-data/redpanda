@@ -20,7 +20,6 @@
 #include "cluster/node_status_table.h"
 #include "cluster/self_test_backend.h"
 #include "cluster/self_test_frontend.h"
-#include "cluster/topic_recovery_status_frontend.h"
 #include "config/node_config.h"
 #include "coproc/fwd.h"
 #include "features/fwd.h"

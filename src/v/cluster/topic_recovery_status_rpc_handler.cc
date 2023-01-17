@@ -11,6 +11,8 @@
 
 #include "cluster/topic_recovery_status_rpc_handler.h"
 
+#include "cloud_storage/topic_recovery_service.h"
+
 namespace cluster {
 
 topic_recovery_status_rpc_handler::topic_recovery_status_rpc_handler(
