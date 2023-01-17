@@ -612,6 +612,9 @@ class ClusterConfigTest(RedpandaTest):
                 if isinstance(actual, bool):
                     # Lowercase because yaml and python capitalize bools differently.
                     actual = str(actual).lower()
+                    # Not all expected bools originate from example values
+                    if isinstance(expect, bool):
+                        expect = str(expect).lower()
                 else:
                     actual = str(actual)
                 if actual != str(expect):
