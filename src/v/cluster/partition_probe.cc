@@ -60,6 +60,12 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           labels)
           .aggregate(aggregate_labels),
         sm::make_gauge(
+          "start_offset",
+          [this] { return _partition.start_offset(); },
+          sm::description("start offset"),
+          labels)
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
           "last_stable_offset",
           [this] { return _partition.last_stable_offset(); },
           sm::description("Last stable offset"),
