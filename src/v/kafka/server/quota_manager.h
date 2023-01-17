@@ -301,6 +301,12 @@ private:
           _shard_quota_minimum);
     }
 
+    void borrow(inoutpair<shard_quota_t> quota_increase) noexcept {
+      to_each([](bottomless_token_bucket& b, const shard_quota_t quota_increase) {
+        b.set_quota(b.quota() + quota_increase);
+      }, _shard_quota, quota_increase);
+    }
+
 private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;

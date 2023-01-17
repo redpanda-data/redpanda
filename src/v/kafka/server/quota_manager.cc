@@ -526,82 +526,112 @@ void quota_manager::quota_balancer() {
     vlog(klog.info, "Quota balancer stopped");
 }
 
-} // namespace kafka
+using shard_count_t = boost::uint_t<std::numeric_limits<ss::shard_id>::digits>::fast;
 
-template<class T>
-struct ::fmt::formatter<kafka::inoutpair<T>> {
-    constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
-        return ctx.begin();
-    }
-    template<typename FormatContext>
-    auto format(const kafka::inoutpair<T>& p, FormatContext& ctx) const
-      -> decltype(ctx.out()) {
-        // ctx.out() is an output iterator to write to.
-        return fmt::format_to(
-          ctx.out(), "{}", static_cast<const std::pair<T, T>&>(p));
-    }
+struct borrower_t {
+  ss::shard_id shard_id;
+  inoutpair<shard_count_t> is_borrower;
 };
-
-namespace kafka {
 
 ss::future<> quota_manager::quota_balancer_step() {
     vlog(klog.trace, "Quota balancer step");
     _probe.balancer_run();
 
     // determine the borrowers and whether any balancing is needed now
-    using opt_shard_t = std::optional<ss::shard_id>;
-    std::vector<inoutpair<opt_shard_t>> borrowers = co_await container().map(
-      [](quota_manager& qm) -> inoutpair<opt_shard_t> {
-          return to_each([](const shard_quota_t d) -> opt_shard_t {
-            if ( d > 0 ) {
-              return ss::this_shard_id();
-            }
-            return {};
-          }, qm.get_deficiency() );
+    const std::vector<borrower_t> borrowers = co_await container().map(
+      [](quota_manager& qm) -> borrower_t {
+          return {
+              ss::this_shard_id(), { to_each(
+                                     [](const shard_quota_t d) -> size_t {
+                                         return d > 0 ? 1u : 0u;
+                                     },
+                                     qm.get_deficiency()) }
+          };
       });
     vlog(klog.trace, "Quota balancer: borrowers: {}", borrowers);
 
-    inoutpair<std::vector<ss::shard_id>> borrowers2;
-    inoutpair<bool> have_borrowers {{ false, false }};
-    borrowers2.in().reserve(ss::smp::count);
-    borrowers2.out().reserve(ss::smp::count);
-    for (const inoutpair<opt_shard_t>& v : borrowers) {
-        to_each(
-          [](
-            std::vector<ss::shard_id>& borrowers2,
-            bool& have_borrowers,
-            const opt_shard_t& v) {
-              if (v.has_value()) {
-                  borrowers2.push_back(*v);
-                  have_borrowers = true;
-              }
-          },
-          borrowers2,
-          have_borrowers,
-          v);
-    }
+    const auto borrowers_count = std::accumulate(
+      borrowers.cbegin(),
+      borrowers.cend(),
+      inoutpair<shard_count_t>{{0u, 0u}},
+      [](const inoutpair<shard_count_t>& s, const borrower_t& b) {
+          return to_each(std::plus{}, s, b.is_borrower);
+      });
     vlog(
       klog.trace,
-      "Quota balancer: borrowers count: {}, {}",
-      borrowers2.in().size(),
-      borrowers2.out().size());
+      "Quota balancer: borrowers count: {}", borrowers_count );
 
     // collect quota from lenders
     const inoutpair<shard_quota_t> collected = co_await container().map_reduce0(
-      [have_borrowers](quota_manager& qm) {
+      [borrowers_count](quota_manager& qm) {
           return qm.lend(to_each(
-            [](const shard_quota_t surplus, const bool have_borrowers) {
-                return have_borrowers ? surplus / 2 : 0;
+            [](
+              const shard_quota_t surplus,
+              const shard_count_t borrowers_count) {
+                return borrowers_count > 0 ? surplus / 2 : 0;
             },
             qm.get_surplus(),
-            have_borrowers));
+            borrowers_count));
       },
       inoutpair<shard_quota_t>{{0, 0}},
       [](const inoutpair<shard_quota_t>& s, const inoutpair<shard_quota_t>& v) {
           return to_each ( std::plus{}, s, v );
       });
-
     vlog(klog.trace, "Quota balancer: collected: {}", collected);
+
+    // dispense the collected amount among the borrowers
+    auto split = to_each(
+      [](
+        const shard_quota_t collected,
+        const shard_count_t borrowers_count) {
+          if ( borrowers_count == 0 ) {
+            vassert(collected==0, "Quota collected when borrowers are absent");
+            return std::div(collected, shard_count_t{1});
+          }
+          return std::div(collected, borrowers_count);
+      },
+      collected,
+      borrowers_count);
+    for ( const borrower_t& b : borrowers ) {
+      if ( !b.is_borrower.in() && !b.is_borrower.out() ) {
+        continue;
+      }
+      const inoutpair<shard_quota_t> share = to_each([]( auto& split ) {
+        if ( split.rem == 0 ) {
+          return split.quot;
+        }
+        --split.rem;
+        return split.quot + 1;
+      }, split );
+      // TBD: make the invocation parallel
+      co_await container().invoke_on ( b.shard_id, [share](quota_manager& qm) {
+        qm.borrow(share);
+      });
+    }
 }
 
 } // namespace kafka
+
+struct parseless_formatter {
+    constexpr auto parse(fmt::format_parse_context& ctx)
+      -> decltype(ctx.begin()) {
+        return ctx.begin();
+    }
+};
+
+template<class T>
+struct fmt::formatter<kafka::inoutpair<T>> : parseless_formatter {
+    template<typename Ctx>
+    auto format(const kafka::inoutpair<T>& p, Ctx& ctx) const {
+        return fmt::format_to(
+          ctx.out(), "{}", static_cast<const std::pair<T, T>&>(p));
+    }
+};
+
+template<>
+struct fmt::formatter<kafka::borrower_t> : parseless_formatter {
+    template<typename Ctx>
+    auto format(const kafka::borrower_t& v, Ctx& ctx) const {
+      return fmt::format_to(ctx.out(), "{{{}, {}}}", v.shard_id, v.is_borrower);
+    }
+};
