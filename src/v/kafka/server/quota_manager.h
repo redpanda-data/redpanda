@@ -240,7 +240,7 @@ private:
         clock::duration delay;
         rate_tracker tp_produce_rate;
         void maybe_arm_balancer_timer();
-        void notify_kafka_quota_balancer_node_period_change();
+        void notify_quota_balancer_node_period_change();
         void quota_balancer();
         ss::future<> quota_balancer_step();
 
@@ -266,7 +266,8 @@ private:
     shard_quota_t get_shard_egress_quota_default() const;
 
     void maybe_arm_balancer_timer();
-    void notify_kafka_quota_balancer_node_period_change();
+    void notify_quota_balancer_node_period_change();
+    std::chrono::milliseconds get_quota_balancer_node_period() const;
     void quota_balancer();
     ss::future<> quota_balancer_step();
 

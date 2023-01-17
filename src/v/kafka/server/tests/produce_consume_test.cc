@@ -331,27 +331,35 @@ FIXTURE_TEST(test_quota_balancer_1, prod_consume_fixture) {
           .get0();
     };
 
-    ss::smp::invoke_on_all([&] {
-        auto& config = config::shard_local_cfg();
-        config.get("kafka_quota_balancer_node_period_ms")
-          .set_value(250ms);
-    }).get0();
+    auto set_balancer_period = [] (const ch::milliseconds d) {
+      ss::smp::invoke_on_all([&] {
+          auto& config = config::shard_local_cfg();
+          config.get("kafka_quota_balancer_node_period_ms")
+            .set_value(d);
+      }).get0();
+    };
+
     wait_for_controller_leadership().get();
-    start();
-    ss::sleep(1s).get0();
+
+    set_balancer_period(25ms);
+    BOOST_TEST_WARN(false, "Starting");
+    ss::sleep(100ms).get0();
     int br = get_balancer_runs();
     BOOST_TEST_CHECK(
-      abs(br-5)<=1, "Expected 5±1 balancer runs");
-    int br_last = br;
+      abs(br-4)<=1, "Expected 4±1 balancer runs, got "<<br );
 
-    ss::smp::invoke_on_all([&] {
-        auto& config = config::shard_local_cfg();
-        config.get("kafka_quota_balancer_node_period_ms")
-          .set_value(150ms);
-    }).get0();
-    ss::sleep(1s).get0();
+    set_balancer_period(0ms);
+    int br_last = get_balancer_runs();
+    ss::sleep(100ms).get0();
     br = get_balancer_runs();
     BOOST_TEST_CHECK(
-      abs(br-br_last-7)<=1, "Expected 7±1 balancer runs");
+      abs(br-br_last-0)<=1, "Expected 0±1 balancer runs, got "<<br-br_last);
+
+    set_balancer_period(15ms);
+    br_last = get_balancer_runs();
+    ss::sleep(100ms).get0();
+    br = get_balancer_runs();
+    BOOST_TEST_CHECK(
+      abs(br-br_last-7)<=1, "Expected 7±1 balancer runs, got "<<br-br_last);
 
 }

@@ -110,7 +110,7 @@ quota_manager::quota_manager()
         _shard_quota.out().set_width(v);
     });
     _kafka_quota_balancer_node_period.watch([this] {
-        notify_kafka_quota_balancer_node_period_change();
+        notify_quota_balancer_node_period_change();
         // if (_balancer_timer.armed() || _as.abort_requested()) {
         //     return;
         // }
@@ -481,24 +481,37 @@ void quota_manager::maybe_arm_balancer_timer() {
     }
 }
 
-void quota_manager::notify_kafka_quota_balancer_node_period_change() {
+void quota_manager::notify_quota_balancer_node_period_change() {
     _as.request_abort_ex(abort_on_configuration_change{});
     // replace abort source immediately so that only subscribers are aborted now
     // and to enable future aborts
     _as = ss::abort_source();
 }
 
+std::chrono::milliseconds
+quota_manager::get_quota_balancer_node_period() const {
+    const auto v = _kafka_quota_balancer_node_period();
+    // zero period in config means do not run balancer
+    if (v == std::chrono::milliseconds::zero()) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          ss::steady_clock_type::duration::max() / 2);
+    }
+    return v;
+}
+
 void quota_manager::quota_balancer() {
     vlog(klog.debug, "Quota balancer started");
     using clock = ss::steady_clock_type;
-    static constexpr auto min_sleep_time = 1ms; // TBD config?
+    static constexpr auto min_sleep_time = 2ms; // TBD config?
 
     clock::time_point next_invocation = clock::now()
-                                        + _kafka_quota_balancer_node_period();
+                                        + get_quota_balancer_node_period();
     try {
         for (;;) {
             auto sleep_time = next_invocation - clock::now();
             if (sleep_time < min_sleep_time) {
+                // negative sleep_time occurs when balancer takes to run
+                // longer than the balancer period
                 vlog(
                   klog.warn,
                   "Quota balancer is invoked too often ({}), enforcing minimum "
@@ -513,7 +526,7 @@ void quota_manager::quota_balancer() {
                     [](const abort_on_configuration_change&) { return false; })
                   .get0();
             next_invocation = clock::now()
-                              + _kafka_quota_balancer_node_period();
+                              + get_quota_balancer_node_period();
 
             if (sleep_succeeded) {
                 quota_balancer_step().get0();
