@@ -106,42 +106,41 @@ constexpr bool is_long = std::is_integral_v<T>&& num_bits<T> > 32
 // https://github.com/apache/kafka/blob/be032735b39360df1a6de1a7feea8b4336e5bcc0/core/src/main/scala/kafka/server/ConfigHelper.scala
 template<typename T>
 consteval describe_configs_type property_config_type() {
-    if constexpr (reflection::is_std_optional<T>) {
+    // clang-format off
+    constexpr auto is_string_type = std::is_same_v<T, ss::sstring> ||
+        std::is_same_v<T, model::compression> ||
+        std::is_same_v<T, model::cleanup_policy_bitflags> ||
+        std::is_same_v<T, model::timestamp_type> ||
+        std::is_same_v<T, config::data_directory_path> ||
+        std::is_same_v<T, v8_engine::data_policy>;
+
+    constexpr auto is_long_type = is_long<T> ||
+        // Long type since seconds is atleast a 35-bit signed integral
+        // https://en.cppreference.com/w/cpp/chrono/duration
+        std::is_same_v<T, std::chrono::seconds> ||
+        // Long type since milliseconds is atleast a 45-bit signed integral
+        // https://en.cppreference.com/w/cpp/chrono/duration
+        std::is_same_v<T, std::chrono::milliseconds>;
+    // clang-format on
+
+    if constexpr (
+      reflection::is_std_optional<T> || reflection::is_tristate<T>) {
         return property_config_type<typename T::value_type>();
-    } else if constexpr (reflection::is_tristate<T>) {
         return property_config_type<typename T::value_type>();
     } else if constexpr (std::is_same_v<T, bool>) {
         return describe_configs_type::boolean;
-    } else if constexpr (std::is_same_v<T, ss::sstring>) {
+    } else if constexpr (is_string_type) {
         return describe_configs_type::string;
     } else if constexpr (is_short<T>) {
         return describe_configs_type::short_type;
     } else if constexpr (is_int<T>) {
         return describe_configs_type::int_type;
-    } else if constexpr (is_long<T>) {
+    } else if constexpr (is_long_type) {
         return describe_configs_type::long_type;
     } else if constexpr (std::is_floating_point_v<T>) {
         return describe_configs_type::double_type;
     } else if constexpr (reflection::is_std_vector<T>) {
         return describe_configs_type::list;
-    } else if constexpr (std::is_same_v<T, model::compression>) {
-        return describe_configs_type::string;
-    } else if constexpr (std::is_same_v<T, model::cleanup_policy_bitflags>) {
-        return describe_configs_type::string;
-    } else if constexpr (std::is_same_v<T, std::chrono::seconds>) {
-        // Long type since seconds is atleast a 35-bit signed integral
-        // https://en.cppreference.com/w/cpp/chrono/duration
-        return describe_configs_type::long_type;
-    } else if constexpr (std::is_same_v<T, std::chrono::milliseconds>) {
-        // Long type since milliseconds is atleast a 45-bit signed integral
-        // https://en.cppreference.com/w/cpp/chrono/duration
-        return describe_configs_type::long_type;
-    } else if constexpr (std::is_same_v<T, model::timestamp_type>) {
-        return describe_configs_type::string;
-    } else if constexpr (std::is_same_v<T, config::data_directory_path>) {
-        return describe_configs_type::string;
-    } else if constexpr (std::is_same_v<T, v8_engine::data_policy>) {
-        return describe_configs_type::string;
     } else {
         static_assert(
           config::detail::dependent_false<T>::value,
@@ -313,13 +312,10 @@ static void add_topic_config_if_requested(
 
 template<typename T>
 static ss::sstring maybe_print_tristate(const tristate<T>& tri) {
-    if (tri.is_disabled()) {
-        return "-1";
-    } else if (tri.has_value()) {
-        return ssx::sformat("{}", tri.value());
-    } else {
+    if (tri.is_disabled() || !tri.has_value()) {
         return "-1";
     }
+    return ssx::sformat("{}", tri.value());
 }
 
 template<typename T>
