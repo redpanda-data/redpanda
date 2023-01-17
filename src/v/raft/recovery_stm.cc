@@ -221,6 +221,7 @@ recovery_stm::read_range_for_recovery(
 
     // TODO: add timeout of maybe 1minute?
     auto reader = co_await _ptr->_log.make_reader(cfg);
+    vlog(_ctxlog.trace, ">>> Created reader with {}", cfg);
     auto batches = co_await model::consume_reader_to_memory(
       std::move(reader), model::no_timeout);
 
