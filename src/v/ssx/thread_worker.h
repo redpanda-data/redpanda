@@ -173,13 +173,15 @@ private:
 } // namespace impl
 
 /**
- * thread_worker runs tasks in a std::thread
+ * thread_worker runs tasks in a std::thread.
  *
  * By running in a std::thread, it's possible to make blocking calls such as
- * file I/O and posix thread primitives.
+ * file I/O and posix thread primitives without blocking a reactor.
  *
  * The thread worker will drain all operations before joining the thread in
- * stop()
+ * stop(), but it should be noted that joining a thread may block. As such, this
+ * class is most suited to run for the lifetime of an application, rather than
+ * short-lived.
  */
 class thread_worker {
 public:
@@ -187,7 +189,7 @@ public:
     thread_worker() = default;
 
     /**
-     * start the background thread
+     * start the background thread.
      */
     ss::future<> start() {
         vassert(
@@ -199,7 +201,10 @@ public:
     }
 
     /**
-     * stop and join the background thread
+     * stop and join the background thread.
+     *
+     * Although the work has completed, it should be noted that joining a thread
+     * may block the reactor.
      */
     ss::future<> stop() {
         vassert(
