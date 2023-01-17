@@ -100,10 +100,6 @@ EOF
 """
         node.account.ssh(cmd, allow_fail=False)
 
-    def start_cmd(self):
-        cmd = f"krb5kdc -P {KRB5KDC_PID_PATH};kadmind -P {KADMIND_PID_PATH}"
-        return cmd
-
     def pids(self, node):
         def pid(path: str):
             try:
@@ -126,11 +122,8 @@ EOF
 
     def start_node(self, node):
         self._render_cfg(node)
+        # Also runs krb5kdc and kadmind
         self._init_realm(node)
-        # Run kdc
-        cmd = self.start_cmd()
-        self.logger.debug("kdc command: %s", cmd)
-        node.account.ssh(cmd, allow_fail=False)
         wait_until(lambda: self.alive(node),
                    timeout_sec=30,
                    backoff_sec=.5,
