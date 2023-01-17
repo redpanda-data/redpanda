@@ -69,6 +69,7 @@ public:
         uint32_t partition_count;
 
         std::vector<node_metrics> nodes;
+        bool has_kafka_gssapi;
     };
     static constexpr ss::shard_id shard = 0;
 
