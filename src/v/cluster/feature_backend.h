@@ -39,6 +39,7 @@ public:
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
+    bool has_snapshot();
     ss::future<> save_snapshot();
 
     bool is_batch_applicable(const model::record_batch& b) {

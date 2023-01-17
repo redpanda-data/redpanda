@@ -43,7 +43,8 @@ public:
       ss::sharded<security::credential_store>&,
       ss::sharded<storage::api>&,
       ss::sharded<members_manager>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<feature_backend>&);
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -59,6 +60,7 @@ private:
     ss::sharded<storage::api>& _storage;
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<feature_backend>& _feature_backend;
     std::optional<model::cluster_uuid> _cluster_uuid_applied;
 };
 
