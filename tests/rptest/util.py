@@ -222,14 +222,26 @@ def wait_for_local_storage_truncate(redpanda,
         storage = redpanda.storage(sizes=True)
         sizes = []
         for node_partition in storage.partitions("kafka", topic):
+            if node_partition.num != partition_idx:
+                continue
             total_size = sum(s.size if s.size else 0
                              for s in node_partition.segments.values())
             redpanda.logger.debug(
                 f"  {topic}/{partition_idx} node {node_partition.node.name} local size {total_size} ({len(node_partition.segments)} segments)"
             )
+            for s in node_partition.segments.values():
+                redpanda.logger.debug(
+                    f"    {topic}/{partition_idx} node {node_partition.node.name} {s.name} {s.size}"
+                )
             sizes.append(total_size)
 
-        return all(s <= target_bytes for s in sizes)
+        # The segment which is open for appends will differ in Redpanda's internal
+        # sizing (exact) vs. what the filesystem reports for a falloc'd file (to the
+        # nearest page).  Since our filesystem view may over-estimate the size of
+        # the log by a page, adjust the target size by that much.
+        threshold = target_bytes + 4096
+
+        return all(s <= threshold for s in sizes)
 
     wait_until(is_truncated, timeout_sec=timeout_sec, backoff_sec=1)
 

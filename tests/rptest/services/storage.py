@@ -20,6 +20,8 @@ class Segment:
         self.data_file = None
         self.base_index = None
         self.compaction_index = None
+
+        # Size of data_file, if caller chooses to populate it via set_size
         self.size = None
 
     def add_file(self, fn, ext):
@@ -75,8 +77,12 @@ class Partition:
             seg.add_file(fn, ext)
 
     def set_segment_size(self, segment_name: str, size: int):
-        seg, _ = os.path.splitext(segment_name)
-        if not re.match(r"^\d+\-\d+\-v\d+$", seg):
+        """Set the data size of a segment: this is not the physical size of
+           all the segment's files, but just the size of the data part, excluding
+           space used by any indices.  This is usually what you care about, because
+           it's how Redpanda itself reasons about size for retention."""
+        seg, ext = os.path.splitext(segment_name)
+        if not (re.match(r"^\d+\-\d+\-v\d+$", seg) and ext == ".log"):
             return
         self.segments[seg].set_size(size)
 
