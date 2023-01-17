@@ -19,6 +19,17 @@
 #include <absl/algorithm/container.h>
 #include <boost/test/unit_test_log.hpp>
 
+struct move_only {
+    explicit move_only(size_t v)
+      : value(v) {}
+    ~move_only() = default;
+    move_only(move_only&&) = default;
+    move_only(move_only const&) = delete;
+    move_only& operator=(move_only&&) = default;
+    move_only& operator=(move_only const&) = delete;
+    size_t value;
+};
+
 template<size_t tries, size_t stop_at>
 auto thread_worker_test() {
     BOOST_REQUIRE_GT(ss::smp::count, 1);
@@ -26,13 +37,13 @@ auto thread_worker_test() {
     auto w = ssx::thread_worker{};
     w.start().get();
 
-    std::vector<std::vector<ss::future<size_t>>> all_results(ss::smp::count);
+    std::vector<std::vector<ss::future<move_only>>> all_results(ss::smp::count);
 
     ss::smp::invoke_on_all([&w, &all_results]() {
         auto& results = all_results[ss::this_shard_id()];
         results.reserve(tries);
         for (size_t i = 0; i < tries; ++i) {
-            results.push_back(w.submit([i]() { return i; }));
+            results.emplace_back(w.submit([i]() { return move_only(i); }));
         }
     }).get();
 
@@ -50,9 +61,9 @@ auto thread_worker_test() {
                 auto result = co_await std::move(results[i])
                                 .handle_exception_type(
                                   [i](const seastar::gate_closed_exception&) {
-                                      return i;
+                                      return move_only(i);
                                   });
-                BOOST_REQUIRE_EQUAL(result, i);
+                BOOST_REQUIRE_EQUAL(result.value, i);
             }
         }(w, all_results);
     }).get();
