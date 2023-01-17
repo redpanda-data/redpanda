@@ -19,6 +19,12 @@
 namespace cluster {
 
 class allocation_state;
+/**
+ * make_soft_constraint adapts hard constraint to soft one by returning
+ * max score for nodes that matches the soft constraint and 0 for
+ * the ones that not
+ */
+soft_constraint_evaluator make_soft_constraint(hard_constraint_evaluator);
 
 hard_constraint_evaluator not_fully_allocated();
 hard_constraint_evaluator is_active();

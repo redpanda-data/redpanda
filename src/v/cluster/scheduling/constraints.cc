@@ -307,4 +307,27 @@ soft_constraint_evaluator least_disk_filled(
       std::make_unique<impl>(max_disk_usage_ratio, node_disk_reports));
 }
 
+soft_constraint_evaluator
+make_soft_constraint(hard_constraint_evaluator hard_constraint) {
+    class impl : public soft_constraint_evaluator::impl {
+    public:
+        explicit impl(hard_constraint_evaluator hard_constraint)
+          : _hard_constraint(std::move(hard_constraint)) {}
+        uint64_t score(const allocation_node& node) const final {
+            return _hard_constraint.evaluate(node)
+                     ? soft_constraint_evaluator::max_score
+                     : 0;
+        }
+
+        void print(std::ostream& o) const final {
+            fmt::print(o, "soft constraint adapter of ({})", _hard_constraint);
+        }
+
+        const hard_constraint_evaluator _hard_constraint;
+    };
+
+    return soft_constraint_evaluator(
+      std::make_unique<impl>(std::move(hard_constraint)));
+}
+
 } // namespace cluster
