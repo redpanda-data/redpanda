@@ -161,7 +161,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_credentials),
             std::ref(_storage),
             std::ref(_members_manager),
-            std::ref(_feature_table));
+            std::ref(_feature_table),
+            std::ref(_feature_backend));
       })
       .then([this] {
           return _config_frontend.start(

@@ -319,11 +319,14 @@ public:
 
     model::offset get_applied_offset() const { return _applied_offset; }
 
-private:
-    // Only for use by our friends feature backend & manager, and during
-    // bootstrap by bootstrap_backend.
-    void set_active_version(cluster::cluster_version);
+    // application and bootstrap_backend may use this to fast-forward a
+    // feature table to the desired version synchronously, early in the
+    // lifetime of a node.
     void bootstrap_active_version(cluster::cluster_version);
+
+private:
+    // Only for use by our friends feature backend & manager
+    void set_active_version(cluster::cluster_version);
     void apply_action(const cluster::feature_update_action& fua);
 
     // The controller log offset of last batch applied to this state machine
@@ -365,10 +368,6 @@ private:
     // feature_backend is a friend for routine updates when
     // applying raft0 log events.
     friend class cluster::feature_backend;
-
-    // bootstrap_backend is a friend for using set_active_version during
-    // bootstrap, thereby fast-forwarding past the usual version negotiation.
-    friend class cluster::bootstrap_backend;
 
     // Unit testing hook.
     friend class feature_table_fixture;
