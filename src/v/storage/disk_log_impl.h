@@ -206,6 +206,10 @@ private:
 
     // Bytes written since last time we requested stm snapshot
     ssx::semaphore_units _stm_dirty_bytes_units;
+
+    // Mutually exclude operations that will cause segment rolling
+    // do_housekeeping and maybe_roll
+    mutex _segments_rolling_lock;
 };
 
 } // namespace storage

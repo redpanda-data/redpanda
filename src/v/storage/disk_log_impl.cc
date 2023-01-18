@@ -1000,6 +1000,13 @@ ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
 
 ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
+    auto maybe_lock = _segments_rolling_lock.try_get_units();
+    if (!maybe_lock) {
+        // if the lock is already taken, do_housekeeping is possibly rolling the
+        // segment. since size rolling can happen later, bail out as to not
+        // impact write latency too much
+        co_return;
+    }
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (_segs.empty()) {
         co_return co_await new_segment(next_offset, t, iopc);
@@ -1021,6 +1028,10 @@ ss::future<> disk_log_impl::maybe_roll(
 
 ss::future<> disk_log_impl::do_housekeeping(
   std::chrono::system_clock::time_point system_time) {
+    // do_housekeeping races with maybe_roll to use new_segment.
+    // take a lock to prevent problems
+    auto lock = _segments_rolling_lock.get_units();
+
     if (_segs.empty()) {
         co_return;
     }
@@ -1060,7 +1071,7 @@ ss::future<> disk_log_impl::do_housekeeping(
                                        // bouncer condition checked this
     co_await last->release_appender(_readers_cache.get());
     auto offsets = last->offsets();
-    co_return co_await new_segment(
+    co_await new_segment(
       offsets.committed_offset + model::offset{1}, offsets.term, pc);
 }
 
