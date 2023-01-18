@@ -516,8 +516,7 @@ std::error_code
 signature_abs::sign_header(http::client::request_header& header) const {
     auto ms_date = _sig_time.format_http_datetime();
     header.set("x-ms-date", {ms_date.data(), ms_date.size()});
-    // TODO(vlad): Support more versions?
-    header.set("x-ms-version", "2021-08-06");
+    header.set("x-ms-version", azure_storage_api_version);
 
     const auto to_sign = get_string_to_sign(header);
     if (!to_sign) {
