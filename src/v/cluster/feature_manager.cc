@@ -21,6 +21,8 @@
 #include "model/timeout_clock.h"
 #include "raft/group_manager.h"
 
+#include <absl/algorithm/container.h>
+
 namespace cluster {
 
 static constexpr std::chrono::seconds status_retry = 5s;
@@ -191,10 +193,16 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
     }
     if (_feature_table.local().is_active(features::feature::license)) {
         const auto& cfg = config::shard_local_cfg();
+        auto has_gssapi = [&cfg]() {
+            return absl::c_any_of(cfg.sasl_mechanisms(), [](const auto& m) {
+                return m == "GSSAPI";
+            });
+        };
         if (
           cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
-               == model::partition_autobalancing_mode::continuous) {
+               == model::partition_autobalancing_mode::continuous
+          || has_gssapi()) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(

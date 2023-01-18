@@ -8,8 +8,10 @@
 # by the Apache License, Version 2.0
 
 import socket
+import time
 
 from ducktape.tests.test import Test
+from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -118,3 +120,45 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
         metadata = self.client.metadata()
         self.redpanda.logger.info(f"Metadata (GSSAPI): {metadata}")
         assert len(metadata['brokers']) == 3
+
+
+class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
+    LICENSE_CHECK_INTERVAL_SEC = 1
+
+    def __init__(self, test_context, num_nodes=3, **kwargs):
+        super(RedpandaKerberosLicenseTest,
+              self).__init__(test_context,
+                             num_nodes=num_nodes,
+                             sasl_mechanisms=["SCRAM"],
+                             **kwargs)
+        self.redpanda.set_environment({
+            '__REDPANDA_LICENSE_CHECK_INTERVAL_SEC':
+            f'{self.LICENSE_CHECK_INTERVAL_SEC}'
+        })
+
+    def _has_license_nag(self):
+        return self.redpanda.search_log_any("Enterprise feature(s).*")
+
+    def _license_nag_is_set(self):
+        return self.redpanda.search_log_all(
+            f"Overriding default license log annoy interval to: {self.LICENSE_CHECK_INTERVAL_SEC}s"
+        )
+
+    @cluster(num_nodes=3)
+    def test_license_nag(self):
+        wait_until(self._license_nag_is_set,
+                   timeout_sec=30,
+                   err_msg="Failed to set license nag internal")
+
+        self.logger.debug("Ensuring no license nag")
+        time.sleep(self.LICENSE_CHECK_INTERVAL_SEC * 2)
+        assert not self._has_license_nag()
+
+        self.logger.debug("Setting cluster config")
+        self.redpanda.set_cluster_config(
+            {"sasl_mechanisms": ["GSSAPI", "SCRAM"]})
+
+        self.logger.debug("Waiting for license nag")
+        wait_until(self._has_license_nag,
+                   timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
+                   err_msg="License nag failed to appear")
