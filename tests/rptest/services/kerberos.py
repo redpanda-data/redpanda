@@ -1,6 +1,9 @@
 import json
 import os
 
+from random import randbytes
+from hashlib import blake2b
+from typing import Optional
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -18,8 +21,12 @@ KDC_CONF_TMPL = """
 		max_renewable_life = 7d 0h 0m 0s
 		supported_enctypes = {supported_encryption_types}
 		default_principal_flags = +preauth
-	}}
+}}
+[logging]
+    kdc = FILE = /var/log/kdc.log
+    admin_server = FILE:/var/log/kadmin.log
 """
+
 KDC_CONF_PATH = "/etc/krb5kdc/kdc.conf"
 
 KRB5_CONF_TMPL = """
@@ -42,6 +49,16 @@ KDC_DB_PATH = "/var/lib/krb5kdc/principal"
 
 
 class KrbKdc(Service):
+    logs = {
+        "kdc_log": {
+            "path": "/var/log/kdc.log",
+            "collect_default": True
+        },
+        "kadmin_log": {
+            "path": "/var/log/kadmin.log",
+            "collect_default": True
+        }
+    }
     """
     A Kerberos KDC implementation backed by krb5-kdc (MIT).
     """
@@ -86,10 +103,6 @@ EOF
 """
         node.account.ssh(cmd, allow_fail=False)
 
-    def start_cmd(self):
-        cmd = f"krb5kdc -P {KRB5KDC_PID_PATH};kadmind -P {KADMIND_PID_PATH}"
-        return cmd
-
     def pids(self, node):
         def pid(path: str):
             try:
@@ -101,7 +114,7 @@ EOF
                     return [p]
 
             except (RemoteCommandError, ValueError):
-                self.logger.warn("pidfile not found: {path}")
+                self.logger.warn(f"pidfile not found: {path}")
 
             return []
 
@@ -112,11 +125,8 @@ EOF
 
     def start_node(self, node):
         self._render_cfg(node)
+        # Also runs krb5kdc and kadmind
         self._init_realm(node)
-        # Run kdc
-        cmd = self.start_cmd()
-        self.logger.debug("kdc command: %s", cmd)
-        node.account.ssh(cmd, allow_fail=False)
         wait_until(lambda: self.alive(node),
                    timeout_sec=30,
                    backoff_sec=.5,
@@ -160,21 +170,19 @@ EOF
             f'kadmin.local -q "delete_principal -force {principal}"',
             allow_fail=False)
 
-    def ktadd(self, principal: str, dst: str, nodes):
+    def ktadd(self, principal: str, dst: str, node):
         src = "/temporary.keytab"
         self.nodes[0].account.ssh(f"rm {src}", allow_fail=True)
-        for node in nodes:
-            # hostname = next(node.account.ssh_capture("hostname -f")).strip()
-            self.nodes[0].account.ssh(
-                f'kadmin.local -q "ktadd -k {src} {principal}"')
-            self.logger.info(
-                f"Copying: {self.nodes[0].name}:{src} -> {node.name}:{dst}")
-            node.account.ssh(f"mkdir -p {os.path.dirname(dst)}")
-            self.nodes[0].account.copy_between(src, dst, node)
-            self.nodes[0].account.copy_between(src, "/node.keytab", node)
-            node.account.ssh(f"kinit {principal} -t {dst}")
-            kl = node.account.ssh_capture(f"klist -k {dst}")
-            self.logger.info(f"klist: {list(kl)}")
+        self.nodes[0].account.ssh(
+            f'kadmin.local -q "ktadd -k {src} {principal}"')
+        self.logger.info(
+            f"Copying: {self.nodes[0].name}:{src} -> {node.name}:{dst}")
+        node.account.ssh(f"mkdir -p {os.path.dirname(dst)}")
+        self.nodes[0].account.copy_between(src, dst, node)
+        self.nodes[0].account.copy_between(src, "/node.keytab", node)
+        node.account.ssh(f"kinit {principal} -t {dst}")
+        kl = node.account.ssh_capture(f"klist -k {dst}")
+        self.logger.info(f"klist: {list(kl)}")
 
     def list_principals(self):
         princs = self.nodes[0].account.ssh_capture(

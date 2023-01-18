@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import os
+import socket
 
 from ducktape.tests.test import Test
 from rptest.clients.kafka_cat import KafkaCat
@@ -18,7 +18,7 @@ from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityCon
 
 LOG_CONFIG = LoggingConfig('info',
                            logger_levels={
-                               'security': 'debug',
+                               'security': 'trace',
                                'kafka': 'trace',
                                'admin_api_server': 'trace',
                            })
@@ -49,6 +49,33 @@ class RedpandaKerberosTest(Test):
         self.client = KrbClient(test_context, self.kdc, self.redpanda,
                                 f"client@{REALM}")
 
+    def _service_principal(self, primary: str, node):
+        ip = socket.gethostbyname(node.account.hostname)
+        out = node.account.ssh_output(cmd=f"dig -x {ip} +short")
+        fqdn = out.decode('utf-8').removesuffix(".\n")
+        return f"{primary}/{fqdn}@{REALM}"
+
+    def _client_principal(self, primary):
+        return f"{primary}@{REALM}"
+
+    def _configure_service_node(self, primary: str, node):
+        self.redpanda.logger.info(
+            f"Configuring Kerberos service '{primary}' on '{node.name}'")
+        principal = self._service_principal(primary, node)
+        self.kdc.add_principal_randkey(principal)
+        self.kdc.ktadd(principal,
+                       f"{self.redpanda.PERSISTENT_ROOT}/{primary}.keytab",
+                       node)
+
+    def _configure_client_node(self, primary: str, node):
+        self.redpanda.logger.info(
+            f"Configuring Kerberos client '{primary}' on '{node.name}'")
+        principal = self._client_principal(primary)
+        self.kdc.add_principal_randkey(principal)
+        self.kdc.ktadd(principal,
+                       f"{self.redpanda.PERSISTENT_ROOT}/{primary}.keytab",
+                       node)
+
     def setUp(self):
         self.redpanda.logger.info("Starting KDC")
         self.kdc.start()
@@ -62,19 +89,10 @@ class RedpandaKerberosTest(Test):
             self.client.start_node(node)
 
         for node in self.redpanda.nodes:
-            redpanda_principal = f"redpanda/{node.name}.redpanda-test@{REALM}"
-            self.redpanda.logger.info(
-                f"Configuring Redpanda {redpanda_principal}")
-            self.kdc.add_principal_randkey(redpanda_principal)
-            self.kdc.ktadd(redpanda_principal,
-                           f"{self.redpanda.PERSISTENT_ROOT}/redpanda.keytab",
-                           [node])
+            self._configure_service_node("redpanda", node)
 
-        client_principal = f"client@{REALM}"
-        self.kdc.add_principal_randkey(client_principal)
-        self.kdc.ktadd(client_principal,
-                       f"{self.redpanda.PERSISTENT_ROOT}/client.keytab",
-                       self.client.nodes)
+        for node in self.client.nodes:
+            self._configure_client_node("client", node)
 
     @cluster(num_nodes=5)
     def test_init(self):
