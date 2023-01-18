@@ -41,7 +41,6 @@ group_manager::group_manager(
   ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
   ss::sharded<features::feature_table>& feature_table,
   group_metadata_serializer_factory serializer_factory,
-  config::configuration& conf,
   enable_group_metrics enable_metrics)
   : _tp_ns(std::move(tp_ns))
   , _gm(gm)
@@ -50,9 +49,10 @@ group_manager::group_manager(
   , _tx_frontend(tx_frontend)
   , _feature_table(feature_table)
   , _serializer_factory(std::move(serializer_factory))
-  , _conf(conf)
+  , _conf(config::shard_local_cfg())
   , _self(cluster::make_self_broker(config::node()))
-  , _enable_group_metrics(enable_metrics) {}
+  , _enable_group_metrics(enable_metrics)
+  , _offset_retention_check(_conf.group_offset_retention_check_ms.bind()) {}
 
 ss::future<> group_manager::start() {
     /*
@@ -97,7 +97,240 @@ ss::future<> group_manager::start() {
             handle_topic_delta(deltas);
         });
 
+    /*
+     * periodically remove expired group offsets.
+     */
+    _timer.set_callback([this] {
+        ssx::spawn_with_gate(_gate, [this] {
+            return handle_offset_expiration().finally([this] {
+                if (!_gate.is_closed()) {
+                    _timer.arm(_offset_retention_check());
+                }
+            });
+        });
+    });
+    _timer.arm(_offset_retention_check());
+
+    /*
+     * reschedule periodic collection of expired offsets when the configured
+     * frequency changes. useful if it were accidentally configured to be much
+     * longer than desired / reasonable, and then fixed (e.g. 1 year vs 1 day).
+     */
+    _offset_retention_check.watch([this] {
+        if (_timer.armed()) {
+            _timer.cancel();
+            _timer.arm(_offset_retention_check());
+        }
+    });
+
     return ss::make_ready_future<>();
+}
+/*
+ * Compute if retention is enabled.
+ *
+ * legacy? | retention_ms | legacy_enabled |>> enabled
+ * ===================================================
+ * no        nullopt        false (n/a)        no
+ * no        nullopt        true  (n/a)        no
+ * no        val (default)  false (n/a)        yes
+ * no        val (default)  true  (n/a)        yes
+ * yes       nullopt        false              no
+ * yes       nullopt        true               no
+ * yes       val (default)  false              no
+ * yes       val (default)  true               yes
+ *
+ * legacy: system is pre-v23.1 (or indeterminate in early bootup)
+ */
+std::optional<std::chrono::seconds> group_manager::offset_retention_enabled() {
+    const auto enabled = [this] {
+        /*
+         * check if retention is disabled in all scenarios. this corresponds to
+         * the setting `group_offset_retention_sec = null`.
+         */
+        if (!config::shard_local_cfg()
+               .group_offset_retention_sec()
+               .has_value()) {
+            return false;
+        }
+
+        /*
+         * in non-legacy clusters (i.e. original version >= v23.1) offset
+         * retention is on by default (group_offset_retention_sec defaults to 7
+         * days).
+         */
+        if (
+          _feature_table.local().get_original_version()
+          >= cluster::cluster_version(9)) {
+            return true;
+        }
+
+        /*
+         * this is a legacy / pre-v23.1 cluster. retention will only be enabled
+         * if explicitly requested for legacy systems in order to retain the
+         * effective behavior of infinite retention.
+         *
+         * this case also handles the early boot-up ambiguity in which the
+         * original version is indeterminate.
+         */
+        return config::shard_local_cfg()
+          .legacy_group_offset_retention_enabled();
+    }();
+
+    /*
+     * log change to effective value of offset_retention_enabled flag since its
+     * value cannot easily be determiend by examining the current configuration.
+     */
+    if (_prev_offset_retention_enabled != enabled) {
+        vlog(
+          klog.info,
+          "Group offset retention is now {} (prev {}). Legacy enabled {} "
+          "retention_sec {} original version {}.",
+          enabled ? "enabled" : "disabled",
+          _prev_offset_retention_enabled,
+          config::shard_local_cfg().legacy_group_offset_retention_enabled(),
+          config::shard_local_cfg().group_offset_retention_sec(),
+          _feature_table.local().get_original_version());
+        _prev_offset_retention_enabled = enabled;
+    }
+
+    if (!enabled) {
+        return std::nullopt;
+    }
+
+    return config::shard_local_cfg().group_offset_retention_sec().value();
+}
+
+ss::future<> group_manager::handle_offset_expiration() {
+    constexpr int max_concurrent_expirations = 10;
+
+    const auto retention_period = offset_retention_enabled();
+    if (!retention_period.has_value()) {
+        co_return;
+    }
+
+    /*
+     * build a light-weight snapshot of the groups to process. the snapshot
+     * allows us to avoid concurrent modifications to _groups container.
+     */
+    fragmented_vector<group_ptr> groups;
+    for (auto& group : _groups) {
+        groups.push_back(group.second);
+    }
+
+    size_t total = 0;
+    co_await ss::max_concurrent_for_each(
+      groups,
+      max_concurrent_expirations,
+      [this, &total, retention_period = retention_period.value()](auto group) {
+          return delete_expired_offsets(group, retention_period)
+            .then([&total](auto removed) { total += removed; });
+      });
+
+    if (total) {
+        vlog(
+          klog.info, "Removed {} offsets from {} groups", total, groups.size());
+    }
+}
+
+ss::future<size_t> group_manager::delete_expired_offsets(
+  group_ptr group, std::chrono::seconds retention_period) {
+    /*
+     * delete expired offsets from the group
+     */
+    const auto offsets = group->delete_expired_offsets(retention_period);
+
+    /*
+     * build tombstones to persistent offset deletions. the group itself may
+     * also be set to dead state in which case we may be able to delete the
+     * group as well.
+     *
+     * the group may be set to dead state even if no offsets are returned from
+     * `group::delete_expired_offsets` so avoid an early return above if no
+     * offsets are returned.
+     */
+    cluster::simple_batch_builder builder(
+      model::record_batch_type::raft_data, model::offset(0));
+
+    for (auto& offset : offsets) {
+        vlog(
+          klog.trace,
+          "Preparing tombstone for expired group offset {}:{}",
+          group,
+          offset);
+        group->add_offset_tombstone_record(group->id(), offset, builder);
+    }
+
+    if (group->in_state(group_state::dead)) {
+        auto it = _groups.find(group->id());
+        if (it != _groups.end() && it->second == group) {
+            _groups.erase(it);
+            if (group->generation() > 0) {
+                vlog(
+                  klog.trace,
+                  "Preparing tombstone for dead group following offset "
+                  "expiration {}",
+                  group);
+                group->add_group_tombstone_record(group->id(), builder);
+            }
+        }
+    }
+
+    if (builder.empty()) {
+        co_return 0;
+    }
+
+    /*
+     * replicate tombstone records to the group's partition. avoid acks=all
+     * because the process is largely best-effort and the in-memory state was
+     * already cleaned up.
+     */
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    try {
+        auto result = co_await group->partition()->raft()->replicate(
+          group->term(),
+          std::move(reader),
+          raft::replicate_options(raft::consistency_level::leader_ack));
+
+        if (result) {
+            vlog(
+              klog.debug,
+              "Wrote {} tombstone records for group {} expired offsets",
+              offsets.size(),
+              group);
+            co_return offsets.size();
+
+        } else if (result.error() == raft::errc::shutting_down) {
+            vlog(
+              klog.debug,
+              "Cannot replicate tombstone records for group {}: shutting down",
+              group);
+
+        } else if (result.error() == raft::errc::not_leader) {
+            vlog(
+              klog.debug,
+              "Cannot replicate tombstone records for group {}: not leader",
+              group);
+
+        } else {
+            vlog(
+              klog.error,
+              "Cannot replicate tombstone records for group {}: {} {}",
+              group,
+              result.error().message(),
+              result.error());
+        }
+
+    } catch (...) {
+        vlog(
+          klog.error,
+          "Exception occurred replicating tombstones for group {}: {}",
+          group,
+          std::current_exception());
+    }
+
+    co_return 0;
 }
 
 ss::future<> group_manager::stop() {
@@ -122,6 +355,8 @@ ss::future<> group_manager::stop() {
     for (auto& e : _partitions) {
         e.second->as.request_abort();
     }
+
+    _timer.cancel();
 
     return _gate.close().then([this]() {
         /**

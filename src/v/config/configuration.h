@@ -94,6 +94,9 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> group_max_session_timeout_ms;
     property<std::chrono::milliseconds> group_initial_rebalance_delay;
     property<std::chrono::milliseconds> group_new_member_join_timeout;
+    property<std::optional<std::chrono::seconds>> group_offset_retention_sec;
+    property<std::chrono::milliseconds> group_offset_retention_check_ms;
+    property<bool> legacy_group_offset_retention_enabled;
     property<std::chrono::milliseconds> metadata_dissemination_interval_ms;
     property<std::chrono::milliseconds> metadata_dissemination_retry_delay_ms;
     property<int16_t> metadata_dissemination_retries;

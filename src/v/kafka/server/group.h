@@ -506,6 +506,7 @@ public:
       const model::topic_partition& tp, const offset_metadata& md);
 
     void reset_tx_state(model::term_id);
+    model::term_id term() const { return _term; }
 
     ss::future<cluster::commit_group_tx_reply>
     commit_tx(cluster::commit_group_tx_request r);
@@ -645,6 +646,17 @@ public:
     void add_group_tombstone_record(
       const kafka::group_id& group, storage::record_batch_builder& builder);
 
+    /*
+     * Delete group offsets that have expired.
+     *
+     * If after expired offsets have been deleted the group is in the empty
+     * state and contains no offsets then the group will be marked as dead.
+     *
+     * The set of expired offsets that have been removed is returned.
+     */
+    std::vector<model::topic_partition>
+    delete_expired_offsets(std::chrono::seconds retention_period);
+
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
@@ -743,7 +755,8 @@ private:
         metadata.generation = generation();
         metadata.protocol = protocol();
         metadata.leader = leader();
-        metadata.state_timestamp = _state_timestamp;
+        metadata.state_timestamp = _state_timestamp.value_or(
+          model::timestamp(-1));
 
         for (const auto& [id, member] : _members) {
             auto state = member->state().copy();
@@ -839,9 +852,17 @@ private:
     void update_subscriptions();
     std::optional<absl::node_hash_set<model::topic>> _subscriptions;
 
+    std::vector<model::topic_partition> filter_expired_offsets(
+      std::chrono::seconds retention_period,
+      const std::function<bool(const model::topic&)>&,
+      const std::function<model::timestamp(const offset_metadata&)>&);
+
+    std::vector<model::topic_partition>
+    get_expired_offsets(std::chrono::seconds retention_period);
+
     kafka::group_id _id;
     group_state _state;
-    model::timestamp _state_timestamp;
+    std::optional<model::timestamp> _state_timestamp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;
