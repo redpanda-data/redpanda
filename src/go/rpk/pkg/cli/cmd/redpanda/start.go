@@ -577,11 +577,11 @@ func buildRedpandaFlags(
 			if err != nil {
 				log.Warn(err)
 			} else if ioProps != nil {
-				yaml, err := iotune.ToYaml(*ioProps)
+				json, err := iotune.ToJSON(*ioProps)
 				if err != nil {
 					return nil, err
 				}
-				sFlags.ioProperties = yaml
+				sFlags.ioProperties = json
 			}
 		}
 	}
