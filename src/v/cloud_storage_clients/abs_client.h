@@ -183,7 +183,8 @@ private:
     ss::future<result<T, error_outcome>> send_request(
       ss::future<T> request_future,
       const bucket_name& bucket,
-      const object_key& key);
+      const object_key& key,
+      std::optional<op_type_tag> op_type = std::nullopt);
 
     ss::future<http::client::response_stream_ref> do_get_object(
       bucket_name const& name,

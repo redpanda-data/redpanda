@@ -610,7 +610,7 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
               });
         })
       .handle_exception_type([this](const rest_error_response& err) {
-          _probe->register_failure(err.code());
+          _probe->register_failure(err.code(), op_type_tag::download);
           return ss::make_exception_future<head_object_result>(err);
       });
 }
@@ -673,7 +673,7 @@ ss::future<> s3_client::do_put_object(
             .handle_exception_type(
               [](const ss::abort_requested_exception&) { return ss::now(); })
             .handle_exception_type([this](const rest_error_response& err) {
-                _probe->register_failure(err.code());
+                _probe->register_failure(err.code(), op_type_tag::upload);
                 return ss::make_exception_future<>(err);
             })
             .handle_exception([](std::exception_ptr eptr) {

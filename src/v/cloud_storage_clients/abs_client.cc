@@ -307,7 +307,8 @@ template<typename T>
 ss::future<result<T, error_outcome>> abs_client::send_request(
   ss::future<T> request_future,
   const bucket_name& bucket,
-  const object_key& key) {
+  const object_key& key,
+  std::optional<op_type_tag> op_type) {
     using namespace boost::beast::http;
 
     auto outcome = error_outcome::fail;
@@ -323,7 +324,7 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
               err.code_string(),
               err.message());
             outcome = error_outcome::retry_slowdown;
-            _probe->register_retryable_failure();
+            _probe->register_retryable_failure(op_type);
         } else if (
           err.http_code() == status::forbidden
           || err.http_code() == status::unauthorized) {
@@ -384,7 +385,10 @@ abs_client::get_object(
   ss::lowres_clock::duration timeout,
   bool expect_no_such_key) {
     return send_request(
-      do_get_object(name, key, timeout, expect_no_such_key), name, key);
+      do_get_object(name, key, timeout, expect_no_such_key),
+      name,
+      key,
+      op_type_tag::download);
 }
 
 ss::future<http::client::response_stream_ref> abs_client::do_get_object(
@@ -444,7 +448,8 @@ abs_client::put_object(
         .then(
           []() { return ss::make_ready_future<no_response>(no_response{}); }),
       name,
-      key);
+      key,
+      op_type_tag::upload);
 }
 
 ss::future<> abs_client::do_put_object(

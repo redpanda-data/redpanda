@@ -26,6 +26,8 @@
 
 namespace cloud_storage_clients {
 
+enum class op_type_tag { upload, download };
+
 /// \brief Cloud storage client probe
 ///
 /// \note The goal of this is to measure billable traffic
@@ -67,10 +69,11 @@ public:
       endpoint_url endpoint);
 
     /// Register S3 rpc error
-    void register_failure(s3_error_code err);
+    void register_failure(
+      s3_error_code err, std::optional<op_type_tag> op_type = std::nullopt);
     /// Register ABS rpc error
     void register_failure(abs_error_code err);
-    void register_retryable_failure();
+    void register_retryable_failure(std::optional<op_type_tag> op_type);
 
 private:
     struct raw_label {
@@ -89,6 +92,10 @@ private:
     uint64_t _total_slowdowns;
     /// Total number of NoSuchKey responses
     uint64_t _total_nosuchkeys;
+    /// Total number of NoSuchKey responses
+    uint64_t _total_upload_slowdowns;
+    /// Total number of NoSuchKey responses
+    uint64_t _total_download_slowdowns;
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{
       ssx::metrics::public_metrics_handle};

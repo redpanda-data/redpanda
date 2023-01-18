@@ -61,8 +61,16 @@ client_probe::client_probe(
     setup_public_metrics(public_disable, abs_labels);
 }
 
-void client_probe::register_failure(s3_error_code err) {
+void client_probe::register_failure(
+  s3_error_code err, std::optional<op_type_tag> op_type) {
     if (err == s3_error_code::slow_down) {
+        if (op_type) {
+            if (*op_type == op_type_tag::upload) {
+                _total_upload_slowdowns += 1;
+            } else if (*op_type == op_type_tag::download) {
+                _total_download_slowdowns += 1;
+            }
+        }
         _total_slowdowns += 1;
     } else if (err == s3_error_code::no_such_key) {
         _total_nosuchkeys += 1;
@@ -77,7 +85,15 @@ void client_probe::register_failure(abs_error_code err) {
     _total_rpc_errors += 1;
 }
 
-void client_probe::register_retryable_failure() {
+void client_probe::register_retryable_failure(
+  std::optional<op_type_tag> op_type) {
+    if (op_type) {
+        if (*op_type == op_type_tag::upload) {
+            _total_upload_slowdowns += 1;
+        } else if (*op_type == op_type_tag::download) {
+            _total_download_slowdowns += 1;
+        }
+    }
     _total_slowdowns += 1;
     _total_rpc_errors += 1;
 }
@@ -198,10 +214,21 @@ void client_probe::setup_public_metrics(
           labels)
           .aggregate({sm::shard_label}),
         sm::make_counter(
-          "throttled",
+          "backoff",
           [this] { return _total_slowdowns; },
-          sm::description(
-            "Total number of requests throttled by the cloud storage provider"),
+          sm::description("Total number of requests that backed off"),
+          labels)
+          .aggregate({sm::shard_label}),
+        sm::make_counter(
+          "dowload_backoff",
+          [this] { return _total_download_slowdowns; },
+          sm::description("Total number of download requests that backed off"),
+          labels)
+          .aggregate({sm::shard_label}),
+        sm::make_counter(
+          "upload_backoff",
+          [this] { return _total_upload_slowdowns; },
+          sm::description("Total number of upload requests that backed off"),
           labels)
           .aggregate({sm::shard_label}),
         sm::make_counter(
