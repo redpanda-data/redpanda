@@ -1,6 +1,9 @@
 import json
 import os
 
+from random import randbytes
+from hashlib import blake2b
+from typing import Optional
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -167,21 +170,19 @@ EOF
             f'kadmin.local -q "delete_principal -force {principal}"',
             allow_fail=False)
 
-    def ktadd(self, principal: str, dst: str, nodes):
+    def ktadd(self, principal: str, dst: str, node):
         src = "/temporary.keytab"
         self.nodes[0].account.ssh(f"rm {src}", allow_fail=True)
-        for node in nodes:
-            # hostname = next(node.account.ssh_capture("hostname -f")).strip()
-            self.nodes[0].account.ssh(
-                f'kadmin.local -q "ktadd -k {src} {principal}"')
-            self.logger.info(
-                f"Copying: {self.nodes[0].name}:{src} -> {node.name}:{dst}")
-            node.account.ssh(f"mkdir -p {os.path.dirname(dst)}")
-            self.nodes[0].account.copy_between(src, dst, node)
-            self.nodes[0].account.copy_between(src, "/node.keytab", node)
-            node.account.ssh(f"kinit {principal} -t {dst}")
-            kl = node.account.ssh_capture(f"klist -k {dst}")
-            self.logger.info(f"klist: {list(kl)}")
+        self.nodes[0].account.ssh(
+            f'kadmin.local -q "ktadd -k {src} {principal}"')
+        self.logger.info(
+            f"Copying: {self.nodes[0].name}:{src} -> {node.name}:{dst}")
+        node.account.ssh(f"mkdir -p {os.path.dirname(dst)}")
+        self.nodes[0].account.copy_between(src, dst, node)
+        self.nodes[0].account.copy_between(src, "/node.keytab", node)
+        node.account.ssh(f"kinit {principal} -t {dst}")
+        kl = node.account.ssh_capture(f"klist -k {dst}")
+        self.logger.info(f"klist: {list(kl)}")
 
     def list_principals(self):
         princs = self.nodes[0].account.ssh_capture(
