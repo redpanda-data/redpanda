@@ -29,9 +29,8 @@ static constexpr std::string_view rule_pattern
   = R"(((DEFAULT)|((RULE:\[(\d*):([^\]]*)](\(([^)]*)\))?(s\/([^\/]*)\/([^\/]*)\/(g)?)?\/?(L|U)?))))";
 
 namespace detail {
-std::vector<gssapi_rule> parse_rules(
-  std::string_view default_realm,
-  std::optional<std::vector<ss::sstring>> unparsed_rules) {
+std::vector<gssapi_rule>
+parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
     static thread_local const re2::RE2 rule_parser(
       rule_pattern, re2::RE2::Quiet);
 
@@ -41,7 +40,7 @@ std::vector<gssapi_rule> parse_rules(
       rule_parser.error());
 
     if (!unparsed_rules || unparsed_rules.value().empty()) {
-        return {gssapi_rule(default_realm)};
+        return {gssapi_rule()};
     }
 
     std::vector<gssapi_rule> rv;
@@ -74,7 +73,7 @@ std::vector<gssapi_rule> parse_rules(
             throw std::runtime_error("GSSAPI: Invalid rule: " + rule);
         }
         if (!default_.empty()) {
-            rv.emplace_back(default_realm);
+            rv.emplace_back();
         } else {
             int num_components = std::numeric_limits<int>::max();
             auto conv_rc = std::from_chars(
@@ -95,7 +94,6 @@ std::vector<gssapi_rule> parse_rules(
                 case_change = gssapi_rule::case_change_operation::make_upper;
             }
             rv.emplace_back(
-              default_realm,
               num_components,
               format,
               match_regex,
@@ -120,7 +118,7 @@ gssapi_name::gssapi_name(
     }
 }
 
-gssapi_name gssapi_name::parse(std::string_view principal_name) {
+std::optional<gssapi_name> gssapi_name::parse(std::string_view principal_name) {
     static thread_local const re2::RE2 gssapi_name_regex(
       gssapi_name_pattern, re2::RE2::Quiet);
     vassert(
@@ -141,7 +139,8 @@ gssapi_name gssapi_name::parse(std::string_view principal_name) {
           ss::sstring(primary), ss::sstring(host_name), ss::sstring(realm));
     } else {
         if (principal_name.find('@') != std::string_view::npos) {
-            throw std::invalid_argument("Malformed gssapi name");
+            vlog(seclog.warn, "Malformed gssapi name: {}", principal_name);
+            return std::nullopt;
         } else {
             return gssapi_name(ss::sstring(principal_name), "", "");
         }
@@ -156,11 +155,7 @@ const ss::sstring& gssapi_name::host_name() const noexcept {
 
 const ss::sstring& gssapi_name::realm() const noexcept { return _realm; }
 
-gssapi_rule::gssapi_rule(std::string_view default_realm)
-  : _default_realm(default_realm) {}
-
 gssapi_rule::gssapi_rule(
-  std::string_view default_realm,
   int number_of_components,
   std::string_view format,
   std::string_view match,
@@ -168,8 +163,7 @@ gssapi_rule::gssapi_rule(
   std::string_view to_pattern,
   repeat repeat_,
   case_change_operation case_change)
-  : _default_realm(default_realm)
-  , _is_default(false)
+  : _is_default(false)
   , _number_of_components(number_of_components)
   , _format(format)
   , _match(match)
@@ -182,8 +176,8 @@ gssapi_rule::gssapi_rule(
   , _repeat(repeat_)
   , _case_change(case_change) {}
 
-std::optional<ss::sstring>
-gssapi_rule::apply(std::vector<std::string_view> params) const {
+std::optional<ss::sstring> gssapi_rule::apply(
+  std::string_view default_realm, std::vector<std::string_view> params) const {
     static thread_local const re2::RE2 non_simple_regex(
       non_simple_pattern, re2::RE2::Quiet);
     const re2::StringPiece match_piece(_match.data(), _match.size());
@@ -245,7 +239,7 @@ gssapi_rule::apply(std::vector<std::string_view> params) const {
     if (_is_default && params.size() >= 2) {
         // If rule is a default rule, check to see if the realm and default
         // realm matches and then use the primary value
-        if (_default_realm == params.at(0)) {
+        if (default_realm == params.at(0)) {
             result = ss::sstring(params.at(1));
         }
     } else if (
@@ -377,21 +371,17 @@ ss::sstring gssapi_rule::replace_substitution(
 }
 
 gssapi_principal_mapper::gssapi_principal_mapper(
-  std::string_view default_realm,
   config::binding<std::optional<std::vector<ss::sstring>>>
     principal_to_local_rules_cb)
-  : _default_realm(default_realm)
-  , _principal_to_local_rules_binding(std::move(principal_to_local_rules_cb))
-  , _rules{detail::parse_rules(
-      _default_realm, _principal_to_local_rules_binding())} {
+  : _principal_to_local_rules_binding(std::move(principal_to_local_rules_cb))
+  , _rules{detail::parse_rules(_principal_to_local_rules_binding())} {
     _principal_to_local_rules_binding.watch([this]() {
-        _rules = detail::parse_rules(
-          _default_realm, _principal_to_local_rules_binding());
+        _rules = detail::parse_rules(_principal_to_local_rules_binding());
     });
 }
 
-std::optional<ss::sstring>
-gssapi_principal_mapper::apply(gssapi_name name) const {
+std::optional<ss::sstring> gssapi_principal_mapper::apply(
+  std::string_view default_realm, gssapi_name name) const {
     std::vector<std::string_view> params;
     if (name.host_name().empty()) {
         if (name.realm().empty()) {
@@ -403,7 +393,7 @@ gssapi_principal_mapper::apply(gssapi_name name) const {
     }
 
     for (const auto& r : _rules) {
-        if (auto result = r.apply(params); result.has_value()) {
+        if (auto result = r.apply(default_realm, params); result.has_value()) {
             return result;
         }
     }
@@ -430,7 +420,7 @@ std::ostream& operator<<(std::ostream& os, const gssapi_principal_mapper& m) {
 std::optional<ss::sstring> validate_kerberos_mapping_rules(
   const std::optional<std::vector<ss::sstring>>& r) noexcept {
     try {
-        detail::parse_rules("", r);
+        detail::parse_rules(r);
     } catch (const std::exception& e) {
         return e.what();
     }
@@ -497,9 +487,5 @@ fmt::formatter<security::gssapi_principal_mapper, char, void>::format<
   fmt::basic_format_context<fmt::appender, char>>(
   security::gssapi_principal_mapper const& r,
   fmt::basic_format_context<fmt::appender, char>& ctx) const {
-    return format_to(
-      ctx.out(),
-      "[{}] (default_realm: {})",
-      fmt::join(r._rules, ", "),
-      r._default_realm);
+    return format_to(ctx.out(), "[{}]", fmt::join(r._rules, ", "));
 }
