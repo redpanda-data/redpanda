@@ -107,8 +107,12 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
                                                            leader_epoch=1)
 
         for o in leader_epoch_offsets:
+            # check if the offset epoch matches what is expected or it is not available
+            # (may be the case if leader wasn't elected in term 1 but other term in this case the offset for term 1 will not be presetn)
             assert initial_offsets[(o.topic,
-                                    o.partition)] == o.epoch_end_offset
+                                    o.partition)] == o.epoch_end_offset or (
+                                        o.epoch_end_offset == -1
+                                        and o.leader_epoch > 1)
 
         # restart all the nodes to force leader election,
         # increase start timeout as partition count may get large
@@ -123,7 +127,9 @@ class OffsetForLeaderEpochTest(PreallocNodesTest):
 
         for o in leader_epoch_offsets:
             assert initial_offsets[(o.topic,
-                                    o.partition)] == o.epoch_end_offset
+                                    o.partition)] == o.epoch_end_offset or (
+                                        o.epoch_end_offset == -1
+                                        and o.leader_epoch > 2)
 
         last_offsets = self.list_offsets(topics=topics,
                                          total_partitions=total_partitions)
