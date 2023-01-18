@@ -181,6 +181,7 @@ struct configuration final : public config_store {
     property<std::vector<ss::sstring>> sasl_mechanisms;
     property<ss::sstring> sasl_kerberos_keytab;
     property<ss::sstring> sasl_kerberos_principal;
+    property<std::vector<ss::sstring>> sasl_kerberos_principal_mapping;
     property<std::optional<bool>> kafka_enable_authorization;
     property<std::optional<std::vector<ss::sstring>>>
       kafka_mtls_principal_mapping_rules;

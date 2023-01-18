@@ -426,6 +426,16 @@ std::ostream& operator<<(std::ostream& os, const gssapi_principal_mapper& m) {
     fmt::print(os, "{}", m);
     return os;
 }
+
+std::optional<ss::sstring> validate_kerberos_mapping_rules(
+  const std::optional<std::vector<ss::sstring>>& r) noexcept {
+    try {
+        detail::parse_rules("", r);
+    } catch (const std::exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
+}
 } // namespace security
 
 // explicit instantiations so as to avoid bringing in <fmt/ranges.h> in the

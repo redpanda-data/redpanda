@@ -125,6 +125,9 @@ private:
       _principal_to_local_rules_binding;
     std::vector<gssapi_rule> _rules;
 };
+
+std::optional<ss::sstring> validate_kerberos_mapping_rules(
+  const std::optional<std::vector<ss::sstring>>& r) noexcept;
 } // namespace security
 
 template<>
