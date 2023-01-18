@@ -32,6 +32,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.1
 	github.com/tklauser/go-sysconf v0.3.10
+	github.com/trstringer/go-systemd-time v1.0.0
 	github.com/twmb/franz-go v1.9.2-0.20221101035527-a07b8c8a01ce
 	github.com/twmb/franz-go/pkg/kadm v1.3.0
 	github.com/twmb/franz-go/pkg/kmsg v1.2.0
@@ -41,6 +42,7 @@ require (
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8
 	golang.org/x/term v0.0.0-20220526004731-065cf7ba2467
 	gopkg.in/yaml.v3 v3.0.1
+	k8s.io/api v0.21.4
 	k8s.io/apimachinery v0.21.4
 	k8s.io/client-go v0.21.4
 )
@@ -100,7 +102,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gotest.tools/v3 v3.0.3 // indirect
 	honnef.co/go/tools v0.3.2 // indirect
-	k8s.io/api v0.21.4 // indirect
 	k8s.io/klog/v2 v2.8.0 // indirect
 	k8s.io/utils v0.0.0-20201110183641-67b214c5f920 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.1.2 // indirect
