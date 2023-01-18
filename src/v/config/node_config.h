@@ -60,6 +60,8 @@ public:
 
     deprecated_property enable_central_config;
 
+    property<std::optional<uint32_t>> crash_loop_limit;
+
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
         return data_directory().path / "pid.lock";

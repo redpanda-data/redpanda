@@ -135,6 +135,13 @@ node_config::node_config() noexcept
       {.visibility = visibility::user},
       std::nullopt)
   , enable_central_config(*this, "enable_central_config")
+  , crash_loop_limit(
+      *this,
+      "crash_loop_limit",
+      "Maximum consecutive crashes (unclean shutdowns) allowed after which "
+      "operator intervention is needed to startup the broker.",
+      {.visibility = visibility::user},
+      std::nullopt)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
