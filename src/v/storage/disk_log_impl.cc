@@ -1002,11 +1002,11 @@ ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (_segs.empty()) {
-        return new_segment(next_offset, t, iopc);
+        co_return co_await new_segment(next_offset, t, iopc);
     }
     auto ptr = _segs.back();
     if (!ptr->has_appender()) {
-        return new_segment(next_offset, t, iopc);
+        co_return co_await new_segment(next_offset, t, iopc);
     }
     bool size_should_roll = false;
 
@@ -1014,12 +1014,9 @@ ss::future<> disk_log_impl::maybe_roll(
         size_should_roll = true;
     }
     if (t != term() || size_should_roll) {
-        return ptr->release_appender(_readers_cache.get())
-          .then([this, next_offset, t, iopc] {
-              return new_segment(next_offset, t, iopc);
-          });
+        co_await ptr->release_appender(_readers_cache.get());
+        co_await new_segment(next_offset, t, iopc);
     }
-    return ss::make_ready_future<>();
 }
 
 ss::future<> disk_log_impl::do_housekeeping(
