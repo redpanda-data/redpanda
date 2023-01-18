@@ -26,18 +26,22 @@ LOG_CONFIG = LoggingConfig('info',
 REALM = "EXAMPLE.COM"
 
 
-class RedpandaKerberosTest(Test):
+class RedpandaKerberosTestBase(Test):
     """
     Base class for tests that use the Redpanda service with Kerberos
     """
-    def __init__(self, test_context, num_nodes=5, **kwargs):
-        super(RedpandaKerberosTest, self).__init__(test_context, **kwargs)
+    def __init__(self,
+                 test_context,
+                 num_nodes=5,
+                 sasl_mechanisms=["SCRAM", "GSSAPI"],
+                 **kwargs):
+        super(RedpandaKerberosTestBase, self).__init__(test_context, **kwargs)
 
         self.kdc = KrbKdc(test_context, realm=REALM)
 
         security = SecurityConfig()
         security.enable_sasl = True
-        security.sasl_mechanisms = ["SCRAM", "GSSAPI"]
+        security.sasl_mechanisms = sasl_mechanisms
         self.redpanda = RedpandaService(
             test_context,
             # environment={"KRB5_TRACE": "/dev/stdout"},
@@ -93,6 +97,11 @@ class RedpandaKerberosTest(Test):
 
         for node in self.client.nodes:
             self._configure_client_node("client", node)
+
+
+class RedpandaKerberosTest(RedpandaKerberosTestBase):
+    def __init__(self, test_context, **kwargs):
+        super(RedpandaKerberosTest, self).__init__(test_context, **kwargs)
 
     @cluster(num_nodes=5)
     def test_init(self):
