@@ -113,4 +113,43 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
     return cfg;
 }
 
+bool adjacent_segment_run::maybe_add_segment(
+  const cloud_storage::segment_meta& s, size_t max_size) {
+    if (num_segments == 0) {
+        // Find the begining of the small segment
+        // run.
+        if (s.size_bytes < max_size) {
+            base_offset = s.base_offset;
+            max_offset = s.committed_offset;
+            size_bytes += s.size_bytes;
+            num_segments = 1;
+        }
+    } else {
+        if (size_bytes + s.size_bytes <= max_size) {
+            // Move the end of the small segment run forward
+            max_offset = s.committed_offset;
+            num_segments++;
+            size_bytes += s.size_bytes;
+        } else {
+            return num_segments > 1;
+        }
+    }
+    vlog(
+      archival_log.debug,
+      "adjacent_segment_run::maybe_add_segment return false, num {}",
+      num_segments);
+    return false;
+}
+
+std::ostream& operator<<(std::ostream& os, const adjacent_segment_run& run) {
+    fmt::print(
+      os,
+      "{{base_offset: {}, max_offset: {}, num_segments: {}, size_bytes: {}}}",
+      run.base_offset,
+      run.max_offset,
+      run.num_segments,
+      run.size_bytes);
+    return os;
+}
+
 } // namespace archival

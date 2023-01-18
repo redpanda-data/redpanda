@@ -107,4 +107,17 @@ private:
     intrusive_list_hook _hook{};
 };
 
+/// Represents a series of adjacent segments
+struct adjacent_segment_run {
+    model::offset base_offset;
+    model::offset max_offset;
+    size_t size_bytes{0};
+    size_t num_segments{0};
+
+    bool
+    maybe_add_segment(const cloud_storage::segment_meta& s, size_t max_size);
+};
+
+std::ostream& operator<<(std::ostream& o, const adjacent_segment_run& run);
+
 } // namespace archival
