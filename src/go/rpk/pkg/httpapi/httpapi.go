@@ -375,8 +375,14 @@ func prepareBody(body interface{}) (bodyBytes []byte, isValues bool, err error) 
 	if body == nil {
 		return nil, false, nil
 	}
-	if form, isForm := body.(url.Values); isForm {
-		return []byte(form.Encode()), true, nil
+	switch v := body.(type) {
+	case url.Values:
+		return []byte(v.Encode()), true, nil
+	case io.Reader:
+		b, err := io.ReadAll(v)
+		return b, false, err
+	case []byte:
+		return v, false, nil
 	}
 	bodyBytes, err = json.Marshal(body)
 	if err != nil {
