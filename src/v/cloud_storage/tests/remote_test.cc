@@ -45,6 +45,8 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
+static ss::abort_source never_abort;
+
 static constexpr std::string_view manifest_payload = R"json({
     "version": 1,
     "namespace": "test-ns",
@@ -76,7 +78,7 @@ static constexpr std::string_view list_response = R"XML(
 )XML";
 
 static cloud_storage::lazy_abort_source always_continue{
-  "no-op", [](auto&) { return false; }};
+  []() { return std::nullopt; }};
 
 static constexpr model::cloud_credentials_source config_file{
   model::cloud_credentials_source::config_file};
@@ -97,7 +99,7 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     remote remote(connection_limit(10), conf, config_file);
     partition_manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote
                  .download_manifest(
                    cloud_storage_clients::bucket_name("bucket"),
@@ -115,7 +117,7 @@ FIXTURE_TEST(test_download_manifest_timeout, s3_imposter_fixture) { // NOLINT
     remote remote(connection_limit(10), conf, config_file);
     partition_manifest actual(manifest_ntp, manifest_revision);
     auto action = ss::defer([&remote] { remote.stop().get(); });
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote
                  .download_manifest(
                    cloud_storage_clients::bucket_name("bucket"),
@@ -142,7 +144,7 @@ FIXTURE_TEST(test_upload_segment, s3_imposter_fixture) { // NOLINT
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote
                  .upload_segment(
                    cloud_storage_clients::bucket_name("bucket"),
@@ -175,9 +177,10 @@ FIXTURE_TEST(
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+    static ss::abort_source never_abort;
     auto lost_leadership = lazy_abort_source{
-      "lost leadership", [](auto&) { return true; }};
+      []() { return "lost leadership"; }};
     auto res = remote
                  .upload_segment(
                    cloud_storage_clients::bucket_name("bucket"),
@@ -206,7 +209,7 @@ FIXTURE_TEST(test_upload_segment_timeout, s3_imposter_fixture) { // NOLINT
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto res = remote
                  .upload_segment(
                    cloud_storage_clients::bucket_name("bucket"),
@@ -236,7 +239,7 @@ FIXTURE_TEST(test_download_segment, s3_imposter_fixture) { // NOLINT
         co_return std::make_unique<storage::segment_reader_handle>(
           make_iobuf_input_stream(std::move(out)));
     };
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto upl_res = remote
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -274,7 +277,7 @@ FIXTURE_TEST(test_download_segment_timeout, s3_imposter_fixture) { // NOLINT
         return ss::make_ready_future<uint64_t>(0);
     };
 
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto dnl_res
       = remote.download_segment(bucket, path, try_consume, fib).get();
     BOOST_REQUIRE(dnl_res == download_result::timedout);
@@ -298,7 +301,7 @@ FIXTURE_TEST(test_segment_exists, s3_imposter_fixture) { // NOLINT
           make_iobuf_input_stream(std::move(out)));
     };
 
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
 
     auto expected_notfound = remote.segment_exists(bucket, path, fib).get();
     BOOST_REQUIRE(expected_notfound == download_result::notfound);
@@ -321,7 +324,7 @@ FIXTURE_TEST(test_segment_exists_timeout, s3_imposter_fixture) { // NOLINT
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{123});
 
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto expect_timeout = remote.segment_exists(bucket, path, fib).get();
     BOOST_REQUIRE(expect_timeout == download_result::timedout);
 }
@@ -335,7 +338,7 @@ FIXTURE_TEST(test_segment_delete, s3_imposter_fixture) { // NOLINT
     auto path = generate_remote_segment_path(
       manifest_ntp, manifest_revision, name, model::term_id{1});
 
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     uint64_t clen = manifest_payload.size();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream =
@@ -409,7 +412,7 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
             ss::default_priority_class()));
     };
 
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto upload_size = b.get_disk_log_impl().size_bytes() - 40;
 
     remote remote(connection_limit(10), conf, config_file);
@@ -433,7 +436,7 @@ FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
     auto action = ss::defer([&r] { r.stop().get(); });
 
     cloud_storage_clients::bucket_name bucket{"test"};
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto result = r.list_objects(bucket, fib).get0();
     BOOST_REQUIRE(result.has_value());
 
@@ -450,7 +453,7 @@ FIXTURE_TEST(test_list_bucket_with_prefix, s3_imposter_fixture) {
     auto action = ss::defer([&r] { r.stop().get(); });
 
     cloud_storage_clients::bucket_name bucket{"test"};
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
     auto result = r.list_objects(
                      bucket, fib, cloud_storage_clients::object_key{"x"})
                     .get0();
@@ -473,7 +476,7 @@ FIXTURE_TEST(test_put_string, s3_imposter_fixture) {
     auto action = ss::defer([&r] { r.stop().get(); });
 
     cloud_storage_clients::bucket_name bucket{"test"};
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
     auto result = r.upload_object(bucket, path, "p", fib).get0();
@@ -491,7 +494,7 @@ FIXTURE_TEST(test_delete_objects, s3_imposter_fixture) {
     auto action = ss::defer([&r] { r.stop().get(); });
 
     cloud_storage_clients::bucket_name bucket{"test"};
-    retry_chain_node fib(100ms, 20ms);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
     std::vector<cloud_storage_clients::object_key> to_delete{

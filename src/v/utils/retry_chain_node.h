@@ -200,16 +200,9 @@ public:
     using milliseconds_uint16_t
       = std::chrono::duration<uint16_t, std::chrono::milliseconds::period>;
 
-    /// Create a head of the chain without backoff
-    retry_chain_node();
-    /// Creates a head with the provided deadline and
-    /// backoff granularity.
-    retry_chain_node(
-      ss::lowres_clock::time_point deadline,
-      ss::lowres_clock::duration initial_backoff);
-    retry_chain_node(
-      ss::lowres_clock::duration timeout,
-      ss::lowres_clock::duration initial_backoff);
+    // No default constructor: we always need an abort source.
+    retry_chain_node() = delete;
+
     /// Create a head of the chain without backoff but with abort_source
     explicit retry_chain_node(ss::abort_source& as);
     /// Creates a head with the provided abort_source, deadline, and
@@ -270,6 +263,11 @@ public:
         return ss::sstring(mbuf.data(), mbuf.size());
     }
 
+    /// Find abort source in the root of the tree
+    /// Always traverses the tree back to the root and returns the abort
+    /// source if it was set in the root c-tor.
+    ss::abort_source& root_abort_source();
+
     /// \brief Request retry
     ///
     /// The retry can be allowed or disallowed. The caller can call this
@@ -324,11 +322,6 @@ private:
     ss::abort_source* get_abort_source();
     const ss::abort_source* get_abort_source() const;
 
-    /// Find abort source in the root of the tree
-    /// Always traverses the tree back to the root and returns the abort
-    /// source if it was set in the root c-tor.
-    ss::abort_source* find_abort_source();
-
     /// This node's id
     uint16_t _id;
     /// Number of retries
@@ -342,7 +335,7 @@ private:
     /// Deadline for retry attempts
     ss::lowres_clock::time_point _deadline;
     /// optional parent node or (if root) abort source for all fibers
-    std::variant<std::monostate, retry_chain_node*, ss::abort_source*> _parent;
+    std::variant<retry_chain_node*, ss::abort_source*> _parent;
 };
 
 /// Logger that adds context from retry_chain_node to the output

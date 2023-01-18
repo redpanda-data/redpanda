@@ -322,22 +322,6 @@ ss::future<> partition::stop() {
 
     auto f = ss::now();
 
-    if (_id_allocator_stm) {
-        return _id_allocator_stm->stop();
-    }
-
-    if (_log_eviction_stm) {
-        f = _log_eviction_stm->stop();
-    }
-
-    if (_rm_stm) {
-        f = f.then([this] { return _rm_stm->stop(); });
-    }
-
-    if (_tm_stm) {
-        f = f.then([this] { return _tm_stm->stop(); });
-    }
-
     if (_archiver) {
         f = f.then([this] { return _archiver->stop(); });
     }
@@ -348,6 +332,22 @@ ss::future<> partition::stop() {
 
     if (_cloud_storage_partition) {
         f = f.then([this] { return _cloud_storage_partition->stop(); });
+    }
+
+    if (_id_allocator_stm) {
+        f = f.then([this] { return _id_allocator_stm->stop(); });
+    }
+
+    if (_log_eviction_stm) {
+        f = f.then([this] { return _log_eviction_stm->stop(); });
+    }
+
+    if (_rm_stm) {
+        f = f.then([this] { return _rm_stm->stop(); });
+    }
+
+    if (_tm_stm) {
+        f = f.then([this] { return _tm_stm->stop(); });
     }
 
     // no state machine
@@ -511,7 +511,7 @@ ss::future<> partition::remove_persistent_state() {
     }
 }
 
-ss::future<> partition::remove_remote_persistent_state() {
+ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
     // Backward compatibility: even if remote.delete is true, only do
     // deletion if the partition is in full tiered storage mode (this
     // excludes read replica clusters from deleting data in S3)
@@ -527,7 +527,7 @@ ss::future<> partition::remove_remote_persistent_state() {
           get_ntp_config(),
           get_ntp_config().is_archival_enabled(),
           get_ntp_config().is_read_replica_mode_enabled());
-        co_await _cloud_storage_partition->erase();
+        co_await _cloud_storage_partition->erase(as);
     } else {
         vlog(
           clusterlog.info, "Leaving S3 objects behind for partition {}", ntp());

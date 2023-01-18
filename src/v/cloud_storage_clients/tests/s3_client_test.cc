@@ -726,13 +726,16 @@ void test_client_pool(
   cloud_storage_clients::client_pool_overdraft_policy policy) {
     auto conf = transport_configuration();
     auto [server, pool] = started_pool_and_server(2, policy, conf);
+
+    ss::abort_source never_abort;
     std::vector<ss::future<>> fut;
     for (size_t i = 0; i < 20; i++) {
-        auto f = pool->acquire().then(
-          [server = server](
-            cloud_storage_clients::client_pool::client_lease lease) {
-              return test_client_pool_payload(server, std::move(lease));
-          });
+        auto f
+          = pool->acquire(never_abort)
+              .then([server = server](
+                      cloud_storage_clients::client_pool::client_lease lease) {
+                  return test_client_pool_payload(server, std::move(lease));
+              });
         fut.emplace_back(std::move(f));
     }
     ss::when_all_succeed(fut.begin(), fut.end()).get0();
@@ -789,14 +792,17 @@ SEASTAR_TEST_CASE(test_client_pool_reconnect) {
           cloud_storage_clients::client_pool_overdraft_policy::wait_if_empty,
           conf);
 
+        ss::abort_source never_abort;
         std::vector<ss::future<bool>> fut;
         for (size_t i = 0; i < 20; i++) {
-            auto f = pool->acquire().then(
-              [server = server](
-                cloud_storage_clients::client_pool::client_lease lease) {
-                  return test_client_pool_reconnect_helper(
-                    server, std::move(lease));
-              });
+            auto f
+              = pool->acquire(never_abort)
+                  .then(
+                    [server = server](
+                      cloud_storage_clients::client_pool::client_lease lease) {
+                        return test_client_pool_reconnect_helper(
+                          server, std::move(lease));
+                    });
             fut.emplace_back(std::move(f));
         }
         auto result = ss::when_all_succeed(fut.begin(), fut.end()).get0();

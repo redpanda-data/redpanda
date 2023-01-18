@@ -176,7 +176,8 @@ public:
       const storage::log_reader_config& config,
       ss::shared_ptr<remote_partition> part,
       ss::lw_shared_ptr<storage::offset_translator_state> ot_state) noexcept
-      : _ctxlog(cst_log, _rtc, part->get_ntp().path())
+      : _rtc(part->_as)
+      , _ctxlog(cst_log, _rtc, part->get_ntp().path())
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
       , _gate_guard(_partition->_gate) {
@@ -471,7 +472,7 @@ remote_partition::remote_partition(
   remote& api,
   cache& c,
   cloud_storage_clients::bucket_name bucket)
-  : _rtc()
+  : _rtc(_as)
   , _ctxlog(cst_log, _rtc, m.get_ntp().path())
   , _api(api)
   , _cache(c)
@@ -580,6 +581,7 @@ remote_partition::aborted_transactions(offset_range offsets) {
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
 
+    _as.request_abort();
     co_await _gate.close();
     // Remove materialized_segment_state from the list that contains it, to
     // avoid it getting registered for eviction and stop.
@@ -748,7 +750,7 @@ ss::future<bool> remote_partition::tolerant_delete_object(
  *    S3, not the state of the archival metadata stm (which can be out
  *    of date if e.g. we were not the leader)
  */
-ss::future<> remote_partition::erase() {
+ss::future<> remote_partition::erase(ss::abort_source& as) {
     // TODO: Edge case 1
     // There is a rare race in which objects might get left behind in S3.
     //
@@ -772,7 +774,11 @@ ss::future<> remote_partition::erase() {
 
     static constexpr ss::lowres_clock::duration erase_timeout = 60s;
     static constexpr ss::lowres_clock::duration erase_backoff = 1s;
-    retry_chain_node local_rtc(erase_timeout, erase_backoff, &_rtc);
+
+    // This function is called after ::stop, so we may not use our
+    // main retry_chain_node which is bound to our abort source,
+    // and construct a special one.
+    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
 
     // Read the partition manifest fresh: we might already have
     // dropped local archival_stm state related to this partition.

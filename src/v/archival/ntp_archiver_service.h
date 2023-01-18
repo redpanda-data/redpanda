@@ -301,7 +301,7 @@ private:
     segment_path_for_candidate(const upload_candidate& candidate);
 
     /// Method to use with lazy_abort_source
-    bool archiver_lost_leadership(cloud_storage::lazy_abort_source& las);
+    std::optional<ss::sstring> upload_should_abort();
 
     const cloud_storage_clients::bucket_name& get_bucket_name() const;
 

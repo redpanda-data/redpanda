@@ -66,7 +66,8 @@ private:
 partition_recovery_manager::partition_recovery_manager(
   cloud_storage_clients::bucket_name bucket, ss::sharded<remote>& remote)
   : _bucket(std::move(bucket))
-  , _remote(remote) {}
+  , _remote(remote)
+  , _root(_as) {}
 
 partition_recovery_manager::~partition_recovery_manager() {
     vassert(_gate.is_closed(), "S3 downloader is not stopped properly");
