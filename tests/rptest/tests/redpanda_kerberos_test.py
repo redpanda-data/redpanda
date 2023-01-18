@@ -114,7 +114,7 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
         kcat = KafkaCat(self.redpanda)
         metadata = kcat.metadata()
         self.redpanda.logger.info(f"Metadata (SCRAM): {metadata}")
-        assert (len(metadata['brokers']) == 3)
+        assert len(metadata['brokers']) == 3
         metadata = self.client.metadata()
         self.redpanda.logger.info(f"Metadata (GSSAPI): {metadata}")
-        assert (len(metadata['brokers']) == 3)
+        assert len(metadata['brokers']) == 3
