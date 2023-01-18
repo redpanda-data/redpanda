@@ -38,7 +38,7 @@ public:
       const storage::disk_log_impl& log,
       size_t max_uploaded_segment_size);
 
-    void collect_segments();
+    void collect_segments(bool non_compacted = false);
 
     segment_seq segments();
 
@@ -47,7 +47,7 @@ public:
     bool can_replace_manifest_segment() const;
 
     /// The starting point for the collection, this may not coincide with the
-    /// start of the first collected compacted segment. It should be aligned
+    /// start of the first collected segment. It should be aligned
     /// with the manifest segment boundary.
     model::offset begin_inclusive() const;
 
@@ -73,11 +73,12 @@ private:
         const storage::ntp_config* ntp_conf;
     };
 
-    /// Collects compacted segments until the end of the manifest, or until the
+    /// Collects segments until the end of the manifest, or until the
     /// end of compacted segments in log.
-    void do_collect();
+    void do_collect(bool non_compacted = false);
 
-    lookup_result find_next_compacted_segment(model::offset start_offset);
+    lookup_result
+    find_next_segment(model::offset start_offset, bool non_compacted = false);
 
     /// Makes sure that the begin offset of the collection is aligned to the
     /// manifest segment boundary. If the begin offset is inside a manifest
