@@ -109,6 +109,19 @@ struct config_t
     auto serde_fields() { return std::tie(version, values, nodes_status); }
 };
 
+struct metrics_reporter_t
+  : public serde::envelope<
+      metrics_reporter_t,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    metrics_reporter_cluster_info cluster_info;
+
+    friend bool operator==(const metrics_reporter_t&, const metrics_reporter_t&)
+      = default;
+
+    auto serde_fields() { return std::tie(cluster_info); }
+};
+
 } // namespace controller_snapshot_parts
 
 struct controller_snapshot
@@ -120,6 +133,7 @@ struct controller_snapshot
     controller_snapshot_parts::features_t features;
     controller_snapshot_parts::members_t members;
     controller_snapshot_parts::config_t config;
+    controller_snapshot_parts::metrics_reporter_t metrics_reporter;
 
     friend bool
     operator==(const controller_snapshot&, const controller_snapshot&)

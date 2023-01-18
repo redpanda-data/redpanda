@@ -83,6 +83,7 @@ public:
 
     metrics_reporter(
       consensus_ptr,
+      ss::sharded<controller_stm>&,
       ss::sharded<members_table>&,
       ss::sharded<topic_table>&,
       ss::sharded<health_monitor_frontend>&,
@@ -103,15 +104,14 @@ private:
     ss::future<> try_initialize_cluster_info();
     ss::future<> propagate_cluster_id();
 
-    ss::sstring _cluster_uuid;
     consensus_ptr _raft0;
+    metrics_reporter_cluster_info& _cluster_info; // owned by controller_stm
     ss::sharded<members_table>& _members_table;
     ss::sharded<topic_table>& _topics;
     ss::sharded<health_monitor_frontend>& _health_monitor;
     ss::sharded<config_frontend>& _config_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<ss::abort_source>& _as;
-    model::timestamp _creation_timestamp;
     prefix_logger _logger;
     ss::timer<> _tick_timer;
     details::address _address;

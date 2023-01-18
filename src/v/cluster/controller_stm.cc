@@ -62,6 +62,18 @@ controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
     }
 
     controller_snapshot data;
+
+    if (!_metrics_reporter_cluster_info.is_initialized()) {
+        // cluster info is initialized manually from the first 2 batches of
+        // controller log so we have to wait until it is initialized by
+        // metrics_reporter before making a snapshot.
+        vlog(
+          clusterlog.debug,
+          "skipping snapshotting, metrics reporter not yet initialized");
+        co_return std::nullopt;
+    }
+    data.metrics_reporter.cluster_info = _metrics_reporter_cluster_info;
+
     ss::future<> fill_fut = ss::now();
     auto call_stm_fill = [&fill_fut, &data](auto& stm) {
         fill_fut = fill_fut.then(
@@ -127,6 +139,8 @@ ss::future<> controller_stm::apply_snapshot(
           std::current_exception(),
           _raft->get_snapshot_path());
     }
+
+    _metrics_reporter_cluster_info = snapshot.metrics_reporter.cluster_info;
 }
 
 } // namespace cluster

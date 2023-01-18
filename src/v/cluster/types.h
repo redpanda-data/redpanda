@@ -3244,6 +3244,24 @@ struct partition_cloud_storage_status {
     std::optional<kafka::offset> local_log_start_offset;
 };
 
+struct metrics_reporter_cluster_info
+  : serde::envelope<
+      metrics_reporter_cluster_info,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    ss::sstring uuid;
+    model::timestamp creation_timestamp;
+
+    bool is_initialized() const { return !uuid.empty(); }
+
+    friend bool operator==(
+      const metrics_reporter_cluster_info&,
+      const metrics_reporter_cluster_info&)
+      = default;
+
+    auto serde_fields() { return std::tie(uuid, creation_timestamp); }
+};
+
 } // namespace cluster
 namespace std {
 template<>
