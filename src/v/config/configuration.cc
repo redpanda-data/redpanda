@@ -1264,6 +1264,19 @@ configuration::configuration()
       "Retention in bytes for topics created during automated recovery",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB)
+  , cloud_storage_segment_size_target(
+      *this,
+      "cloud_storage_segment_size_target",
+      "Desired segment size in the cloud storage. Default: segment.bytes",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
+  , cloud_storage_segment_size_min(
+      *this,
+      "cloud_storage_segment_size_min",
+      "Smallest acceptable segment size in the cloud storage. Default: "
+      "cloud_storage_segment_size_target/2",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
