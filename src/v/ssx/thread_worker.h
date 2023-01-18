@@ -53,20 +53,28 @@ public:
 
 template<typename Func>
 class worker_task final : public task_base {
-    using futurator = ss::futurize<std::invoke_result_t<Func>>;
+    using value_type = std::invoke_result_t<Func>;
 
 public:
     explicit worker_task(Func func)
       : _func{std::move(func)} {}
 
-    typename futurator::type get_future() noexcept {
+    ss::future<value_type> get_future() noexcept {
         return _promise.get_future();
     }
 
     void process(ss::alien::instance& alien, ss::shard_id shard) final {
-        auto f = futurator::invoke(_func);
-        ss::alien::run_on(alien, shard, [this, f{std::move(f)}]() mutable {
-            f.forward_to(std::move(_promise));
+        try {
+            set_value(alien, shard, _func());
+        } catch (...) {
+            set_exception(alien, shard, std::current_exception());
+        };
+    }
+
+    void
+    set_value(ss::alien::instance& alien, ss::shard_id shard, value_type v) {
+        ss::alien::run_on(alien, shard, [this, v{std::move(v)}]() mutable {
+            _promise.set_value(std::move(v));
         });
     }
 
@@ -80,7 +88,7 @@ public:
 
 private:
     Func _func;
-    typename futurator::promise_type _promise;
+    typename ss::promise<value_type> _promise;
 };
 
 class thread_worker {
@@ -165,13 +173,15 @@ private:
 } // namespace impl
 
 /**
- * thread_worker runs tasks in a std::thread
+ * thread_worker runs tasks in a std::thread.
  *
  * By running in a std::thread, it's possible to make blocking calls such as
- * file I/O and posix thread primitives.
+ * file I/O and posix thread primitives without blocking a reactor.
  *
  * The thread worker will drain all operations before joining the thread in
- * stop()
+ * stop(), but it should be noted that joining a thread may block. As such, this
+ * class is most suited to run for the lifetime of an application, rather than
+ * short-lived.
  */
 class thread_worker {
 public:
@@ -179,7 +189,7 @@ public:
     thread_worker() = default;
 
     /**
-     * start the background thread
+     * start the background thread.
      */
     ss::future<> start() {
         vassert(
@@ -191,7 +201,10 @@ public:
     }
 
     /**
-     * stop and join the background thread
+     * stop and join the background thread.
+     *
+     * Although the work has completed, it should be noted that joining a thread
+     * may block the reactor.
      */
     ss::future<> stop() {
         vassert(
