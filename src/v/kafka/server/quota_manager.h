@@ -29,6 +29,7 @@
 #include <chrono>
 #include <optional>
 #include <string_view>
+#include <deque>
 
 namespace kafka {
 
@@ -118,6 +119,145 @@ inoutpair<TRes> to_each(F f, /*const inoutpair<T>&... args*/ T&&... args) {
   }
 }
 
+template<class T>
+inoutpair<std::vector<T>> to_inside_out ( const std::vector<inoutpair<T>>& v ) {
+  inoutpair<std::vector<T>> res;
+  res.in().reserve(v.size());
+  res.out().reserve(v.size());
+  for ( const inoutpair<T>& i : v ) {
+    res.in().push_back( i.in() );
+    res.out().push_back( i.out() );
+  };
+  return res;
+}
+
+
+/// Isolates \ref quota_manager functionality related to 
+/// shard/node/cluster (SNC) wide quotas and limits
+class snc_quota_manager {
+public:
+    using clock = ss::lowres_clock;
+    using quota_t = bottomless_token_bucket::quota_t;
+
+    snc_quota_manager(ss::sharded<class quota_manager>&);
+    snc_quota_manager(const snc_quota_manager&) = delete;
+    snc_quota_manager& operator=(const snc_quota_manager&) = delete;
+    snc_quota_manager(snc_quota_manager&&) = delete;
+    snc_quota_manager& operator=(snc_quota_manager&&) = delete;
+    ~snc_quota_manager() noexcept;
+
+    void start();
+    ss::future<> stop();
+
+    /// @p enforce delay to enforce in this call
+    /// @p request delay to request from the client via throttle_ms
+    struct delays_t {
+        clock::duration enforce{0};
+        clock::duration request{0};
+    };
+
+    /// Determine throttling required by shard level TP quotas.
+    /// @param connection_throttle_until (in,out) until what time the client
+    /// on this conection should throttle until. If it does not, this throttling
+    /// will be enforced on the next call. In: value from the last call, out:
+    /// value saved until the next call.
+    delays_t get_shard_delays(
+      clock::time_point& connection_throttle_until,
+      clock::time_point now) const;
+
+    void record_request_tp(
+      size_t request_size, clock::time_point now) noexcept;
+
+    void record_response_tp(
+      size_t request_size, clock::time_point now) noexcept;
+
+    const throughput_quotas_probe&
+    get_throughput_quotas_probe() const noexcept {
+        return _probe;
+    };
+
+private:
+    /// Describes an instruction to the balancer how to alter effective shard quotas
+    /// When \p amount_is == \p delta, \p amount should be dispensed among shard 
+    /// quotas (if positive) or collected from shard quotas (if negative).
+    /// When \p amount_is == \p value, \p amount contains the new shard quota value
+    /// and each shard quota should be reset to that value regardless of what is 
+    /// there now.
+    struct collect_dispense_amount_t {
+      snc_quota_manager::quota_t amount {0};
+      enum { delta, value } amount_is{delta};
+      bool empty() const noexcept { return amount == 0 && amount_is==delta; }
+      void append ( const collect_dispense_amount_t& rhs ) noexcept;
+    };
+    friend struct fmt::formatter<collect_dispense_amount_t>;
+
+    // Returns value based on upstream values, not the _node_quota_default
+    inoutpair<std::optional<quota_t>> calc_node_quota_default() const;
+    // Uses the func above to update _node_quota_default and dependencies
+    void update_node_quota_default();
+    // Returns value based on _node_quota_default
+    inoutpair<quota_t> get_shard_quota_default() const;
+
+    // void maybe_arm_balancer_timer();
+    void notify_quota_balancer_node_period_change();
+    std::chrono::milliseconds get_quota_balancer_node_period() const;
+    void update_shard_quota_minimum();
+    void quota_balancer();
+    ss::future<> quota_balancer_step();
+    ss::future<> quota_balancer_update();
+
+    inoutpair<quota_t> get_deficiency() const noexcept {
+      return to_each([] (const bottomless_token_bucket& b, const quota_t shard_quota_min) -> quota_t {
+        if ( b.tokens() < 0 || b.quota() < shard_quota_min) {
+          return 1;
+        }
+        return 0;
+      }, _shard_quota, _shard_quota_minimum );
+    }
+
+    inoutpair<quota_t> get_quota() const noexcept {
+        return to_each(&bottomless_token_bucket::quota, _shard_quota);
+    }
+
+    inoutpair<quota_t> get_surplus() const noexcept {
+        return to_each(
+          [](const bottomless_token_bucket& b, const quota_t& quota_min) {
+              return std::max<quota_t>(
+                b.get_current_rate() - quota_min, 0);
+          }, _shard_quota, _shard_quota_minimum);
+    }
+
+    void adjust_quota(const inoutpair<quota_t>& delta) noexcept;
+
+private:
+    // immutable
+    ss::sharded<class quota_manager>& _container;
+
+    // configuration
+    config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
+    inoutpair<config::binding<std::optional<quota_t>>>
+      _kafka_throughput_limit_node_bps;
+    config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
+    config::binding<std::chrono::milliseconds>
+      _kafka_quota_balancer_node_period;
+    config::binding<double> _kafka_quota_balancer_min_shard_thoughput_ratio;
+    config::binding<quota_t> _kafka_quota_balancer_min_shard_thoughput_bps;
+
+    // operational, only used in the balancer shard
+    ss::thread _balancer_thread;
+    inoutpair<collect_dispense_amount_t> _shard_quotas_update;
+    inoutpair<quota_t> _node_deficit;
+
+    // operational, used on each shard
+    inoutpair<std::optional<quota_t>> _node_quota_default;
+    inoutpair<quota_t> _shard_quota_minimum;
+    inoutpair<bottomless_token_bucket> _shard_quota;
+
+    // service
+    ss::abort_source _as;
+    throughput_quotas_probe _probe;
+};
+
 // quota_manager tracks quota usage
 //
 // TODO:
@@ -190,13 +330,8 @@ public:
       uint32_t mutations,
       clock::time_point now = clock::now());
 
-    /// @p enforce delay to enforce in this call
-    /// @p request delay to request from the client via throttle_ms
-    struct shard_delays_t {
-        clock::duration enforce{0};
-        clock::duration request{0};
-    };
-
+    using shard_delays_t = snc_quota_manager::delays_t;
+    
     /// Determine throttling required by shard level TP quotas.
     /// @param connection_throttle_until (in,out) until what time the client
     /// on this conection should throttle until. If it does not, this throttling
@@ -204,18 +339,22 @@ public:
     /// value saved until the next call.
     shard_delays_t get_shard_delays(
       clock::time_point& connection_throttle_until,
-      clock::time_point now) const;
+      clock::time_point now) const {
+        return _snc_qm.get_shard_delays(connection_throttle_until, now);
+      }
 
     void record_request_tp(
-      size_t request_size, clock::time_point now = clock::now()) noexcept;
+      size_t request_size, clock::time_point now = clock::now()) noexcept {
+        _snc_qm.record_request_tp(request_size,now);
+      }
 
     void record_response_tp(
-      size_t request_size, clock::time_point now = clock::now()) noexcept;
+      size_t request_size, clock::time_point now = clock::now()) noexcept {
+        _snc_qm.record_response_tp(request_size,now);
+      }
 
-    const throughput_quotas_probe&
-    get_throughput_quotas_probe() const noexcept {
-        return _probe;
-    };
+    snc_quota_manager& snc_qm() noexcept { return _snc_qm; }
+    const snc_quota_manager& snc_qm() const noexcept { return _snc_qm; }
 
 private:
     std::chrono::milliseconds do_record_partition_mutations(
@@ -261,53 +400,6 @@ private:
     std::optional<int64_t> get_client_target_fetch_tp_rate(
       const std::optional<std::string_view>& quota_id);
 
-    using shard_quota_t = bottomless_token_bucket::quota_t;
-    shard_quota_t get_shard_ingress_quota_default() const;
-    shard_quota_t get_shard_egress_quota_default() const;
-
-    void maybe_arm_balancer_timer();
-    void notify_quota_balancer_node_period_change();
-    std::chrono::milliseconds get_quota_balancer_node_period() const;
-    void quota_balancer();
-    ss::future<> quota_balancer_step();
-
-    inoutpair<shard_quota_t> get_deficiency() const noexcept {
-      return to_each([] (const bottomless_token_bucket& b) -> shard_quota_t {
-          return b.tokens() < 0 ? 1 : 0;
-      }, _shard_quota );
-    }
-
-    inoutpair<shard_quota_t> get_surplus() const noexcept {
-        return to_each(
-          [](const bottomless_token_bucket& b, const shard_quota_t& quota_min) {
-              return std::max<shard_quota_t>(
-                b.get_current_rate() - quota_min, 0);
-          }, _shard_quota, _shard_quota_minimum);
-    }
-
-    inoutpair<shard_quota_t> lend(inoutpair<shard_quota_t> quota_ask) noexcept {
-        return to_each(
-          [](
-            bottomless_token_bucket& b,
-            const shard_quota_t quota_ask,
-            const shard_quota_t quota_min) {
-              const auto can_lend = std::min<shard_quota_t>(
-                quota_ask, b.get_current_rate() - quota_min);
-              vassert(can_lend >= 0, "can_lend logic error");
-              b.set_quota(b.quota() - can_lend);
-              return can_lend;
-          },
-          _shard_quota,
-          quota_ask,
-          _shard_quota_minimum);
-    }
-
-    void borrow(inoutpair<shard_quota_t> quota_increase) noexcept {
-      to_each([](bottomless_token_bucket& b, const shard_quota_t quota_increase) {
-        b.set_quota(b.quota() + quota_increase);
-      }, _shard_quota, quota_increase);
-    }
-
 private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
@@ -320,25 +412,13 @@ private:
     config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
       _target_fetch_tp_rate_per_client_group;
 
-    config::binding<std::optional<uint64_t>>
-      _kafka_throughput_limit_node_in_bps;
-    config::binding<std::optional<uint64_t>>
-      _kafka_throughput_limit_node_out_bps;
-    config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
-    config::binding<std::chrono::milliseconds>
-      _kafka_quota_balancer_node_period;
-
     client_quotas_t _client_quotas;
-    inoutpair<bottomless_token_bucket> _shard_quota;
-    inoutpair<shard_quota_t> _shard_quota_minimum;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;
     config::binding<std::chrono::milliseconds> _max_delay;
-    ss::timer<> _balancer_timer;
-    ss::abort_source _as;
-    throughput_quotas_probe _probe;
-    ss::thread _balancer_thread;
+
+    snc_quota_manager _snc_qm;
 };
 
 } // namespace kafka

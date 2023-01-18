@@ -210,8 +210,8 @@ FIXTURE_TEST(test_node_throughput_limits, prod_consume_fixture) {
     namespace ch = std::chrono;
 
     // configure
-    constexpr uint64_t pershard_rate_limit_in = 9_KiB;
-    constexpr uint64_t pershard_rate_limit_out = 7_KiB;
+    constexpr int64_t pershard_rate_limit_in = 9_KiB;
+    constexpr int64_t pershard_rate_limit_out = 7_KiB;
     constexpr auto window_width = 200ms;
     constexpr size_t batch_size = 256;
     ss::smp::invoke_on_all([&] {
@@ -324,7 +324,7 @@ FIXTURE_TEST(test_quota_balancer_1, prod_consume_fixture) {
         return app.quota_mgr
           .map_reduce0(
             [](const kafka::quota_manager& qm) {
-                return qm.get_throughput_quotas_probe().get_balancer_runs();
+                return qm.snc_qm().get_throughput_quotas_probe().get_balancer_runs();
             },
             0,
             [](uint32_t lhs, uint32_t rhs) { return lhs + rhs; })
