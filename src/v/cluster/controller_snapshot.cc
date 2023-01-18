@@ -18,6 +18,7 @@ ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
     co_await serde::write_async(out, std::move(features));
     co_await serde::write_async(out, std::move(members));
     co_await serde::write_async(out, std::move(config));
+    co_await serde::write_async(out, std::move(metrics_reporter));
 }
 
 ss::future<>
@@ -30,6 +31,9 @@ controller_snapshot::serde_async_read(iobuf_parser& in, serde::header const h) {
       in, h._bytes_left_limit);
     config = co_await serde::read_async_nested<decltype(config)>(
       in, h._bytes_left_limit);
+    metrics_reporter
+      = co_await serde::read_async_nested<decltype(metrics_reporter)>(
+        in, h._bytes_left_limit);
 
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);

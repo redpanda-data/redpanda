@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iostream.h"
 #include "cluster/config_frontend.h"
+#include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/health_monitor_types.h"
@@ -100,6 +101,7 @@ static ss::logger logger("metrics-reporter");
 
 metrics_reporter::metrics_reporter(
   consensus_ptr raft0,
+  ss::sharded<controller_stm>& controller_stm,
   ss::sharded<members_table>& members_table,
   ss::sharded<topic_table>& topic_table,
   ss::sharded<health_monitor_frontend>& health_monitor,
@@ -107,6 +109,7 @@ metrics_reporter::metrics_reporter(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
+  , _cluster_info(controller_stm.local().get_metrics_reporter_cluster_info())
   , _members_table(members_table)
   , _topics(topic_table)
   , _health_monitor(health_monitor)
@@ -171,8 +174,8 @@ ss::future<result<metrics_reporter::metrics_snapshot>>
 metrics_reporter::build_metrics_snapshot() {
     metrics_snapshot snapshot;
 
-    snapshot.cluster_uuid = _cluster_uuid;
-    snapshot.cluster_creation_epoch = _creation_timestamp.value();
+    snapshot.cluster_uuid = _cluster_info.uuid;
+    snapshot.cluster_creation_epoch = _cluster_info.creation_timestamp.value();
 
     absl::node_hash_map<model::node_id, node_metrics> metrics_map;
 
@@ -266,7 +269,21 @@ metrics_reporter::build_metrics_snapshot() {
 
 ss::future<> metrics_reporter::try_initialize_cluster_info() {
     // already initialized, do nothing
-    if (_cluster_uuid != "") {
+    if (_cluster_info.is_initialized()) {
+        co_return;
+    }
+
+    if (_raft0->start_offset() > model::offset{0}) {
+        // Controller log already snapshotted, wait until cluster info gets
+        // initialized from the snapshot.
+        co_return;
+    }
+
+    /**
+     * In order to seed the UUID generator we use a hash over first two batches
+     * timestamps and initial raft-0 configuration
+     */
+    if (_raft0->committed_offset() < model::offset{2}) {
         co_return;
     }
 
@@ -276,10 +293,6 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
 
     auto batches = co_await model::consume_reader_to_memory(
       std::move(reader), model::no_timeout);
-    /**
-     * In order to seed the UUID generator we use a hash over first two batches
-     * timestamps and initial raft-0 configuration
-     */
     if (batches.size() < 2) {
         co_return;
     }
@@ -289,7 +302,7 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
     auto data_bytes = iobuf_to_bytes(first_cfg.data());
     hash_sha256 sha256;
     sha256.update(data_bytes);
-    _creation_timestamp = first_cfg.header().first_timestamp;
+    _cluster_info.creation_timestamp = first_cfg.header().first_timestamp;
     // use timestamps of first two batches in raft-0 log.
     for (int i = 0; i < 2; ++i) {
         sha256.update(iobuf_to_bytes(
@@ -303,7 +316,7 @@ ss::future<> metrics_reporter::try_initialize_cluster_info() {
 
     boost::uuids::random_generator_mt19937 uuid_gen(mersenne_twister);
 
-    _cluster_uuid = fmt::format("{}", uuid_gen());
+    _cluster_info.uuid = fmt::format("{}", uuid_gen());
 }
 
 /**
@@ -321,18 +334,19 @@ ss::future<> metrics_reporter::propagate_cluster_id() {
         co_return;
     }
 
-    if (_cluster_uuid == "") {
+    if (_cluster_info.uuid == "") {
         co_return;
     }
 
     auto result = co_await _config_frontend.local().do_patch(
-      config_update_request{.upsert = {{"cluster_id", _cluster_uuid}}},
+      config_update_request{.upsert = {{"cluster_id", _cluster_info.uuid}}},
       model::timeout_clock::now() + 5s);
     if (result.errc) {
         vlog(
           clusterlog.warn, "Failed to initialize cluster_id: {}", result.errc);
     } else {
-        vlog(clusterlog.info, "Initialized cluster_id to {}", _cluster_uuid);
+        vlog(
+          clusterlog.info, "Initialized cluster_id to {}", _cluster_info.uuid);
     }
 }
 
@@ -378,14 +392,15 @@ ss::future<http::client> metrics_reporter::make_http_client() {
 }
 
 ss::future<> metrics_reporter::do_report_metrics() {
+    // try initializing cluster info, if it is already present this operation
+    // does nothing.
+    // do this on every node to allow controller snapshotting to proceed.
+    co_await try_initialize_cluster_info();
+
     // skip reporting if current node is not raft0 leader
     if (!_raft0->is_elected_leader()) {
         co_return;
     }
-
-    // try initializing cluster info, if it is already present this operation
-    // does nothig
-    co_await try_initialize_cluster_info();
 
     // Update cluster_id in configuration, if not already set.
     co_await propagate_cluster_id();
@@ -405,7 +420,7 @@ ss::future<> metrics_reporter::do_report_metrics() {
     }
 
     // if not initialized, wait until next tick
-    if (_cluster_uuid == "") {
+    if (!_cluster_info.is_initialized()) {
         co_return;
     }
 
