@@ -79,7 +79,7 @@ ntp_archiver::ntp_archiver(
       cloud_storage::remote::make_partition_manifest_tags(_ntp, _rev))
   , _tx_tags(cloud_storage::remote::make_tx_manifest_tags(_ntp, _rev))
   , _local_segment_merger(
-      std::make_unique<local_adjacent_segment_merger>(*this, _rtclog)) {
+      std::make_unique<adjacent_segment_merger>(*this, _rtclog, true)) {
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
@@ -539,7 +539,7 @@ bool ntp_archiver::housekeeping_can_continue() const {
 ss::future<> ntp_archiver::stop() {
     _leader_cond.broken();
     if (_local_segment_merger) {
-        co_await dynamic_cast<local_adjacent_segment_merger*>(
+        co_await dynamic_cast<adjacent_segment_merger*>(
           _local_segment_merger.get())
           ->stop();
     }
@@ -611,6 +611,9 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
 
 remote_segment_path
 ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
+    vassert(
+      candidate.remote_sources.empty(),
+      "This method can only work with local segments");
     auto front = candidate.sources.front();
     cloud_storage::partition_manifest::value val{
       .is_compacted = front->is_compacted_segment()
@@ -631,6 +634,9 @@ ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
   upload_candidate candidate,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    vassert(
+      candidate.remote_sources.empty(),
+      "This method can only work with local segments");
     gate_guard guard{_gate};
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
@@ -688,6 +694,9 @@ std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_tx(
   upload_candidate candidate,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    vassert(
+      candidate.remote_sources.empty(),
+      "This method can only work with local segments");
     gate_guard guard{_gate};
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
@@ -1227,6 +1236,10 @@ std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
 ss::future<> ntp_archiver::housekeeping() {
     try {
         if (housekeeping_can_continue()) {
+            // Acquire mutex to prevent concurrency between
+            // external housekeeping jobs from upload_housekeeping_service
+            // and retention/GC
+            auto units = co_await ss::get_units(_mutex, 1, _as);
             co_await apply_retention();
             co_await garbage_collect();
         }
@@ -1398,7 +1411,7 @@ ntp_archiver::get_housekeeping_jobs() {
 }
 
 ss::future<std::optional<upload_candidate_with_locks>>
-ntp_archiver::find_upload_candidate(manifest_scanner_t scanner) {
+ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     if (!upload_loop_can_continue()) {
         co_return std::nullopt;
     }
@@ -1407,30 +1420,52 @@ ntp_archiver::find_upload_candidate(manifest_scanner_t scanner) {
         vlog(_rtclog.debug, "Scan didn't resulted in upload candidate");
         co_return std::nullopt;
     } else {
-        vlog(
-          _rtclog.debug,
-          "Scan results are: size={}, base_offset={}, max_offset={}, "
-          "num_segments={}",
-          run->size_bytes,
-          run->base_offset,
-          run->max_offset,
-          run->num_segments);
+        vlog(_rtclog.debug, "Scan result: {}", run);
     }
-    auto log_generic = _parent.log();
-    auto& log = dynamic_cast<storage::disk_log_impl&>(*log_generic.get_impl());
-    segment_collector collector(
-      run->base_offset, manifest(), log, run->size_bytes);
-    collector.collect_segments(true);
-    auto candidate = co_await collector.make_upload_candidate(
-      _conf->upload_io_priority, _conf->segment_upload_timeout);
-    if (candidate.candidate.exposed_name().empty()) {
-        vlog(_rtclog.warn, "Failed to make upload candidate");
-        co_return std::nullopt;
+    if (run->meta.base_offset >= _parent.start_offset()) {
+        auto log_generic = _parent.log();
+        auto& log = dynamic_cast<storage::disk_log_impl&>(
+          *log_generic.get_impl());
+        segment_collector collector(
+          run->meta.base_offset, manifest(), log, run->meta.size_bytes);
+        collector.collect_segments(
+          segment_collector_mode::collect_non_compacted);
+        auto candidate = co_await collector.make_upload_candidate(
+          _conf->upload_io_priority, _conf->segment_upload_timeout);
+        if (candidate.candidate.exposed_name().empty()) {
+            vlog(_rtclog.warn, "Failed to make upload candidate");
+            co_return std::nullopt;
+        }
+        co_return candidate;
     }
-    co_return candidate;
+    // segment_name exposed_name;
+    upload_candidate candidate = {};
+    candidate.starting_offset = run->meta.base_offset;
+    candidate.content_length = run->meta.size_bytes;
+    candidate.final_offset = run->meta.committed_offset;
+    candidate.base_timestamp = run->meta.base_timestamp;
+    candidate.max_timestamp = run->meta.max_timestamp;
+    candidate.term = run->meta.segment_term;
+    candidate.remote_sources = run->segments;
+    // Reuploaded segment can only use new name format
+    run->meta.sname_format = cloud_storage::segment_name_format::v2;
+    candidate.exposed_name
+      = cloud_storage::partition_manifest::generate_remote_segment_name(
+        run->meta);
+    // Create a remote upload candidate
+    co_return upload_candidate_with_locks{std::move(candidate)};
 }
 
 ss::future<bool> ntp_archiver::upload(
+  upload_candidate_with_locks upload_locks,
+  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    if (upload_locks.candidate.sources.size() > 0) {
+        return do_upload_local(std::move(upload_locks), source_rtc);
+    }
+    return do_upload_remote(std::move(upload_locks), source_rtc);
+}
+
+ss::future<bool> ntp_archiver::do_upload_local(
   upload_candidate_with_locks upload_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     if (!upload_loop_can_continue()) {
@@ -1511,6 +1546,24 @@ ss::future<bool> ntp_archiver::upload(
           "archival metadata replicated but manifest is not re-uploaded");
     }
     co_return true;
+}
+
+ss::future<bool> ntp_archiver::do_upload_remote(
+  upload_candidate_with_locks candidate,
+  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    std::ignore = candidate;
+    std::ignore = source_rtc;
+    throw std::runtime_error("Not implemented");
+}
+
+size_t ntp_archiver::get_local_segment_size() const {
+    auto log_segment_size = config::shard_local_cfg().log_segment_size.value();
+    const auto& cfg = _parent.raft()->log_config();
+    if (cfg.has_overrides()) {
+        log_segment_size = cfg.get_overrides().segment_size.value_or(
+          log_segment_size);
+    }
+    return log_segment_size;
 }
 
 } // namespace archival

@@ -11,6 +11,8 @@
 #include "archival/types.h"
 
 #include "archival/logger.h"
+#include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/types.h"
 #include "config/configuration.h"
 
 #include <fmt/chrono.h>
@@ -115,40 +117,56 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
 
 bool adjacent_segment_run::maybe_add_segment(
   const cloud_storage::segment_meta& s, size_t max_size) {
+    vlog(archival_log.debug, "Looking at segment meta: {}", s);
     if (num_segments == 0) {
         // Find the begining of the small segment
         // run.
         if (s.size_bytes < max_size) {
-            base_offset = s.base_offset;
-            max_offset = s.committed_offset;
-            size_bytes += s.size_bytes;
+            meta = s;
             num_segments = 1;
+            segments.push_back(
+              cloud_storage::partition_manifest::generate_remote_segment_path(
+                ntp, s));
         }
     } else {
-        if (size_bytes + s.size_bytes <= max_size) {
+        if (meta.size_bytes + s.size_bytes <= max_size) {
+            if (model::next_offset(meta.committed_offset) != s.base_offset) {
+                // In case if we're dealing with one of the old manifests with
+                // inconsistencies (overlapping offsets, etc).
+                num_segments = 0;
+                meta = {};
+            }
             // Move the end of the small segment run forward
-            max_offset = s.committed_offset;
+            meta.committed_offset = s.committed_offset;
+            meta.max_timestamp = s.max_timestamp;
             num_segments++;
-            size_bytes += s.size_bytes;
+            meta.size_bytes += s.size_bytes;
+            segments.push_back(
+              cloud_storage::partition_manifest::generate_remote_segment_path(
+                ntp, s));
         } else {
             return num_segments > 1;
         }
     }
-    vlog(
-      archival_log.debug,
-      "adjacent_segment_run::maybe_add_segment return false, num {}",
-      num_segments);
     return false;
 }
 
 std::ostream& operator<<(std::ostream& os, const adjacent_segment_run& run) {
+    std::vector<ss::sstring> names;
+    names.reserve(run.segments.size());
+    std::transform(
+      run.segments.begin(),
+      run.segments.end(),
+      std::back_inserter(names),
+      [](const cloud_storage::remote_segment_path& rsp) {
+          return rsp().native();
+      });
     fmt::print(
       os,
-      "{{base_offset: {}, max_offset: {}, num_segments: {}, size_bytes: {}}}",
-      run.base_offset,
-      run.max_offset,
+      "{{meta: {}, num_segments: {}, segments: {}}}",
+      run.meta,
       run.num_segments,
-      run.size_bytes);
+      names);
     return os;
 }
 

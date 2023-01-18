@@ -20,50 +20,95 @@
 
 namespace archival {
 
-local_adjacent_segment_merger::local_adjacent_segment_merger(
-  ntp_archiver& parent, retry_chain_logger& ctxlog)
-  : _archiver(parent)
+static std::pair<size_t, size_t> get_low_high_segment_size(
+  size_t segment_size,
+  config::binding<std::optional<size_t>>& low_wm,
+  config::binding<std::optional<size_t>>& high_wm) {
+    auto high_watermark = high_wm().value_or(segment_size);
+    auto low_watermark = low_wm().value_or(high_watermark / 2);
+    if (low_watermark >= high_watermark) {
+        // Low watermark can't be equal to high watermark
+        // otherwise the merger want be able to find upload
+        // candidate.
+        low_watermark = high_watermark * 8 / 10;
+    }
+    return std::make_pair(low_watermark, high_watermark);
+}
+
+adjacent_segment_merger::adjacent_segment_merger(
+  ntp_archiver& parent, retry_chain_logger& ctxlog, bool is_local)
+  : _is_local(is_local)
+  , _archiver(parent)
   , _ctxlog(ctxlog)
   , _target_segment_size(
       config::shard_local_cfg().cloud_storage_segment_size_target.bind())
   , _min_segment_size(
       config::shard_local_cfg().cloud_storage_segment_size_min.bind()) {}
 
-ss::future<> local_adjacent_segment_merger::stop() {
-    interrupt();
-    return _gate.close();
-}
+ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 
-ss::future<> local_adjacent_segment_merger::run(retry_chain_node& rtc) {
+ss::future<> adjacent_segment_merger::run(retry_chain_node& rtc) {
     ss::gate::holder h(_gate);
     vlog(_ctxlog.debug, "Adjacent segment merger run begin");
     auto scanner = [this](
-                     model::offset start_offset,
+                     model::offset local_start_offset,
                      const cloud_storage::partition_manifest& manifest)
       -> std::optional<adjacent_segment_run> {
-        adjacent_segment_run run;
-        auto high_watermark = _target_segment_size().value_or(_segment_size());
-        auto low_watermark = _min_segment_size().value_or(high_watermark / 2);
-        if (low_watermark >= high_watermark) {
-            // Low watermark can't be equal to high watermark
-            // otherwise the merger want be able to find upload
-            // candidate.
-            low_watermark = high_watermark * 8 / 10;
+        adjacent_segment_run run(_archiver.get_ntp());
+        auto [low_watermark, high_watermark] = get_low_high_segment_size(
+          _archiver.get_local_segment_size(),
+          _min_segment_size,
+          _target_segment_size);
+        model::offset so = _last;
+        if (so == model::offset{} && _is_local) {
+            // Local lookup, start from local start offset
+            so = local_start_offset;
+        } else {
+            // Remote lookup, start from start offset in the manifest (or 0)
+            so = _archiver.manifest().get_start_offset().value_or(
+              model::offset{0});
         }
-        auto so = _last == model::offset{} ? start_offset : _last;
+        vlog(
+          _ctxlog.debug,
+          "Searching for adjacent segment run, start: {}, is_local: {}, "
+          "local_start_offset: {}",
+          so,
+          _is_local,
+          local_start_offset);
         for (auto it = manifest.segment_containing(so); it != manifest.end();
              it++) {
+            if (
+              !_is_local && it->second.committed_offset >= local_start_offset) {
+                // We're looking for the remote segment
+                break;
+            }
             auto [key, meta] = *it;
             if (!run.maybe_add_segment(meta, high_watermark)) {
                 continue;
             }
         }
-        if (run.num_segments > 1 && run.size_bytes > low_watermark) {
+        if (run.num_segments > 1 && run.meta.size_bytes > low_watermark) {
+            vlog(_ctxlog.debug, "Found adjacent segment run {}", run);
             return run;
         }
+        if (
+          run.num_segments > 1
+          && run.meta.committed_offset != manifest.get_last_offset()) {
+            // Reupload if we have a run of small segments between large
+            // segments but this run is smaller than low_watermark. In this case
+            // its stil makes sense to reupload it.
+            vlog(
+              _ctxlog.debug,
+              "Found adjacent segment run {} which is smaller than the limit "
+              "{}",
+              run,
+              low_watermark);
+            return run;
+        }
+        vlog(_ctxlog.debug, "Adjacent segment run not found");
         return std::nullopt;
     };
-    auto upl = co_await _archiver.find_upload_candidate(scanner);
+    auto upl = co_await _archiver.find_reupload_candidate(scanner);
     if (!upl.has_value()) {
         vlog(_ctxlog.debug, "No upload candidates");
         co_return;
@@ -77,9 +122,9 @@ ss::future<> local_adjacent_segment_merger::run(retry_chain_node& rtc) {
     }
 }
 
-void local_adjacent_segment_merger::interrupt() { _as.request_abort(); }
+void adjacent_segment_merger::interrupt() { _as.request_abort(); }
 
-bool local_adjacent_segment_merger::interrupted() const {
+bool adjacent_segment_merger::interrupted() const {
     return _as.abort_requested();
 }
 

@@ -31,7 +31,7 @@ segment_collector::segment_collector(
   , _max_uploaded_segment_size(max_uploaded_segment_size)
   , _collected_size(0) {}
 
-void segment_collector::collect_segments(bool non_compacted) {
+void segment_collector::collect_segments(segment_collector_mode mode) {
     if (_manifest.size() == 0) {
         vlog(
           archival_log.info,
@@ -52,19 +52,19 @@ void segment_collector::collect_segments(bool non_compacted) {
         return;
     }
 
-    do_collect(non_compacted);
+    do_collect(mode);
 }
 
 segment_collector::segment_seq segment_collector::segments() {
     return _segments;
 }
 
-void segment_collector::do_collect(bool non_compacted) {
+void segment_collector::do_collect(segment_collector_mode mode) {
     auto replace_boundary = find_replacement_boundary();
     auto start = _begin_inclusive;
     model::offset current_segment_end{0};
     while (current_segment_end < _manifest.get_last_offset()) {
-        auto result = find_next_segment(start, non_compacted);
+        auto result = find_next_segment(start, mode);
         if (result.segment.get() == nullptr) {
             break;
         }
@@ -174,7 +174,7 @@ void segment_collector::align_end_offset_to_manifest(
 }
 
 segment_collector::lookup_result segment_collector::find_next_segment(
-  model::offset start_offset, bool non_compacted) {
+  model::offset start_offset, segment_collector_mode mode) {
     const auto& segment_set = _log.segments();
     auto it = segment_set.lower_bound(start_offset);
     // start_offset < log start due to eviction of segments before
@@ -201,8 +201,10 @@ segment_collector::lookup_result segment_collector::find_next_segment(
     }
 
     const auto& segment = *it;
-    auto is_compacted = segment->finished_self_compaction();
-    if ((non_compacted && !is_compacted) || (!non_compacted && is_compacted)) {
+    auto segment_is_compacted = segment->finished_self_compaction();
+    auto compacted_segment_expected
+      = mode == segment_collector_mode::collect_compacted;
+    if (segment_is_compacted == compacted_segment_expected) {
         vlog(
           archival_log.trace,
           "Found segment for ntp {}: {}",
@@ -318,7 +320,10 @@ segment_collector::make_upload_candidate(
   ss::io_priority_class io_priority_class,
   ss::lowres_clock::duration segment_lock_duration) {
     if (_segments.empty()) {
-        vlog(archival_log.info, "No segments");
+        vlog(
+          archival_log.info,
+          "No segments to reupload for {}",
+          _manifest.get_ntp());
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 

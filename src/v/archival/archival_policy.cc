@@ -52,18 +52,29 @@ namespace archival {
 using namespace std::chrono_literals;
 
 std::ostream& operator<<(std::ostream& s, const upload_candidate& c) {
-    if (c.sources.empty()) {
+    vassert(
+      c.sources.empty() || c.remote_sources.empty(),
+      "The upload candidate could have only local or only remote source");
+    if (c.sources.empty() && c.remote_sources.empty()) {
         s << "{empty}";
         return s;
     }
 
     std::vector<ss::sstring> source_names;
-    source_names.reserve(c.sources.size());
-    std::transform(
-      c.sources.begin(),
-      c.sources.end(),
-      std::back_inserter(source_names),
-      [](const auto& src) { return src->filename(); });
+    source_names.reserve(std::max(c.sources.size(), c.remote_sources.size()));
+    if (c.remote_sources.empty()) {
+        std::transform(
+          c.sources.begin(),
+          c.sources.end(),
+          std::back_inserter(source_names),
+          [](const auto& src) { return src->filename(); });
+    } else if (c.sources.empty()) {
+        std::transform(
+          c.remote_sources.begin(),
+          c.remote_sources.end(),
+          std::back_inserter(source_names),
+          [](const auto& src) { return src().native(); });
+    }
 
     fmt::print(
       s,

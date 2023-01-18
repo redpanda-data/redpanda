@@ -28,6 +28,11 @@ class segment;
 
 namespace archival {
 
+enum class segment_collector_mode {
+    collect_compacted,
+    collect_non_compacted,
+};
+
 class segment_collector {
 public:
     using segment_seq = std::vector<ss::lw_shared_ptr<storage::segment>>;
@@ -38,7 +43,12 @@ public:
       const storage::disk_log_impl& log,
       size_t max_uploaded_segment_size);
 
-    void collect_segments(bool non_compacted = false);
+    /// Collect segments
+    ///
+    /// \param mode defines what segments should be collected
+    ///        compacted or normal.
+    void collect_segments(
+      segment_collector_mode mode = segment_collector_mode::collect_compacted);
 
     segment_seq segments();
 
@@ -75,10 +85,10 @@ private:
 
     /// Collects segments until the end of the manifest, or until the
     /// end of compacted segments in log.
-    void do_collect(bool non_compacted = false);
+    void do_collect(segment_collector_mode mode);
 
     lookup_result
-    find_next_segment(model::offset start_offset, bool non_compacted = false);
+    find_next_segment(model::offset start_offset, segment_collector_mode mode);
 
     /// Makes sure that the begin offset of the collection is aligned to the
     /// manifest segment boundary. If the begin offset is inside a manifest

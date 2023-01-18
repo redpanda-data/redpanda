@@ -13,6 +13,7 @@
 #include "archival/probe.h"
 #include "archival/types.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 #include "storage/log_manager.h"
@@ -34,6 +35,7 @@ struct upload_candidate {
     model::timestamp max_timestamp;
     model::term_id term;
     std::vector<ss::lw_shared_ptr<storage::segment>> sources;
+    std::vector<cloud_storage::remote_segment_path> remote_sources;
 
     friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
 };

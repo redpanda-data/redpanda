@@ -187,13 +187,21 @@ public:
 
     /// Find upload candidate
     ///
+    /// Depending on the output of the 'scanner' the upload candidate
+    /// might be local (it will contain a list of segments in candidate.segments
+    /// and a list of locks) or remote (it will contain a list of paths in
+    /// candidate.remote_segments).
+    ///
     /// \param scanner is a user provided function used to find upload candidate
     /// \return nullopt or the upload candidate
     ss::future<std::optional<upload_candidate_with_locks>>
-    find_upload_candidate(manifest_scanner_t scanner);
+    find_reupload_candidate(manifest_scanner_t scanner);
 
     /**
      * Upload segment provided from the outside of the ntp_archiver
+     *
+     * The method can be used to upload segments stored locally in the
+     * redpanda data directory or remotely in cloud storage.
      *
      * \param candidate is an upload candidate
      * \param source_rtc is used to pass retry_chain_node that belongs
@@ -204,10 +212,21 @@ public:
      */
     ss::future<bool> upload(
       upload_candidate_with_locks candidate,
-      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
-      = std::nullopt);
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
+
+    /// Return reference to partition manifest from archival STM
+    const cloud_storage::partition_manifest& manifest() const;
+
+    /// Get segment size for the partition
+    size_t get_local_segment_size() const;
 
 private:
+    ss::future<bool> do_upload_local(
+      upload_candidate_with_locks candidate,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
+    ss::future<bool> do_upload_remote(
+      upload_candidate_with_locks candidate,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
     /// Information about started upload
     struct scheduled_upload {
         /// The future that will be ready when the segment will be fully
@@ -347,7 +366,6 @@ private:
     bool upload_loop_can_continue() const;
     bool sync_manifest_loop_can_continue() const;
     bool housekeeping_can_continue() const;
-    const cloud_storage::partition_manifest& manifest() const;
 
     /// Helper to generate a segment path from candidate
     remote_segment_path

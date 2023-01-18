@@ -108,12 +108,26 @@ private:
 };
 
 /// Represents a series of adjacent segments
+/// The object is used to compute a possible reupload
+/// candidate. The series of segment is supposed to be
+/// merged and reuploaded. The object produces metadata
+/// for the reuploaded segment.
 struct adjacent_segment_run {
-    model::offset base_offset;
-    model::offset max_offset;
-    size_t size_bytes{0};
-    size_t num_segments{0};
+    explicit adjacent_segment_run(model::ntp ntp)
+      : ntp(std::move(ntp)) {}
 
+    model::ntp ntp;
+    cloud_storage::segment_meta meta{};
+    size_t num_segments{0};
+    std::vector<cloud_storage::remote_segment_path> segments;
+
+    /// Try to add segment to the run
+    ///
+    /// The subsequent calls are successful until the total size
+    /// of the run is below the threshold. The object keeps track
+    /// of all segment names.
+    ///
+    /// \return true if the segment is added, false otherwise
     bool
     maybe_add_segment(const cloud_storage::segment_meta& s, size_t max_size);
 };

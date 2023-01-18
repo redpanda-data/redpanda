@@ -21,10 +21,10 @@
 namespace archival {
 
 /// Re-uploads small segments to S3
-class local_adjacent_segment_merger : public housekeeping_job {
+class adjacent_segment_merger : public housekeeping_job {
 public:
-    explicit local_adjacent_segment_merger(
-      ntp_archiver& parent, retry_chain_logger& ctxlog);
+    explicit adjacent_segment_merger(
+      ntp_archiver& parent, retry_chain_logger& ctxlog, bool is_local);
 
     ss::future<> run(retry_chain_node& rtc) override;
 
@@ -35,6 +35,7 @@ public:
     ss::future<> stop();
 
 private:
+    const bool _is_local;
     model::offset _last;
     ntp_archiver& _archiver;
     retry_chain_logger& _ctxlog;
