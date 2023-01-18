@@ -581,7 +581,7 @@ func buildRedpandaFlags(
 				if err != nil {
 					return nil, err
 				}
-				sFlags.ioProperties = fmt.Sprintf("'%s'", yaml)
+				sFlags.ioProperties = yaml
 			}
 		}
 	}
