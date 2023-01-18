@@ -88,7 +88,7 @@ get_status_response self_test_backend::start_test(start_test_request req) {
     if (units) {
         _id = req.id;
         vlog(
-          clusterlog.info, "Starting redpanda self-tests with id: {}", req.id);
+          clusterlog.debug, "Request to start self-tests with id: {}", req.id);
         ssx::background
           = ssx::spawn_with_gate_then(_gate, [this, req = std::move(req)]() {
                 return do_start_test(req.dtos, req.ntos)
