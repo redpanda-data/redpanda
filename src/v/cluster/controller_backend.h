@@ -26,6 +26,7 @@
 
 #include <absl/container/node_hash_map.h>
 
+#include <cstdint>
 #include <ostream>
 
 namespace cluster {
@@ -217,6 +218,16 @@ namespace cluster {
 class controller_backend
   : public ss::peering_sharded_service<controller_backend> {
 public:
+    struct delta_metadata {
+        explicit delta_metadata(topic_table::delta delta)
+          : delta(std::move(delta)) {}
+
+        topic_table::delta delta;
+        uint64_t retries = 0;
+        friend std::ostream& operator<<(std::ostream&, const delta_metadata&);
+    };
+
+    using deltas_t = std::vector<delta_metadata>;
     using results_t = std::vector<std::error_code>;
     controller_backend(
       ss::sharded<cluster::topic_table>&,
@@ -231,7 +242,7 @@ public:
     ss::future<> stop();
     ss::future<> start();
 
-    std::vector<topic_table::delta> list_ntp_deltas(const model::ntp&) const;
+    std::vector<delta_metadata> list_ntp_deltas(const model::ntp&) const;
 
 private:
     struct cross_shard_move_request {
@@ -251,7 +262,6 @@ private:
         }
     };
 
-    using deltas_t = std::vector<topic_table::delta>;
     using underlying_t = absl::flat_hash_map<model::ntp, deltas_t>;
 
     // Topics
@@ -377,6 +387,6 @@ private:
     ss::metrics::metric_groups _metrics;
 };
 
-std::vector<topic_table::delta> calculate_bootstrap_deltas(
-  model::node_id self, const std::vector<topic_table::delta>&);
+std::vector<controller_backend::delta_metadata> calculate_bootstrap_deltas(
+  model::node_id self, const std::vector<controller_backend::delta_metadata>&);
 } // namespace cluster

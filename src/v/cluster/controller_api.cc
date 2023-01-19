@@ -140,7 +140,7 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     co_return co_await get_reconciliation_state(std::move(ntps));
 }
 
-ss::future<std::vector<topic_table_delta>>
+ss::future<std::vector<controller_backend::delta_metadata>>
 controller_api::get_remote_core_deltas(model::ntp ntp, ss::shard_id shard) {
     return _backend.invoke_on(
       shard, [ntp = std::move(ntp)](controller_backend& backend) {
@@ -171,11 +171,11 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
           local_deltas.begin(),
           local_deltas.end(),
           std::back_inserter(ops),
-          [shard](topic_table_delta& delta) {
+          [shard](controller_backend::delta_metadata& m) {
               return backend_operation{
                 .source_shard = shard,
-                .p_as = std::move(delta.new_assignment),
-                .type = delta.type,
+                .p_as = std::move(m.delta.new_assignment),
+                .type = m.delta.type,
               };
           });
     }
