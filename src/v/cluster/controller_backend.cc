@@ -963,7 +963,8 @@ controller_backend::process_partition_reconfiguration(
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), target_assignment);
             }
-            co_return ec;
+            // Wait fo the operation to be finished on one of the nodes
+            co_return errc::waiting_for_reconfiguration_finish;
         }
 
         /**
