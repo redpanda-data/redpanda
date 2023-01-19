@@ -1322,10 +1322,15 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
 }
 
 ss::future<> disk_log_impl::do_truncate(
-  truncate_config cfg, std::optional<ssx::semaphore_units> lock_guard) {
-    if (!lock_guard) {
-        ssx::semaphore_units units = co_await _segment_rewrite_lock.get_units();
-        lock_guard = std::move(units);
+  truncate_config cfg,
+  std::optional<std::pair<ssx::semaphore_units, ssx::semaphore_units>>
+    lock_guards) {
+    if (!lock_guards) {
+        auto seg_rolling_units = co_await _segments_rolling_lock.get_units();
+        ssx::semaphore_units seg_rewrite_units
+          = co_await _segment_rewrite_lock.get_units();
+        lock_guards = {
+          std::move(seg_rewrite_units), std::move(seg_rolling_units)};
     }
 
     auto stats = offsets();
@@ -1342,7 +1347,7 @@ ss::future<> disk_log_impl::do_truncate(
       < std::max(_segs.back()->offsets().base_offset, _start_offset)) {
         co_await remove_full_segments(cfg.base_offset);
         // recurse
-        co_return co_await do_truncate(cfg, std::move(lock_guard));
+        co_return co_await do_truncate(cfg, std::move(lock_guards));
     }
 
     auto last = _segs.back();
@@ -1399,7 +1404,7 @@ ss::future<> disk_log_impl::do_truncate(
           cfg,
           initial_generation_id,
           last_ptr->get_generation_id());
-        co_return co_await do_truncate(cfg, std::move(lock_guard));
+        co_return co_await do_truncate(cfg, std::move(lock_guards));
     }
 
     if (!phs) {

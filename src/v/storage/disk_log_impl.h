@@ -142,7 +142,9 @@ private:
       ss::io_priority_class prio);
 
     ss::future<> do_truncate(
-      truncate_config, std::optional<ssx::semaphore_units> lock_guard);
+      truncate_config,
+      std::optional<std::pair<ssx::semaphore_units, ssx::semaphore_units>>
+        lock_guards);
     ss::future<> remove_full_segments(model::offset o);
 
     ss::future<> do_truncate_prefix(truncate_prefix_config);
