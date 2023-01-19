@@ -13,6 +13,7 @@
 
 #include "cluster/logger.h"
 #include "seastarx.h"
+#include "ssx/future-util.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -83,23 +84,24 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
 }
 
 get_status_response self_test_backend::start_test(start_test_request req) {
-    auto gate_holder = _gate.hold();
     auto units = _lock.try_get_units();
     if (units) {
         _id = req.id;
         vlog(
           clusterlog.info, "Starting redpanda self-tests with id: {}", req.id);
-        (void)do_start_test(req.dtos, req.ntos)
-          .then([this, id = req.id](auto results) {
-              for (auto& r : results) {
-                  r.test_id = id;
-              }
-              _prev_run = get_status_response{
-                .id = id,
-                .status = self_test_status::idle,
-                .results = std::move(results)};
-          })
-          .finally([units = std::move(units)] {});
+        ssx::background
+          = ssx::spawn_with_gate_then(_gate, [this, req = std::move(req)]() {
+                return do_start_test(req.dtos, req.ntos)
+                  .then([this, id = req.id](auto results) {
+                      for (auto& r : results) {
+                          r.test_id = id;
+                      }
+                      _prev_run = get_status_response{
+                        .id = id,
+                        .status = self_test_status::idle,
+                        .results = std::move(results)};
+                  });
+            }).finally([units = std::move(units)] {});
     } else {
         vlog(
           clusterlog.info,
