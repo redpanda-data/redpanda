@@ -7,6 +7,7 @@ rp_test(
     authorizer_test.cc
     mtls_test.cc
     license_test.cc
+    gssapi_principal_mapper_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
   LABELS kafka

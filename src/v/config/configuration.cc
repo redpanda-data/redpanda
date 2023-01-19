@@ -14,6 +14,7 @@
 #include "config/node_config.h"
 #include "config/validators.h"
 #include "model/metadata.h"
+#include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
 #include "storage/chunk_cache.h"
 #include "storage/segment_appender.h"
@@ -870,6 +871,13 @@ configuration::configuration()
       "The primary of the Kerberos Service Principal Name (SPN) for Redpanda",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       "redpanda")
+  , sasl_kerberos_principal_mapping(
+      *this,
+      "sasl_kerberos_principal_mapping",
+      "Rules for mapping Kerberos Service Principal Name (SPN) to Redpanda",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {"DEFAULT"},
+      security::validate_kerberos_mapping_rules)
   , kafka_enable_authorization(
       *this,
       "kafka_enable_authorization",

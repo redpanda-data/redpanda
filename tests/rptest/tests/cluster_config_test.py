@@ -564,6 +564,13 @@ class ClusterConfigTest(RedpandaTest):
                 # arbitrary strings because the config system validates them.
                 valid_value = ['SCRAM', 'GSSAPI']
 
+            if name == 'sasl_kerberos_principal_mapping':
+                # The default value is ['DEFAULT'], but the array must contain
+                # valid Kerberos mapping rules
+                valid_value = [
+                    'RULE:[1:$1]/L', 'RULE:[2:$1](Test.*)s/ABC///L', 'DEFAULT'
+                ]
+
             if name == 'enable_coproc':
                 # Don't try enabling coproc, it has external dependencies
                 continue
