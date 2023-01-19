@@ -157,6 +157,16 @@ public:
         { r.encode(writer, version) } -> std::same_as<void>;
     }
     ss::future<response_ptr> respond(ResponseType r) {
+        /// Many responses contain a throttle_time_ms field, to prevent each
+        /// handler from manually having to set this value, it can be done in
+        /// one place here, with this concept check
+        if constexpr (has_throttle_time_ms<ResponseType>) {
+            /// Allow request handlers to override the throttle response, if
+            /// multiple throttles detected, choose larger of the two
+            r.data.throttle_time_ms = std::max(
+              r.data.throttle_time_ms, throttle_delay_ms());
+        }
+
         vlog(
           klog.trace,
           "[{}:{}] sending {}:{} for {}, response {}",
@@ -181,16 +191,6 @@ public:
                 /// version 0.
                 version = api_version(0);
             }
-        }
-
-        /// Many responses contain a throttle_time_ms field, to prevent each
-        /// handler from manually having to set this value, it can be done in
-        /// one place here, with this concept check
-        if constexpr (has_throttle_time_ms<ResponseType>) {
-            /// Allow request handlers to override the throttle response, if
-            /// multiple throttles detected, choose larger of the two
-            r.data.throttle_time_ms = std::max(
-              r.data.throttle_time_ms, throttle_delay_ms());
         }
 
         auto resp = std::make_unique<response>(is_flexible);
