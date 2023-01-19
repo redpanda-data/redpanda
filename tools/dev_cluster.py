@@ -57,6 +57,7 @@ class NodeConfig:
 
     # This is _not_ the node_id, just the index into our array of nodes
     index: int
+    cluster_size: int
 
 
 class Redpanda:
@@ -85,10 +86,19 @@ class Redpanda:
         else:
             cores_args = ""
 
+        # If user did not specify memory, share 75% of memory equally between nodes
+        if not {"-m", "--memory"} & set(self.extra_args):
+            memory_total = psutil.virtual_memory().total
+            memory_per_node = (3 *
+                               (memory_total // 4)) // self.config.cluster_size
+            memory_args = f"-m {memory_per_node // (1024 * 1024)}M"
+        else:
+            memory_args = ""
+
         extra_args = ' '.join(f"\"{a}\"" for a in self.extra_args)
 
         self.process = await asyncio.create_subprocess_shell(
-            f"{self.binary} --redpanda-cfg {self.config.config_path} {cores_args} {extra_args} 2>&1 | tee -i {log_path}",
+            f"{self.binary} --redpanda-cfg {self.config.config_path} {cores_args} {memory_args} {extra_args} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
 
@@ -158,7 +168,10 @@ async def main():
                                   admin=make_address(args.base_admin_port),
                                   seed_servers=seed_servers,
                                   empty_seed_starts_cluster=False)
-        return NodeConfig(redpanda=redpanda, index=i, config_path=config_path)
+        return NodeConfig(redpanda=redpanda,
+                          index=i,
+                          config_path=config_path,
+                          cluster_size=args.nodes)
 
     def pathlib_path_representer(dumper, path):
         return dumper.represent_scalar("!Path", str(path))
