@@ -1074,6 +1074,7 @@ environments:
         * topic_partitions_per_shard: 1000
         * fetch_reads_debounce_timeout: 10
         * group_initial_rebalance_delay: 0
+        * log_segment_size_min: 1
 
 After redpanda starts you can modify the cluster properties using:
     rpk config set <key> <value>`
