@@ -31,6 +31,7 @@
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/node_isolation_watcher.h"
 #include "cluster/node_status_rpc_handler.h"
 #include "cluster/partition_balancer_rpc_handler.h"
 #include "cluster/partition_manager.h"
@@ -1102,6 +1103,13 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(controller->get_partition_leaders()),
       std::ref(controller->get_health_monitor()))
       .get();
+
+    syschecks::systemd_message("Creating isolation node watcher").get();
+    construct_single_service(
+      _node_isolation_watcher,
+      metadata_cache,
+      controller->get_health_monitor(),
+      node_status_table);
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager").get();
