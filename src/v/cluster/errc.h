@@ -35,6 +35,7 @@ enum class errc : int16_t {
     not_leader,
     partition_already_exists,
     waiting_for_recovery,
+    waiting_for_reconfiguration_finish,
     update_in_progress,
     user_exists,
     user_does_not_exist,
@@ -116,6 +117,8 @@ struct errc_category final : public std::error_category {
             return "Requested partition already exists";
         case errc::waiting_for_recovery:
             return "Waiting for partition to recover";
+        case errc::waiting_for_reconfiguration_finish:
+            return "Waiting for partition recovery to be finished";
         case errc::update_in_progress:
             return "Partition configuration update in progress";
         case errc::user_exists:
