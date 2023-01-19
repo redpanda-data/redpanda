@@ -39,6 +39,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/algorithm/container.h>
 #include <absl/container/node_hash_map.h>
 #include <boost/lexical_cast.hpp>
 #include <boost/random/seed_seq.hpp>
@@ -240,6 +241,10 @@ metrics_reporter::build_metrics_snapshot() {
     for (auto& [_, m] : metrics_map) {
         snapshot.nodes.push_back(std::move(m));
     }
+
+    snapshot.has_kafka_gssapi = absl::c_any_of(
+      config::shard_local_cfg().sasl_mechanisms(),
+      [](auto const& mech) { return mech == "GSSAPI"; });
 
     co_return snapshot;
 }
@@ -452,6 +457,8 @@ void rjson_serialize(
         rjson_serialize(w, m);
     }
     w.EndArray();
+    w.Key("has_kafka_gssapi");
+    w.Bool(snapshot.has_kafka_gssapi);
     w.EndObject();
 }
 

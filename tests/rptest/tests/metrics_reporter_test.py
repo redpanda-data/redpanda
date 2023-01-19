@@ -80,10 +80,13 @@ class MetricsReporterTest(RedpandaTest):
         # cluster uuid and create timestamp should stay the same across requests
         assert_fields_are_the_same(metadata, 'cluster_uuid')
         assert_fields_are_the_same(metadata, 'cluster_created_ts')
+        # Configuration should be the same across requests
+        assert_fields_are_the_same(metadata, 'has_kafka_gssapi')
         # get the last report
         last = metadata.pop()
         assert last['topic_count'] == total_topics
         assert last['partition_count'] == total_partitions
+        assert last['has_kafka_gssapi'] is False
         nodes_meta = last['nodes']
 
         assert len(last['nodes']) == len(self.redpanda.nodes)
