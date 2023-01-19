@@ -18,7 +18,6 @@ import (
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gexec"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -177,10 +176,6 @@ var _ = BeforeEach(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
-	// kube-apiserver hanging during cleanup
-	// stopping the controllers prevents the hang
-	controllerCancel()
-	gexec.KillAndWait(5 * time.Second)
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
