@@ -618,7 +618,7 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             }
         }
         try {
-            auto ec = co_await execute_partition_op(it->delta);
+            auto ec = co_await execute_partition_op(*it);
             if (ec) {
                 if (it->delta.is_reconfiguration_operation()) {
                     /**
@@ -768,7 +768,7 @@ ss::future<> controller_backend::reconcile_topics() {
 }
 
 ss::future<std::error_code>
-controller_backend::execute_partition_op(const topic_table::delta& delta) {
+controller_backend::execute_partition_op(const delta_metadata& metadata) {
     using op_t = topic_table::delta::op_type;
     /**
      * Revision is derived from delta offset, i.e. offset of a command that
@@ -778,29 +778,32 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
      */
     vlog(
       clusterlog.trace,
-      "[{}] executing operation: {{type: {}, revision: {}, assignment: {}, "
+      "[{}] (retry {}) executing operation: {{type: {}, revision: {}, "
+      "assignment: {}, "
       "previous assignment: {}}}",
-      delta.ntp,
-      delta.type,
-      delta.offset,
-      delta.new_assignment,
-      delta.previous_replica_set);
-    const model::revision_id rev(delta.offset());
+      metadata.delta.ntp,
+      metadata.retries,
+      metadata.delta.type,
+      metadata.delta.offset,
+      metadata.delta.new_assignment,
+      metadata.delta.previous_replica_set);
+    const model::revision_id rev(metadata.delta.offset());
     // new partitions
 
     // only create partitions for this backend
     // partitions created on current shard at this node
-    switch (delta.type) {
+    switch (metadata.delta.type) {
     case op_t::add:
-        if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
+        if (!has_local_replicas(
+              _self, metadata.delta.new_assignment.replicas)) {
             return ss::make_ready_future<std::error_code>(errc::success);
         }
         return create_partition(
-          delta.ntp,
-          delta.new_assignment.group,
+          metadata.delta.ntp,
+          metadata.delta.new_assignment.group,
           rev,
           create_brokers_set(
-            delta.new_assignment.replicas, _members_table.local()));
+            metadata.delta.new_assignment.replicas, _members_table.local()));
     case op_t::add_non_replicable:
         [[fallthrough]];
     case op_t::del_non_replicable:
@@ -809,34 +812,37 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "controller_backend attempted to process an event that should only "
           "be handled by coproc::reconciliation_backend");
     case op_t::del:
-        return delete_partition(delta.ntp, rev, partition_removal_mode::global)
+        return delete_partition(
+                 metadata.delta.ntp, rev, partition_removal_mode::global)
           .then([] { return std::error_code(errc::success); });
     case op_t::update:
     case op_t::force_abort_update:
     case op_t::cancel_update:
         vassert(
-          delta.previous_replica_set,
+          metadata.delta.previous_replica_set,
           "reconfiguration delta must have previous replica set, current "
           "delta: {}",
-          delta);
+          metadata.delta);
         vassert(
-          delta.replica_revisions,
+          metadata.delta.replica_revisions,
           "replica revisions map must be present in reconfiguration type "
           "delta: {}",
-          delta);
+          metadata.delta);
         return process_partition_reconfiguration(
-          delta.type,
-          delta.ntp,
-          delta.new_assignment,
-          *delta.previous_replica_set,
-          *delta.replica_revisions,
+          metadata.retries,
+          metadata.delta.type,
+          metadata.delta.ntp,
+          metadata.delta.new_assignment,
+          *metadata.delta.previous_replica_set,
+          *metadata.delta.replica_revisions,
           rev);
     case op_t::update_finished:
-        return finish_partition_update(delta.ntp, delta.new_assignment, rev)
+        return finish_partition_update(
+                 metadata.delta.ntp, metadata.delta.new_assignment, rev)
           .then([] { return std::error_code(errc::success); });
     case op_t::update_properties:
         return process_partition_properties_update(
-                 delta.ntp, delta.new_assignment)
+                 metadata.delta.ntp, metadata.delta.new_assignment)
           .then([] { return std::error_code(errc::success); });
     }
     __builtin_unreachable();
@@ -872,6 +878,7 @@ ss::future<> controller_backend::release_cross_shard_move_request(
 
 ss::future<std::error_code>
 controller_backend::process_partition_reconfiguration(
+  uint64_t current_retry,
   topic_table_delta::op_type type,
   model::ntp ntp,
   const partition_assignment& target_assignment,
@@ -880,9 +887,10 @@ controller_backend::process_partition_reconfiguration(
   model::revision_id rev) {
     vlog(
       clusterlog.trace,
-      "[{}] processing reconfiguration {} command with target replicas: {}, "
-      "previous replica set: {}, revision: {}",
+      "[{}] (retry {}) processing reconfiguration {} command with target "
+      "replicas: {}, previous replica set: {}, revision: {}",
       ntp,
+      current_retry,
       type,
       target_assignment.replicas,
       previous_replicas,
@@ -971,7 +979,7 @@ controller_backend::process_partition_reconfiguration(
              * configuration so old replicas are not longer needed.
              */
             if (can_finish_update(
-                  type, target_assignment.replicas, previous_replicas)) {
+                  current_retry, type, target_assignment.replicas)) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), target_assignment);
             }
@@ -1022,27 +1030,22 @@ controller_backend::process_partition_reconfiguration(
 }
 
 bool controller_backend::can_finish_update(
+  uint64_t current_retry,
   topic_table_delta::op_type update_type,
-  const std::vector<model::broker_shard>& current_replicas,
-  const std::vector<model::broker_shard>& previous_replicas) {
+  const std::vector<model::broker_shard>& current_replicas) {
     // force abort update may be finished by any node
     if (update_type == topic_table_delta::op_type::force_abort_update) {
         return true;
     }
-    // update may be finished by a node that was added to replica set
-    if (!has_local_replicas(_self, previous_replicas)) {
-        return true;
-    }
-    // finally if no nodes were added to replica set one of the current replicas
-    // may finish an update
+    /**
+     * Use retry count to determine which node is eligible to dispatch update
+     * finished. Using modulo division allow us to round robin between
+     * candidates
+     */
+    const model::broker_shard& candidate
+      = current_replicas[current_retry % current_replicas.size()];
 
-    auto added_nodes = subtract_replica_sets(
-      current_replicas, previous_replicas);
-    if (added_nodes.empty()) {
-        return has_local_replicas(_self, current_replicas);
-    }
-
-    return false;
+    return candidate.node_id == _self && candidate.shard == ss::this_shard_id();
 }
 
 ss::future<std::error_code>

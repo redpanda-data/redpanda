@@ -273,14 +273,15 @@ private:
     ss::future<> reconcile_topics();
     ss::future<> reconcile_ntp(deltas_t&);
 
-    ss::future<std::error_code> execute_partition_op(const topic_table::delta&);
+    ss::future<std::error_code> execute_partition_op(const delta_metadata&);
     ss::future<std::error_code> process_partition_reconfiguration(
-      topic_table_delta::op_type,
-      model::ntp,
-      const partition_assignment&,
-      const std::vector<model::broker_shard>&,
-      const topic_table_delta::revision_map_t&,
-      model::revision_id);
+      uint64_t current_retry,
+      topic_table_delta::op_type operation_type,
+      model::ntp ntp,
+      const partition_assignment& requested_assignment,
+      const std::vector<model::broker_shard>& previous_replica_set,
+      const topic_table_delta::revision_map_t& revisions_map,
+      model::revision_id rev);
 
     ss::future<std::error_code> execute_reconfiguration(
       topic_table_delta::op_type,
@@ -348,9 +349,9 @@ private:
       model::ntp, ss::shard_id, partition_assignment);
 
     bool can_finish_update(
-      topic_table_delta::op_type,
-      const std::vector<model::broker_shard>&,
-      const std::vector<model::broker_shard>&);
+      uint64_t current_retry,
+      topic_table_delta::op_type operation_type,
+      const std::vector<model::broker_shard>& requested_replicas);
 
     void housekeeping();
     void setup_metrics();
