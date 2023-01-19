@@ -5,6 +5,7 @@ metadata:
   namespace: default
 spec:
   additionalConfiguration:
+    redpanda.crash_loop_limit: "5"
     redpanda.enable_idempotence: "true"
     redpanda.default_topic_partitions: "3"
     pandaproxy_client.retries: "11" # this is the change
