@@ -73,8 +73,7 @@ quota_manager::quota_manager()
   , _target_fetch_tp_rate_per_client_group(
       config::shard_local_cfg().kafka_client_group_fetch_byte_rate_quota.bind())
   , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
-  , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
-  , _snc_qm(container()) {
+  , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
     _gc_timer.set_callback([this] {
         auto full_window = _default_num_windows() * _default_window_width();
         gc(full_window);
@@ -99,7 +98,7 @@ ss::future<> quota_manager::stop() {
 
 ss::future<> quota_manager::start() {
     _gc_timer.arm_periodic(_gc_freq);
-    _snc_qm.start();
+    _snc_qm.start(container());
     return ss::make_ready_future<>();
 }
 
@@ -360,9 +359,8 @@ void snc_quota_manager::collect_dispense_amount_t::append ( const snc_quota_mana
   }
 }
 
-snc_quota_manager::snc_quota_manager(ss::sharded<quota_manager>& container)
-: _container(container)
-  , _max_kafka_throttle_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
+snc_quota_manager::snc_quota_manager()
+:  _max_kafka_throttle_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
   , _kafka_throughput_limit_node_bps{{
       config::shard_local_cfg().kafka_throughput_limit_node_in_bps.bind(),
       config::shard_local_cfg().kafka_throughput_limit_node_out_bps.bind()}}
@@ -417,7 +415,8 @@ snc_quota_manager::~snc_quota_manager() noexcept {
     }
 }
 
-void snc_quota_manager::start() {
+void snc_quota_manager::start(ss::sharded<quota_manager>& container) {
+    _container = &container;
     if (ss::this_shard_id() == quota_manager_shard) {
         _balancer_thread = ss::thread([this] { quota_balancer(); });
     }
@@ -649,7 +648,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
     _probe.balancer_run();
 
     // determine the borrowers and whether any balancing is needed now
-    const std::vector<borrower_t> borrowers = co_await _container.map(
+    const std::vector<borrower_t> borrowers = co_await _container->map(
       [](quota_manager& qm) -> borrower_t {
           return {
               ss::this_shard_id(), { to_each(
@@ -673,7 +672,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
       "Quota balancer: borrowers count: {}", borrowers_count );
 
     // collect quota from lenders
-    const inoutpair<quota_t> collected = co_await _container.map_reduce0(
+    const inoutpair<quota_t> collected = co_await _container->map_reduce0(
       [borrowers_count](quota_manager& qm) {
           const auto to_collect = to_each(
             [](
@@ -717,7 +716,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
         return split.quot + 1;
       }, split );
       // TBD: make the invocation parallel
-      co_await _container.invoke_on ( b.shard_id, [share](quota_manager& qm) {
+      co_await _container->invoke_on ( b.shard_id, [share](quota_manager& qm) {
         qm.snc_qm().adjust_quota(share);
       });
     }
@@ -727,7 +726,7 @@ ss::future<> snc_quota_manager::quota_balancer_update() {
     vlog(klog.trace, "Quota balancer update: {}", _shard_quotas_update);
 
     // deliver shard quota updates of value type
-    co_await _container.invoke_on_all([this](quota_manager& qm) {
+    co_await _container->invoke_on_all([this](quota_manager& qm) {
         to_each(
           [](bottomless_token_bucket& shard_quota, const collect_dispense_amount_t& shard_quotas_update) {
               if (
@@ -759,7 +758,7 @@ ss::future<> snc_quota_manager::quota_balancer_update() {
 
         // cap negative delta at -(total surrenderable quota), 
         // diff towards node deficit
-        const auto total_quota = co_await _container.map_reduce0 ( 
+        const auto total_quota = co_await _container->map_reduce0 ( 
           [](const quota_manager& qm) {
             return to_each(std::minus{}, qm.snc_qm().get_quota(), qm.snc_qm()._shard_quota_minimum);
           },
@@ -774,7 +773,7 @@ ss::future<> snc_quota_manager::quota_balancer_update() {
           }
         }, deltas, _node_deficit, total_quota );
 
-        const auto surplus = co_await _container.map ( 
+        const auto surplus = co_await _container->map ( 
           [](const quota_manager& qm) {
             return qm.snc_qm().get_surplus();
           } );
@@ -846,7 +845,7 @@ ss::future<> snc_quota_manager::quota_balancer_update() {
       vlog ( klog.debug, "Quota balancer dispense delta updates {} of {} as {}",
         deltas, _shard_quotas_update, schedule );
 
-      co_await _container.invoke_on_all ( [&schedule](quota_manager& qm) {
+      co_await _container->invoke_on_all ( [&schedule](quota_manager& qm) {
         qm.snc_qm().adjust_quota ( 
           to_each ( [](const std::vector<quota_t>& schedule) {
             return schedule.at(ss::this_shard_id());

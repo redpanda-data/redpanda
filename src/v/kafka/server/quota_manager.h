@@ -139,14 +139,14 @@ public:
     using clock = ss::lowres_clock;
     using quota_t = bottomless_token_bucket::quota_t;
 
-    snc_quota_manager(ss::sharded<class quota_manager>&);
+    snc_quota_manager();
     snc_quota_manager(const snc_quota_manager&) = delete;
     snc_quota_manager& operator=(const snc_quota_manager&) = delete;
     snc_quota_manager(snc_quota_manager&&) = delete;
     snc_quota_manager& operator=(snc_quota_manager&&) = delete;
     ~snc_quota_manager() noexcept;
 
-    void start();
+    void start(ss::sharded<class quota_manager>&);
     ss::future<> stop();
 
     /// @p enforce delay to enforce in this call
@@ -231,7 +231,7 @@ private:
 
 private:
     // immutable
-    ss::sharded<class quota_manager>& _container;
+    ss::sharded<class quota_manager>* _container{nullptr};
 
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
