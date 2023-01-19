@@ -26,23 +26,9 @@ namespace cluster {
 
 enum class self_test_status : int8_t { idle = 0, running, unreachable };
 
-inline ss::sstring self_test_status_as_string(self_test_status sts) {
-    switch (sts) {
-    case self_test_status::idle:
-        return "idle";
-    case self_test_status::running:
-        return "running";
-    case self_test_status::unreachable:
-        return "unreachable";
-    default:
-        __builtin_unreachable();
-    }
-}
+ss::sstring self_test_status_as_string(self_test_status sts);
 
-inline std::ostream& operator<<(std::ostream& o, self_test_status sts) {
-    fmt::print(o, "{}", self_test_status_as_string(sts));
-    return o;
-}
+std::ostream& operator<<(std::ostream& o, self_test_status sts);
 
 struct diskcheck_opts
   : serde::

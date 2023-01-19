@@ -15,6 +15,24 @@
 
 namespace cluster {
 
+ss::sstring self_test_status_as_string(self_test_status sts) {
+    switch (sts) {
+    case self_test_status::idle:
+        return "idle";
+    case self_test_status::running:
+        return "running";
+    case self_test_status::unreachable:
+        return "unreachable";
+    default:
+        __builtin_unreachable();
+    }
+}
+
+std::ostream& operator<<(std::ostream& o, self_test_status sts) {
+    fmt::print(o, "{}", self_test_status_as_string(sts));
+    return o;
+}
+
 ss::future<cluster::netcheck_request>
 make_netcheck_request(model::node_id src, size_t sz) {
     static const size_t fragment_size = 8192;
