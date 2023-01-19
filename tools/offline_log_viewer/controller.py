@@ -105,8 +105,8 @@ def read_property_update_serde(rdr: Reader, type_reader):
 
 
 def read_incremental_topic_update_serde(rdr: Reader):
-    return rdr.read_envelope(
-        lambda rdr, _: {
+    def incr_topic_upd(rdr: Reader, version):
+        incr_obj = {
             'compression':
             read_property_update_serde(
                 rdr, lambda r: r.read_optional(Reader.read_serde_enum)),
@@ -131,7 +131,10 @@ def read_incremental_topic_update_serde(rdr: Reader):
             'shadow_indexing':
             read_property_update_serde(
                 rdr, lambda r: r.read_optional(Reader.read_serde_enum)),
-        })
+        }
+        return incr_obj
+
+    return rdr.read_envelope(incr_topic_upd)
 
 
 def read_create_partitions_serde(rdr: Reader):
