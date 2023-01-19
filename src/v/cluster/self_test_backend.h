@@ -91,6 +91,7 @@ private:
     model::node_id _self;
     ss::gate _gate;
     ss::scheduling_group _st_sg;
+    bool _cancelling{false};
     mutex _lock;
     self_test::diskcheck _disk_test;
     self_test::netcheck _network_test;

@@ -53,9 +53,16 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
     for (auto& dto : dtos) {
         try {
             dto.sg = _st_sg;
-            auto dtr = co_await _disk_test.run(dto).then(
-              [](auto result) { return result; });
-            std::copy(dtr.begin(), dtr.end(), std::back_inserter(results));
+            if (!_cancelling) {
+                auto dtr = co_await _disk_test.run(dto).then(
+                  [](auto result) { return result; });
+                std::copy(dtr.begin(), dtr.end(), std::back_inserter(results));
+            } else {
+                results.push_back(self_test_result{
+                  .name = dto.name,
+                  .warning = "Disk self test prevented from starting due to "
+                             "cancel signal"});
+            }
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Disk self test finished with error");
             results.push_back(
@@ -66,9 +73,18 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
         try {
             if (!nto.peers.empty()) {
                 nto.sg = _st_sg;
-                auto ntr = co_await _network_test.run(nto).then(
-                  [](auto results) { return results; });
-                std::copy(ntr.begin(), ntr.end(), std::back_inserter(results));
+                if (!_cancelling) {
+                    auto ntr = co_await _network_test.run(nto).then(
+                      [](auto results) { return results; });
+                    std::copy(
+                      ntr.begin(), ntr.end(), std::back_inserter(results));
+                } else {
+                    results.push_back(self_test_result{
+                      .name = nto.name,
+                      .warning
+                      = "Network self test prevented from starting due to "
+                        "cancel signal"});
+                }
             } else {
                 results.push_back(self_test_result{
                   .name = nto.name,
@@ -86,6 +102,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
 get_status_response self_test_backend::start_test(start_test_request req) {
     auto units = _lock.try_get_units();
     if (units) {
+        _cancelling = false;
         _id = req.id;
         vlog(
           clusterlog.debug, "Request to start self-tests with id: {}", req.id);
@@ -116,6 +133,7 @@ get_status_response self_test_backend::start_test(start_test_request req) {
 
 ss::future<get_status_response> self_test_backend::stop_test() {
     auto gate_holder = _gate.hold();
+    _cancelling = true;
     _disk_test.cancel();
     _network_test.cancel();
     try {
