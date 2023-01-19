@@ -38,6 +38,9 @@ public:
     feature_table ft;
     ss::abort_source as;
     void set_active_version(cluster_version v) { ft.set_active_version(v); }
+    void bootstrap_active_version(cluster_version v) {
+        ft.bootstrap_active_version(v);
+    }
     void apply_action(const feature_update_action& fua) {
         ft.apply_action(fua);
     }
@@ -236,4 +239,37 @@ FIXTURE_TEST(feature_uniqueness, feature_table_fixture) {
               || other.bits == current_feature);
         }
     }
+}
+
+/**
+ * Validate that the bootstrap method not only updates the cluster version,
+ * but also activates elegible features.
+ */
+FIXTURE_TEST(feature_table_bootstrap, feature_table_fixture) {
+    bootstrap_active_version(cluster_version{2001});
+
+    // A non-auto-activating feature should remain in available state:
+    // explicit_only features always require explicit activation, even
+    // if the cluster was bootstrapped in a version where the feature
+    // is available.
+    BOOST_REQUIRE(
+      ft.get_state(feature::test_alpha).get_state()
+      == feature_state::state::available);
+    BOOST_REQUIRE(!ft.is_active(feature::test_alpha));
+
+    // An auto-activating feature fast-forwards to the active state
+    BOOST_REQUIRE(
+      ft.get_state(feature::test_bravo).get_state()
+      == feature_state::state::active);
+    BOOST_REQUIRE(ft.is_active(feature::test_bravo));
+
+    // A feature that has a preparing state skips it when bootstrapping
+    // straight into the version where the feature is available.
+    BOOST_REQUIRE(
+      ft.get_state(feature::cloud_retention).spec.prepare_rule
+      == feature_spec::prepare_policy::requires_migration);
+    BOOST_REQUIRE(
+      ft.get_state(feature::cloud_retention).get_state()
+      == feature_state::state::active);
+    BOOST_REQUIRE(ft.is_active(feature::cloud_retention));
 }

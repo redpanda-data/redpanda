@@ -2306,7 +2306,7 @@ struct user_and_credential
 struct bootstrap_cluster_cmd_data
   : serde::envelope<
       bootstrap_cluster_cmd_data,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -2315,12 +2315,18 @@ struct bootstrap_cluster_cmd_data
       = default;
 
     auto serde_fields() {
-        return std::tie(uuid, bootstrap_user_cred, node_ids_by_uuid);
+        return std::tie(
+          uuid, bootstrap_user_cred, node_ids_by_uuid, founding_version);
     }
 
     model::cluster_uuid uuid;
     std::optional<user_and_credential> bootstrap_user_cred;
     absl::flat_hash_map<model::node_uuid, model::node_id> node_ids_by_uuid;
+
+    // If this is set, fast-forward the feature_table to enable features
+    // from this version. Indicates the version of Redpanda of
+    // the node that generated the bootstrap record.
+    cluster_version founding_version{invalid_version};
 };
 
 enum class reconciliation_status : int8_t {

@@ -13,6 +13,7 @@
 
 #include "cluster/commands.h"
 #include "cluster/fwd.h"
+#include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_types.h"
@@ -41,7 +42,9 @@ public:
     bootstrap_backend(
       ss::sharded<security::credential_store>&,
       ss::sharded<storage::api>&,
-      ss::sharded<members_manager>&);
+      ss::sharded<members_manager>&,
+      ss::sharded<features::feature_table>&,
+      ss::sharded<feature_backend>&);
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -56,6 +59,8 @@ private:
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<storage::api>& _storage;
     ss::sharded<members_manager>& _members_manager;
+    ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<feature_backend>& _feature_backend;
     std::optional<model::cluster_uuid> _cluster_uuid_applied;
 };
 

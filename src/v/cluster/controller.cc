@@ -160,7 +160,9 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
           return _bootstrap_backend.start_single(
             std::ref(_credentials),
             std::ref(_storage),
-            std::ref(_members_manager));
+            std::ref(_members_manager),
+            std::ref(_feature_table),
+            std::ref(_feature_backend));
       })
       .then([this] {
           return _config_frontend.start(
@@ -623,6 +625,8 @@ ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
         cmd_data.bootstrap_user_cred
           = security_frontend::get_bootstrap_user_creds_from_env();
         cmd_data.node_ids_by_uuid = std::move(discovery.get_node_ids_by_uuid());
+        cmd_data.founding_version
+          = features::feature_table::get_latest_logical_version();
         co_return co_await create_cluster(std::move(cmd_data));
     }
 
