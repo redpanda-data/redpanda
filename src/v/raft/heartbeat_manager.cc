@@ -244,7 +244,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
                  r.target,
                  std::move(r.request),
                  rpc::client_opts(
-                   clock_type::now() + _heartbeat_timeout(),
+                   rpc::timeout_spec::from_now(_heartbeat_timeout()),
                    rpc::compression_type::zstd,
                    512))
                .then([node = r.target,

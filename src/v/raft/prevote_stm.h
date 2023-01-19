@@ -15,6 +15,7 @@
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "raft/vote_stm.h"
+#include "rpc/types.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_future.hh>
@@ -58,7 +59,7 @@ private:
     // for sequentiality/progress
     ssx::semaphore _sem;
     std::optional<raft::group_configuration> _config;
-    clock_type::time_point _prevote_timeout;
+    rpc::timeout_spec _prevote_timeout;
     // for safety to wait for all bg ops
     ss::gate _vote_bg;
     absl::flat_hash_map<vnode, vmeta> _replies;

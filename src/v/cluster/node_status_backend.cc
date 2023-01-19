@@ -148,18 +148,19 @@ ss::future<result<node_status>> node_status_backend::send_node_status_request(
     auto connection_source_shard = co_await maybe_create_client(
       target, nm->get().broker.rpc_address());
 
-    auto send_by = rpc::clock_type::now() + _period();
-    auto reply = co_await _node_connection_cache.local()
-                   .with_node_client<node_status_rpc_client_protocol>(
-                     _self,
-                     connection_source_shard,
-                     target,
-                     send_by,
-                     [send_by, r = std::move(r)](auto client) mutable {
-                         return client.node_status(
-                           std::move(r), rpc::client_opts(send_by));
-                     })
-                   .then(&rpc::get_ctx_data<node_status_reply>);
+    // auto send_by = rpc::clock_type::now() + _period();
+    auto opts = rpc::client_opts(_period());
+    auto reply
+      = co_await _node_connection_cache.local()
+          .with_node_client<node_status_rpc_client_protocol>(
+            _self,
+            connection_source_shard,
+            target,
+            opts.timeout,
+            [opts = std::move(opts), r = std::move(r)](auto client) mutable {
+                return client.node_status(std::move(r), std::move(opts));
+            })
+          .then(&rpc::get_ctx_data<node_status_reply>);
 
     co_return process_reply(reply);
 }
