@@ -1028,6 +1028,7 @@ ss::future<> disk_log_impl::maybe_roll(
 
 ss::future<> disk_log_impl::do_housekeeping(
   std::chrono::system_clock::time_point system_time) {
+    auto gate = _compaction_gate.hold();
     // do_housekeeping races with maybe_roll to use new_segment.
     // take a lock to prevent problems
     auto lock = _segments_rolling_lock.get_units();
