@@ -344,6 +344,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				sFlags,
 				cmd.Flags(),
 				!prestartCfg.checkEnabled,
+				resolveWellKnownIo,
 			)
 			if err != nil {
 				return err
@@ -551,6 +552,7 @@ func buildRedpandaFlags(
 	sFlags seastarFlags,
 	flags *pflag.FlagSet,
 	skipChecks bool,
+	ioResolver func(*config.Config, bool) (*iotune.IoProperties, error),
 ) (*rp.RedpandaArgs, error) {
 	wellKnownIOSet := conf.Rpk.WellKnownIo != ""
 	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
@@ -562,18 +564,23 @@ func buildRedpandaFlags(
 		)
 	}
 
+	// We want to preserve the IOProps flags in case we find them either by
+	// finding the file in the default location or by resolving to a well known
+	// IO.
+	preserve := make(map[string]bool, 2)
 	if !ioPropsSet {
 		// If --io-properties-file and --io-properties weren't set, try
 		// finding an IO props file in the default location.
-		sFlags.ioPropertiesFile = rp.GetIOConfigPath(
-			filepath.Dir(conf.FileLocation()),
-		)
+		sFlags.ioPropertiesFile = rp.GetIOConfigPath(filepath.Dir(conf.FileLocation()))
+		preserve[ioPropertiesFileFlag] = true
+
 		if exists, _ := afero.Exists(fs, sFlags.ioPropertiesFile); !exists {
 			sFlags.ioPropertiesFile = ""
-		}
-		// Otherwise, try to deduce the IO props.
-		if sFlags.ioPropertiesFile == "" {
-			ioProps, err := resolveWellKnownIo(conf, skipChecks)
+			preserve[ioPropertiesFileFlag] = false
+
+			// If the file is not located in the default location either, we try
+			// to deduce the IO props.
+			ioProps, err := ioResolver(conf, skipChecks)
 			if err != nil {
 				log.Warn(err)
 			} else if ioProps != nil {
@@ -582,12 +589,13 @@ func buildRedpandaFlags(
 					return nil, err
 				}
 				sFlags.ioProperties = json
+				preserve[ioPropertiesFlag] = true
 			}
 		}
 	}
 	flagsMap := flagsMap(sFlags)
 	for flag := range flagsMap {
-		if !flags.Changed(flag) {
+		if !flags.Changed(flag) && !preserve[flag] {
 			delete(flagsMap, flag)
 		}
 	}
