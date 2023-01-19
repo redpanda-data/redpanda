@@ -1,4 +1,4 @@
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 
 from rptest.clients.types import TopicSpec
 from rptest.services.mock_iam_roles_server import MockIamRolesServer
