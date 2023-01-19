@@ -361,7 +361,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         super().__init__(
             test_context=test_context,
             num_brokers=3,
-            si_settings=SISettings(),
+            si_settings=SISettings(test_context),
             extra_rp_conf={
                 # We will exercise storage/cloud_storage read paths, get the
                 # batch cache out of the way to ensure reads hit storage layer.
@@ -537,7 +537,8 @@ class UpgradeFrom22_2_7VerifyMigratedRetentionSettings(RedpandaTest):
     segment_size = 1000000  # 1MB
 
     def __init__(self, test_context):
-        si_settings = SISettings(log_segment_size=self.segment_size)
+        si_settings = SISettings(test_context,
+                                 log_segment_size=self.segment_size)
         super().__init__(
             test_context=test_context,
             num_brokers=3,
@@ -587,7 +588,8 @@ class UpgradeFrom22_2_7VerifyMigratedRetentionSettings(RedpandaTest):
         produce_until_segments(self.redpanda, topic.name, 0, total_segments)
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3Snapshot([topic], self.redpanda.s3_client,
+            s3_snapshot = S3Snapshot([topic],
+                                     self.redpanda.cloud_storage_client,
                                      self.s3_bucket_name, self.logger)
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(topic.name, 0)
             self.logger.debug(f"Current cloud log size is: {cloud_log_size}")

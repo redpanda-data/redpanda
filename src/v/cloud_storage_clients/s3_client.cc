@@ -320,15 +320,6 @@ request_creator::make_delete_objects_request(
 
 // client //
 
-/// Parse timestamp in format that S3 uses
-static std::chrono::system_clock::time_point
-parse_timestamp(std::string_view sv) {
-    std::tm tm = {};
-    std::stringstream ss({sv.data(), sv.size()});
-    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S.Z%Z");
-    return std::chrono::system_clock::from_time_t(timegm(&tm));
-}
-
 static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
     try {
         for (auto& frag : buf) {
@@ -348,7 +339,7 @@ static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
                     } else if (item_tag == "Size") {
                         item.size_bytes = item_value.get_value<size_t>();
                     } else if (item_tag == "LastModified") {
-                        item.last_modified = parse_timestamp(
+                        item.last_modified = util::parse_timestamp(
                           item_value.get_value<ss::sstring>());
                     } else if (item_tag == "ETag") {
                         item.etag = item_value.get_value<ss::sstring>();
@@ -510,7 +501,7 @@ ss::future<result<http::client::response_stream_ref, error_outcome>>
 s3_client::get_object(
   bucket_name const& name,
   object_key const& key,
-  const ss::lowres_clock::duration& timeout,
+  ss::lowres_clock::duration timeout,
   bool expect_no_such_key) {
     return send_request(
       do_get_object(name, key, timeout, expect_no_such_key), name, key);
@@ -519,7 +510,7 @@ s3_client::get_object(
 ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   bucket_name const& name,
   object_key const& key,
-  const ss::lowres_clock::duration& timeout,
+  ss::lowres_clock::duration timeout,
   bool expect_no_such_key) {
     auto header = _requestor.make_get_object_request(name, key);
     if (!header) {
@@ -569,14 +560,14 @@ ss::future<result<s3_client::head_object_result, error_outcome>>
 s3_client::head_object(
   bucket_name const& name,
   object_key const& key,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     return send_request(do_head_object(name, key, timeout), name, key);
 }
 
 ss::future<s3_client::head_object_result> s3_client::do_head_object(
   bucket_name const& name,
   object_key const& key,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_head_object_request(name, key);
     if (!header) {
         return ss::make_exception_future<s3_client::head_object_result>(
@@ -619,7 +610,7 @@ ss::future<s3_client::head_object_result> s3_client::do_head_object(
               });
         })
       .handle_exception_type([this](const rest_error_response& err) {
-          _probe->register_failure(err.code());
+          _probe->register_failure(err.code(), op_type_tag::download);
           return ss::make_exception_future<head_object_result>(err);
       });
 }
@@ -628,9 +619,9 @@ ss::future<result<s3_client::no_response, error_outcome>> s3_client::put_object(
   bucket_name const& name,
   object_key const& key,
   size_t payload_size,
-  ss::input_stream<char>&& body,
+  ss::input_stream<char> body,
   const object_tag_formatter& tags,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     return send_request(
       do_put_object(name, key, payload_size, std::move(body), tags, timeout)
         .then(
@@ -643,9 +634,9 @@ ss::future<> s3_client::do_put_object(
   bucket_name const& name,
   object_key const& id,
   size_t payload_size,
-  ss::input_stream<char>&& body,
+  ss::input_stream<char> body,
   const object_tag_formatter& tags,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_unsigned_put_object_request(
       name, id, payload_size, tags);
     if (!header) {
@@ -682,7 +673,7 @@ ss::future<> s3_client::do_put_object(
             .handle_exception_type(
               [](const ss::abort_requested_exception&) { return ss::now(); })
             .handle_exception_type([this](const rest_error_response& err) {
-                _probe->register_failure(err.code());
+                _probe->register_failure(err.code(), op_type_tag::upload);
                 return ss::make_exception_future<>(err);
             })
             .handle_exception([](std::exception_ptr eptr) {
@@ -700,7 +691,7 @@ s3_client::list_objects(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     const object_key dummy{""};
     co_return co_await send_request(
       do_list_objects_v2(
@@ -715,7 +706,7 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_list_objects_v2_request(
       name,
       std::move(prefix),
@@ -729,35 +720,20 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
       .then([](const http::client::response_stream_ref& resp) mutable {
-          // chunked encoding is used so we don't know output size in
-          // advance
-          return ss::do_with(
-            resp->as_input_stream(),
-            iobuf(),
-            [resp](ss::input_stream<char>& stream, iobuf& outbuf) mutable {
-                return ss::do_until(
-                         [&stream] { return stream.eof(); },
-                         [&stream, &outbuf] {
-                             return stream.read().then(
-                               [&outbuf](ss::temporary_buffer<char>&& chunk) {
-                                   outbuf.append(std::move(chunk));
-                               });
-                         })
-                  .then([&outbuf, resp] {
-                      const auto& header = resp->get_headers();
-                      if (header.result() != boost::beast::http::status::ok) {
-                          // We received error response so the outbuf contains
-                          // error digest instead of the result of the query
-                          vlog(
-                            s3_log.warn, "S3 replied with error: {:l}", header);
-                          return parse_rest_error_response<
-                            s3_client::list_bucket_result>(
-                            header.result(), std::move(outbuf));
-                      }
-                      auto res = iobuf_to_list_bucket_result(std::move(outbuf));
-                      return ss::make_ready_future<list_bucket_result>(
-                        std::move(res));
-                  });
+          return util::drain_chunked_response_stream(resp).then(
+            [resp](iobuf outbuf) {
+                const auto& header = resp->get_headers();
+                if (header.result() != boost::beast::http::status::ok) {
+                    // We received error response so the outbuf contains
+                    // error digest instead of the result of the query
+                    vlog(s3_log.warn, "S3 replied with error: {:l}", header);
+                    return parse_rest_error_response<
+                      s3_client::list_bucket_result>(
+                      header.result(), std::move(outbuf));
+                }
+                auto res = iobuf_to_list_bucket_result(std::move(outbuf));
+                return ss::make_ready_future<list_bucket_result>(
+                  std::move(res));
             });
       });
 }
@@ -766,7 +742,7 @@ ss::future<result<s3_client::no_response, error_outcome>>
 s3_client::delete_object(
   const bucket_name& bucket,
   const object_key& key,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     using ret_t = result<s3_client::no_response, error_outcome>;
 
     return send_request(
@@ -800,7 +776,7 @@ s3_client::delete_object(
 ss::future<> s3_client::do_delete_object(
   const bucket_name& bucket,
   const object_key& key,
-  const ss::lowres_clock::duration& timeout) {
+  ss::lowres_clock::duration timeout) {
     auto header = _requestor.make_delete_object_request(bucket, key);
     if (!header) {
         return ss::make_exception_future<>(std::system_error(header.error()));

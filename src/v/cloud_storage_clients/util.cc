@@ -72,6 +72,15 @@ error_outcome handle_client_transport_error(
 
 ss::future<iobuf>
 drain_response_stream(http::client::response_stream_ref resp) {
+    const auto transfer_encoding = resp->get_headers().find(
+      boost::beast::http::field::transfer_encoding);
+
+    if (
+      transfer_encoding != resp->get_headers().end()
+      && transfer_encoding->value().find("chunked")) {
+        return drain_chunked_response_stream(resp);
+    }
+
     return ss::do_with(
       iobuf(), [resp = std::move(resp)](iobuf& outbuf) mutable {
           return ss::do_until(
@@ -80,6 +89,26 @@ drain_response_stream(http::client::response_stream_ref resp) {
                        return resp->recv_some().then([&outbuf](iobuf&& chunk) {
                            outbuf.append(std::move(chunk));
                        });
+                   })
+            .then([&outbuf] {
+                return ss::make_ready_future<iobuf>(std::move(outbuf));
+            });
+      });
+}
+
+ss::future<iobuf>
+drain_chunked_response_stream(http::client::response_stream_ref resp) {
+    return ss::do_with(
+      resp->as_input_stream(),
+      iobuf(),
+      [resp](ss::input_stream<char>& stream, iobuf& outbuf) mutable {
+          return ss::do_until(
+                   [&stream] { return stream.eof(); },
+                   [&stream, &outbuf] {
+                       return stream.read().then(
+                         [&outbuf](ss::temporary_buffer<char>&& chunk) {
+                             outbuf.append(std::move(chunk));
+                         });
                    })
             .then([&outbuf] {
                 return ss::make_ready_future<iobuf>(std::move(outbuf));
@@ -100,6 +129,13 @@ boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf, ss::logger& logger) {
         vlog(logger.error, "!!parsing error {}", std::current_exception());
         throw;
     }
+}
+
+std::chrono::system_clock::time_point parse_timestamp(std::string_view sv) {
+    std::tm tm = {};
+    std::stringstream ss({sv.data(), sv.size()});
+    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S.Z%Z");
+    return std::chrono::system_clock::from_time_t(timegm(&tm));
 }
 
 void log_buffer_with_rate_limiting(

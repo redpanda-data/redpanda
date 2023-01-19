@@ -9,7 +9,7 @@ import re
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings
 
 from rptest.services.admin import Admin
 from rptest.clients.types import TopicSpec
@@ -19,6 +19,7 @@ from rptest.util import (
     produce_until_segments,
     wait_for_segments_removal,
 )
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 # Log errors expected when connectivity between redpanda and the S3
@@ -38,6 +39,7 @@ class SIAdminApiTest(RedpandaTest):
 
     def __init__(self, test_context):
         si_settings = SISettings(
+            test_context,
             cloud_storage_max_connections=5,
             log_segment_size=self.log_segment_size,
             cloud_storage_enable_remote_read=True,
@@ -67,11 +69,13 @@ class SIAdminApiTest(RedpandaTest):
         self.redpanda.set_cluster_config({'admin_api_require_auth': True})
 
     def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
         super().tearDown()
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_bucket_validation(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_bucket_validation(self, cloud_storage_type):
         """
         The test produces to the partition and waits untils the
         data is uploaded to S3 and the oldest segments are picked
@@ -109,8 +113,8 @@ class SIAdminApiTest(RedpandaTest):
 
         segment_to_remove = self.find_deletion_candidate()
         self.logger.info(f"trying to remove segment {segment_to_remove}")
-        self.s3_client.delete_object(self.s3_bucket_name, segment_to_remove,
-                                     True)
+        self.cloud_storage_client.delete_object(self.s3_bucket_name,
+                                                segment_to_remove, True)
 
         self.logger.info("trying to sync remote partition")
         for node in self.redpanda.nodes:
@@ -130,7 +134,7 @@ class SIAdminApiTest(RedpandaTest):
             assert part.start_offset > 0, f"start-offset of the partition is {part.start_offset}, should be greater than 0"
 
     def find_deletion_candidate(self):
-        for obj in self.s3_client.list_objects(self.s3_bucket_name):
-            if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.Key):
-                return obj.Key
+        for obj in self.cloud_storage_client.list_objects(self.s3_bucket_name):
+            if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.key):
+                return obj.key
         return None

@@ -9,7 +9,7 @@
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, SISettings
+from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -21,7 +21,7 @@ from rptest.util import (
     firewall_blocked,
 )
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, parametrize
 
 from collections import namedtuple, defaultdict
 import time
@@ -146,7 +146,8 @@ class ArchivalTest(RedpandaTest):
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        si_settings = SISettings(cloud_storage_max_connections=5,
+        si_settings = SISettings(test_context,
+                                 cloud_storage_max_connections=5,
                                  log_segment_size=self.log_segment_size)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 
@@ -177,18 +178,22 @@ class ArchivalTest(RedpandaTest):
                                         'true')
 
     def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
         super().tearDown()
 
     @cluster(num_nodes=3)
-    def test_write(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_write(self, cloud_storage_type):
         """Simpe smoke test, write data to redpanda and check if the
         data hit the S3 storage bucket"""
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_isolate(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_isolate(self, cloud_storage_type):
         """Verify that our isolate/rejoin facilities actually work"""
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
             self.kafka_tools.produce(self.topic, 10000, 1024)
@@ -197,8 +202,9 @@ class ArchivalTest(RedpandaTest):
             # Topic manifest can be present in the bucket because topic is created before
             # firewall is blocked. No segments or partition manifest should be present.
             topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
-            objects = self.s3_client.list_objects(self.s3_bucket_name)
-            keys = [x.Key for x in objects]
+            objects = self.cloud_storage_client.list_objects(
+                self.s3_bucket_name)
+            keys = [x.key for x in objects]
 
             assert len(keys) < 2, \
                 f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys}"
@@ -208,7 +214,9 @@ class ArchivalTest(RedpandaTest):
                     f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys[0]}"
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_reconnect(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_reconnect(self, cloud_storage_type):
         """Disconnect redpanda from S3, write data, connect redpanda to S3
         and check that the data is uploaded"""
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
@@ -220,7 +228,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_one_node_reconnect(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_one_node_reconnect(self, cloud_storage_type):
         """Disconnect one redpanda node from S3, write data, connect redpanda to S3
         and check that the data is uploaded"""
         self.kafka_tools.produce(self.topic, 1000, 1024)
@@ -234,7 +244,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_connection_drop(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_connection_drop(self, cloud_storage_type):
         """Disconnect redpanda from S3 during the active upload, restore connection
         and check that everything is uploaded"""
         self.kafka_tools.produce(self.topic, 10000, 1024)
@@ -246,7 +258,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_connection_flicker(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_connection_flicker(self, cloud_storage_type):
         """Disconnect redpanda from S3 during the active upload for short period of time
         during upload and check that everything is uploaded"""
         con_enabled = True
@@ -263,7 +277,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._quick_verify, self.logger, 90)
 
     @cluster(num_nodes=3)
-    def test_single_partition_leadership_transfer(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_single_partition_leadership_transfer(self, cloud_storage_type):
         """Start uploading data, restart leader node of the partition 0 to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
@@ -278,7 +294,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._cross_node_verify, self.logger, 90)
 
     @cluster(num_nodes=3)
-    def test_all_partitions_leadership_transfer(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_all_partitions_leadership_transfer(self, cloud_storage_type):
         """Start uploading data, restart leader nodes of all partitions to trigger the
         leadership transfer, continue upload, verify S3 bucket content"""
         self.kafka_tools.produce(self.topic, 5000, 1024)
@@ -294,8 +312,9 @@ class ArchivalTest(RedpandaTest):
         validate(self._cross_node_verify, self.logger, 90)
 
     @cluster(num_nodes=3)
-    @matrix(acks=[-1, 0, 1])
-    def test_timeboxed_uploads(self, acks):
+    @matrix(acks=[-1, 0, 1],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_timeboxed_uploads(self, acks, cloud_storage_type):
         """This test checks segment upload time limit. The feature is enabled in the
         configuration. The configuration defines maximum time interval between uploads.
         If the option is set then redpanda will start uploading a segment partially if
@@ -372,8 +391,9 @@ class ArchivalTest(RedpandaTest):
         validate(check_upload, self.logger, 90)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    @matrix(acks=[1, -1])
-    def test_retention_archival_coordination(self, acks):
+    @matrix(acks=[1, -1],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_retention_archival_coordination(self, acks, cloud_storage_type):
         """
         Test that only archived segments can be evicted and that eviction
         restarts once the segments have been archived.
@@ -460,7 +480,8 @@ class ArchivalTest(RedpandaTest):
                 f"expected path {expected} is not found in the bucket, bucket content: \n{objlist}"
             )
             assert not id is None
-        manifest = self.s3_client.get_object_data(self.s3_bucket_name, id)
+        manifest = self.cloud_storage_client.get_object_data(
+            self.s3_bucket_name, id)
         self.logger.info(f"manifest found: {manifest}")
         return json.loads(manifest)
 
@@ -636,16 +657,16 @@ class ArchivalTest(RedpandaTest):
         try:
             topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
             partition_manifest_id = "d0000000/meta/kafka/panda-topic/0_9/manifest.json"
-            manifest = self.s3_client.get_object_data(self.s3_bucket_name,
-                                                      partition_manifest_id)
+            manifest = self.cloud_storage_client.get_object_data(
+                self.s3_bucket_name, partition_manifest_id)
             results = [topic_manifest_id, partition_manifest_id]
             for id in manifest['segments'].keys():
                 results.append(id)
             self.logger.debug(f"ListObjects(source: manifest): {results}")
         except:
             results = [
-                loc.Key
-                for loc in self.s3_client.list_objects(self.s3_bucket_name)
+                loc.key for loc in self.cloud_storage_client.list_objects(
+                    self.s3_bucket_name)
             ]
             self.logger.debug(f"ListObjects: {results}")
         return results
@@ -768,7 +789,7 @@ class ArchivalTest(RedpandaTest):
             manifest_extension = ".json"
             return not path.endswith(manifest_extension)
 
-        objects = self.s3_client.list_objects(self.s3_bucket_name)
+        objects = self.cloud_storage_client.list_objects(self.s3_bucket_name)
         self.logger.info(
             f"got {len(list(objects))} objects from bucket {self.s3_bucket_name}"
         )
@@ -776,9 +797,9 @@ class ArchivalTest(RedpandaTest):
             self.logger.info(f"object: {o}")
 
         return {
-            normalize(it.Key): (it.ETag, it.ContentLength)
-            for it in self.s3_client.list_objects(self.s3_bucket_name)
-            if included(it.Key)
+            normalize(it.key): (it.etag, it.content_length)
+            for it in self.cloud_storage_client.list_objects(
+                self.s3_bucket_name) if included(it.key)
         }
 
     def _get_partial_checksum(self, hostname, normalized_path, tail_bytes):

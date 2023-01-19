@@ -18,7 +18,7 @@ setup(
         'crc32c==2.2', 'confluent-kafka==1.7.0', 'zstandard==0.15.2',
         'xxhash==2.0.2', 'protobuf==3.19.3', 'fastavro==1.4.9',
         'psutil==5.9.0', 'numpy==1.22.3', 'pygal==3.0', 'pytest==7.1.2',
-        'jump-consistent-hash==3.2.0',
+        'jump-consistent-hash==3.2.0', 'azure-storage-blob==12.14.1',
         'kafkatest@git+https://github.com/apache/kafka.git@058589b03db686803b33052d574ce887fb5cfbd1#egg=kafkatest&subdirectory=tests'
     ],
     scripts=[],

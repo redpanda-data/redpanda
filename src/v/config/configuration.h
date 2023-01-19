@@ -247,6 +247,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> cloud_storage_housekeeping_interval_ms;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
+    // Azure Blob Storage
+    property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;
+    property<std::optional<ss::sstring>> cloud_storage_azure_container;
+    property<std::optional<ss::sstring>> cloud_storage_azure_shared_key;
 
     // Archival upload controller
     property<std::chrono::milliseconds>

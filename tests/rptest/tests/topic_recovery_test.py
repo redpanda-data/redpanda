@@ -222,7 +222,7 @@ class BaseCase:
 
     def _list_objects(self):
         """Return list of all topics in the bucket (only names)"""
-        results = [loc.Key for loc in self._s3.list_objects(self._bucket)]
+        results = [loc.key for loc in self._s3.list_objects(self._bucket)]
         self.logger.info(f"ListObjects: {results}")
         return results
 
@@ -571,7 +571,7 @@ class MissingSegment(BaseCase):
 
     def _delete(self, key):
         self._deleted_segment_size = self._s3.get_object_meta(
-            self._bucket, key).ContentLength
+            self._bucket, key).content_length
         self.logger.info(
             f"deleting segment file {key} of size {self._deleted_segment_size}"
         )
@@ -659,9 +659,9 @@ class FastCheck(BaseCase):
             if s3_snapshot.is_segment_part_of_a_manifest(item)
         ]
         for seg in segments:
-            components = parse_s3_segment_path(seg.Key)
+            components = parse_s3_segment_path(seg.key)
             ntp = components.ntp
-            segment_data = self._s3.get_object_data(self._bucket, seg.Key)
+            segment_data = self._s3.get_object_data(self._bucket, seg.key)
             segment_size = len(segment_data)
             segment = SegmentReader(io.BytesIO(segment_data))
             # We want to skip segments where the size is lower than EMPTY_SEGMENT_SIZE,
@@ -947,7 +947,8 @@ class TopicRecoveryTest(RedpandaTest):
                  test_context: TestContext,
                  num_brokers: Optional[int] = None,
                  extra_rp_conf=dict()):
-        si_settings = SISettings(cloud_storage_max_connections=5,
+        si_settings = SISettings(test_context,
+                                 cloud_storage_max_connections=5,
                                  cloud_storage_segment_max_upload_interval_sec=
                                  CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC,
                                  log_segment_size=default_log_segment_size)
@@ -983,8 +984,8 @@ class TopicRecoveryTest(RedpandaTest):
                            acks=acks)
 
     def tearDown(self):
-        assert self.s3_client
-        self.s3_client.empty_bucket(self.s3_bucket)
+        assert self.cloud_storage_client
+        self.cloud_storage_client.empty_bucket(self.s3_bucket)
         super().tearDown()
 
     def _collect_file_checksums(self) -> dict[str, FileToChecksumSize]:
@@ -1105,10 +1106,10 @@ class TopicRecoveryTest(RedpandaTest):
             manifests = []
             topic_manifests = []
             segments = []
-            assert self.s3_client
-            lst = self.s3_client.list_objects(self.s3_bucket)
+            assert self.cloud_storage_client
+            lst = self.cloud_storage_client.list_objects(self.s3_bucket)
             for obj in lst:
-                self.logger.debug(f'checking S3 object: {obj.Key}')
+                self.logger.debug(f'checking S3 object: {obj.key}')
                 if path_matcher.is_partition_manifest(obj):
                     manifests.append(obj)
                 elif path_matcher.is_topic_manifest(obj):
@@ -1136,8 +1137,8 @@ class TopicRecoveryTest(RedpandaTest):
                         tmp_size += size
                 size_on_disk = max(tmp_size, size_on_disk)
 
-            size_in_cloud = sum(obj.ContentLength for obj in segments
-                                if obj.ContentLength > EMPTY_SEGMENT_SIZE)
+            size_in_cloud = sum(obj.content_length for obj in segments
+                                if obj.content_length > EMPTY_SEGMENT_SIZE)
             self.logger.debug(
                 f'segments in cloud: {pprint.pformat(segments, indent=2)}, '
                 f'size in cloud: {size_in_cloud}')
@@ -1269,8 +1270,8 @@ class TopicRecoveryTest(RedpandaTest):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
         to produce to the topic."""
-        test_case = NoDataCase(self.s3_client, self.kafka_tools, self.rpk,
-                               self.s3_bucket, self.logger,
+        test_case = NoDataCase(self.cloud_storage_client, self.kafka_tools,
+                               self.rpk, self.s3_bucket, self.logger,
                                self.rpk_producer_maker)
         self.do_run(test_case)
 
@@ -1279,8 +1280,9 @@ class TopicRecoveryTest(RedpandaTest):
     def test_empty_segments(self):
         """Test case in which the segments are uploaded but they doesn't
         have any data batches but they do have configuration batches."""
-        test_case = EmptySegmentsCase(self.s3_client, self.kafka_tools,
-                                      self.rpk, self.s3_bucket, self.logger,
+        test_case = EmptySegmentsCase(self.cloud_storage_client,
+                                      self.kafka_tools, self.rpk,
+                                      self.s3_bucket, self.logger,
                                       self.rpk_producer_maker, self.redpanda)
         self.do_run(test_case)
 
@@ -1290,8 +1292,9 @@ class TopicRecoveryTest(RedpandaTest):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
         to produce to the topic."""
-        test_case = MissingTopicManifest(self.s3_client, self.kafka_tools,
-                                         self.rpk, self.s3_bucket, self.logger,
+        test_case = MissingTopicManifest(self.cloud_storage_client,
+                                         self.kafka_tools, self.rpk,
+                                         self.s3_bucket, self.logger,
                                          self.rpk_producer_maker)
         self.do_run(test_case)
 
@@ -1304,8 +1307,9 @@ class TopicRecoveryTest(RedpandaTest):
         locations that could be used if the partition was moved between the
         nodes.
         """
-        test_case = MissingPartition(self.s3_client, self.kafka_tools,
-                                     self.rpk, self.s3_bucket, self.logger,
+        test_case = MissingPartition(self.cloud_storage_client,
+                                     self.kafka_tools, self.rpk,
+                                     self.s3_bucket, self.logger,
                                      self.rpk_producer_maker)
         self.do_run(test_case)
 
@@ -1315,8 +1319,8 @@ class TopicRecoveryTest(RedpandaTest):
         """Test the handling of the missing segment. The segment is
         missing if it's present in the manifest but deleted from the
         bucket."""
-        test_case = MissingSegment(self.s3_client, self.kafka_tools, self.rpk,
-                                   self.s3_bucket, self.logger,
+        test_case = MissingSegment(self.cloud_storage_client, self.kafka_tools,
+                                   self.rpk, self.s3_bucket, self.logger,
                                    self.rpk_producer_maker)
         self.do_run(test_case)
 
@@ -1329,8 +1333,8 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=1,
                       replication_factor=3)
         ]
-        test_case = FastCheck(self.s3_client, self.kafka_tools, self.rpk,
-                              self.s3_bucket, self.logger,
+        test_case = FastCheck(self.cloud_storage_client, self.kafka_tools,
+                              self.rpk, self.s3_bucket, self.logger,
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
@@ -1346,8 +1350,8 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=3,
                       replication_factor=3),
         ]
-        test_case = FastCheck(self.s3_client, self.kafka_tools, self.rpk,
-                              self.s3_bucket, self.logger,
+        test_case = FastCheck(self.cloud_storage_client, self.kafka_tools,
+                              self.rpk, self.s3_bucket, self.logger,
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
@@ -1366,8 +1370,8 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=2,
                       replication_factor=3),
         ]
-        test_case = FastCheck(self.s3_client, self.kafka_tools, self.rpk,
-                              self.s3_bucket, self.logger,
+        test_case = FastCheck(self.cloud_storage_client, self.kafka_tools,
+                              self.rpk, self.s3_bucket, self.logger,
                               self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
@@ -1381,8 +1385,9 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=1,
                       replication_factor=3)
         ]
-        test_case = SizeBasedRetention(self.s3_client, self.kafka_tools,
-                                       self.rpk, self.s3_bucket, self.logger,
+        test_case = SizeBasedRetention(self.cloud_storage_client,
+                                       self.kafka_tools, self.rpk,
+                                       self.s3_bucket, self.logger,
                                        self.rpk_producer_maker, topics)
         self.do_run(test_case)
 
@@ -1397,8 +1402,9 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=1,
                       replication_factor=3)
         ]
-        test_case = TimeBasedRetention(self.s3_client, self.kafka_tools,
-                                       self.rpk, self.s3_bucket, self.logger,
+        test_case = TimeBasedRetention(self.cloud_storage_client,
+                                       self.kafka_tools, self.rpk,
+                                       self.s3_bucket, self.logger,
                                        self.rpk_producer_maker, topics, False)
         self.do_run(test_case)
 
@@ -1413,7 +1419,8 @@ class TopicRecoveryTest(RedpandaTest):
                       partition_count=1,
                       replication_factor=3)
         ]
-        test_case = TimeBasedRetention(self.s3_client, self.kafka_tools,
-                                       self.rpk, self.s3_bucket, self.logger,
+        test_case = TimeBasedRetention(self.cloud_storage_client,
+                                       self.kafka_tools, self.rpk,
+                                       self.s3_bucket, self.logger,
                                        self.rpk_producer_maker, topics, True)
         self.do_run(test_case)

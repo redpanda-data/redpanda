@@ -42,6 +42,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
                 "log_compaction_interval_ms": 1000
             },
             si_settings=SISettings(
+                test_context,
                 log_segment_size=OffsetForLeaderEpochArchivalTest.segment_size,
                 cloud_storage_cache_size=5 *
                 OffsetForLeaderEpochArchivalTest.segment_size))

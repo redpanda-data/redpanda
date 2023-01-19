@@ -71,6 +71,22 @@ struct s3_configuration : common_configuration {
     friend std::ostream& operator<<(std::ostream& o, const s3_configuration& c);
 };
 
+struct abs_configuration : common_configuration {
+    cloud_roles::storage_account storage_account_name;
+    std::optional<cloud_roles::private_key_str> shared_key;
+
+    static ss::future<abs_configuration> make_configuration(
+      const std::optional<cloud_roles::private_key_str>& shared_key,
+      const cloud_roles::storage_account& storage_account_name,
+      const default_overrides& overrides = {},
+      net::metrics_disabled disable_metrics = net::metrics_disabled::yes,
+      net::public_metrics_disabled disable_public_metrics
+      = net::public_metrics_disabled::yes);
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const abs_configuration& c);
+};
+
 template<typename T>
 concept storage_client_configuration
   = std::is_base_of_v<common_configuration, T>;
@@ -78,7 +94,8 @@ concept storage_client_configuration
 template<storage_client_configuration... Ts>
 using client_configuration_variant = std::variant<Ts...>;
 
-using client_configuration = client_configuration_variant<s3_configuration>;
+using client_configuration
+  = client_configuration_variant<abs_configuration, s3_configuration>;
 
 template<typename>
 inline constexpr bool always_false_v = false;

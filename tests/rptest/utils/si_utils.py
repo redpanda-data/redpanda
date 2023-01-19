@@ -6,7 +6,7 @@ from collections import defaultdict, namedtuple
 from typing import Sequence, Optional
 import xxhash
 
-from rptest.archival.s3_client import S3ObjectMetadata, S3Client
+from rptest.archival.s3_client import ObjectMetadata, S3Client
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
@@ -312,16 +312,16 @@ class PathMatcher:
             for t in self.topic_names
         }
 
-    def is_partition_manifest(self, o: S3ObjectMetadata) -> bool:
-        return o.Key.endswith('/manifest.json') and any(
-            tn in o.Key for tn in self.topic_names)
+    def is_partition_manifest(self, o: ObjectMetadata) -> bool:
+        return o.key.endswith('/manifest.json') and any(
+            tn in o.key for tn in self.topic_names)
 
-    def is_topic_manifest(self, o: S3ObjectMetadata) -> bool:
-        return any(o.Key.endswith(t) for t in self.topic_manifest_paths)
+    def is_topic_manifest(self, o: ObjectMetadata) -> bool:
+        return any(o.key.endswith(t) for t in self.topic_manifest_paths)
 
-    def is_segment(self, o: S3ObjectMetadata) -> bool:
+    def is_segment(self, o: ObjectMetadata) -> bool:
         try:
-            return parse_s3_segment_path(o.Key).ntp.topic in self.topic_names
+            return parse_s3_segment_path(o.key).ntp.topic in self.topic_names
         except Exception:
             return False
 
@@ -341,15 +341,15 @@ class S3Snapshot:
         self.partition_manifests = {}
         for o in self.objects:
             if self.path_matcher.is_partition_manifest(o):
-                manifest_path = parse_s3_manifest_path(o.Key)
-                data = self.client.get_object_data(self.bucket, o.Key)
+                manifest_path = parse_s3_manifest_path(o.key)
+                data = self.client.get_object_data(self.bucket, o.key)
                 self.partition_manifests[manifest_path.ntp] = json.loads(data)
                 self.logger.debug(
                     f'registered partition manifest for {manifest_path.ntp}: '
                     f'{pprint.pformat(self.partition_manifests[manifest_path.ntp], indent=2)}'
                 )
 
-    def is_segment_part_of_a_manifest(self, o: S3ObjectMetadata) -> bool:
+    def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
         """
         Queries that given object is a segment, and is a part of one of the test partition manifests
         with a matching archiver term
@@ -358,7 +358,7 @@ class S3Snapshot:
             if not self.path_matcher.is_segment(o):
                 return False
 
-            segment_path = parse_s3_segment_path(o.Key)
+            segment_path = parse_s3_segment_path(o.key)
             partition_manifest = self.partition_manifests.get(segment_path.ntp)
             if not partition_manifest:
                 self.logger.warn(f'no manifest found for {segment_path.ntp}')

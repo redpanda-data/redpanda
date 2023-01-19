@@ -10,7 +10,10 @@
 
 #pragma once
 
+#include "cloud_roles/types.h"
+#include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/s3_error.h"
+#include "cloud_storage_clients/types.h"
 #include "http/probe.h"
 #include "model/fundamental.h"
 #include "net/types.h"
@@ -19,17 +22,21 @@
 #include <seastar/core/metrics_registration.hh>
 
 #include <cstdint>
+#include <span>
 
 namespace cloud_storage_clients {
 
-/// \brief S3 client probe
+enum class op_type_tag { upload, download };
+
+/// \brief Cloud storage client probe
 ///
 /// \note The goal of this is to measure billable traffic
-///       and performance related metrics. Since S3 client
-///       reuses the net::base_transport it can potentially
+///       (not yet implemented on the cloud side)
+///       and performance related metrics. Since clients
+///       reuse net::base_transport, they could potentially
 ///       use its probe. But this doesn't make much sence
-///       since S3 requires different approach in measuring.
-///       For instance, all connectoins are made to the same
+///       since cloud storage clients require different approaches
+///       to measuring. For instance, all connections are made to the same
 ///       endpoint and we don't want to look at every individual
 ///       http connection here because they can be transient.
 ///       Approach that RPC package uses will lead to cardinality
@@ -37,29 +44,47 @@ namespace cloud_storage_clients {
 ///       time-series.
 class client_probe : public http::client_probe {
 public:
-    /// \brief Probe c-tor
+    /// \brief Probe c-tor for S3 client
     ///
-    /// \param disable is used to switch the monitoring off
-    /// \param region is a cloud provider region
-    /// \param endpoint is a cloud provider endpoint
+    /// \param disable is used to switch the internal monitoring off
+    /// \param public_disable is used to switch the public monitoring off
+    /// \param region is the AWS region
+    /// \param endpoint is the AWS S3 endpoint
     client_probe(
       net::metrics_disabled disable,
       net::public_metrics_disabled public_disable,
-      ss::sstring region,
-      ss::sstring endpoint);
+      cloud_roles::aws_region_name region,
+      endpoint_url endpoint);
+
+    /// \brief Probe c-tor for ABS client
+    ///
+    /// \param disable is used to switch the internal monitoring off
+    /// \param public_disable is used to switch the public monitoring off
+    /// \param storage_account_name
+    /// \param endpoint is the ABS endpoint
+    client_probe(
+      net::metrics_disabled disable,
+      net::public_metrics_disabled public_disable,
+      cloud_roles::storage_account storage_account_name,
+      endpoint_url endpoint);
 
     /// Register S3 rpc error
-    void register_failure(s3_error_code err);
+    void register_failure(
+      s3_error_code err, std::optional<op_type_tag> op_type = std::nullopt);
+    /// Register ABS rpc error
+    void register_failure(abs_error_code err);
+    void register_retryable_failure(std::optional<op_type_tag> op_type);
 
 private:
+    struct raw_label {
+        ss::sstring key;
+        ss::sstring value;
+    };
+
     void setup_internal_metrics(
-      net::metrics_disabled disable,
-      const ss::sstring& region,
-      const ss::sstring& endpoint);
+      net::metrics_disabled disable, std::span<raw_label> raw_labels);
     void setup_public_metrics(
-      net::public_metrics_disabled disable,
-      const ss::sstring& region,
-      const ss::sstring& endpoint);
+      net::public_metrics_disabled disable, std::span<raw_label> raw_labels);
 
     /// Total number of rpc errors
     uint64_t _total_rpc_errors;
@@ -67,6 +92,10 @@ private:
     uint64_t _total_slowdowns;
     /// Total number of NoSuchKey responses
     uint64_t _total_nosuchkeys;
+    /// Total number of NoSuchKey responses
+    uint64_t _total_upload_slowdowns;
+    /// Total number of NoSuchKey responses
+    uint64_t _total_download_slowdowns;
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{
       ssx::metrics::public_metrics_handle};

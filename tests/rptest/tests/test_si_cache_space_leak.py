@@ -43,7 +43,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         test_name = test_context.test_name
         si_params = self.test_defaults.get(
             test_name) or self.test_defaults.get('default')
-        si_settings = SISettings(**si_params)
+        si_settings = SISettings(test_context, **si_params)
         self._segment_size = si_params['log_segment_size']
         extra_rp_conf = {
             'disable_metrics': True,
@@ -100,7 +100,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
             objects = list(self.redpanda.get_objects_from_si())
             total_size = 0
             for o in objects:
-                total_size += o.ContentLength
+                total_size += o.content_length
             return total_size > self._segment_size
 
         wait_until(s3_has_some_data, timeout_sec=300, backoff_sec=5)

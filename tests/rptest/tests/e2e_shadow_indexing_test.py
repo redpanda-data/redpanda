@@ -11,7 +11,7 @@ import random
 import time
 
 from ducktape.errors import TimeoutError
-from ducktape.mark import ok_to_fail, parametrize
+from ducktape.mark import ok_to_fail, parametrize, matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
@@ -24,7 +24,7 @@ from rptest.services.action_injector import ActionConfig, random_process_kills
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale, wait_until_segments
@@ -56,6 +56,7 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.topic = self.s3_topic_name
 
         self.si_settings = SISettings(
+            test_context,
             cloud_storage_max_connections=5,
             log_segment_size=self.segment_size,  # 1MB
         )
@@ -77,13 +78,15 @@ class EndToEndShadowIndexingBase(EndToEndTest):
             self.kafka_tools.create_topic(topic)
 
     def tearDown(self):
-        assert self.redpanda and self.redpanda.s3_client
-        self.redpanda.s3_client.empty_bucket(self.s3_bucket_name)
+        assert self.redpanda and self.redpanda.cloud_storage_client
+        self.redpanda.cloud_storage_client.empty_bucket(self.s3_bucket_name)
 
 
 class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @cluster(num_nodes=5)
-    def test_write(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_write(self, cloud_storage_type):
         """Write at least 10 segments, set retention policy to leave only 5
         segments, wait for segments removal, consume data and run validation,
         that everything that is acked is consumed."""
@@ -189,7 +192,9 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
 
     @skip_debug_mode
     @cluster(num_nodes=5)
-    def test_write(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_write(self, cloud_storage_type):
         original_snapshot = self._prime_compacted_topic(10)
 
         self.kafka_tools.alter_topic_config(
@@ -209,7 +214,8 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
-        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
                                  self.s3_bucket_name, self.logger)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
                                                                   partition=0,
@@ -218,7 +224,9 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
 
     @skip_debug_mode
     @cluster(num_nodes=5)
-    def test_compacting_during_leadership_transfer(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_compacting_during_leadership_transfer(self, cloud_storage_type):
         original_snapshot = self._prime_compacted_topic(10)
 
         self.kafka_tools.alter_topic_config(
@@ -242,7 +250,8 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
-        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
                                  self.s3_bucket_name, self.logger)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
                                                                   partition=0,
@@ -258,7 +267,9 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
                          })
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    def test_write_with_node_failures(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_write_with_node_failures(self, cloud_storage_type):
         self.start_producer()
         produce_until_segments(
             redpanda=self.redpanda,
@@ -316,13 +327,16 @@ class EndToEndCloudRetentionTest(EndToEndShadowIndexingBase):
 
     @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @skip_debug_mode
-    def test_retention_with_node_failures(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_retention_with_node_failures(self, cloud_storage_type):
         max_overshoot_percentage = 100
 
         self.start_producer(throughput=10000)
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+            s3_snapshot = S3Snapshot(self.topics,
+                                     self.redpanda.cloud_storage_client,
                                      self.s3_bucket_name, self.logger)
             if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
                 self.logger.debug(f"No manifest present yet")
@@ -392,7 +406,9 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
             })
 
     @cluster(num_nodes=2)
-    def test_segments_not_deleted(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_segments_not_deleted(self, cloud_storage_type):
         self.start_producer()
         produce_until_segments(
             redpanda=self.redpanda,
@@ -403,7 +419,8 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
 
         # Wait for there to be some segments.
         def manifest_has_segments():
-            s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+            s3_snapshot = S3Snapshot(self.topics,
+                                     self.redpanda.cloud_storage_client,
                                      self.s3_bucket_name, self.logger)
             manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name,
                                                     0)
@@ -413,7 +430,8 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
 
         # Give ample time for would-be segment deletions to occur.
         time.sleep(5)
-        s3_snapshot = S3Snapshot(self.topics, self.redpanda.s3_client,
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
                                  self.s3_bucket_name, self.logger)
         manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name, 0)
         assert "0-1-v1.log" in manifest["segments"], manifest
@@ -429,7 +447,8 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
     topics = [TopicSpec()]
 
     def __init__(self, test_context: TestContext):
-        si_settings = SISettings(log_segment_size=self.segment_size,
+        si_settings = SISettings(test_context,
+                                 log_segment_size=self.segment_size,
                                  cloud_storage_cache_size=20 * 2**30,
                                  cloud_storage_enable_remote_read=False,
                                  cloud_storage_enable_remote_write=False)
@@ -453,10 +472,11 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
         super().setUp()
 
     @cluster(num_nodes=8)
-    @parametrize(short_retention=False)
-    @parametrize(short_retention=True)
+    @matrix(short_retention=[False, True],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
     @skip_debug_mode
-    def test_create_or_delete_topics_while_busy(self, short_retention):
+    def test_create_or_delete_topics_while_busy(self, short_retention,
+                                                cloud_storage_type):
         """
         :param short_retention: whether to run with a very short retention globally, or just
                a short target for local retention (see issue #7092)

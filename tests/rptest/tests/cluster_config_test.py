@@ -31,7 +31,8 @@ BOOTSTRAP_CONFIG = {
     'enable_idempotence': False,
 }
 
-SECRET_CONFIG_NAMES = frozenset(["cloud_storage_secret_key"])
+SECRET_CONFIG_NAMES = frozenset(
+    ["cloud_storage_secret_key", "cloud_storage_azure_shared_key"])
 
 
 class ClusterConfigUpgradeTest(RedpandaTest):

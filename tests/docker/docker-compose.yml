@@ -28,6 +28,15 @@ services:
     image: minio/minio:RELEASE.2021-03-26T00-00-41Z
     networks:
     - redpanda-test
+  azurite:
+    container_name: azurite
+    hostname: devstoreaccount1.blob.localhost
+    restart: always
+    ports:
+    - 10000:10000
+    image: mcr.microsoft.com/azure-storage/azurite:3.21.0
+    networks:
+    - redpanda-test
   rp:
     image: vectorized/redpanda-test-node
     privileged: true

@@ -18,7 +18,7 @@ from rptest.util import expect_exception
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import CloudStorageType, RedpandaService
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
@@ -41,6 +41,7 @@ class TestReadReplicaService(EndToEndTest):
         super(TestReadReplicaService, self).__init__(
             test_context=test_context,
             si_settings=SISettings(
+                test_context,
                 cloud_storage_max_connections=5,
                 log_segment_size=TestReadReplicaService.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
@@ -50,6 +51,7 @@ class TestReadReplicaService(EndToEndTest):
         # We're adding 'none' as a bucket name without creating
         # an actual bucket with such name.
         self.rr_settings = SISettings(
+            test_context,
             bypass_bucket_creation=True,
             cloud_storage_max_connections=5,
             log_segment_size=TestReadReplicaService.log_segment_size,
@@ -143,15 +145,15 @@ class TestReadReplicaService(EndToEndTest):
             "because topic manifest is not in S3.")
 
     def _bucket_usage(self) -> BucketUsage:
-        assert self.redpanda and self.redpanda.s3_client
+        assert self.redpanda and self.redpanda.cloud_storage_client
         keys: set[str] = set()
-        s3 = self.redpanda.s3_client
+        s3 = self.redpanda.cloud_storage_client
         num_objects = total_bytes = 0
         bucket = self.si_settings.cloud_storage_bucket
         for o in s3.list_objects(bucket):
             num_objects += 1
-            total_bytes += o.ContentLength
-            keys.add(o.Key)
+            total_bytes += o.content_length
+            keys.add(o.key)
         self.redpanda.logger.info(f"bucket usage {num_objects} objects, " +
                                   f"{total_bytes} bytes for {bucket}")
         return BucketUsage(num_objects, total_bytes, keys)
@@ -169,8 +171,10 @@ class TestReadReplicaService(EndToEndTest):
             return None
 
     @cluster(num_nodes=7)
-    @matrix(partition_count=[10])
-    def test_writes_forbidden(self, partition_count: int) -> None:
+    @matrix(partition_count=[10],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_writes_forbidden(self, partition_count: int,
+                              cloud_storage_type: CloudStorageType) -> None:
         """
         Verify that the read replica cluster does not permit writes,
         and does not perform other data-modifying actions such as
@@ -187,12 +191,12 @@ class TestReadReplicaService(EndToEndTest):
             second_rpk.produce(self.topic_name, "", "test payload")
 
         objects_before = set(
-            self.redpanda.s3_client.list_objects(
+            self.redpanda.cloud_storage_client.list_objects(
                 self.si_settings.cloud_storage_bucket))
         assert len(objects_before) > 0
         second_rpk.delete_topic(self.topic_name)
         objects_after = set(
-            self.redpanda.s3_client.list_objects(
+            self.redpanda.cloud_storage_client.list_objects(
                 self.si_settings.cloud_storage_bucket))
         if len(objects_after) < len(objects_before):
             deleted = objects_before - objects_after
@@ -204,9 +208,11 @@ class TestReadReplicaService(EndToEndTest):
             assert len(objects_after) >= len(objects_before)
 
     @cluster(num_nodes=9)
-    @matrix(partition_count=[10], min_records=[10000])
-    def test_simple_end_to_end(self, partition_count: int,
-                               min_records: int) -> None:
+    @matrix(partition_count=[10],
+            min_records=[10000],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_simple_end_to_end(self, partition_count: int, min_records: int,
+                               cloud_storage_type: CloudStorageType) -> None:
 
         self._setup_read_replica(num_messages=min_records,
                                  partition_count=partition_count)

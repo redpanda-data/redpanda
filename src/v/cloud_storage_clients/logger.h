@@ -16,4 +16,5 @@
 
 namespace cloud_storage_clients {
 inline ss::logger s3_log("s3");
+inline ss::logger abs_log("abs");
 } // namespace cloud_storage_clients

@@ -144,9 +144,11 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
 
     def __init__(self, ctx):
         # Allow enough space for each parallel random read to be able to evict a segment
-        si_settings = SISettings(cloud_storage_cache_size=(
-            self.cloud_storage_cache_size or self.RANDOM_READ_PARALLEL *
-            self.segment_size))
+        si_settings = SISettings(
+            ctx,
+            cloud_storage_cache_size=(self.cloud_storage_cache_size
+                                      or self.RANDOM_READ_PARALLEL *
+                                      self.segment_size))
 
         super(KgoVerifierWithSiTest, self).__init__(
             test_context=ctx,
@@ -183,7 +185,7 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
         objects = list(self.redpanda.get_objects_from_si())
         assert len(objects) > 0
         for o in objects:
-            self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
+            self.logger.info(f"S3 object: {o.key}, {o.content_length}")
 
         wrote_at_least = self._producer.produce_status.acked
 
