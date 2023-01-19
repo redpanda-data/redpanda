@@ -16,7 +16,7 @@
 #   [jerry@winterland]$ dev_cluster.py -e vbuild/debug/clang/bin/redpanda
 #
 import asyncio
-import multiprocessing
+import psutil
 import pathlib
 import yaml
 import dataclasses
@@ -53,10 +53,15 @@ class RedpandaConfig:
 @dataclasses.dataclass
 class NodeConfig:
     redpanda: RedpandaConfig
+    config_path: str
+
+    # This is _not_ the node_id, just the index into our array of nodes
+    index: int
+    cluster_size: int
 
 
 class Redpanda:
-    def __init__(self, binary, cores, config, extra_args):
+    def __init__(self, binary, cores: int, config: NodeConfig, extra_args):
         self.binary = binary
         self.cores = cores
         self.config = config
@@ -68,18 +73,32 @@ class Redpanda:
         self.process.send_signal(signal.SIGINT)
 
     async def run(self):
-        log_path = pathlib.Path(os.path.dirname(self.config)) / "redpanda.log"
+        log_path = pathlib.Path(os.path.dirname(
+            self.config.config_path)) / "redpanda.log"
 
         # If user did not override cores with extra args, apply it from our internal cores setting
         if not {"-c", "--smp"} & set(self.extra_args):
-            cores_args = f"-c {self.cores}" if self.cores else ""
+            # Caller is required to pass a finite core count
+            assert self.cores > 0
+            base_core = self.cores * self.config.index
+
+            cores_args = f"--cpuset {base_core}-{base_core + self.cores - 1}"
         else:
             cores_args = ""
+
+        # If user did not specify memory, share 75% of memory equally between nodes
+        if not {"-m", "--memory"} & set(self.extra_args):
+            memory_total = psutil.virtual_memory().total
+            memory_per_node = (3 *
+                               (memory_total // 4)) // self.config.cluster_size
+            memory_args = f"-m {memory_per_node // (1024 * 1024)}M"
+        else:
+            memory_args = ""
 
         extra_args = ' '.join(f"\"{a}\"" for a in self.extra_args)
 
         self.process = await asyncio.create_subprocess_shell(
-            f"{self.binary} --redpanda-cfg {self.config} {cores_args} {extra_args} 2>&1 | tee -i {log_path}",
+            f"{self.binary} --redpanda-cfg {self.config.config_path} {cores_args} {memory_args} {extra_args} 2>&1 | tee -i {log_path}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT)
 
@@ -139,7 +158,7 @@ async def main():
         for i in range(args.nodes)
     ]
 
-    def make_node_config(i, data_dir):
+    def make_node_config(i, data_dir, config_path):
         make_address = lambda p: NetworkAddress(args.listen_address, p + i)
         rpc_address = seed_servers[i]
         redpanda = RedpandaConfig(data_directory=data_dir,
@@ -149,7 +168,10 @@ async def main():
                                   admin=make_address(args.base_admin_port),
                                   seed_servers=seed_servers,
                                   empty_seed_starts_cluster=False)
-        return NodeConfig(redpanda=redpanda)
+        return NodeConfig(redpanda=redpanda,
+                          index=i,
+                          config_path=config_path,
+                          cluster_size=args.nodes)
 
     def pathlib_path_representer(dumper, path):
         return dumper.represent_scalar("!Path", str(path))
@@ -167,7 +189,7 @@ async def main():
         node_dir.mkdir(parents=True, exist_ok=True)
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        config = make_node_config(i, data_dir)
+        config = make_node_config(i, data_dir, conf_file)
         with open(conf_file, "w") as f:
             yaml.dump(dataclasses.asdict(config),
                       f,
@@ -179,16 +201,17 @@ async def main():
         if os.path.exists(BOOTSTRAP_YAML):
             shutil.copyfile(BOOTSTRAP_YAML, node_dir / BOOTSTRAP_YAML)
 
-        return config, conf_file
+        return config
 
     configs = [prepare_node(i) for i in range(args.nodes)]
 
     cores = args.cores
     if cores is None:
-        cores = max(multiprocessing.cpu_count() // args.nodes, 1)
-    nodes = [
-        Redpanda(args.executable, cores, c[1], extra_args) for c in configs
-    ]
+        # Use 75% of cores for redpanda.  e.g. 3 node cluster on a 16 node system
+        # gives each node 4 cores.
+        cores = max((3 * (psutil.cpu_count(logical=False) // 4)) // args.nodes,
+                    1)
+    nodes = [Redpanda(args.executable, cores, c, extra_args) for c in configs]
 
     coros = [r.run() for r in nodes]
 
