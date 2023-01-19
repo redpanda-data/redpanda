@@ -109,8 +109,7 @@ private:
 class gssapi_principal_mapper {
 public:
     explicit gssapi_principal_mapper(
-      config::binding<std::optional<std::vector<ss::sstring>>>
-        principal_to_local_rules_cb);
+      config::binding<std::vector<ss::sstring>> principal_to_local_rules_cb);
     std::optional<ss::sstring>
     apply(std::string_view default_realm, gssapi_name name) const;
 
@@ -120,13 +119,12 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const gssapi_principal_mapper& p);
 
-    config::binding<std::optional<std::vector<ss::sstring>>>
-      _principal_to_local_rules_binding;
+    config::binding<std::vector<ss::sstring>> _principal_to_local_rules_binding;
     std::vector<gssapi_rule> _rules;
 };
 
-std::optional<ss::sstring> validate_kerberos_mapping_rules(
-  const std::optional<std::vector<ss::sstring>>& r) noexcept;
+std::optional<ss::sstring>
+validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept;
 } // namespace security
 
 template<>

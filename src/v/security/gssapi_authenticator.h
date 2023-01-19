@@ -11,6 +11,7 @@
 #include "security/acl.h"
 #include "security/credential_store.h"
 #include "security/gssapi.h"
+#include "security/gssapi_principal_mapper.h"
 #include "security/logger.h"
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
@@ -28,8 +29,11 @@ class gssapi_authenticator final : public sasl_mechanism {
 public:
     static constexpr const char* name = "GSSAPI";
 
-    explicit gssapi_authenticator(ssx::thread_worker& thread_worker)
-      : _worker{thread_worker} {}
+    gssapi_authenticator(
+      ssx::thread_worker& thread_worker,
+      config::binding<std::vector<ss::sstring>> cb)
+      : _worker{thread_worker}
+      , _gssapi_principal_mapper(std::move(cb)) {}
 
     ss::future<result<bytes>> authenticate(bytes) override;
 
@@ -58,8 +62,10 @@ private:
         auto msg = ssx::sformat(format_str, std::forward<Args>(args)...);
         fail_impl(maj_stat, min_stat, msg);
     }
+    acl_principal get_principal_from_name(std::string_view source_name);
 
     ssx::thread_worker& _worker;
+    security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::acl_principal _principal;
     state _state{state::init};
     gss::cred_id _server_creds;

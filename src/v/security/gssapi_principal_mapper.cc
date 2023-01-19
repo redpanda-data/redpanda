@@ -30,7 +30,7 @@ static constexpr std::string_view rule_pattern
 
 namespace detail {
 std::vector<gssapi_rule>
-parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
+parse_rules(const std::vector<ss::sstring>& unparsed_rules) {
     static thread_local const re2::RE2 rule_parser(
       rule_pattern, re2::RE2::Quiet);
 
@@ -39,7 +39,7 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
       "Failed to build rule pattern regex: {}",
       rule_parser.error());
 
-    if (!unparsed_rules || unparsed_rules.value().empty()) {
+    if (unparsed_rules.empty()) {
         return {gssapi_rule()};
     }
 
@@ -52,7 +52,7 @@ parse_rules(std::optional<std::vector<ss::sstring>> unparsed_rules) {
     re2::StringPiece to_pattern;
     re2::StringPiece repeat;
     re2::StringPiece upper_lower;
-    for (const auto& rule : *unparsed_rules) {
+    for (const auto& rule : unparsed_rules) {
         const re2::StringPiece rule_piece(rule.data(), rule.size());
         if (!re2::RE2::FullMatch(
               rule_piece,
@@ -371,8 +371,7 @@ ss::sstring gssapi_rule::replace_substitution(
 }
 
 gssapi_principal_mapper::gssapi_principal_mapper(
-  config::binding<std::optional<std::vector<ss::sstring>>>
-    principal_to_local_rules_cb)
+  config::binding<std::vector<ss::sstring>> principal_to_local_rules_cb)
   : _principal_to_local_rules_binding(std::move(principal_to_local_rules_cb))
   , _rules{detail::parse_rules(_principal_to_local_rules_binding())} {
     _principal_to_local_rules_binding.watch([this]() {
@@ -417,8 +416,8 @@ std::ostream& operator<<(std::ostream& os, const gssapi_principal_mapper& m) {
     return os;
 }
 
-std::optional<ss::sstring> validate_kerberos_mapping_rules(
-  const std::optional<std::vector<ss::sstring>>& r) noexcept {
+std::optional<ss::sstring>
+validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept {
     try {
         detail::parse_rules(r);
     } catch (const std::exception& e) {
