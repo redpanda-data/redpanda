@@ -53,6 +53,12 @@ def read_topic_properties_serde(rdr: Reader, version):
             'retention_local_target_ms': rdr.read_tristate(Reader.read_uint64),
             'remote_delete': rdr.read_bool()
         }
+
+    if version >= 4:
+        topic_properties |= {
+            'segment_ms': rdr.read_tristate(Reader.read_uint64)
+        }
+
     return topic_properties
 
 
@@ -72,7 +78,7 @@ def read_topic_assignment_serde(rdr: Reader):
                     rdr.read_int16(),
                     'properties':
                     rdr.read_envelope(read_topic_properties_serde,
-                                      max_version=3),
+                                      max_version=4),
                 }, 1),
             'assignments':
             rdr.read_serde_vector(lambda r: r.read_envelope(
@@ -132,9 +138,31 @@ def read_incremental_topic_update_serde(rdr: Reader):
             read_property_update_serde(
                 rdr, lambda r: r.read_optional(Reader.read_serde_enum)),
         }
+        # there is no release that uses version 1
+        if version >= 2:
+            incr_obj |= {
+                'batch_max_bytes':
+                read_property_update_serde(
+                    rdr, lambda r: r.read_optional(Reader.read_uint32)),
+                'retention_local_target_bytes':
+                read_property_update_serde(
+                    rdr, lambda r: r.read_tristate(Reader.read_uint64)),
+                'retention_local_target_ms':
+                read_property_update_serde(
+                    rdr, lambda r: r.read_tristate(Reader.read_uint64)),
+                'remote_delete':
+                read_property_update_serde(rdr, Reader.read_bool)
+            }
+        if version >= 3:
+            incr_obj |= {
+                'segment_ms':
+                read_property_update_serde(
+                    rdr, lambda r: r.read_tristate(Reader.read_uint64))
+            }
+
         return incr_obj
 
-    return rdr.read_envelope(incr_topic_upd)
+    return rdr.read_envelope(incr_topic_upd, max_version=3)
 
 
 def read_create_partitions_serde(rdr: Reader):
