@@ -347,6 +347,15 @@ class SISettings:
 
             self.endpoint_url = None
             self.cloud_storage_disable_tls = False
+            self.cloud_storage_api_endpoint_port = 443
+        if test_context.globals.get(self.GLOBAL_S3_SECRET_KEY, None):
+            test_context.ok_to_fail = True
+
+            msg = (
+                "Test requested ABS cloud storage, but provided globals for Azure."
+                " Stopping and marking as OFAIL.")
+            logger.info(msg)
+            raise Exception(msg)
         else:
             logger.debug("Running in Dockerised env against Azurite. "
                          "Using Azurite defualt credentials.")
@@ -373,8 +382,17 @@ class SISettings:
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
         else:
-            logger.debug(
-                'No AWS credentials supplied, assuming minio defaults')
+            if test_context.globals.get(self.GLOBAL_ABS_SHARED_KEY, None):
+                test_context.ok_to_fail = True
+
+                msg = (
+                    "Test requested S3 cloud storage, but provided globals for Azure."
+                    " Stopping and marking as OFAIL.")
+                logger.info(msg)
+                raise Exception(msg)
+            else:
+                logger.debug(
+                    'No AWS credentials supplied, assuming minio defaults')
 
     @property
     def cloud_storage_bucket(self):
