@@ -599,12 +599,12 @@ func buildRedpandaFlags(
 	for n, v := range flagsMap {
 		if _, alreadyPresent := finalFlags[n]; alreadyPresent {
 			return nil, fmt.Errorf(
-				"Configuration conflict. Flag '--%s'"+
+				"configuration conflict. Flag '--%s'"+
 					" is also present in"+
 					" 'rpk.additional_start_flags' in"+
 					" configuration file '%s'. Please"+
 					" remove it and pass '--%s' directly"+
-					" to `rpk start`.",
+					" to `rpk start`",
 				n,
 				conf.FileLocation(),
 				n,
