@@ -199,7 +199,7 @@ private:
     inoutpair<quota_t> get_shard_quota_default() const;
 
     // void maybe_arm_balancer_timer();
-    void notify_quota_balancer_node_period_change();
+    void notify_quota_balancer_of_config_change();
     std::chrono::milliseconds get_quota_balancer_node_period() const;
     void update_shard_quota_minimum();
     void quota_balancer();

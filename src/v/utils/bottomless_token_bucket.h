@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <chrono>
 #include <limits>
+#include <fmt/core.h>
 
 /// muldiv calculates \p x * \p mul / \p div in integer domain avoiding both
 /// integer overflow and loss of precision because of the intermediate result
@@ -111,4 +112,13 @@ private:
     tokens_t _tokens{0};
     tokens_t _burst{0}; // capacity of the bucket
     clock::time_point _last_check{-max_width};
+
+    friend struct fmt::formatter<bottomless_token_bucket>;
+};
+
+template<>
+struct fmt::formatter<bottomless_token_bucket> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.begin(); }
+    template<typename Ctx>
+    typename Ctx::iterator format(const bottomless_token_bucket&, Ctx&) const;
 };

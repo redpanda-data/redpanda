@@ -390,16 +390,12 @@ snc_quota_manager::snc_quota_manager()
     });
     _kafka_quota_balancer_window.watch([this] {
         const auto v = _kafka_quota_balancer_window();
-        vlog(klog.debug, "Set shard TP token bucket window {}", v);
+        vlog(klog.debug, "snc_qm - Set shard TP token bucket window: {}", v);
         _shard_quota.in().set_width(v);
         _shard_quota.out().set_width(v);
     });
     _kafka_quota_balancer_node_period.watch([this] {
-        notify_quota_balancer_node_period_change();
-        // if (_balancer_timer.armed() || _as.abort_requested()) {
-        //     return;
-        // }
-        // maybe_arm_balancer_timer();
+        notify_quota_balancer_of_config_change();
     });
     _kafka_quota_balancer_min_shard_thoughput_ratio.watch(
       [this] { update_shard_quota_minimum(); });
@@ -409,7 +405,6 @@ snc_quota_manager::snc_quota_manager()
 }
 
 snc_quota_manager::~snc_quota_manager() noexcept {
-    // _balancer_timer.cancel();
     if (!_as.abort_requested()) {
       _as.request_abort_ex(abort_on_stop{});
     }
@@ -479,7 +474,7 @@ snc_quota_manager::calc_node_quota_default() const {
           return tpl_node_bps();
       },
       _kafka_throughput_limit_node_bps);
-    vlog(klog.debug, "Default node TP quotas: {}", default_quota);
+    vlog(klog.debug, "snc_qm - Default node TP quotas: {}", default_quota);
     return default_quota;
 }
 
@@ -491,7 +486,7 @@ snc_quota_manager::get_shard_quota_default() const {
       // },
       &node_to_shard_quota,
       _node_quota_default);
-    vlog(klog.debug, "Default shard TP quotas: {}", default_quota);
+    vlog(klog.debug, "snc_qm - Default shard TP quotas: {}", default_quota);
     return default_quota;
 }
 
@@ -527,7 +522,7 @@ void snc_quota_manager::record_response_tp(
 }
 
 
-void snc_quota_manager::notify_quota_balancer_node_period_change() {
+void snc_quota_manager::notify_quota_balancer_of_config_change() {
     _as.request_abort_ex(abort_on_configuration_change{});
     // replace abort source immediately so that only subscribers are aborted now
     // and to enable future aborts
@@ -573,6 +568,8 @@ void snc_quota_manager::update_node_quota_default() {
     _node_quota_default = new_node_quota_default;
     // - shard minimum quota:
     update_shard_quota_minimum();
+    // apply the configuration change to the balancer
+    notify_quota_balancer_of_config_change();
 }
 
 void snc_quota_manager::update_shard_quota_minimum() {
@@ -587,7 +584,7 @@ void snc_quota_manager::update_shard_quota_minimum() {
 }
 
 void snc_quota_manager::quota_balancer() {
-    vlog(klog.debug, "Quota balancer started");
+    vlog(klog.debug, "snc_qm - Quota balancer started");
     using clock = ss::steady_clock_type;
     static constexpr auto min_sleep_time = 2ms; // TBD config?
 
@@ -603,8 +600,8 @@ void snc_quota_manager::quota_balancer() {
                 // longer than the balancer period
                 vlog(
                   klog.warn,
-                  "Quota balancer is invoked too often ({}), enforcing minimum "
-                  "sleep time",
+                  "snc_qm - Quota balancer is invoked too often ({}), "
+                  "enforcing minimum sleep time",
                   sleep_time);
                 sleep_time = min_sleep_time;
             }
@@ -630,10 +627,8 @@ void snc_quota_manager::quota_balancer() {
             }
         }
     } catch (const abort_on_stop&) {
-        // TBD: remove
-        vlog(klog.debug, "Quota balancer stopped by aborting the sleep");
     }
-    vlog(klog.info, "Quota balancer stopped");
+    vlog(klog.info, "snc_qm - Quota balancer stopped");
 }
 
 using shard_count_t = boost::uint_t<std::numeric_limits<ss::shard_id>::digits>::fast;
@@ -644,7 +639,7 @@ struct borrower_t {
 };
 
 ss::future<> snc_quota_manager::quota_balancer_step() {
-    vlog(klog.trace, "Quota balancer step");
+    vlog(klog.trace, "snc_qm - Quota balancer step");
     _probe.balancer_run();
 
     // determine the borrowers and whether any balancing is needed now
@@ -658,7 +653,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
                                      qm.snc_qm().get_deficiency()) }
           };
       });
-    vlog(klog.trace, "Quota balancer: borrowers: {}", borrowers);
+    vlog(klog.trace, "snc_qm - Quota balancer: borrowers: {}", borrowers);
 
     const auto borrowers_count = std::accumulate(
       borrowers.cbegin(),
@@ -669,7 +664,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
       });
     vlog(
       klog.trace,
-      "Quota balancer: borrowers count: {}", borrowers_count );
+      "snc_qm - Quota balancer: borrowers count: {}", borrowers_count );
 
     // collect quota from lenders
     const inoutpair<quota_t> collected = co_await _container->map_reduce0(
@@ -689,7 +684,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
       [](const inoutpair<quota_t>& s, const inoutpair<quota_t>& v) {
           return to_each ( std::plus{}, s, v );
       });
-    vlog(klog.trace, "Quota balancer: collected: {}", collected);
+    vlog(klog.trace, "snc_qm - Quota balancer: collected: {}", collected);
 
     // dispense the collected amount among the borrowers
     auto split = to_each(
@@ -708,13 +703,16 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
       if ( !b.is_borrower.in() && !b.is_borrower.out() ) {
         continue;
       }
-      const inoutpair<quota_t> share = to_each([]( auto& split ) {
+      const inoutpair<quota_t> share = to_each([]( auto& split, const bool is_borrower ) -> quota_t {
+        if ( !is_borrower ) {
+          return 0;
+        }
         if ( split.rem == 0 ) {
           return split.quot;
         }
         --split.rem;
         return split.quot + 1;
-      }, split );
+      }, split, b.is_borrower );
       // TBD: make the invocation parallel
       co_await _container->invoke_on ( b.shard_id, [share](quota_manager& qm) {
         qm.snc_qm().adjust_quota(share);
@@ -723,7 +721,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
 }
 
 ss::future<> snc_quota_manager::quota_balancer_update() {
-    vlog(klog.trace, "Quota balancer update: {}", _shard_quotas_update);
+    vlog(klog.trace, "snc_qm - Quota balancer update: {}", _shard_quotas_update);
 
     // deliver shard quota updates of value type
     co_await _container->invoke_on_all([this](quota_manager& qm) {
@@ -842,7 +840,7 @@ ss::future<> snc_quota_manager::quota_balancer_update() {
 
       }
 
-      vlog ( klog.debug, "Quota balancer dispense delta updates {} of {} as {}",
+      vlog ( klog.debug, "snc_qm - Quota balancer dispense delta updates {} of {} as {}",
         deltas, _shard_quotas_update, schedule );
 
       co_await _container->invoke_on_all ( [&schedule](quota_manager& qm) {
@@ -861,6 +859,7 @@ void snc_quota_manager::adjust_quota(const inoutpair<quota_t>& delta) noexcept {
     to_each([](bottomless_token_bucket& b, const quota_t delta) {
         b.set_quota(b.quota() + delta);
     }, _shard_quota, delta);
+    vlog(klog.trace, "snc_qm - adjust_quota: {} -> {}", delta, _shard_quota);
 }
 
 } // namespace kafka
@@ -877,7 +876,7 @@ struct fmt::formatter<kafka::inoutpair<T>> : parseless_formatter {
     template<typename Ctx>
     auto format(const kafka::inoutpair<T>& p, Ctx& ctx) const {
         return fmt::format_to(
-          ctx.out(), "{}", static_cast<const std::pair<T, T>&>(p));
+          ctx.out(), "(i:{}, o:{})", p.in(), p.out());
     }
 };
 

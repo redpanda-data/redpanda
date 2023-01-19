@@ -71,3 +71,18 @@ void bottomless_token_bucket::refill(const clock::time_point now) noexcept {
         }
     }
 }
+
+//namespace fmt {
+template<>
+typename fmt::basic_format_context<fmt::appender, char>::iterator
+fmt::formatter<bottomless_token_bucket, char, void>::format<
+  fmt::basic_format_context<fmt::appender, char>>(
+  const bottomless_token_bucket& v,
+  fmt::basic_format_context<fmt::appender, char>& ctx) const {
+    return fmt::format_to(
+      ctx.out(),
+      "{{quota:{}, width:{}, tokens:{}, burst:{}, last_check:{}}}",
+      v._quota, v._width.count(), v._tokens, v._burst, v._last_check.time_since_epoch().count());
+}
+
+//} // namespace fmt

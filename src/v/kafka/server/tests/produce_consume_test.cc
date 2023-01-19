@@ -225,6 +225,7 @@ FIXTURE_TEST(test_node_throughput_limits, prod_consume_fixture) {
         config.get("kafka_quota_balancer_window_ms").set_value(window_width);
         config.get("fetch_max_bytes").set_value(batch_size);
         config.get("max_kafka_throttle_delay_ms").set_value(60'000ms);
+        config.get("kafka_quota_balancer_node_period_ms").set_value(0ms);
     }).get0();
     wait_for_controller_leadership().get();
     start();
