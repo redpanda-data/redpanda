@@ -1,12 +1,11 @@
 import json
 import os
+import socket
 
-from random import randbytes
-from hashlib import blake2b
-from typing import Optional
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
+from rptest.services.redpanda import RedpandaService
 
 KADM5_ACL_TMPL = """
 {kadmin_principal}@{realm} *
@@ -42,10 +41,51 @@ KRB5_CONF_TMPL = """
 	}}
 """
 KRB5_CONF_PATH = "/etc/krb5.conf"
+DEFAULT_KEYTAB_FILE = "/etc/krb5.keytab"
 
 KRB5KDC_PID_PATH = "/var/run/krb5kdc.pid"
 KADMIND_PID_PATH = "/var/run/kadmind.pid"
 KDC_DB_PATH = "/var/lib/krb5kdc/principal"
+
+REMOTE_KADMIN_TMPL = 'kadmin -r {realm} -p {principal} -w {password} -q "{command}"'
+LOCAL_KADMIN_TMPL = 'kadmin.local -q "{cmd}"'
+ADD_PRINCIPAL_TMPL = 'add_principal {keytype} {principal}'
+KTADD_TMPL = 'ktadd -k {keytab_file} {principal}'
+KINIT_TMPL = 'kinit {principal} -kt {keytab_file}'
+
+
+def render_krb5_config(kdc_node, realm: str, file_path: str = KRB5_CONF_PATH):
+    return KRB5_CONF_TMPL.format(node=kdc_node, realm=realm)
+
+
+def render_remote_kadmin_command(command, realm, principal, password):
+    return REMOTE_KADMIN_TMPL.format(realm=realm,
+                                     principal=principal,
+                                     password=password,
+                                     command=command)
+
+
+def render_local_kadmin_command(command):
+    return LOCAL_KADMIN_TMPL.format(command=command)
+
+
+def render_add_principal_command(principal: str, password: str = None):
+    if password is None:
+        keytype = '-randkey'
+    else:
+        keytype = f'-pw {password}'
+
+    return ADD_PRINCIPAL_TMPL.format(keytype=keytype, principal=principal)
+
+
+def render_ktadd_command(principal: str,
+                         keytab_file: str = DEFAULT_KEYTAB_FILE):
+    return KTADD_TMPL.format(keytab_file=keytab_file, principal=principal)
+
+
+def render_kinit_command(principal: str,
+                         keytab_file: str = DEFAULT_KEYTAB_FILE):
+    return KINIT_TMPL.format(principal=principal, keytab_file=keytab_file)
 
 
 class KrbKdc(Service):
@@ -90,6 +130,20 @@ class KrbKdc(Service):
         self.logger.info(f"{self.kadm5_acl_path}: {tmpl}")
         node.account.create_file(self.kadm5_acl_path, tmpl)
 
+    def _create_or_update_principal(self, principal: str, password: str):
+        if self._principal_exists(principal):
+            self.logger.debug(
+                f"Principal {principal} already exists.. changing password")
+            self.change_principal_password(principal, password)
+        else:
+            self.logger.debug(
+                f"Principal {principal} does not exist. Creating")
+            self.add_principal(principal, password)
+
+    def _form_kadmin_cmd(self, cmd):
+        KADMIN_CMD_TMPL = 'kadmin.local -q "{cmd}"'
+        return KADMIN_CMD_TMPL.format(cmd=cmd)
+
     def _hard_delete_principals(self, node):
         node.account.ssh(f"rm -fr {KDC_DB_PATH}*", allow_fail=True)
 
@@ -102,6 +156,10 @@ class KrbKdc(Service):
 EOF
 """
         node.account.ssh(cmd, allow_fail=False)
+
+    def _principal_exists(self, principal: str):
+        principals = self.list_principals()
+        return principal in principals
 
     def pids(self, node):
         def pid(path: str):
@@ -123,7 +181,7 @@ EOF
     def alive(self, node):
         return len(self.pids(node)) == 2
 
-    def start_node(self, node):
+    def start_node(self, node, **kwargs):
         self._render_cfg(node)
         # Also runs krb5kdc and kadmind
         self._init_realm(node)
@@ -132,9 +190,10 @@ EOF
                    backoff_sec=.5,
                    err_msg="kdc took too long to start.")
         self.logger.debug("kdc is alive")
-        self.add_principal(f"{self.kadmin_principal}@{self.realm}",
-                           self.kadmin_password)
-        self.add_principal(f"noPermissions@{self.realm}", self.kadmin_password)
+        self._create_or_update_principal(
+            f"{self.kadmin_principal}@{self.realm}", self.kadmin_password)
+        self._create_or_update_principal(f"noPermissions@{self.realm}",
+                                         self.kadmin_password)
 
     def stop_node(self, node, clean_shutdown=True):
         s = "TERM" if clean_shutdown else "KILL"
@@ -147,8 +206,8 @@ EOF
                    backoff_sec=.5,
                    err_msg="kdc took too long to stop.")
 
-    def clean_node(self, node):
-        self.logger.warn(f"Cleaning node {node.name}")
+    def clean_node(self, node, **kwargs):
+        self.logger.warn(f"Cleaning KDC node {node.name}")
         if self.alive(node):
             self.logger.warn(
                 "kdc was still alive at cleanup time. Killing forcefully...")
@@ -157,36 +216,27 @@ EOF
 
     def add_principal(self, principal: str, password: str):
         self.nodes[0].account.ssh(
-            f'kadmin.local -q "add_principal -pw {password} {principal}"',
+            self._form_kadmin_cmd(f"add_principal -pw {password} {principal}"),
             allow_fail=False)
 
     def add_principal_randkey(self, principal: str):
         self.nodes[0].account.ssh(
-            f'kadmin.local -q "add_principal -randkey {principal}"',
+            self._form_kadmin_cmd(f"add_principal -randkey {principal}"),
+            allow_fail=False)
+
+    def change_principal_password(self, principal: str, password: str):
+        self.nodes[0].account.ssh(
+            self._form_kadmin_cmd(f"cpw -pw {password} {principal}"),
             allow_fail=False)
 
     def delete_principal(self, principal: str):
         self.nodes[0].account.ssh(
-            f'kadmin.local -q "delete_principal -force {principal}"',
+            self._form_kadmin_cmd(f"delete_principal -force {principal}"),
             allow_fail=False)
-
-    def ktadd(self, principal: str, dst: str, node):
-        src = "/temporary.keytab"
-        self.nodes[0].account.ssh(f"rm {src}", allow_fail=True)
-        self.nodes[0].account.ssh(
-            f'kadmin.local -q "ktadd -k {src} {principal}"')
-        self.logger.info(
-            f"Copying: {self.nodes[0].name}:{src} -> {node.name}:{dst}")
-        node.account.ssh(f"mkdir -p {os.path.dirname(dst)}")
-        self.nodes[0].account.copy_between(src, dst, node)
-        self.nodes[0].account.copy_between(src, "/node.keytab", node)
-        node.account.ssh(f"kinit {principal} -t {dst}")
-        kl = node.account.ssh_capture(f"klist -k {dst}")
-        self.logger.info(f"klist: {list(kl)}")
 
     def list_principals(self):
         princs = self.nodes[0].account.ssh_capture(
-            'kadmin.local -q "list_principals"',
+            self._form_kadmin_cmd("list_principals"),
             allow_fail=False,
             callback=lambda l: l.strip())
         # Drop the first line, which is login details
@@ -197,34 +247,164 @@ class KrbClient(Service):
     """
     A Kerberos KDC implementation backed by krb5-kdc (MIT).
     """
-    def __init__(self, context, kdc, redpanda, principal: str):
+    def __init__(self, context, kdc: KrbKdc, redpanda):
         super(KrbClient, self).__init__(context, num_nodes=1)
         self.kdc = kdc
         self.redpanda = redpanda
-        self.principal = principal
         self.krb5_conf_path = KRB5_CONF_PATH
+        self.keytab_file = DEFAULT_KEYTAB_FILE
 
-    def _render_cfg(self, node):
-        tmpl = KRB5_CONF_TMPL.format(node=self.kdc.nodes[0],
-                                     realm=self.kdc.realm)
-        self.logger.info(f"{self.krb5_conf_path}: {tmpl}")
-        node.account.create_file(self.krb5_conf_path, tmpl)
+    def _form_kadmin_command(self,
+                             command,
+                             realm=None,
+                             principal=None,
+                             password=None):
+        KADMIN_CMD_TMPL = 'kadmin -r {realm} -p {principal} -w {password} -q "{command}"'
 
-    def start_node(self, node):
-        self._render_cfg(node)
+        if realm is None:
+            realm = self.kdc.realm
+
+        if principal is None:
+            principal = self.kdc.kadmin_principal
+
+        if password is None:
+            password = self.kdc.kadmin_password
+
+        return KADMIN_CMD_TMPL.format(realm=realm,
+                                      principal=principal,
+                                      password=password,
+                                      command=command)
+
+    def add_principal_randkey(self, principal: str, node=None):
+        cmd = self._form_kadmin_command(f"add_principal -randkey {principal}")
+        if node is None:
+            node = self.nodes[0]
+        self.logger.debug(
+            f"Adding principal {principal} remotely from node {node.name}")
+        node.account.ssh(cmd=cmd, allow_fail=False)
+
+    def delete_principal(self, principal: str, node=None):
+        cmd = self._form_kadmin_command(f"delete_principal -force {principal}")
+        if node is None:
+            node = self.nodes[0]
+        self.logger.debug(
+            f"Removing principal {principal} remotely from node {node.name}")
+        node.account.ssh(cmd=cmd, allow_fail=False)
+
+    def list_principals(self, node=None):
+        cmd = self._form_kadmin_command("list_principals")
+        if node is None:
+            node = self.nodes[0]
+        princs = node.account.ssh_capture(cmd=cmd,
+                                          allow_fail=False,
+                                          callback=lambda l: l.strip())
+        # Drop the first line, which is login details
+        return list(princs)[1:]
+
+    def start_node(self, node, **kwargs):
+        self.logger.debug(f"Generating KRB5 config file for {node.name}")
+        krb5_config = render_krb5_config(kdc_node=self.kdc.nodes[0],
+                                         realm=self.kdc.realm)
+        self.logger.debug(f"KRB5 config to {KRB5_CONF_PATH}: {krb5_config}")
+        node.account.create_file(KRB5_CONF_PATH, krb5_config)
 
     def stop_node(self, node, clean_shutdown=True):
         self.logger.warn(f"Stopping node {node.name}")
 
-    def clean_node(self, node):
-        self.logger.warn(f"Cleaning node {node.name}")
+    def clean_node(self, node, **kwargs):
+        self.logger.warn(f"Cleaning Client node {node.name}")
+        node.account.ssh(
+            f"rm -fr {self.redpanda.PERSISTENT_ROOT}/client.keytab /etc/krb5.keytab",
+            allow_fail=True)
 
-    def metadata(self):
+    def add_primary(self, primary: str, realm: str = None):
+        self.logger.info(
+            f"Adding primary {primary} to KrbClient {self.nodes[0].name}")
+        if realm is None:
+            realm = self.kdc.realm
+        principal = f"{primary}@{realm}"
+        cmd = render_remote_kadmin_command(
+            command=render_add_principal_command(principal=principal),
+            realm=self.kdc.realm,
+            principal=self.kdc.kadmin_principal,
+            password=self.kdc.kadmin_password)
+        self.logger.debug(f"Client add primary command: {cmd}")
+        self.nodes[0].account.ssh(cmd=cmd, allow_fail=False)
+        cmd = render_remote_kadmin_command(command=render_ktadd_command(
+            principal=principal, keytab_file=self.keytab_file),
+                                           realm=self.kdc.realm,
+                                           principal=self.kdc.kadmin_principal,
+                                           password=self.kdc.kadmin_password)
+        self.logger.debug(f"Client ktadd command: {cmd}")
+        self.nodes[0].account.ssh(cmd=cmd, allow_fail=False)
+
+    def metadata(self, principal: str):
         self.logger.info("Metadata request")
+        client_cache = f"/tmp/{principal}.krb5ccache"
+        kinit_args = f"-kt {self.keytab_file} -c {client_cache} {principal}"
+        kinit_cmd = f"kinit -R {kinit_args} || kinit {kinit_args}"
+        sasl_conf = f"-X security.protocol=sasl_plaintext -X sasl.mechanisms=GSSAPI '-Xsasl.kerberos.kinit.cmd={kinit_cmd}' -X sasl.kerberos.service.name=redpanda"
         res = self.nodes[0].account.ssh_output(
             cmd=
-            f"KRB5_TRACE=/dev/stderr kcat -L -J -b {self.redpanda.brokers()} -X security.protocol=sasl_plaintext -X sasl.mechanisms=GSSAPI '-Xsasl.kerberos.kinit.cmd=kinit {self.principal} -t {self.redpanda.PERSISTENT_ROOT}/client.keytab' -X sasl.kerberos.service.name=redpanda",
+            f"KRB5_TRACE=/dev/stderr KRB5CCNAME={client_cache} kcat -L -J -b {self.redpanda.brokers()} {sasl_conf}",
             allow_fail=False,
             combine_stderr=False)
         self.logger.debug(f"Metadata request: {res}")
         return json.loads(res)
+
+
+class RedpandaKerberosNode(RedpandaService):
+    def __init__(
+            self,
+            context,
+            kdc: KrbKdc,
+            realm: str,
+            keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
+            *args,
+            **kwargs):
+        super(RedpandaKerberosNode, self).__init__(context, *args, **kwargs)
+        self.kdc = kdc
+        self.realm = realm
+        self.keytab_file = keytab_file
+
+    def clean_node(self, node, **kwargs):
+        super().clean_node(node, **kwargs)
+        node.account.ssh(f"rm -fr {self.keytab_file}", allow_fail=True)
+
+    def start_node(self, node, **kwargs):
+        self.logger.debug(
+            f"Rendering KRB5 config for {node.name} using KDC node {self.kdc.nodes[0].name}"
+        )
+        krb5_config = render_krb5_config(kdc_node=self.kdc.nodes[0],
+                                         realm=self.kdc.realm)
+        self.logger.debug(f"KRB5 config to {KRB5_CONF_PATH}: {krb5_config}")
+        node.account.create_file(KRB5_CONF_PATH, krb5_config)
+        principal = self._service_principal(node)
+        self.logger.debug(f"Principal for {node.name}: {principal}")
+        self.logger.debug(f"Adding principal {principal} to KDC")
+        cmd = render_remote_kadmin_command(
+            command=render_add_principal_command(principal=principal),
+            realm=self.kdc.realm,
+            principal=self.kdc.kadmin_principal,
+            password=self.kdc.kadmin_password)
+        self.logger.debug(f"principal add command: {cmd}")
+        node.account.ssh(cmd=cmd, allow_fail=False)
+        self.logger.debug(
+            f"Generating keytab file {self.keytab_file} for {node.name}")
+        cmd = render_remote_kadmin_command(command=render_ktadd_command(
+            principal=principal, keytab_file=self.keytab_file),
+                                           realm=self.kdc.realm,
+                                           principal=self.kdc.kadmin_principal,
+                                           password=self.kdc.kadmin_password)
+        self.logger.debug(f"ktadd command: {cmd}")
+        node.account.ssh(f"mkdir -p {os.path.dirname(self.keytab_file)}")
+        node.account.ssh(cmd=cmd, allow_fail=False)
+        super().start_node(node, **kwargs)
+
+    def _service_principal(self, node, primary: str = "redpanda"):
+        ip = socket.gethostbyname(node.account.hostname)
+        hostname = node.account.ssh_output(cmd=f"dig -x {ip} +short").decode(
+            'utf-8').split('\n')[0].removesuffix(".")
+        fqdn = node.account.ssh_output(
+            cmd=f"host {hostname}").decode('utf-8').split(' ')[0]
+        return f"{primary}/{fqdn}@{self.realm}"
