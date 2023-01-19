@@ -498,3 +498,89 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=self.consumer_timeout_seconds,
                             min_records=self.min_records)
+
+    def get_node_by_id(self, id):
+        for n in self.redpanda.nodes:
+            if self.redpanda.node_id(n) == id:
+                return n
+        return None
+
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_cancelling_partition_move_node_down(self):
+        """
+        Cancel partition moving with active consumer / producer
+        """
+
+        self.start_redpanda(num_nodes=5,
+                            extra_rp_conf={
+                                "default_topic_replications": 3,
+                            })
+
+        spec = TopicSpec(partition_count=self.partition_count,
+                         replication_factor=3)
+
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1, throughput=self.throughput)
+        self.start_consumer(1)
+        self.await_startup(min_records=self.throughput,
+                           timeout_sec=self.consumer_timeout_seconds)
+
+        metadata = self.client().describe_topics()
+        topic, partition = self._random_partition(metadata)
+        admin = Admin(self.redpanda)
+        assignments = self._get_assignments(admin, topic, partition)
+        prev_assignments = assignments.copy()
+
+        self.logger.info(
+            f"initial assignments for {topic}/{partition}: {prev_assignments}")
+
+        replica_ids = [a['node_id'] for a in prev_assignments]
+        # throttle recovery to prevent partition move from finishing
+        self._throttle_recovery(10)
+        to_stop = None
+        for n in self.redpanda.nodes:
+            id = self.redpanda.node_id(n)
+            if id not in replica_ids:
+                previous = assignments.pop()
+                assignments.append({"node_id": id, "core": 0})
+                # stop a node that is going to be removed from current partition assignment
+                to_stop = self.get_node_by_id(previous['node_id'])
+                self.redpanda.stop_node(to_stop)
+                break
+
+        def new_controller():
+            leader_id = admin.get_partition_leader(namespace="redpanda",
+                                                   topic="controller",
+                                                   partition=0)
+            return leader_id != -1 and leader_id != self.redpanda.node_id(
+                to_stop)
+
+        wait_until(new_controller, 30)
+
+        self.logger.info(
+            f"moving {topic}/{partition}: {prev_assignments} -> {assignments}")
+
+        admin.set_partition_replicas(topic, partition, assignments)
+
+        self._wait_for_move_in_progress(topic, partition)
+
+        admin.cancel_partition_move(topic, partition)
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=self.consumer_timeout_seconds,
+                            min_records=self.min_records)
+
+        def move_finished():
+            for n in self.redpanda.started_nodes():
+                partition_info = admin.get_partitions(topic=topic,
+                                                      partition=partition,
+                                                      node=n)
+                if partition_info['status'] != 'done':
+                    return False
+                if not self._equal_assignments(partition_info['replicas'],
+                                               prev_assignments):
+                    return False
+
+            return True
+
+        wait_until(move_finished, 30, backoff_sec=1)
