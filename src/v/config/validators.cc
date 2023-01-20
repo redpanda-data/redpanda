@@ -117,7 +117,13 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms) {
             return ssx::sformat("'{}' is not a supported SASL mechanism", m);
         }
     }
+    return std::nullopt;
+}
 
+std::optional<ss::sstring> validate_0_to_1_ratio(const double d) {
+    if (d < 0 || d > 1) {
+        return fmt::format("Ratio must be in the [0,1] range, got: {}", d);
+    }
     return std::nullopt;
 }
 

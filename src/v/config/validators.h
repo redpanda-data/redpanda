@@ -33,4 +33,6 @@ std::optional<ss::sstring> validate_client_groups_byte_rate_quota(
 std::optional<ss::sstring>
 validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms);
 
+std::optional<ss::sstring> validate_0_to_1_ratio(const double d);
+
 }; // namespace config

@@ -26,6 +26,14 @@ snc_quota_manager::snc_quota_manager()
       config::shard_local_cfg().kafka_throughput_limit_node_out_bps.bind())
   , _kafka_quota_balancer_window(
       config::shard_local_cfg().kafka_quota_balancer_window.bind())
+  , _kafka_quota_balancer_node_period(
+      config::shard_local_cfg().kafka_quota_balancer_node_period.bind())
+  , _kafka_quota_balancer_min_shard_thoughput_ratio(
+      config::shard_local_cfg()
+        .kafka_quota_balancer_min_shard_thoughput_ratio.bind())
+  , _kafka_quota_balancer_min_shard_thoughput_bps(
+      config::shard_local_cfg()
+        .kafka_quota_balancer_min_shard_thoughput_bps.bind())
   , _shard_ingress_quota(
       get_shard_ingress_quota_default(), _kafka_quota_balancer_window())
   , _shard_egress_quota(

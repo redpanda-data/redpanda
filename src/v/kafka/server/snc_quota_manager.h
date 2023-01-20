@@ -73,6 +73,10 @@ private:
     config::binding<std::optional<uint64_t>>
       _kafka_throughput_limit_node_out_bps;
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
+    config::binding<std::chrono::milliseconds>
+      _kafka_quota_balancer_node_period;
+    config::binding<double> _kafka_quota_balancer_min_shard_thoughput_ratio;
+    config::binding<quota_t> _kafka_quota_balancer_min_shard_thoughput_bps;
 
     // operational, used on each shard
     bottomless_token_bucket _shard_ingress_quota;
