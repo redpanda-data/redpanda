@@ -793,8 +793,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 			Expect(k8sClient.Create(context.Background(), licenseSecret)).Should(Succeed())
 
 			By("Creating a Cluster")
-			key, _, redpandaCluster := getInitialTestCluster(clusterNameWithLicense)
+			key, _, redpandaCluster, namespace := getInitialTestCluster(clusterNameWithLicense)
 			redpandaCluster.Spec.LicenseRef = &v1alpha1.SecretKeyRef{Namespace: licenseNamespace, Name: licenseName}
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 		})
