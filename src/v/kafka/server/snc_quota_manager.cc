@@ -19,6 +19,8 @@ using namespace std::chrono_literals;
 
 namespace kafka {
 
+using quota_t = snc_quota_manager::quota_t;
+
 template<std::integral T>
 ingress_egress_state<T> operator+(
   const ingress_egress_state<T>& lhs, const ingress_egress_state<T>& rhs) {
@@ -52,13 +54,32 @@ to_soa_layout(const std::vector<ingress_egress_state<T>>& v) {
     return res;
 }
 
+namespace {
+
+quota_t
+node_to_shard_quota(const config::binding<std::optional<quota_t>> node_quota) {
+    if (node_quota().has_value()) {
+        const quota_t v = node_quota().value() / ss::smp::count;
+        if (v > bottomless_token_bucket::max_quota) {
+            return bottomless_token_bucket::max_quota;
+        }
+        if (v < 1) {
+            return quota_t{1};
+        }
+        return v;
+    } else {
+        return bottomless_token_bucket::max_quota;
+    }
+}
+
+} // namespace
+
 snc_quota_manager::snc_quota_manager()
   : _max_kafka_throttle_delay(
     config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
-  , _kafka_throughput_limit_node_in_bps(
-      config::shard_local_cfg().kafka_throughput_limit_node_in_bps.bind())
-  , _kafka_throughput_limit_node_out_bps(
-      config::shard_local_cfg().kafka_throughput_limit_node_out_bps.bind())
+  , _kafka_throughput_limit_node_bps{
+      config::shard_local_cfg().kafka_throughput_limit_node_in_bps.bind(),
+      config::shard_local_cfg().kafka_throughput_limit_node_out_bps.bind()}
   , _kafka_quota_balancer_window(
       config::shard_local_cfg().kafka_quota_balancer_window.bind())
   , _kafka_quota_balancer_node_period(
@@ -69,22 +90,20 @@ snc_quota_manager::snc_quota_manager()
   , _kafka_quota_balancer_min_shard_thoughput_bps(
       config::shard_local_cfg()
         .kafka_quota_balancer_min_shard_thoughput_bps.bind())
-  , _shard_ingress_quota(
-      get_shard_ingress_quota_default(), _kafka_quota_balancer_window())
-  , _shard_egress_quota(
-      get_shard_egress_quota_default(), _kafka_quota_balancer_window()) {
-    _kafka_throughput_limit_node_in_bps.watch([this] {
-        _shard_ingress_quota.set_quota(get_shard_ingress_quota_default());
-    });
-    _kafka_throughput_limit_node_out_bps.watch([this] {
-        _shard_egress_quota.set_quota(get_shard_egress_quota_default());
-    });
+  , _shard_quota{
+        .in {node_to_shard_quota(_kafka_throughput_limit_node_bps.in),
+             _kafka_quota_balancer_window()},
+        .eg {node_to_shard_quota(_kafka_throughput_limit_node_bps.eg),
+             _kafka_quota_balancer_window()}}
+{
     _kafka_quota_balancer_window.watch([this] {
         const auto v = _kafka_quota_balancer_window();
-        vlog(klog.debug, "Set shard TP token bucket window {}", v);
-        _shard_ingress_quota.set_width(v);
-        _shard_egress_quota.set_width(v);
+        vlog(klog.debug, "qm - Set shard TP token bucket window: {}", v);
+        _shard_quota.in.set_width(v);
+        _shard_quota.eg.set_width(v);
     });
+
+    vlog(klog.debug, "qm - Initial quota: {}", _shard_quota);
 }
 
 ss::future<> snc_quota_manager::start() { return ss::make_ready_future<>(); }
@@ -92,22 +111,6 @@ ss::future<> snc_quota_manager::start() { return ss::make_ready_future<>(); }
 ss::future<> snc_quota_manager::stop() { return ss::make_ready_future<>(); }
 
 namespace {
-
-bottomless_token_bucket::quota_t get_default_quota_from_property(
-  const config::binding<std::optional<int64_t>>& prop) {
-    if (prop()) {
-        const bottomless_token_bucket::quota_t v = *prop() / ss::smp::count;
-        if (v > bottomless_token_bucket::max_quota) {
-            return bottomless_token_bucket::max_quota;
-        }
-        if (v < 1) {
-            return 1;
-        }
-        return v;
-    } else {
-        return bottomless_token_bucket::max_quota;
-    }
-}
 
 using delay_t = std::chrono::milliseconds;
 
@@ -126,22 +129,6 @@ delay_t eval_delay(const bottomless_token_bucket& tb) noexcept {
 
 } // namespace
 
-snc_quota_manager::quota_t
-snc_quota_manager::get_shard_ingress_quota_default() const {
-    const quota_t v = get_default_quota_from_property(
-      _kafka_throughput_limit_node_in_bps);
-    vlog(klog.debug, "Default shard TP ingress quota: {}", v);
-    return v;
-}
-
-snc_quota_manager::quota_t
-snc_quota_manager::get_shard_egress_quota_default() const {
-    const quota_t v = get_default_quota_from_property(
-      _kafka_throughput_limit_node_out_bps);
-    vlog(klog.debug, "Default shard TP egress quota {}", v);
-    return v;
-}
-
 snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
   clock::time_point& connection_throttle_until,
   const clock::time_point now) const {
@@ -156,8 +143,7 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
     // this time
     res.request = std::min(
       _max_kafka_throttle_delay(),
-      std::max(
-        eval_delay(_shard_ingress_quota), eval_delay(_shard_egress_quota)));
+      std::max(eval_delay(_shard_quota.in), eval_delay(_shard_quota.eg)));
     connection_throttle_until = now + res.request;
 
     return res;
@@ -165,12 +151,12 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
 
 void snc_quota_manager::record_request_tp(
   const size_t request_size, const clock::time_point now) noexcept {
-    _shard_ingress_quota.use(request_size, now);
+    _shard_quota.in.use(request_size, now);
 }
 
 void snc_quota_manager::record_response_tp(
   const size_t request_size, const clock::time_point now) noexcept {
-    _shard_egress_quota.use(request_size, now);
+    _shard_quota.eg.use(request_size, now);
 }
 
 } // namespace kafka

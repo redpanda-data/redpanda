@@ -35,6 +35,7 @@ class snc_quota_manager
   : public ss::peering_sharded_service<snc_quota_manager> {
 public:
     using clock = ss::lowres_clock;
+    using quota_t = bottomless_token_bucket::quota_t;
 
     snc_quota_manager();
     snc_quota_manager(const snc_quota_manager&) = delete;
@@ -69,16 +70,10 @@ public:
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
 private:
-    using quota_t = bottomless_token_bucket::quota_t;
-    quota_t get_shard_ingress_quota_default() const;
-    quota_t get_shard_egress_quota_default() const;
-
-private:
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
-    config::binding<std::optional<quota_t>> _kafka_throughput_limit_node_in_bps;
-    config::binding<std::optional<quota_t>>
-      _kafka_throughput_limit_node_out_bps;
+    ingress_egress_state<config::binding<std::optional<quota_t>>>
+      _kafka_throughput_limit_node_bps;
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
     config::binding<std::chrono::milliseconds>
       _kafka_quota_balancer_node_period;
@@ -86,8 +81,7 @@ private:
     config::binding<quota_t> _kafka_quota_balancer_min_shard_thoughput_bps;
 
     // operational, used on each shard
-    bottomless_token_bucket _shard_ingress_quota;
-    bottomless_token_bucket _shard_egress_quota;
+    ingress_egress_state<bottomless_token_bucket> _shard_quota;
 };
 
 } // namespace kafka
