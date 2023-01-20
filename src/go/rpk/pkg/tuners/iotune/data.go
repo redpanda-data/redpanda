@@ -10,19 +10,19 @@
 package iotune
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
 )
 
 type IoProperties struct {
-	MountPoint     string `yaml:"mountpoint"`
-	ReadIops       int64  `yaml:"read_iops"`
-	ReadBandwidth  int64  `yaml:"read_bandwidth"`
-	WriteIops      int64  `yaml:"write_iops"`
-	WriteBandwidth int64  `yaml:"write_bandwidth"`
+	MountPoint     string `json:"mountpoint"`
+	ReadIops       int64  `json:"read_iops"`
+	ReadBandwidth  int64  `json:"read_bandwidth"`
+	WriteIops      int64  `json:"write_iops"`
+	WriteBandwidth int64  `json:"write_bandwidth"`
 }
 
 type io = IoProperties
@@ -56,15 +56,15 @@ func DataForVendor(
 	return DataFor(mountpoint, v.Name(), vmType, "default")
 }
 
-func ToYaml(props IoProperties) (string, error) {
+func ToJSON(props IoProperties) (string, error) {
 	type ioPropertiesWrapper struct {
-		Disks []IoProperties `yaml:"disks"`
+		Disks []IoProperties `json:"disks"`
 	}
-	yaml, err := yaml.Marshal(ioPropertiesWrapper{[]io{props}})
+	json, err := json.Marshal(ioPropertiesWrapper{[]io{props}})
 	if err != nil {
 		return "", err
 	}
-	return string(yaml), nil
+	return string(json), nil
 }
 
 func precompiledData() map[string]map[string]map[string]io {
