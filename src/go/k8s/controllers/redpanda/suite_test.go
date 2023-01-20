@@ -107,7 +107,6 @@ var _ = BeforeSuite(func(done Done) {
 		}
 		return testAdminAPI, nil
 	}
-	testAdminAPI.SetClusterHealth(true)
 
 	testStore = consolepkg.NewStore(k8sManager.GetClient(), k8sManager.GetScheme())
 	testKafkaAdmin = &mockKafkaAdmin{}
