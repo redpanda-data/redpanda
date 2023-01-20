@@ -80,7 +80,8 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 }
 
 func newDecommissionBroker(fs afero.Fs) *cobra.Command {
-	return &cobra.Command{
+	var force bool
+	cmd := &cobra.Command{
 		Use:   "decommission [BROKER ID]",
 		Short: "Decommission the given broker",
 		Long: `Decommission the given broker.
@@ -105,15 +106,18 @@ leader handles the request.
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			b, err := cl.Broker(cmd.Context(), broker)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			if !force {
+				b, err := cl.Broker(cmd.Context(), broker)
+				out.MaybeDie(err, "unable to verify if the broker is in maintenance mode, use --force flag if you want to skip this step: %v", err)
 
-			// Old brokers (< v22.1) don't have maintenance mode, so we must
-			// check if b.Maintenance is not nil.
-			if b.Maintenance != nil && b.Maintenance.Draining {
-				out.Die(`Node cannot be decommissioned while it is in maintenance mode.
+				// Old brokers (< v22.1) don't have maintenance mode, so we must
+				// check if b.Maintenance is not nil.
+				if b.Maintenance != nil && b.Maintenance.Draining {
+					out.Die(`Node cannot be decommissioned while it is in maintenance mode.
 Take the node out of maintenance mode first by running: 
-    rpk cluster maintenance disable %v`, broker)
+    rpk cluster maintenance disable %v
+or use --force flag if you want to skip this check`, broker)
+				}
 			}
 
 			err = cl.DecommissionBroker(cmd.Context(), broker)
@@ -122,6 +126,10 @@ Take the node out of maintenance mode first by running:
 			fmt.Printf("Success, broker %d has been decommissioned!\n", broker)
 		},
 	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "If enabled, rpk will issue the decommission request without checking if the broker is in maintenance mode")
+
+	return cmd
 }
 
 func newRecommissionBroker(fs afero.Fs) *cobra.Command {
