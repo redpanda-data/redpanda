@@ -48,6 +48,9 @@ var (
 	testStore             *consolepkg.Store
 	testKafkaAdmin        *mockKafkaAdmin
 	testKafkaAdminFactory consolepkg.KafkaAdminClientFactory
+
+	ctx              context.Context
+	controllerCancel context.CancelFunc
 )
 
 func TestAPIs(t *testing.T) {
@@ -84,6 +87,8 @@ var _ = BeforeSuite(func(done Done) {
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).ToNot(HaveOccurred())
+	ctx = ctrl.SetupSignalHandler()
+	ctx, controllerCancel = context.WithCancel(ctx)
 
 	testAdminAPI = &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
 	testAdminAPIFactory = func(
@@ -145,7 +150,7 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 
 	go func() {
-		err = k8sManager.Start(ctrl.SetupSignalHandler())
+		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
 	}()
 	Expect(k8sManager.GetCache().WaitForCacheSync(context.Background())).To(BeTrue())
@@ -175,12 +180,10 @@ var _ = BeforeEach(func() {
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
-	gexec.KillAndWait(5 * time.Second)
 	// kube-apiserver hanging during cleanup
-	// REF https://book.kubebuilder.io/reference/envtest.html#kubernetes-120-and-121-binary-issues
-	timeout := 30 * time.Second
-	poll := 5 * time.Second
-	Eventually(func() error {
-		return testEnv.Stop()
-	}, timeout, poll).ShouldNot(HaveOccurred())
+	// stopping the controllers prevents the hang
+	controllerCancel()
+	gexec.KillAndWait(5 * time.Second)
+	err := testEnv.Stop()
+	Expect(err).NotTo(HaveOccurred())
 })

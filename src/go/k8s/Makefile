@@ -135,7 +135,7 @@ KUTTL ?= $(LOCALBIN)/kubectl-kuttl
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v4.5.7
 CONTROLLER_TOOLS_VERSION ?= v0.4.1
-KUTTL_VERSION ?= v0.13.0
+KUTTL_VERSION ?= v0.15.0
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
