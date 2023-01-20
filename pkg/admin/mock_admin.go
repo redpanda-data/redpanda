@@ -189,8 +189,12 @@ func (m *MockAdminAPI) Clear() {
 	m.schema = nil
 	m.patches = nil
 	m.unavailable = false
+	m.invalid = nil
+	m.unknown = nil
 	m.directValidation = false
 	m.brokers = nil
+	m.clusterHealth = true
+	m.MaintenanceStatus = &admin.MaintenanceStatus{}
 }
 
 func (m *MockAdminAPI) GetFeatures(
