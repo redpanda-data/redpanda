@@ -133,6 +133,19 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
           sm::description("Total number of bytes fetched"),
           labels)
           .aggregate(aggregate_labels),
+        sm::make_total_bytes(
+          "cloud_storage_segments_metadata_bytes",
+          [this] {
+              return _partition.archival_meta_stm()
+                       ? _partition.archival_meta_stm()
+                           ->manifest()
+                           .segments_metadata_bytes()
+                       : 0;
+          },
+          sm::description("Current number of bytes consumed by remote segments "
+                          "managed for this partition"),
+          labels)
+          .aggregate(aggregate_labels),
       });
 }
 

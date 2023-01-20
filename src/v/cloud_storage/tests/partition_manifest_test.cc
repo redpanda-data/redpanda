@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
+#include "utils/tracking_allocator.h"
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -427,6 +428,84 @@ SEASTAR_THREAD_TEST_CASE(test_segment_contains) {
       m.segment_containing(model::offset{52}) == std::prev(m.end()));
     BOOST_REQUIRE(
       m.segment_containing(model::offset{59}) == std::prev(m.end()));
+}
+
+// Test for the partition manifest tracked memory.
+SEASTAR_THREAD_TEST_CASE(test_manifest_mem_tracking) {
+    partition_manifest empty_manifest;
+    empty_manifest.update(make_manifest_stream(empty_manifest_json)).get0();
+    BOOST_REQUIRE_EQUAL(0, empty_manifest.segments_metadata_bytes());
+
+    auto one_segment_manifest = manifest_for({
+      {model::offset(0), kafka::offset(0)},
+      {model::offset(10), kafka::offset(5)},
+    });
+    BOOST_REQUIRE_GT(
+      one_segment_manifest.segments_metadata_bytes(),
+      empty_manifest.segments_metadata_bytes());
+
+    auto two_segment_manifest = manifest_for({
+      {model::offset(0), kafka::offset(0)},
+      {model::offset(10), kafka::offset(5)},
+      {model::offset(20), kafka::offset(10)},
+    });
+    auto two_segment_size_bytes
+      = two_segment_manifest.segments_metadata_bytes();
+    BOOST_REQUIRE_GT(
+      two_segment_size_bytes, one_segment_manifest.segments_metadata_bytes());
+
+    segment_meta another_seg{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(20),
+      .committed_offset = model::offset(29),
+      .delta_offset = model::offset_delta(10),
+      .delta_offset_end = model::offset_delta(15),
+    };
+    two_segment_manifest.add(segment_name("20-1-v1.log"), another_seg);
+    auto three_segment_size_bytes
+      = two_segment_manifest.segments_metadata_bytes();
+    BOOST_REQUIRE_GT(three_segment_size_bytes, two_segment_size_bytes);
+
+    // Truncate so we're left with the last two segments. This doesn't
+    // deallocate the memory.
+    two_segment_manifest.truncate(model::offset(10));
+    BOOST_REQUIRE_EQUAL(2, two_segment_manifest.size());
+    BOOST_REQUIRE_EQUAL(
+      three_segment_size_bytes, two_segment_manifest.segments_metadata_bytes());
+
+    // Making a copy will have the copy share the original mem_tracker, meaning
+    // the original manifest's tracked memory increase.
+    {
+        auto another_two_segment_manifest = two_segment_manifest;
+        BOOST_REQUIRE_GT(
+          two_segment_manifest.segments_metadata_bytes(),
+          three_segment_size_bytes);
+        BOOST_REQUIRE_EQUAL(
+          two_segment_manifest.segments_metadata_bytes(),
+          another_two_segment_manifest.segments_metadata_bytes());
+    }
+
+    // Once we destroy the copy, the allocated memory will go down.
+    BOOST_REQUIRE_EQUAL(
+      three_segment_size_bytes, two_segment_manifest.segments_metadata_bytes());
+
+    // Replace all segments in the manifest with one segment. This will reduce
+    // the underlying map to no segments, and then add the new segment,
+    // resulting in meaningful reduction in memory.
+    segment_meta whole_seg{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(10),
+      .committed_offset = model::offset(29),
+      .delta_offset = model::offset_delta(5),
+      .delta_offset_end = model::offset_delta(15),
+    };
+    two_segment_manifest.add(model::offset(0), whole_seg);
+    BOOST_REQUIRE_EQUAL(1, two_segment_manifest.size());
+    BOOST_REQUIRE_EQUAL(
+      one_segment_manifest.segments_metadata_bytes(),
+      two_segment_manifest.segments_metadata_bytes());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_type) {
