@@ -96,6 +96,9 @@ public:
         const std::vector<model::broker_shard>& get_previous_replicas() const {
             return _previous_replicas;
         }
+        const std::vector<model::broker_shard>& get_target_replicas() const {
+            return _target_replicas;
+        }
 
         const replicas_revision_map& get_replicas_revisions() const {
             return _replicas_revisions;
@@ -339,6 +342,13 @@ public:
      */
     std::optional<std::vector<model::broker_shard>>
     get_previous_replica_set(const model::ntp&) const;
+    /**
+     * returns target replica set of partition if partition is currently being
+     * reconfigured. For reconfiguration from [1,2,3] to [2,3,4] this method
+     * will return [2,3,4].
+     */
+    std::optional<std::vector<model::broker_shard>>
+    get_target_replica_set(const model::ntp&) const;
 
     const absl::node_hash_map<model::ntp, in_progress_update>&
     in_progress_updates() const {

@@ -173,10 +173,6 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                         "currently being updated",
                         ntp);
 
-                      auto to_delete = subtract_replica_sets(
-                        current_assignment->replicas, *new_target_replicas);
-                      _partition_allocator.local().remove_allocations(
-                        to_delete, get_allocation_domain(ntp));
                       _partition_balancer_state.local().handle_ntp_update(
                         ntp.ns,
                         ntp.tp.topic,
@@ -187,13 +183,36 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                   });
             },
             [this, base_offset](finish_moving_partition_replicas_cmd cmd) {
+                // initial replica set of the move command (not changed when
+                // operation is cancelled)
                 auto previous_replicas
                   = _topic_table.local().get_previous_replica_set(cmd.key);
+                // requested/target replica set of original move command(not
+                // changed when move is cancelled)
+                auto target_replicas
+                  = _topic_table.local().get_target_replica_set(cmd.key);
+                /**
+                 * Finish moving command may be related either with cancellation
+                 * or with finish of an original move
+                 *
+                 * For original move the direction of data transfer is:
+                 *
+                 *  previous_replica -> target_replicas
+                 *
+                 * for cancelled move it is:
+                 *
+                 *  target_replicas -> previous_replicas
+                 *
+                 * Finish command contains the final replica set it will be
+                 * target_replicas for finished move and previous_replicas for
+                 * finished cancellation
+                 */
                 return dispatch_updates_to_cores(cmd, base_offset)
                   .then([this,
                          ntp = std::move(cmd.key),
-                         previous_replicas = previous_replicas,
-                         current_replicas = std::move(cmd.value)](
+                         previous_replicas = std::move(previous_replicas),
+                         target_replicas = std::move(target_replicas),
+                         command_replicas = std::move(cmd.value)](
                           std::error_code ec) {
                       if (ec) {
                           return ec;
@@ -204,11 +223,33 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                         "update can only be applied to partition that is "
                         "currently being updated",
                         ntp);
-
-                      auto to_delete = subtract_replica_sets(
-                        *previous_replicas, current_replicas);
+                      vassert(
+                        target_replicas.has_value(),
+                        "Target replicas for NTP {} must exists as finish "
+                        "update can only be applied to partition that is "
+                        "currently being updated",
+                        ntp);
+                      std::vector<model::broker_shard> to_delete;
+                      // move was successful, not cancelled
+                      if (target_replicas == command_replicas) {
+                          to_delete = subtract_replica_sets(
+                            *previous_replicas, command_replicas);
+                      } else {
+                          vassert(
+                            previous_replicas == command_replicas,
+                            "When finishing cancelled move of partition {} the "
+                            "finish command replica set {} must be equal to "
+                            "previous_replicas {} from topic table in progress "
+                            "update tracker",
+                            ntp,
+                            command_replicas,
+                            previous_replicas);
+                          to_delete = subtract_replica_sets(
+                            *target_replicas, command_replicas);
+                      }
                       _partition_allocator.local().remove_allocations(
                         to_delete, get_allocation_domain(ntp));
+
                       return ec;
                   });
             },
