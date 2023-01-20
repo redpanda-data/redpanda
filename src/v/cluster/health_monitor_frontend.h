@@ -82,6 +82,8 @@ public:
     ss::future<cluster_health_overview>
       get_cluster_health_overview(model::timeout_clock::time_point);
 
+    ss::future<bool> does_raft0_have_leader();
+
 private:
     template<typename Func>
     auto dispatch_to_backend(Func&& f) {
