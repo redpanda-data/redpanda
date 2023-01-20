@@ -13,6 +13,11 @@
 
 namespace random_generators {
 
+void fill_buffer_randomchars(char* start, size_t amount) {
+    static std::uniform_int_distribution<int> rand_fill('@', '~');
+    memset(start, rand_fill(internal::gen), amount);
+}
+
 bytes get_bytes(size_t n) {
     auto b = ss::uninitialized_string<bytes>(n);
     std::generate_n(b.begin(), n, [] { return get_int<bytes::value_type>(); });

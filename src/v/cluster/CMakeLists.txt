@@ -138,6 +138,9 @@ v_cc_library(
     self_test_backend.cc
     self_test_frontend.cc
     self_test_rpc_handler.cc
+    self_test_rpc_types.cc
+    self_test/diskcheck.cc
+    self_test/netcheck.cc
     bootstrap_service.cc
     bootstrap_backend.cc
     ephemeral_credential_frontend.cc
@@ -162,3 +165,4 @@ v_cc_library(
     v::features
   )
 add_subdirectory(tests)
+add_subdirectory(self_test/tests)

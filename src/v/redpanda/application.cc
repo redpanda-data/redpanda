@@ -1055,7 +1055,11 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
     controller->wire_up().get0();
 
     construct_single_service_sharded(
-      self_test_backend, _scheduling_groups.self_test_sg())
+      self_test_backend,
+      node_id,
+      std::ref(local_monitor),
+      std::ref(_connection_cache),
+      _scheduling_groups.self_test_sg())
       .get();
 
     construct_single_service_sharded(

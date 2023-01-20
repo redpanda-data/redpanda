@@ -125,6 +125,37 @@ ss::future<> self_test_frontend::start() { return ss::now(); }
 
 ss::future<> self_test_frontend::stop() { co_await _gate.close(); }
 
+/// Returns groupings of nodes that the network bench will run between. Simple
+/// for loop groups unique pairs of nodes with eachother.
+static absl::flat_hash_map<model::node_id, std::vector<model::node_id>>
+network_test_plan(
+  absl::flat_hash_set<model::node_id> ids_set,
+  std::vector<model::node_id> nodes) {
+    /*
+     * Example: 3 node cluster nodes: [0,1,2]
+     *
+     * Pairings: [(0,1), (0,2), (1,2)], will be participants in network tests
+     * where the first element in the tuple will be the client, second will be
+     * the server
+     *
+     * ids_set: Include nodes for which user intended as the test runner
+     */
+    absl::flat_hash_map<model::node_id, std::vector<model::node_id>> peers;
+    for (const auto& requested_id : ids_set) {
+        for (const auto& node_id : nodes) {
+            if (requested_id != node_id) {
+                vlog(
+                  clusterlog.debug,
+                  "Adding {{client: {} server: {}}} pair to netcheck plan",
+                  requested_id,
+                  node_id);
+                peers[requested_id].emplace_back(node_id);
+            }
+        }
+    }
+    return peers;
+}
+
 ss::future<uuid_t> self_test_frontend::start_test(
   start_test_request req, std::vector<model::node_id> ids) {
     auto gate_holder = _gate.hold();
@@ -159,14 +190,32 @@ ss::future<uuid_t> self_test_frontend::start_test(
 
     /// Invoke command to start test on all nodes, using the same test id
     const auto test_id = uuid_t::create();
-    auto state = co_await invoke_on_all_nodes(
-      [test_id, ids_set, req](model::node_id nid, auto& handle) {
+    const auto network_plan = network_test_plan(
+      ids_set, _members.local().node_ids());
+    co_await invoke_on_all_nodes(
+      [test_id, ids_set, req, &network_plan](model::node_id nid, auto& handle) {
           /// Clear last results of nodes who don't participate in this run
           if (!ids_set.contains(nid)) {
               return handle->start_test(start_test_request{.id = test_id});
-          } else {
-              return handle->start_test(req);
           }
+          /// Alert each peer of which other peers it should run their
+          /// network tests against
+          auto new_ntos = req.ntos;
+          if (!new_ntos.empty()) {
+              auto found = network_plan.find(nid);
+              if (found != network_plan.end()) {
+                  for (auto& n : new_ntos) {
+                      n.peers = found->second;
+                      n.max_duration = n.duration * network_plan.size();
+                  }
+              } else {
+                  /// Plan does not involve current 'node_id', therefore omit
+                  /// sending any network test information to this node
+                  new_ntos.clear();
+              }
+          }
+          return handle->start_test(start_test_request{
+            .id = test_id, .dtos = req.dtos, .ntos = new_ntos});
       });
     co_return test_id;
 }

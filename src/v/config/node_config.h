@@ -71,6 +71,10 @@ public:
         return data_directory().path / ".redpanda_data_dir";
     }
 
+    std::filesystem::path disk_benchmark_path() const {
+        return data_directory().path / "syschecks";
+    }
+
     std::vector<model::broker_endpoint> advertised_kafka_api() const {
         if (_advertised_kafka_api().empty()) {
             std::vector<model::broker_endpoint> eps;

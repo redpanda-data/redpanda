@@ -21,7 +21,7 @@ class SelfTestTest(RedpandaTest):
         super(SelfTestTest, self).__init__(test_context=ctx)
         self._admin = Admin(self.redpanda)
 
-    def wait_for_self_test_completion(self, timeout):
+    def wait_for_self_test_completion(self):
         """
         Completion is defined as all brokers reporting an 'idle'
         status in the self_test_status() API
@@ -30,26 +30,57 @@ class SelfTestTest(RedpandaTest):
             node_reports = self._admin.self_test_status()
             return not any([x['status'] == 'running' for x in node_reports])
 
-        wait_until(all_idle, timeout_sec=timeout, backoff_sec=1)
+        wait_until(all_idle, timeout_sec=30, backoff_sec=1)
+
+    def _disk_test_parameters(self, name, duration_ms):
+        return {
+            'type': 'disk',
+            'name': name,
+            'duration_ms': duration_ms,
+            'skip_read': False,
+            'skip_write': False,
+            'dsync': False,
+            'data_size': 10 << 20,  # 10 MiB
+            'request_size': 2 << 11,  # 4 KiB
+            'parallelism': 4
+        }
+
+    def _network_test_parameters(self, name, duration_ms):
+        return {
+            'type': 'network',
+            'name': name,
+            'request_size': 2 << 11,  # 4KiB
+            'duration_ms': duration_ms,
+            'parallelism': 4
+        }
+
+    def _self_test_options(self,
+                           disk_test_name_and_duration,
+                           network_test_name_and_duration,
+                           nodes=None):
+        (dt_name, dt_duration) = disk_test_name_and_duration
+        (nt_name, nt_duration) = network_test_name_and_duration
+        test_options = {
+            'tests': [
+                self._disk_test_parameters(dt_name, dt_duration),
+                self._network_test_parameters(nt_name, nt_duration)
+            ]
+        }
+        if nodes is not None:
+            test_options['nodes'] = nodes
+        return test_options
 
     @cluster(num_nodes=3)
     def test_self_test(self):
         """Assert the self test starts/completes with success."""
-        test_options = {
-            'tests': [{
-                'type': 'disk',
-                'disk_test_execution_time': 1
-            }, {
-                'type': 'network',
-                'network_test_execution_time': 1
-            }]
-        }
+        test_options = self._self_test_options(('ducktape dsk', 1000),
+                                               ('ducktape net', 1000))
 
         # Launch the self test with the options above
         assert self._admin.self_test_start(test_options).status_code == 200
 
         # Wait for completion
-        self.wait_for_self_test_completion(5)
+        self.wait_for_self_test_completion()
 
         # Verify returned results
         node_reports = self._admin.self_test_status()
@@ -60,21 +91,13 @@ class SelfTestTest(RedpandaTest):
                 assert 'error' not in report
                 assert 'warning' not in report
                 assert 'duration' in report
-                assert report['duration'] >= 1000 and report[
-                    'duration'] <= 2000, report['duration']
+                assert report['duration'] > 0
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_self_test_node_crash(self):
         """Assert the self test starts/completes with success."""
-        test_options = {
-            'tests': [{
-                'type': 'disk',
-                'disk_test_execution_time': 3
-            }, {
-                'type': 'network',
-                'network_test_execution_time': 3
-            }]
-        }
+        test_options = self._self_test_options(('ducktape dsk', 3000),
+                                               ('ducktape net', 3000))
 
         # Launch the self test with the options above
         assert self._admin.self_test_start(test_options).status_code == 200
@@ -88,7 +111,7 @@ class SelfTestTest(RedpandaTest):
         self.redpanda.stop_node(self.redpanda.get_node(stopped_nid))
 
         # Wait for completion
-        self.wait_for_self_test_completion(7)
+        self.wait_for_self_test_completion()
 
         # Verify returned results
         all_status = self._admin.self_test_status()
@@ -99,10 +122,14 @@ class SelfTestTest(RedpandaTest):
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
-                assert 'error' not in report
-                assert 'warning' not in report
-                assert 'duration' in report
-                assert report['duration'] >= 1000, report['duration']
+                # Errors related to crashed node are allowed, for example a network test on a good node that had attempted to connect to the crashed node
+                if 'error' in report:
+                    assert report[
+                        'error'] == f'Failed to reach peer with node_id: {stopped_nid}'
+                else:
+                    assert 'warning' not in report
+                    assert 'duration' in report
+                    assert report['duration'] > 0
         crashed_nodes_report = [
             x for x in all_status if x['node_id'] == stopped_nid
         ][0]
@@ -112,17 +139,11 @@ class SelfTestTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_self_test_cancellable(self):
         """Assert the self test can cancel an action on command."""
-        disk_test_time = 5
-        network_test_time = 5
-        test_options = {
-            'tests': [{
-                'type': 'disk',
-                'disk_test_execution_time': disk_test_time
-            }, {
-                'type': 'network',
-                'network_test_execution_time': network_test_time
-            }]
-        }
+        disk_test_time = 5000  # ms
+        network_test_time = 5000  # ms
+        test_options = self._self_test_options(
+            ('ducktape dsk', disk_test_time),
+            ('ducktape net', network_test_time))
 
         # Launch the self test with the options above
         start = time.time()
@@ -146,7 +167,7 @@ class SelfTestTest(RedpandaTest):
             assert node['status'] == 'idle'
             assert node.get('results') is not None
             for report in node['results']:
-                assert 'error' not in report
+                assert 'error' not in report, report['error']
                 assert 'warning' in report
                 assert 'duration' in report
                 # If test was running it was cancelled otherwise it was

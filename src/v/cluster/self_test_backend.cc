@@ -13,6 +13,7 @@
 
 #include "cluster/logger.h"
 #include "seastarx.h"
+#include "ssx/future-util.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -23,10 +24,20 @@
 
 namespace cluster {
 
-self_test_backend::self_test_backend(ss::scheduling_group sg)
-  : _st_sg(sg) {}
+self_test_backend::self_test_backend(
+  model::node_id self,
+  ss::sharded<node::local_monitor>& nlm,
+  ss::sharded<rpc::connection_cache>& connections,
+  ss::scheduling_group sg)
+  : _self(self)
+  , _st_sg(sg)
+  , _disk_test(nlm)
+  , _network_test(self, connections) {}
 
-ss::future<> self_test_backend::start() { return ss::now(); }
+ss::future<> self_test_backend::start() {
+    co_await _disk_test.start();
+    co_await _network_test.start();
+}
 
 ss::future<> self_test_backend::stop() {
     co_await _gate.close();
@@ -41,13 +52,17 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
     std::vector<self_test_result> results;
     for (auto& dto : dtos) {
         try {
-            vlog(clusterlog.info, "Starting disk self test...");
             dto.sg = _st_sg;
-            auto dtr = co_await _disk_test.run(dto).then([](auto result) {
-                vlog(clusterlog.info, "Disk self test finished with success");
-                return result;
-            });
-            std::copy(dtr.begin(), dtr.end(), std::back_inserter(results));
+            if (!_cancelling) {
+                auto dtr = co_await _disk_test.run(dto).then(
+                  [](auto result) { return result; });
+                std::copy(dtr.begin(), dtr.end(), std::back_inserter(results));
+            } else {
+                results.push_back(self_test_result{
+                  .name = dto.name,
+                  .warning = "Disk self test prevented from starting due to "
+                             "cancel signal"});
+            }
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Disk self test finished with error");
             results.push_back(
@@ -56,14 +71,25 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
     }
     for (auto& nto : ntos) {
         try {
-            vlog(clusterlog.info, "Starting network self test...");
-            nto.sg = _st_sg;
-            auto ntr = co_await _network_test.run(nto).then([](auto results) {
-                vlog(
-                  clusterlog.info, "Network self test finished with success");
-                return results;
-            });
-            std::copy(ntr.begin(), ntr.end(), std::back_inserter(results));
+            if (!nto.peers.empty()) {
+                nto.sg = _st_sg;
+                if (!_cancelling) {
+                    auto ntr = co_await _network_test.run(nto).then(
+                      [](auto results) { return results; });
+                    std::copy(
+                      ntr.begin(), ntr.end(), std::back_inserter(results));
+                } else {
+                    results.push_back(self_test_result{
+                      .name = nto.name,
+                      .warning
+                      = "Network self test prevented from starting due to "
+                        "cancel signal"});
+                }
+            } else {
+                results.push_back(self_test_result{
+                  .name = nto.name,
+                  .warning = "No peers to start network test against"});
+            }
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Network self test finished with error");
             results.push_back(
@@ -74,24 +100,25 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
 }
 
 get_status_response self_test_backend::start_test(start_test_request req) {
-    auto gate_holder = _gate.hold();
     auto units = _lock.try_get_units();
     if (units) {
+        _cancelling = false;
         _id = req.id;
         vlog(
-          clusterlog.info, "Starting redpanda self-tests with id: {}", req.id);
-        (void)do_start_test(req.dtos, req.ntos)
-          .then([this, id = req.id](auto results) {
-              _prev_run = get_status_response{
-                .id = id,
-                .status = self_test_status::idle,
-                .results = std::move(results)};
-          })
-          .finally([this, units = std::move(units)] {
-              /// TODO: No need for this when disk + network tests are written
-              _disk_test.reset();
-              _network_test.reset();
-          });
+          clusterlog.debug, "Request to start self-tests with id: {}", req.id);
+        ssx::background
+          = ssx::spawn_with_gate_then(_gate, [this, req = std::move(req)]() {
+                return do_start_test(req.dtos, req.ntos)
+                  .then([this, id = req.id](auto results) {
+                      for (auto& r : results) {
+                          r.test_id = id;
+                      }
+                      _prev_run = get_status_response{
+                        .id = id,
+                        .status = self_test_status::idle,
+                        .results = std::move(results)};
+                  });
+            }).finally([units = std::move(units)] {});
     } else {
         vlog(
           clusterlog.info,
@@ -106,6 +133,7 @@ get_status_response self_test_backend::start_test(start_test_request req) {
 
 ss::future<get_status_response> self_test_backend::stop_test() {
     auto gate_holder = _gate.hold();
+    _cancelling = true;
     _disk_test.cancel();
     _network_test.cancel();
     try {
@@ -127,6 +155,23 @@ get_status_response self_test_backend::get_status() const {
           .id = _id, .status = self_test_status::running};
     }
     return _prev_run;
+}
+
+ss::future<netcheck_response>
+self_test_backend::netcheck(model::node_id source, iobuf&& iob) {
+    static const auto reset_threshold = 200ms;
+    auto now = ss::lowres_clock::now();
+    if (likely(
+          _prev_nc.source == source
+          || _prev_nc.source == previous_netcheck_entity::unassigned
+          || ((_prev_nc.last_request + reset_threshold) < now))) {
+        _prev_nc = previous_netcheck_entity{
+          .source = source, .last_request = now};
+        co_return netcheck_response{.bytes_read = iob.size_bytes()};
+    }
+    // Clients will respect this empty response and respond by sleeping before
+    // attempting to call this endpoint.
+    co_return netcheck_response{.bytes_read = 0};
 }
 
 } // namespace cluster

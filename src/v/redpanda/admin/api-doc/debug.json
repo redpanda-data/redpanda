@@ -200,6 +200,10 @@
                     "type": "long",
                     "description": "Bytes operated on per second"
                 },
+                "timeouts": {
+                    "type": "long",
+                    "description": "Number of io timeouts observed during run"
+                },
                 "test_id": {
                     "type": "string",
                     "description": "Global test uuid identifier"
