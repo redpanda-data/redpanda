@@ -121,6 +121,7 @@ public:
     ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<kafka::quota_manager> quota_mgr;
+    ss::sharded<kafka::snc_quota_manager> snc_quota_mgr;
     ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
 
     ss::sharded<raft::group_manager> raft_group_manager;

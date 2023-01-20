@@ -13,6 +13,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/handlers/produce.h"
+#include "kafka/server/snc_quota_manager.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"

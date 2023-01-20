@@ -23,6 +23,7 @@
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/server/server.h"
+#include "kafka/server/snc_quota_manager.h"
 #include "net/exceptions.h"
 #include "security/exceptions.h"
 #include "units.h"
@@ -211,9 +212,9 @@ connection_context::record_tp_and_calculate_throttle(
     }
 
     // Throttle on shard wide quotas
-    _server.quota_mgr().record_request_tp(request_size, now);
-    const quota_manager::shard_delays_t shard_delays
-      = _server.quota_mgr().get_shard_delays(_throttled_until, now);
+    _server.snc_quota_mgr().record_request_tp(request_size, now);
+    const snc_quota_manager::delays_t shard_delays
+      = _server.snc_quota_mgr().get_shard_delays(_throttled_until, now);
 
     // Sum up
     const clock::duration delay_enforce = std::max(
@@ -510,7 +511,7 @@ ss::future<> connection_context::maybe_process_responses() {
         // throttle_ms has been serialized long ago already. With the current
         // approach, egress token bucket level will always be an extra burst
         // into the negative while under pressure.
-        _server.quota_mgr().record_response_tp(msg.size());
+        _server.snc_quota_mgr().record_response_tp(msg.size());
         try {
             return conn->write(std::move(msg))
               .then([] {

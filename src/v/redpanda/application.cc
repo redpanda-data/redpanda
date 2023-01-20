@@ -66,6 +66,7 @@
 #include "kafka/server/quota_manager.h"
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/server.h"
+#include "kafka/server/snc_quota_manager.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/server.h"
@@ -1122,8 +1123,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       node_status_table);
 
     // metrics and quota management
-    syschecks::systemd_message("Adding kafka quota manager").get();
+    syschecks::systemd_message("Adding kafka quota managers").get();
     construct_service(quota_mgr).get();
+    construct_service(snc_quota_mgr).get();
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
@@ -1416,6 +1418,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(controller->get_config_frontend()),
         std::ref(controller->get_feature_table()),
         std::ref(quota_mgr),
+        std::ref(snc_quota_mgr),
         std::ref(group_router),
         std::ref(shard_table),
         std::ref(partition_manager),
@@ -1902,6 +1905,7 @@ void application::start_runtime_services(
       .get();
 
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
+    snc_quota_mgr.invoke_on_all(&kafka::snc_quota_manager::start).get();
 
     if (!config::node().admin().empty()) {
         _admin.invoke_on_all(&admin_server::start).get0();

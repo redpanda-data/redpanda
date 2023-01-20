@@ -118,6 +118,7 @@ public:
           app.controller->get_config_frontend(),
           app.controller->get_feature_table(),
           app.quota_mgr,
+          app.snc_quota_mgr,
           app.group_router,
           app.shard_table,
           app.partition_manager,
