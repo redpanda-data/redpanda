@@ -26,4 +26,18 @@ else()
       ARGS "-- -c 1"
       LABELS archival
     )
+
+    rp_test(
+      UNIT_TEST
+      BINARY_NAME test_archival_service
+      SOURCES 
+        upload_housekeeping_service_test.cc
+      DEFINITIONS BOOST_TEST_DYN_LINK
+      LIBRARIES 
+        v::seastar_testing_main 
+        Boost::unit_test_framework 
+        v::archival 
+      ARGS "-- -c 1"
+      LABELS archival
+    )
 endif()
