@@ -75,6 +75,7 @@ type ConfigPropertyMetadata struct {
 	Description  string              `json:"description"`           // One liner human readable string
 	Nullable     bool                `json:"nullable"`              // If true, may be null
 	NeedsRestart bool                `json:"needs_restart"`         // If true, won't take effect until restart
+	IsSecret     bool                `json:"is_secret"`             // If true, the field should be redacted.
 	Visibility   string              `json:"visibility"`            // One of 'user', 'deprecated', 'tunable'
 	Units        string              `json:"units,omitempty"`       // A unit like 'ms', or empty.
 	Example      string              `json:"example,omitempty"`     // A non-default value for use in docs or tests
