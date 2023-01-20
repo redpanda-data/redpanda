@@ -1008,7 +1008,10 @@ controller_backend::process_partition_reconfiguration(
              * configuration so old replicas are not longer needed.
              */
             if (can_finish_update(
-                  current_retry, type, target_assignment.replicas)) {
+                  partition->get_leader_id(),
+                  current_retry,
+                  type,
+                  target_assignment.replicas)) {
                 co_return co_await dispatch_update_finished(
                   std::move(ntp), target_assignment);
             }
@@ -1059,12 +1062,22 @@ controller_backend::process_partition_reconfiguration(
 }
 
 bool controller_backend::can_finish_update(
+  std::optional<model::node_id> current_leader,
   uint64_t current_retry,
   topic_table_delta::op_type update_type,
   const std::vector<model::broker_shard>& current_replicas) {
     // force abort update may be finished by any node
     if (update_type == topic_table_delta::op_type::force_abort_update) {
         return true;
+    }
+    /**
+     * If the revert feature is active we use current leader to dispatch
+     * partition move
+     */
+    if (_features.local().is_active(
+          features::feature::partition_move_revert_cancel)) {
+        return current_leader == _self
+               && has_local_replicas(_self, current_replicas);
     }
     /**
      * Use retry count to determine which node is eligible to dispatch update
