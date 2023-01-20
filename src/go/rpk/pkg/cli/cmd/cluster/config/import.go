@@ -113,26 +113,37 @@ func importConfig(
 			continue
 		}
 
+		addProperty := func(old interface{}) {
+			upsert[k] = v
+
+			// If the value is not [secret], the user changed the redacted sentinel
+			// value and is changing the secret. We redact the value that we store
+			// to our to-be-printed propertyDeltas.
+			if meta, ok := schema[k]; ok {
+				if v != nil && meta.IsSecret && fmt.Sprintf("%v", v) != "[secret]" {
+					v = "[redacted]"
+				}
+			}
+			propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", old), fmt.Sprintf("%v", v)})
+		}
+
 		if haveOldVal {
 			// Since the admin endpoint will redact secret fields, ignore any
 			// such sentinel strings we've been given, to avoid accidentally
 			// setting configs to this value.
-			// TODO: why doesn't this work with DeepEqual?
 			if fmt.Sprintf("%v", oldVal) == "[secret]" && fmt.Sprintf("%v", v) == "[secret]" {
 				continue
 			}
 			// If value changed, add it to list of updates.
 			// DeepEqual because values can be slices.
 			if !reflect.DeepEqual(oldVal, v) {
-				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldVal), fmt.Sprintf("%v", v)})
-				upsert[k] = v
+				addProperty(oldVal)
 			}
 		} else {
 			// Present in input but not original config, insert if it differs
 			// from the materialized current value (which may be a default)
 			if !haveOldValMaterialized || !reflect.DeepEqual(oldValMaterialized, v) {
-				upsert[k] = v
-				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldValMaterialized), fmt.Sprintf("%v", v)})
+				addProperty(oldValMaterialized)
 			}
 		}
 	}
