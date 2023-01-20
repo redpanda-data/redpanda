@@ -804,6 +804,46 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
           return r.has_error() ? r.error() : r.value().result;
       });
 }
+ss::future<std::error_code> topics_frontend::revert_cancel_partition_move(
+  model::ntp ntp, model::timeout_clock::time_point tout) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!leader) {
+        return ss::make_ready_future<std::error_code>(
+          errc::no_leader_controller);
+    }
+    // optimization: if update is not in progress return early
+    if (!_topics.local().is_update_in_progress(ntp)) {
+        return ss::make_ready_future<std::error_code>(
+          errc::no_update_in_progress);
+    }
+    // current node is a leader, just replicate
+    if (leader == _self) {
+        revert_cancel_partition_move_cmd cmd(
+          0, revert_cancel_partition_move_cmd_data{.ntp = std::move(ntp)});
+
+        return replicate_and_wait(_stm, _features, _as, std::move(cmd), tout);
+    }
+
+    return _connections.local()
+      .with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *leader,
+        tout,
+        [ntp = std::move(ntp),
+         tout](controller_client_protocol client) mutable {
+            return client
+              .revert_cancel_partition_move(
+                revert_cancel_partition_move_request{.ntp = std::move(ntp)},
+                rpc::client_opts(tout))
+              .then(&rpc::get_ctx_data<revert_cancel_partition_move_reply>);
+        })
+      .then([](result<revert_cancel_partition_move_reply> r) {
+          return r.has_error() ? r.error() : r.value().result;
+      });
+}
 
 ss::future<result<model::offset>> topics_frontend::stm_linearizable_barrier(
   model::timeout_clock::time_point timeout) {

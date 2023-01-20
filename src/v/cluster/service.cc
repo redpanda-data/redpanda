@@ -314,6 +314,14 @@ ss::future<finish_reallocation_reply> service::finish_reallocation(
       [this, req]() mutable { return do_finish_reallocation(req); });
 }
 
+ss::future<revert_cancel_partition_move_reply>
+service::revert_cancel_partition_move(
+  revert_cancel_partition_move_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(),
+      [this, req]() mutable { return do_revert_cancel_partition_move(req); });
+}
+
 ss::future<set_maintenance_mode_reply> service::set_maintenance_mode(
   set_maintenance_mode_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
@@ -429,6 +437,26 @@ service::do_finish_reallocation(finish_reallocation_request req) {
     }
 
     co_return finish_reallocation_reply{.error = errc::success};
+}
+
+ss::future<revert_cancel_partition_move_reply>
+service::do_revert_cancel_partition_move(
+  revert_cancel_partition_move_request req) {
+    auto ec = co_await _topics_frontend.local().revert_cancel_partition_move(
+      std::move(req.ntp),
+      config::shard_local_cfg().replicate_append_timeout_ms()
+        + model::timeout_clock::now());
+    if (ec) {
+        if (ec.category() == error_category()) {
+            co_return revert_cancel_partition_move_reply{
+              .result = errc(ec.value())};
+        } else {
+            co_return revert_cancel_partition_move_reply{
+              .result = errc::replication_error};
+        }
+    }
+
+    co_return revert_cancel_partition_move_reply{.result = errc::success};
 }
 
 cluster::errc map_health_monitor_error_code(std::error_code e) {
