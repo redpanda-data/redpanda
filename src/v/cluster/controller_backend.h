@@ -26,6 +26,7 @@
 
 #include <absl/container/node_hash_map.h>
 
+#include <cstdint>
 #include <ostream>
 
 namespace cluster {
@@ -217,6 +218,16 @@ namespace cluster {
 class controller_backend
   : public ss::peering_sharded_service<controller_backend> {
 public:
+    struct delta_metadata {
+        explicit delta_metadata(topic_table::delta delta)
+          : delta(std::move(delta)) {}
+
+        topic_table::delta delta;
+        uint64_t retries = 0;
+        friend std::ostream& operator<<(std::ostream&, const delta_metadata&);
+    };
+
+    using deltas_t = std::vector<delta_metadata>;
     using results_t = std::vector<std::error_code>;
     controller_backend(
       ss::sharded<cluster::topic_table>&,
@@ -231,7 +242,7 @@ public:
     ss::future<> stop();
     ss::future<> start();
 
-    std::vector<topic_table::delta> list_ntp_deltas(const model::ntp&) const;
+    std::vector<delta_metadata> list_ntp_deltas(const model::ntp&) const;
 
 private:
     struct cross_shard_move_request {
@@ -251,7 +262,6 @@ private:
         }
     };
 
-    using deltas_t = std::vector<topic_table::delta>;
     using underlying_t = absl::flat_hash_map<model::ntp, deltas_t>;
 
     // Topics
@@ -263,14 +273,15 @@ private:
     ss::future<> reconcile_topics();
     ss::future<> reconcile_ntp(deltas_t&);
 
-    ss::future<std::error_code> execute_partition_op(const topic_table::delta&);
+    ss::future<std::error_code> execute_partition_op(const delta_metadata&);
     ss::future<std::error_code> process_partition_reconfiguration(
-      topic_table_delta::op_type,
-      model::ntp,
-      const partition_assignment&,
-      const std::vector<model::broker_shard>&,
-      const topic_table_delta::revision_map_t&,
-      model::revision_id);
+      uint64_t current_retry,
+      topic_table_delta::op_type operation_type,
+      model::ntp ntp,
+      const partition_assignment& requested_assignment,
+      const std::vector<model::broker_shard>& previous_replica_set,
+      const topic_table_delta::revision_map_t& revisions_map,
+      model::revision_id rev);
 
     ss::future<std::error_code> execute_reconfiguration(
       topic_table_delta::op_type,
@@ -338,9 +349,9 @@ private:
       model::ntp, ss::shard_id, partition_assignment);
 
     bool can_finish_update(
-      topic_table_delta::op_type,
-      const std::vector<model::broker_shard>&,
-      const std::vector<model::broker_shard>&);
+      uint64_t current_retry,
+      topic_table_delta::op_type operation_type,
+      const std::vector<model::broker_shard>& requested_replicas);
 
     void housekeeping();
     void setup_metrics();
@@ -377,6 +388,6 @@ private:
     ss::metrics::metric_groups _metrics;
 };
 
-std::vector<topic_table::delta> calculate_bootstrap_deltas(
-  model::node_id self, const std::vector<topic_table::delta>&);
+std::vector<controller_backend::delta_metadata> calculate_bootstrap_deltas(
+  model::node_id self, const std::vector<controller_backend::delta_metadata>&);
 } // namespace cluster

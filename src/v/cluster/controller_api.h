@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "cluster/controller_backend.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
@@ -80,7 +81,7 @@ private:
       absl::node_hash_map<model::node_id, std::vector<model::ntp>>,
       model::timeout_clock::time_point);
 
-    ss::future<std::vector<topic_table_delta>>
+    ss::future<std::vector<controller_backend::delta_metadata>>
       get_remote_core_deltas(model::ntp, ss::shard_id);
 
     model::node_id _self;
