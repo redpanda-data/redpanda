@@ -89,7 +89,7 @@ ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
     // wait for compaction to finish
-    co_await _compaction_gate.close();
+    co_await _compaction_housekeeping_gate.close();
     // gets all the futures started in the background
     std::vector<ss::future<>> permanent_delete;
     permanent_delete.reserve(_segs.size());
@@ -132,7 +132,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     }
     // wait for compaction to finish
     vlog(stlog.trace, "waiting for {} compaction to finish", config().ntp());
-    co_await _compaction_gate.close();
+    co_await _compaction_housekeeping_gate.close();
     vlog(stlog.trace, "stopping {} readers cache", config().ntp());
 
     // close() on the segments is not expected to fail, but it might
@@ -719,32 +719,33 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
 }
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
-    return ss::try_with_gate(_compaction_gate, [this, cfg]() mutable {
-        vlog(
-          gclog.trace,
-          "[{}] house keeping with configuration from manager: {}",
-          config().ntp(),
-          cfg);
-        cfg = apply_overrides(cfg);
-        ss::future<> f = ss::now();
-        if (config().is_collectable()) {
-            f = gc(cfg);
-        }
-        if (unlikely(
-              config().has_overrides()
-              && config().get_overrides().cleanup_policy_bitflags
-                   == model::cleanup_policy_bitflags::none)) {
-            // prevent *any* collection - used for snapshots
-            // all the internal redpanda logs - i.e.: controller, etc should
-            // have this set
-            f = ss::now();
-        }
-        if (config().is_compacted() && !_segs.empty()) {
-            f = f.then([this, cfg] { return do_compact(cfg); });
-        }
-        return f.then(
-          [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
-    });
+    return ss::try_with_gate(
+      _compaction_housekeeping_gate, [this, cfg]() mutable {
+          vlog(
+            gclog.trace,
+            "[{}] house keeping with configuration from manager: {}",
+            config().ntp(),
+            cfg);
+          cfg = apply_overrides(cfg);
+          ss::future<> f = ss::now();
+          if (config().is_collectable()) {
+              f = gc(cfg);
+          }
+          if (unlikely(
+                config().has_overrides()
+                && config().get_overrides().cleanup_policy_bitflags
+                     == model::cleanup_policy_bitflags::none)) {
+              // prevent *any* collection - used for snapshots
+              // all the internal redpanda logs - i.e.: controller, etc should
+              // have this set
+              f = ss::now();
+          }
+          if (config().is_compacted() && !_segs.empty()) {
+              f = f.then([this, cfg] { return do_compact(cfg); });
+          }
+          return f.then(
+            [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
+      });
 }
 
 ss::future<> disk_log_impl::gc(compaction_config cfg) {
@@ -1027,7 +1028,7 @@ ss::future<> disk_log_impl::maybe_roll(
 }
 
 ss::future<> disk_log_impl::do_housekeeping() {
-    auto gate = _compaction_gate.hold();
+    auto gate = _compaction_housekeeping_gate.hold();
     // do_housekeeping races with maybe_roll to use new_segment.
     // take a lock to prevent problems
     auto lock = _segments_rolling_lock.get_units();

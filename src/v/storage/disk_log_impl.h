@@ -179,7 +179,7 @@ private:
         ss::abort_source::subscription subscription;
     };
     bool _closed{false};
-    ss::gate _compaction_gate;
+    ss::gate _compaction_housekeeping_gate;
     log_manager& _manager;
     float _segment_size_jitter;
     segment_set _segs;
