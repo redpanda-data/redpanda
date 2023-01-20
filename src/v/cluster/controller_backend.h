@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "outcome.h"
@@ -237,6 +238,7 @@ public:
       ss::sharded<cluster::partition_leaders_table>&,
       ss::sharded<topics_frontend>&,
       ss::sharded<storage::api>&,
+      ss::sharded<features::feature_table>&,
       ss::sharded<seastar::abort_source>&);
 
     ss::future<> stop();
@@ -288,6 +290,7 @@ private:
       const model::ntp&,
       const std::vector<model::broker_shard>&,
       const topic_table_delta::revision_map_t&,
+      const std::vector<model::broker_shard>&,
       model::revision_id);
 
     ss::future<> finish_partition_update(
@@ -322,16 +325,20 @@ private:
       const model::ntp&,
       const std::vector<model::broker_shard>&,
       const topic_table_delta::revision_map_t&,
+      const std::vector<model::broker_shard>&,
       model::revision_id);
 
     ss::future<std::error_code> force_abort_replica_set_update(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
       const topic_table_delta::revision_map_t&,
+      const std::vector<model::broker_shard>&,
       model::revision_id);
 
     ss::future<std::error_code>
       dispatch_update_finished(model::ntp, partition_assignment);
+
+    ss::future<std::error_code> dispatch_revert_cancel_move(model::ntp);
 
     ss::future<> do_bootstrap();
     ss::future<> bootstrap_ntp(const model::ntp&, deltas_t&);
@@ -362,6 +369,7 @@ private:
     ss::sharded<partition_leaders_table>& _partition_leaders_table;
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<storage::api>& _storage;
+    ss::sharded<features::feature_table>& _features;
     model::node_id _self;
     ss::sstring _data_directory;
     std::chrono::milliseconds _housekeeping_timer_interval;

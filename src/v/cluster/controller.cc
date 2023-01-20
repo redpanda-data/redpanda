@@ -289,6 +289,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_partition_leaders),
             std::ref(_tp_frontend),
             std::ref(_storage),
+            std::ref(_feature_table),
             std::ref(_as));
       })
       .then(
