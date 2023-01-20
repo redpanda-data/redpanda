@@ -13,6 +13,7 @@
 #include "config/property.h"
 #include "seastarx.h"
 #include "utils/bottomless_token_bucket.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -84,6 +85,8 @@ private:
         bool empty() const noexcept {
             return amount == 0 && amount_is == amount_t::delta;
         }
+        snc_quota_manager::quota_t get_delta_or_0() const noexcept;
+        std::optional<snc_quota_manager::quota_t> get_value() const noexcept;
     };
     friend struct fmt::formatter<dispense_quota_amount>;
 
@@ -113,6 +116,25 @@ private:
     ss::future<>
       quota_balancer_update(ingress_egress_state<dispense_quota_amount>);
 
+    /// Update time position of the buckets of the shard so that
+    /// get_deficiency() and get_surplus() will return actual data
+    void refill_buckets(const clock::time_point now) noexcept;
+
+    /// Return current quota values
+    ingress_egress_state<quota_t> get_quota() const noexcept;
+
+    /// If the current quota is more than sufficient for the shard,
+    /// returns how much it is more than sufficient as a positive value,
+    /// otherwise returns 0.
+    ingress_egress_state<quota_t> get_surplus() const noexcept;
+
+    /// If the argument has a value, set the current shard quota to the value
+    void maybe_set_quota(
+      const ingress_egress_state<std::optional<quota_t>>&) noexcept;
+
+    /// Increase or decrease the current shard quota by the argument
+    void adjust_quota(const ingress_egress_state<quota_t>& delta) noexcept;
+
 private:
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
@@ -128,6 +150,8 @@ private:
     ss::timer<ss::lowres_clock> _balancer_timer;
     ss::lowres_clock::time_point _balancer_timer_last_ran;
     ss::gate _balancer_gate;
+    mutex _balancer_mx;
+    ingress_egress_state<quota_t> _node_deficit;
 
     // operational, used on each shard
     ingress_egress_state<std::optional<quota_t>> _node_quota_default;
