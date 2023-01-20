@@ -168,4 +168,5 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_interrupt) {
     BOOST_REQUIRE(job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 0);
     BOOST_REQUIRE(!job2.interrupted());
+    wf.stop().get();
 }

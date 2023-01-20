@@ -18,6 +18,8 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
+#include <seastar/core/with_scheduling_group.hh>
 
 #include <variant>
 
@@ -45,7 +47,7 @@ std::ostream& operator<<(std::ostream& o, housekeeping_state s) {
 }
 
 upload_housekeeping_service::upload_housekeeping_service(
-  ss::sharded<cloud_storage::remote>& api)
+  ss::sharded<cloud_storage::remote>& api, ss::scheduling_group sg)
   : _remote(api.local())
   , _idle_timeout(
       config::shard_local_cfg().cloud_storage_idle_timeout_ms.bind())
@@ -55,7 +57,7 @@ upload_housekeeping_service::upload_housekeeping_service(
   , _rtc(_as)
   , _ctxlog(archival_log, _rtc)
   , _filter(_rtc)
-  , _workflow(_rtc) {
+  , _workflow(_rtc, sg) {
     _idle_timer.set_callback([this] { return idle_timer_callback(); });
     _epoch_timer.set_callback([this] { return epoch_timer_callback(); });
 }
@@ -134,8 +136,10 @@ void upload_housekeeping_service::deregister_jobs(
     }
 }
 
-housekeeping_workflow::housekeeping_workflow(retry_chain_node& parent)
-  : _parent(parent) {}
+housekeeping_workflow::housekeeping_workflow(
+  retry_chain_node& parent, ss::scheduling_group sg)
+  : _parent(parent)
+  , _sg(sg) {}
 
 void housekeeping_workflow::register_job(housekeeping_job& job) {
     _pending.push_back(job);
@@ -154,7 +158,9 @@ void housekeeping_workflow::deregister_job(housekeeping_job& job) {
 }
 
 void housekeeping_workflow::start() {
-    ssx::spawn_with_gate(_gate, [this] { return run_jobs_bg(); });
+    ssx::spawn_with_gate(_gate, [this] {
+        return ss::with_scheduling_group(_sg, [this] { return run_jobs_bg(); });
+    });
 }
 
 ss::future<> housekeeping_workflow::run_jobs_bg() {
@@ -226,7 +232,7 @@ void housekeeping_workflow::pause() {
 ss::future<> housekeeping_workflow::stop() {
     _as.request_abort();
     _cvar.broken();
-    if (_current_job.has_value()) {
+    if (_current_job.has_value() && !_current_job->get().interrupted()) {
         _current_job->get().interrupt();
     }
     return _gate.close();

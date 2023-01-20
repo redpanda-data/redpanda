@@ -19,6 +19,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/timer.hh>
 
@@ -52,7 +53,9 @@ std::ostream& operator<<(std::ostream& o, housekeeping_state s);
 /// the idle state.
 class housekeeping_workflow {
 public:
-    explicit housekeeping_workflow(retry_chain_node& parent);
+    explicit housekeeping_workflow(
+      retry_chain_node& parent,
+      ss::scheduling_group sg = ss::default_scheduling_group());
 
     void register_job(housekeeping_job&);
 
@@ -90,6 +93,7 @@ private:
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node& _parent;
+    ss::scheduling_group _sg;
     housekeeping_state _state{housekeeping_state::idle};
     intrusive_list<housekeeping_job, &housekeeping_job::_hook> _pending;
     std::optional<std::reference_wrapper<housekeeping_job>> _current_job;
@@ -166,7 +170,8 @@ private:
 class upload_housekeeping_service {
 public:
     explicit upload_housekeeping_service(
-      ss::sharded<cloud_storage::remote>& api);
+      ss::sharded<cloud_storage::remote>& api,
+      ss::scheduling_group sg = ss::default_scheduling_group());
 
     upload_housekeeping_service(const upload_housekeeping_service&) = delete;
     upload_housekeeping_service(upload_housekeeping_service&&) = delete;
