@@ -21,6 +21,8 @@ namespace kafka {
 
 using quota_t = snc_quota_manager::quota_t;
 
+static constexpr ss::shard_id quota_balancer_shard = 0;
+
 template<std::integral T>
 ingress_egress_state<T> operator+(
   const ingress_egress_state<T>& lhs, const ingress_egress_state<T>& rhs) {
@@ -103,12 +105,33 @@ snc_quota_manager::snc_quota_manager()
         _shard_quota.eg.set_width(v);
     });
 
+    if (ss::this_shard_id() == quota_balancer_shard) {
+        _balancer_timer.set_callback([this] {
+            ssx::spawn_with_gate(_balancer_gate, [this] {
+                return quota_balancer_step().finally(
+                  [this] { arm_balancer_timer(); });
+            });
+        });
+    }
     vlog(klog.debug, "qm - Initial quota: {}", _shard_quota);
 }
 
-ss::future<> snc_quota_manager::start() { return ss::make_ready_future<>(); }
+ss::future<> snc_quota_manager::start() {
+    if (ss::this_shard_id() == quota_balancer_shard) {
+        _balancer_timer.arm(
+          ss::lowres_clock::now() + get_quota_balancer_node_period());
+    }
+    return ss::make_ready_future<>();
+}
 
-ss::future<> snc_quota_manager::stop() { return ss::make_ready_future<>(); }
+ss::future<> snc_quota_manager::stop() {
+    if (ss::this_shard_id() == quota_balancer_shard) {
+        _balancer_timer.cancel();
+        return _balancer_gate.close();
+    } else {
+        return ss::make_ready_future<>();
+    }
+}
 
 namespace {
 
@@ -159,6 +182,46 @@ void snc_quota_manager::record_response_tp(
     _shard_quota.eg.use(request_size, now);
 }
 
+ss::lowres_clock::duration
+snc_quota_manager::get_quota_balancer_node_period() const {
+    const auto v = _kafka_quota_balancer_node_period();
+    // zero period in config means do not run balancer
+    if (v == std::chrono::milliseconds::zero()) {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          ss::lowres_clock::duration::max() / 2);
+    }
+    return v;
+}
+
+void snc_quota_manager::arm_balancer_timer() {
+    static constexpr auto min_sleep_time = 2ms; // TBD config?
+    ss::lowres_clock::time_point arm_until = _balancer_timer_last_ran
+                                             + get_quota_balancer_node_period();
+    const auto now = ss::lowres_clock::now();
+    const ss::lowres_clock::time_point closest_arm_until = now + min_sleep_time;
+    if (arm_until < closest_arm_until) {
+        // occurs when balancer takes to run longer than the balancer period,
+        // and on the first iteration
+        if (
+          _balancer_timer_last_ran.time_since_epoch()
+          != ss::lowres_clock::duration::zero()) {
+            vlog(
+              klog.warn,
+              "qb - Quota balancer is invoked too often ({}), "
+              "enforcing minimum sleep time",
+              arm_until - now);
+        }
+        arm_until = closest_arm_until;
+    }
+    _balancer_timer.arm(arm_until);
+}
+
+ss::future<> snc_quota_manager::quota_balancer_step() {
+    _balancer_gate.check();
+    _balancer_timer_last_ran = ss::lowres_clock::now();
+    return ss::make_ready_future<>();
+}
+
 } // namespace kafka
 
 struct parseless_formatter {
@@ -173,5 +236,28 @@ struct fmt::formatter<kafka::ingress_egress_state<T>> : parseless_formatter {
     template<typename Ctx>
     auto format(const kafka::ingress_egress_state<T>& p, Ctx& ctx) const {
         return fmt::format_to(ctx.out(), "(in:{}, eg:{})", p.in, p.eg);
+    }
+};
+
+template<>
+struct fmt::formatter<kafka::snc_quota_manager::dispense_quota_amount>
+  : parseless_formatter {
+    template<typename Ctx>
+    auto format(
+      const kafka::snc_quota_manager::dispense_quota_amount& v,
+      Ctx& ctx) const {
+        const char* ai_name;
+        switch (v.amount_is) {
+        case kafka::snc_quota_manager::dispense_quota_amount::amount_t::delta:
+            ai_name = "delta";
+            break;
+        case kafka::snc_quota_manager::dispense_quota_amount::amount_t::value:
+            ai_name = "value";
+            break;
+        default:
+            ai_name = "?";
+            break;
+        }
+        return fmt::format_to(ctx.out(), "{{{}: {}}}", ai_name, v.amount);
     }
 };

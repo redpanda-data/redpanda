@@ -17,6 +17,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/timer.hh>
 
 #include <chrono>
 #include <optional>
@@ -70,6 +71,36 @@ public:
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
 private:
+    /// Describes an instruction to the balancer how to alter effective shard
+    /// quotas When \p amount_is == \p delta, \p amount should be dispensed
+    /// among shard quotas (if positive) or collected from shard quotas (if
+    /// negative). When \p amount_is == \p value, \p amount contains the new
+    /// shard quota value and each shard quota should be reset to that value
+    /// regardless of what is there now.
+    struct dispense_quota_amount {
+        snc_quota_manager::quota_t amount{0};
+        enum class amount_t { delta, value };
+        amount_t amount_is{amount_t::delta};
+        bool empty() const noexcept {
+            return amount == 0 && amount_is == amount_t::delta;
+        }
+    };
+    friend struct fmt::formatter<dispense_quota_amount>;
+
+    ss::lowres_clock::duration get_quota_balancer_node_period() const;
+    void update_shard_quota_minimum();
+
+    /// Arm quota balancer timer at the distance of balancer period
+    /// from the beginning of the last regular balancer run.
+    /// \pre Current shard is the balancer shard
+    void arm_balancer_timer();
+
+    /// A step of regular quota balancer that reassigns parts of quota
+    /// based on shards backpressure. Spawned by the balancer timer
+    /// periodically. Runs on the balancer shard only
+    ss::future<> quota_balancer_step();
+
+private:
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
     ingress_egress_state<config::binding<std::optional<quota_t>>>
@@ -79,6 +110,11 @@ private:
       _kafka_quota_balancer_node_period;
     config::binding<double> _kafka_quota_balancer_min_shard_thoughput_ratio;
     config::binding<quota_t> _kafka_quota_balancer_min_shard_thoughput_bps;
+
+    // operational, only used in the balancer shard
+    ss::timer<ss::lowres_clock> _balancer_timer;
+    ss::lowres_clock::time_point _balancer_timer_last_ran;
+    ss::gate _balancer_gate;
 
     // operational, used on each shard
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
