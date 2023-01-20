@@ -14,6 +14,7 @@
 #include "prometheus/prometheus_sanitize.h"
 
 #include <fmt/core.h>
+#include <fmt/ranges.h>
 
 using namespace std::chrono_literals;
 
@@ -292,10 +293,101 @@ void snc_quota_manager::arm_balancer_timer() {
     _balancer_timer.arm(arm_until);
 }
 
+using shard_count_t = unsigned;
+
+struct borrower_t {
+    ss::shard_id shard_id;
+    // how many borrowers the shard counts towards as, can be 0 or 1
+    ingress_egress_state<shard_count_t> borrowers_count;
+};
+
 ss::future<> snc_quota_manager::quota_balancer_step() {
+    const auto units = co_await _balancer_mx.get_units();
     _balancer_gate.check();
     _balancer_timer_last_ran = ss::lowres_clock::now();
-    return ss::make_ready_future<>();
+    vlog(klog.trace, "qb - Step");
+
+    // determine the borrowers and whether any balancing is needed now
+    const auto borrowers = co_await container().map(
+      [](snc_quota_manager& qm) -> borrower_t {
+          qm.refill_buckets(clock::now());
+          const ingress_egress_state<quota_t> def = qm.get_deficiency();
+          return {
+            .shard_id = ss::this_shard_id(),
+            .borrowers_count{
+              .in = def.in > 0 ? 1u : 0u, .eg = def.eg > 0 ? 1u : 0u}};
+      });
+
+    const auto borrowers_count = std::accumulate(
+      borrowers.cbegin(),
+      borrowers.cend(),
+      ingress_egress_state<shard_count_t>{0u, 0u},
+      [](const ingress_egress_state<shard_count_t>& s, const borrower_t& b) {
+          return s + b.borrowers_count;
+      });
+    vlog(
+      klog.trace,
+      "qb - Borrowers count: {}, borrowers:",
+      borrowers_count,
+      borrowers);
+    if (is_zero(borrowers_count)) {
+        co_return;
+    }
+
+    // collect quota from lenders
+    const ingress_egress_state<quota_t> collected
+      = co_await container().map_reduce0(
+        [borrowers_count](snc_quota_manager& qm) {
+            const auto surplus_to_collect =
+              [](const quota_t surplus, const shard_count_t borrowers_count) {
+                  return borrowers_count > 0 ? surplus / 2 : 0;
+              };
+            const ingress_egress_state<quota_t> surplus = qm.get_surplus();
+            const ingress_egress_state<quota_t> to_collect{
+              .in = surplus_to_collect(surplus.in, borrowers_count.in),
+              .eg = surplus_to_collect(surplus.eg, borrowers_count.eg)};
+            qm.adjust_quota(-to_collect);
+            return to_collect;
+        },
+        ingress_egress_state<quota_t>{0, 0},
+        std::plus{});
+    vlog(klog.trace, "qb - Collected: {}", collected);
+
+    // dispense the collected amount among the borrowers
+    using split_t = decltype(std::div(quota_t{}, shard_count_t{}));
+    ingress_egress_state<split_t> split{{0, 0}, {0, 0}};
+    if (borrowers_count.in > 0) {
+        split.in = std::ldiv(collected.in, borrowers_count.in);
+    }
+    if (borrowers_count.eg > 0) {
+        split.eg = std::ldiv(collected.eg, borrowers_count.eg);
+    }
+
+    const auto equal_share_or_0 =
+      [](split_t& split, const shard_count_t borrowers_count) -> quota_t {
+        if (borrowers_count == 0) {
+            return 0;
+        }
+        if (split.rem == 0) {
+            return split.quot;
+        }
+        --split.rem;
+        return split.quot + 1;
+    };
+    for (const borrower_t& b : borrowers) {
+        const ingress_egress_state<quota_t> share{
+          .in = equal_share_or_0(split.in, b.borrowers_count.in),
+          .eg = equal_share_or_0(split.eg, b.borrowers_count.eg)};
+        if (!is_zero(share)) {
+            // TBD: make the invocation parallel
+            co_await container().invoke_on(
+              b.shard_id,
+              [share](snc_quota_manager& qm) { qm.adjust_quota(share); });
+        }
+    }
+    if (split.in.rem != 0 || split.eg.rem != 0) {
+        vlog(klog.error, "qb - Split not dispensed in full: {}", split);
+    }
 }
 
 namespace {
@@ -480,6 +572,21 @@ void snc_quota_manager::refill_buckets(const clock::time_point now) noexcept {
     _shard_quota.eg.refill(now);
 }
 
+ingress_egress_state<quota_t>
+snc_quota_manager::get_deficiency() const noexcept {
+    const auto f = [](
+                     const bottomless_token_bucket& b,
+                     const quota_t shard_quota_min) -> quota_t {
+        if (b.tokens() < 0 || b.quota() < shard_quota_min) {
+            return 1;
+        }
+        return 0;
+    };
+    return {
+      .in = f(_shard_quota.in, _shard_quota_minimum.in),
+      .eg = f(_shard_quota.eg, _shard_quota_minimum.eg)};
+}
+
 ingress_egress_state<quota_t> snc_quota_manager::get_quota() const noexcept {
     return {.in = _shard_quota.in.quota(), .eg = _shard_quota.eg.quota()};
 }
@@ -548,6 +655,15 @@ struct fmt::formatter<kafka::ingress_egress_state<T>> : parseless_formatter {
 };
 
 template<>
+struct fmt::formatter<kafka::borrower_t> : parseless_formatter {
+    template<typename Ctx>
+    auto format(const kafka::borrower_t& v, Ctx& ctx) const {
+        return fmt::format_to(
+          ctx.out(), "{{{}, {}}}", v.shard_id, v.borrowers_count);
+    }
+};
+
+template<>
 struct fmt::formatter<kafka::snc_quota_manager::dispense_quota_amount>
   : parseless_formatter {
     template<typename Ctx>
@@ -567,5 +683,13 @@ struct fmt::formatter<kafka::snc_quota_manager::dispense_quota_amount>
             break;
         }
         return fmt::format_to(ctx.out(), "{{{}: {}}}", ai_name, v.amount);
+    }
+};
+
+template<>
+struct fmt::formatter<std::ldiv_t> : parseless_formatter {
+    template<typename Ctx>
+    auto format(const std::ldiv_t& v, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "(q:{}, r:{})", v.quot, v.rem);
     }
 };

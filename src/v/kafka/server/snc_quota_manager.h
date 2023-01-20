@@ -123,6 +123,10 @@ private:
     /// Return current quota values
     ingress_egress_state<quota_t> get_quota() const noexcept;
 
+    /// If the current quota is sufficient for the shard, returns 0,
+    /// otherwise returns a positive value
+    ingress_egress_state<quota_t> get_deficiency() const noexcept;
+
     /// If the current quota is more than sufficient for the shard,
     /// returns how much it is more than sufficient as a positive value,
     /// otherwise returns 0.
