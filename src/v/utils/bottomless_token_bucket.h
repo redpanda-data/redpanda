@@ -12,6 +12,8 @@
 #include "seastar/core/lowres_clock.hh"
 #include "seastarx.h"
 
+#include <fmt/core.h>
+
 #include <algorithm>
 #include <chrono>
 #include <limits>
@@ -70,31 +72,42 @@ public:
     }
 
     void set_quota(const quota_t quota) noexcept {
-        set_quota_impl(quota);
-        update_burst_tokens();
+        if (quota != _quota) {
+            set_quota_impl(quota);
+            update_burst_tokens();
+        }
     }
 
     /// @post 0 < return value <= max_quota
     quota_t quota() const noexcept { return _quota; }
 
     void set_width(const time_res_t width) noexcept {
-        set_width_impl(width);
-        update_burst_tokens();
+        if (width != _width) {
+            set_width_impl(width);
+            update_burst_tokens();
+        }
     }
 
-    /// Record usage of tokens
+    /// Advance internal time and record usage of tokens
     /// @param n Number of tokens used
     /// @param now Time to record at
     void use(tokens_t n, clock::time_point now) noexcept;
 
-    /// Current amount of tokens
+    /// Advance internal time
+    void refill(clock::time_point now) noexcept;
+
+    /// Amount of tokens after the last use()/refill()
     tokens_t tokens() const noexcept { return _tokens; }
+
+    /// Amount of tokens after the last use()/refill() expressed in [tokens/s],
+    /// i.e. how much of the quota value is available after the last use.
+    /// @post return value <= quota()
+    quota_t get_current_rate() const noexcept;
 
 private:
     void set_quota_impl(const quota_t quota) noexcept;
     void set_width_impl(const time_res_t width) noexcept;
     void update_burst_tokens() noexcept;
-    void refill(const clock::time_point now) noexcept;
 
 private:
     quota_t _quota{0};
@@ -102,4 +115,13 @@ private:
     tokens_t _tokens{0};
     tokens_t _burst{0}; // capacity of the bucket
     clock::time_point _last_check{-max_width};
+
+    friend struct fmt::formatter<bottomless_token_bucket>;
+};
+
+template<>
+struct fmt::formatter<bottomless_token_bucket> {
+    constexpr auto parse(fmt::format_parse_context& ctx) { return ctx.begin(); }
+    template<typename Ctx>
+    typename Ctx::iterator format(const bottomless_token_bucket&, Ctx&) const;
 };
