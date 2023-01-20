@@ -363,9 +363,10 @@ private:
 
     void update_probe();
 
-    bool upload_loop_can_continue() const;
-    bool sync_manifest_loop_can_continue() const;
-    bool housekeeping_can_continue() const;
+    /// Return true if archival metadata can be replicated.
+    /// This means that the replica is a leader, the term did not
+    /// change and the archiver is not stopping.
+    bool can_update_archival_metadata() const;
 
     /// Helper to generate a segment path from candidate
     remote_segment_path

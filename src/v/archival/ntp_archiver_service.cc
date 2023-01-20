@@ -293,7 +293,7 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
-    while (upload_loop_can_continue()) {
+    while (can_update_archival_metadata()) {
         // Bump up archival STM's state to make sure that it's not lagging
         // behind too far. If the STM is lagging behind we will have to read a
         // lot of data next time we upload something.
@@ -352,7 +352,7 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             _next_housekeeping = _housekeeping_jitter();
         }
 
-        if (!upload_loop_can_continue()) {
+        if (!can_update_archival_metadata()) {
             break;
         }
 
@@ -380,7 +380,7 @@ ss::future<> ntp_archiver::upload_until_term_change() {
 }
 
 ss::future<> ntp_archiver::sync_manifest_until_term_change() {
-    while (sync_manifest_loop_can_continue()) {
+    while (can_update_archival_metadata()) {
         cloud_storage::download_result result = co_await sync_manifest();
 
         if (result != cloud_storage::download_result::success) {
@@ -520,18 +520,7 @@ void ntp_archiver::update_probe() {
       truncated_seg_count + man.replaced_segments_count());
 }
 
-bool ntp_archiver::upload_loop_can_continue() const {
-    return !_as.abort_requested() && !_gate.is_closed()
-           && _parent.is_elected_leader() && _parent.term() == _start_term;
-}
-
-bool ntp_archiver::sync_manifest_loop_can_continue() const {
-    // todo: think about it
-    return !_as.abort_requested() && !_gate.is_closed()
-           && _parent.is_elected_leader() && _parent.term() == _start_term;
-}
-
-bool ntp_archiver::housekeeping_can_continue() const {
+bool ntp_archiver::can_update_archival_metadata() const {
     return !_as.abort_requested() && !_gate.is_closed()
            && _parent.is_elected_leader() && _parent.term() == _start_term;
 }
@@ -905,7 +894,7 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
             _probe->upload_lag(ctx.last_offset - ctx.start_offset);
         }
 
-        while (uploads_remaining > 0 && upload_loop_can_continue()) {
+        while (uploads_remaining > 0 && can_update_archival_metadata()) {
             auto should_stop = co_await ctx.schedule_single_upload(*this);
             if (should_stop == ss::stop_iteration::yes) {
                 break;
@@ -962,7 +951,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
     }
     auto results = co_await ss::when_all_succeed(begin(flist), end(flist));
 
-    if (!upload_loop_can_continue()) {
+    if (!can_update_archival_metadata()) {
         // We exit early even if we have successfully uploaded some segments to
         // avoid interfering with an archiver that could have started on another
         // node.
@@ -1235,7 +1224,7 @@ std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
 
 ss::future<> ntp_archiver::housekeeping() {
     try {
-        if (housekeeping_can_continue()) {
+        if (can_update_archival_metadata()) {
             // Acquire mutex to prevent concurrency between
             // external housekeeping jobs from upload_housekeeping_service
             // and retention/GC
@@ -1244,7 +1233,7 @@ ss::future<> ntp_archiver::housekeeping() {
             co_await garbage_collect();
         }
 
-        if (housekeeping_can_continue()) {
+        if (can_update_archival_metadata()) {
             co_await upload_manifest();
         }
     } catch (std::exception& e) {
@@ -1253,7 +1242,7 @@ ss::future<> ntp_archiver::housekeeping() {
 }
 
 ss::future<> ntp_archiver::apply_retention() {
-    if (!housekeeping_can_continue()) {
+    if (!can_update_archival_metadata()) {
         co_return;
     }
 
@@ -1295,7 +1284,7 @@ ss::future<> ntp_archiver::apply_retention() {
 // * issue #6843: delete via DeleteObjects S3 api instead of deleting individual
 // segments
 ss::future<> ntp_archiver::garbage_collect() {
-    if (!housekeeping_can_continue()) {
+    if (!can_update_archival_metadata()) {
         co_return;
     }
 
@@ -1412,7 +1401,7 @@ ntp_archiver::get_housekeeping_jobs() {
 
 ss::future<std::optional<upload_candidate_with_locks>>
 ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
-    if (!upload_loop_can_continue()) {
+    if (!can_update_archival_metadata()) {
         co_return std::nullopt;
     }
     auto run = scanner(_parent.start_offset(), manifest());
@@ -1468,7 +1457,7 @@ ss::future<bool> ntp_archiver::upload(
 ss::future<bool> ntp_archiver::do_upload_local(
   upload_candidate_with_locks upload_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
-    if (!upload_loop_can_continue()) {
+    if (!can_update_archival_metadata()) {
         co_return false;
     }
     auto [upload, locks] = std::move(upload_locks);
