@@ -68,9 +68,8 @@ private:
 private:
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
-    config::binding<std::optional<uint64_t>>
-      _kafka_throughput_limit_node_in_bps;
-    config::binding<std::optional<uint64_t>>
+    config::binding<std::optional<quota_t>> _kafka_throughput_limit_node_in_bps;
+    config::binding<std::optional<quota_t>>
       _kafka_throughput_limit_node_out_bps;
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
     config::binding<std::chrono::milliseconds>

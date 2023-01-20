@@ -59,16 +59,16 @@ ss::future<> snc_quota_manager::stop() { return ss::make_ready_future<>(); }
 namespace {
 
 bottomless_token_bucket::quota_t get_default_quota_from_property(
-  const config::binding<std::optional<uint64_t>>& prop) {
+  const config::binding<std::optional<int64_t>>& prop) {
     if (prop()) {
-        const uint64_t v = *prop() / ss::smp::count;
-        if (v >= static_cast<uint64_t>(bottomless_token_bucket::max_quota)) {
+        const bottomless_token_bucket::quota_t v = *prop() / ss::smp::count;
+        if (v > bottomless_token_bucket::max_quota) {
             return bottomless_token_bucket::max_quota;
         }
         if (v < 1) {
             return 1;
         }
-        return static_cast<bottomless_token_bucket::quota_t>(v);
+        return v;
     } else {
         return bottomless_token_bucket::max_quota;
     }
