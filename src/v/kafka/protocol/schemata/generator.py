@@ -288,7 +288,37 @@ path_type_map = {
                 "EndOffset": ("model::offset", "int64"),
             }
         }
-    }
+    },
+    "AlterPartitionReassignmentsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        }
+    },
+    "AlterPartitionReassignmentsResponseData": {
+        "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
+        "Responses": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        }
+    },
+    "ListPartitionReassignmentsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "PartitionIndexes": ("model::partition_id", "int32"),
+        }
+    },
+    "ListPartitionReassignmentsResponseData": {
+        "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        }
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -471,6 +501,13 @@ STRUCT_TYPES = [
     "SupportedFeatureKey",
     "FinalizedFeatureKey",
     "DeleteTopicState",
+    "ReassignableTopic",
+    "ReassignablePartition",
+    "ReassignableTopicResponse",
+    "ReassignablePartitionResponse",
+    "ListPartitionReassignmentsTopics",
+    "OngoingTopicReassignment",
+    "OngoingPartitionReassignment",
 ]
 
 # a list of struct types which are ineligible to have default-generated
@@ -1184,14 +1221,6 @@ if ({{ cond }}) {
 {%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
     return reader.{{ decoder }};
-{%- elif field.nullable() %}
-    {
-        auto tmp = reader.{{ decoder }};
-        if (tmp) {
-            return {{ named_type }}(std::move(*tmp));
-        }
-        return std::nullopt;
-    }
 {%- else %}
     return {{ named_type }}(reader.{{ decoder }});
 {%- endif %}

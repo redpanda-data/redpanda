@@ -1287,4 +1287,80 @@ ss::future<std::error_code> topics_frontend::decrease_replication_factor(
       _stm, _features, _as, std::move(cmd), timeout);
 }
 
+allocation_request make_allocation_request(
+  model::ntp ntp,
+  replication_factor tp_replication_factor,
+  const std::vector<model::node_id>& new_replicas) {
+    allocation_request req(
+      get_allocation_domain(model::topic_namespace{ntp.ns, ntp.tp.topic}));
+    req.partitions.reserve(1);
+    allocation_constraints constraints;
+    constraints.hard_constraints.push_back(
+      ss::make_lw_shared<hard_constraint_evaluator>(on_nodes(new_replicas)));
+    req.partitions.emplace_back(
+      ntp.tp.partition, tp_replication_factor, std::move(constraints));
+    return req;
+}
+
+ss::future<result<std::vector<partition_assignment>>>
+topics_frontend::generate_reassignments(
+  model::ntp ntp, std::vector<model::node_id> new_replicas) {
+    auto tp_metadata = _topics.local().get_topic_metadata_ref(
+      model::topic_namespace{ntp.ns, ntp.tp.topic});
+    if (!tp_metadata.has_value()) {
+        co_return errc::topic_not_exists;
+    }
+
+    if (!tp_metadata.value().get().is_topic_replicable()) {
+        co_return errc::topic_operation_error;
+    }
+
+    auto tp_replication_factor
+      = tp_metadata.value().get().get_replication_factor();
+
+    auto units = co_await _allocator.invoke_on(
+      partition_allocator::shard,
+      [ntp, tp_replication_factor, new_replicas{std::move(new_replicas)}](
+        partition_allocator& al) {
+          return al.allocate(
+            make_allocation_request(ntp, tp_replication_factor, new_replicas));
+      });
+
+    if (!units) {
+        co_return units.error();
+    }
+
+    auto assignments = units.value()->get_assignments();
+    if (assignments.empty()) {
+        co_return errc::no_partition_assignments;
+    }
+
+    co_return assignments;
+}
+
+ss::future<std::error_code> topics_frontend::move_partition_replicas(
+  model::ntp ntp,
+  std::vector<model::node_id> new_replica_set,
+  model::timeout_clock::time_point tout,
+  std::optional<model::term_id> term) {
+    auto assignments = co_await generate_reassignments(
+      ntp, std::move(new_replica_set));
+
+    // The return type from generate_reassignments is a
+    // result<vector<partition_assignment>>. So we need to make sure
+    // the result: 1) has a value and 2) the vector should only have one replica
+    // set, so check that the front partition id matches the request.
+
+    if (!assignments) {
+        co_return assignments.error();
+    }
+
+    if (assignments.value().front().id != ntp.tp.partition) {
+        co_return errc::allocation_error;
+    }
+
+    co_return co_await move_partition_replicas(
+      ntp, std::move(assignments.value().front().replicas), tout, term);
+}
+
 } // namespace cluster

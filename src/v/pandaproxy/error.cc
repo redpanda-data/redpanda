@@ -239,6 +239,7 @@ std::error_condition make_error_condition(std::error_code ec) {
         case kec::kafka_storage_error:
         case kec::unknown_server_error:
         case kec::unstable_offset_commit:
+        case kec::no_reassignment_in_progress:
             return rec::kafka_error;
         case kec::network_exception:
         case kec::coordinator_load_in_progress:

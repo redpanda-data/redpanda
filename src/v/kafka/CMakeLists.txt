@@ -18,6 +18,8 @@ set(handlers_srcs
   server/handlers/delete_acls.cc
   server/handlers/create_partitions.cc
   server/handlers/offset_for_leader_epoch.cc
+  server/handlers/alter_partition_reassignments.cc
+  server/handlers/list_partition_reassignments.cc
   server/handlers/handler_interface.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc

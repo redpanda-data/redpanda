@@ -298,4 +298,18 @@ topic_properties metadata_cache::get_default_properties() const {
     return tp;
 }
 
+std::optional<partition_assignment>
+metadata_cache::get_partition_assignment(const model::ntp& ntp) const {
+    return _topics_state.local().get_partition_assignment(ntp);
+}
+
+std::optional<std::vector<model::broker_shard>>
+metadata_cache::get_previous_replica_set(const model::ntp& ntp) const {
+    return _topics_state.local().get_previous_replica_set(ntp);
+}
+
+const topic_table::updates_t& metadata_cache::updates_in_progress() const {
+    return _topics_state.local().updates_in_progress();
+}
+
 } // namespace cluster
