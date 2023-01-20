@@ -1026,8 +1026,7 @@ ss::future<> disk_log_impl::maybe_roll(
     }
 }
 
-ss::future<> disk_log_impl::do_housekeeping(
-  std::chrono::system_clock::time_point system_time) {
+ss::future<> disk_log_impl::do_housekeeping() {
     auto gate = _compaction_gate.hold();
     // do_housekeeping races with maybe_roll to use new_segment.
     // take a lock to prevent problems
@@ -1062,7 +1061,7 @@ ss::future<> disk_log_impl::do_housekeeping(
           seg_ms.value(),
           local_config.log_segment_ms_min(),
           local_config.log_segment_ms_max())
-      > system_time) {
+      > ss::lowres_clock::now()) {
         // skip, time hasn't expired
         co_return;
     }

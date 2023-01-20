@@ -205,9 +205,8 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
     // handle segment.ms sequentially, since compaction is already sequential
     // when this will be unified with compaction, the whole task could be made
     // concurrent
-    for (auto now = std::chrono::system_clock::now();
-         auto& log_meta : _logs_list) {
-        co_await log_meta.handle.housekeeping(now);
+    for (auto& log_meta : _logs_list) {
+        co_await log_meta.handle.housekeeping();
     }
 
     for (auto& log_meta : _logs_list) {

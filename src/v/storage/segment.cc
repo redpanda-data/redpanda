@@ -454,7 +454,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
                 !this->_first_write.has_value()
                 && batch_type == model::record_batch_type::raft_data) {
                   // record time of first write of data batch
-                  this->_first_write = std::chrono::system_clock::now();
+                  this->_first_write = ss::lowres_clock::now();
               }
               index_fut.get();
               return std::move(append_fut);

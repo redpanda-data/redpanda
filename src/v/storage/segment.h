@@ -163,8 +163,16 @@ public:
     generation_id get_generation_id() const { return _generation_id; }
     void advance_generation() { _generation_id++; }
 
-    auto first_write_ts()
-      -> std::optional<std::chrono::system_clock::time_point> {
+    /**
+     * Timestamp of the first data batch written to this segment.
+     * Note that this isn't the first timestamp of a data batch in the log,
+     * and is only set if the segment was appended to while this segment was
+     * active. I.e. a closed segment following a restart wouldn't have this
+     * value set, because we only intend on using this in the context of an
+     * active segment.
+     */
+    constexpr std::optional<ss::lowres_clock::time_point>
+    first_write_ts() const {
         return _first_write;
     }
 
@@ -227,8 +235,8 @@ private:
 
     // Timestamp from server time of first data written to this segment,
     // field is set when a raft_data batch is appended.
-    // Used to implement segment.ms
-    std::optional<std::chrono::system_clock::time_point> _first_write;
+    // Used to implement segment.ms rolling
+    std::optional<ss::lowres_clock::time_point> _first_write;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
