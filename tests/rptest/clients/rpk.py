@@ -315,7 +315,7 @@ class RpkTool:
         assert m, f"Reported offset not found in: {out}"
         return int(m.group(1))
 
-    def describe_topic(self, topic: str, tolerant: bool = False):
+    def describe_topic(self, topic: str, tolerant: bool = False, timeout = None):
         """
         By default this will omit any partitions which do not have full
         metadata in the response: this means that if we are unlucky and a
@@ -335,7 +335,7 @@ class RpkTool:
             return None
 
         cmd = ['describe', topic, '-p']
-        output = self._run_topic(cmd)
+        output = self._run_topic(cmd, timeout=timeout)
         table = parse_rpk_table(output)
 
         expected_columns = set([

@@ -17,12 +17,14 @@ import numpy
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.services.admin import Admin
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, LoggingConfig
+from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, SISettings, LoggingConfig
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer, KgoVerifierRandomConsumer
 from rptest.services.kgo_repeater_service import KgoRepeaterService, repeater_traffic
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+from rptest.utils.node_operations import NodeDecommissionWaiter
 
 # An unreasonably large fetch request: we submit requests like this in the
 # expectation that the server will properly clamp the amount of data it
@@ -49,9 +51,14 @@ PARTITIONS_PER_SHARD = 1000
 # on the test.
 DOCKER_PARTITION_LIMIT = 128
 
+STOP_NODE_TIME_SEC = 180
+
 
 class ScaleParameters:
-    def __init__(self, redpanda, replication_factor):
+    def __init__(self,
+                 redpanda,
+                 replication_factor,
+                 tiered_storage_enabled=False):
         self.redpanda = redpanda
 
         node_count = len(self.redpanda.nodes)
@@ -106,8 +113,10 @@ class ScaleParameters:
         # as they like without risking filling the disk.
         partition_replicas_per_node = int(
             (self.partition_limit * replication_factor) / node_count)
+
         self.retention_bytes = int(
             (node_disk_free / 2) / partition_replicas_per_node)
+        self.local_retention_bytes = self.retention_bytes
 
         # Choose an appropriate segment size to enable retention
         # rules to kick in promptly.
@@ -133,10 +142,6 @@ class ScaleParameters:
             # liable to be slow, we have many nodes sharing the same drive.
             self.expect_bandwidth = 5 * 1024 * 1024
             self.expect_single_bandwidth = 10E6
-
-        self.logger.info(
-            f"Selected retention.bytes={self.retention_bytes}, segment.bytes={self.segment_size}"
-        )
 
         mb_per_partition = 1
         if not self.redpanda.dedicated_nodes:
@@ -170,6 +175,40 @@ class ScaleParameters:
             raise RuntimeError(
                 f"Node memory is too small ({node_memory}MB - {reserved_memory}MB)"
             )
+
+        if tiered_storage_enabled:
+            # Configure a relatively low cache size
+            self.cloud_cache_size_bytes = self.segment_size * partition_replicas_per_node
+            self.cloud_cache_size_bytes = min(self.cloud_cache_size_bytes,
+                                              node_disk_free / 2)
+
+            # Emulate an order of magnitude reduction in local retention, e.g.
+            # 7 days of data -> 1 day stored local.
+            # To ensure we have some data that isn't retained.
+            max_local_size = int(40 * 1024 * 1024 * 1024 / partition_replicas_per_node)
+            self.local_retention_bytes = min(max_local_size,
+                                             int(self.retention_bytes / 7))
+
+            # Empirically, an initial load of 100GiB completes in 5-7 minutes
+            # with tiered storage enabled. Force at last a couple cloud
+            # segments per partition during that initial load.
+            self.cloud_upload_interval_sec = 60 * 2
+
+            # Run housekeeping frequently enough to keep cloud uploads going.
+            self.cloud_housekeeping_interval_ms = self.cloud_upload_interval_sec * 1000 / 2
+
+            self.si_settings = SISettings(
+                log_segment_size=self.segment_size,
+                cloud_storage_cache_size=self.cloud_cache_size_bytes,
+                cloud_storage_segment_max_upload_interval_sec=self.
+                cloud_upload_interval_sec,
+            )
+        else:
+            self.si_settings = None
+
+        self.logger.info(
+            f"Selected retention.bytes={self.retention_bytes}, segment.bytes={self.segment_size}"
+        )
 
     @property
     def logger(self):
@@ -215,7 +254,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                 'reclaim_batch_cache_min_free': 256000000,
                 'storage_read_buffer_size': 32768,
                 'storage_read_readahead_count': 2,
-                'disable_metrics': True,
+                'disable_metrics': False,
                 'disable_public_metrics': False,
                 'append_chunk_size': 32768,
                 'kafka_rpc_server_tcp_recv_buf': 131072,
@@ -237,8 +276,11 @@ class ManyPartitionsTest(PreallocNodesTest):
             # to warn instead of info.
             log_config=LoggingConfig('info',
                                      logger_levels={
-                                         'storage': 'warn',
-                                         'storage-gc': 'warn',
+                                         'storage': 'info',
+                                         'archival': 'debug',
+                                         'archival-ctrl': 'debug',
+                                         'cloud_storage': 'debug',
+                                         'storage-gc': 'info',
                                          'raft': 'warn',
                                          'offset_translator': 'warn'
                                      }),
@@ -249,7 +291,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         any_incomplete = False
         for tn in topic_names:
             try:
-                partitions = list(self.rpk.describe_topic(tn, tolerant=True))
+                partitions = list(self.rpk.describe_topic(tn, tolerant=True, timeout=60))
             except RpkException as e:
                 # One retry.  This is a case where running rpk after a full
                 # cluster restart can time out after 30 seconds, but succeed
@@ -399,7 +441,8 @@ class ManyPartitionsTest(PreallocNodesTest):
                 futs.append(
                     executor.submit(self.redpanda.restart_nodes,
                                     nodes=[node],
-                                    start_timeout=self.EXPECT_START_TIME))
+                                    start_timeout=self.EXPECT_START_TIME,
+                                    stop_timeout=STOP_NODE_TIME_SEC))
 
             for f in futs:
                 # Raise on error
@@ -417,12 +460,12 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(f"Single node restart on node {node.name}")
         node_id = self.redpanda.idx(node)
 
-        self.redpanda.stop_node(node)
+        self.redpanda.stop_node(node, timeout=STOP_NODE_TIME_SEC)
 
         # Wait for leaderships to stabilize on the surviving nodes
         wait_until(
             lambda: self._node_leadership_evacuated(topic_names, n_partitions,
-                                                    node_id), 30, 1)
+                                                    node_id), 120, 1)
 
         self.redpanda.start_node(node, timeout=self.EXPECT_START_TIME)
 
@@ -444,6 +487,21 @@ class ManyPartitionsTest(PreallocNodesTest):
             expect_leader_transfer_time, 10)
         self.logger.info(
             f"Leaderships balanced in {time.time() - t1:.2f} seconds")
+
+    def _single_node_graceful_restart(self):
+        """
+        Perform a graceful restart of a node.
+
+        Typically we'd want to rolling restart an entire cluster, but to reduce
+        runtime of this test while still exercising graceful leadership
+        transfers, just restart one.
+        """
+        node = self.redpanda.nodes[-1]
+        self.logger.info(f"Single node graceful restart on node {node.name}")
+        self.redpanda.rolling_restart_nodes(
+            node,
+            start_timeout=self.EXPECT_START_TIME,
+            stop_timeout=STOP_NODE_TIME_SEC)
 
     def _restart_stress(self, scale: ScaleParameters, topic_names: list,
                         n_partitions: int, inter_restart_check: callable):
@@ -715,6 +773,11 @@ class ManyPartitionsTest(PreallocNodesTest):
         self._test_many_partitions(compacted=False)
 
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_many_partitions_tiered_storage(self):
+        self._test_many_partitions(compacted=False,
+                                   tiered_storage_enabled=True)
+
+    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_omb(self):
         scale = ScaleParameters(self.redpanda, replication_factor=3)
         self.redpanda.start(parallel=True)
@@ -723,7 +786,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         # peak partition count.
         self._run_omb(scale)
 
-    def _test_many_partitions(self, compacted):
+    def _test_many_partitions(self, compacted, tiered_storage_enabled=False):
         """
         Validate that redpanda works with partition counts close to its resource
         limits.
@@ -756,7 +819,10 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         replication_factor = 3
 
-        scale = ScaleParameters(self.redpanda, replication_factor)
+        scale = ScaleParameters(self.redpanda, replication_factor,
+                                tiered_storage_enabled)
+        if scale.si_settings is not None:
+            self.redpanda.set_si_settings(scale.si_settings)
 
         # Run with one huge topic: it is more stressful for redpanda when clients
         # request the metadata for many partitions at once, and the simplest way
@@ -780,10 +846,16 @@ class ManyPartitionsTest(PreallocNodesTest):
                 f"Creating topic {tn} with {n_partitions} partitions")
             config = {
                 'segment.bytes': scale.segment_size,
-                'retention.bytes': scale.retention_bytes
+                'retention.bytes': scale.retention_bytes,
+                'retention.local.target.bytes': scale.local_retention_bytes,
             }
             if compacted:
-                config['cleanup.policy'] = 'compact'
+                if tiered_storage_enabled:
+                    config['cleanup.policy'] = 'compact,delete'
+                else:
+                    config['cleanup.policy'] = 'compact'
+            elif tiered_storage_enabled:
+                config['cleanup.policy'] = 'delete'
 
             self.rpk.create_topic(tn,
                                   partitions=n_partitions,
@@ -895,3 +967,47 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"Expected throughput {expect_mbps:.2f}, got throughput {actual_mbps:.2f}MB/s"
                 )
                 raise
+
+        # Run a workload and ops that stresses the cloud cache code paths. Even
+        # if cloud storage isn't enabled, we shoul be able to handily proceed
+        # with the work.
+
+        # When tiered storage is enabled, changes in leaderships will force
+        # hydration of data from S3 on different nodes. Using a random workload
+        # ensures we aren't always reading at the tip of the logs that may be
+        # stored locally.
+        rand_ios = 10
+        rand_parallel = 10
+        if not self.redpanda.dedicated_nodes:
+            rand_parallel = 10
+            rand_ios = 10
+
+        rand_consumer = KgoVerifierRandomConsumer(
+            self.test_context,
+            self.redpanda,
+            topic_names[0],
+            msg_size=0,
+            rand_read_msgs=rand_ios,
+            parallel=rand_parallel,
+            nodes=[self.preallocated_nodes[1]])
+        rand_consumer.start(clean=False)
+        try:
+            # Perform a rolling restart and a decommission while the read
+            # workload is on-going.
+            self.logger.info(f"Entering single node graceful restart phase")
+            self._single_node_graceful_restart()
+
+            # self.logger.info(f"Entering single node decommissioning phase")
+            # admin = Admin(self.redpanda)
+            # to_decommission = self.redpanda.nodes[-1]
+            # to_decommission_id = self.redpanda.node_id(to_decommission)
+            # admin.decommission_broker(to_decommission_id,
+            #                           node=self.redpanda.nodes[0])
+
+            # waiter = NodeDecommissionWaiter(self.redpanda, to_decommission_id,
+            #                                 self.logger)
+            # waiter.wait_for_removal()
+        except:
+            raise
+        finally:
+            rand_consumer.wait()

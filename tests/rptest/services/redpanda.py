@@ -277,7 +277,8 @@ class SISettings:
                      int] = None,
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
-                 bypass_bucket_creation: bool = False):
+                 bypass_bucket_creation: bool = False,
+                 cloud_storage_housekeeping_interval_ms=None):
         self.log_segment_size = log_segment_size
         self.cloud_storage_access_key = cloud_storage_access_key
         self.cloud_storage_secret_key = cloud_storage_secret_key
@@ -294,6 +295,7 @@ class SISettings:
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
+        self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
 
     def load_context(self, logger, test_context):
         """
@@ -352,6 +354,9 @@ class SISettings:
         if self.cloud_storage_segment_max_upload_interval_sec:
             conf[
                 'cloud_storage_segment_max_upload_interval_sec'] = self.cloud_storage_segment_max_upload_interval_sec
+        if self.cloud_storage_housekeeping_interval_ms:
+            conf[
+                'cloud_storage_housekeeping_interval_ms'] = self.cloud_storage_housekeeping_interval_ms
         return conf
 
 
@@ -1740,6 +1745,7 @@ class RedpandaService(Service):
             wait_until(
                 lambda: len(self.pids(node)) == 0,
                 timeout_sec=timeout,
+                backoff_sec=1,
                 err_msg=
                 f"Redpanda node {node.account.hostname} failed to stop in {timeout} seconds"
             )
@@ -1838,7 +1844,10 @@ class RedpandaService(Service):
         * 'node' started in 'start_wasm_engine' (only when coproc is enabled)
         """
         try:
-            proc_name_regex = "redpanda\|/bin/node"
+            # NOTE: intentional space after "node" to avoid accidentally
+            # grepping "node_*", e.g. "node_exporter" when running with
+            # Grafana.
+            proc_name_regex = "redpanda\|/bin/node "
             cmd = f"ps ax | grep -i '{proc_name_regex}' | grep -v grep | awk '{{print $1}}'"
             pid_arr = [
                 pid for pid in node.account.ssh_capture(

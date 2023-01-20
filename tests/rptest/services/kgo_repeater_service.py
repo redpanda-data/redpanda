@@ -164,7 +164,10 @@ class KgoRepeaterService(Service):
 
         def group_ready():
             rpk = RpkTool(self.redpanda)
-            group = rpk.group_describe(self.group_name, summary=True)
+            try:
+                group = rpk.group_describe(self.group_name, summary=True)
+            except:
+                return False
             if group is None:
                 self.logger.debug(
                     f"group_ready: {self.group_name} got None from describe")
@@ -185,7 +188,7 @@ class KgoRepeaterService(Service):
         self.logger.debug(f"Waiting for group {self.group_name} to be ready")
         t1 = time.time()
         try:
-            wait_until(group_ready, timeout_sec=120, backoff_sec=10)
+            wait_until(group_ready, timeout_sec=300, backoff_sec=10)
         except:
             # On failure, inspect the group to identify which workers
             # specifically were absent.  This information helps to
