@@ -58,10 +58,9 @@ to_soa_layout(const std::vector<ingress_egress_state<T>>& v) {
 
 namespace {
 
-quota_t
-node_to_shard_quota(const config::binding<std::optional<quota_t>> node_quota) {
-    if (node_quota().has_value()) {
-        const quota_t v = node_quota().value() / ss::smp::count;
+quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
+    if (node_quota.has_value()) {
+        const quota_t v = node_quota.value() / ss::smp::count;
         if (v > bottomless_token_bucket::max_quota) {
             return bottomless_token_bucket::max_quota;
         }
@@ -92,18 +91,38 @@ snc_quota_manager::snc_quota_manager()
   , _kafka_quota_balancer_min_shard_thoughput_bps(
       config::shard_local_cfg()
         .kafka_quota_balancer_min_shard_thoughput_bps.bind())
+  , _node_quota_default{calc_node_quota_default()}
   , _shard_quota{
-        .in {node_to_shard_quota(_kafka_throughput_limit_node_bps.in),
-             _kafka_quota_balancer_window()},
-        .eg {node_to_shard_quota(_kafka_throughput_limit_node_bps.eg),
-             _kafka_quota_balancer_window()}}
+      .in {node_to_shard_quota(_node_quota_default.in),
+           _kafka_quota_balancer_window()},
+      .eg {node_to_shard_quota(_node_quota_default.eg),
+           _kafka_quota_balancer_window()}}
 {
+    update_shard_quota_minimum();
+    _kafka_throughput_limit_node_bps.in.watch(
+      [this] { update_node_quota_default(); });
+    _kafka_throughput_limit_node_bps.eg.watch(
+      [this] { update_node_quota_default(); });
     _kafka_quota_balancer_window.watch([this] {
         const auto v = _kafka_quota_balancer_window();
         vlog(klog.debug, "qm - Set shard TP token bucket window: {}", v);
         _shard_quota.in.set_width(v);
         _shard_quota.eg.set_width(v);
     });
+    _kafka_quota_balancer_node_period.watch([this] {
+        if (_balancer_gate.is_closed()) {
+            return;
+        }
+        if (_balancer_timer.cancel()) {
+            // cancel() returns true only on the balancer shard
+            // because the timer is never armed on the others
+            arm_balancer_timer();
+        }
+    });
+    _kafka_quota_balancer_min_shard_thoughput_ratio.watch(
+      [this] { update_shard_quota_minimum(); });
+    _kafka_quota_balancer_min_shard_thoughput_bps.watch(
+      [this] { update_shard_quota_minimum(); });
 
     if (ss::this_shard_id() == quota_balancer_shard) {
         _balancer_timer.set_callback([this] {
@@ -152,6 +171,17 @@ delay_t eval_delay(const bottomless_token_bucket& tb) noexcept {
 
 } // namespace
 
+ingress_egress_state<std::optional<quota_t>>
+snc_quota_manager::calc_node_quota_default() const {
+    // here will be the code to merge node limit
+    // and node share of cluster limit; so far it's node limit only
+    const ingress_egress_state<std::optional<quota_t>> default_quota{
+      .in = _kafka_throughput_limit_node_bps.in(),
+      .eg = _kafka_throughput_limit_node_bps.eg()};
+    vlog(klog.trace, "qm - Default node TP quotas: {}", default_quota);
+    return default_quota;
+}
+
 snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
   clock::time_point& connection_throttle_until,
   const clock::time_point now) const {
@@ -193,6 +223,52 @@ snc_quota_manager::get_quota_balancer_node_period() const {
     return v;
 }
 
+void snc_quota_manager::update_node_quota_default() {
+    const ingress_egress_state<std::optional<quota_t>> new_node_quota_default
+      = calc_node_quota_default();
+    if (ss::this_shard_id() == quota_balancer_shard) {
+        // downstream updates:
+        // - shard effective quota (via _shard_quotas_update):
+        const auto calc_diff = [](
+                                 const std::optional<quota_t>& qold,
+                                 const std::optional<quota_t>& qnew) {
+            dispense_quota_amount diff;
+            if (qold && qnew) {
+                diff.amount = *qnew - *qold;
+                diff.amount_is = dispense_quota_amount::amount_t::delta;
+            } else if (qold || qnew) {
+                diff.amount = node_to_shard_quota(qnew);
+                diff.amount_is = dispense_quota_amount::amount_t::value;
+            }
+            return diff;
+        };
+        ingress_egress_state<dispense_quota_amount> shard_quotas_update{
+          .in = calc_diff(_node_quota_default.in, new_node_quota_default.in),
+          .eg = calc_diff(_node_quota_default.eg, new_node_quota_default.eg)};
+        ssx::spawn_with_gate(
+          _balancer_gate, [this, update = shard_quotas_update] {
+              return quota_balancer_update(update);
+          });
+    }
+    _node_quota_default = new_node_quota_default;
+    // - shard minimum quota:
+    update_shard_quota_minimum();
+}
+
+void snc_quota_manager::update_shard_quota_minimum() {
+    const auto f = [this](const std::optional<quota_t>& node_quota_default) {
+        const auto shard_quota_default = node_to_shard_quota(
+          node_quota_default);
+        return std::max<quota_t>(
+          _kafka_quota_balancer_min_shard_thoughput_ratio()
+            * shard_quota_default,
+          _kafka_quota_balancer_min_shard_thoughput_bps());
+    };
+    _shard_quota_minimum.in = f(_node_quota_default.in);
+    _shard_quota_minimum.eg = f(_node_quota_default.eg);
+    // downstream updates: none
+}
+
 void snc_quota_manager::arm_balancer_timer() {
     static constexpr auto min_sleep_time = 2ms; // TBD config?
     ss::lowres_clock::time_point arm_until = _balancer_timer_last_ran
@@ -219,6 +295,12 @@ void snc_quota_manager::arm_balancer_timer() {
 ss::future<> snc_quota_manager::quota_balancer_step() {
     _balancer_gate.check();
     _balancer_timer_last_ran = ss::lowres_clock::now();
+    return ss::make_ready_future<>();
+}
+
+ss::future<> snc_quota_manager::quota_balancer_update(
+  ingress_egress_state<dispense_quota_amount> /*shard_quotas_update*/) {
+    _balancer_gate.check();
     return ss::make_ready_future<>();
 }
 

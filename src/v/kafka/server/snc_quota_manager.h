@@ -87,6 +87,13 @@ private:
     };
     friend struct fmt::formatter<dispense_quota_amount>;
 
+    // Returns value based on upstream values, not the _node_quota_default
+    ingress_egress_state<std::optional<quota_t>>
+    calc_node_quota_default() const;
+
+    // Uses the func above to update _node_quota_default and dependencies
+    void update_node_quota_default();
+
     ss::lowres_clock::duration get_quota_balancer_node_period() const;
     void update_shard_quota_minimum();
 
@@ -99,6 +106,12 @@ private:
     /// based on shards backpressure. Spawned by the balancer timer
     /// periodically. Runs on the balancer shard only
     ss::future<> quota_balancer_step();
+
+    /// A step of balancer that applies any updates from configuration changes.
+    /// Spawned by configration bindings watching changes of the properties.
+    /// Runs on the balancer shard only.
+    ss::future<>
+      quota_balancer_update(ingress_egress_state<dispense_quota_amount>);
 
 private:
     // configuration
@@ -117,6 +130,8 @@ private:
     ss::gate _balancer_gate;
 
     // operational, used on each shard
+    ingress_egress_state<std::optional<quota_t>> _node_quota_default;
+    ingress_egress_state<quota_t> _shard_quota_minimum;
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
 };
 
