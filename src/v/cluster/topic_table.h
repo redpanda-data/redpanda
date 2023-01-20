@@ -24,18 +24,56 @@
 #include <absl/container/node_hash_map.h>
 
 #include <span>
+#include <type_traits>
 
 namespace cluster {
-
-/// Topic table represent all topics configuration and partition assignments.
-/// The topic table is copied on each core to minimize cross core communication
-/// when requesting topic information. The topics table provides an API for
-/// Kafka requests and delta API for controller backend. The delta API allows
-/// backend to wait for changes in topics table. Topics table is update directly
-/// from controller_stm. The table is always updated before any actions related
-/// with topic creation or deletion are executed. Topic table is also
-/// responsible for commiting or removing pending allocations
-///
+/**
+ * ## Overview
+ *
+ * Topic table represent all topics configuration and partition assignments.
+ * The topic table is copied on each core to minimize cross core communication
+ * when requesting topic information. The topics table provides an API for
+ * Kafka requests and delta API for controller backend. The delta API allows
+ * backend to wait for changes in topics table. Topics table is update directly
+ * from controller_stm. The table is always updated before any actions related
+ * with topic creation or deletion are executed.
+ *
+ * Topic table is updated through topic_updates_dispatcher.
+ *
+ *
+ * ## Partition movement state machine
+ *
+ * When partition is being moved from replica set A to replica set B it may
+ * either be finished or cancelled. The cancellation on the other hand may be
+ * reverted. The partition movement state transitions are explained in the
+ * following diagram:
+ *
+ * A - replica set A
+ * B - replica set B
+ *
+ * ┌──────────┐   move           ┌──────────┐       finish         ┌──────────┐
+ * │  static  │                  │  moving  │                      │  static  │
+ * │          ├─────────────────►│          ├─────────────────────►│          │
+ * │    A     │                  │  A -> B  │                      │    B     │
+ * └──────────┘                  └────┬─────┘                      └──────────┘
+ *      ▲                             │                                  ▲
+ *      │                             │                                  │
+ *      │                             │ cancel/force_cancel              │
+ *      │                             │                                  │
+ *      │                             │                                  │
+ *      │                             ▼                                  │
+ *      │                        ┌──────────┐                            │
+ *      │        finish          │  moving  │     revert_cancel          │
+ *      └────────────────────────┤          ├────────────────────────────┘
+ *                               │  B -> A  │
+ *                               └──────────┴─────┐
+ *                                    ▲           │
+ *                                    │           │
+ *                                    │           │
+ *                                    │           │
+ *                                    └───────────┘
+ *                                        force_cancel
+ */
 
 class topic_table {
 public:
@@ -106,6 +144,10 @@ public:
 
         const model::revision_id& get_update_revision() const {
             return _update_revision;
+        }
+
+        void swap_replica_revisions(replicas_revision_map& revisions) {
+            std::swap(_replicas_revisions, revisions);
         }
 
     private:
@@ -221,6 +263,8 @@ public:
     ss::future<std::error_code>
       apply(cancel_moving_partition_replicas_cmd, model::offset);
     ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(revert_cancel_partition_move_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API

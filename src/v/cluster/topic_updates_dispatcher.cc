@@ -253,6 +253,68 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                       return ec;
                   });
             },
+            [this, base_offset](revert_cancel_partition_move_cmd cmd) {
+                /**
+                 * In this case partition underlying raft group reconfiguration
+                 * already finished when it is attempted to be cancelled.
+                 *
+                 * In the case where original move was scheduled
+                 * to happen from replica set A to B:
+                 *
+                 *      A->B
+                 *
+                 * Cancellation would result in reconfiguration:
+                 *
+                 *      B->A
+                 * But since the move A->B finished we update the topic table
+                 * back to the state from before the cancellation
+                 *
+                 */
+
+                // Replica set that the original move was requested from (A from
+                // an example above)
+                auto previous_replicas
+                  = _topic_table.local().get_previous_replica_set(
+                    cmd.value.ntp);
+                auto target_replicas
+                  = _topic_table.local().get_target_replica_set(cmd.value.ntp);
+                return dispatch_updates_to_cores(cmd, base_offset)
+                  .then([this,
+                         ntp = std::move(cmd.value.ntp),
+                         previous_replicas = std::move(previous_replicas),
+                         target_replicas = std::move(target_replicas)](
+                          std::error_code ec) {
+                      if (ec) {
+                          return ec;
+                      }
+
+                      vassert(
+                        previous_replicas.has_value(),
+                        "Previous replicas for NTP {} must exists as revert "
+                        "update can only be applied to partition that move is "
+                        "currently being cancelled",
+                        ntp);
+                      vassert(
+                        target_replicas.has_value(),
+                        "Target replicas for NTP {} must exists as revert "
+                        "update can only be applied to partition that move is "
+                        "currently being cancelled",
+                        ntp);
+
+                      auto to_delete = subtract_replica_sets(
+                        *previous_replicas, *target_replicas);
+                      _partition_allocator.local().remove_allocations(
+                        to_delete, get_allocation_domain(ntp));
+
+                      _partition_balancer_state.local().handle_ntp_update(
+                        ntp.ns,
+                        ntp.tp.topic,
+                        ntp.tp.partition,
+                        *previous_replicas,
+                        *target_replicas);
+                      return ec;
+                  });
+            },
             [this, base_offset](update_topic_properties_cmd cmd) {
                 return dispatch_updates_to_cores(std::move(cmd), base_offset);
             },

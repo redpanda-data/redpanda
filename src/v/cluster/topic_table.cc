@@ -323,6 +323,21 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         co_return errc::no_update_in_progress;
     }
 
+    // only swap replica revisions if state is in progress i.e. it is the first
+    // time cancel is called (i.e. it is not the force cancel called after
+    // previous cancel)
+    auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
+    if (
+      in_progress_it->second.get_state()
+      == reconfiguration_state::in_progress) {
+        vassert(
+          revisions_it != tp->second.replica_revisions.end(),
+          "partition {} replica revisions map must exists",
+          cmd.key);
+
+        in_progress_it->second.swap_replica_revisions(revisions_it->second);
+    }
+
     in_progress_it->second.set_state(
       cmd.value.force ? reconfiguration_state::force_cancelled
                       : reconfiguration_state::cancelled);
@@ -331,13 +346,6 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
     // replace replica set with set from in progress operation
     current_assignment_it->replicas
       = in_progress_it->second.get_previous_replicas();
-    auto revisions_it = tp->second.replica_revisions.find(cmd.key.tp.partition);
-    vassert(
-      revisions_it != tp->second.replica_revisions.end(),
-      "partition {} replica revisions map must exists",
-      cmd.key);
-
-    revisions_it->second = in_progress_it->second.get_replicas_revisions();
 
     /// Update all non_replicable topics to have the same 'in-progress' state
     auto found = _topics_hierarchy.find(model::topic_namespace_view(cmd.key));
@@ -390,6 +398,92 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
                       : delta::op_type::cancel_update,
       std::move(replicas),
       revisions_it->second);
+
+    notify_waiters();
+
+    co_return errc::success;
+}
+
+ss::future<std::error_code>
+topic_table::apply(revert_cancel_partition_move_cmd cmd, model::offset o) {
+    _last_applied_revision_id = model::revision_id(o);
+
+    const auto ntp = std::move(cmd.value.ntp);
+    vlog(
+      clusterlog.trace,
+      "applying revert cancel move partition replicas command ntp: {}",
+      ntp);
+    /**
+     * Validate partition exists
+     */
+    auto tp = _topics.find(model::topic_namespace_view(ntp));
+    if (tp == _topics.end()) {
+        co_return errc::topic_not_exists;
+    }
+    if (!tp->second.is_topic_replicable()) {
+        co_return errc::topic_operation_error;
+    }
+
+    auto current_assignment_it = tp->second.get_assignments().find(
+      ntp.tp.partition);
+
+    if (current_assignment_it == tp->second.get_assignments().end()) {
+        co_return errc::partition_not_exists;
+    }
+
+    // update must be cancelled to be able to revert cancellation
+    auto in_progress_it = _updates_in_progress.find(ntp);
+    if (in_progress_it == _updates_in_progress.end()) {
+        co_return errc::no_update_in_progress;
+    }
+    if (
+      in_progress_it->second.get_state()
+      == reconfiguration_state::in_progress) {
+        co_return errc::no_update_in_progress;
+    }
+
+    // revert replica set update
+    current_assignment_it->replicas
+      = in_progress_it->second.get_target_replicas();
+
+    partition_assignment delta_assignment{
+      current_assignment_it->group,
+      current_assignment_it->id,
+      current_assignment_it->replicas,
+    };
+
+    // update replica revisions map
+    auto revisions_it = tp->second.replica_revisions.find(ntp.tp.partition);
+
+    vassert(
+      revisions_it != tp->second.replica_revisions.end(),
+      "partition {} replica revisions map must exists",
+      cmd.value.ntp);
+
+    revisions_it->second = in_progress_it->second.get_replicas_revisions();
+
+    /// Since the update is already finished we drop in_progress state
+    _updates_in_progress.erase(in_progress_it);
+
+    /// Remove child non_replicable topics out of the 'updates_in_progress' set
+    auto found = _topics_hierarchy.find(model::topic_namespace_view(ntp));
+    if (found != _topics_hierarchy.end()) {
+        for (const auto& cs : found->second) {
+            bool erased = _updates_in_progress.erase(
+                            model::ntp(cs.ns, cs.tp, ntp.tp.partition))
+                          > 0;
+            if (!erased) {
+                vlog(
+                  clusterlog.error,
+                  "non_replicable_topic expected to exist in "
+                  "updates_in_progress set");
+            }
+        }
+    }
+
+    // notify backend about finished update
+    _pending_deltas.emplace_back(
+      ntp, std::move(delta_assignment), o, delta::op_type::update_finished);
 
     notify_waiters();
 
@@ -841,6 +935,14 @@ topic_table::get_previous_replica_set(const model::ntp& ntp) const {
     if (auto it = _updates_in_progress.find(ntp);
         it != _updates_in_progress.end()) {
         return it->second.get_previous_replicas();
+    }
+    return std::nullopt;
+}
+std::optional<std::vector<model::broker_shard>>
+topic_table::get_target_replica_set(const model::ntp& ntp) const {
+    if (auto it = _updates_in_progress.find(ntp);
+        it != _updates_in_progress.end()) {
+        return it->second.get_target_replicas();
     }
     return std::nullopt;
 }
