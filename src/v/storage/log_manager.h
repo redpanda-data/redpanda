@@ -230,7 +230,7 @@ private:
     kvstore& _kvstore;
     storage_resources& _resources;
     simple_time_jitter<ss::lowres_clock> _jitter;
-    ss::timer<ss::lowres_clock> _compaction_timer;
+    ss::timer<ss::lowres_clock> _housekeeping_timer;
     logs_type _logs;
     compaction_list_type _logs_list;
     batch_cache _batch_cache;

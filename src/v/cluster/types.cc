@@ -136,7 +136,8 @@ bool topic_properties::has_overrides() const {
            || read_replica.has_value() || batch_max_bytes.has_value()
            || retention_local_target_bytes.has_value()
            || retention_local_target_ms.has_value()
-           || remote_delete != storage::ntp_config::default_remote_delete;
+           || remote_delete != storage::ntp_config::default_remote_delete
+           || segment_ms.has_value() || segment_ms.is_disabled();
 }
 
 storage::ntp_config::default_overrides
@@ -152,6 +153,7 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_local_target_bytes = retention_local_target_bytes;
     ret.retention_local_target_ms = retention_local_target_ms;
     ret.remote_delete = remote_delete;
+    ret.segment_ms = segment_ms;
     return ret;
 }
 
@@ -181,7 +183,9 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .retention_local_target_bytes
             = properties.retention_local_target_bytes,
             .retention_local_target_ms = properties.retention_local_target_ms,
-            .remote_delete = properties.remote_delete});
+            .remote_delete = properties.remote_delete,
+            .segment_ms = properties.segment_ms,
+          });
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -290,7 +294,7 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
       "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
       "batch_max_bytes: {}, retention_local_target_bytes: {}, "
-      "retention_local_target_ms: {}, remote_delete: {}}}",
+      "retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -306,7 +310,8 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.batch_max_bytes,
       properties.retention_local_target_bytes,
       properties.retention_local_target_ms,
-      properties.remote_delete);
+      properties.remote_delete,
+      properties.segment_ms);
 
     return o;
 }
@@ -551,7 +556,7 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
       "shadow_indexing: {}, batch_max_bytes: {}, retention_local_target_bytes: "
-      "{}, retention_local_target_ms: {}, remote_delete: {}}}",
+      "{}, retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}}}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -563,7 +568,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.batch_max_bytes,
       i.retention_local_target_bytes,
       i.retention_local_target_ms,
-      i.remote_delete);
+      i.remote_delete,
+      i.segment_ms);
     return o;
 }
 
@@ -1659,7 +1665,8 @@ void adl<cluster::incremental_topic_updates>::to(
       t.batch_max_bytes,
       t.retention_local_target_bytes,
       t.retention_local_target_ms,
-      t.remote_delete);
+      t.remote_delete,
+      t.segment_ms);
 }
 
 cluster::incremental_topic_updates
@@ -1736,6 +1743,12 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         updates.remote_delete = adl<cluster::property_update<bool>>{}.from(in);
     }
 
+    if (
+      version <= cluster::incremental_topic_updates::version_with_segment_ms) {
+        updates.segment_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+    }
     return updates;
 }
 
@@ -2032,7 +2045,9 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       tristate<std::chrono::milliseconds>{std::nullopt},
       // Backward compat: ADL-generation (pre-22.3) topics use legacy tiered
       // storage mode in which topic deletion does not delete objects in S3
-      false};
+      false,
+      tristate<std::chrono::milliseconds>{std::nullopt},
+    };
 }
 
 void adl<cluster::cluster_property_kv>::to(

@@ -690,7 +690,8 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_tristate([] { return tests::random_duration_ms(); }),
           // Remote delete always false to enable ADL roundtrip (ADL
           // always decodes to false for legacy topics)
-          false};
+          false,
+          tests::random_tristate([] { return tests::random_duration_ms(); })};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }

@@ -89,7 +89,7 @@ ss::future<> disk_log_impl::remove() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
     // wait for compaction to finish
-    co_await _compaction_gate.close();
+    co_await _compaction_housekeeping_gate.close();
     // gets all the futures started in the background
     std::vector<ss::future<>> permanent_delete;
     permanent_delete.reserve(_segs.size());
@@ -132,7 +132,7 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     }
     // wait for compaction to finish
     vlog(stlog.trace, "waiting for {} compaction to finish", config().ntp());
-    co_await _compaction_gate.close();
+    co_await _compaction_housekeeping_gate.close();
     vlog(stlog.trace, "stopping {} readers cache", config().ntp());
 
     // close() on the segments is not expected to fail, but it might
@@ -719,32 +719,33 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
 }
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
-    return ss::try_with_gate(_compaction_gate, [this, cfg]() mutable {
-        vlog(
-          gclog.trace,
-          "[{}] house keeping with configuration from manager: {}",
-          config().ntp(),
-          cfg);
-        cfg = apply_overrides(cfg);
-        ss::future<> f = ss::now();
-        if (config().is_collectable()) {
-            f = gc(cfg);
-        }
-        if (unlikely(
-              config().has_overrides()
-              && config().get_overrides().cleanup_policy_bitflags
-                   == model::cleanup_policy_bitflags::none)) {
-            // prevent *any* collection - used for snapshots
-            // all the internal redpanda logs - i.e.: controller, etc should
-            // have this set
-            f = ss::now();
-        }
-        if (config().is_compacted() && !_segs.empty()) {
-            f = f.then([this, cfg] { return do_compact(cfg); });
-        }
-        return f.then(
-          [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
-    });
+    return ss::try_with_gate(
+      _compaction_housekeeping_gate, [this, cfg]() mutable {
+          vlog(
+            gclog.trace,
+            "[{}] house keeping with configuration from manager: {}",
+            config().ntp(),
+            cfg);
+          cfg = apply_overrides(cfg);
+          ss::future<> f = ss::now();
+          if (config().is_collectable()) {
+              f = gc(cfg);
+          }
+          if (unlikely(
+                config().has_overrides()
+                && config().get_overrides().cleanup_policy_bitflags
+                     == model::cleanup_policy_bitflags::none)) {
+              // prevent *any* collection - used for snapshots
+              // all the internal redpanda logs - i.e.: controller, etc should
+              // have this set
+              f = ss::now();
+          }
+          if (config().is_compacted() && !_segs.empty()) {
+              f = f.then([this, cfg] { return do_compact(cfg); });
+          }
+          return f.then(
+            [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
+      });
 }
 
 ss::future<> disk_log_impl::gc(compaction_config cfg) {
@@ -1000,13 +1001,20 @@ ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
 
 ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
+    auto maybe_lock = _segments_rolling_lock.try_get_units();
+    if (!maybe_lock) {
+        // if the lock is already taken, do_housekeeping is possibly rolling the
+        // segment. since size rolling can happen later, bail out as to not
+        // impact write latency too much
+        co_return;
+    }
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (_segs.empty()) {
-        return new_segment(next_offset, t, iopc);
+        co_return co_await new_segment(next_offset, t, iopc);
     }
     auto ptr = _segs.back();
     if (!ptr->has_appender()) {
-        return new_segment(next_offset, t, iopc);
+        co_return co_await new_segment(next_offset, t, iopc);
     }
     bool size_should_roll = false;
 
@@ -1014,12 +1022,58 @@ ss::future<> disk_log_impl::maybe_roll(
         size_should_roll = true;
     }
     if (t != term() || size_should_roll) {
-        return ptr->release_appender(_readers_cache.get())
-          .then([this, next_offset, t, iopc] {
-              return new_segment(next_offset, t, iopc);
-          });
+        co_await ptr->release_appender(_readers_cache.get());
+        co_await new_segment(next_offset, t, iopc);
     }
-    return ss::make_ready_future<>();
+}
+
+ss::future<> disk_log_impl::do_housekeeping() {
+    auto gate = _compaction_housekeeping_gate.hold();
+    // do_housekeeping races with maybe_roll to use new_segment.
+    // take a lock to prevent problems
+    auto lock = _segments_rolling_lock.get_units();
+
+    if (_segs.empty()) {
+        co_return;
+    }
+    auto last = _segs.back();
+    if (!last->has_appender()) {
+        // skip, rolling is already happening
+        co_return;
+    }
+    auto first_write_ts = last->first_write_ts();
+    if (!first_write_ts) {
+        // skip check, no writes yet in this segment
+        co_return;
+    }
+
+    auto seg_ms = config().segment_ms();
+    if (!seg_ms.has_value()) {
+        // skip, disabled or no default value
+        co_return;
+    }
+
+    auto& local_config = config::shard_local_cfg();
+    // clamp user provided value with (hopefully sane) server min and max
+    // values, this should protect against overflow UB
+    if (
+      first_write_ts.value()
+        + std::clamp(
+          seg_ms.value(),
+          local_config.log_segment_ms_min(),
+          local_config.log_segment_ms_max())
+      > ss::lowres_clock::now()) {
+        // skip, time hasn't expired
+        co_return;
+    }
+
+    auto pc = last->appender()
+                .get_priority_class(); // note: has_appender is true, the
+                                       // bouncer condition checked this
+    co_await last->release_appender(_readers_cache.get());
+    auto offsets = last->offsets();
+    co_await new_segment(
+      offsets.committed_offset + model::offset{1}, offsets.term, pc);
 }
 
 ss::future<model::record_batch_reader>
@@ -1269,10 +1323,15 @@ ss::future<> disk_log_impl::truncate(truncate_config cfg) {
 }
 
 ss::future<> disk_log_impl::do_truncate(
-  truncate_config cfg, std::optional<ssx::semaphore_units> lock_guard) {
-    if (!lock_guard) {
-        ssx::semaphore_units units = co_await _segment_rewrite_lock.get_units();
-        lock_guard = std::move(units);
+  truncate_config cfg,
+  std::optional<std::pair<ssx::semaphore_units, ssx::semaphore_units>>
+    lock_guards) {
+    if (!lock_guards) {
+        auto seg_rolling_units = co_await _segments_rolling_lock.get_units();
+        ssx::semaphore_units seg_rewrite_units
+          = co_await _segment_rewrite_lock.get_units();
+        lock_guards = {
+          std::move(seg_rewrite_units), std::move(seg_rolling_units)};
     }
 
     auto stats = offsets();
@@ -1289,7 +1348,7 @@ ss::future<> disk_log_impl::do_truncate(
       < std::max(_segs.back()->offsets().base_offset, _start_offset)) {
         co_await remove_full_segments(cfg.base_offset);
         // recurse
-        co_return co_await do_truncate(cfg, std::move(lock_guard));
+        co_return co_await do_truncate(cfg, std::move(lock_guards));
     }
 
     auto last = _segs.back();
@@ -1346,7 +1405,7 @@ ss::future<> disk_log_impl::do_truncate(
           cfg,
           initial_generation_id,
           last_ptr->get_generation_id());
-        co_return co_await do_truncate(cfg, std::move(lock_guard));
+        co_return co_await do_truncate(cfg, std::move(lock_guards));
     }
 
     if (!phs) {

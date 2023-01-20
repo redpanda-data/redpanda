@@ -1195,7 +1195,7 @@ struct remote_topic_properties
  */
 struct topic_properties
   : serde::
-      envelope<topic_properties, serde::version<3>, serde::compat_version<0>> {
+      envelope<topic_properties, serde::version<4>, serde::compat_version<0>> {
     topic_properties() noexcept = default;
     topic_properties(
       std::optional<model::compression> compression,
@@ -1213,7 +1213,8 @@ struct topic_properties
       std::optional<uint32_t> batch_max_bytes,
       tristate<size_t> retention_local_target_bytes,
       tristate<std::chrono::milliseconds> retention_local_target_ms,
-      bool remote_delete)
+      bool remote_delete,
+      tristate<std::chrono::milliseconds> segment_ms)
       : compression(compression)
       , cleanup_policy_bitflags(cleanup_policy_bitflags)
       , compaction_strategy(compaction_strategy)
@@ -1229,7 +1230,8 @@ struct topic_properties
       , batch_max_bytes(batch_max_bytes)
       , retention_local_target_bytes(retention_local_target_bytes)
       , retention_local_target_ms(retention_local_target_ms)
-      , remote_delete(remote_delete) {}
+      , remote_delete(remote_delete)
+      , segment_ms(segment_ms) {}
 
     std::optional<model::compression> compression;
     std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -1252,6 +1254,8 @@ struct topic_properties
     // This is intentionally not an optional: all topics have a concrete value
     // one way or another.  There is no "use the cluster default".
     bool remote_delete{storage::ntp_config::default_remote_delete};
+
+    tristate<std::chrono::milliseconds> segment_ms{std::nullopt};
 
     bool is_compacted() const;
     bool has_overrides() const;
@@ -1276,7 +1280,8 @@ struct topic_properties
           batch_max_bytes,
           retention_local_target_bytes,
           retention_local_target_ms,
-          remote_delete);
+          remote_delete,
+          segment_ms);
     }
 
     friend bool operator==(const topic_properties&, const topic_properties&)
@@ -1364,19 +1369,19 @@ struct property_update<tristate<T>>
 struct incremental_topic_updates
   : serde::envelope<
       incremental_topic_updates,
-      serde::version<2>,
+      serde::version<3>,
       serde::compat_version<0>> {
     static constexpr int8_t version_with_data_policy = -1;
     static constexpr int8_t version_with_shadow_indexing = -3;
     static constexpr int8_t version_with_batch_max_bytes_and_local_retention
       = -4;
+    static constexpr int8_t version_with_segment_ms = -5;
     // negative version indicating different format:
     // -1 - topic_updates with data_policy
     // -2 - topic_updates without data_policy
     // -3 - topic_updates with shadow_indexing
     // -4 - topic update with batch_max_bytes and retention.local.target
-    static constexpr int8_t version
-      = version_with_batch_max_bytes_and_local_retention;
+    static constexpr int8_t version = version_with_segment_ms;
     property_update<std::optional<model::compression>> compression;
     property_update<std::optional<model::cleanup_policy_bitflags>>
       cleanup_policy_bitflags;
@@ -1393,6 +1398,7 @@ struct incremental_topic_updates
       retention_local_target_ms;
     property_update<bool> remote_delete{
       false, incremental_update_operation::none};
+    property_update<tristate<std::chrono::milliseconds>> segment_ms;
 
     auto serde_fields() {
         return std::tie(
@@ -1407,7 +1413,8 @@ struct incremental_topic_updates
           batch_max_bytes,
           retention_local_target_bytes,
           retention_local_target_ms,
-          remote_delete);
+          remote_delete,
+          segment_ms);
     }
 
     friend std::ostream&

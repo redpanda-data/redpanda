@@ -277,6 +277,10 @@ metadata_cache::get_default_shadow_indexing_mode() const {
     return m;
 }
 
+std::optional<std::chrono::milliseconds>
+metadata_cache::get_default_segment_ms() const {
+    return config::shard_local_cfg().log_segment_ms();
+}
 topic_properties metadata_cache::get_default_properties() const {
     topic_properties tp;
     tp.compression = {get_default_compression()};

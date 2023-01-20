@@ -189,7 +189,9 @@ class CreateTopicsTest(RedpandaTest):
         'max.message.bytes':
         lambda: random.randint(1024 * 1024, 10 * 1024 * 1024),
         'redpanda.remote.delete':
-        lambda: "true" if random.randint(0, 1) else "false"
+        lambda: "true" if random.randint(0, 1) else "false",
+        'segment.ms':
+        lambda: random.randint(10000, 10000000),
     }
 
     def __init__(self, test_context):
@@ -217,7 +219,8 @@ class CreateTopicsTest(RedpandaTest):
                              config={p: property_value})
 
             cfgs = rpk.describe_topic_configs(topic=name)
-            assert str(cfgs[p][0]) == str(property_value)
+            assert str(cfgs[p][0]) == str(
+                property_value), f"{cfgs[p][0]=} != {property_value=}"
 
 
 class CreateSITopicsTest(RedpandaTest):

@@ -330,6 +330,7 @@ struct compat_check<cluster::topic_properties> {
         json_write(retention_local_target_bytes);
         json_write(retention_local_target_ms);
         json_write(remote_delete);
+        json_write(segment_ms);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -350,6 +351,7 @@ struct compat_check<cluster::topic_properties> {
         json_read(retention_local_target_bytes);
         json_read(retention_local_target_ms);
         json_read(remote_delete);
+        json_read(segment_ms);
         return obj;
     }
 
@@ -370,6 +372,8 @@ struct compat_check<cluster::topic_properties> {
         obj.retention_local_target_bytes = tristate<size_t>{std::nullopt};
         obj.retention_local_target_ms = tristate<std::chrono::milliseconds>{
           std::nullopt};
+
+        obj.segment_ms = tristate<std::chrono::milliseconds>{std::nullopt};
 
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -437,6 +441,9 @@ struct compat_check<cluster::topic_configuration> {
         // ADL will always squash remote_delete to false
         obj.properties.remote_delete = false;
 
+        obj.properties.segment_ms = tristate<std::chrono::milliseconds>{
+          std::nullopt};
+
         if (cfg != obj) {
             throw compat_error(fmt::format(
               "Verify of {{cluster::topic_property}} decoding "
@@ -491,6 +498,9 @@ struct compat_check<cluster::create_topics_request> {
               std::nullopt};
             topic.properties.retention_local_target_ms
               = tristate<std::chrono::milliseconds>{std::nullopt};
+
+            topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
+              std::nullopt};
         }
         if (req != obj) {
             throw compat_error(fmt::format(
@@ -547,6 +557,8 @@ struct compat_check<cluster::create_topics_reply> {
               std::nullopt};
             topic.properties.retention_local_target_ms
               = tristate<std::chrono::milliseconds>{std::nullopt};
+            topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
+              std::nullopt};
         }
         if (reply != obj) {
             throw compat_error(fmt::format(

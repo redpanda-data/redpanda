@@ -586,6 +586,7 @@ inline void rjson_serialize(
       w, "retention_local_target_bytes", tps.retention_local_target_bytes);
     write_member(w, "retention_local_target_ms", tps.retention_local_target_ms);
     write_member(w, "remote_delete", tps.remote_delete);
+    write_member(w, "segment_ms", tps.segment_ms);
     w.EndObject();
 }
 
@@ -607,6 +608,7 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
       rd, "retention_local_target_bytes", obj.retention_local_target_bytes);
     read_member(rd, "retention_local_target_ms", obj.retention_local_target_ms);
     read_member(rd, "remote_delete", obj.remote_delete);
+    read_member(rd, "segment_ms", obj.segment_ms);
 }
 
 inline void rjson_serialize(

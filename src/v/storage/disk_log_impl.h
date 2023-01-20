@@ -66,6 +66,7 @@ public:
     ss::future<> truncate(truncate_config) final;
     ss::future<> truncate_prefix(truncate_prefix_config) final;
     ss::future<> compact(compaction_config) final;
+    ss::future<> do_housekeeping() final override;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
     void set_collectible_offset(model::offset) final;
@@ -140,7 +141,9 @@ private:
       ss::io_priority_class prio);
 
     ss::future<> do_truncate(
-      truncate_config, std::optional<ssx::semaphore_units> lock_guard);
+      truncate_config,
+      std::optional<std::pair<ssx::semaphore_units, ssx::semaphore_units>>
+        lock_guards);
     ss::future<> remove_full_segments(model::offset o);
 
     ss::future<> do_truncate_prefix(truncate_prefix_config);
@@ -176,7 +179,7 @@ private:
         ss::abort_source::subscription subscription;
     };
     bool _closed{false};
-    ss::gate _compaction_gate;
+    ss::gate _compaction_housekeeping_gate;
     log_manager& _manager;
     float _segment_size_jitter;
     segment_set _segs;
@@ -204,6 +207,10 @@ private:
 
     // Bytes written since last time we requested stm snapshot
     ssx::semaphore_units _stm_dirty_bytes_units;
+
+    // Mutually exclude operations that will cause segment rolling
+    // do_housekeeping and maybe_roll
+    mutex _segments_rolling_lock;
 };
 
 } // namespace storage
