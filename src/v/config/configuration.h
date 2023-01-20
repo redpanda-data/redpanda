@@ -193,6 +193,9 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;
     property<uint32_t> kafka_request_max_bytes;
     property<uint32_t> kafka_batch_max_bytes;
+    property<std::vector<ss::sstring>> kafka_nodelete_topics;
+    property<std::vector<ss::sstring>> kafka_noproduce_topics;
+
     // Compaction controller
     property<std::chrono::milliseconds> compaction_ctrl_update_interval_ms;
     property<double> compaction_ctrl_p_coeff;

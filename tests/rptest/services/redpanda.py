@@ -1487,7 +1487,7 @@ class RedpandaService(Service):
     def set_cluster_config(self,
                            values: dict,
                            expect_restart: bool = False,
-                           admin_client: Admin = None,
+                           admin_client: Optional[Admin] = None,
                            timeout: int = 10):
         """
         Update cluster configuration and wait for all nodes to report that they

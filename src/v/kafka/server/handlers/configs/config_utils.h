@@ -99,16 +99,39 @@ std::vector<R> authorize_alter_config_resources(
         to_authorize.broker_changes.clear();
     }
 
+    const auto& kafka_nodelete_topics
+      = config::shard_local_cfg().kafka_nodelete_topics();
+    const auto& kafka_noproduce_topics
+      = config::shard_local_cfg().kafka_noproduce_topics();
+
     /**
      * Check topic configuration authorization
      */
     auto unauthorized_it = std::partition(
       to_authorize.topic_changes.begin(),
       to_authorize.topic_changes.end(),
-      [&ctx](const T& res) {
-          return ctx.authorized(
-            security::acl_operation::alter_configs,
-            model::topic(res.resource_name));
+      [&ctx, &kafka_nodelete_topics, &kafka_noproduce_topics](const T& res) {
+          auto topic = model::topic(res.resource_name);
+
+          auto is_nodelete_topic = std::find(
+                                     kafka_nodelete_topics.cbegin(),
+                                     kafka_nodelete_topics.cend(),
+                                     topic)
+                                   != kafka_nodelete_topics.cend();
+          if (is_nodelete_topic) {
+              return false;
+          }
+
+          auto is_noproduce_topic = std::find(
+                                      kafka_noproduce_topics.cbegin(),
+                                      kafka_noproduce_topics.cend(),
+                                      topic)
+                                    != kafka_noproduce_topics.cend();
+          if (is_noproduce_topic) {
+              return false;
+          }
+
+          return ctx.authorized(security::acl_operation::alter_configs, topic);
       });
 
     std::transform(
