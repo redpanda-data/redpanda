@@ -23,6 +23,7 @@
 namespace cluster {
 class feature_backend;
 class feature_manager;
+class bootstrap_backend;
 } // namespace cluster
 
 namespace features {
@@ -49,7 +50,8 @@ enum class feature : std::uint64_t {
     tm_stm_cache = 1ULL << 16U,
 
     // Dummy features for testing only
-    test_alpha = 1ULL << 63U,
+    test_alpha = 1ULL << 62U,
+    test_bravo = 1ULL << 63U,
 };
 
 /**
@@ -201,12 +203,23 @@ constexpr static std::array feature_schema{
     feature::tm_stm_cache,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
+
+  // For testing, a feature that does not auto-activate
   feature_spec{
     cluster::cluster_version{2001},
     "__test_alpha",
     feature::test_alpha,
     feature_spec::available_policy::explicit_only,
-    feature_spec::prepare_policy::always}};
+    feature_spec::prepare_policy::always},
+
+  // For testing, a feature that auto-activates
+  feature_spec{
+    cluster::cluster_version{2001},
+    "__test_bravo",
+    feature::test_bravo,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+};
 
 std::string_view to_string_view(feature);
 std::string_view to_string_view(feature_state::state);
@@ -294,6 +307,11 @@ public:
     void testing_activate_all();
 
     model::offset get_applied_offset() const { return _applied_offset; }
+
+    // application and bootstrap_backend may use this to fast-forward a
+    // feature table to the desired version synchronously, early in the
+    // lifetime of a node.
+    void bootstrap_active_version(cluster::cluster_version);
 
 private:
     // Only for use by our friends feature backend & manager
