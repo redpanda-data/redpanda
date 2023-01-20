@@ -424,6 +424,24 @@ void partition::maybe_construct_archiver() {
           log().config(), _archival_conf, _cloud_storage_api.local(), *this);
     }
 }
+
+uint64_t partition::non_log_disk_size_bytes() const {
+    uint64_t non_log_disk_size = _raft->get_snapshot_size();
+    if (_rm_stm) {
+        non_log_disk_size += _rm_stm->get_snapshot_size();
+    }
+    if (_tm_stm) {
+        non_log_disk_size += _tm_stm->get_snapshot_size();
+    }
+    if (_archival_meta_stm) {
+        non_log_disk_size += _archival_meta_stm->get_snapshot_size();
+    }
+    if (_id_allocator_stm) {
+        non_log_disk_size += _id_allocator_stm->get_snapshot_size();
+    }
+    return non_log_disk_size;
+}
+
 ss::future<> partition::update_configuration(topic_properties properties) {
     auto& old_ntp_config = _raft->log().config();
     auto new_ntp_config = properties.get_ntp_cfg_overrides();

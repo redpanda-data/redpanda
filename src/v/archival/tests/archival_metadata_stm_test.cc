@@ -27,6 +27,7 @@
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -200,6 +201,21 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
 }
 
+void check_snapshot_size(
+  const cluster::archival_metadata_stm& archival_stm,
+  const storage::ntp_config& ntp_cfg) {
+    std::filesystem::path snapshot_file_path = std::filesystem::path(
+                                                 ntp_cfg.work_directory())
+                                               / "archival_metadata.snapshot";
+    bool snapshot_exists = ss::file_exists(snapshot_file_path.string()).get();
+
+    BOOST_REQUIRE(snapshot_exists);
+
+    BOOST_REQUIRE(
+      archival_stm.get_snapshot_size()
+      == ss::file_size(snapshot_file_path.string()).get());
+}
+
 FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     start_raft();
     auto& ntp_cfg = _raft->log_config();
@@ -265,6 +281,7 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
 
     BOOST_REQUIRE_EQUAL(archival_stm.get_start_offset(), model::offset{100});
     BOOST_REQUIRE(archival_stm.manifest() == m);
+    check_snapshot_size(archival_stm, ntp_cfg);
     archival_stm.stop().get();
 }
 
@@ -456,6 +473,7 @@ FIXTURE_TEST(
     wait_for_confirmed_leader();
 
     BOOST_REQUIRE(archival_stm.manifest() == m);
+    check_snapshot_size(archival_stm, ntp_cfg);
 
     archival_stm.stop().get();
 }

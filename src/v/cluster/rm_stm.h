@@ -288,6 +288,8 @@ public:
 
     ss::future<> remove_persistent_state() override;
 
+    uint64_t get_snapshot_size() const override;
+
 protected:
     ss::future<> handle_eviction() override;
 
@@ -759,6 +761,8 @@ private:
     bool _is_tx_enabled{false};
     ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
     storage::snapshot_manager _abort_snapshot_mgr;
+    absl::flat_hash_map<std::pair<model::offset, model::offset>, uint64_t>
+      _abort_snapshot_sizes{};
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     ss::sharded<features::feature_table>& _feature_table;
     config::binding<std::chrono::seconds> _log_stats_interval_s;

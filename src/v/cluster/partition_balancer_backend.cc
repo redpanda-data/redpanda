@@ -43,7 +43,8 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<unsigned>&& max_disk_usage_percent,
   config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
   config::binding<std::chrono::milliseconds>&& tick_interval,
-  config::binding<size_t>&& movement_batch_size_bytes)
+  config::binding<size_t>&& movement_batch_size_bytes,
+  config::binding<size_t>&& segment_fallocation_step)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
   , _state(state.local())
@@ -57,6 +58,7 @@ partition_balancer_backend::partition_balancer_backend(
       std::move(storage_space_alert_free_threshold_percent))
   , _tick_interval(std::move(tick_interval))
   , _movement_batch_size_bytes(std::move(movement_batch_size_bytes))
+  , _segment_fallocation_step(std::move(segment_fallocation_step))
   , _timer([this] { tick(); }) {}
 
 void partition_balancer_backend::start() {
@@ -158,7 +160,7 @@ ss::future<> partition_balancer_backend::do_tick() {
             .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
             .movement_disk_size_batch = _movement_batch_size_bytes(),
             .node_availability_timeout_sec = _availability_timeout(),
-          },
+            .segment_fallocation_step = _segment_fallocation_step()},
           _state,
           _partition_allocator)
           .plan_reassignments(health_report.value(), follower_metrics);

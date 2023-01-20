@@ -600,6 +600,9 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
           ->write_snapshot(raft::write_snapshot_cfg(
             get_leader_raft(gr)->committed_offset(), iobuf{}))
           .get0();
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
     }
     gr.enable_node(disabled_id);
     success = replicate_random_batches(gr, 5).get0();
@@ -613,6 +616,11 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
 
     validate_logs_replication(gr);
     validate_offset_translation(gr);
+    for (auto& [_, member] : gr.get_members()) {
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
+    }
 };
 
 FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
@@ -652,6 +660,9 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
           ->write_snapshot(raft::write_snapshot_cfg(
             get_leader_raft(gr)->committed_offset(), iobuf{}))
           .get0();
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
     }
     gr.enable_node(disabled_id);
     success = replicate_random_batches(gr, 5).get0();

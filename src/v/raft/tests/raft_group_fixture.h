@@ -910,4 +910,17 @@ struct raft_test_fixture {
         }
         return gr.get_member(*leader_id).consensus;
     }
+
+    uint64_t get_snapshot_size_from_disk(raft_node& node) const {
+        std::filesystem::path snapshot_file_path
+          = std::filesystem::path(node.log->config().work_directory())
+            / storage::simple_snapshot_manager::default_snapshot_filename;
+        bool snapshot_file_exists
+          = ss::file_exists(snapshot_file_path.string()).get();
+        if (snapshot_file_exists) {
+            return ss::file_size(snapshot_file_path.string()).get();
+        } else {
+            return 0;
+        }
+    }
 };

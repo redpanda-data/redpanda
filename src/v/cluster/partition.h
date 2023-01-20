@@ -204,6 +204,9 @@ public:
     ss::shared_ptr<cluster::rm_stm> rm_stm();
 
     size_t size_bytes() const { return _raft->log().size_bytes(); }
+
+    uint64_t non_log_disk_size_bytes() const;
+
     ss::future<> update_configuration(topic_properties);
 
     const storage::ntp_config& get_ntp_config() const {
