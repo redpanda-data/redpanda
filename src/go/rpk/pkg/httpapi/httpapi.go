@@ -25,6 +25,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -344,7 +345,9 @@ func maybeUnmarshalRespBodyInto(r io.Reader, into interface{}) error {
 		*t = string(body)
 	default:
 		if err := json.Unmarshal(body, into); err != nil {
-			return fmt.Errorf("unable to decode response body: %w", err)
+			if err := xml.Unmarshal(body, into); err != nil {
+				return fmt.Errorf("unable to decode response body: %w", err)
+			}
 		}
 	}
 	return nil
@@ -375,8 +378,14 @@ func prepareBody(body interface{}) (bodyBytes []byte, isValues bool, err error) 
 	if body == nil {
 		return nil, false, nil
 	}
-	if form, isForm := body.(url.Values); isForm {
-		return []byte(form.Encode()), true, nil
+	switch v := body.(type) {
+	case url.Values:
+		return []byte(v.Encode()), true, nil
+	case io.Reader:
+		b, err := io.ReadAll(v)
+		return b, false, err
+	case []byte:
+		return v, false, nil
 	}
 	bodyBytes, err = json.Marshal(body)
 	if err != nil {

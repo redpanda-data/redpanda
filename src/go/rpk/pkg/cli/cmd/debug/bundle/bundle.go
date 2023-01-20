@@ -10,6 +10,8 @@
 package bundle
 
 import (
+	"context"
+	"encoding/xml"
 	"fmt"
 	"os"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -49,6 +52,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	var (
 		configFile string
 		outFile    string
+		uploadURL  string
 
 		brokers   []string
 		user      string
@@ -128,6 +132,11 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 				err = executeK8SBundle(cmd.Context(), bp)
 			}
 			out.MaybeDie(err, "unable to create bundle: %v", err)
+			if uploadURL != "" {
+				err = uploadBundle(cmd.Context(), path, uploadURL)
+				out.MaybeDie(err, "unable to upload bundle: %v", err)
+				fmt.Println("Successfully uploaded the bundle")
+			}
 		},
 	}
 	command.Flags().StringVar(
@@ -176,6 +185,12 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		"20MB",
 		"Sets the limit of the controller log size that can be stored in the bundle. Multipliers are also supported, e.g. 3MB, 1GiB",
 	)
+	command.Flags().StringVar(
+		&uploadURL,
+		"upload-url",
+		"",
+		"If provided, rpk will upload the bundle to the given URL in addition to creating a copy on disk",
+	)
 
 	command.Flags().StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
 
@@ -199,6 +214,37 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	)
 
 	return command
+}
+
+// uploadBundle will send the file located in 'filepath' by issuing a PUT
+// request to the 'uploadURL'.
+func uploadBundle(ctx context.Context, filepath, uploadURL string) error {
+	uploadFile, err := os.Open(filepath)
+	if err != nil {
+		return fmt.Errorf("unable to open the file %q: %v", filepath, err)
+	}
+	defer uploadFile.Close()
+
+	cl := httpapi.NewClient(
+		httpapi.Err4xx(func(code int) error { return &S3EndpointError{HTTPCode: code} }),
+		httpapi.Headers(
+			"Content-Type", "application/zip",
+		))
+
+	return cl.Put(ctx, uploadURL, nil, uploadFile, nil)
+}
+
+// S3EndpointError is the error that we get when calling an S3 url.
+type S3EndpointError struct {
+	XMLName xml.Name `xml:"Error"`
+	Code    string   `xml:"Code"`
+	Message string   `xml:"Message"`
+
+	HTTPCode int
+}
+
+func (e *S3EndpointError) Error() string {
+	return fmt.Sprintf("unexpected error code %v - %v : %v", e.HTTPCode, e.Code, e.Message)
 }
 
 const bundleHelpText = `'rpk debug bundle' collects environment data that can help debug and diagnose
