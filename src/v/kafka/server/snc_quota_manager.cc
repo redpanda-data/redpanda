@@ -13,9 +13,44 @@
 #include "kafka/server/logger.h"
 #include "prometheus/prometheus_sanitize.h"
 
+#include <fmt/core.h>
+
 using namespace std::chrono_literals;
 
 namespace kafka {
+
+template<std::integral T>
+ingress_egress_state<T> operator+(
+  const ingress_egress_state<T>& lhs, const ingress_egress_state<T>& rhs) {
+    return {.in = lhs.in + rhs.in, .eg = lhs.eg + rhs.eg};
+}
+template<std::integral T>
+ingress_egress_state<T> operator-(
+  const ingress_egress_state<T>& lhs, const ingress_egress_state<T>& rhs) {
+    return {.in = lhs.in - rhs.in, .eg = lhs.eg - rhs.eg};
+}
+template<std::integral T>
+ingress_egress_state<T> operator-(const ingress_egress_state<T>& v) {
+    return {.in = -v.in, .eg = -v.eg};
+}
+template<std::integral T>
+bool is_zero(const ingress_egress_state<T>& v) noexcept {
+    return v.in == 0 && v.eg == 0;
+}
+
+/// Copies vector of inoutpairs to an ingress_egress_state of vectors
+template<class T>
+ingress_egress_state<std::vector<T>>
+to_soa_layout(const std::vector<ingress_egress_state<T>>& v) {
+    ingress_egress_state<std::vector<T>> res;
+    res.in.reserve(v.size());
+    res.eg.reserve(v.size());
+    for (const ingress_egress_state<T>& i : v) {
+        res.in.push_back(i.in);
+        res.eg.push_back(i.eg);
+    };
+    return res;
+}
 
 snc_quota_manager::snc_quota_manager()
   : _max_kafka_throttle_delay(
@@ -139,3 +174,18 @@ void snc_quota_manager::record_response_tp(
 }
 
 } // namespace kafka
+
+struct parseless_formatter {
+    constexpr auto parse(fmt::format_parse_context& ctx)
+      -> decltype(ctx.begin()) {
+        return ctx.begin();
+    }
+};
+
+template<class T>
+struct fmt::formatter<kafka::ingress_egress_state<T>> : parseless_formatter {
+    template<typename Ctx>
+    auto format(const kafka::ingress_egress_state<T>& p, Ctx& ctx) const {
+        return fmt::format_to(ctx.out(), "(in:{}, eg:{})", p.in, p.eg);
+    }
+};

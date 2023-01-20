@@ -23,6 +23,14 @@
 
 namespace kafka {
 
+/// Represents a homogenous pair of values that correspond to
+/// ingress and egress side of the same entity
+template<class T>
+struct ingress_egress_state {
+    T in;
+    T eg;
+};
+
 class snc_quota_manager
   : public ss::peering_sharded_service<snc_quota_manager> {
 public:
