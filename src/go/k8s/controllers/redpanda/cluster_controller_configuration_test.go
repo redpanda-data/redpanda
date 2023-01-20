@@ -16,11 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moby/moby/pkg/namesgenerator"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,6 +26,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/internal/testutils"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 const (
@@ -50,15 +53,16 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 		lastAppliedConfiguraitonHashKey = "redpanda.vectorized.io/last-applied-configuration"
 	)
 
-	deletePolicy := metav1.DeletePropagationForeground
-	foregroundDeleteOptions := &client.DeleteOptions{
-		PropagationPolicy: &deletePolicy,
+	gracePeriod := int64(0)
+	deleteOptions := &client.DeleteOptions{
+		GracePeriodSeconds: &gracePeriod,
 	}
 
 	Context("When managing a RedpandaCluster with centralized config", func() {
 		It("Can initialize a cluster with centralized configuration", func() {
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("central-initialize")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("central-initialize")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating a Configmap with the bootstrap configuration")
@@ -88,12 +92,14 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(annotationGetter(key, &sts, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 
 		It("Should interact with the admin API when doing changes", func() {
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("central-changes")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("central-changes")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -146,12 +152,14 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 
 		It("Should remove properties from the admin API when needed", func() {
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("central-removal")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("central-removal")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -235,12 +243,14 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 
 		It("Should restart the cluster only when strictly required", func() {
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("central-restart")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("central-restart")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -336,14 +346,16 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(numberOfPatches))
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 
 		It("Should defer updating the centralized configuration when admin API is unavailable", func() {
 			testAdminAPI.SetUnavailable(true)
 
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("admin-unavailable")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("admin-unavailable")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the StatefulSet and the ConfigMap")
@@ -374,15 +386,17 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(testAdminAPI.PropertyGetter("prop")()).To(Equal(propValue))
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 	})
 
 	Context("When reconciling a cluster without centralized configuration", func() {
 		It("Should behave like before", func() {
 			By("Allowing creation of a cluster with an old version")
-			key, baseKey, redpandaCluster := getInitialTestCluster("no-central")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("no-central")
 			redpandaCluster.Spec.Version = versionWithoutCentralizedConfiguration
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap without .bootstrap.yaml and the statefulset")
@@ -421,15 +435,17 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 	})
 
 	Context("When upgrading a cluster from a version without centralized configuration", func() {
 		It("Should do a single rolling upgrade", func() {
 			By("Allowing creation of a cluster with an old version")
-			key, baseKey, redpandaCluster := getInitialTestCluster("upgrading")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("upgrading")
 			redpandaCluster.Spec.Version = versionWithoutCentralizedConfiguration
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -469,15 +485,17 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(0))
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 
 		It("Should be able to upgrade and change a cluster even if the admin API is unavailable", func() {
 			testAdminAPI.SetUnavailable(true)
 
 			By("Allowing creation of a cluster with an old version")
-			key, baseKey, redpandaCluster := getInitialTestCluster("upgrading-unavailable")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("upgrading-unavailable")
 			redpandaCluster.Spec.Version = versionWithoutCentralizedConfiguration
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -545,14 +563,16 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(testAdminAPI.PropertyGetter("prop")()).To(Equal(propValue))
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 	})
 
 	Context("When setting invalid configuration on the cluster", func() {
 		It("Should reflect any invalid status in the condition", func() {
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("condition-check")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("condition-check")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -627,7 +647,8 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 
 		It("Should report direct validation errors in the condition", func() {
@@ -635,7 +656,8 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			testAdminAPI.SetDirectValidationEnabled(true)
 
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("condition-validation")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("condition-validation")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -672,7 +694,8 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 
 		It("Should report configuration errors present in the .bootstrap.yaml file", func() {
@@ -684,11 +707,12 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(err).To(BeNil())
 
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("condition-bootstrap-failure")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("condition-bootstrap-failure")
 			if redpandaCluster.Spec.AdditionalConfiguration == nil {
 				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
 			}
 			redpandaCluster.Spec.AdditionalConfiguration["redpanda.unk"] = val
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating the Configmap and the statefulset")
@@ -712,7 +736,8 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(annotationGetter(key, &appsv1.StatefulSet{}, centralizedConfigurationHashKey)()).To(BeEmpty())
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 	})
 
@@ -735,7 +760,8 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			testAdminAPI.SetProperty(unmanagedProp, unmanagedPropValue)
 
 			By("Allowing creation of a new cluster")
-			key, baseKey, redpandaCluster := getInitialTestCluster("central-drift-detector")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("central-drift-detector")
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
 			By("Creating a Configmap and StatefulSet with the bootstrap configuration")
@@ -771,7 +797,8 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			Expect(testAdminAPI.PropertyGetter(unmanagedProp)()).To(Equal(externalChangeUnmanagedPropValue))
 
 			By("Deleting the cluster")
-			Expect(k8sClient.Delete(context.Background(), redpandaCluster, foregroundDeleteOptions)).Should(Succeed())
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster, deleteOptions)).Should(Succeed())
+			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 	})
 })
@@ -782,14 +809,16 @@ func getInitialTestCluster(
 	key types.NamespacedName,
 	baseKey types.NamespacedName,
 	cluster *v1alpha1.Cluster,
+	namespace *corev1.Namespace,
 ) {
+	ns := strings.Replace(namesgenerator.GetRandomName(0), "_", "-", 1)
 	key = types.NamespacedName{
 		Name:      name,
-		Namespace: "default",
+		Namespace: ns,
 	}
 	baseKey = types.NamespacedName{
 		Name:      name + "-base",
-		Namespace: "default",
+		Namespace: ns,
 	}
 
 	cluster = &v1alpha1.Cluster{
@@ -824,5 +853,10 @@ func getInitialTestCluster(
 			},
 		},
 	}
-	return key, baseKey, cluster
+	namespace = &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: ns,
+		},
+	}
+	return key, baseKey, cluster, namespace
 }

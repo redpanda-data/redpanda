@@ -11,6 +11,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/jetstack/cert-manager v1.4.4
 	github.com/json-iterator/go v1.1.12
+	github.com/moby/moby v20.10.23+incompatible
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
 	github.com/prometheus/client_golang v1.12.2
