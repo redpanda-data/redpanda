@@ -25,6 +25,7 @@ spec:
      - port: 8082
     developerMode: true
   additionalConfiguration:
+    redpanda.crash_loop_limit: "2"
     redpanda.default_topic_partitions: "3"
     pandaproxy_client.retries: "10"
     schema_registry.schema_registry_api: "[{'name':'external','address':'0.0.0.0','port':8081}]"

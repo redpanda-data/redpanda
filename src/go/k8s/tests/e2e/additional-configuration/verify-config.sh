@@ -2,8 +2,9 @@
 retries=20
 until [ "$retries" -lt 0 ]; do
   PANDAPROXY_RETRIES=$1
-  if [[ -z $PANDAPROXY_RETRIES ]]; then
-    echo "requires one argument, pandaproxy retries count"
+  CRASH_LOOP_LIMIT=$2
+  if [ -z CRASH_LOOP_LIMIT ] && [ -z $PANDAPROXY_RETRIES ]; then
+    echo "requires two argument, pandaproxy retries count and crash loop limit"
     exit 1
   fi
   actual=$(kubectl exec additional-configuration-0 -- cat /etc/redpanda/redpanda.yaml)
@@ -41,6 +42,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   default_topic_partitions: 3
   developer_mode: true
+  crash_loop_limit: ${CRASH_LOOP_LIMIT}
   kafka_api:
   - address: 0.0.0.0
     name: kafka
