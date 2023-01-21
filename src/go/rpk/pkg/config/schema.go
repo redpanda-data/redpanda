@@ -72,6 +72,7 @@ type RedpandaNodeConfig struct {
 	AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api,omitempty" json:"advertised_rpc_api,omitempty"`
 	AdvertisedKafkaAPI         []NamedSocketAddress      `yaml:"advertised_kafka_api,omitempty" json:"advertised_kafka_api,omitempty"`
 	DeveloperMode              bool                      `yaml:"developer_mode,omitempty" json:"developer_mode"`
+	CrashLoopLimit             *int                      `yaml:"crash_loop_limit,omitempty" json:"crash_loop_limit"`
 	Other                      map[string]interface{}    `yaml:",inline"`
 }
 
