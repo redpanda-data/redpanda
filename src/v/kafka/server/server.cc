@@ -443,7 +443,9 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
         if (request.data.mechanism == security::gssapi_authenticator::name) {
             ctx.sasl()->set_mechanism(
               std::make_unique<security::gssapi_authenticator>(
-                ctx.connection()->server().thread_worker()));
+                ctx.connection()->server().thread_worker(),
+                config::shard_local_cfg()
+                  .sasl_kerberos_principal_mapping.bind()));
         }
     }
 

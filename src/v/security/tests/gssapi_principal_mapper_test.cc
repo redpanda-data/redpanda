@@ -75,19 +75,18 @@ BOOST_DATA_TEST_CASE(test_gssapi_name, bdata::make(gssapi_name_test_data), c) {
       "RULE:[2:$1](App\\..*)s/App\\.(.*)/$1/g",
       "RULE:[2:$1data$2](redpanda.*)",
       "DEFAULT"};
-    static constexpr const char* const DEFAULT_REALM = "REALM.com";
+    static constexpr std::string_view DEFAULT_REALM = "REALM.com";
     BOOST_REQUIRE_NO_THROW(
       auto mapper = gssapi_principal_mapper(
-        DEFAULT_REALM,
-        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+        config::mock_binding(std::vector<ss::sstring>{rules}));
 
       BOOST_REQUIRE_NO_THROW(
-        auto name = gssapi_name::parse(c.gssapi_principal_name);
+        auto name = gssapi_name::parse(c.gssapi_principal_name).value();
         BOOST_REQUIRE_EQUAL(c.expected_primary, name.primary());
         BOOST_REQUIRE_EQUAL(c.expected_host_name, name.host_name());
         BOOST_REQUIRE_EQUAL(c.expected_realm, name.realm());
         BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
-        auto result_name = mapper.apply(name);
+        auto result_name = mapper.apply(DEFAULT_REALM, name);
         BOOST_REQUIRE(result_name.has_value());
         BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
 }
@@ -116,19 +115,18 @@ BOOST_DATA_TEST_CASE(
       "RULE:[2:$1](App\\..*)s/App\\.(.*)/$1/g/L",
       "RULE:[2:$1]/L",
       "DEFAULT"};
-    static constexpr const char* const DEFAULT_REALM = "REALM.COM";
+    static constexpr std::string_view DEFAULT_REALM = "REALM.COM";
     BOOST_REQUIRE_NO_THROW(
       auto mapper = gssapi_principal_mapper(
-        DEFAULT_REALM,
-        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+        config::mock_binding(std::vector<ss::sstring>{rules}));
 
       BOOST_REQUIRE_NO_THROW(
-        auto name = gssapi_name::parse(c.gssapi_principal_name);
+        auto name = gssapi_name::parse(c.gssapi_principal_name).value();
         BOOST_REQUIRE_EQUAL(c.expected_primary, name.primary());
         BOOST_REQUIRE_EQUAL(c.expected_host_name, name.host_name());
         BOOST_REQUIRE_EQUAL(c.expected_realm, name.realm());
         BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
-        auto result_name = mapper.apply(name);
+        auto result_name = mapper.apply(DEFAULT_REALM, name);
         BOOST_REQUIRE(result_name.has_value());
         BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
 }
@@ -157,19 +155,18 @@ BOOST_DATA_TEST_CASE(
       "RULE:[2:$1](App\\..*)s/App\\.(.*)/$1/g/U",
       "RULE:[2:$1]/U",
       "DEFAULT"};
-    static constexpr const char* const DEFAULT_REALM = "REALM.COM";
+    static constexpr std::string_view DEFAULT_REALM = "REALM.COM";
     BOOST_REQUIRE_NO_THROW(
       auto mapper = gssapi_principal_mapper(
-        DEFAULT_REALM,
-        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
+        config::mock_binding(std::vector<ss::sstring>{rules}));
 
       BOOST_REQUIRE_NO_THROW(
-        auto name = gssapi_name::parse(c.gssapi_principal_name);
+        auto name = gssapi_name::parse(c.gssapi_principal_name).value();
         BOOST_REQUIRE_EQUAL(c.expected_primary, name.primary());
         BOOST_REQUIRE_EQUAL(c.expected_host_name, name.host_name());
         BOOST_REQUIRE_EQUAL(c.expected_realm, name.realm());
         BOOST_REQUIRE_EQUAL(c.gssapi_principal_name, fmt::format("{}", name));
-        auto result_name = mapper.apply(name);
+        auto result_name = mapper.apply(DEFAULT_REALM, name);
         BOOST_REQUIRE(result_name.has_value());
         BOOST_REQUIRE_EQUAL(c.expected_name, *result_name);););
 }
@@ -189,41 +186,37 @@ std::array<ss::sstring, 11> gssapi_invalid_rules{
 
 BOOST_DATA_TEST_CASE(
   test_gssapi_invalid_rules, bdata::make(gssapi_invalid_rules), c) {
-    static constexpr const char* const DEFAULT_REALM = "REALM.com";
     BOOST_REQUIRE_THROW(
       gssapi_principal_mapper(
-        DEFAULT_REALM,
-        config::mock_binding(std::optional<std::vector<ss::sstring>>{{c}})),
+        config::mock_binding(std::vector<ss::sstring>{{c}})),
       std::runtime_error);
 }
 
 BOOST_AUTO_TEST_CASE(test_invalid_index) {
     static const std::vector<ss::sstring> rules = {"RULE:[2:$3]"};
-    static constexpr const char* const DEFAULT_REALM = "REALM.com";
-    static constexpr const char* const TEST_NAME = "test/host@REALM.com";
+    static constexpr std::string_view DEFAULT_REALM = "REALM.com";
+    static constexpr std::string_view TEST_NAME = "test/host@REALM.com";
     BOOST_REQUIRE_NO_THROW(
       auto mapper = gssapi_principal_mapper(
-        DEFAULT_REALM,
-        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
-      BOOST_REQUIRE_NO_THROW(auto name = gssapi_name::parse(TEST_NAME);
-                             auto result = mapper.apply(name);
+        config::mock_binding(std::vector<ss::sstring>{rules}));
+      BOOST_REQUIRE_NO_THROW(auto name = gssapi_name::parse(TEST_NAME).value();
+                             auto result = mapper.apply(DEFAULT_REALM, name);
                              BOOST_REQUIRE(!result.has_value());););
 }
 
 BOOST_AUTO_TEST_CASE(test_only_primary) {
     static const std::vector<ss::sstring> rules = {
       "RULE:[1:$1data](redpanda.*)", "RULE:[2:$3]"};
-    static constexpr const char* const DEFAULT_REALM = "REALM.com";
-    static constexpr const char* const TEST_NAME = "redpanda";
+    static constexpr std::string_view DEFAULT_REALM = "REALM.com";
+    static constexpr std::string_view TEST_NAME = "redpanda";
     BOOST_REQUIRE_NO_THROW(
       auto mapper = gssapi_principal_mapper(
-        DEFAULT_REALM,
-        config::mock_binding(std::optional<std::vector<ss::sstring>>{rules}));
-      BOOST_REQUIRE_NO_THROW(auto name = gssapi_name::parse(TEST_NAME);
+        config::mock_binding(std::vector<ss::sstring>{rules}));
+      BOOST_REQUIRE_NO_THROW(auto name = gssapi_name::parse(TEST_NAME).value();
                              BOOST_REQUIRE(name.host_name().empty());
                              BOOST_REQUIRE(name.realm().empty());
                              BOOST_REQUIRE_EQUAL(TEST_NAME, name.primary());
-                             auto result = mapper.apply(name);
+                             auto result = mapper.apply(DEFAULT_REALM, name);
                              BOOST_REQUIRE(result.has_value());
                              BOOST_REQUIRE_EQUAL(TEST_NAME, *result);););
 }
