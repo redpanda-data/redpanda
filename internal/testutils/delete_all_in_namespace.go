@@ -1,3 +1,13 @@
+// Copyright 2021 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+// Package testutils contains utilities used with testing
 package testutils
 
 import (
@@ -5,13 +15,14 @@ import (
 	"strings"
 	"time"
 
+	//nolint:stylecheck // gomega
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/kubernetes"
+	clientgo "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
@@ -23,11 +34,12 @@ const (
 
 func DeleteAllInNamespace(testEnv *envtest.Environment, k8sClient client.Client, namespaces ...client.Object) {
 	ctx := context.Background()
-	clientGo, err := kubernetes.NewForConfig(testEnv.Config)
+	clientGo, err := clientgo.NewForConfig(testEnv.Config)
 	Expect(err).ShouldNot(HaveOccurred())
 	for _, obj := range namespaces {
 		Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, obj))).Should(Succeed())
 
+		//nolint:nestif // this is not as complex as it looks
 		if ns, ok := obj.(*v1.Namespace); ok {
 			// Normally the kube-controller-manager would handle finalization
 			// and garbage collection of namespaces, but with envtest, we aren't
@@ -44,8 +56,9 @@ func DeleteAllInNamespace(testEnv *envtest.Environment, k8sClient client.Client,
 			Expect(err).ShouldNot(HaveOccurred())
 			namespacedGVKs := make(map[string]schema.GroupVersionKind)
 			for _, apiResourceList := range apiResources {
-				defaultGV, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
-				Expect(err).ShouldNot(HaveOccurred())
+				defaultGV, pgverr := schema.ParseGroupVersion(apiResourceList.GroupVersion)
+				Expect(pgverr).ShouldNot(HaveOccurred())
+				//nolint:gocritic // a dozen copies of 176 bytes is inconsequential
 				for _, r := range apiResourceList.APIResources {
 					if !r.Namespaced || strings.Contains(r.Name, "/") {
 						// skip non-namespaced and subresources
@@ -70,8 +83,8 @@ func DeleteAllInNamespace(testEnv *envtest.Environment, k8sClient client.Client,
 			for _, gvk := range namespacedGVKs {
 				var u unstructured.Unstructured
 				u.SetGroupVersionKind(gvk)
-				err := k8sClient.DeleteAllOf(ctx, &u, client.InNamespace(ns.Name))
-				Expect(client.IgnoreNotFound(ignoreMethodNotAllowed(err))).ShouldNot(HaveOccurred())
+				deleteallerr := k8sClient.DeleteAllOf(ctx, &u, client.InNamespace(ns.Name))
+				Expect(client.IgnoreNotFound(ignoreMethodNotAllowed(deleteallerr))).ShouldNot(HaveOccurred())
 			}
 
 			Eventually(func() error {
@@ -79,8 +92,8 @@ func DeleteAllInNamespace(testEnv *envtest.Environment, k8sClient client.Client,
 				if err != nil {
 					return err
 				}
-				if err := k8sClient.Get(ctx, key, ns); err != nil {
-					return client.IgnoreNotFound(err)
+				if geterr := k8sClient.Get(ctx, key, ns); geterr != nil {
+					return client.IgnoreNotFound(geterr)
 				}
 				// remove `kubernetes` finalizer
 				const kubernetes = "kubernetes"
