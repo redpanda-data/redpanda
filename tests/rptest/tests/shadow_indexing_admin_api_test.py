@@ -5,22 +5,24 @@
 # the License. You may obtain a copy of the License at
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+
 import re
 
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings
+import requests
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import CloudStorageType, SISettings
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     produce_until_segments,
     wait_for_segments_removal,
 )
-from ducktape.mark import parametrize
-from ducktape.utils.util import wait_until
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted
@@ -33,6 +35,7 @@ CONNECTION_ERROR_LOGS = [
 
 
 class SIAdminApiTest(RedpandaTest):
+
     log_segment_size = 1048576  # 1MB
 
     topics = (TopicSpec(), )
@@ -138,3 +141,45 @@ class SIAdminApiTest(RedpandaTest):
             if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.key):
                 return obj.key
         return None
+
+    def _get_non_controller_node(self):
+        self.admin.wait_stable_configuration('controller',
+                                             namespace='redpanda')
+        controller_leader = self.admin.get_partition_leader(
+            namespace='redpanda', topic='controller', partition=0)
+        not_controller = next(
+            (node_id for node_id in
+             {self.redpanda.node_id(node)
+              for node in self.redpanda.nodes}
+             if node_id != controller_leader))
+        return self.redpanda.get_node(not_controller)
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_redirects_to_controller_leader(self):
+        response = self.admin.initiate_topic_scan_and_recovery(
+            node=self._get_non_controller_node(), allow_redirects=False)
+        assert response.status_code == requests.status_codes.codes[
+            'temporary_redirect']
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_on_leader(self):
+        response = self.admin.initiate_topic_scan_and_recovery(
+            node=self._get_non_controller_node())
+        assert response.status_code == requests.status_codes.codes['ok']
+        assert response.json() == {'status': 'recovery started'}
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_request_validation(self):
+        for payload in ({
+                'x': 1
+        }, {
+                'topic_names_pattern': 'x',
+                'retention_ms': 1,
+                'retention_bytes': 1
+        }):
+            try:
+                response = self.admin.initiate_topic_scan_and_recovery(
+                    payload=payload)
+            except requests.exceptions.HTTPError as e:
+                assert e.response.status_code == requests.status_codes.codes[
+                    'bad_request'], f'unexpected status code: {response} for {payload}'

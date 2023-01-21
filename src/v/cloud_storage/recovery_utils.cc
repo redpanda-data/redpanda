@@ -1,0 +1,171 @@
+/*
+ * Copyright 2023 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
+
+#include "cloud_storage/recovery_utils.h"
+
+#include "cloud_storage/logger.h"
+#include "cloud_storage/remote.h"
+#include "storage/ntp_config.h"
+
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
+
+namespace {
+// The top level path for all recovery state files on the cloud storage bucket
+constexpr std::string_view recovery_result_prefix{"recovery_state"};
+
+// The format for recovery state files, containing the NTP, a random UUID and
+// the boolean status
+// {recovery_result_prefix}/{ns}/{topic}/{partition}_{uuid}/{success:true|false}
+constexpr std::string_view recovery_result_format{"{}/{}/{}/{}_{}.{}"};
+
+constexpr size_t max_delete_items_per_call{1000};
+} // namespace
+
+namespace cloud_storage {
+
+ss::sstring
+generate_result_path(const storage::ntp_config& ntp_cfg, bool result) {
+    auto uuid = boost::uuids::random_generator()();
+    return fmt::format(
+      recovery_result_format,
+      recovery_result_prefix,
+      ntp_cfg.ntp().ns(),
+      ntp_cfg.ntp().tp.topic(),
+      ntp_cfg.ntp().tp.partition,
+      boost::uuids::to_string(uuid),
+      result);
+}
+
+ss::future<> place_download_result(
+  remote& remote,
+  cloud_storage_clients::bucket_name bucket,
+  const storage::ntp_config& ntp_cfg,
+  bool result_completed,
+  retry_chain_node& parent) {
+    retry_chain_node fib{&parent};
+    auto result_path = generate_result_path(ntp_cfg, result_completed);
+    auto result = co_await remote.upload_object(
+      bucket, cloud_storage_clients::object_key{result_path}, "", fib);
+    if (result != upload_result::success) {
+        vlog(
+          cst_log.error,
+          "failed to upload result to {}, error: {}",
+          result_path,
+          result);
+    }
+    co_return;
+}
+
+ss::future<std::vector<recovery_result>> gather_recovery_results(
+  remote& remote,
+  cloud_storage_clients::bucket_name bucket,
+  retry_chain_node& parent) {
+    retry_chain_node fib{&parent};
+    std::vector<recovery_result> results{};
+    auto result = co_await remote.list_objects(
+      bucket, fib, cloud_storage_clients::object_key{recovery_result_prefix});
+    if (result.has_error()) {
+        vlog(
+          cst_log.error, "failed to list recovery results: {}", result.error());
+        co_return results;
+    }
+
+    // Matches the recovery_result_format. Example:
+    // "recovery_state/test_ns/test_topic/0_<UUID>.true" OR
+    // "recovery_state/test_ns/test_topic/0_<UUID>.false"
+    std::regex result_expr{fmt::format(
+      "{}/(.*?)/(.*?)/(\\d+)_(.*?).(true|false)", recovery_result_prefix)};
+
+    results.reserve(result.value().size());
+    for (const auto& item : result.value()) {
+        std::cmatch matches;
+        if (std::regex_match(
+              item.key.begin(), item.key.end(), matches, result_expr)) {
+            results.push_back(
+              {model::topic_namespace{
+                 model::ns{matches[1].str()}, model::topic{matches[2].str()}},
+               model::partition_id{std::stoi(matches[3].str())},
+               matches[4].str(),
+               matches[5].str() == "true"});
+        }
+    }
+    co_return results;
+}
+
+ss::future<> clear_recovery_results(
+  remote& remote,
+  cloud_storage_clients::bucket_name bucket,
+  retry_chain_node& parent,
+  std::optional<std::vector<recovery_result>> items_to_delete) {
+    retry_chain_node fib{&parent};
+    if (!items_to_delete.has_value()) {
+        auto r = co_await gather_recovery_results(remote, bucket, fib);
+        items_to_delete.emplace(r);
+    }
+
+    if (items_to_delete->empty()) {
+        vlog(cst_log.info, "skipping clear recovery results, nothing to clear");
+        co_return;
+    }
+
+    std::vector<cloud_storage_clients::object_key> keys;
+    keys.reserve(items_to_delete->size());
+    std::transform(
+      std::make_move_iterator(items_to_delete->begin()),
+      std::make_move_iterator(items_to_delete->end()),
+      std::back_inserter(keys),
+      [](auto&& item) { return make_result_path(item); });
+
+    std::vector<cloud_storage_clients::object_key> to_delete;
+    to_delete.reserve(max_delete_items_per_call);
+    while (!keys.empty()) {
+        auto end = keys.size() > max_delete_items_per_call
+                     ? keys.begin() + max_delete_items_per_call
+                     : keys.end();
+        to_delete.insert(
+          to_delete.end(),
+          std::make_move_iterator(keys.begin()),
+          std::make_move_iterator(end));
+
+        vlog(
+          cst_log.trace,
+          "deleting {} of {} result files",
+          to_delete.size(),
+          keys.size());
+
+        keys.erase(keys.begin(), end);
+
+        auto result = co_await remote.delete_objects(bucket, to_delete, fib);
+        if (result != upload_result::success) {
+            vlog(
+              cst_log.error, "failed to delete recovery results: {}", result);
+        } else {
+            vlog(cst_log.debug, "delete recovery results: {}", result);
+        }
+
+        to_delete.clear();
+    }
+
+    co_return;
+}
+
+cloud_storage_clients::object_key make_result_path(const recovery_result& r) {
+    return cloud_storage_clients::object_key{fmt::format(
+      recovery_result_format,
+      recovery_result_prefix,
+      r.tp_ns.ns(),
+      r.tp_ns.tp(),
+      r.partition,
+      r.uuid,
+      r.result)};
+}
+
+} // namespace cloud_storage

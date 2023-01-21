@@ -166,7 +166,8 @@ public:
     struct init_cloud_storage_tag {};
 
     // Start redpanda with shadow indexing enabled
-    explicit redpanda_thread_fixture(init_cloud_storage_tag)
+    explicit redpanda_thread_fixture(
+      init_cloud_storage_tag, std::optional<uint16_t> port = std::nullopt)
       : redpanda_thread_fixture(
         model::node_id(1),
         9092,
@@ -178,9 +179,9 @@ public:
         ssx::sformat("test.dir_{}", time(0)),
         std::nullopt,
         true,
-        get_s3_config(),
+        get_s3_config(port),
         get_archival_config(),
-        get_cloud_config()) {}
+        get_cloud_config(port)) {}
 
     ~redpanda_thread_fixture() {
         shutdown();
@@ -198,8 +199,9 @@ public:
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
-    static cloud_storage_clients::s3_configuration get_s3_config() {
-        net::unresolved_address server_addr("127.0.0.1", 4430);
+    static cloud_storage_clients::s3_configuration
+    get_s3_config(std::optional<uint16_t> port = std::nullopt) {
+        net::unresolved_address server_addr("127.0.0.1", port.value_or(4430));
         cloud_storage_clients::s3_configuration s3conf;
         s3conf.uri = cloud_storage_clients::access_point_uri("127.0.0.1");
         s3conf.access_key = cloud_roles::public_key_str("acess-key");
@@ -221,8 +223,9 @@ public:
         return aconf;
     }
 
-    static cloud_storage::configuration get_cloud_config() {
-        auto s3conf = get_s3_config();
+    static cloud_storage::configuration
+    get_cloud_config(std::optional<uint16_t> port = std::nullopt) {
+        auto s3conf = get_s3_config(port);
         cloud_storage::configuration cconf;
         cconf.client_config = s3conf;
         cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");

@@ -33,8 +33,6 @@ using namespace std::chrono_literals;
 
 inline ss::logger fixt_log("fixture"); // NOLINT
 
-static constexpr const char* httpd_host_name = "127.0.0.1";
-
 /// For http_imposter to run this binary with a unique port
 uint16_t unit_test_httpd_port_number() { return 4442; }
 
@@ -174,4 +172,23 @@ void s3_imposter_fixture::set_routes(
       [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
       "txt");
     r.add_default_handler(_handler.get());
+}
+
+enable_cloud_storage_fixture::enable_cloud_storage_fixture() {
+    ss::smp::invoke_on_all([]() {
+        auto& cfg = config::shard_local_cfg();
+        cfg.cloud_storage_enabled.set_value(true);
+        cfg.cloud_storage_api_endpoint.set_value(
+          std::optional<ss::sstring>{s3_imposter_fixture::httpd_host_name});
+        cfg.cloud_storage_api_endpoint_port.set_value(
+          static_cast<int16_t>(unit_test_httpd_port_number()));
+        cfg.cloud_storage_access_key.set_value(
+          std::optional<ss::sstring>{"access-key"});
+        cfg.cloud_storage_secret_key.set_value(
+          std::optional<ss::sstring>{"secret-key"});
+        cfg.cloud_storage_region.set_value(
+          std::optional<ss::sstring>{"us-east1"});
+        cfg.cloud_storage_bucket.set_value(
+          std::optional<ss::sstring>{"test-bucket"});
+    }).get();
 }

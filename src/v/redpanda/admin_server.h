@@ -10,6 +10,7 @@
  */
 
 #pragma once
+
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
@@ -47,6 +48,10 @@ template<auto V>
 struct dependent_false : std::false_type {};
 } // namespace detail
 
+namespace cloud_storage {
+struct topic_recovery_service;
+}
+
 class admin_server {
 public:
     explicit admin_server(
@@ -59,7 +64,8 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<cluster::node_status_table>&,
       ss::sharded<cluster::self_test_frontend>&,
-      pandaproxy::schema_registry::api*);
+      pandaproxy::schema_registry::api*,
+      ss::sharded<cloud_storage::topic_recovery_service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -316,6 +322,9 @@ private:
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
 
+    ss::future<ss::json::json_return_type>
+    initiate_topic_scan_and_recovery(std::unique_ptr<ss::httpd::request> req);
+
     /// Self test routes
     ss::future<ss::json::json_return_type>
       self_test_start_handler(std::unique_ptr<ss::httpd::request>);
@@ -370,4 +379,5 @@ private:
     ss::sharded<cluster::node_status_table>& _node_status_table;
     ss::sharded<cluster::self_test_frontend>& _self_test_frontend;
     pandaproxy::schema_registry::api* _schema_registry;
+    ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;
 };
