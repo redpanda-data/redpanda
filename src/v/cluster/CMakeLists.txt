@@ -65,7 +65,7 @@ rpcgen(
 rpcgen(
   TARGET topic_recovery_status_rpc
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/topic_recovery_status_rpc.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/topic_recovery_status_rpc.h
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/topic_recovery_status_rpc_service.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
