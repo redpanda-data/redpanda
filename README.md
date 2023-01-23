@@ -18,7 +18,6 @@ transforms and geo-replicated hierarchical storage. A new platform that scales w
 you from the smallest projects to petabytes of data distributed across the globe.
 
 # Community
-
 [Slack](https://redpanda.com/slack) is the main way the community interacts with one another in real time :) 
 
 [Github Discussion](https://github.com/redpanda-data/redpanda/discussions) is preferred for longer, async, thoughtful discussions
