@@ -60,13 +60,14 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             } else {
                 results.push_back(self_test_result{
                   .name = dto.name,
+                  .test_type = "disk",
                   .warning = "Disk self test prevented from starting due to "
                              "cancel signal"});
             }
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Disk self test finished with error");
-            results.push_back(
-              self_test_result{.name = dto.name, .error = ex.what()});
+            results.push_back(self_test_result{
+              .name = dto.name, .test_type = "disk", .error = ex.what()});
         }
     }
     for (auto& nto : ntos) {
@@ -81,6 +82,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
                 } else {
                     results.push_back(self_test_result{
                       .name = nto.name,
+                      .test_type = "network",
                       .warning
                       = "Network self test prevented from starting due to "
                         "cancel signal"});
@@ -88,12 +90,13 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             } else {
                 results.push_back(self_test_result{
                   .name = nto.name,
+                  .test_type = "network",
                   .warning = "No peers to start network test against"});
             }
         } catch (const std::exception& ex) {
             vlog(clusterlog.warn, "Network self test finished with error");
-            results.push_back(
-              self_test_result{.name = nto.name, .error = ex.what()});
+            results.push_back(self_test_result{
+              .name = nto.name, .test_type = "network", .error = ex.what()});
         }
     }
     co_return results;

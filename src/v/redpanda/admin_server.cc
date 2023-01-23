@@ -3194,6 +3194,7 @@ self_test_result_to_json(const cluster::self_test_result& str) {
     r.test_id = ss::sstring(str.test_id);
     r.name = str.name;
     r.info = str.info;
+    r.test_type = str.test_type;
     r.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
                    str.duration)
                    .count();

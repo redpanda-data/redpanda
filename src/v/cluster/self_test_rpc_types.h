@@ -196,6 +196,7 @@ struct self_test_result
     uuid_t test_id;
     ss::sstring name;
     ss::sstring info;
+    ss::sstring test_type;
     ss::lowres_clock::duration duration;
     std::optional<ss::sstring> warning;
     std::optional<ss::sstring> error;
@@ -205,8 +206,8 @@ struct self_test_result
         fmt::print(
           o,
           "{{p50: {} p90: {} p99: {} p999: {} max: {} rps: {} bps: {} "
-          "timeouts: {} test_id: {} name: {} info: {} duration: {}ms warning: "
-          "{} error: {}}}",
+          "timeouts: {} test_id: {} name: {} info: {} type: {} duration: {}ms "
+          "warning: {} error: {}}}",
           r.p50,
           r.p90,
           r.p99,
@@ -218,6 +219,7 @@ struct self_test_result
           r.test_id,
           r.name,
           r.info,
+          r.test_type,
           std::chrono::duration_cast<std::chrono::milliseconds>(r.duration)
             .count(),
           r.warning ? *r.warning : "<no_value>",
