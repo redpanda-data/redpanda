@@ -11,6 +11,8 @@
 #include "archival/types.h"
 
 #include "archival/logger.h"
+#include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/types.h"
 #include "config/configuration.h"
 
 #include <fmt/chrono.h>
@@ -111,6 +113,61 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
       .upload_io_priority = p};
     vlog(archival_log.debug, "Archival configuration generated: {}", cfg);
     return cfg;
+}
+
+bool adjacent_segment_run::maybe_add_segment(
+  const cloud_storage::segment_meta& s, size_t max_size) {
+    vlog(archival_log.debug, "Looking at segment meta: {}", s);
+    if (num_segments == 0) {
+        // Find the begining of the small segment
+        // run.
+        if (s.size_bytes < max_size) {
+            meta = s;
+            num_segments = 1;
+            segments.push_back(
+              cloud_storage::partition_manifest::generate_remote_segment_path(
+                ntp, s));
+        }
+    } else {
+        if (meta.size_bytes + s.size_bytes <= max_size) {
+            if (model::next_offset(meta.committed_offset) != s.base_offset) {
+                // In case if we're dealing with one of the old manifests with
+                // inconsistencies (overlapping offsets, etc).
+                num_segments = 0;
+                meta = {};
+            }
+            // Move the end of the small segment run forward
+            meta.committed_offset = s.committed_offset;
+            meta.max_timestamp = s.max_timestamp;
+            num_segments++;
+            meta.size_bytes += s.size_bytes;
+            segments.push_back(
+              cloud_storage::partition_manifest::generate_remote_segment_path(
+                ntp, s));
+        } else {
+            return num_segments > 1;
+        }
+    }
+    return false;
+}
+
+std::ostream& operator<<(std::ostream& os, const adjacent_segment_run& run) {
+    std::vector<ss::sstring> names;
+    names.reserve(run.segments.size());
+    std::transform(
+      run.segments.begin(),
+      run.segments.end(),
+      std::back_inserter(names),
+      [](const cloud_storage::remote_segment_path& rsp) {
+          return rsp().native();
+      });
+    fmt::print(
+      os,
+      "{{meta: {}, num_segments: {}, segments: {}}}",
+      run.meta,
+      run.num_segments,
+      names);
+    return os;
 }
 
 } // namespace archival

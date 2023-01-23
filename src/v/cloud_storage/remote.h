@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "storage/segment_reader.h"
+#include "utils/intrusive_list_helpers.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -90,6 +91,14 @@ private:
     cloud_storage_clients::client_configuration _client_conf;
     model::cloud_credentials_source _cloud_credentials_source;
     std::optional<cloud_roles::refresh_credentials> _refresh_credentials;
+};
+
+enum class api_activity_notification {
+    segment_upload,
+    segment_download,
+    segment_delete,
+    manifest_upload,
+    manifest_download,
 };
 
 /// \brief Represents remote endpoint
@@ -301,6 +310,66 @@ public:
 
     materialized_segments& materialized() { return *_materialized; }
 
+    /// Event filter class.
+    ///
+    /// The filter can be used to subscribe to subset of events.
+    /// For instance, only to segment downloads and uploads, or to
+    /// events from all sybsystems except one.
+    /// The filter is a RAII object. It works until the object
+    /// exists. If the filter is destroyed before the notification
+    /// will be received the receiver of the event will se broken
+    /// promise error.
+    class event_filter {
+        friend class remote;
+
+    public:
+        /// Event filter that subscribes to events from all sources.
+        /// The event type wildcard can also be specified.
+        explicit event_filter(
+          std::unordered_set<api_activity_notification> ignored_events = {})
+          : _events_to_ignore(std::move(ignored_events)) {}
+        /// Event filter that subscribes to events from all sources
+        /// except one. The event type wildcard can also be specified.
+        /// The filter will ignore all events triggered by callers which
+        /// are using the same retry_chain_node. This is useful when the
+        /// client of the 'remote' needs to subscribe to all events except
+        /// own.
+        explicit event_filter(
+          retry_chain_node& ignored_src,
+          std::unordered_set<api_activity_notification> ignored_events = {})
+          : _source_to_ignore(std::ref(ignored_src))
+          , _events_to_ignore(std::move(ignored_events)) {}
+
+        void cancel() {
+            if (_promise.has_value()) {
+                _hook.unlink();
+                _promise.reset();
+            }
+        }
+
+    private:
+        std::optional<std::reference_wrapper<retry_chain_node>>
+          _source_to_ignore;
+        std::unordered_set<api_activity_notification> _events_to_ignore;
+        std::optional<ss::promise<api_activity_notification>> _promise;
+        intrusive_list_hook _hook;
+    };
+
+    /// Return future that will become available on next cloud storage
+    /// api operation.
+    ///
+    /// \note The operations which are trigger notifications are segment upload,
+    /// segment download, segment(s) delete, manifest upload, manifest download.
+    /// The notification is generated before the actual use and does not
+    /// affected by errors. The notification is generated even if the operation
+    /// failed. Also, every retry is generating its own notification.
+    ///
+    /// \param filter is a notification filter which allows to narrow the set of
+    ///        posible notificatoins by source and type.
+    /// \return the future which will be available after the next cloud storage
+    ///         API operation.
+    ss::future<api_activity_notification> subscribe(event_filter& filter);
+
     /// Add partition manifest tags (includes partition id)
     static cloud_storage_clients::object_tag_formatter
     make_partition_manifest_tags(
@@ -317,6 +386,10 @@ public:
 
 private:
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
+    /// Notify all subscribers about segment or manifest upload/download
+    void notify_external_subscribers(
+      api_activity_notification, const retry_chain_node& caller);
+
     cloud_storage_clients::client_pool _pool;
     ss::gate _gate;
     ss::abort_source _as;
@@ -325,6 +398,8 @@ private:
 
     // Lifetime: probe has reference to _materialized, must be destroyed after
     remote_probe _probe;
+
+    intrusive_list<event_filter, &event_filter::_hook> _filters;
 };
 
 } // namespace cloud_storage

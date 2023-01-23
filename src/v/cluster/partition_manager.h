@@ -44,6 +44,7 @@ public:
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&,
+      ss::sharded<archival::upload_housekeeping_service>&,
       config::binding<uint64_t>);
 
     ~partition_manager();
@@ -207,6 +208,7 @@ private:
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
+    ss::sharded<archival::upload_housekeeping_service>& _upload_hks;
     ss::gate _gate;
 
     // In general, all our background work is in partition objects which

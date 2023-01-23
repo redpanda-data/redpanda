@@ -16,6 +16,7 @@
 #include "seastar/util/bool_class.hh"
 #include "seastarx.h"
 #include "utils/named_type.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/scheduling.hh>
@@ -76,5 +77,61 @@ struct configuration {
 archival::configuration get_archival_service_config(
   ss::scheduling_group sg = ss::default_scheduling_group(),
   ss::io_priority_class p = ss::default_priority_class());
+
+/// The housekeeping job that performs the long
+/// task incrementally. It can be paused and resumed.
+/// When the underlying partition is stopped or the
+/// entire shard is stopped the job is 'completed'
+/// by calling 'complete' method.
+class housekeeping_job {
+public:
+    housekeeping_job() = default;
+    virtual ~housekeeping_job() = default;
+    housekeeping_job(const housekeeping_job&) = delete;
+    housekeeping_job(housekeeping_job&&) = delete;
+    housekeeping_job& operator=(const housekeeping_job&) = delete;
+    housekeeping_job& operator=(housekeeping_job&&) = delete;
+
+    /// Start the job. The job can be paused (not immediately).
+    virtual ss::future<> run(retry_chain_node&) = 0;
+    /// Stop the job. The job object can't be reused after that.
+    /// Subsequent calls to 'run' method should fail.
+    virtual void interrupt() = 0;
+
+    /// Return true if the jb was interrupted.
+    /// The job can't be executed if 'interrupted() == true'
+    virtual bool interrupted() const = 0;
+
+private:
+    friend class housekeeping_workflow;
+    intrusive_list_hook _hook{};
+};
+
+/// Represents a series of adjacent segments
+/// The object is used to compute a possible reupload
+/// candidate. The series of segment is supposed to be
+/// merged and reuploaded. The object produces metadata
+/// for the reuploaded segment.
+struct adjacent_segment_run {
+    explicit adjacent_segment_run(model::ntp ntp)
+      : ntp(std::move(ntp)) {}
+
+    model::ntp ntp;
+    cloud_storage::segment_meta meta{};
+    size_t num_segments{0};
+    std::vector<cloud_storage::remote_segment_path> segments;
+
+    /// Try to add segment to the run
+    ///
+    /// The subsequent calls are successful until the total size
+    /// of the run is below the threshold. The object keeps track
+    /// of all segment names.
+    ///
+    /// \return true if the segment is added, false otherwise
+    bool
+    maybe_add_segment(const cloud_storage::segment_meta& s, size_t max_size);
+};
+
+std::ostream& operator<<(std::ostream& o, const adjacent_segment_run& run);
 
 } // namespace archival

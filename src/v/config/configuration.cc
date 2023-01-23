@@ -1235,6 +1235,14 @@ configuration::configuration()
       "Interval for cloud storage housekeeping tasks",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
+  , cloud_storage_idle_timeout_ms(
+      *this,
+      "cloud_storage_idle_timeout_ms",
+      "Timeout used to detect idle state of the cloud storage API. If no API "
+      "requests are made for at least idle timeout milliseconds the cloud "
+      "storage is considered idle.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , cloud_storage_max_segments_pending_deletion_per_partition(
       *this,
       "cloud_storage_max_segments_pending_deletion_per_partition",
@@ -1256,6 +1264,19 @@ configuration::configuration()
       "Retention in bytes for topics created during automated recovery",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1_GiB)
+  , cloud_storage_segment_size_target(
+      *this,
+      "cloud_storage_segment_size_target",
+      "Desired segment size in the cloud storage. Default: segment.bytes",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
+  , cloud_storage_segment_size_min(
+      *this,
+      "cloud_storage_segment_size_min",
+      "Smallest acceptable segment size in the cloud storage. Default: "
+      "cloud_storage_segment_size_target/2",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",

@@ -159,6 +159,20 @@ ss::sstring retry_chain_node::operator()() const {
     return ss::sstring(buf.data(), buf.size());
 }
 
+const retry_chain_node* retry_chain_node::get_root() const {
+    auto it = this;
+    auto root = it;
+    while (it) {
+        root = it;
+        it = it->get_parent();
+    }
+    return root;
+}
+
+bool retry_chain_node::same_root(const retry_chain_node& other) const {
+    return get_root() == other.get_root();
+}
+
 retry_permit retry_chain_node::retry(retry_strategy st) {
     auto& as = root_abort_source();
     as.check();

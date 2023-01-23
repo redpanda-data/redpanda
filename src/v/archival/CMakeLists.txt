@@ -9,6 +9,8 @@ v_cc_library(
     upload_controller.cc
     segment_reupload.cc
     retention_calculator.cc
+    upload_housekeeping_service.cc
+    adjacent_segment_merger.cc
   DEPS
     Seastar::seastar
     v::bytes
