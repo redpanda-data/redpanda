@@ -23,6 +23,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.restart_services_test import check_service_restart
 from rptest.services.admin import Admin
 from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig
 
@@ -61,7 +62,6 @@ message Test2 {
 
 log_config = LoggingConfig('info',
                            logger_levels={
-                               'admin_api_server': 'trace',
                                'security': 'trace',
                                'pandaproxy': 'trace',
                                'kafka/client': 'trace'
@@ -1251,8 +1251,6 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
             res_versions = result_raw.json()
             self.logger.debug(res_versions)
             assert type(res_versions) == type([])
-            res_versions.sort()
-            subject_versions.sort()
             assert res_versions == subject_versions
 
         # Given the subject, list of schemas, list of versions, and list of ids,
@@ -1260,7 +1258,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         def check_each_schema(subject: str, schemas: list[str],
                               schema_ids: list[int],
                               subject_versions: list[int]):
-            for version in subject_versions:
+            for idx, version in zip(schema_ids, subject_versions):
                 self.logger.debug(
                     f"Fetch schema version {version} on subject {subject}")
                 result_raw = self._get_subjects_subject_versions_version(
@@ -1276,7 +1274,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
                 assert "schema" in res
                 assert res["subject"] == subject
                 assert res["version"] == version
-                assert res["id"] in schema_ids
+                assert res["id"] == idx
                 schema = json.loads(schemas[version - 1])
                 assert res["schema"] == schema["schema"]
 
@@ -1308,6 +1306,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.debug("Restart the schema registry")
         result_raw = admin.redpanda_services_restart(
             rp_service='schema-registry')
+        check_service_restart(self.redpanda, "Restarting the schema registry")
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
 
