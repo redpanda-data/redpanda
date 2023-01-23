@@ -659,6 +659,19 @@ def decode_user_and_credential(rdr: Reader):
         })
 
 
+def decode_bootstrap_cluster_cmd_data(rdr: Reader, version):
+    decoded = {
+        'cluster_uuid': rdr.read_uuid(),
+        'bootstrap_user_cred': rdr.read_optional(decode_user_and_credential),
+        'nodes_by_uuid': rdr.read_serde_map(Reader.read_uuid,
+                                            Reader.read_int32)
+    }
+    if version >= 1:
+        decoded |= {'founding_version': rdr.read_int64()}
+
+    return decoded
+
+
 def decode_cluster_bootstrap_command(k_rdr, rdr):
     cmd = {}
     rdr.skip(1)
@@ -666,15 +679,8 @@ def decode_cluster_bootstrap_command(k_rdr, rdr):
     cmd['type'] = rdr.read_int8()
     if cmd['type'] == 0:
         cmd['type_name'] = 'bootstrap_cluster'
-        cmd |= rdr.read_envelope(
-            lambda r, _: {
-                'cluster_uuid':
-                r.read_uuid(),
-                'bootstrap_user_cred':
-                r.read_optional(decode_user_and_credential),
-                'nodes_by_uuid':
-                r.read_serde_map(Reader.read_uuid, Reader.read_int32)
-            })
+        cmd |= rdr.read_envelope(decode_bootstrap_cluster_cmd_data,
+                                 max_version=1)
 
     return cmd
 
