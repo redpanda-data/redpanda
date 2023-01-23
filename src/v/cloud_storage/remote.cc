@@ -138,6 +138,9 @@ ss::future<download_result> remote::do_download_manifest(
     vlog(ctxlog.debug, "Download manifest {}", key());
     while (!_gate.is_closed() && retry_permit.is_allowed
            && !result.has_value()) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout(), expect_missing);
 
@@ -228,6 +231,9 @@ ss::future<upload_result> remote::upload_manifest(
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto [is, size] = manifest.serialize();
         const auto res = co_await lease.client->put_object(
           bucket, path, size, std::move(is), tags, fib.get_timeout());
@@ -318,6 +324,9 @@ ss::future<upload_result> remote::upload_segment(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto lease = co_await _pool.acquire(fib.root_abort_source());
 
         // Client acquisition can take some time. Do a check before starting
@@ -423,6 +432,9 @@ ss::future<download_result> remote::download_segment(
     vlog(ctxlog.debug, "Download segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto resp = co_await lease.client->get_object(
           bucket, path, fib.get_timeout());
 
@@ -499,6 +511,9 @@ ss::future<download_result> remote::segment_exists(
     vlog(ctxlog.debug, "Check segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto resp = co_await lease.client->head_object(
           bucket, path, fib.get_timeout());
         if (resp) {
@@ -571,6 +586,9 @@ ss::future<upload_result> remote::delete_object(
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         // NOTE: DeleteObject in S3 doesn't return an error
         // if the object doesn't exist. Because of that we're
         // using 'upload_result' type as a return type. No need
@@ -646,6 +664,9 @@ ss::future<upload_result> remote::delete_objects(
     vlog(ctxlog.debug, "Delete objects count {}", keys.size());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto res = co_await lease.client->delete_objects(
           bucket, keys, fib.get_timeout());
 
@@ -724,6 +745,9 @@ ss::future<remote::list_result> remote::list_objects(
 
     // Keep iterating until the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return cloud_storage_clients::error_outcome::fail;
+        }
         auto res = co_await lease.client->list_objects(
           bucket,
           prefix,
@@ -813,6 +837,9 @@ ss::future<upload_result> remote::upload_object(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto lease = co_await _pool.acquire(fib.root_abort_source());
 
         auto path = cloud_storage_clients::object_key(object_path());
