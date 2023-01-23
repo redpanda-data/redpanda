@@ -8,6 +8,7 @@ v_cc_library(
     acl.cc
     mtls.cc
     license.cc
+    krb5.cc
     gssapi_principal_mapper.cc
   DEPS
     v::bytes
