@@ -58,6 +58,9 @@ public:
     ss::future<finish_partition_update_reply> finish_partition_update(
       finish_partition_update_request&&, rpc::streaming_context&) final;
 
+    ss::future<revert_cancel_partition_move_reply> revert_cancel_partition_move(
+      revert_cancel_partition_move_request&&, rpc::streaming_context&) final;
+
     ss::future<update_topic_properties_reply> update_topic_properties(
       update_topic_properties_request&&, rpc::streaming_context&) final;
     ss::future<reconciliation_state_reply> get_reconciliation_state(
@@ -125,6 +128,9 @@ private:
 
     ss::future<finish_reallocation_reply>
       do_finish_reallocation(finish_reallocation_request);
+
+    ss::future<revert_cancel_partition_move_reply>
+      do_revert_cancel_partition_move(revert_cancel_partition_move_request);
 
     ss::future<get_node_health_reply>
       do_collect_node_health_report(get_node_health_request);

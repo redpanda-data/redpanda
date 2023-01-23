@@ -15,6 +15,7 @@
 #include "security/acl.h"
 #include "security/errc.h"
 #include "security/gssapi.h"
+#include "security/krb5.h"
 #include "security/logger.h"
 #include "vlog.h"
 
@@ -399,7 +400,8 @@ result<void> gssapi_authenticator::check() {
     //     return errc::invalid_credentials;
     // }
 
-    _principal = acl_principal{principal_type::user, ss::sstring{source_name}};
+    _principal = get_principal_from_name(source_name);
+
     return outcome::success();
 }
 
@@ -417,6 +419,53 @@ void gssapi_authenticator::fail_impl(
         vlog(seclog.info, "{}", msg);
     }
     _state = state::failed;
+}
+
+acl_principal
+gssapi_authenticator::get_principal_from_name(std::string_view source_name) {
+    krb5::krb5_context krb5_ctx;
+    int krb5_rv = ::krb5_init_context(&krb5_ctx);
+    if (krb5_rv != 0) {
+        vlog(
+          seclog.error,
+          "Failed to initialize KRB5 instance for source_name mapping: {}",
+          krb5_rv);
+        return {};
+    }
+
+    const krb5::krb5_context_view krb5_ctx_view(&krb5_ctx);
+
+    krb5::krb5_default_realm default_realm(krb5_ctx_view);
+
+    krb5_rv = ::krb5_get_default_realm(
+      ::krb5_context{krb5_ctx}, &default_realm);
+
+    if (krb5_rv != 0) {
+        vlog(seclog.error, "Failed to obtain default realm: {}", krb5_rv);
+        return {};
+    }
+
+    vlog(seclog.debug, "Default realm: '{}'", std::string_view{default_realm});
+
+    auto parsed_name = gssapi_name::parse(source_name);
+
+    if (!parsed_name) {
+        vlog(
+          seclog.warn,
+          "Failed to parse source name.  Returning default credentials");
+        return {};
+    }
+
+    auto mapped_name = _gssapi_principal_mapper.apply(
+      std::string_view{default_realm}, *parsed_name);
+
+    if (!mapped_name) {
+        vlog(seclog.warn, "Failed to apply rules to {}", parsed_name);
+        return {};
+    }
+
+    vlog(seclog.debug, "Mapped '{}' to '{}'", source_name, *mapped_name);
+    return {principal_type::user, *mapped_name};
 }
 
 } // namespace security

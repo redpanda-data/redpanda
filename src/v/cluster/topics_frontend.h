@@ -83,6 +83,9 @@ public:
       std::vector<model::broker_shard>,
       model::timeout_clock::time_point);
 
+    ss::future<std::error_code> revert_cancel_partition_move(
+      model::ntp, model::timeout_clock::time_point);
+
     /**
      * Cancelling partition replicas move will use graceful path i.e. will never
      * allow data loss but it may require to be able to contact majority nodes

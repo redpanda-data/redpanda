@@ -2958,6 +2958,53 @@ struct cancel_partition_movements_reply
     std::vector<move_cancellation_result> partition_results;
 };
 
+struct revert_cancel_partition_move_cmd_data
+  : serde::envelope<
+      revert_cancel_partition_move_cmd_data,
+      serde::version<0>,
+      serde::version<0>> {
+    model::ntp ntp;
+
+    auto serde_fields() { return std::tie(ntp); }
+
+    friend bool operator==(
+      const revert_cancel_partition_move_cmd_data&,
+      const revert_cancel_partition_move_cmd_data&)
+      = default;
+};
+
+struct revert_cancel_partition_move_request
+  : serde::envelope<
+      revert_cancel_partition_move_request,
+      serde::version<0>,
+      serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    model::ntp ntp;
+
+    auto serde_fields() { return std::tie(ntp); }
+
+    friend bool operator==(
+      const revert_cancel_partition_move_request&,
+      const revert_cancel_partition_move_request&)
+      = default;
+};
+
+struct revert_cancel_partition_move_reply
+  : serde::envelope<
+      revert_cancel_partition_move_reply,
+      serde::version<0>,
+      serde::version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    errc result;
+
+    auto serde_fields() { return std::tie(result); }
+
+    friend bool operator==(
+      const revert_cancel_partition_move_reply&,
+      const revert_cancel_partition_move_reply&)
+      = default;
+};
+
 /**
  * Broker state transitions are coordinated centrally as opposite to
  * configuration which change is requested by the described node itself. Broker

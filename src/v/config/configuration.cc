@@ -1235,6 +1235,14 @@ configuration::configuration()
       "Interval for cloud storage housekeeping tasks",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5min)
+  , cloud_storage_idle_timeout_ms(
+      *this,
+      "cloud_storage_idle_timeout_ms",
+      "Timeout used to detect idle state of the cloud storage API. If no API "
+      "requests are made for at least idle timeout milliseconds the cloud "
+      "storage is considered idle.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      10s)
   , cloud_storage_max_segments_pending_deletion_per_partition(
       *this,
       "cloud_storage_max_segments_pending_deletion_per_partition",
@@ -1250,6 +1258,25 @@ configuration::configuration()
       "Enable re-uploading data for compacted topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_recovery_temporary_retention_bytes_default(
+      *this,
+      "cloud_storage_recovery_temporary_retention_bytes_default",
+      "Retention in bytes for topics created during automated recovery",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1_GiB)
+  , cloud_storage_segment_size_target(
+      *this,
+      "cloud_storage_segment_size_target",
+      "Desired segment size in the cloud storage. Default: segment.bytes",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
+  , cloud_storage_segment_size_min(
+      *this,
+      "cloud_storage_segment_size_min",
+      "Smallest acceptable segment size in the cloud storage. Default: "
+      "cloud_storage_segment_size_target/2",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
@@ -1703,7 +1730,15 @@ configuration::configuration()
       "balancer, in milliseconds",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       5000ms,
-      {.min = 1ms, .max = bottomless_token_bucket::max_width}) {}
+      {.min = 1ms, .max = bottomless_token_bucket::max_width})
+  , node_isolation_heartbeat_timeout(
+      *this,
+      "node_isolation_heartbeat_timeout",
+      "How long after the last heartbeat request a node will wait before "
+      "considering itself to be isolated",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      3000,
+      {.min = 100, .max = 10000}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

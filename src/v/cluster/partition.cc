@@ -10,6 +10,7 @@
 #include "cluster/partition.h"
 
 #include "archival/ntp_archiver_service.h"
+#include "archival/upload_housekeeping_service.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
 #include "config/configuration.h"
@@ -38,6 +39,7 @@ partition::partition(
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
+  ss::sharded<archival::upload_housekeeping_service>& upload_hks,
   config::binding<uint64_t> max_concurrent_producer_ids,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(r)
@@ -51,7 +53,8 @@ partition::partition(
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
   , _archival_conf(archival_conf)
-  , _cloud_storage_api(cloud_storage_api) {
+  , _cloud_storage_api(cloud_storage_api)
+  , _upload_housekeeping(upload_hks) {
     auto stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
@@ -328,7 +331,11 @@ ss::future<> partition::stop() {
     auto f = ss::now();
 
     if (_archiver) {
-        f = f.then([this] { return _archiver->stop(); });
+        f = f.then([this] {
+            _upload_housekeeping.local().deregister_jobs(
+              _archiver->get_housekeeping_jobs());
+            return _archiver->stop();
+        });
     }
 
     if (_archival_meta_stm) {
@@ -422,6 +429,8 @@ void partition::maybe_construct_archiver() {
       && _raft->log().config().is_archival_enabled()) {
         _archiver = std::make_unique<archival::ntp_archiver>(
           log().config(), _archival_conf, _cloud_storage_api.local(), *this);
+        _upload_housekeeping.local().register_jobs(
+          _archiver->get_housekeeping_jobs());
     }
 }
 
@@ -471,6 +480,8 @@ ss::future<> partition::update_configuration(topic_properties properties) {
           new_ntp_config,
           _raft->ntp());
         if (_archiver) {
+            _upload_housekeeping.local().deregister_jobs(
+              _archiver->get_housekeeping_jobs());
             co_await _archiver->stop();
             _archiver = nullptr;
         }
@@ -559,6 +570,8 @@ ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
 
 ss::future<> partition::stop_archiver() {
     if (_archiver) {
+        _upload_housekeeping.local().deregister_jobs(
+          _archiver->get_housekeeping_jobs());
         return _archiver->stop().then([this] {
             // Drop it so that we don't end up double-stopping on shutdown
             _archiver = nullptr;

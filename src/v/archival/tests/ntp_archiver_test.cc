@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "archival/adjacent_segment_merger.h"
 #include "archival/archival_policy.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/tests/service_fixture.h"
@@ -27,6 +28,7 @@
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/testing/thread_test_case.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 
@@ -1140,4 +1142,55 @@ FIXTURE_TEST(test_upload_segments_with_overlap, archiver_fixture) {
                      .get()
                      .candidate;
     BOOST_REQUIRE(upload4.sources.empty());
+}
+
+SEASTAR_THREAD_TEST_CASE(small_segment_run_test) {
+    size_t high_watermark = 100;
+    std::vector<cloud_storage::segment_meta> segments = {
+      {.size_bytes = 120,
+       .base_offset = model::offset{0},
+       .committed_offset = model::offset{10},
+       .ntp_revision = model::initial_revision_id{20},
+       .archiver_term = model::term_id{5},
+       .segment_term = model::term_id{4},
+       .sname_format = cloud_storage::segment_name_format::v2},
+      {.size_bytes = 20,
+       .base_offset = model::offset{11},
+       .committed_offset = model::offset{12},
+       .ntp_revision = model::initial_revision_id{20},
+       .archiver_term = model::term_id{5},
+       .segment_term = model::term_id{4},
+       .sname_format = cloud_storage::segment_name_format::v2},
+      {.size_bytes = 40,
+       .base_offset = model::offset{13},
+       .committed_offset = model::offset{17},
+       .ntp_revision = model::initial_revision_id{20},
+       .archiver_term = model::term_id{5},
+       .segment_term = model::term_id{4},
+       .sname_format = cloud_storage::segment_name_format::v2},
+      {.size_bytes = 40,
+       .base_offset = model::offset{18},
+       .committed_offset = model::offset{21},
+       .ntp_revision = model::initial_revision_id{20},
+       .archiver_term = model::term_id{5},
+       .segment_term = model::term_id{4},
+       .sname_format = cloud_storage::segment_name_format::v2},
+      {.size_bytes = 40,
+       .base_offset = model::offset{22},
+       .committed_offset = model::offset{25},
+       .ntp_revision = model::initial_revision_id{20},
+       .archiver_term = model::term_id{5},
+       .segment_term = model::term_id{4},
+       .sname_format = cloud_storage::segment_name_format::v2},
+    };
+    archival::adjacent_segment_run run(manifest_ntp);
+    for (const auto& s : segments) {
+        if (run.maybe_add_segment(s, high_watermark)) {
+            break;
+        }
+    }
+    BOOST_REQUIRE(run.meta.base_offset == model::offset{11});
+    BOOST_REQUIRE(run.meta.committed_offset == model::offset{21});
+    BOOST_REQUIRE(run.num_segments == 3);
+    BOOST_REQUIRE(run.meta.size_bytes == 100);
 }

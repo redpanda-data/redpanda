@@ -29,7 +29,7 @@ public:
       std::string_view primary,
       std::string_view host_name,
       std::string_view realm);
-    static gssapi_name parse(std::string_view principal_name);
+    static std::optional<gssapi_name> parse(std::string_view principal_name);
 
     const ss::sstring& primary() const noexcept;
     const ss::sstring& host_name() const noexcept;
@@ -50,10 +50,9 @@ public:
     enum case_change_operation { noop, make_lower, make_upper };
     using repeat = ss::bool_class<struct repeat_tag>;
 
-    explicit gssapi_rule(std::string_view default_realm);
+    gssapi_rule() = default;
 
     gssapi_rule(
-      std::string_view default_realm,
       int number_of_components,
       std::string_view format,
       std::string_view match,
@@ -64,13 +63,15 @@ public:
 
     /**
      * Applies the rule to the provided parameters
+     * @param default_realm The default realm to use when applying the rules
      * @param params The first element is realm, second and later elements are
      * the components of the name "a/b@FOO" -> {"FOO", "a", "b"}
      * @return The short name if this rule applies or nothing
      * @throws std::invalid_argument If there is something wrong with the rules
      */
-    std::optional<ss::sstring>
-    apply(std::vector<std::string_view> params) const;
+    std::optional<ss::sstring> apply(
+      std::string_view default_realm,
+      std::vector<std::string_view> params) const;
 
 private:
     friend struct fmt::formatter<gssapi_rule>;
@@ -85,7 +86,6 @@ private:
       std::string_view to,
       repeat repeat_);
 
-    ss::sstring _default_realm;
     bool _is_default{true};
     int _number_of_components{0};
     ss::sstring _format;
@@ -108,11 +108,10 @@ private:
 
 class gssapi_principal_mapper {
 public:
-    gssapi_principal_mapper(
-      std::string_view default_realm,
-      config::binding<std::optional<std::vector<ss::sstring>>>
-        principal_to_local_rules_cb);
-    std::optional<ss::sstring> apply(gssapi_name name) const;
+    explicit gssapi_principal_mapper(
+      config::binding<std::vector<ss::sstring>> principal_to_local_rules_cb);
+    std::optional<ss::sstring>
+    apply(std::string_view default_realm, gssapi_name name) const;
 
 private:
     friend struct fmt::formatter<gssapi_principal_mapper>;
@@ -120,14 +119,12 @@ private:
     friend std::ostream&
     operator<<(std::ostream& os, const gssapi_principal_mapper& p);
 
-    ss::sstring _default_realm;
-    config::binding<std::optional<std::vector<ss::sstring>>>
-      _principal_to_local_rules_binding;
+    config::binding<std::vector<ss::sstring>> _principal_to_local_rules_binding;
     std::vector<gssapi_rule> _rules;
 };
 
-std::optional<ss::sstring> validate_kerberos_mapping_rules(
-  const std::optional<std::vector<ss::sstring>>& r) noexcept;
+std::optional<ss::sstring>
+validate_kerberos_mapping_rules(const std::vector<ss::sstring>& r) noexcept;
 } // namespace security
 
 template<>

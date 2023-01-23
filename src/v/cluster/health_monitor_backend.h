@@ -77,6 +77,8 @@ public:
     ss::future<cluster_health_overview>
       get_cluster_health_overview(model::timeout_clock::time_point);
 
+    bool does_raft0_have_leader();
+
 private:
     /**
      * Struct used to track pending refresh request, it gives ability

@@ -31,7 +31,7 @@ segment_collector::segment_collector(
   , _max_uploaded_segment_size(max_uploaded_segment_size)
   , _collected_size(0) {}
 
-void segment_collector::collect_segments() {
+void segment_collector::collect_segments(segment_collector_mode mode) {
     if (_manifest.size() == 0) {
         vlog(
           archival_log.info,
@@ -52,19 +52,19 @@ void segment_collector::collect_segments() {
         return;
     }
 
-    do_collect();
+    do_collect(mode);
 }
 
 segment_collector::segment_seq segment_collector::segments() {
     return _segments;
 }
 
-void segment_collector::do_collect() {
+void segment_collector::do_collect(segment_collector_mode mode) {
     auto replace_boundary = find_replacement_boundary();
     auto start = _begin_inclusive;
     model::offset current_segment_end{0};
     while (current_segment_end < _manifest.get_last_offset()) {
-        auto result = find_next_compacted_segment(start);
+        auto result = find_next_segment(start, mode);
         if (result.segment.get() == nullptr) {
             break;
         }
@@ -77,7 +77,7 @@ void segment_collector::do_collect() {
         if (_collected_size + segment_size > _max_uploaded_segment_size) {
             vlog(
               archival_log.debug,
-              "Compacted segment collect for ntp {} stopping collection, total "
+              "Segment collect for ntp {} stopping collection, total "
               "size: {} will overflow max allowed upload size: {}, current "
               "collected size: {}",
               _manifest.get_ntp(),
@@ -87,7 +87,7 @@ void segment_collector::do_collect() {
             break;
         }
 
-        // For the first compacted segment found, begin offset needs to be
+        // For the first segment found, begin offset needs to be
         // re-aligned if it falls inside manifest segment.
         if (_segments.empty()) {
             _begin_inclusive = result.segment->offsets().base_offset;
@@ -132,57 +132,57 @@ model::offset segment_collector::find_replacement_boundary() const {
 }
 
 void segment_collector::align_end_offset_to_manifest(
-  model::offset compacted_segment_end) {
-    if (compacted_segment_end == _manifest.get_last_offset()) {
+  model::offset segment_end) {
+    if (segment_end == _manifest.get_last_offset()) {
         _end_inclusive = _manifest.get_last_offset();
-    } else if (compacted_segment_end > _manifest.get_last_offset()) {
+    } else if (segment_end > _manifest.get_last_offset()) {
         vlog(
           archival_log.debug,
-          "Compacted segment collect for ntp {} offset {} advanced "
+          "Segment collect for ntp {} offset {} advanced "
           "ahead of manifest, clamping to {}",
           _manifest.get_ntp(),
-          compacted_segment_end,
+          segment_end,
           _manifest.get_last_offset());
         _end_inclusive = _manifest.get_last_offset();
     } else {
         // Align the end offset to the nearest segment ending in manifest.
-        auto it = _manifest.segment_containing(compacted_segment_end);
+        auto it = _manifest.segment_containing(segment_end);
         if (it == _manifest.end()) {
-            // compacted_segment_end is in a gap in the manifest.
-            if (compacted_segment_end >= _manifest.get_start_offset().value()) {
+            // segment_end is in a gap in the manifest.
+            if (segment_end >= _manifest.get_start_offset().value()) {
                 vlog(
                   archival_log.info,
-                  "Compacted segment collect for ntp {}: collection ended at "
+                  "Segment collect for ntp {}: collection ended at "
                   "gap in manifest: {}",
                   _manifest.get_ntp(),
-                  compacted_segment_end);
+                  segment_end);
 
                 // try to fill the manifest gap with the data locally available.
-                _end_inclusive = compacted_segment_end;
+                _end_inclusive = segment_end;
             }
             return;
         }
 
-        // If the compacted segment end is not aligned to manifest segment, then
+        // If the segment end is not aligned to manifest segment, then
         // pull back to the end of the previous segment.
-        if (it->second.committed_offset == compacted_segment_end) {
-            _end_inclusive = compacted_segment_end;
+        if (it->second.committed_offset == segment_end) {
+            _end_inclusive = segment_end;
         } else {
             _end_inclusive = it->second.base_offset - model::offset{1};
         }
     }
 }
 
-segment_collector::lookup_result
-segment_collector::find_next_compacted_segment(model::offset start_offset) {
+segment_collector::lookup_result segment_collector::find_next_segment(
+  model::offset start_offset, segment_collector_mode mode) {
     const auto& segment_set = _log.segments();
     auto it = segment_set.lower_bound(start_offset);
-    // start_offset < log start due to eviction of compacted segments before
+    // start_offset < log start due to eviction of segments before
     // they could be uploaded, skip forward to log start.
     if (start_offset < _log.offsets().start_offset) {
         vlog(
           archival_log.debug,
-          "Finding next compacted segment for {}: start_offset: {} behind log "
+          "Finding next segment for {}: start_offset: {} behind log "
           "start: {}, skipping forward",
           _manifest.get_ntp(),
           start_offset,
@@ -193,7 +193,7 @@ segment_collector::find_next_compacted_segment(model::offset start_offset) {
     if (it == segment_set.end()) {
         vlog(
           archival_log.debug,
-          "Finding next compacted segment for {}: can't find segment after "
+          "Finding next segment for {}: can't find segment after "
           "offset: {}",
           _manifest.get_ntp(),
           start_offset);
@@ -201,17 +201,20 @@ segment_collector::find_next_compacted_segment(model::offset start_offset) {
     }
 
     const auto& segment = *it;
-    if (segment->finished_self_compaction()) {
+    auto segment_is_compacted = segment->finished_self_compaction();
+    auto compacted_segment_expected
+      = mode == segment_collector_mode::collect_compacted;
+    if (segment_is_compacted == compacted_segment_expected) {
         vlog(
           archival_log.trace,
-          "Found compacted segment for ntp {}: {}",
+          "Found segment for ntp {}: {}",
           _manifest.get_ntp(),
           segment);
         return {.segment = segment, .ntp_conf = &_log.config()};
     }
     vlog(
       archival_log.debug,
-      "Finding next compacted segment for {}: no compacted "
+      "Finding next segment for {}: no "
       "segments after offset: {}",
       _manifest.get_ntp(),
       start_offset);
@@ -317,6 +320,10 @@ segment_collector::make_upload_candidate(
   ss::io_priority_class io_priority_class,
   ss::lowres_clock::duration segment_lock_duration) {
     if (_segments.empty()) {
+        vlog(
+          archival_log.info,
+          "No segments to reupload for {}",
+          _manifest.get_ntp());
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 

@@ -10,6 +10,7 @@ rp_test(
     tx_range_manifest_test.cc
     offset_translation_layer_test.cc
     remote_segment_index_test.cc
+    recovery_request_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cloud_storage v::storage_test_utils v::cloud_roles
   ARGS "-- -c 1"
@@ -25,8 +26,15 @@ rp_test(
     remote_test.cc
     remote_segment_test.cc
     remote_partition_test.cc
+    topic_recovery_service_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cloud_storage v::storage_test_utils v::cloud_roles
+  LIBRARIES
+    Boost::unit_test_framework
+    v::seastar_testing_main
+    v::cloud_storage
+    v::storage_test_utils
+    v::cloud_roles
+    v::application
   ARGS "-- -c 1"
   LABELS cloud_storage
 )

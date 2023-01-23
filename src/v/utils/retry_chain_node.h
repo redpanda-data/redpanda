@@ -268,6 +268,10 @@ public:
     /// source if it was set in the root c-tor.
     ss::abort_source& root_abort_source();
 
+    /// Return true if both retry chains share the same
+    /// root.
+    bool same_root(const retry_chain_node& other) const;
+
     /// \brief Request retry
     ///
     /// The retry can be allowed or disallowed. The caller can call this
@@ -311,6 +315,9 @@ private:
     void rem_child();
 
     uint16_t get_len() const;
+
+    /// Return root node of the retry chain
+    const retry_chain_node* get_root() const;
 
     /// Fetch parent of the node
     /// Method returns nullptr if root

@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include "config/configuration.h"
+#include "config/property.h"
 #include "model/metadata.h"
 #include "rpc/types.h"
 
@@ -23,7 +25,9 @@ struct node_status {
 class node_status_table {
 public:
     explicit node_status_table(model::node_id self)
-      : _self(self) {}
+      : _self(self)
+      , _isolation_timeout(
+          config::shard_local_cfg().node_isolation_heartbeat_timeout.bind()) {}
 
     std::optional<node_status> get_node_status(model::node_id node) const {
         if (node == _self) {
@@ -44,8 +48,28 @@ public:
         }
     }
 
+    bool is_isolated() const {
+        if (_peers_status.empty()) {
+            return false;
+        }
+
+        for (auto& status : _peers_status) {
+            if (status.first == _self) {
+                continue;
+            }
+
+            auto diff = rpc::clock_type::now() - status.second.last_seen;
+            if (diff / 1ms < _isolation_timeout()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
 private:
     model::node_id _self;
     absl::flat_hash_map<model::node_id, node_status> _peers_status;
+    config::binding<int64_t> _isolation_timeout;
 };
 } // namespace cluster

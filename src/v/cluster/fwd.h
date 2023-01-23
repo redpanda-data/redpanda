@@ -55,6 +55,8 @@ class node_status_table;
 class ephemeral_credential_frontend;
 class self_test_backend;
 class self_test_frontend;
+class topic_recovery_status_frontend;
+class node_isolation_watcher;
 
 namespace node {
 class local_monitor;

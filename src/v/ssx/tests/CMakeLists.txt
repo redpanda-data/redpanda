@@ -6,6 +6,7 @@ rp_test(
     sformat.cc
     future_util.cc
     thread_worker.cc
+    sleep_abortable_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::ssx
   LABELS ssx

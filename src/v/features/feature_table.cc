@@ -57,6 +57,10 @@ std::string_view to_string_view(feature f) {
         return "tm_stm_cache";
     case feature::kafka_gssapi:
         return "kafka_gssapi";
+    case feature::partition_move_revert_cancel:
+        return "partition_move_cancel_revert";
+    case feature::node_isolation:
+        return "node_isolation";
     case feature::test_alpha:
         return "__test_alpha";
     case feature::test_bravo:

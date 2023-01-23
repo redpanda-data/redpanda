@@ -9,12 +9,15 @@
 
 #include "redpanda/application.h"
 
+#include "archival/fwd.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/upload_controller.h"
+#include "archival/upload_housekeeping_service.h"
 #include "cli_parser.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_recovery_manager.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/topic_recovery_service.h"
 #include "cluster/bootstrap_service.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
@@ -30,6 +33,7 @@
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/node_isolation_watcher.h"
 #include "cluster/node_status_rpc_handler.h"
 #include "cluster/partition_balancer_rpc_handler.h"
 #include "cluster/partition_manager.h"
@@ -37,6 +41,8 @@
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
+#include "cluster/topic_recovery_status_frontend.h"
+#include "cluster/topic_recovery_status_rpc_handler.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_frontend.h"
@@ -179,6 +185,13 @@ void application::shutdown() {
     // heartbeats for consensus objects that no longer exist.
     if (raft_group_manager.local_is_initialized()) {
         raft_group_manager.invoke_on_all(&raft::group_manager::stop_heartbeats)
+          .get();
+    }
+
+    if (topic_recovery_service.local_is_initialized()) {
+        topic_recovery_service
+          .invoke_on_all(
+            &cloud_storage::topic_recovery_service::shutdown_recovery)
           .get();
     }
 
@@ -764,7 +777,8 @@ void application::configure_admin_server() {
       std::ref(_connection_cache),
       std::ref(node_status_table),
       std::ref(self_test_frontend),
-      _schema_registry.get())
+      _schema_registry.get(),
+      std::ref(topic_recovery_service))
       .get();
 }
 
@@ -997,10 +1011,18 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           .get();
         construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
         cloud_storage_api.invoke_on_all(&cloud_storage::remote::start).get();
+
         construct_service(
           partition_recovery_manager,
           cloud_configs.local().bucket_name,
           std::ref(cloud_storage_api))
+          .get();
+
+        construct_service(
+          _archival_upload_housekeeping, std::ref(cloud_storage_api))
+          .get();
+        _archival_upload_housekeeping
+          .invoke_on_all(&archival::upload_housekeeping_service::start)
           .get();
     }
 
@@ -1030,6 +1052,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         }),
       std::ref(feature_table),
       std::ref(tm_stm_cache),
+      std::ref(_archival_upload_housekeeping),
       ss::sharded_parameter([] {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
       }))
@@ -1091,6 +1114,13 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(controller->get_health_monitor()))
       .get();
 
+    syschecks::systemd_message("Creating isolation node watcher").get();
+    construct_single_service(
+      _node_isolation_watcher,
+      metadata_cache,
+      controller->get_health_monitor(),
+      node_status_table);
+
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager").get();
     construct_service(quota_mgr).get();
@@ -1130,6 +1160,29 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           _archival_upload_controller,
           std::ref(partition_manager),
           make_upload_controller_config(_scheduling_groups.archival_upload()))
+          .get();
+
+        construct_service(
+          topic_recovery_status_frontend,
+          node_id,
+          std::ref(_connection_cache),
+          std::ref(controller->get_members_table()))
+          .get();
+
+        construct_service(
+          topic_recovery_service,
+          std::ref(cloud_storage_api),
+          std::ref(controller->get_topics_state()),
+          std::ref(controller->get_topics_frontend()),
+          std::ref(topic_recovery_status_frontend))
+          .get();
+
+        partition_recovery_manager
+          .invoke_on_all(
+            [this](cloud_storage::partition_recovery_manager& prm) {
+                prm.set_topic_recovery_components(
+                  topic_recovery_status_frontend, topic_recovery_service);
+            })
           .get();
     }
 
@@ -1830,6 +1883,12 @@ void application::start_runtime_services(
               _scheduling_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(controller->get_ephemeral_credential_frontend())));
+
+          runtime_services.push_back(
+            std::make_unique<cluster::topic_recovery_status_rpc_handler>(
+              _scheduling_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(topic_recovery_service)));
           s.add_services(std::move(runtime_services));
       })
       .get();

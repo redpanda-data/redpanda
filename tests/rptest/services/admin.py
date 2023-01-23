@@ -761,7 +761,7 @@ class Admin:
         """
         Check data in the S3 bucket and fix local index if needed
         """
-        path = f"shadow_indexing/sync_local_state/{topic}/{partition}"
+        path = f"cloud_storage/sync_local_state/{topic}/{partition}"
         return self._request('post', path, node=node)
 
     def get_partition_balancer_status(self, node=None, **kwargs):
@@ -784,6 +784,20 @@ class Admin:
         if len(r.text) > 0:
             return r.json()["cluster_uuid"]
 
+    def initiate_topic_scan_and_recovery(self,
+                                         payload: Optional[dict] = None,
+                                         force_acquire_lock: bool = False,
+                                         node=None,
+                                         **kwargs):
+        path = f"cloud_storage/initiate_topic_scan_and_recovery"
+        request_args = {'node': node, **kwargs}
+
+        if force_acquire_lock:
+            request_args['params'] = {'force_acquire_lock': force_acquire_lock}
+        if payload:
+            request_args['json'] = payload
+        return self._request('post', path, **request_args)
+
     def self_test_start(self, options):
         return self._request("POST", "debug/self_test/start", json=options)
 
@@ -797,3 +811,6 @@ class Admin:
         service_param = f"service={rp_service if rp_service is not None else ''}"
         return self._request("PUT",
                              f"redpanda-services/restart?{service_param}")
+
+    def is_node_isolated(self, node):
+        return self._request("GET", "debug/is_node_isolated", node=node).json()
