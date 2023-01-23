@@ -138,6 +138,9 @@ ss::future<download_result> remote::do_download_manifest(
     vlog(ctxlog.debug, "Download manifest {}", key());
     while (!_gate.is_closed() && retry_permit.is_allowed
            && !result.has_value()) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         notify_external_subscribers(
           api_activity_notification::manifest_download, parent);
         auto resp = co_await lease.client->get_object(
@@ -230,6 +233,9 @@ ss::future<upload_result> remote::upload_manifest(
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         notify_external_subscribers(
           api_activity_notification::manifest_upload, parent);
         auto [is, size] = manifest.serialize();
@@ -347,6 +353,9 @@ ss::future<upload_result> remote::upload_segment(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto lease = co_await _pool.acquire(fib.root_abort_source());
         notify_external_subscribers(
           api_activity_notification::segment_upload, parent);
@@ -453,6 +462,9 @@ ss::future<download_result> remote::download_segment(
     vlog(ctxlog.debug, "Download segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         notify_external_subscribers(
           api_activity_notification::segment_download, parent);
         auto resp = co_await lease.client->get_object(
@@ -531,6 +543,9 @@ ss::future<download_result> remote::segment_exists(
     vlog(ctxlog.debug, "Check segment {}", path);
     std::optional<download_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto resp = co_await lease.client->head_object(
           bucket, path, fib.get_timeout());
         if (resp) {
@@ -603,6 +618,9 @@ ss::future<upload_result> remote::delete_object(
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         notify_external_subscribers(
           api_activity_notification::segment_delete, parent);
         // NOTE: DeleteObject in S3 doesn't return an error
@@ -680,6 +698,9 @@ ss::future<upload_result> remote::delete_objects(
     vlog(ctxlog.debug, "Delete objects count {}", keys.size());
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         notify_external_subscribers(
           api_activity_notification::segment_delete, parent);
         auto res = co_await lease.client->delete_objects(
@@ -760,6 +781,9 @@ ss::future<remote::list_result> remote::list_objects(
 
     // Keep iterating until the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return cloud_storage_clients::error_outcome::fail;
+        }
         auto res = co_await lease.client->list_objects(
           bucket,
           prefix,
@@ -849,6 +873,9 @@ ss::future<upload_result> remote::upload_object(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
+        if (_as.abort_requested()) {
+            co_return upload_result::cancelled;
+        }
         auto lease = co_await _pool.acquire(fib.root_abort_source());
 
         auto path = cloud_storage_clients::object_key(object_path());
