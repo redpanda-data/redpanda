@@ -500,10 +500,12 @@ ss::future<> controller::set_ready() {
 }
 
 ss::future<> controller::shutdown_input() {
+    vlog(clusterlog.debug, "Shutting down controller inputs");
     if (_raft0) {
         _raft0->shutdown_input();
     }
-    return _as.invoke_on_all(&ss::abort_source::request_abort);
+    co_await _as.invoke_on_all(&ss::abort_source::request_abort);
+    vlog(clusterlog.debug, "Shut down controller inputs");
 }
 
 ss::future<> controller::stop() {

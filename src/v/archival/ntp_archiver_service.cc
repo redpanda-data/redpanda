@@ -530,9 +530,11 @@ bool ntp_archiver::housekeeping_can_continue() const {
 }
 
 ss::future<> ntp_archiver::stop() {
+    archival_log.debug("Stopping ntp archiver: {}", _ntp);
     _leader_cond.broken();
     _as.request_abort();
-    return _gate.close();
+    co_await _gate.close();
+    archival_log.debug("Stopped ntp archiver: {}", _ntp);
 }
 
 const model::ntp& ntp_archiver::get_ntp() const { return _ntp; }

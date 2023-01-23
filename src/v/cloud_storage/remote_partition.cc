@@ -181,6 +181,8 @@ public:
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
       , _gate_guard(_partition->_gate) {
+        auto ntp = _partition->get_ntp();
+        vlog(_ctxlog.debug, "Constructing reader {}", ntp);
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
@@ -196,9 +198,12 @@ public:
         }
         initialize_reader_state(config);
         _partition->_probe.reader_created();
+        vlog(_ctxlog.debug, "Constructed reader {}", ntp);
     }
 
     ~partition_record_batch_reader_impl() noexcept override {
+        auto ntp = _partition->get_ntp();
+        vlog(_ctxlog.debug, "Destructing reader {}", ntp);
         _partition->_probe.reader_destroyed();
         if (_reader) {
             // We must not destroy this reader: it is not safe to do so
@@ -225,6 +230,7 @@ public:
                   std::current_exception());
             }
         }
+        vlog(_ctxlog.debug, "Destructed reader {}", ntp);
     }
     partition_record_batch_reader_impl(
       partition_record_batch_reader_impl&& o) noexcept = delete;
@@ -608,6 +614,7 @@ ss::future<> remote_partition::stop() {
     // stopping readers is fast, the queue is not usually long, and destroying
     // partitions is relatively infrequent.
     co_await materialized().flush_evicted();
+    vlog(_ctxlog.debug, "remote partition stopped");
 }
 
 /// Return reader back to segment_state
