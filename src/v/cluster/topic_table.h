@@ -51,27 +51,27 @@ public:
     public:
         explicit in_progress_update(
           std::vector<model::broker_shard> previous_replicas,
-          std::vector<model::broker_shard> result_replicas,
+          std::vector<model::broker_shard> target_replicas,
           reconfiguration_state state,
           model::revision_id update_revision,
           replicas_revision_map replicas_revisions,
           topic_table_probe& probe)
           : _previous_replicas(std::move(previous_replicas))
-          , _result_replicas(std::move(result_replicas))
+          , _target_replicas(std::move(target_replicas))
           , _state(state)
           , _update_revision(update_revision)
           , _replicas_revisions(std::move(replicas_revisions))
           , _probe(probe) {
-            _probe.handle_update(_previous_replicas, _result_replicas);
+            _probe.handle_update(_previous_replicas, _target_replicas);
         }
 
         ~in_progress_update() {
-            _probe.handle_update_finish(_previous_replicas, _result_replicas);
+            _probe.handle_update_finish(_previous_replicas, _target_replicas);
             if (
               _state == reconfiguration_state::cancelled
               || _state == reconfiguration_state::force_cancelled) {
                 _probe.handle_update_cancel_finish(
-                  _previous_replicas, _result_replicas);
+                  _previous_replicas, _target_replicas);
                 ;
             }
         }
@@ -88,7 +88,7 @@ public:
               _state == reconfiguration_state::in_progress
               && (state == reconfiguration_state::cancelled || state == reconfiguration_state::force_cancelled)) {
                 _probe.handle_update_cancel(
-                  _previous_replicas, _result_replicas);
+                  _previous_replicas, _target_replicas);
             }
             _state = state;
         }
@@ -107,7 +107,7 @@ public:
 
     private:
         std::vector<model::broker_shard> _previous_replicas;
-        std::vector<model::broker_shard> _result_replicas;
+        std::vector<model::broker_shard> _target_replicas;
         reconfiguration_state _state;
         model::revision_id _update_revision;
         replicas_revision_map _replicas_revisions;
