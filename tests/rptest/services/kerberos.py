@@ -22,8 +22,8 @@ KDC_CONF_TMPL = """
 		default_principal_flags = +preauth
 }}
 [logging]
-    kdc = FILE = /var/log/kdc.log
-    admin_server = FILE:/var/log/kadmin.log
+    kdc = FILE=/var/log/kdc.log
+    admin_server = FILE=/var/log/kadmin.log
 """
 
 KDC_CONF_PATH = "/etc/krb5kdc/kdc.conf"
