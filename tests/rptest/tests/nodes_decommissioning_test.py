@@ -521,7 +521,9 @@ class NodesDecommissioningTest(EndToEndTest):
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_flipping_decommission_recommission(self):
+    @parametrize(node_is_alive=True)
+    @parametrize(node_is_alive=False)
+    def test_flipping_decommission_recommission(self, node_is_alive):
 
         self.start_redpanda(num_nodes=4)
         self._create_topics(replication_factors=[3])
@@ -536,12 +538,14 @@ class NodesDecommissioningTest(EndToEndTest):
 
         survivor_node = self._not_decommissioned_node(node_id)
 
+        if not node_is_alive:
+            self.redpanda.stop_node(to_decommission)
+
         for i in range(1, 10):
             self.logger.info(f"decommissioning node: {node_id}")
             # set recovery rate to small value to prevent node
             # from finishing decommission operation
-            self.redpanda.set_cluster_config({"raft_learner_recovery_rate": 1},
-                                             timeout=30)
+            self._set_recovery_rate(1)
             admin.decommission_broker(id=node_id)
             wait_until(lambda: self._partitions_moving(node=survivor_node) or
                        self._node_removed(node_id, survivor_node),
@@ -551,8 +555,7 @@ class NodesDecommissioningTest(EndToEndTest):
                 break
             self.logger.info(f"recommissioning node: {node_id}", )
             admin.recommission_broker(id=node_id)
-            self.redpanda.set_cluster_config(
-                {"raft_learner_recovery_rate": 1024 * 1024 * 1024}, timeout=30)
+            self._set_recovery_rate(100 * 1024 * 1024)
 
         if not self._node_removed(node_id, survivor_node):
             # finally decommission node

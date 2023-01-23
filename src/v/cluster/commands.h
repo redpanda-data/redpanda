@@ -92,6 +92,7 @@ static constexpr int8_t create_partition_cmd_type = 5;
 static constexpr int8_t create_non_replicable_topic_cmd_type = 6;
 static constexpr int8_t cancel_moving_partition_replicas_cmd_type = 7;
 static constexpr int8_t move_topic_replicas_cmd_type = 8;
+static constexpr int8_t revert_cancel_partition_move_cmd_type = 9;
 
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
@@ -182,6 +183,13 @@ using cancel_moving_partition_replicas_cmd = controller_command<
   cancel_moving_partition_replicas_cmd_type,
   model::record_batch_type::topic_management_cmd,
   serde_opts::adl_and_serde>;
+
+using revert_cancel_partition_move_cmd = controller_command<
+  int8_t, // unused
+  revert_cancel_partition_move_cmd_data,
+  revert_cancel_partition_move_cmd_type,
+  model::record_batch_type::topic_management_cmd,
+  serde_opts::serde_only>;
 
 using create_user_cmd = controller_command<
   security::credential_user,
