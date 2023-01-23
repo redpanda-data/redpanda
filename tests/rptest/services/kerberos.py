@@ -147,10 +147,14 @@ class KrbKdc(Service):
     def _hard_delete_principals(self, node):
         node.account.ssh(f"rm -fr {KDC_DB_PATH}*", allow_fail=True)
 
+    def start_cmd(self):
+        cmd = f"krb5kdc -P {KRB5KDC_PID_PATH} && kadmind -P {KADMIND_PID_PATH}"
+        return cmd
+
     def _init_realm(self, node):
         self._hard_delete_principals(node)
         master_password = "1NSMkA4W7TBYapV9lC2MMeUcAEJDGK"
-        cmd = f"""krb5_newrealm<<EOF
+        cmd = f"""kdb5_util create -s<<EOF
 {master_password}
 {master_password}
 EOF
@@ -183,8 +187,9 @@ EOF
 
     def start_node(self, node, **kwargs):
         self._render_cfg(node)
-        # Also runs krb5kdc and kadmind
         self._init_realm(node)
+        node.account.ssh(self.start_cmd(), allow_fail=False)
+
         wait_until(lambda: self.alive(node),
                    timeout_sec=30,
                    backoff_sec=.5,
