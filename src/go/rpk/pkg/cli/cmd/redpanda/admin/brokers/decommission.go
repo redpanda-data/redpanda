@@ -7,6 +7,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -37,15 +38,32 @@ leader handles the request.
 			cl, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			b, err := cl.Broker(cmd.Context(), broker)
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
+			brokers, err := cl.Brokers(cmd.Context())
+			out.MaybeDie(err, "unable to get broker list: %v", err)
 
-			// Old brokers (< v22.1) don't have maintenance mode, so we must
-			// check if b.Maintenance is not nil.
-			if b.Maintenance != nil && b.Maintenance.Draining {
-				out.Die(`Node cannot be decommissioned while it is in maintenance mode.
+			var b admin.Broker
+			var found bool
+			for _, br := range brokers {
+				if br.NodeID == broker {
+					b, found = br, true
+					break
+				}
+			}
+			if !found {
+				out.Die("unable to find broker %v in the cluster", broker)
+			}
+
+			version, err := redpanda.VersionFromString(b.Version)
+			out.MaybeDie(err, "unable to get broker version: %v", err)
+
+			if version.Less(redpanda.Version{Year: 23, Feature: 1, Patch: 1}) {
+				// Old brokers (< v22.1) don't have maintenance mode, so we must
+				// check if b.Maintenance is not nil.
+				if b.Maintenance != nil && b.Maintenance.Draining {
+					out.Die(`Node cannot be decommissioned while it is in maintenance mode.
 Take the node out of maintenance mode first by running: 
     rpk cluster maintenance disable %v`, broker)
+				}
 			}
 
 			err = cl.DecommissionBroker(cmd.Context(), broker)
