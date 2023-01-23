@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
 import subprocess
 import re
 import typing
@@ -642,6 +643,48 @@ class RpkTool:
             self._rpk_binary(), 'wasm', 'generate', '--skip-version', directory
         ]
         return self._execute(cmd)
+
+    def self_test_start(self,
+                        disk_duration_ms=None,
+                        network_duration_ms=None,
+                        only_disk=False,
+                        only_network=False,
+                        only_connectivity=False,
+                        node_ids=None):
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), 'cluster', 'self-test', 'start', '--no-confirm'
+        ]
+        if disk_duration_ms is not None:
+            cmd += ['--disk-duration-ms', str(disk_duration_ms)]
+        if network_duration_ms is not None:
+            cmd += ['--network-duration-ms', str(network_duration_ms)]
+        if only_disk is True:
+            cmd += ['--only-disk-test']
+        if only_network is True:
+            cmd += ['--only-network-test']
+        if only_connectivity is True:
+            cmd += ['--only-connectivity-test']
+        if node_ids is not None:
+            ids = ",".join([str(x) for x in node_ids])
+            cmd += ['--participants-node-ids', ids]
+        return self._execute(cmd)
+
+    def self_test_stop(self):
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), 'cluster', 'self-test', 'stop'
+        ]
+        return self._execute(cmd)
+
+    def self_test_status(self, output_format='json'):
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), 'cluster', 'self-test', 'status', '--format',
+            output_format
+        ]
+        output = self._execute(cmd)
+        return json.loads(output) if output_format == 'json' else output
 
     def _run_topic(self, cmd, stdin=None, timeout=None):
         cmd = [self._rpk_binary(), "topic"] + self._kafka_conn_settings() + cmd
