@@ -91,7 +91,7 @@ func latestClientAPIVersion() string {
 	}
 
 	proc := vos.NewProc()
-	output, err := proc.RunWithSystemLdPath(2*time.Second, "npm", "search", "@vectorizedio/wasm-api", "--json")
+	output, err := proc.RunWithSystemLdPath(2*time.Second, "npm", "search", "@redpanda-data/wasm-api", "--json")
 	if err != nil {
 		log.Error(err)
 		return defAPIVersion

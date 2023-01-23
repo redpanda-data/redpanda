@@ -13,7 +13,7 @@ const wasmJs = `const {
   SimpleTransform,
   PolicyError,
   PolicyInjection
-} = require("@vectorizedio/wasm-api");
+} = require("@redpanda-data/wasm-api");
 const transform = new SimpleTransform();
 /* Topics that fire the transform function */
 transform.subscribe([["test-topic", PolicyInjection.Stored]]);

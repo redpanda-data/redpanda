@@ -1,9 +1,9 @@
 {
   "name": "Depedencies",
-  "description": "Vectorized's materialized stream dependencies",
+  "description": "Redpanda's materialized stream dependencies",
   "version": "0.0.1",
   "keywords": [],
-  "author": "hi@vectorized.io",
+  "author": "hi@redpanda.com",
   "scripts": {
     "start": "sudo node ./modules/rpc/service.js"
   },
