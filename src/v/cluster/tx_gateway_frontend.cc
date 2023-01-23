@@ -3071,6 +3071,33 @@ tx_gateway_frontend::get_ongoing_tx(
                 co_return tx_errc::invalid_txn_state;
             }
 
+            if (old_tx.status == tm_transaction::tx_status::ongoing) {
+                if (old_tx.tx_seq() == tx.tx_seq()) {
+                    // previous leader attempted a commit/about, the operation
+                    // returned indecisive error (the cached ongoing wasn't
+                    // updated) but the operation actually passed (current
+                    // leader observes the commit/abort)"
+                    old_tx = tx;
+                } else if (old_tx.tx_seq() != tx.tx_seq() + 1) {
+                    vlog(
+                      txlog.warn,
+                      "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "isn't"
+                      "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
+                      "status:{}))",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      old_tx.get_status(),
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq,
+                      tx.get_status());
+                    co_return tx_errc::invalid_txn_state;
+                }
+            }
+
             old_tx.etag = expected_term;
             auto r2 = co_await stm->update_tx(old_tx, expected_term);
             if (!r2) {
