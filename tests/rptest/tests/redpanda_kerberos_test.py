@@ -19,7 +19,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode
+from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError
 from rptest.services.redpanda import LoggingConfig, SecurityConfig
 
 LOG_CONFIG = LoggingConfig('info',
@@ -95,8 +95,6 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
     @parametrize(req_principal="invalid", acl=False, topics={}, fail=True)
     def test_init(self, req_principal: str, acl: bool, topics: set[str],
                   fail: bool):
-        def is_auth_error(msg):
-            return b'No Kerberos credentials available' in msg
 
         self.client.add_primary(primary="client")
         feature_name = "kafka_gssapi"
@@ -139,10 +137,9 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
                        backoff_sec=0.5,
                        err_msg=f"Did not receive expected set of topics")
             assert not fail
-        except RemoteCommandError as err:
-            assert is_auth_error(err.msg)
+        except AuthenticationError:
             assert fail
-        except TimeoutError as err:
+        except TimeoutError:
             assert fail
 
     def _have_expected_topics(self, req_principal, expected_broker_count,

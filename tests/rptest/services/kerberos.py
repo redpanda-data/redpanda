@@ -54,6 +54,14 @@ KTADD_TMPL = 'ktadd -k {keytab_file} {principal}'
 KINIT_TMPL = 'kinit {principal} -kt {keytab_file}'
 
 
+class AuthenticationError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return repr(self.message)
+
+
 def render_krb5_config(kdc_node, realm: str, file_path: str = KRB5_CONF_PATH):
     return KRB5_CONF_TMPL.format(node=kdc_node, realm=realm)
 
@@ -349,13 +357,18 @@ class KrbClient(Service):
         kinit_args = f"-kt {self.keytab_file} -c {client_cache} {principal}"
         kinit_cmd = f"kinit -R {kinit_args} || kinit {kinit_args}"
         sasl_conf = f"-X security.protocol=sasl_plaintext -X sasl.mechanisms=GSSAPI '-Xsasl.kerberos.kinit.cmd={kinit_cmd}' -X sasl.kerberos.service.name=redpanda"
-        res = self.nodes[0].account.ssh_output(
-            cmd=
-            f"KRB5_TRACE=/dev/stderr KRB5CCNAME={client_cache} kcat -L -J -b {self.redpanda.brokers()} {sasl_conf}",
-            allow_fail=False,
-            combine_stderr=False)
-        self.logger.debug(f"Metadata request: {res}")
-        return json.loads(res)
+        try:
+            res = self.nodes[0].account.ssh_output(
+                cmd=
+                f"KRB5_TRACE=/dev/stderr KRB5CCNAME={client_cache} kcat -L -J -b {self.redpanda.brokers()} {sasl_conf}",
+                allow_fail=False,
+                combine_stderr=False)
+            self.logger.debug(f"Metadata request: {res}")
+            return json.loads(res)
+        except RemoteCommandError as err:
+            if b'No Kerberos credentials available' in err.msg:
+                raise AuthenticationError(err.msg) from err
+            raise
 
 
 class RedpandaKerberosNode(RedpandaService):
