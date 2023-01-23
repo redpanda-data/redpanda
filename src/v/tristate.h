@@ -51,6 +51,16 @@ public:
         return !is_disabled() && get_optional().has_value();
     }
 
+    /// \brief Checks if the tristate is in the "Disabled or "Set" states.
+    /// We often use "Not set" as the default state of a tristate, and
+    /// it's useful to check if any explicit changes were made.
+    ///
+    /// \return true if the tristate is in the "Disabled" or "Set" state
+    ///         false otherwise
+    constexpr bool is_engaged() const {
+        return is_disabled() || get_optional().has_value();
+    }
+
     constexpr const T& operator*() const& { return *get_optional(); }
     constexpr T& operator*() & { return *get_optional(); }
     constexpr T&& operator*() && { return *get_optional(); }
