@@ -89,13 +89,20 @@ ss::future<> remote::start() {
 }
 
 ss::future<> remote::stop() {
+    cst_log.debug("Stopping remote...");
     _as.request_abort();
     co_await _materialized->stop();
     co_await _pool.stop();
+
+    cst_log.debug("Closing remote gate...");
     co_await _gate.close();
+    cst_log.debug("Stopped remote...");
 }
 
-void remote::shutdown_connections() { _pool.shutdown_connections(); }
+void remote::shutdown_connections() {
+    cst_log.debug("Shutting down remote connections...");
+    _pool.shutdown_connections();
+}
 
 size_t remote::concurrency() const { return _pool.max_size(); }
 

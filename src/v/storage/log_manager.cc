@@ -378,6 +378,7 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
         co_return;
     }
     co_await clean_close(handle.mapped()->handle);
+    vlog(stlog.debug, "Shutdown: {}", ntp);
 }
 
 ss::future<> log_manager::remove(model::ntp ntp) {

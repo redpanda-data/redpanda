@@ -778,8 +778,11 @@ archival_metadata_stm::get_segments_to_cleanup() const {
 }
 
 ss::future<> archival_metadata_stm::stop() {
+    const auto ntp = _raft->ntp();
+    vlog(_logger.debug, "Stopping archival stm: {}", ntp);
     _download_as.request_abort();
     co_await raft::state_machine::stop();
+    vlog(_logger.debug, "Stopped archival stm: {}", ntp);
 }
 
 const cloud_storage::partition_manifest&
