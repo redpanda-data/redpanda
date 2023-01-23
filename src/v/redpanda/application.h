@@ -245,6 +245,8 @@ private:
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
     std::unique_ptr<kafka::rm_group_proxy_impl> _rm_group_proxy;
 
+    std::unique_ptr<cluster::node_isolation_watcher> _node_isolation_watcher;
+
     // Small helpers to execute one-time upgrade actions
     std::vector<std::unique_ptr<features::feature_migrator>> _migrators;
 

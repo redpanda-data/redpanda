@@ -137,4 +137,9 @@ void health_monitor_frontend::disk_health_tick() {
     });
 }
 
+ss::future<bool> health_monitor_frontend::does_raft0_have_leader() {
+    return dispatch_to_backend(
+      [](health_monitor_backend& be) { return be.does_raft0_have_leader(); });
+}
+
 } // namespace cluster

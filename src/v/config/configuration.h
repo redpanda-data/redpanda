@@ -365,6 +365,8 @@ struct configuration final : public config_store {
       kafka_throughput_limit_node_out_bps;
     bounded_property<std::chrono::milliseconds> kafka_quota_balancer_window;
 
+    bounded_property<int64_t> node_isolation_heartbeat_timeout;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

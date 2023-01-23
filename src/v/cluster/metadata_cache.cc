@@ -16,6 +16,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -156,6 +157,10 @@ ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
     co_return !brokers.empty() ? brokers : _members_table.local().node_list();
 }
 
+std::vector<node_metadata> metadata_cache::all_nodes() const {
+    return _members_table.local().node_list();
+}
+
 std::vector<model::node_id> metadata_cache::node_ids() const {
     return _members_table.local().node_ids();
 }
@@ -216,6 +221,12 @@ cluster::partition_leaders_table::leaders_info_t
 metadata_cache::get_leaders() const {
     return _leaders.local().get_leaders();
 }
+
+void metadata_cache::set_is_node_isolated_status(bool is_node_isolated) {
+    _is_node_isolated = is_node_isolated;
+}
+
+bool metadata_cache::is_node_isolated() { return _is_node_isolated; }
 
 /**
  * hard coded defaults

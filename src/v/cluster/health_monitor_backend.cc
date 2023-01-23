@@ -788,4 +788,9 @@ health_monitor_backend::get_cluster_health_overview(
 
     co_return ret;
 }
+
+bool health_monitor_backend::does_raft0_have_leader() {
+    return _raft0->get_leader_id().has_value();
+}
+
 } // namespace cluster

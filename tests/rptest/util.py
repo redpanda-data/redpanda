@@ -355,14 +355,21 @@ def get_second_cluster_license():
 class firewall_blocked:
     """Temporary firewall barrier that isolates set of redpanda
     nodes from the ip-address"""
-    def __init__(self, nodes, blocked_port):
+    def __init__(self, nodes, blocked_port, full_block=False):
         self._nodes = nodes
         self._port = blocked_port
+
+        self.mode_for_input = "sport"
+        if full_block:
+            self.mode_for_input = "dport"
 
     def __enter__(self):
         """Isolate certain ips from the nodes using firewall rules"""
         cmd = []
-        cmd.append(f"iptables -A INPUT -p tcp --sport {self._port} -j DROP")
+        mode_for_inut = "sport"
+        cmd.append(
+            f"iptables -A INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP"
+        )
         cmd.append(f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP")
         cmd = " && ".join(cmd)
         for node in self._nodes:
@@ -371,7 +378,9 @@ class firewall_blocked:
     def __exit__(self, type, value, traceback):
         """Remove firewall rules that isolate ips from the nodes"""
         cmd = []
-        cmd.append(f"iptables -D INPUT -p tcp --sport {self._port} -j DROP")
+        cmd.append(
+            f"iptables -D INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP"
+        )
         cmd.append(f"iptables -D OUTPUT -p tcp --dport {self._port} -j DROP")
         cmd = " && ".join(cmd)
         for node in self._nodes:
