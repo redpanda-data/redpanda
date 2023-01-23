@@ -643,17 +643,19 @@ disk_log_impl::override_retention_config(compaction_config cfg) const {
     // defaults.
     if (
       !local_retention_bytes.is_disabled()
-      && !local_retention_bytes.has_value()) {
+      && !local_retention_bytes.has_optional_value()) {
         local_retention_bytes = tristate<size_t>{
           config::shard_local_cfg().retention_local_target_bytes_default()};
     }
 
-    if (!local_retention_ms.is_disabled() && !local_retention_ms.has_value()) {
+    if (
+      !local_retention_ms.is_disabled()
+      && !local_retention_ms.has_optional_value()) {
         local_retention_ms = tristate<std::chrono::milliseconds>{
           config::shard_local_cfg().retention_local_target_ms_default()};
     }
 
-    if (local_retention_bytes.has_value()) {
+    if (local_retention_bytes.has_optional_value()) {
         if (cfg.max_bytes) {
             cfg.max_bytes = std::min(
               local_retention_bytes.value(), cfg.max_bytes.value());
@@ -662,7 +664,7 @@ disk_log_impl::override_retention_config(compaction_config cfg) const {
         }
     }
 
-    if (local_retention_ms.has_value()) {
+    if (local_retention_ms.has_optional_value()) {
         cfg.eviction_time = std::max(
           model::timestamp(
             model::timestamp::now().value()
@@ -699,7 +701,7 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
     if (retention_bytes.is_disabled()) {
         ret.max_bytes = std::nullopt;
     }
-    if (retention_bytes.has_value()) {
+    if (retention_bytes.has_optional_value()) {
         ret.max_bytes = retention_bytes.value();
     }
 
@@ -710,7 +712,7 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
     if (retention_time.is_disabled()) {
         ret.eviction_time = model::timestamp::min();
     }
-    if (retention_time.has_value()) {
+    if (retention_time.has_optional_value()) {
         ret.eviction_time = model::timestamp(
           model::timestamp::now().value() - retention_time.value().count());
     }

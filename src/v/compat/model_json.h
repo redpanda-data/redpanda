@@ -225,7 +225,7 @@ void rjson_serialize_exceptional_type(
     w.Key("status");
     if (t.is_disabled()) {
         w.Int(uint8_t(tristate_status::disabled));
-    } else if (!t.has_value()) {
+    } else if (!t.has_optional_value()) {
         w.Int(uint8_t(tristate_status::not_set));
     } else {
         w.Int(uint8_t(tristate_status::set));

@@ -312,7 +312,7 @@ static void add_topic_config_if_requested(
 
 template<typename T>
 static ss::sstring maybe_print_tristate(const tristate<T>& tri) {
-    if (tri.is_disabled() || !tri.has_value()) {
+    if (tri.is_disabled() || !tri.has_optional_value()) {
         return "-1";
     }
     return ssx::sformat("{}", tri.value());
@@ -330,7 +330,7 @@ static void add_topic_config(
     // Wrap overrides in an optional because add_topic_config expects
     // optional<S> where S = tristate<T>
     std::optional<tristate<T>> override_value;
-    if (overrides.is_disabled() || overrides.has_value()) {
+    if (overrides.is_disabled() || overrides.has_optional_value()) {
         override_value = std::make_optional(overrides);
     }
 
@@ -548,7 +548,7 @@ int64_t describe_retention_duration(
     if (overrides.is_disabled()) {
         return -1;
     }
-    if (overrides.has_value()) {
+    if (overrides.has_optional_value()) {
         return overrides.value().count();
     }
 
@@ -559,7 +559,7 @@ int64_t describe_retention_bytes(
     if (overrides.is_disabled()) {
         return -1;
     }
-    if (overrides.has_value()) {
+    if (overrides.has_optional_value()) {
         return overrides.value();
     }
 

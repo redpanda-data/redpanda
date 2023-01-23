@@ -130,14 +130,16 @@ bool topic_properties::is_compacted() const {
 
 bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
-           || retention_bytes.has_value() || retention_bytes.is_disabled()
-           || retention_duration.has_value() || retention_duration.is_disabled()
-           || recovery.has_value() || shadow_indexing.has_value()
-           || read_replica.has_value() || batch_max_bytes.has_value()
-           || retention_local_target_bytes.has_value()
-           || retention_local_target_ms.has_value()
-           || remote_delete != storage::ntp_config::default_remote_delete
-           || segment_ms.has_value() || segment_ms.is_disabled();
+             || retention_bytes.has_optional_value()
+             || retention_bytes.is_disabled()
+             || retention_duration.has_optional_value()
+             || retention_duration.is_disabled() || recovery.has_value()
+             || shadow_indexing.has_value() || read_replica.has_value()
+             || batch_max_bytes.has_value()
+             || retention_local_target_bytes.has_optional_value()
+             || retention_local_target_ms.has_optional_value()
+             || remote_delete != storage::ntp_config::default_remote_delete
+             || segment_ms.has_optional_value() || segment_ms.is_disabled();
 }
 
 storage::ntp_config::default_overrides

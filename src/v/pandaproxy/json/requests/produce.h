@@ -84,45 +84,51 @@ public:
       : _fmt(fmt) {}
 
     bool Null() {
-        if (auto res = maybe_json(&json_writer::Null); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Null);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Bool(bool b) {
-        if (auto res = maybe_json(&json_writer::Bool, b); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Bool, b);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Int64(int64_t v) {
-        if (auto res = maybe_json(&json_writer::Int64, v); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Int64, v);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Uint64(uint64_t v) {
-        if (auto res = maybe_json(&json_writer::Uint64, v); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Uint64, v);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool Double(double v) {
-        if (auto res = maybe_json(&json_writer::Double, v); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Double, v);
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
     bool RawNumber(const Ch* str, ::json::SizeType len, bool b) {
         if (auto res = maybe_json(&json_writer::RawNumber, str, len, b);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         return false;
     }
 
     bool Int(int i) {
-        if (auto res = maybe_json(&json_writer::Int, i); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Int, i);
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::partition) {
@@ -134,7 +140,8 @@ public:
     }
 
     bool Uint(unsigned u) {
-        if (auto res = maybe_json(&json_writer::Uint, u); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::Uint, u);
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::partition) {
@@ -149,7 +156,7 @@ public:
         if (auto res = maybe_json<bool (json_writer::*)(
               const Ch*, ::json::SizeType, bool)>(
               &json_writer::String, str, len, b);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::key) {
@@ -176,7 +183,7 @@ public:
         if (auto res = maybe_json<bool (json_writer::*)(
               const Ch*, ::json::SizeType, bool)>(
               &json_writer::Key, str, len, b);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         auto key = std::string_view(str, len);
@@ -206,7 +213,8 @@ public:
     }
 
     bool StartObject() {
-        if (auto res = maybe_json(&json_writer::StartObject); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::StartObject);
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::empty) {
@@ -222,7 +230,7 @@ public:
 
     bool EndObject(::json::SizeType s) {
         if (auto res = maybe_json(&json_writer::EndObject, s);
-            res.has_value()) {
+            res.has_optional_value()) {
             return res.value();
         }
         if (state == state::record) {
@@ -237,14 +245,16 @@ public:
     }
 
     bool StartArray() {
-        if (auto res = maybe_json(&json_writer::StartArray); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::StartArray);
+            res.has_optional_value()) {
             return res.value();
         }
         return state == state::records;
     }
 
     bool EndArray(::json::SizeType s) {
-        if (auto res = maybe_json(&json_writer::EndArray, s); res.has_value()) {
+        if (auto res = maybe_json(&json_writer::EndArray, s);
+            res.has_optional_value()) {
             return res.value();
         }
         return state == state::records;

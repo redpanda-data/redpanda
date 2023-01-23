@@ -258,16 +258,16 @@ get_retention_policy(const storage::ntp_config::default_overrides& prop) {
         //
         // This differs from ordinary storage GC, in that we are applying
         // space _or_ time bounds: not both together.
-        if (prop.retention_local_target_bytes.has_value()) {
+        if (prop.retention_local_target_bytes.has_optional_value()) {
             auto v = prop.retention_local_target_bytes.value();
 
-            if (prop.retention_bytes.has_value()) {
+            if (prop.retention_bytes.has_optional_value()) {
                 v = std::min(prop.retention_bytes.value(), v);
             }
             return size_bound_deletion_parameters{v};
-        } else if (prop.retention_local_target_ms.has_value()) {
+        } else if (prop.retention_local_target_ms.has_optional_value()) {
             auto v = prop.retention_local_target_ms.value();
-            if (prop.retention_time.has_value()) {
+            if (prop.retention_time.has_optional_value()) {
                 v = std::min(prop.retention_time.value(), v);
             }
             return time_bound_deletion_parameters{v};

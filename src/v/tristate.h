@@ -42,7 +42,12 @@ public:
         return std::holds_alternative<std::monostate>(_value);
     }
 
-    constexpr bool has_value() const {
+    /// \brief Checks if the tristate is in the "Set" state. That means
+    /// it is not disabled and it holds a value.
+    ///
+    /// \return true if the tristate is in the "Set" state
+    ///         false otherwise
+    constexpr bool has_optional_value() const {
         return !is_disabled() && get_optional().has_value();
     }
 
@@ -88,7 +93,7 @@ public:
             fmt::print(o, "{{disabled}}");
             return o;
         }
-        if (t.has_value()) {
+        if (t.has_optional_value()) {
             fmt::print(o, "{{{}}}", t.value());
             return o;
         }
