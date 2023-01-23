@@ -326,44 +326,64 @@ ss::future<> partition::start() {
 }
 
 ss::future<> partition::stop() {
+    auto partition_ntp = ntp();
+    vlog(clusterlog.debug, "Stopping partition: {}", partition_ntp);
     _as.request_abort();
 
-    auto f = ss::now();
-
     if (_archiver) {
-        f = f.then([this] {
-            _upload_housekeeping.local().deregister_jobs(
-              _archiver->get_housekeeping_jobs());
-            return _archiver->stop();
-        });
+        _upload_housekeeping.local().deregister_jobs(
+          _archiver->get_housekeeping_jobs());
+        vlog(
+          clusterlog.debug,
+          "Stopping archiver on partition: {}",
+          partition_ntp);
+        co_await _archiver->stop();
     }
 
     if (_archival_meta_stm) {
-        f = f.then([this] { return _archival_meta_stm->stop(); });
+        vlog(
+          clusterlog.debug,
+          "Stopping archival_meta_stm on partition: {}",
+          partition_ntp);
+        co_await _archival_meta_stm->stop();
     }
 
     if (_cloud_storage_partition) {
-        f = f.then([this] { return _cloud_storage_partition->stop(); });
+        vlog(
+          clusterlog.debug,
+          "Stopping cloud_storage_partition on partition: {}",
+          partition_ntp);
+        co_await _cloud_storage_partition->stop();
     }
 
     if (_id_allocator_stm) {
-        f = f.then([this] { return _id_allocator_stm->stop(); });
+        vlog(
+          clusterlog.debug,
+          "Stopping id_allocator_stm on partition: {}",
+          partition_ntp);
+        co_await _id_allocator_stm->stop();
     }
 
     if (_log_eviction_stm) {
-        f = f.then([this] { return _log_eviction_stm->stop(); });
+        vlog(
+          clusterlog.debug,
+          "Stopping log_eviction_stm on partition: {}",
+          partition_ntp);
+        co_await _log_eviction_stm->stop();
     }
 
     if (_rm_stm) {
-        f = f.then([this] { return _rm_stm->stop(); });
+        vlog(
+          clusterlog.debug, "Stopping rm_stm on partition: {}", partition_ntp);
+        co_await _rm_stm->stop();
     }
 
     if (_tm_stm) {
-        f = f.then([this] { return _tm_stm->stop(); });
+        vlog(
+          clusterlog.debug, "Stopping tm_stm on partition: {}", partition_ntp);
+        co_await _tm_stm->stop();
     }
-
-    // no state machine
-    return f;
+    vlog(clusterlog.debug, "Stopped partition {}", partition_ntp);
 }
 
 ss::future<std::optional<storage::timequery_result>>
