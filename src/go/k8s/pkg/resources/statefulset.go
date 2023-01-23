@@ -466,7 +466,8 @@ func (r *StatefulSetResource) obj(
 								r.portsConfiguration(),
 							}, prepareAdditionalArguments(
 								r.pandaCluster.Spec.Configuration.DeveloperMode,
-								r.pandaCluster.Spec.Resources)...),
+								r.pandaCluster.Spec.Resources,
+								r.pandaCluster.Spec.Configuration.AdditionalCommandlineArguments)...),
 							Env: []corev1.EnvVar{
 								{
 									Name:  "REDPANDA_ENVIRONMENT",
@@ -686,52 +687,62 @@ func (r *StatefulSetResource) rpkStatusContainer(
 func prepareAdditionalArguments(
 	developerMode bool,
 	originalRequests redpandav1alpha1.RedpandaResourceRequirements,
+	additionalCommandlineArguments map[string]string,
 ) []string {
 	requests := originalRequests.DeepCopy()
 
 	requestedCores := requests.RedpandaCPU().Value()
 	requestedMemory := requests.RedpandaMemory().Value()
 
-	args := []string{}
+	args := make(map[string]string)
 	if developerMode {
-		args = append(args,
-			"--overprovisioned",
-			"--kernel-page-cache=true",
-			"--default-log-level=debug",
-		)
+		args["overprovisioned"] = ""
+		args["kernel-page-cache"] = "true"
+		args["default-log-level"] = "debug"
 	} else {
-		args = append(args, "--default-log-level=info")
+		args["default-log-level"] = "info"
 	}
 
 	// When cpu is not set, all cores are used
 	if requestedCores > 0 {
-		args = append(args, "--smp="+strconv.FormatInt(requestedCores, 10))
+		args["smp"] = strconv.FormatInt(requestedCores, 10)
 	}
 
 	// When memory is not set, all of the host memory is used minus max(1.5Gi, 7%)
 	if requestedMemory > 0 {
-		args = append(args,
-			// Both of these flags shouldn't be set at the same time:
-			// https://github.com/scylladb/seastar/issues/375
-			//
-			// However, this allows explicitly setting the amount of memory to
-			// the required value, and the code in seastar hasn't changed in
-			// years.
-			//
-			// The correct way to do it is to set just --reserve-memory
-			// taking into account:
-			// * Seastar sees the total host memory
-			// * k8s has an allocatable amount of memory
-			// * DefaultRequestBaseMemory reservation
-			// * Memory buffer for the cgroup
-			//
-			// All of which doesn't feel much less fragile or intuitive.
-			"--memory="+strconv.FormatInt(requestedMemory, 10),
-			"--reserve-memory=0M",
-		)
+		// Both of these flags shouldn't be set at the same time:
+		// https://github.com/scylladb/seastar/issues/375
+		//
+		// However, this allows explicitly setting the amount of memory to
+		// the required value, and the code in seastar hasn't changed in
+		// years.
+		//
+		// The correct way to do it is to set just --reserve-memory
+		// taking into account:
+		// * Seastar sees the total host memory
+		// * k8s has an allocatable amount of memory
+		// * DefaultRequestBaseMemory reservation
+		// * Memory buffer for the cgroup
+		//
+		// All of which doesn't feel much less fragile or intuitive.
+		args["memory"] = strconv.FormatInt(requestedMemory, 10)
+		args["reserve-memory"] = "0M"
 	}
 
-	return args
+	for k, v := range additionalCommandlineArguments {
+		args[k] = v
+	}
+
+	out := make([]string, 0)
+	for k, v := range args {
+		if v == "" {
+			out = append(out, fmt.Sprintf("--%s", k))
+		} else {
+			out = append(out, fmt.Sprintf("--%s=%s", k, v))
+		}
+	}
+
+	return out
 }
 
 func (r *StatefulSetResource) pandaproxyEnvVars() []corev1.EnvVar {

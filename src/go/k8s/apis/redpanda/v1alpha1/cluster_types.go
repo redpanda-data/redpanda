@@ -552,6 +552,10 @@ type RedpandaConfig struct {
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 	// Enable auto-creation of topics. Reference https://kafka.apache.org/documentation/#brokerconfigs_auto.create.topics.enable
 	AutoCreateTopics bool `json:"autoCreateTopics,omitempty"`
+	// Additional command line arguments that we pass to the redpanda binary
+	// These are applied last and will override any other command line arguments that may be defined,
+	// including the ones added when setting `DeveloperMode` to `true`.
+	AdditionalCommandlineArguments map[string]string `json:"additionalCommandlineArguments,omitempty"`
 }
 
 // AdminAPI configures listener for the Redpanda Admin API
