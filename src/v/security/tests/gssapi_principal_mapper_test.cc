@@ -220,4 +220,78 @@ BOOST_AUTO_TEST_CASE(test_only_primary) {
                              BOOST_REQUIRE(result.has_value());
                              BOOST_REQUIRE_EQUAL(TEST_NAME, *result);););
 }
+
+struct gssapi_default_mapper_record {
+    explicit gssapi_default_mapper_record(std::string_view kerberos_principal)
+      : kerberos_principal(kerberos_principal) {}
+    gssapi_default_mapper_record(
+      std::string_view kerberos_principal, std::string_view mapped_name)
+      : kerberos_principal(kerberos_principal)
+      , mapped_name(mapped_name) {}
+
+    std::string_view kerberos_principal;
+    std::optional<std::string_view> mapped_name{std::nullopt};
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const gssapi_default_mapper_record& r) {
+        fmt::print(os, "kerberos_principal: '{}'", r.kerberos_principal);
+        if (r.mapped_name) {
+            fmt::print(os, ", mapped_name: '{}'", *(r.mapped_name));
+        }
+        return os;
+    }
+};
+
+static std::array<gssapi_default_mapper_record, 2> gssapi_default_rule_test_set{
+  gssapi_default_mapper_record{"test@REALM.com", "test"},
+  gssapi_default_mapper_record{"test@test.com"}};
+
+BOOST_DATA_TEST_CASE(
+  test_no_rules, bdata::make(gssapi_default_rule_test_set), c) {
+    static const std::string_view DEFAULT_REALM = "REALM.com";
+    BOOST_REQUIRE_NO_THROW(
+      auto mapper = gssapi_principal_mapper(
+        config::mock_binding(std::vector<ss::sstring>{}));
+      auto name = gssapi_name::parse(c.kerberos_principal).value();
+      auto result = mapper.apply(DEFAULT_REALM, name);
+      BOOST_REQUIRE_EQUAL(c.mapped_name, result););
+}
+
+struct gssapi_mapping_rules_test {
+    explicit gssapi_mapping_rules_test(std::vector<ss::sstring> rules)
+      : rules(std::move(rules)) {}
+    gssapi_mapping_rules_test(
+      std::vector<ss::sstring> rules, std::string_view error_message)
+      : rules(std::move(rules))
+      , error_message(error_message) {}
+
+    std::vector<ss::sstring> rules;
+    std::optional<std::string_view> error_message{std::nullopt};
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const gssapi_mapping_rules_test& r) {
+        fmt::print(os, "rules: '[{}]'", fmt::join(r.rules, ", "));
+        if (r.error_message) {
+            fmt::print(os, ", error_message: '{}'", *(r.error_message));
+        }
+        return os;
+    }
+};
+
+static std::array<gssapi_mapping_rules_test, 3> gssapi_mapping_rules_test_data{
+  gssapi_mapping_rules_test{{ss::sstring{"DEFAULT"}}},
+  {{ss::sstring{"default"}}, "GSSAPI: Invalid rule: default"},
+  {{ss::sstring{"RULE:[9999999999:$1]"}},
+   "Invalid rule - Invalid value for number of components: 9999999999"}};
+
+BOOST_DATA_TEST_CASE(
+  test_validate_mapping_rules, bdata::make(gssapi_mapping_rules_test_data), c) {
+    BOOST_REQUIRE_EQUAL(
+      c.error_message, validate_kerberos_mapping_rules(c.rules));
+}
+
+BOOST_AUTO_TEST_CASE(invalid_names) {
+    BOOST_REQUIRE(!gssapi_name::parse("test@@@test").has_value());
+    BOOST_REQUIRE_THROW(gssapi_name("", "", ""), std::invalid_argument);
+}
 } // namespace security
