@@ -62,7 +62,7 @@ def read_topic_properties_serde(rdr: Reader, version):
     return topic_properties
 
 
-def read_topic_assignment_serde(rdr: Reader):
+def read_topic_configuration_assignment_serde(rdr: Reader):
     return rdr.read_envelope(
         lambda rdr, _: {
             'cfg':
@@ -199,7 +199,7 @@ def decode_topic_command_serde(k_rdr: Reader, rdr: Reader):
         cmd['key'] = {}
         cmd['key']['namespace'] = k_rdr.read_string()
         cmd['key']['topic'] = k_rdr.read_string()
-        cmd |= read_topic_assignment_serde(rdr)
+        cmd |= read_topic_configuration_assignment_serde(rdr)
     elif cmd['type'] == 1:
         cmd['type_string'] = 'delete_topic'
         cmd['namespace'] = rdr.read_string()
