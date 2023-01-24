@@ -65,7 +65,11 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
                              "cancel signal"});
             }
         } catch (const std::exception& ex) {
-            vlog(clusterlog.warn, "Disk self test finished with error");
+            vlog(
+              clusterlog.warn,
+              "Disk self test finished with error: {} - options: {}",
+              ex.what(),
+              dto);
             results.push_back(self_test_result{
               .name = dto.name, .test_type = "disk", .error = ex.what()});
         }
@@ -94,7 +98,11 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
                   .warning = "No peers to start network test against"});
             }
         } catch (const std::exception& ex) {
-            vlog(clusterlog.warn, "Network self test finished with error");
+            vlog(
+              clusterlog.warn,
+              "Network self test finished with error: {} - options: {}",
+              ex.what(),
+              nto);
             results.push_back(self_test_result{
               .name = nto.name, .test_type = "network", .error = ex.what()});
         }
