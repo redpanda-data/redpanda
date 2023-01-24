@@ -7,11 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from functools import partial
 import socket
 import time
 
 import ducktape.errors
-from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.errors import TimeoutError
 from ducktape.mark import parametrize
 from ducktape.tests.test import Test
@@ -130,22 +130,27 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
         wait_until(lambda: super_rpk.acl_list().count('\n') >= expected_acls,
                    5)
 
-        try:
-            wait_until(lambda: self._have_expected_topics(
-                req_principal, 3, set(topics)),
-                       timeout_sec=5,
-                       backoff_sec=0.5,
-                       err_msg=f"Did not receive expected set of topics")
-            assert not fail
-        except AuthenticationError:
-            assert fail
-        except TimeoutError:
-            assert fail
+        for metadata_fn in [self.client.metadata, self.client.metadata_java]:
+            try:
+                wait_until(
+                    lambda f=metadata_fn: self._have_expected_topics(
+                        f, req_principal, 3, set(topics)),
+                    timeout_sec=5,
+                    backoff_sec=0.5,
+                    err_msg=
+                    f"Did not receive expected set of topics with {metadata_fn.__name__}"
+                )
+                assert not fail
+            except AuthenticationError:
+                assert fail
+            except TimeoutError:
+                assert fail
 
-    def _have_expected_topics(self, req_principal, expected_broker_count,
-                              topics_set):
-        metadata = self.client.metadata(req_principal)
-        self.redpanda.logger.info(f"Metadata (GSSAPI): {metadata}")
+    def _have_expected_topics(self, metadata_fn, req_principal,
+                              expected_broker_count, topics_set):
+        metadata = metadata_fn(req_principal)
+        self.redpanda.logger.info(
+            f"{metadata_fn.__name__} (GSSAPI): {metadata}")
         assert len(metadata['brokers']) == expected_broker_count
         return {n['topic'] for n in metadata['topics']} == topics_set
 
