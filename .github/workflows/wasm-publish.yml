@@ -10,7 +10,8 @@
 name: wasm-api
 on:
   push:
-    tags: 'v*'
+    tags:
+      - v*
 
 jobs:
   publish:
@@ -19,7 +20,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v1
         with:
-          node-version: '12.16.1'
+          node-version: '14.21.2'
           registry-url: 'https://registry.npmjs.org'
 
       - name: Check out code
