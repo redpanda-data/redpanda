@@ -1975,11 +1975,30 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
           ss::httpd::reply::status_type::service_unavailable);
     }
 
+    auto h_report
+      = co_await _controller->get_health_monitor().local().get_cluster_health(
+        cluster::cluster_report_filter{
+          .node_report_filter
+          = {.include_partitions = cluster::include_partitions_info::no},
+          .nodes = {id}},
+        cluster::force_refresh::no,
+        model::no_timeout);
+
     ss::httpd::broker_json::broker ret;
     ret.node_id = node_meta->broker.id();
     ret.num_cores = node_meta->broker.properties().cores;
     if (node_meta->broker.rack()) {
         ret.rack = node_meta->broker.rack().value();
+    }
+    if (h_report) {
+        const auto& reports = h_report.value().node_reports;
+        auto node_it = std::find_if(
+          reports.begin(), reports.end(), [id](const auto& report) {
+              return report.id == id;
+          });
+        if (node_it != reports.end()) {
+            ret.version = node_it->local_state.redpanda_version;
+        }
     }
     ret.membership_status = fmt::format(
       "{}", node_meta->state.get_membership_state());
