@@ -19,6 +19,12 @@
 namespace cluster {
 
 class allocation_state;
+/**
+ * make_soft_constraint adapts hard constraint to soft one by returning
+ * max score for nodes that matches the soft constraint and 0 for
+ * the ones that not
+ */
+soft_constraint_evaluator make_soft_constraint(hard_constraint_evaluator);
 
 hard_constraint_evaluator not_fully_allocated();
 hard_constraint_evaluator is_active();
@@ -49,8 +55,8 @@ hard_constraint_evaluator disk_not_overflowed_by_partition(
 soft_constraint_evaluator least_allocated();
 
 /*
- * scores nodes based on allocation capacity used by priorty partitions
- * returning `0` for nodes fully allocated for priority partitons
+ * scores nodes based on allocation capacity used by priority partitions
+ * returning `0` for nodes fully allocated for priority partitions
  * and `max_capacity` for nodes without any priority partitions
  * non-priority partition allocations are ignored
  */
@@ -67,7 +73,13 @@ soft_constraint_evaluator least_disk_filled(
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
-soft_constraint_evaluator
+hard_constraint_evaluator
 distinct_rack(const std::vector<model::broker_shard>&, const allocation_state&);
+
+inline soft_constraint_evaluator distinct_rack_preferred(
+  const std::vector<model::broker_shard>& replicas,
+  const allocation_state& state) {
+    return make_soft_constraint(distinct_rack(replicas, state));
+}
 
 } // namespace cluster

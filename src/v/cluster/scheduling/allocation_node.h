@@ -69,7 +69,7 @@ public:
         }
         return _max_capacity;
     }
-    // Overall partition space of the node, less reseved partitions
+    // Overall partition space of the node, less reserved partitions
     allocation_capacity max_capacity() const { return _max_capacity; }
 
     void decommission() {

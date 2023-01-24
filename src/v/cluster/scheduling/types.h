@@ -23,7 +23,7 @@ class allocation_node;
 class allocation_state;
 
 /**
- * Constraints evaluators loosely inspired by Fenzo Constrainst Solver.
+ * Constraints evaluators loosely inspired by Fenzo Constraints Solver.
  *
  * https://github.com/Netflix/Fenzo/blob/master/fenzo-core/src/main/java/com/netflix/fenzo/ConstraintEvaluator.java
  * https://github.com/Netflix/Fenzo/blob/master/fenzo-core/src/main/java/com/netflix/fenzo/VMTaskFitnessCalculator.java
@@ -109,7 +109,7 @@ private:
 
 /**
  * Configuration used to request partition allocation, if current allocations
- * are not empty then allocation strategy will allocate as many replis as
+ * are not empty then allocation strategy will allocate as many replicas as
  * required to achieve requested replication factor.
  */
 struct allocation_constraints {
@@ -125,7 +125,7 @@ struct allocation_constraints {
     operator<<(std::ostream&, const allocation_constraints&);
 };
 /**
- * RAII based helper holding allocated partititions, allocation is reverted
+ * RAII based helper holding allocated partitions, allocation is reverted
  * after this object goes out of scope.
  *
  * WARNING: this object contains an embedded reference to the partition
@@ -178,7 +178,7 @@ private:
 /**
  * Configuration used to request manual allocation configuration for topic.
  * Custom allocation only designate nodes where partition should be placed but
- * not the shards on each node, allocation strategy will assing shards to each
+ * not the shards on each node, allocation strategy will assign shards to each
  * replica
  */
 struct partition_constraints {
