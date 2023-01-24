@@ -626,7 +626,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         auto const h = read_header<Type>(in, bytes_left_limit);
 
         if constexpr (is_checksum_envelope<Type>) {
-            auto const shared = in.share(in.bytes_left() - h._bytes_left_limit);
+            auto const shared = in.share_no_consume(
+              in.bytes_left() - h._bytes_left_limit);
             auto read_only_in = iobuf_const_parser{shared};
             auto crc = crc::crc32c{};
             read_only_in.consume(

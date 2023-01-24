@@ -56,11 +56,15 @@ SEASTAR_THREAD_TEST_CASE(custom_read_write_test) {
 
 struct test_msg0
   : serde::envelope<test_msg0, serde::version<1>, serde::compat_version<0>> {
+    bool operator==(const test_msg0&) const = default;
+
     char _i, _j;
 };
 
 struct test_msg1
   : serde::envelope<test_msg1, serde::version<4>, serde::compat_version<0>> {
+    bool operator==(const test_msg1&) const = default;
+
     int _a;
     test_msg0 _m;
     int _b, _c;
@@ -68,12 +72,16 @@ struct test_msg1
 
 struct test_msg1_imcompatible
   : serde::envelope<test_msg1, serde::version<5>, serde::compat_version<5>> {
+    bool operator==(const test_msg1_imcompatible&) const = default;
+
     test_msg0 _m;
 };
 
 struct test_msg1_new
   : serde::
       envelope<test_msg1_new, serde::version<10>, serde::compat_version<5>> {
+    bool operator==(const test_msg1_new&) const = default;
+
     int _a;
     test_msg0 _m;
     int _b, _c;
@@ -138,6 +146,8 @@ SEASTAR_THREAD_TEST_CASE(envelope_too_big_test) {
     struct big
       : public serde::
           envelope<big, serde::version<0>, serde::compat_version<0>> {
+        bool operator==(const big&) const = default;
+
         std::vector<char> data_;
     };
 
@@ -150,6 +160,8 @@ SEASTAR_THREAD_TEST_CASE(envelope_too_big_test) {
 SEASTAR_THREAD_TEST_CASE(simple_envelope_test) {
     struct msg
       : serde::envelope<msg, serde::version<1>, serde::compat_version<0>> {
+        bool operator==(const msg&) const = default;
+
         int32_t _i, _j;
     };
 
@@ -231,12 +243,16 @@ struct inner_differing_sizes
       inner_differing_sizes,
       serde::version<1>,
       serde::compat_version<1>> {
+    bool operator==(const inner_differing_sizes&) const = default;
+
     std::vector<int32_t> _ints;
 };
 
 struct complex_msg
   : serde::envelope<complex_msg, serde::version<3>, serde::compat_version<3>> {
     std::vector<inner_differing_sizes> _vec;
+    bool operator==(const complex_msg&) const = default;
+
     int32_t _x;
 };
 
@@ -385,6 +401,8 @@ struct test_snapshot_header
     ss::future<> serde_async_read(iobuf_parser&, serde::header const);
     ss::future<> serde_async_write(iobuf&) const;
 
+    bool operator==(const test_snapshot_header&) const = default;
+
     model::ns ns_;
     int32_t header_crc;
     int32_t metadata_crc;
@@ -455,11 +473,15 @@ SEASTAR_THREAD_TEST_CASE(snapshot_test) {
 
 struct small
   : public serde::envelope<small, serde::version<0>, serde::compat_version<0>> {
+    bool operator==(const small&) const = default;
+
     int a, b, c;
 };
 
 struct big
   : public serde::envelope<big, serde::version<1>, serde::compat_version<0>> {
+    bool operator==(const big&) const = default;
+
     int a, b, c, d{0x1234};
 };
 
@@ -515,6 +537,8 @@ SEASTAR_THREAD_TEST_CASE(compat_test_half_field_1) {
           serde::version<1>,
           serde::compat_version<
             0 /* Actually not compatible! Just to catch errors. */>> {
+        bool operator==(const half_field_1&) const = default;
+
         int a, b;
         short c;
     };
@@ -528,6 +552,8 @@ SEASTAR_THREAD_TEST_CASE(compat_test_half_field_2) {
     struct half_field_2
       : public serde::
           envelope<half_field_2, serde::version<1>, serde::compat_version<0>> {
+        bool operator==(const half_field_2&) const = default;
+
         int a, b, c;
         short d;
     };
@@ -550,6 +576,8 @@ SEASTAR_THREAD_TEST_CASE(serde_checksum_envelope_test) {
           checksummed,
           serde::version<3>,
           serde::compat_version<2>> {
+        bool operator==(const checksummed&) const = default;
+
         std::vector<test_msg1_new_manual> data_;
     };
 
@@ -569,6 +597,8 @@ SEASTAR_THREAD_TEST_CASE(serde_checksum_envelope_test) {
 struct old_no_cs
   : public serde::
       envelope<old_no_cs, serde::version<3>, serde::compat_version<2>> {
+    bool operator==(const old_no_cs&) const = default;
+
     std::vector<test_msg1_new_manual> data_;
 };
 struct new_cs
@@ -591,6 +621,8 @@ struct new_cs
             break;
         }
     }
+
+    bool operator==(const new_cs&) const = default;
 
     std::vector<test_msg1_new_manual> data_;
 };
@@ -626,11 +658,17 @@ struct old_cs
       old_no_cs,
       serde::version<3>,
       serde::compat_version<2>> {
+    bool operator==(const old_cs&) const = default;
+
     std::vector<test_msg1_new_manual> data_;
 };
 struct new_no_cs
   : public serde::
       envelope<new_cs, serde::version<4>, serde::compat_version<3>> {
+    bool operator==(const new_no_cs& other) const {
+        return data_ == other.data_;
+    }
+
     serde::checksum_t unchecked_dummy_checksum_{0U};
     std::vector<test_msg1_new_manual> data_;
 };
@@ -666,7 +704,11 @@ struct serde_fields_test_struct
       envelope<test_msg1_new, serde::version<10>, serde::compat_version<5>> {
     serde_fields_test_struct() = default;
     explicit serde_fields_test_struct(int a)
-      : _a{a} {}
+      : _a{a}
+      , _m{test_msg0{._i = 11, ._j = 22}}
+      , _b{333}
+      , _c{444} {}
+    bool operator==(const serde_fields_test_struct&) const = default;
     auto serde_fields() { return std::tie(_a, _m, _b, _c); }
     int _a;
     test_msg0 _m;
@@ -900,6 +942,8 @@ struct no_default_ctor
       : x(x) {}
 
     auto serde_fields() { return std::tie(x); }
+
+    bool operator==(const no_default_ctor&) const = default;
 
     static no_default_ctor
     serde_direct_read(iobuf_parser& in, size_t const bytes_left_limit) {
