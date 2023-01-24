@@ -131,6 +131,9 @@ private:
     std::optional<offset_index::find_result>
     maybe_get_offsets(kafka::offset kafka_offset);
 
+    /// Sets the results of the waiters of this segment as the given error.
+    void set_waiter_errors(const std::exception_ptr& err);
+
     /// Run hydration loop. The method is supposed to be constantly running
     /// in the background. The background loop is triggered by the condition
     /// variable '_bg_cvar' and the promise list '_wait_list'. When the promise
