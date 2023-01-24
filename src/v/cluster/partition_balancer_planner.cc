@@ -673,6 +673,12 @@ void partition_balancer_planner::get_unavailable_node_movement_cancellations(
         if (!current_assignments.has_value()) {
             continue;
         }
+        // Do not cancel movement if node in previous replica set is unavailable
+        for (const auto& r : previous_replicas_set) {
+            if (rrs.timed_out_unavailable_nodes.contains(r)) {
+                break;
+            }
+        }
         for (const auto& r : current_assignments->replicas) {
             if (
               rrs.timed_out_unavailable_nodes.contains(r.node_id)
