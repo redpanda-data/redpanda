@@ -30,10 +30,7 @@ client_probe::client_probe(
   net::public_metrics_disabled public_disable,
   cloud_roles::aws_region_name region,
   endpoint_url endpoint)
-  : http::client_probe()
-  , _total_rpc_errors(0)
-  , _total_slowdowns(0)
-  , _total_nosuchkeys(0) {
+  : http::client_probe() {
     namespace sm = ss::metrics;
 
     std::vector<raw_label> s3_labels = {
@@ -49,10 +46,7 @@ client_probe::client_probe(
   net::public_metrics_disabled public_disable,
   cloud_roles::storage_account storage_account_name,
   endpoint_url endpoint)
-  : http::client_probe()
-  , _total_rpc_errors(0)
-  , _total_slowdowns(0)
-  , _total_nosuchkeys(0) {
+  : http::client_probe() {
     std::vector<raw_label> abs_labels = {
       {endpoint_label_key, std::move(endpoint)()},
       {storage_account_label_key, std::move(storage_account_name)()}};

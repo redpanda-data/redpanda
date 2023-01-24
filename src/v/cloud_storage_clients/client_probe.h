@@ -87,15 +87,15 @@ private:
       net::public_metrics_disabled disable, std::span<raw_label> raw_labels);
 
     /// Total number of rpc errors
-    uint64_t _total_rpc_errors;
+    uint64_t _total_rpc_errors{0};
     /// Total number of SlowDown responses
-    uint64_t _total_slowdowns;
+    uint64_t _total_slowdowns{0};
     /// Total number of NoSuchKey responses
-    uint64_t _total_nosuchkeys;
+    uint64_t _total_nosuchkeys{0};
     /// Total number of NoSuchKey responses
-    uint64_t _total_upload_slowdowns;
+    uint64_t _total_upload_slowdowns{0};
     /// Total number of NoSuchKey responses
-    uint64_t _total_download_slowdowns;
+    uint64_t _total_download_slowdowns{0};
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{
       ssx::metrics::public_metrics_handle};
