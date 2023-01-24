@@ -1057,9 +1057,31 @@ consensus::cancel_configuration_change(model::revision_id revision) {
       config());
     return interrupt_configuration_change(
              revision,
-             [revision](raft::group_configuration cfg) {
+             [this, revision](raft::group_configuration cfg) {
+                 /**
+                  * Optimization of cancelling configuration change
+                  *
+                  * When the raft group reconfiguration advanced beyond the
+                  * point where nodes from the old configuration are demoted to
+                  * learners there is no point of cancellation as the resulting
+                  * configuration would require greater quorum then the one
+                  * required to finish current configuration change.
+                  *
+                  */
+                 if (cfg.get_state() == raft::configuration_state::joint) {
+                     if (!cfg.old_config()->learners.empty()) {
+                         vlog(
+                           _ctxlog.info,
+                           "not cancelling partition configuration as old "
+                           "configuration voters are already demoted to "
+                           "learners: {}",
+                           cfg);
+                         return result<group_configuration>(
+                           errc::invalid_configuration_update);
+                     }
+                 }
                  cfg.cancel_configuration_change(revision);
-                 return cfg;
+                 return result<group_configuration>(cfg);
              })
       .then([this](std::error_code ec) {
           if (!ec) {
