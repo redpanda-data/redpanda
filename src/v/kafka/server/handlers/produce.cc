@@ -249,7 +249,7 @@ static partition_produce_stages produce_topic_partition(
     if (!shard) {
         return make_ready_stage(produce_response::partition{
           .partition_index = ntp.tp.partition,
-          .error_code = error_code::unknown_topic_or_partition});
+          .error_code = error_code::not_leader_for_partition});
     }
 
     // steal the batch from the adapter
@@ -307,7 +307,7 @@ static partition_produce_stages produce_topic_partition(
                 auto partition = mgr.get(ntp);
                 if (!partition) {
                     return finalize_request_with_error_code(
-                      error_code::unknown_topic_or_partition,
+                      error_code::not_leader_for_partition,
                       std::move(dispatch),
                       ntp,
                       source_shard);
