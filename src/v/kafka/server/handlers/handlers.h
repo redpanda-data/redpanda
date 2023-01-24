@@ -25,6 +25,8 @@
 #include "kafka/server/handlers/describe_configs.h"
 #include "kafka/server/handlers/describe_groups.h"
 #include "kafka/server/handlers/describe_log_dirs.h"
+#include "kafka/server/handlers/describe_producers.h"
+#include "kafka/server/handlers/describe_transactions.h"
 #include "kafka/server/handlers/end_txn.h"
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/find_coordinator.h"
@@ -36,6 +38,7 @@
 #include "kafka/server/handlers/list_groups.h"
 #include "kafka/server/handlers/list_offsets.h"
 #include "kafka/server/handlers/list_partition_reassignments.h"
+#include "kafka/server/handlers/list_transactions.h"
 #include "kafka/server/handlers/metadata.h"
 #include "kafka/server/handlers/offset_commit.h"
 #include "kafka/server/handlers/offset_fetch.h"
@@ -90,7 +93,10 @@ using request_types = make_request_types<
   create_partitions_handler,
   offset_for_leader_epoch_handler,
   alter_partition_reassignments_handler,
-  list_partition_reassignments_handler>;
+  list_partition_reassignments_handler,
+  describe_producers_handler,
+  describe_transactions_handler,
+  list_transactions_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {

@@ -128,7 +128,8 @@ enum class tx_errc {
     invalid_producer_id_mapping,
     invalid_txn_state,
     invalid_producer_epoch,
-    tx_not_found
+    tx_not_found,
+    tx_id_not_found
 };
 
 std::ostream& operator<<(std::ostream&, const tx_errc&);

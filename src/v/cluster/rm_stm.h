@@ -244,6 +244,8 @@ public:
         model::offset lso_bound;
         std::optional<expiration_info> info;
 
+        std::optional<int32_t> seq;
+
         std::string_view get_status() const {
             switch (status) {
             case status_t::ongoing:
@@ -708,6 +710,7 @@ private:
     get_tx_status(model::producer_identity pid) const;
     std::optional<expiration_info>
     get_expiration_info(model::producer_identity pid) const;
+    std::optional<int32_t> get_seq_number(model::producer_identity pid) const;
 
     uint8_t active_snapshot_version();
 

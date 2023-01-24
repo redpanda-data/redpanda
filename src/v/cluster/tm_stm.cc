@@ -467,6 +467,7 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
     tx.partitions.clear();
     tx.groups.clear();
     tx.etag = term;
+    tx.tx_seq += 1;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
 }
