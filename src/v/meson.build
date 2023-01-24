@@ -81,6 +81,14 @@ add_project_arguments(
   '-Wno-deprecated-experimental-coroutine',
   language: 'cpp')
 
+git_version = find_program('git-version.py')
+version_h = custom_target(
+  input: 'version.h.in',
+  output: 'version.h',
+  command: [git_version, '@SOURCE_ROOT@', '@INPUT@', '@OUTPUT@'],
+  build_by_default: true,
+  build_always_stale: true)
+
 # the timeout multiplier and the timeout settings per test need some tuning to
 # account for debug vs release builds as well as desktop vs CI environments.
 add_test_setup('redpanda',
