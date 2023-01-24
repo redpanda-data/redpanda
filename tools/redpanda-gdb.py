@@ -707,6 +707,43 @@ class spill_key_index:
         return absl_flat_hash_map(self.ref["_midx"])
 
 
+class model_offset:
+    def __init__(self, ref):
+        self.ref = ref
+
+    def __str__(self):
+        return str(self.ref['_value'])
+
+
+class offset_tracker:
+    def __init__(self, ref):
+        self.ref = ref
+
+    @property
+    def base_offset(self):
+        return model_offset(self.ref['base_offset'])
+
+    @property
+    def dirty_offset(self):
+        return model_offset(self.ref['dirty_offset'])
+
+    @property
+    def term(self):
+        return model_offset(self.ref['term'])
+
+    @property
+    def committed_offset(self):
+        return model_offset(self.ref['committed_offset'])
+
+    @property
+    def stable_offset(self):
+        return model_offset(self.ref['stable_offset'])
+
+    def __str__(self):
+
+        return f"[base_offset: {self.base_offset}, dirty_offset: {self.dirty_offset}, term: {self.term} committed_offset: {self.committed_offset}, stable_offset: {self.stable_offset}]"
+
+
 class segment:
     segment_t = gdb.lookup_type("storage::segment")
     segment_t_size = segment_t.sizeof
@@ -726,6 +763,9 @@ class segment:
         if o:
             return absl_btree_map(o.get()["_index"])
 
+    def offsets_tracker(self):
+        return offset_tracker(self.ref['_tracker'])
+
     def reader(self):
         return segment_reader(self.ref["_reader"])
 
@@ -743,6 +783,9 @@ class segment:
 class segment_set:
     def __init__(self, ref):
         self.ref = ref
+
+    def size(self):
+        return seastar_circular_buffer(self.ref["_handles"]).size()
 
     def __iter__(self):
         segments = seastar_circular_buffer(self.ref["_handles"])
@@ -1010,6 +1053,39 @@ class redpanda_memory(gdb.Command):
                         allocated_count=large_allocs[span_size],
                         allocated_size=allocated_size))
         gdb.write('Large allocations: %d [B]\n' % total_large_bytes)
+
+
+class redpanda_storage(gdb.Command):
+    """Summarize the state of redpanda storage layer
+    """
+    def __init__(self):
+        gdb.Command.__init__(self, 'redpanda storage', gdb.COMMAND_USER,
+                             gdb.COMPLETE_COMMAND)
+
+    def print_segments(self):
+        print(f"# Log segments")
+
+        for ntp, log in find_logs():
+            print(f"{ntp} segment count {log.segments().size()}")
+            for segment in log.segments():
+                offsets = segment.offsets_tracker()
+                print(f"{ntp} - {offsets}")
+
+    def print_readers_cache_memory(self):
+        print(f"# Readers cache")
+        total_readers = 0
+        for ntp, log in find_logs():
+            readers = len(log.readers_cache().readers)
+            in_use = len(log.readers_cache().in_use)
+            print(f"readers: {readers}, readers_in_use: {in_use} @ {ntp}")
+            total_readers += in_use
+            total_readers += readers
+
+        print(f"Total cached readers: {total_readers}")
+
+    def invoke(self, arg, from_tty):
+        self.print_segments()
+        self.print_readers_cache_memory()
 
 
 class redpanda_small_objects(gdb.Command):
@@ -1842,6 +1918,7 @@ class redpanda_heapprof(gdb.Command):
 
 redpanda()
 redpanda_memory()
+redpanda_storage()
 redpanda_task_queues()
 redpanda_smp_queues()
 redpanda_small_objects()
