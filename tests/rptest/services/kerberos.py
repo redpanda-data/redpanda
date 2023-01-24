@@ -53,6 +53,26 @@ ADD_PRINCIPAL_TMPL = 'add_principal {keytype} {principal}'
 KTADD_TMPL = 'ktadd -k {keytab_file} {principal}'
 KINIT_TMPL = 'kinit {principal} -kt {keytab_file}'
 
+CLIENT_PROPERTIES_TPL = """
+security.protocol=SASL_PLAINTEXT
+sasl.mechanism=GSSAPI
+sasl.kerberos.service.name=redpanda
+sasl.jaas.config=com.sun.security.auth.module.Krb5LoginModule required \
+    useKeyTab=true \
+    storeKey=false \
+    keyTab="{keytab_file}" \
+    principal="{principal}" \
+    useTicketCache=false;
+"""
+
+
+class AuthenticationError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return repr(self.message)
+
 
 def render_krb5_config(kdc_node, realm: str, file_path: str = KRB5_CONF_PATH):
     return KRB5_CONF_TMPL.format(node=kdc_node, realm=realm)
@@ -349,13 +369,59 @@ class KrbClient(Service):
         kinit_args = f"-kt {self.keytab_file} -c {client_cache} {principal}"
         kinit_cmd = f"kinit -R {kinit_args} || kinit {kinit_args}"
         sasl_conf = f"-X security.protocol=sasl_plaintext -X sasl.mechanisms=GSSAPI '-Xsasl.kerberos.kinit.cmd={kinit_cmd}' -X sasl.kerberos.service.name=redpanda"
-        res = self.nodes[0].account.ssh_output(
-            cmd=
-            f"KRB5_TRACE=/dev/stderr KRB5CCNAME={client_cache} kcat -L -J -b {self.redpanda.brokers()} {sasl_conf}",
-            allow_fail=False,
-            combine_stderr=False)
-        self.logger.debug(f"Metadata request: {res}")
-        return json.loads(res)
+        try:
+            res = self.nodes[0].account.ssh_output(
+                cmd=
+                f"KRB5_TRACE=/dev/stderr KRB5CCNAME={client_cache} kcat -L -J -b {self.redpanda.brokers()} {sasl_conf}",
+                allow_fail=False,
+                combine_stderr=False)
+            self.logger.debug(f"Metadata request: {res}")
+            return json.loads(res)
+        except RemoteCommandError as err:
+            if b'No Kerberos credentials available' in err.msg:
+                raise AuthenticationError(err.msg) from err
+            raise
+
+    def metadata_java(self, principal: str):
+        self.logger.info("Metadata request (Java)")
+        tmpl = CLIENT_PROPERTIES_TPL.format(keytab_file=self.keytab_file,
+                                            principal=principal)
+        properties_filepath = f"/tmp/{principal}_client.properties"
+        self.nodes[0].account.create_file(properties_filepath, tmpl)
+
+        try:
+            cmd_args = f"--command-config {properties_filepath} --bootstrap-server {self.redpanda.brokers()}"
+            topics = self.nodes[0].account.ssh_output(
+                cmd=f"/opt/kafka-3.0.0/bin/kafka-topics.sh {cmd_args} --list",
+                allow_fail=False,
+                combine_stderr=False)
+            self.logger.debug(f"kafka-topics: {topics}")
+
+            brokers = self.nodes[0].account.ssh_output(
+                cmd=
+                f"/opt/kafka-3.0.0/bin/kafka-broker-api-versions.sh {cmd_args} | awk '/^[a-z]/ {{print $1}}'",
+                allow_fail=False,
+                combine_stderr=False)
+            self.logger.debug(f"kafka-broker-api-versions: {brokers}")
+
+            def sanitize(raw: bytes):
+                return filter(None, raw.decode('utf-8').split('\n'))
+
+            metadata = {
+                "brokers": [{
+                    'name': l
+                } for l in sanitize(brokers)],
+                "topics": [{
+                    'topic': l
+                } for l in sanitize(topics)],
+            }
+
+            self.logger.debug(f"Metadata request: {metadata}")
+            return metadata
+        except RemoteCommandError as err:
+            if b'javax.security.auth.login.LoginException' in err.msg:
+                raise AuthenticationError(err.msg) from err
+            raise
 
 
 class RedpandaKerberosNode(RedpandaService):
