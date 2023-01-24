@@ -294,7 +294,6 @@ public:
             vlog(
               _ctxlog.debug,
               "gate_closed_exception while reading from remote_partition");
-            _reader = {};
         } catch (const std::exception& e) {
             vlog(
               _ctxlog.warn,
@@ -303,13 +302,14 @@ public:
             unknown_exception_ptr = std::current_exception();
         }
 
-        // The reader may have been left in an indeterminate state.
-        // Re-set the pointer to it to ensure that it will not be reused.
+        // If we've made it through the above try block without returning,
+        // we've thrown an exception. Regardless of which error, the reader may
+        // have been left in an indeterminate state. Re-set the pointer to it
+        // to ensure that it will not be reused.
+        if (_reader) {
+            co_await set_end_of_stream();
+        }
         if (unknown_exception_ptr) {
-            if (_reader) {
-                co_await set_end_of_stream();
-            }
-
             std::rethrow_exception(unknown_exception_ptr);
         }
 
