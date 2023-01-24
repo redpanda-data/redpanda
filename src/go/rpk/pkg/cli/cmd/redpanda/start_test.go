@@ -19,6 +19,7 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/iotune"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
@@ -1365,7 +1366,7 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.AdditionalStartFlags = []string{"--overprovisioned"}
 			return conf.Write(fs)
 		},
-		expectedErrMsg: "Configuration conflict. Flag '--overprovisioned' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--overprovisioned' directly to `rpk start`.",
+		expectedErrMsg: "configuration conflict. Flag '--overprovisioned' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--overprovisioned' directly to `rpk start`",
 	}, {
 		name: "it should fail if --smp is set in the config file too",
 		args: []string{
@@ -1376,7 +1377,7 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.AdditionalStartFlags = []string{"--smp=1"}
 			return conf.Write(fs)
 		},
-		expectedErrMsg: "Configuration conflict. Flag '--smp' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--smp' directly to `rpk start`.",
+		expectedErrMsg: "configuration conflict. Flag '--smp' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--smp' directly to `rpk start`",
 	}, {
 		name: "it should fail if --memory is set in the config file too",
 		args: []string{
@@ -1387,7 +1388,7 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.AdditionalStartFlags = []string{"--memory=1G"}
 			return conf.Write(fs)
 		},
-		expectedErrMsg: "Configuration conflict. Flag '--memory' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--memory' directly to `rpk start`.",
+		expectedErrMsg: "configuration conflict. Flag '--memory' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--memory' directly to `rpk start`",
 	}, {
 		name: "it should pass the last instance of a duplicate flag set in rpk.additional_start_flags",
 		args: []string{
@@ -1679,4 +1680,138 @@ func TestExtraFlags(t *testing.T) {
 			require.Exactly(st, tt.expected, result)
 		})
 	}
+}
+
+func Test_buildRedpandaFlags(t *testing.T) {
+	type args struct {
+		conf       *config.Config
+		args       []string
+		sFlags     seastarFlags
+		flags      map[string]string
+		ioResolver func(*config.Config, bool) (*iotune.IoProperties, error)
+	}
+	tests := []struct {
+		name       string
+		args       args
+		writeIoCfg bool
+		exp        map[string]string
+		expErr     bool
+	}{
+		{
+			name: "err when ioPropertiesFlag and wellKnownIo are set",
+			args: args{
+				conf:  &config.Config{Rpk: config.RpkConfig{WellKnownIo: "some io"}},
+				flags: map[string]string{ioPropertiesFlag: "{some:value}"},
+			},
+			expErr: true,
+		}, {
+			name: "err when ioPropertiesFileFlag and wellKnownIo are set",
+			args: args{
+				conf:  &config.Config{Rpk: config.RpkConfig{WellKnownIo: "some io"}},
+				flags: map[string]string{ioPropertiesFileFlag: ""},
+			},
+			expErr: true,
+		}, {
+			name: "setting the properties from the config file ",
+			args: args{
+				conf: &config.Config{Rpk: config.RpkConfig{
+					Overprovisioned:      true,
+					EnableMemoryLocking:  false,
+					SMP:                  intPtr(2),
+					AdditionalStartFlags: []string{"--abort-on-seastar-bad-alloc=true"},
+				}},
+			},
+			exp: map[string]string{
+				"overprovisioned":            "true",
+				"lock-memory":                "false",
+				"smp":                        "2",
+				"abort-on-seastar-bad-alloc": "true",
+			},
+		}, {
+			name: "err if flag and additional_start_flags are present",
+			args: args{
+				flags: map[string]string{maxIoRequestsFlag: "2"},
+				conf: &config.Config{Rpk: config.RpkConfig{
+					AdditionalStartFlags: []string{"--max-io-requests=3"},
+				}},
+			},
+			expErr: true,
+		}, {
+			name: "get the io property file from the default location",
+			args: args{
+				conf: &config.Config{},
+			},
+			writeIoCfg: true,
+			exp: map[string]string{
+				"io-properties-file": "io-config.yaml",
+				// These 2 are false because of the empty config
+				"overprovisioned": "false",
+				"lock-memory":     "false",
+			},
+		}, {
+			name: "get the io property from the  ioResolver",
+			args: args{
+				conf: &config.Config{},
+				ioResolver: func(_ *config.Config, _ bool) (*iotune.IoProperties, error) {
+					return &iotune.IoProperties{
+						MountPoint:     "/mnt/",
+						ReadIops:       2,
+						ReadBandwidth:  3,
+						WriteIops:      4,
+						WriteBandwidth: 5,
+					}, nil
+				},
+			},
+			exp: map[string]string{
+				"io-properties": `{"disks":[{"mountpoint":"/mnt/","read_iops":2,"read_bandwidth":3,"write_iops":4,"write_bandwidth":5}]}`,
+				// These 2 are false because of the empty config
+				"overprovisioned": "false",
+				"lock-memory":     "false",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+
+			if tt.writeIoCfg {
+				err := afero.WriteFile(fs, "io-config.yaml", []byte{}, 0o655)
+				require.NoError(t, err)
+			}
+
+			cmdFlag := NewStartCommand(fs, &noopLauncher{}).Flags()
+			if len(tt.args.flags) > 0 {
+				for k, v := range tt.args.flags {
+					err := cmdFlag.Set(k, v)
+					require.NoError(t, err)
+				}
+			}
+
+			ioResolver := func(*config.Config, bool) (*iotune.IoProperties, error) {
+				return nil, nil
+			}
+			if tt.args.ioResolver != nil {
+				ioResolver = tt.args.ioResolver
+			}
+
+			// We can safely pass 'skipCheck:true' to buildRedpandaFlags since
+			// this is only used for the ioResolver function, and we are mocking
+			// it.
+			rpArgs, err := buildRedpandaFlags(fs, tt.args.conf, tt.args.args, tt.args.sFlags, cmdFlag, true, ioResolver)
+			if tt.expErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			// We will just test the output of the built flags, since the other
+			// field of the struct is the config file location which we are
+			// writing in a MemMap FS in the test
+			require.Equal(t, tt.exp, rpArgs.SeastarFlags)
+		})
+	}
+}
+
+func intPtr(i int) *int {
+	return &i
 }
