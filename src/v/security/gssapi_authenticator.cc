@@ -28,6 +28,7 @@
 #include <array>
 #include <sstream>
 #include <string_view>
+#include <utility>
 
 namespace security {
 
@@ -142,8 +143,9 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
           [this, auth_bytes]() { return ssfcap(auth_bytes); });
     }
     case state::ssfreq: {
-        co_return co_await _worker.submit(
-          [this, auth_bytes]() { return ssfreq(auth_bytes); });
+        co_return co_await _worker.submit([this, auth_bytes, rules = _rules]() {
+            return ssfreq(auth_bytes, rules);
+        });
     }
     case state::complete:
     case state::failed:
@@ -301,7 +303,8 @@ result<bytes> gssapi_authenticator::ssfcap(bytes_view auth_bytes) {
     return bytes{bytes_view{output_token}};
 }
 
-result<bytes> gssapi_authenticator::ssfreq(bytes_view auth_bytes) {
+result<bytes> gssapi_authenticator::ssfreq(
+  bytes_view auth_bytes, const std::vector<gssapi_rule>& rules) {
     gss::buffer_view input_token{auth_bytes};
     gss::buffer output_token{};
     OM_uint32 minor_status{};
@@ -326,7 +329,7 @@ result<bytes> gssapi_authenticator::ssfreq(bytes_view auth_bytes) {
           output_token.size());
     }
 
-    if (auto res = check(); res.has_error()) {
+    if (auto res = check(rules); res.has_error()) {
         return res.assume_error();
     }
 
@@ -336,7 +339,8 @@ result<bytes> gssapi_authenticator::ssfreq(bytes_view auth_bytes) {
     return ret;
 }
 
-result<void> gssapi_authenticator::check() {
+result<void>
+gssapi_authenticator::check(const std::vector<gssapi_rule>& rules) {
     OM_uint32 major_status{};
     OM_uint32 minor_status{};
     OM_uint32 lifetime_rec{};
@@ -400,7 +404,7 @@ result<void> gssapi_authenticator::check() {
     //     return errc::invalid_credentials;
     // }
 
-    _principal = get_principal_from_name(source_name);
+    _principal = get_principal_from_name(source_name, rules);
 
     return outcome::success();
 }
@@ -421,8 +425,8 @@ void gssapi_authenticator::fail_impl(
     _state = state::failed;
 }
 
-acl_principal
-gssapi_authenticator::get_principal_from_name(std::string_view source_name) {
+acl_principal gssapi_authenticator::get_principal_from_name(
+  std::string_view source_name, const std::vector<gssapi_rule>& rules) {
     auto krb5_ctx = krb5::context::create();
     if (!krb5_ctx) {
         vlog(
@@ -456,8 +460,8 @@ gssapi_authenticator::get_principal_from_name(std::string_view source_name) {
         return {};
     }
 
-    auto mapped_name = _gssapi_principal_mapper.apply(
-      std::string_view{default_realm.assume_value()}, *parsed_name);
+    auto mapped_name = gssapi_principal_mapper::apply(
+      std::string_view{default_realm.assume_value()}, *parsed_name, rules);
 
     if (!mapped_name) {
         vlog(seclog.warn, "Failed to apply rules to {}", parsed_name);

@@ -115,6 +115,8 @@ server::server(
   , _coproc_partition_manager(coproc_partition_manager)
   , _mtls_principal_mapper(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
+  , _gssapi_principal_mapper(
+      config::shard_local_cfg().sasl_kerberos_principal_mapping.bind())
   , _thread_worker(tw) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
@@ -444,8 +446,7 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
             ctx.sasl()->set_mechanism(
               std::make_unique<security::gssapi_authenticator>(
                 ctx.connection()->server().thread_worker(),
-                config::shard_local_cfg()
-                  .sasl_kerberos_principal_mapping.bind()));
+                ctx.connection()->server().gssapi_principal_mapper().rules()));
         }
     }
 

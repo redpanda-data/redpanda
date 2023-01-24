@@ -380,7 +380,14 @@ gssapi_principal_mapper::gssapi_principal_mapper(
 }
 
 std::optional<ss::sstring> gssapi_principal_mapper::apply(
-  std::string_view default_realm, gssapi_name name) const {
+  std::string_view default_realm, const gssapi_name& name) const {
+    return apply(default_realm, name, _rules);
+}
+
+std::optional<ss::sstring> gssapi_principal_mapper::apply(
+  std::string_view default_realm,
+  const gssapi_name& name,
+  const std::vector<gssapi_rule>& rules) {
     std::vector<std::string_view> params;
     if (name.host_name().empty()) {
         if (name.realm().empty()) {
@@ -391,13 +398,13 @@ std::optional<ss::sstring> gssapi_principal_mapper::apply(
         params = {name.realm(), name.primary(), name.host_name()};
     }
 
-    for (const auto& r : _rules) {
+    for (const auto& r : rules) {
         if (auto result = r.apply(default_realm, params); result.has_value()) {
             return result;
         }
     }
 
-    vlog(seclog.warn, "No rules apply to {}, rules: {}", name, _rules);
+    vlog(seclog.warn, "No rules apply to {}, rules: {}", name, rules);
     return std::nullopt;
 }
 
