@@ -63,6 +63,12 @@ struct convert<ss::socket_address> {
         Node node;
         std::ostringstream o;
         o << rhs.addr();
+        if (!o.good()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "failed to format socket_address, state: {}",
+              o.rdstate()));
+        }
         node["address"] = o.str();
         node["port"] = rhs.port();
         return node;

@@ -10,6 +10,7 @@
 
 #include "cloud_storage_clients/s3_client.h"
 
+#include "bytes/bytes.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/util.h"
@@ -36,6 +37,7 @@
 #include <boost/property_tree/xml_parser.hpp>
 #include <gnutls/crypto.h>
 
+#include <bit>
 #include <exception>
 #include <utility>
 
@@ -279,6 +281,12 @@ request_creator::make_delete_objects_request(
 
         auto out = std::ostringstream{};
         boost::property_tree::write_xml(out, delete_tree);
+        if (!out.good()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "failed to create delete request, state: {}",
+              out.rdstate()));
+        }
         return out.str();
     }();
 
@@ -287,9 +295,7 @@ request_creator::make_delete_objects_request(
         auto hash = internal::hash<GNUTLS_DIG_MD5, 16>{};
         hash.update(body);
         auto bin_digest = hash.reset();
-        return bytes_to_base64(
-          {reinterpret_cast<const uint8_t*>(bin_digest.data()),
-           bin_digest.size()});
+        return bytes_to_base64(to_bytes_view(bin_digest));
     }();
 
     auto header = http::client::request_header{};
