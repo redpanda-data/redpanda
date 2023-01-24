@@ -51,8 +51,8 @@ ss::future<> cloud_storage_config::do_mutate() {
             || config::shard_local_cfg().cloud_storage_enable_remote_write();
 
         if (
-          props.retention_local_target_bytes.has_value()
-          || props.retention_local_target_ms.has_value()) {
+          props.retention_local_target_bytes.has_optional_value()
+          || props.retention_local_target_ms.has_optional_value()) {
             // This may be a retry, if we got partway through an upgrade and
             // were interrupted: do not keep emitting configuration update
             // events for all topics

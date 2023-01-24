@@ -388,7 +388,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     // - key is not null - tristate is enabled and set
     if (!_topic_config->properties.retention_bytes.is_disabled()) {
         w.Key("retention_bytes");
-        if (_topic_config->properties.retention_bytes.has_value()) {
+        if (_topic_config->properties.retention_bytes.has_optional_value()) {
             w.Int64(_topic_config->properties.retention_bytes.value());
         } else {
             w.Null();
@@ -396,7 +396,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     }
     if (!_topic_config->properties.retention_duration.is_disabled()) {
         w.Key("retention_duration");
-        if (_topic_config->properties.retention_duration.has_value()) {
+        if (_topic_config->properties.retention_duration.has_optional_value()) {
             w.Int64(
               _topic_config->properties.retention_duration.value().count());
         } else {

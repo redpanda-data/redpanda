@@ -403,7 +403,8 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
     auto topic = app.controller->get_topics_state().local().get_topic_cfg(
       tp_ns);
     BOOST_REQUIRE(topic.has_value());
-    BOOST_REQUIRE(topic->properties.retention_local_target_ms.has_value());
+    BOOST_REQUIRE(
+      topic->properties.retention_local_target_ms.has_optional_value());
     BOOST_REQUIRE_EQUAL(
       topic->properties.retention_local_target_ms.value().count(), 10000);
 }
@@ -429,7 +430,8 @@ FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
     auto topic = app.controller->get_topics_state().local().get_topic_cfg(
       tp_ns);
     BOOST_REQUIRE(topic.has_value());
-    BOOST_REQUIRE(topic->properties.retention_local_target_bytes.has_value());
+    BOOST_REQUIRE(
+      topic->properties.retention_local_target_bytes.has_optional_value());
     BOOST_REQUIRE_EQUAL(
       topic->properties.retention_local_target_bytes.value(), 10000);
 }

@@ -421,7 +421,7 @@ template<typename T>
 void write(iobuf& out, tristate<T> t) {
     if (t.is_disabled()) {
         write<int8_t>(out, -1);
-    } else if (!t.has_value()) {
+    } else if (!t.has_optional_value()) {
         write<int8_t>(out, 0);
     } else {
         write<int8_t>(out, 1);

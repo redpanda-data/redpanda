@@ -244,11 +244,11 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
         config_entries[topic_property_segment_size] = from_config_type(
           *properties.segment_size);
     }
-    if (properties.retention_bytes.has_value()) {
+    if (properties.retention_bytes.has_optional_value()) {
         config_entries[topic_property_retention_bytes] = from_config_type(
           properties.retention_bytes.value());
     }
-    if (properties.retention_duration.has_value()) {
+    if (properties.retention_duration.has_optional_value()) {
         config_entries[topic_property_retention_duration] = from_config_type(
           *properties.retention_duration);
     }
@@ -284,12 +284,12 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
           *properties.read_replica_bucket);
     }
 
-    if (properties.retention_local_target_bytes.has_value()) {
+    if (properties.retention_local_target_bytes.has_optional_value()) {
         config_entries[topic_property_retention_local_target_bytes]
           = from_config_type(*properties.retention_local_target_bytes);
     }
 
-    if (properties.retention_local_target_ms.has_value()) {
+    if (properties.retention_local_target_ms.has_optional_value()) {
         config_entries[topic_property_retention_local_target_ms]
           = from_config_type(*properties.retention_local_target_ms);
     }
@@ -297,7 +297,7 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
     config_entries[topic_property_remote_delete] = from_config_type(
       properties.remote_delete);
 
-    if (properties.segment_ms.has_value()) {
+    if (properties.segment_ms.has_optional_value()) {
         config_entries[topic_property_segment_ms] = from_config_type(
           properties.segment_ms.value());
     }

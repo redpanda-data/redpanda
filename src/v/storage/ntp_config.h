@@ -164,7 +164,7 @@ public:
             if (_overrides->retention_bytes.is_disabled()) {
                 return std::nullopt;
             }
-            if (_overrides->retention_bytes.has_value()) {
+            if (_overrides->retention_bytes.has_optional_value()) {
                 return _overrides->retention_bytes.value();
             }
             // If no value set, fall through and use the cluster-wide default.
@@ -178,7 +178,7 @@ public:
             if (_overrides->retention_time.is_disabled()) {
                 return std::nullopt;
             }
-            if (_overrides->retention_time.has_value()) {
+            if (_overrides->retention_time.has_optional_value()) {
                 return _overrides->retention_time.value();
             }
             // If no value set, fall through and use the cluster-wide default.
@@ -227,7 +227,7 @@ public:
             if (_overrides->segment_ms.is_disabled()) {
                 return std::nullopt;
             }
-            if (_overrides->segment_ms.has_value()) {
+            if (_overrides->segment_ms.has_optional_value()) {
                 return _overrides->segment_ms.value();
             }
             // fall through to server config

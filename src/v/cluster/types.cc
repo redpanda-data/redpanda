@@ -133,14 +133,13 @@ bool topic_properties::is_compacted() const {
 
 bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
-           || retention_bytes.has_value() || retention_bytes.is_disabled()
-           || retention_duration.has_value() || retention_duration.is_disabled()
+           || retention_bytes.is_engaged() || retention_duration.is_engaged()
            || recovery.has_value() || shadow_indexing.has_value()
            || read_replica.has_value() || batch_max_bytes.has_value()
-           || retention_local_target_bytes.has_value()
-           || retention_local_target_ms.has_value()
+           || retention_local_target_bytes.is_engaged()
+           || retention_local_target_ms.is_engaged()
            || remote_delete != storage::ntp_config::default_remote_delete
-           || segment_ms.has_value() || segment_ms.is_disabled();
+           || segment_ms.is_engaged();
 }
 
 storage::ntp_config::default_overrides

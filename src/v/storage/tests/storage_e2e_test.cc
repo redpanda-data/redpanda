@@ -3251,14 +3251,14 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
         }
 
         if (
-          tc.topic_cloud_bytes.has_value()
+          tc.topic_cloud_bytes.has_optional_value()
           || tc.topic_cloud_bytes.is_disabled()) {
             have_overrides = true;
             overrides.retention_bytes = tc.topic_cloud_bytes;
         }
 
         if (
-          tc.topic_cloud_bytes.has_value()
+          tc.topic_cloud_bytes.has_optional_value()
           || tc.topic_cloud_bytes.is_disabled()) {
             have_overrides = true;
             overrides.retention_local_target_bytes = tc.topic_cloud_bytes;
