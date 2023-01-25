@@ -112,12 +112,11 @@ void ntp_archiver::notify_leadership(std::optional<model::node_id> leader_id) {
 }
 
 ss::future<> ntp_archiver::upload_until_abort() {
-    if (!_probe) {
-        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
-    }
-
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
+            if (_probe.has_value()) {
+                _probe = {};
+            }
             bool shutdown = false;
             try {
                 vlog(_rtclog.debug, "upload loop waiting for leadership");
@@ -134,6 +133,9 @@ ss::future<> ntp_archiver::upload_until_abort() {
 
             // We were signalled that we became leader: fall through and
             // start the upload loop.
+        }
+        if (!_probe.has_value()) {
+            _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
         }
 
         _start_term = _parent.term();
@@ -160,12 +162,11 @@ ss::future<> ntp_archiver::upload_until_abort() {
 }
 
 ss::future<> ntp_archiver::sync_manifest_until_abort() {
-    if (!_probe) {
-        _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
-    }
-
     while (!_as.abort_requested()) {
         if (!_parent.is_elected_leader()) {
+            if (_probe.has_value()) {
+                _probe = {};
+            }
             bool shutdown = false;
             try {
                 vlog(
@@ -183,6 +184,9 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
 
             // We were signalled that we became leader: fall through and
             // start the upload loop.
+        }
+        if (!_probe.has_value()) {
+            _probe.emplace(_conf->ntp_metrics_disabled, _ntp);
         }
 
         _start_term = _parent.term();
