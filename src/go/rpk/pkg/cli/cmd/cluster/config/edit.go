@@ -55,7 +55,8 @@ to edit all properties including these tunables.
 			out.MaybeDie(err, "unable to query config schema: %v", err)
 
 			// GET current config
-			currentConfig, err := client.Config(cmd.Context())
+
+			currentConfig, err := client.Config(cmd.Context(), true)
 			out.MaybeDie(err, "unable to get current config: %v", err)
 
 			err = executeEdit(cmd.Context(), client, schema, currentConfig, all)
@@ -116,7 +117,7 @@ func executeEdit(
 	}
 
 	// Read back template & parse
-	err = importConfig(ctx, client, filename, currentConfig, schema, *all)
+	err = importConfig(ctx, client, filename, currentConfig, currentConfig, schema, *all)
 	if err != nil {
 		return fmt.Errorf("error updating config: %v", err)
 	}

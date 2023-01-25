@@ -187,7 +187,7 @@ func (*unavailableError) Error() string {
 	return "unavailable"
 }
 
-func (m *mockAdminAPI) Config(_ context.Context) (admin.Config, error) {
+func (m *mockAdminAPI) Config(context.Context, bool) (admin.Config, error) {
 	m.monitor.Lock()
 	defer m.monitor.Unlock()
 	if m.unavailable {
