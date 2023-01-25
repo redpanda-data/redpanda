@@ -84,30 +84,28 @@ static ss::future<result<iobuf>> verify_read_iobuf(
   size_t expected,
   ss::sstring msg,
   bool recover = false) {
-    return read_iobuf_exactly(in, expected)
-      .then([msg = std::move(msg), expected, recover](iobuf b) {
-          if (likely(b.size_bytes() == expected)) {
-              return ss::make_ready_future<result<iobuf>>(std::move(b));
-          }
-          if (!recover) {
-              stlog.error(
-                "cannot continue parsing. recived size:{} bytes, expected:{} "
-                "bytes. context:{}",
-                b.size_bytes(),
-                expected,
-                msg);
-          } else {
-              stlog.debug(
-                "recovery ended with short read. recived size:{} bytes, "
-                "expected:{} "
-                "bytes. context:{}",
-                b.size_bytes(),
-                expected,
-                msg);
-          }
-          return ss::make_ready_future<result<iobuf>>(
-            parser_errc::input_stream_not_enough_bytes);
-      });
+    auto b = co_await read_iobuf_exactly(in, expected);
+
+    if (likely(b.size_bytes() == expected)) {
+        co_return b;
+    }
+    if (!recover) {
+        stlog.error(
+          "cannot continue parsing. recived size:{} bytes, expected:{} "
+          "bytes. context:{}",
+          b.size_bytes(),
+          expected,
+          msg);
+    } else {
+        stlog.debug(
+          "recovery ended with short read. recived size:{} bytes, "
+          "expected:{} "
+          "bytes. context:{}",
+          b.size_bytes(),
+          expected,
+          msg);
+    }
+    co_return parser_errc::input_stream_not_enough_bytes;
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
