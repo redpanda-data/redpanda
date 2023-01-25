@@ -45,7 +45,7 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 			cl, err := admin.NewHostClient(fs, cfg, host)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			conf, err := cl.Config()
+			conf, err := cl.Config(true)
 			out.MaybeDie(err, "unable to request configuration: %v", err)
 
 			marshaled, err := json.MarshalIndent(conf, "", "  ")

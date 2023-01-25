@@ -23,9 +23,14 @@ type Config map[string]interface{}
 
 // Config returns a single admin endpoint's configuration. This errors if
 // multiple URLs are configured.
-func (a *AdminAPI) Config() (Config, error) {
+//
+// If includeDefaults is true, all properties are returned, including those
+// that are simply reporting their defaults.  Otherwise, only properties with
+// non-default values are included (i.e. those which have been set at some
+// point).
+func (a *AdminAPI) Config(includeDefaults bool) (Config, error) {
 	var rawResp []byte
-	err := a.sendAny(http.MethodGet, "/v1/config", nil, &rawResp)
+	err := a.sendAny(http.MethodGet, fmt.Sprintf("/v1/cluster_config?include_defaults=%t", includeDefaults), nil, &rawResp)
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +74,7 @@ type ConfigPropertyMetadata struct {
 	Description  string              `json:"description"`           // One liner human readable string
 	Nullable     bool                `json:"nullable"`              // If true, may be null
 	NeedsRestart bool                `json:"needs_restart"`         // If true, won't take effect until restart
+	IsSecret     bool                `json:"is_secret"`             // If true, the field should be redacted.
 	Visibility   string              `json:"visibility"`            // One of 'user', 'deprecated', 'tunable'
 	Units        string              `json:"units,omitempty"`       // A unit like 'ms', or empty.
 	Example      string              `json:"example,omitempty"`     // A non-default value for use in docs or tests
