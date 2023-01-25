@@ -539,7 +539,7 @@ void segment::advance_stable_offset(size_t offset) {
 
     _reader.set_file_size(it->first);
     _tracker.stable_offset = it->second;
-    _inflight.erase(_inflight.begin(), it);
+    _inflight.erase(_inflight.begin(), std::next(it));
 }
 
 std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {
