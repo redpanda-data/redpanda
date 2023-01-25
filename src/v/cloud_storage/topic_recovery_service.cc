@@ -182,6 +182,12 @@ ss::future<> topic_recovery_service::propagate_state(state s) {
     });
 }
 
+static bool
+is_topic_manifest(const cloud_storage_clients::client::list_bucket_item& item) {
+    return std::regex_match(
+      item.key.cbegin(), item.key.cend(), manifest_path_expr);
+}
+
 ss::future<result<void, recovery_error_ctx>>
 topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     if (is_active()) {
@@ -224,7 +230,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     co_await propagate_state(state::scanning_bucket);
     vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
     auto bucket_contents_result = co_await _remote.local().list_objects(
-      _config.bucket, fib);
+      _config.bucket, fib, std::nullopt, is_topic_manifest);
 
     if (bucket_contents_result.has_error()) {
         auto error = recovery_error_ctx::make(
@@ -381,11 +387,12 @@ topic_recovery_service::filter_existing_topics(
     }
 
     for (const auto& item : items) {
-        std::string s{item.key.data(), item.key.size()};
-
-        std::smatch matches;
+        // Although we filter for topic manifest pattern earlier, we still use
+        // this regex match here to extract the namespace and topic from the
+        // pattern.
+        std::cmatch matches;
         const auto is_topic_manifest = std::regex_match(
-          s, matches, manifest_path_expr);
+          item.key.cbegin(), item.key.cend(), matches, manifest_path_expr);
         if (!is_topic_manifest) {
             continue;
         }
