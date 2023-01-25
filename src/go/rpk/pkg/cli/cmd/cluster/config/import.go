@@ -35,6 +35,40 @@ func (fe *formattedError) Error() string {
 	return fe.s
 }
 
+// clusterConfig represents a redpanda configuration.
+type clusterConfig map[string]interface{}
+
+// A custom unmarshal is needed because go-yaml parse "YYYY-MM-DD" as a full
+// timestamp, writing YYYY-MM-DD HH:MM:SS +0000 UTC when encoding, so we are
+// going to treat timestamps as strings.
+// See: https://github.com/go-yaml/yaml/issues/770
+
+func replaceTimestamp(n *yaml.Node) {
+	if len(n.Content) == 0 {
+		return
+	}
+	for _, innerNode := range n.Content {
+		if innerNode.Tag == "!!map" {
+			replaceTimestamp(innerNode)
+		}
+		if innerNode.Tag == "!!timestamp" {
+			innerNode.Tag = "!!str"
+		}
+	}
+}
+
+func (c *clusterConfig) UnmarshalYAML(n *yaml.Node) error {
+	replaceTimestamp(n)
+
+	var a map[string]interface{}
+	err := n.Decode(&a)
+	if err != nil {
+		return err
+	}
+	*c = a
+	return nil
+}
+
 func importConfig(
 	ctx context.Context,
 	client *admin.AdminAPI,
@@ -48,7 +82,7 @@ func importConfig(
 	if err != nil {
 		return fmt.Errorf("error reading file %s: %v", filename, err)
 	}
-	var readbackConfig admin.Config
+	var readbackConfig clusterConfig
 	err = yaml.Unmarshal(readbackBytes, &readbackConfig)
 	if err != nil {
 		return fmt.Errorf("error parsing edited config: %v", err)
