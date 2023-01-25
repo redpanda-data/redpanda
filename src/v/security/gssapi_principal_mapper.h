@@ -111,7 +111,13 @@ public:
     explicit gssapi_principal_mapper(
       config::binding<std::vector<ss::sstring>> principal_to_local_rules_cb);
     std::optional<ss::sstring>
-    apply(std::string_view default_realm, gssapi_name name) const;
+    apply(std::string_view default_realm, const gssapi_name& name) const;
+    static std::optional<ss::sstring> apply(
+      std::string_view default_realm,
+      const gssapi_name& name,
+      const std::vector<gssapi_rule>& rules);
+
+    const std::vector<gssapi_rule>& rules() const noexcept { return _rules; }
 
 private:
     friend struct fmt::formatter<gssapi_principal_mapper>;

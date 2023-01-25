@@ -22,6 +22,7 @@
 #include "net/server.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
+#include "security/gssapi_principal_mapper.h"
 #include "security/mtls.h"
 #include "ssx/fwd.h"
 #include "utils/ema.h"
@@ -135,6 +136,10 @@ public:
         return _fetch_metadata_cache;
     }
 
+    security::gssapi_principal_mapper& gssapi_principal_mapper() {
+        return _gssapi_principal_mapper;
+    }
+
     latency_probe& latency_probe() { return _probe; }
 
     ssx::thread_worker& thread_worker() { return _thread_worker; }
@@ -163,6 +168,7 @@ private:
     std::optional<qdc_monitor> _qdc_mon;
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;
+    security::gssapi_principal_mapper _gssapi_principal_mapper;
 
     class latency_probe _probe;
     ssx::thread_worker& _thread_worker;

@@ -30,10 +30,9 @@ public:
     static constexpr const char* name = "GSSAPI";
 
     gssapi_authenticator(
-      ssx::thread_worker& thread_worker,
-      config::binding<std::vector<ss::sstring>> cb)
+      ssx::thread_worker& thread_worker, std::vector<gssapi_rule> rules)
       : _worker{thread_worker}
-      , _gssapi_principal_mapper(std::move(cb)) {}
+      , _rules{std::move(rules)} {}
 
     ss::future<result<bytes>> authenticate(bytes) override;
 
@@ -48,8 +47,8 @@ private:
     result<void> init(ss::sstring principal, ss::sstring keytab);
     result<bytes> more(bytes_view);
     result<bytes> ssfcap(bytes_view);
-    result<bytes> ssfreq(bytes_view);
-    result<void> check();
+    result<bytes> ssfreq(bytes_view, const std::vector<gssapi_rule>& rules);
+    result<void> check(const std::vector<gssapi_rule>& rules);
     void finish();
     void
     fail_impl(OM_uint32 maj_stat, OM_uint32 min_stat, std::string_view msg);
@@ -62,11 +61,12 @@ private:
         auto msg = ssx::sformat(format_str, std::forward<Args>(args)...);
         fail_impl(maj_stat, min_stat, msg);
     }
-    acl_principal get_principal_from_name(std::string_view source_name);
+    acl_principal get_principal_from_name(
+      std::string_view source_name, const std::vector<gssapi_rule>& rules);
 
     ssx::thread_worker& _worker;
-    security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::acl_principal _principal;
+    const std::vector<gssapi_rule> _rules;
     state _state{state::init};
     gss::cred_id _server_creds;
     gss::ctx_id _context;
