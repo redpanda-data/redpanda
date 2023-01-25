@@ -78,6 +78,7 @@ server::server(
   ss::sharded<cluster::config_frontend>& cf,
   ss::sharded<features::feature_table>& ft,
   ss::sharded<quota_manager>& quota,
+  ss::sharded<snc_quota_manager>& snc_quota_mgr,
   ss::sharded<kafka::group_router>& router,
   ss::sharded<cluster::shard_table>& tbl,
   ss::sharded<cluster::partition_manager>& pm,
@@ -98,6 +99,7 @@ server::server(
   , _feature_table(ft)
   , _metadata_cache(meta)
   , _quota_mgr(quota)
+  , _snc_quota_mgr(snc_quota_mgr)
   , _group_router(router)
   , _shard_table(tbl)
   , _partition_manager(pm)

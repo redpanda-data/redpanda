@@ -1731,6 +1731,33 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       5000ms,
       {.min = 1ms, .max = bottomless_token_bucket::max_width})
+  , kafka_quota_balancer_node_period(
+      *this,
+      "kafka_quota_balancer_node_period_ms",
+      "Intra-node throughput quota balancer invocation period, in "
+      "milliseconds. Value of 0 disables the balancer and makes all the "
+      "thoughput quotas immutable.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      750ms,
+      {.min = 0ms})
+  , kafka_quota_balancer_min_shard_thoughput_ratio(
+      *this,
+      "kafka_quota_balancer_min_shard_thoughput_ratio",
+      "The lowest value of the throughput quota a shard can get in the process "
+      "of quota balancing, expressed as a ratio of default shard quota. "
+      "0 means there is no minimum, 1 means no quota can be taken away "
+      "by the balancer.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      0.01,
+      &validate_0_to_1_ratio)
+  , kafka_quota_balancer_min_shard_thoughput_bps(
+      *this,
+      "kafka_quota_balancer_min_shard_thoughput_bps",
+      "The lowest value of the throughput quota a shard can get in the process "
+      "of quota balancing, in bytes/s. 0 means there is no minimum.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      256,
+      {.min = 0})
   , node_isolation_heartbeat_timeout(
       *this,
       "node_isolation_heartbeat_timeout",

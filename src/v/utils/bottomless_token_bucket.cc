@@ -13,6 +13,8 @@
 #include "likely.h"
 #include "vassert.h"
 
+#include <fmt/chrono.h>
+
 void bottomless_token_bucket::use(
   const tokens_t n, const clock::time_point now) noexcept {
     vassert(n >= 0, "Cannot use negative number of tokens");
@@ -48,6 +50,11 @@ void bottomless_token_bucket::update_burst_tokens() noexcept {
     _tokens = std::min(_burst, _tokens);
 }
 
+bottomless_token_bucket::quota_t
+bottomless_token_bucket::get_current_rate() const noexcept {
+    return muldiv(_tokens, time_res_t::period::den, _width.count());
+}
+
 void bottomless_token_bucket::refill(const clock::time_point now) noexcept {
     const auto delta = std::chrono::duration_cast<time_res_t>(
       now - _last_check);
@@ -65,4 +72,22 @@ void bottomless_token_bucket::refill(const clock::time_point now) noexcept {
             _tokens = std::min<tokens_t>(_burst, _tokens + add_tokens);
         }
     }
+}
+
+template<>
+typename fmt::basic_format_context<fmt::appender, char>::iterator
+fmt::formatter<bottomless_token_bucket, char, void>::format<
+  fmt::basic_format_context<fmt::appender, char>>(
+  const bottomless_token_bucket& v,
+  fmt::basic_format_context<fmt::appender, char>& ctx) const {
+    return fmt::format_to(
+      ctx.out(),
+      "{{quota:{}, width:{}, tokens:{}, burst:{}, last_check:{:%S}}}",
+      v._quota,
+      v._width.count(),
+      v._tokens,
+      v._burst,
+      // time_since_epoch() here has no meaning on its own,
+      // we just care about seeing this value change
+      v._last_check.time_since_epoch());
 }

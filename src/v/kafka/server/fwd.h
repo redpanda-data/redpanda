@@ -20,6 +20,7 @@ class fetch_session_cache;
 class group_manager;
 class group_router;
 class quota_manager;
+class snc_quota_manager;
 class request_context;
 class rm_group_frontend;
 class rm_group_proxy_impl;

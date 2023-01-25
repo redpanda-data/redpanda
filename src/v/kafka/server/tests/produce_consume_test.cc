@@ -13,6 +13,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/handlers/produce.h"
+#include "kafka/server/snc_quota_manager.h"
 #include "model/fundamental.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
@@ -205,49 +206,86 @@ single_batch(const size_t volume) {
     return res;
 }
 
-FIXTURE_TEST(test_node_throughput_limits, prod_consume_fixture) {
-    namespace ch = std::chrono;
+namespace ch = std::chrono;
 
-    // configure
-    constexpr uint64_t pershard_rate_limit_in = 9_KiB;
-    constexpr uint64_t pershard_rate_limit_out = 7_KiB;
-    constexpr auto window_width = 200ms;
-    constexpr size_t batch_size = 256;
-    ss::smp::invoke_on_all([&] {
-        auto& config = config::shard_local_cfg();
-        config.get("kafka_throughput_limit_node_in_bps")
-          .set_value(
-            std::make_optional(pershard_rate_limit_in * ss::smp::count));
-        config.get("kafka_throughput_limit_node_out_bps")
-          .set_value(
-            std::make_optional(pershard_rate_limit_out * ss::smp::count));
-        config.get("kafka_quota_balancer_window_ms").set_value(window_width);
-        config.get("fetch_max_bytes").set_value(batch_size);
-        config.get("max_kafka_throttle_delay_ms").set_value(60'000ms);
-    }).get0();
-    wait_for_controller_leadership().get();
-    start();
+struct throughput_limits_fixure : prod_consume_fixture {
+    ch::milliseconds _window_width;
+    ch::milliseconds _balancer_period;
+    int64_t _rate_minimum;
 
-    // PRODUCE 10 KiB in smaller batches, check throttle but do not honour it,
-    // check that has to take 1 s
-    size_t kafka_in_data_len = 0;
-    {
+    void config_set(const std::string_view name, const std::any value) {
+        ss::smp::invoke_on_all([&] {
+            config::shard_local_cfg().get(name).set_value(value);
+        }).get0();
+    }
+
+    void config_set_window_width(const ch::milliseconds window_width) {
+        _window_width = window_width;
+        ss::smp::invoke_on_all([window_width] {
+            config::shard_local_cfg()
+              .get("kafka_quota_balancer_window_ms")
+              .set_value(window_width);
+        }).get0();
+    }
+
+    void config_set_balancer_period(const ch::milliseconds balancer_period) {
+        _balancer_period = balancer_period;
+        ss::smp::invoke_on_all([balancer_period] {
+            config::shard_local_cfg()
+              .get("kafka_quota_balancer_node_period_ms")
+              .set_value(balancer_period);
+        }).get0();
+    }
+
+    void config_set_rate_minimum(const int64_t rate_minimum) {
+        _rate_minimum = rate_minimum;
+        ss::smp::invoke_on_all([rate_minimum] {
+            config::shard_local_cfg()
+              .get("kafka_quota_balancer_min_shard_thoughput_bps")
+              .set_value(rate_minimum);
+        }).get0();
+    }
+
+    int warmup_cycles(const size_t rate_limit, const size_t packet_size) const {
+        // warmup is the number of iterations enough to exhaust the token bucket
+        // at least twice, and for the balancer to run at least 4 times after
+        // that.
+        const int warmup_bytes = rate_limit
+                                 * ch::duration_cast<ch::milliseconds>(
+                                     // token bucket component
+                                     2 * _window_width
+                                     // balancer component
+                                     + 4 * _balancer_period)
+                                     .count()
+                                 / 1000;
+        return warmup_bytes / packet_size + 1;
+    }
+
+    size_t test_ingress(
+      const size_t rate_limit_in,
+      const size_t batch_size,
+      const int tolerance_percent) {
+        size_t kafka_in_data_len = 0;
         constexpr size_t kafka_packet_overhead = 127;
-        const auto batches_cnt = pershard_rate_limit_in
+        // do not divide rate by smp::count because
+        // - balanced case: TP will be balanced and  the entire quota will end
+        // up in one shard
+        // - static case: rate_limit is per shard
+        const auto batches_cnt = /* 1s * */ rate_limit_in
                                  / (batch_size + kafka_packet_overhead);
         ch::steady_clock::time_point start;
         ch::milliseconds throttle_time{};
-        // warmup is the number of iterations enough to exhaust the token bucket
-        // at least twice
-        const int warmup
-          = 2 * pershard_rate_limit_in
-              * ch::duration_cast<ch::milliseconds>(window_width).count() / 1000
-              / (batch_size + kafka_packet_overhead)
-            + 1;
-        for (int k = -warmup; k != batches_cnt; ++k) {
+
+        for (int k = -warmup_cycles(
+               rate_limit_in, batch_size + kafka_packet_overhead);
+             k != batches_cnt;
+             ++k) {
             if (k == 0) {
                 start = ch::steady_clock::now();
                 throttle_time = {};
+                BOOST_TEST_WARN(
+                  false,
+                  "Ingress measurement starts. batches: " << batches_cnt);
             }
             throttle_time += produce_raw(single_batch(batch_size))
                                .then([](const kafka::produce_response& r) {
@@ -259,36 +297,48 @@ FIXTURE_TEST(test_node_throughput_limits, prod_consume_fixture) {
         const auto stop = ch::steady_clock::now();
         const auto wire_data_length = (batch_size + kafka_packet_overhead)
                                       * batches_cnt;
+        const auto rate_estimated = rate_limit_in
+                                    - _rate_minimum * (ss::smp::count - 1);
         const auto time_estimated = ch::milliseconds(
-          wire_data_length * 1000 / pershard_rate_limit_in);
+          wire_data_length * 1000 / rate_estimated);
         BOOST_TEST_CHECK(
-          abs(stop - start - time_estimated) < time_estimated / 25,
-          "stop-start[" << stop - start << "] == time_estimated["
-                        << time_estimated << "] ±4%");
+          abs(stop - start - time_estimated)
+            < time_estimated * tolerance_percent / 100,
+          "Ingress time: stop-start["
+            << stop - start << "] ≈ time_estimated[" << time_estimated << "] ±"
+            << tolerance_percent << "%, error: " << std::setprecision(3)
+            << (stop - start - time_estimated) * 100.0 / time_estimated << "%");
+        return kafka_in_data_len;
     }
 
-    // CONSUME
-    size_t kafka_out_data_len = 0;
-    {
+    size_t test_egress(
+      const size_t kafka_data_available,
+      const size_t rate_limit_out,
+      const size_t batch_size,
+      const int tolerance_percent) {
+        size_t kafka_out_data_len = 0;
         constexpr size_t kafka_packet_overhead = 62;
         ch::steady_clock::time_point start;
         size_t total_size{};
         ch::milliseconds throttle_time{};
-        const int warmup
-          = 2 * pershard_rate_limit_out
-              * ch::duration_cast<ch::milliseconds>(window_width).count() / 1000
-              / (batch_size + kafka_packet_overhead)
-            + 1;
         // consume cannot be measured by the number of fetches because the size
         // of fetch payload is up to redpanda, "fetch_max_bytes" is merely a
         // guidance. Therefore the consume test runs as long as there is data
         // to fetch. We only can consume almost as much as have been produced:
-        const auto kafka_data_cap = kafka_in_data_len - batch_size * 2;
-        for (int k = -warmup; kafka_out_data_len < kafka_data_cap; ++k) {
+        const auto kafka_data_cap = kafka_data_available - batch_size * 2;
+        for (int k = -warmup_cycles(
+               rate_limit_out, batch_size + kafka_packet_overhead);
+             kafka_out_data_len < kafka_data_cap;
+             ++k) {
             if (k == 0) {
                 start = ch::steady_clock::now();
                 total_size = {};
                 throttle_time = {};
+                BOOST_TEST_WARN(
+                  false,
+                  "Egress measurement starts. kafka_out_data_len: "
+                    << kafka_out_data_len
+                    << ", kafka_data_cap: " << kafka_data_cap);
             }
             const auto fetch_resp = fetch_next().get0();
             BOOST_REQUIRE_EQUAL(fetch_resp.data.topics.size(), 1);
@@ -304,13 +354,82 @@ FIXTURE_TEST(test_node_throughput_limits, prod_consume_fixture) {
             kafka_out_data_len += kafka_data_len;
         }
         const auto stop = ch::steady_clock::now();
+        const auto rate_estimated = rate_limit_out
+                                    - _rate_minimum * (ss::smp::count - 1);
         const auto time_estimated = ch::milliseconds(
-          total_size * 1000 / pershard_rate_limit_out);
+          total_size * 1000 / rate_estimated);
         BOOST_TEST_CHECK(
-          abs(stop - start - time_estimated) < time_estimated / 25,
-          "stop-start[" << stop - start << "] == time_estimated["
-                        << time_estimated << "] ±4%");
+          abs(stop - start - time_estimated)
+            < (time_estimated * tolerance_percent / 100),
+          "Egress time: stop-start["
+            << stop - start << "] ≈ time_estimated[" << time_estimated << "] ±"
+            << tolerance_percent << "%, error: " << std::setprecision(3)
+            << (stop - start - time_estimated) * 100.0 / time_estimated << "%");
+        return kafka_out_data_len;
     }
+};
+
+FIXTURE_TEST(test_node_throughput_limits_static, throughput_limits_fixure) {
+    // configure
+    constexpr int64_t pershard_rate_limit_in = 9_KiB;
+    constexpr int64_t pershard_rate_limit_out = 7_KiB;
+    constexpr size_t batch_size = 256;
+    config_set(
+      "kafka_throughput_limit_node_in_bps",
+      std::make_optional(pershard_rate_limit_in * ss::smp::count));
+    config_set(
+      "kafka_throughput_limit_node_out_bps",
+      std::make_optional(pershard_rate_limit_out * ss::smp::count));
+    config_set("fetch_max_bytes", batch_size);
+    config_set("max_kafka_throttle_delay_ms", 60'000ms);
+    config_set_window_width(200ms);
+    config_set_balancer_period(0ms);
+    config_set_rate_minimum(0);
+
+    wait_for_controller_leadership().get();
+    start();
+
+    // PRODUCE 10 KiB in smaller batches, check throttle but do not honour it,
+    // check that has to take 1 s
+    const size_t kafka_in_data_len = test_ingress(
+      pershard_rate_limit_in, batch_size, 3 /*%*/);
+
+    // CONSUME
+    const size_t kafka_out_data_len = test_egress(
+      kafka_in_data_len, pershard_rate_limit_out, batch_size, 3 /*%*/);
+
+    // otherwise test is not valid:
+    BOOST_REQUIRE_GT(kafka_in_data_len, kafka_out_data_len);
+}
+
+FIXTURE_TEST(test_node_throughput_limits_balanced, throughput_limits_fixure) {
+    // configure
+    constexpr int64_t rate_limit_in = 9_KiB;
+    constexpr int64_t rate_limit_out = 7_KiB;
+    constexpr size_t batch_size = 256;
+    config_set(
+      "kafka_throughput_limit_node_in_bps", std::make_optional(rate_limit_in));
+    config_set(
+      "kafka_throughput_limit_node_out_bps",
+      std::make_optional(rate_limit_out));
+    config_set("fetch_max_bytes", batch_size);
+    config_set("max_kafka_throttle_delay_ms", 60'000ms);
+    config_set("kafka_quota_balancer_min_shard_thoughput_ratio", 0.);
+    config_set_window_width(100ms);
+    config_set_balancer_period(50ms);
+    config_set_rate_minimum(250);
+
+    wait_for_controller_leadership().get();
+    start();
+
+    // PRODUCE 10 KiB in smaller batches, check throttle but do not honour it,
+    // check that has to take 1 s
+    const size_t kafka_in_data_len = test_ingress(
+      rate_limit_in, batch_size, 8 /*%*/);
+
+    // CONSUME
+    size_t kafka_out_data_len = test_egress(
+      kafka_in_data_len, rate_limit_out, batch_size, 8 /*%*/);
 
     // otherwise test is not valid:
     BOOST_REQUIRE_GT(kafka_in_data_len, kafka_out_data_len);

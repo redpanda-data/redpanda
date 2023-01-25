@@ -45,6 +45,7 @@ v_cc_library(
     server/server.cc
     server/protocol_utils.cc
     server/quota_manager.cc
+    server/snc_quota_manager.cc
     server/fetch_session_cache.cc
     server/replicated_partition.cc
     server/partition_proxy.cc
