@@ -123,6 +123,11 @@ public:
             return *this;
         }
 
+        iter& operator-=(ssize_t n) {
+            _index -= n;
+            return *this;
+        }
+
         iter& operator++() {
             ++_index;
             return *this;
@@ -144,6 +149,9 @@ public:
             --*this;
             return tmp;
         }
+
+        iter operator+(difference_type offset) { return iter{*this} += offset; }
+        iter operator-(difference_type offset) { return iter{*this} -= offset; }
 
         bool operator==(const iter&) const = default;
 
