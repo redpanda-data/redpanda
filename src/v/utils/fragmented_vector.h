@@ -114,6 +114,8 @@ public:
         using pointer = value_type*;
         using reference = value_type&;
 
+        iter() = default;
+
         reference operator*() const { return _vec->operator[](_index); }
 
         iter& operator+=(ssize_t n) {
@@ -157,8 +159,8 @@ public:
           : _index(index)
           , _vec(vec) {}
 
-        size_t _index;
-        vec_type* _vec;
+        size_t _index{};
+        vec_type* _vec{};
     };
 
     using const_iterator = iter<true>;
