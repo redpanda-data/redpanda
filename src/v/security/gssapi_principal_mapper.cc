@@ -251,7 +251,7 @@ std::optional<ss::sstring> gssapi_rule::apply(
         }
         const re2::StringPiece base_piece(base->data(), base->size());
         if (_match.empty() || re2::RE2::FullMatch(base_piece, match_regex)) {
-            if (!_from_pattern) {
+            if (_from_pattern_str.empty()) {
                 result = *base;
             } else {
                 result = replace_substitution(

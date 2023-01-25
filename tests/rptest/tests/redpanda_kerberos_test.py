@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from functools import partial
+import json
 import socket
 import time
 
@@ -16,7 +17,7 @@ from ducktape.errors import TimeoutError
 from ducktape.mark import parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError
@@ -195,3 +196,81 @@ class RedpandaKerberosLicenseTest(RedpandaKerberosTestBase):
         wait_until(self._has_license_nag,
                    timeout_sec=self.LICENSE_CHECK_INTERVAL_SEC * 2,
                    err_msg="License nag failed to appear")
+
+
+class RedpandaKerberosRulesTesting(RedpandaKerberosTestBase):
+    def __init__(self, test_context, **kwargs):
+        super(RedpandaKerberosRulesTesting, self).__init__(test_context,
+                                                           num_nodes=3,
+                                                           **kwargs)
+
+    @cluster(num_nodes=3)
+    @parametrize(rules=["RULE:[1:$1test$0](client.*)", "DEFAULT"],
+                 kerberos_principal="client",
+                 rp_user=f"clienttest{REALM}",
+                 expected_topics=["restricted", "always_visible"],
+                 acl=[("restricted", f"clienttest{REALM}"),
+                      ("always_visible", "*")])
+    @parametrize(rules=[
+        "RULE:[2:$1testbad$0](client.*)",
+        "RULE:[1:$1testgood](client.*)s/client(.*)/$1redpanda/U", "DEFAULT"
+    ],
+                 kerberos_principal="client",
+                 rp_user="TESTGOODREDPANDA",
+                 expected_topics=["restricted", "always_visible"],
+                 acl=[("restricted", "TESTGOODREDPANDA"),
+                      ("always_visible", "*")])
+    def test_kerberos_mapping_rules(self, rules: [str],
+                                    kerberos_principal: str, rp_user: str,
+                                    expected_topics: [str], acl: [(str, str)]):
+        self.client.add_primary(primary=kerberos_principal)
+        feature_name = "kafka_gssapi"
+        self.redpanda.logger.info(f"Principals: {self.kdc.list_principals()}")
+        admin = Admin(self.redpanda)
+        admin.put_feature(feature_name, {"state": "active"})
+
+        self.redpanda.await_feature_active(feature_name, timeout_sec=30)
+
+        username, password, mechanism = self.redpanda.SUPERUSER_CREDENTIALS
+        super_rpk = RpkTool(self.redpanda,
+                            username=username,
+                            password=password,
+                            sasl_mechanism=mechanism)
+
+        super_rpk.sasl_create_user(f"User:{rp_user}", "rp123", mechanism)
+
+        for topic, principal in acl:
+            super_rpk.create_topic(topic)
+            super_rpk.sasl_allow_principal(principal,
+                                           ["write", "read", "describe"],
+                                           "topic", topic, username, password,
+                                           mechanism)
+
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("sasl_kerberos_principal_mapping",
+                               json.dumps(rules))
+
+        wait_until(lambda: self._have_expected_topics(kerberos_principal,
+                                                      set(expected_topics)),
+                   timeout_sec=5,
+                   backoff_sec=0.5,
+                   err_msg=f"Did not receive expected set of topics")
+
+    def _have_expected_topics(self, req_principal, topics_set):
+        metadata = self.client.metadata(req_principal)
+        self.logger.debug(f"Metadata (GSSAPI): {metadata}")
+        return {n['topic'] for n in metadata['topics']} == topics_set
+
+    @cluster(num_nodes=3)
+    @parametrize(rules=['default'], expected_error="default")
+    @parametrize(rules=['RULE:[1:$1]', 'RUL'], expected_error="RUL")
+    def test_invalid_kerberos_mapping_rules(self, rules: [str],
+                                            expected_error: str):
+        rpk = RpkTool(self.redpanda)
+        try:
+            rpk.cluster_config_set("sasl_kerberos_principal_mapping",
+                                   json.dumps(rules))
+            assert False
+        except RpkException as e:
+            self.logger.debug(f"Message: {e.stderr}")
+            assert f"Invalid rule: {expected_error}" in e.stderr
