@@ -117,23 +117,28 @@ class gssapi_authenticator::impl {
 public:
     using state = gssapi_authenticator::state;
 
+    template<typename R>
+    struct state_result {
+        gssapi_authenticator::state state;
+        result<R> result;
+    };
+
     impl(
       ss::sstring krb_service_primary,
       ss::sstring keytab,
       std::vector<gssapi_rule> rules,
-      security::acl_principal& rp_user_principal,
-      state& state)
+      security::acl_principal& rp_user_principal)
       : _krb_service_primary{std::move(krb_service_primary)}
       , _keytab{std::move(keytab)}
       , _rules{std::move(rules)}
-      , _rp_user_principal(rp_user_principal)
-      , _state(state) {}
+      , _rp_user_principal(rp_user_principal) {}
 
-    result<void> init();
-    result<bytes> more(bytes_view);
-    result<bytes> ssfcap(bytes_view);
-    result<bytes> ssfreq(bytes_view);
-    result<void> check();
+    state_result<bytes> authenticate(bytes auth_bytes);
+    state_result<void> init();
+    state_result<bytes> more(bytes_view);
+    state_result<bytes> ssfcap(bytes_view);
+    state_result<bytes> ssfreq(bytes_view);
+    state_result<void> check();
     void finish();
     void
     fail_impl(OM_uint32 maj_stat, OM_uint32 min_stat, std::string_view msg);
@@ -152,7 +157,7 @@ public:
     ss::sstring _keytab;
     const std::vector<gssapi_rule> _rules;
     security::acl_principal& _rp_user_principal;
-    state& _state;
+    state _state{state::init};
     gss::cred_id _server_creds;
     gss::ctx_id _context;
 };
@@ -164,8 +169,7 @@ gssapi_authenticator::gssapi_authenticator(
       config::shard_local_cfg().sasl_kerberos_principal(),
       config::shard_local_cfg().sasl_kerberos_keytab(),
       std::move(rules),
-      _principal,
-      _state)} {}
+      _principal)} {}
 
 gssapi_authenticator::~gssapi_authenticator() = default;
 
@@ -176,37 +180,45 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
       _state,
       auth_bytes.size());
 
+    auto res = co_await _worker.submit(
+      [this, auth_bytes{std::move(auth_bytes)}]() mutable {
+          return _impl->authenticate(std::move(auth_bytes));
+      });
+
+    _state = res.state;
+    co_return std::move(res.result);
+}
+
+gssapi_authenticator::impl::state_result<bytes>
+gssapi_authenticator::impl::authenticate(bytes auth_bytes) {
     switch (_state) {
     case state::init: {
-        auto res = co_await _worker.submit(
-          [this]() mutable { return _impl->init(); });
-        if (res.has_error()) {
-            co_return res.assume_error();
+        auto res = init();
+        if (res.result.has_error()) {
+            return {res.state, res.result.assume_error()};
         }
     }
         [[fallthrough]];
     case state::more: {
-        co_return co_await _worker.submit(
-          [this, auth_bytes]() { return _impl->more(auth_bytes); });
+        return more(auth_bytes);
     }
     case state::ssfcap: {
-        co_return co_await _worker.submit(
-          [this, auth_bytes]() { return _impl->ssfcap(auth_bytes); });
+        return ssfcap(auth_bytes);
     }
     case state::ssfreq: {
-        co_return co_await _worker.submit(
-          [this, auth_bytes]() { return _impl->ssfreq(auth_bytes); });
+        return ssfreq(auth_bytes);
     }
     case state::complete:
     case state::failed:
         break;
     }
 
-    _impl->fail(0, 0, "gss {} authenticate failed", _state);
-    co_return errc::invalid_gssapi_state;
+    fail(0, 0, "gss {} authenticate failed", _state);
+    return {_state, errc::invalid_gssapi_state};
 }
 
-result<void> gssapi_authenticator::impl::init() {
+gssapi_authenticator::impl::state_result<void>
+gssapi_authenticator::impl::init() {
     OM_uint32 minor_status{};
     gss::buffer_view service_name{_krb_service_primary};
     gss::name server_name{};
@@ -221,7 +233,7 @@ result<void> gssapi_authenticator::impl::init() {
           "gss {} failed to import service principal {}",
           _state,
           _krb_service_primary);
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
 
     gss_key_value_element_desc elem{.key = "keytab", .value = _keytab.c_str()};
@@ -246,14 +258,15 @@ result<void> gssapi_authenticator::impl::init() {
           _state,
           _krb_service_primary,
           _keytab);
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
 
     _state = state::more;
-    return outcome::success();
+    return {_state, outcome::success()};
 }
 
-result<bytes> gssapi_authenticator::impl::more(bytes_view auth_bytes) {
+gssapi_authenticator::impl::state_result<bytes>
+gssapi_authenticator::impl::more(bytes_view auth_bytes) {
     gss::buffer_view recv_tok{auth_bytes};
     gss::buffer send_tok;
     OM_uint32 minor_status{};
@@ -281,7 +294,7 @@ result<bytes> gssapi_authenticator::impl::more(bytes_view auth_bytes) {
           minor_status,
           "gss {} failed to accept security context",
           _state);
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
 
     bytes ret{bytes_view{send_tok}};
@@ -293,10 +306,11 @@ result<bytes> gssapi_authenticator::impl::more(bytes_view auth_bytes) {
         _state = state::more;
     }
 
-    return ret;
+    return {_state, ret};
 }
 
-result<bytes> gssapi_authenticator::impl::ssfcap(bytes_view auth_bytes) {
+gssapi_authenticator::impl::state_result<bytes>
+gssapi_authenticator::impl::ssfcap(bytes_view auth_bytes) {
     if (!auth_bytes.empty()) {
         fail(
           0,
@@ -304,7 +318,7 @@ result<bytes> gssapi_authenticator::impl::ssfcap(bytes_view auth_bytes) {
           "gss {} expected empty response but got {} bytes",
           _state,
           auth_bytes.size());
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
 
     OM_uint32 minor_status{};
@@ -314,11 +328,11 @@ result<bytes> gssapi_authenticator::impl::ssfcap(bytes_view auth_bytes) {
     if (major_status != GSS_S_COMPLETE) {
         fail(
           major_status, minor_status, "gss {} failed to inquire ssf", _state);
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
     if ((bufset.size() != 1) || (bufset[0].size() != 4)) {
         fail(0, 0, "gss {} unexpected data in ssf", _state);
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
 
     uint32_t ssf{};
@@ -344,15 +358,16 @@ result<bytes> gssapi_authenticator::impl::ssfcap(bytes_view auth_bytes) {
           "gss {} failed to wrap ssf",
           major_status,
           minor_status);
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
 
     vlog(seclog.trace, "gss {} sending {} bytes", _state, output_token.size());
     _state = state::ssfreq;
-    return bytes{bytes_view{output_token}};
+    return {_state, bytes{bytes_view{output_token}}};
 }
 
-result<bytes> gssapi_authenticator::impl::ssfreq(bytes_view auth_bytes) {
+gssapi_authenticator::impl::state_result<bytes>
+gssapi_authenticator::impl::ssfreq(bytes_view auth_bytes) {
     gss::buffer_view input_token{auth_bytes};
     gss::buffer output_token{};
     OM_uint32 minor_status{};
@@ -365,7 +380,7 @@ result<bytes> gssapi_authenticator::impl::ssfreq(bytes_view auth_bytes) {
           "gss {} failed to unwrap ssf of {} bytes",
           _state,
           auth_bytes.size());
-        return errc::invalid_credentials;
+        return {_state, errc::invalid_credentials};
     }
 
     if (output_token.size() < 4) {
@@ -377,17 +392,18 @@ result<bytes> gssapi_authenticator::impl::ssfreq(bytes_view auth_bytes) {
           output_token.size());
     }
 
-    if (auto res = check(); res.has_error()) {
-        return res.assume_error();
+    if (auto res = check(); res.result.has_error()) {
+        return {res.state, res.result.assume_error()};
     }
 
     bytes ret{};
     vlog(seclog.trace, "gss {} sending {} bytes", _state, ret.size());
     finish();
-    return ret;
+    return {_state, ret};
 }
 
-result<void> gssapi_authenticator::impl::check() {
+gssapi_authenticator::impl::state_result<void>
+gssapi_authenticator::impl::check() {
     OM_uint32 major_status{};
     OM_uint32 minor_status{};
     OM_uint32 lifetime_rec{};
@@ -413,21 +429,21 @@ result<void> gssapi_authenticator::impl::check() {
           minor_status,
           "gss {} failed to inquire context",
           _state);
-        return errc::invalid_scram_state;
+        return {_state, errc::invalid_scram_state};
     }
 
     auto target_buf = target.display_name_buffer();
     std::string_view target_name{target_buf};
     if (target_name.empty()) {
         fail(0, 0, "gss {} failed to get service principal", _state);
-        return errc::invalid_scram_state;
+        return {_state, errc::invalid_scram_state};
     }
 
     auto source_buf = source.display_name_buffer();
     std::string_view source_name{source_buf};
     if (source_name.empty()) {
         fail(0, 0, "gss {} failed to get client principal", _state);
-        return errc::invalid_scram_state;
+        return {_state, errc::invalid_scram_state};
     }
 
     vlog(
@@ -453,7 +469,7 @@ result<void> gssapi_authenticator::impl::check() {
 
     _rp_user_principal = get_principal_from_name(source_name);
 
-    return outcome::success();
+    return {_state, outcome::success()};
 }
 
 void gssapi_authenticator::impl::finish() {
