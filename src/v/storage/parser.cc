@@ -78,11 +78,12 @@ static model::record_batch_header header_from_iobuf(iobuf b) {
     hdr.ctx.owner_shard = ss::this_shard_id();
     return hdr;
 }
-
+// make sure that `msg` parameter is a static string or it is not removed before
+// this function finishes
 static ss::future<result<iobuf>> verify_read_iobuf(
   ss::input_stream<char>& in,
   size_t expected,
-  ss::sstring msg,
+  const char* msg,
   bool recover = false) {
     auto b = co_await read_iobuf_exactly(in, expected);
 
