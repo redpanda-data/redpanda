@@ -699,7 +699,8 @@ ss::future<upload_result> remote::delete_objects(
 ss::future<remote::list_result> remote::list_objects(
   const cloud_storage_clients::bucket_name& bucket,
   retry_chain_node& parent,
-  std::optional<cloud_storage_clients::object_key> prefix) {
+  std::optional<cloud_storage_clients::object_key> prefix,
+  std::optional<cloud_storage_clients::client::item_filter> item_filter) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -722,7 +723,8 @@ ss::future<remote::list_result> remote::list_objects(
           std::nullopt,
           std::nullopt,
           continuation_token,
-          fib.get_timeout());
+          fib.get_timeout(),
+          item_filter);
 
         if (res) {
             auto list_result = res.value();

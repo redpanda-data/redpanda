@@ -274,10 +274,13 @@ public:
     /// \param name The bucket to delete from
     /// \param parent The retry chain node to manage timeouts
     /// \param prefix Optional prefix to restrict listing of objects
+    /// \param item_filter Optional filter to apply to items before collecting
     ss::future<list_result> list_objects(
       const cloud_storage_clients::bucket_name& name,
       retry_chain_node& parent,
-      std::optional<cloud_storage_clients::object_key> prefix = std::nullopt);
+      std::optional<cloud_storage_clients::object_key> prefix = std::nullopt,
+      std::optional<cloud_storage_clients::client::item_filter> item_filter
+      = std::nullopt);
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment
