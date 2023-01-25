@@ -591,7 +591,8 @@ abs_client::list_objects(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  std::optional<item_filter> collect_item_if) {
     return send_request(
       do_list_objects(
         name,
@@ -599,7 +600,8 @@ abs_client::list_objects(
         std::move(start_after),
         max_keys,
         std::move(continuation_token),
-        timeout),
+        timeout,
+        std::move(collect_item_if)),
       name,
       object_key{""});
 }
@@ -610,7 +612,8 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   [[maybe_unused]] std::optional<ss::sstring> continuation_token,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  std::optional<item_filter>) {
     auto header = _requestor.make_list_blobs_request(
       name, std::move(prefix), std::move(start_after), max_keys);
     if (!header) {

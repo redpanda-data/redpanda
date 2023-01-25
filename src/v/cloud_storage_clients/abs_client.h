@@ -158,8 +158,8 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      ss::lowres_clock::duration timeout
-      = http::default_connect_timeout) override;
+      ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<item_filter> collect_item_if = std::nullopt) override;
 
     /// Send Delete Blob request
     /// \param name is a container name
@@ -216,7 +216,8 @@ private:
       std::optional<object_key> start_after,
       std::optional<size_t> max_keys,
       std::optional<ss::sstring> continuation_token,
-      ss::lowres_clock::duration timeout);
+      ss::lowres_clock::duration timeout,
+      std::optional<item_filter> collect_item_if = std::nullopt);
 
     abs_request_creator _requestor;
     http::client _client;

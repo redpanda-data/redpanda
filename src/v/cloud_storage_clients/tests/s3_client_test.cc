@@ -571,6 +571,43 @@ SEASTAR_TEST_CASE(test_list_objects_success) {
     });
 }
 
+SEASTAR_TEST_CASE(test_list_objects_with_filter) {
+    return ss::async([] {
+        auto conf = transport_configuration();
+        auto [server, client] = started_client_and_server(conf);
+        iobuf payload;
+        auto payload_stream = make_iobuf_ref_output_stream(payload);
+        const auto result
+          = client
+              ->list_objects(
+                cloud_storage_clients::bucket_name("test-bucket"),
+                cloud_storage_clients::object_key("test"),
+                std::nullopt,
+                std::nullopt,
+                std::nullopt,
+                http::default_connect_timeout,
+                [](const auto& item) { return item.key == "test-key2"; })
+              .get0();
+
+        BOOST_REQUIRE(result);
+        const auto& lst = result.value();
+
+        BOOST_REQUIRE_EQUAL(lst.is_truncated, false);
+
+        BOOST_REQUIRE_EQUAL(lst.contents.size(), 1);
+
+        BOOST_REQUIRE_EQUAL(lst.prefix, "test-prefix");
+        BOOST_REQUIRE_EQUAL(lst.contents[0].key, "test-key2");
+        BOOST_REQUIRE_EQUAL(lst.contents[0].size_bytes, 222);
+        BOOST_REQUIRE_EQUAL(
+          strtime(lst.contents[0].last_modified), "2021-01-10T02:00:00.000Z");
+
+        BOOST_REQUIRE(!result.value().is_truncated);
+        BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "next");
+        server->stop().get();
+    });
+}
+
 SEASTAR_TEST_CASE(test_list_objects_failure) {
     return ss::async([] {
         auto conf = transport_configuration();

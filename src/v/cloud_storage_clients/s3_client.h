@@ -170,8 +170,8 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      ss::lowres_clock::duration timeout
-      = http::default_connect_timeout) override;
+      ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<item_filter> collect_item_if = std::nullopt) override;
 
     ss::future<result<no_response, error_outcome>> delete_object(
       const bucket_name& bucket,
@@ -209,7 +209,8 @@ private:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      ss::lowres_clock::duration timeout = http::default_connect_timeout);
+      ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<item_filter> collect_item_if = std::nullopt);
 
     ss::future<> do_delete_object(
       const bucket_name& bucket,
