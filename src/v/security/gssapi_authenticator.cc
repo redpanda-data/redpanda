@@ -129,11 +129,11 @@ public:
       , _rp_user_principal(rp_user_principal)
       , _state(state) {}
 
-    result<void> init(ss::sstring principal, ss::sstring keytab);
+    result<void> init();
     result<bytes> more(bytes_view);
     result<bytes> ssfcap(bytes_view);
-    result<bytes> ssfreq(bytes_view, const std::vector<gssapi_rule>& rules);
-    result<void> check(const std::vector<gssapi_rule>& rules);
+    result<bytes> ssfreq(bytes_view);
+    result<void> check();
     void finish();
     void
     fail_impl(OM_uint32 maj_stat, OM_uint32 min_stat, std::string_view msg);
@@ -146,8 +146,7 @@ public:
         auto msg = ssx::sformat(format_str, std::forward<Args>(args)...);
         fail_impl(maj_stat, min_stat, msg);
     }
-    acl_principal get_principal_from_name(
-      std::string_view source_name, const std::vector<gssapi_rule>& rules);
+    acl_principal get_principal_from_name(std::string_view source_name);
 
     ss::sstring _krb_service_primary;
     ss::sstring _keytab;
@@ -179,15 +178,8 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
 
     switch (_state) {
     case state::init: {
-        auto principal = config::shard_local_cfg().sasl_kerberos_principal();
-        auto keytab = config::shard_local_cfg().sasl_kerberos_keytab();
-
         auto res = co_await _worker.submit(
-          [this,
-           principal{std::move(principal)},
-           keytab{std::move(keytab)}]() mutable {
-              return _impl->init(std::move(principal), std::move(keytab));
-          });
+          [this]() mutable { return _impl->init(); });
         if (res.has_error()) {
             co_return res.assume_error();
         }
@@ -202,9 +194,8 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
           [this, auth_bytes]() { return _impl->ssfcap(auth_bytes); });
     }
     case state::ssfreq: {
-        co_return co_await _worker.submit([this, auth_bytes]() {
-            return _impl->ssfreq(auth_bytes, _impl->_rules);
-        });
+        co_return co_await _worker.submit(
+          [this, auth_bytes]() { return _impl->ssfreq(auth_bytes); });
     }
     case state::complete:
     case state::failed:
@@ -215,10 +206,9 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
     co_return errc::invalid_gssapi_state;
 }
 
-result<void>
-gssapi_authenticator::impl::init(ss::sstring principal, ss::sstring keytab) {
+result<void> gssapi_authenticator::impl::init() {
     OM_uint32 minor_status{};
-    gss::buffer_view service_name{principal};
+    gss::buffer_view service_name{_krb_service_primary};
     gss::name server_name{};
 
     auto major_status = ::gss_import_name(
@@ -230,11 +220,11 @@ gssapi_authenticator::impl::init(ss::sstring principal, ss::sstring keytab) {
           minor_status,
           "gss {} failed to import service principal {}",
           _state,
-          principal);
+          _krb_service_primary);
         return errc::invalid_credentials;
     }
 
-    gss_key_value_element_desc elem{.key = "keytab", .value = keytab.c_str()};
+    gss_key_value_element_desc elem{.key = "keytab", .value = _keytab.c_str()};
     gss_key_value_set_desc store{.count = 1, .elements = &elem};
 
     major_status = ::gss_acquire_cred_from(
@@ -254,8 +244,8 @@ gssapi_authenticator::impl::init(ss::sstring principal, ss::sstring keytab) {
           minor_status,
           "gss {} failed to acquire credentials for principal {} in keytab {}",
           _state,
-          principal,
-          keytab);
+          _krb_service_primary,
+          _keytab);
         return errc::invalid_credentials;
     }
 
@@ -362,8 +352,7 @@ result<bytes> gssapi_authenticator::impl::ssfcap(bytes_view auth_bytes) {
     return bytes{bytes_view{output_token}};
 }
 
-result<bytes> gssapi_authenticator::impl::ssfreq(
-  bytes_view auth_bytes, const std::vector<gssapi_rule>& rules) {
+result<bytes> gssapi_authenticator::impl::ssfreq(bytes_view auth_bytes) {
     gss::buffer_view input_token{auth_bytes};
     gss::buffer output_token{};
     OM_uint32 minor_status{};
@@ -388,7 +377,7 @@ result<bytes> gssapi_authenticator::impl::ssfreq(
           output_token.size());
     }
 
-    if (auto res = check(rules); res.has_error()) {
+    if (auto res = check(); res.has_error()) {
         return res.assume_error();
     }
 
@@ -398,8 +387,7 @@ result<bytes> gssapi_authenticator::impl::ssfreq(
     return ret;
 }
 
-result<void>
-gssapi_authenticator::impl::check(const std::vector<gssapi_rule>& rules) {
+result<void> gssapi_authenticator::impl::check() {
     OM_uint32 major_status{};
     OM_uint32 minor_status{};
     OM_uint32 lifetime_rec{};
@@ -463,7 +451,7 @@ gssapi_authenticator::impl::check(const std::vector<gssapi_rule>& rules) {
     //     return errc::invalid_credentials;
     // }
 
-    _rp_user_principal = get_principal_from_name(source_name, rules);
+    _rp_user_principal = get_principal_from_name(source_name);
 
     return outcome::success();
 }
@@ -485,7 +473,7 @@ void gssapi_authenticator::impl::fail_impl(
 }
 
 acl_principal gssapi_authenticator::impl::get_principal_from_name(
-  std::string_view source_name, const std::vector<gssapi_rule>& rules) {
+  std::string_view source_name) {
     auto krb5_ctx = krb5::context::create();
     if (!krb5_ctx) {
         vlog(
@@ -520,7 +508,7 @@ acl_principal gssapi_authenticator::impl::get_principal_from_name(
     }
 
     auto mapped_name = gssapi_principal_mapper::apply(
-      std::string_view{default_realm.assume_value()}, *parsed_name, rules);
+      std::string_view{default_realm.assume_value()}, *parsed_name, _rules);
 
     if (!mapped_name) {
         vlog(seclog.warn, "Failed to apply rules to {}", parsed_name);
