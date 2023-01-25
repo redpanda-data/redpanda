@@ -132,6 +132,21 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/controller_status",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get last_applied_offset and commited_index for controller log",
+                    "type": "controller_status",
+                    "nickname": "get_controller_status",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
@@ -180,6 +195,20 @@
                 "since_last_status": {
                     "type": "long",
                     "description": "Milliseconds since last update from peer"
+                }
+            }
+        },
+        "controller_status": {
+            "id": "controller_status",
+            "description": "Controller status",
+            "properties": {
+                "last_applied_offset": {
+                    "type": "long",
+                    "description": "Last applied offset for controller stm"
+                },
+                "commited_index": {
+                    "type": "long",
+                    "description": "Commited index for controller consensus"
                 }
             }
         },
