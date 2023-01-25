@@ -134,6 +134,8 @@ public:
       ss::abort_source& as,
       std::optional<model::term_id> term = std::nullopt);
 
+    model::offset get_last_applied_offset() { return last_applied_offset(); }
+
 private:
     using promise_t = expiring_promise<std::error_code>;
 
