@@ -49,7 +49,7 @@ using http_call = ss::noncopyable_function<ss::future<api_response>(
 ss::future<api_response> static do_request(
   http::client::request_header req, http_call func) {
     try {
-        return func(req);
+        co_return co_await func(req);
     } catch (const std::system_error& ec) {
         if (!is_retryable(ec)) {
             vlog(
@@ -57,15 +57,14 @@ ss::future<api_response> static do_request(
               "abort system error {} while making request {}",
               ec,
               req);
-            return ss::make_ready_future<api_response>(make_abort_error(ec));
+            co_return api_response(make_abort_error(ec));
         } else {
             vlog(
               clrl_log.warn,
               "retryable system error {} while making request {}",
               ec,
               req);
-            return ss::make_ready_future<api_response>(
-              make_retryable_error(ec));
+            co_return api_response(make_retryable_error(ec));
         }
     } catch (const std::exception& e) {
         vlog(
@@ -73,7 +72,7 @@ ss::future<api_response> static do_request(
           "abort exception {} while making request {}",
           e.what(),
           req);
-        return ss::make_ready_future<api_response>(make_abort_error(e));
+        co_return api_response(make_abort_error(e));
     }
 }
 
@@ -132,6 +131,7 @@ static ss::future<api_response> make_post_request(
     auto stream = make_iobuf_input_stream(std::move(content));
     auto tout = timeout.value_or(
       config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
+
     auto response = co_await client.request(std::move(req), stream, tout);
     auto status = co_await get_status(response);
     if (is_retryable(status)) {
