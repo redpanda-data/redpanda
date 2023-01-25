@@ -10,14 +10,26 @@
 #include "storage/types.h"
 
 #include "storage/compacted_index.h"
+#include "storage/logger.h"
 #include "storage/ntp_config.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
+#include "vlog.h"
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 
 namespace storage {
+
+model::offset stm_manager::max_collectible_offset() {
+    model::offset result = model::offset::max();
+    for (const auto& stm : _stms) {
+        auto mco = stm->max_collectible_offset();
+        result = std::min(result, mco);
+        vlog(stlog.trace, "max_collectible_offset[{}] = {}", stm->name(), mco);
+    }
+    return result;
+}
 
 std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
     switch (d) {

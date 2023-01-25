@@ -277,6 +277,8 @@ public:
         return _snapshot.remove_snapshot(_filename);
     }
 
+    const ss::sstring& name() { return _filename; }
+
 private:
     ss::sstring _filename;
     snapshot_manager _snapshot;
