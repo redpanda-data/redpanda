@@ -93,6 +93,8 @@ public:
     void remove_partition_bytes(size_t remove) { _partition_bytes -= remove; }
     void set_compaction_ratio(double r) { _compaction_ratio = r; }
 
+    int64_t get_batch_parse_errors() const { return _batch_parse_errors; }
+
 private:
     uint64_t _partition_bytes = 0;
     uint64_t _bytes_written = 0;
