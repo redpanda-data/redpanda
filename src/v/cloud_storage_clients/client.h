@@ -133,6 +133,11 @@ public:
         std::vector<list_bucket_item> contents;
     };
 
+    /// A predicate to allow list_objects to collect items selectively, saving
+    /// memory. This cannot be ss::noncopyable_function because remote needs to
+    /// copy this object for calls in a loop.
+    using item_filter = std::function<bool(const list_bucket_item&)>;
+
     /// List the objects in a bucket
     ///
     /// \param name is a bucket name
