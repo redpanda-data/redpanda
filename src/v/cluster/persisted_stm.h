@@ -90,6 +90,7 @@ public:
     model::offset max_collectible_offset() override;
     ss::future<std::vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;
+    const ss::sstring& name() override { return _snapshot_mgr.name(); }
 
     virtual ss::future<> remove_persistent_state();
 
