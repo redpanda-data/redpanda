@@ -91,19 +91,20 @@ static ss::future<result<iobuf>> verify_read_iobuf(
         co_return b;
     }
     if (!recover) {
-        stlog.error(
-          "cannot continue parsing. recived size:{} bytes, expected:{} "
-          "bytes. context:{}",
-          b.size_bytes(),
+        vlog(
+          stlog.error,
+          "Stopping parser, short read. Expected to read {} bytes, but read {} "
+          "bytes. context: {}",
           expected,
+          b.size_bytes(),
           msg);
     } else {
-        stlog.debug(
-          "recovery ended with short read. recived size:{} bytes, "
-          "expected:{} "
-          "bytes. context:{}",
-          b.size_bytes(),
+        vlog(
+          stlog.debug,
+          "Recovery ended with short read. Expected to read {} bytes, but read "
+          "{} bytes. context: {}",
           expected,
+          b.size_bytes(),
           msg);
     }
     co_return parser_errc::input_stream_not_enough_bytes;
