@@ -1504,7 +1504,10 @@ class RedpandaService(Service):
         if admin_client is None:
             admin_client = self._admin
 
-        patch_result = admin_client.patch_cluster_config(upsert=values)
+        patch_result = admin_client.patch_cluster_config(
+            upsert={k: v
+                    for k, v in values.items() if v is not None},
+            remove=[k for k, v in values.items() if v is None])
         new_version = patch_result['config_version']
 
         def is_ready():

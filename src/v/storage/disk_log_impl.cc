@@ -10,6 +10,7 @@
 #include "storage/disk_log_impl.h"
 
 #include "config/configuration.h"
+#include "fmt/chrono.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -1071,6 +1072,8 @@ ss::future<> disk_log_impl::do_housekeeping() {
         // skip, time hasn't expired
         co_return;
     }
+
+    vlog(stlog.info, "{} rolling {}", __PRETTY_FUNCTION__, seg_ms.value());
 
     auto pc = last->appender()
                 .get_priority_class(); // note: has_appender is true, the
