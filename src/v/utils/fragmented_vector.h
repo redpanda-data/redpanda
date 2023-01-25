@@ -13,6 +13,8 @@
 #include "vassert.h"
 
 #include <cstddef>
+#include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 /**
@@ -40,6 +42,7 @@ class fragmented_vector {
     static_assert(elems_per_frag >= 1);
 
 public:
+    using this_type = fragmented_vector<T, fragment_size>;
     using value_type = T;
 
     fragmented_vector() noexcept = default;
@@ -78,9 +81,7 @@ public:
     }
 
     T& operator[](size_t index) {
-        vassert(index < _size, "Index out of range {}/{}", index, _size);
-        auto& frag = _frags.at(index / elems_per_frag);
-        return frag.at(index % elems_per_frag);
+        return const_cast<T&>(std::as_const(*this)[index]);
     }
 
     const T& back() const { return _frags.back().back(); }
@@ -104,59 +105,73 @@ public:
         return _frags.size() * (sizeof(_frags[0]) + elems_per_frag * sizeof(T));
     }
 
-    class const_iterator {
+    template<bool C>
+    class iter {
     public:
         using iterator_category = std::random_access_iterator_tag;
-        using value_type = const T;
+        using value_type = typename std::conditional_t<C, const T, T>;
         using difference_type = std::ptrdiff_t;
-        using pointer = const T*;
-        using reference = const T&;
+        using pointer = value_type*;
+        using reference = value_type&;
 
         reference operator*() const { return _vec->operator[](_index); }
 
-        const_iterator& operator+=(ssize_t n) {
+        iter& operator+=(ssize_t n) {
             _index += n;
             return *this;
         }
 
-        const_iterator& operator++() {
+        iter& operator++() {
             ++_index;
             return *this;
         }
 
-        const_iterator& operator--() {
+        iter& operator--() {
             --_index;
             return *this;
         }
 
-        const iter operator++(int) {
+        iter operator++(int) {
             auto tmp = *this;
             ++*this;
             return tmp;
         }
 
-        const iter operator--(int) {
+        iter operator--(int) {
             auto tmp = *this;
             --*this;
             return tmp;
         }
+
+        bool operator==(const iter&) const = default;
+
+        friend ssize_t operator-(const iter& a, const iter& b) {
             return a._index - b._index;
         }
 
     private:
         friend class fragmented_vector;
+        using vec_type = std::conditional_t<C, const this_type, this_type>;
 
-        const_iterator(
-          const fragmented_vector<T, fragment_size>* vec, size_t index)
+        iter(vec_type* vec, size_t index)
           : _index(index)
           , _vec(vec) {}
 
         size_t _index;
-        const fragmented_vector<T, fragment_size>* _vec;
+        vec_type* _vec;
     };
+
+    using const_iterator = iter<true>;
+    using iterator = iter<false>;
+
+    iterator begin() { return iterator(this, 0); }
+    iterator end() { return iterator(this, _size); }
 
     const_iterator begin() const { return const_iterator(this, 0); }
     const_iterator end() const { return const_iterator(this, _size); }
+
+    const_iterator cbegin() const { return const_iterator(this, 0); }
+    const_iterator cend() const { return const_iterator(this, _size); }
 
 private:
     fragmented_vector(const fragmented_vector&) noexcept = default;
