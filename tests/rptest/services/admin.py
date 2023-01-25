@@ -774,6 +774,10 @@ class Admin:
         return self._request("GET", f"debug/peer_status/{peer_id}",
                              node=node).json()
 
+    def get_controller_status(self, node):
+        return self._request("GET", f"debug/controller_status",
+                             node=node).json()
+
     def get_cluster_uuid(self, node):
         try:
             r = self._request("GET", "cluster/uuid", node=node)
