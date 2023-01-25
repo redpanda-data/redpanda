@@ -11,6 +11,8 @@
 #include "cloud_roles/request_response_helpers.h"
 
 #include "bytes/iobuf_istreambuf.h"
+#include "bytes/iostream.h"
+#include "config/configuration.h"
 #include "json/istreamwrapper.h"
 #include "logger.h"
 
@@ -78,8 +80,10 @@ ss::future<api_response> static do_request(
 static ss::future<api_response> make_get_request(
   http::client& client,
   http::client::request_header req,
-  std::chrono::milliseconds timeout) {
-    auto response_stream = co_await client.request(std::move(req), timeout);
+  std::optional<std::chrono::milliseconds> timeout) {
+    auto tout = timeout.value_or(
+      config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
+    auto response_stream = co_await client.request(std::move(req), tout);
     auto status = co_await get_status(response_stream);
     if (is_retryable(status)) {
         co_return make_retryable_error(
@@ -96,11 +100,13 @@ static ss::future<api_response> make_get_request(
 ss::future<api_response> make_request(
   http::client client,
   http::client::request_header req,
-  std::chrono::milliseconds timeout) {
+  std::optional<std::chrono::milliseconds> timeout) {
+    auto tout = timeout.value_or(
+      config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
     return http::with_client(
-      std::move(client), [req = std::move(req), timeout](auto& client) mutable {
-          return do_request(req, [&client, timeout](auto& req) mutable {
-              return make_get_request(client, req, timeout);
+      std::move(client), [req = std::move(req), tout](auto& client) mutable {
+          return do_request(req, [&client, tout](auto& req) mutable {
+              return make_get_request(client, req, tout);
           });
       });
 }
@@ -117,14 +123,16 @@ json::Document parse_json_response(iobuf resp) {
 static ss::future<api_response> make_post_request(
   http::client& client,
   http::client::request_header& req,
-  iobuf&& content,
-  std::chrono::milliseconds timeout) {
+  iobuf content,
+  std::optional<std::chrono::milliseconds> timeout) {
     req.set(
       boost::beast::http::field::content_length,
       boost::beast::to_static_string(content.size_bytes()));
 
     auto stream = make_iobuf_input_stream(std::move(content));
-    auto response = co_await client.request(std::move(req), stream, timeout);
+    auto tout = timeout.value_or(
+      config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
+    auto response = co_await client.request(std::move(req), stream, tout);
     auto status = co_await get_status(response);
     if (is_retryable(status)) {
         co_return make_retryable_error(
@@ -144,17 +152,18 @@ ss::future<api_response> post_request(
   http::client client,
   http::client::request_header req,
   iobuf content,
-  std::chrono::milliseconds timeout) {
+  std::optional<std::chrono::milliseconds> timeout) {
+    auto tout = timeout.value_or(
+      config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
+
     return http::with_client(
       std::move(client),
-      [req = std::move(req), content = std::move(content), timeout](
+      [req = std::move(req), content = std::move(content), tout](
         auto& client) mutable -> ss::future<api_response> {
           return do_request(
             req,
-            [&client, content = std::move(content), timeout](
-              auto& req) mutable {
-                return make_post_request(
-                  client, req, std::move(content), timeout);
+            [&client, content = std::move(content), tout](auto& req) mutable {
+                return make_post_request(client, req, std::move(content), tout);
             });
       });
 }
@@ -163,11 +172,12 @@ ss::future<api_response> post_request(
   http::client client,
   http::client::request_header req,
   seastar::sstring content,
-  std::chrono::milliseconds timeout) {
+  std::optional<std::chrono::milliseconds> timeout) {
     iobuf b;
     b.append(content.data(), content.size());
-    return post_request(
-      std::move(client), std::move(req), std::move(b), timeout);
+    auto tout = timeout.value_or(
+      config::shard_local_cfg().cloud_storage_roles_operation_timeout_ms);
+    return post_request(std::move(client), std::move(req), std::move(b), tout);
 }
 
 std::chrono::system_clock::time_point parse_timestamp(std::string_view sv) {
