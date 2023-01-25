@@ -552,7 +552,8 @@ ss::future<> config_manager::reconcile_status() {
             co_await _reconcile_wait.wait(status_retry);
         } else {
             // We are clean: sleep until signalled.
-            co_await _reconcile_wait.wait();
+            co_await _reconcile_wait.wait(
+              [this]() { return should_send_status(); });
         }
     } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
