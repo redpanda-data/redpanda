@@ -1033,7 +1033,7 @@ ss::future<> disk_log_impl::do_housekeeping() {
     auto gate = _compaction_housekeeping_gate.hold();
     // do_housekeeping races with maybe_roll to use new_segment.
     // take a lock to prevent problems
-    auto lock = _segments_rolling_lock.get_units();
+    auto lock = co_await _segments_rolling_lock.get_units();
 
     if (_segs.empty()) {
         co_return;
