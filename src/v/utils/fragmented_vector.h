@@ -182,6 +182,7 @@ public:
         iter operator-(difference_type offset) { return iter{*this} -= offset; }
 
         bool operator==(const iter&) const = default;
+        auto operator<=>(const iter&) const = default;
 
         friend ssize_t operator-(const iter& a, const iter& b) {
             return a._index - b._index;
