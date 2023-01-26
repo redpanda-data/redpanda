@@ -9,13 +9,21 @@
 import random
 import json
 import re
+import subprocess
 
+from ducktape.mark import ignore
 from ducktape.tests.test import TestLoggerMaker
+from ducktape.utils.util import wait_until
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
+from rptest.services.verifiable_producer import VerifiableProducer
+from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kcl import KCL
+from typing import Optional
 
 
 def get_topics_and_partitions(reassignments: dict):
@@ -40,13 +48,12 @@ def check_execute_reassign_partitions(lines: list[str], reassignments: dict,
     # Line 4 - "Save this to use as the --reassignment-json-file option during rollback"
     # Line 5 - "Successfully started partition reassignments for topic1-p0,topic1-p1,...,topic2-p0,topic2-p1,..."
 
-    # Check the output in reverse order
-
     # The last line should list topic partitions
     line = lines.pop().strip()
     assert line.startswith("Successfully started partition reassignments for ")
     topic_partitions = line.removeprefix(
         "Successfully started partition reassignments for ").split(',')
+
     tp_re = re.compile(r"^(?P<topic>[a-z\-]+?)-(?P<pid>[0-9]+?)$")
     for tp in topic_partitions:
         tp_match = tp_re.match(tp)
@@ -64,7 +71,7 @@ def check_execute_reassign_partitions(lines: list[str], reassignments: dict,
     current_assignment = json.loads(lines.pop().strip())
     assert type(current_assignment) == type({}), "Expected JSON object"
 
-    # Then another set of exact strings
+    # Then another exact string
     assert len(lines.pop()) == 0
     assert lines.pop().strip() == "Current partition replica assignment"
 
@@ -73,7 +80,6 @@ def check_execute_reassign_partitions(lines: list[str], reassignments: dict,
 
 
 def check_verify_reassign_partitions(lines: list[str], reassignments: dict,
-                                     rp_node_idxs: list[str],
                                      logger: TestLoggerMaker):
 
     topic_names, partition_idxs = get_topics_and_partitions(reassignments)
@@ -87,7 +93,6 @@ def check_verify_reassign_partitions(lines: list[str], reassignments: dict,
     #        - An InvalidConfigurationException because the kafka script attempts to alter broker configs
     #          on a per-node basis which Redpanda does not support
 
-    # Reverse the order so we do not have to look at the entire Java exception
     lines.reverse()
 
     # First line is an exact string
@@ -118,25 +123,54 @@ def check_verify_reassign_partitions(lines: list[str], reassignments: dict,
         tp_match = re_match(line)
         logger.debug(f"topic partition match: {line} {tp_match}")
 
-    # The previous line is an empty string
-    assert len(line) == 0
+    if len(lines) != 0:
+        raise RuntimeError(f"Unexpected output: {lines}")
 
-    # Then a line with each node id
+
+def check_cancel_reassign_partitions(lines: list[str], reassignments: dict,
+                                     logger: TestLoggerMaker):
+    topic_names, partition_idxs = get_topics_and_partitions(reassignments)
+
+    # Output has the following structure
+    # Line 0 - "Successfully cancelled partition reassignments for: topic1-p0,topic1-p1,...,topic2-p0,topic2-p1,..."
+    # Line 1 - "None of the specified partition moves are active."
+
+    lines.reverse()
+
+    # The last line should list topic partitions
     line = lines.pop().strip()
-    assert line.startswith("Clearing broker-level throttles on brokers ")
-    node_idxs = line.removeprefix(
-        "Clearing broker-level throttles on brokers ").split(",")
-    node_idxs.sort()
-    rp_node_idxs.sort()
-    logger.debug(f'{node_idxs}  {rp_node_idxs}')
-    assert node_idxs == rp_node_idxs
+    assert line.startswith(
+        "Successfully cancelled partition reassignments for: ")
+    topic_partitions = line.removeprefix(
+        "Successfully cancelled partition reassignments for: ").split(',')
 
-    # Then check for the expected exception
-    assert "Setting broker properties on named brokers is unsupported" in lines.pop(
-    ).strip()
+    tp_re = re.compile(r"^(?P<topic>[a-z\-]+?)-(?P<pid>[0-9]+?)$")
+    for tp in topic_partitions:
+        tp_match = tp_re.match(tp)
+        logger.debug(f"topic partition match: {tp}, {tp_match}")
+        assert tp_match is not None
+        assert tp_match.group("topic") in topic_names
+        assert int(tp_match.group("pid")) in partition_idxs
+
+    # The next lines are exact strings
+    assert lines.pop().strip(
+    ) == "None of the specified partition moves are active."
+
+    if len(lines) != 0:
+        raise RuntimeError(f"Unexpected output: {lines}")
+
+
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'kafka': 'trace',
+                               'kafka/client': 'trace',
+                               'cluster': 'trace',
+                               'raft': 'trace'
+                           })
 
 
 class PartitionReassignmentsTest(RedpandaTest):
+    REPLICAS_COUNT = 3
     PARTITION_COUNT = 3
     topics = [
         TopicSpec(partition_count=PARTITION_COUNT),
@@ -145,34 +179,27 @@ class PartitionReassignmentsTest(RedpandaTest):
 
     def __init__(self, test_context):
         super(PartitionReassignmentsTest,
-              self).__init__(test_context=test_context, num_brokers=4)
+              self).__init__(test_context=test_context,
+                             num_brokers=4,
+                             log_config=log_config)
 
     def get_missing_node_idx(self, lhs: list[int], rhs: list[int]):
         missing_nodes = set(lhs).difference(set(rhs))
         assert len(missing_nodes) == 1, "Expected one missing node"
         return missing_nodes.pop()
 
-    @cluster(num_nodes=4)
-    def test_reassignments(self):
-        initial_assignments = self.client().describe_topics()
-        self.logger.debug(f"Initial assignments: {initial_assignments}")
-
-        all_node_idx = [
-            self.redpanda.node_id(node) for node in self.redpanda.nodes
-        ]
-        self.logger.debug(f"All node idx: { all_node_idx}")
-
+    def make_reassignments_for_cli(self, all_node_idx, initial_assignments):
         reassignments_json = {"version": 1, "partitions": []}
         log_dirs = ["any" for _ in range(self.PARTITION_COUNT)]
 
         for assignment in initial_assignments:
             for partition in assignment.partitions:
-                assert len(partition.replicas) == self.PARTITION_COUNT
+                assert len(partition.replicas) == self.REPLICAS_COUNT
                 missing_node_idx = self.get_missing_node_idx(
                     all_node_idx, partition.replicas)
                 # Replace one of the replicas with the missing one
                 new_replica_assignment = partition.replicas
-                new_replica_assignment[0] = missing_node_idx
+                new_replica_assignment[2] = missing_node_idx
                 reassignments_json["partitions"].append({
                     "topic":
                     assignment.name,
@@ -187,6 +214,69 @@ class PartitionReassignmentsTest(RedpandaTest):
                     f"{assignment.name} partition {partition.id}, new replica assignments: {new_replica_assignment}"
                 )
 
+        return reassignments_json
+
+    def make_producer(self, topic_name: str, throughput: int):
+        prod = VerifiableProducer(self.test_context,
+                                  num_nodes=1,
+                                  redpanda=self.redpanda,
+                                  topic=topic_name,
+                                  throughput=throughput)
+        prod.start()
+        return prod
+
+    def wait_producers(self, producers: list[VerifiableProducer],
+                       num_messages: int):
+        assert num_messages > 0
+
+        for prod in producers:
+            wait_until(lambda: prod.num_acked > num_messages,
+                           timeout_sec=180,
+                           err_msg="Producer failed to produce messages for %ds." %\
+                           60)
+            self.logger.info("Stopping producer after writing up to offsets %s" %\
+                            str(prod.last_acked_offsets))
+            prod.stop()
+
+    def initial_setup_steps(self,
+                            producer_config: dict,
+                            recovery_rate: Optional[int] = None):
+        initial_assignments = self.client().describe_topics()
+        self.logger.debug(f"Initial assignments: {initial_assignments}")
+
+        all_node_idx = [
+            self.redpanda.node_id(node) for node in self.redpanda.nodes
+        ]
+        self.logger.debug(f"All node idx: {all_node_idx}")
+
+        if recovery_rate is not None:
+            self.redpanda.set_cluster_config(
+                {"raft_learner_recovery_rate": str(recovery_rate)})
+
+        assert "throughput" in producer_config
+        assert "topics" in producer_config
+
+        producers = []
+        for topic in producer_config["topics"]:
+            producers.append(
+                self.make_producer(topic,
+                                   throughput=producer_config["throughput"]))
+
+        return initial_assignments, all_node_idx, producers
+
+    @cluster(num_nodes=6)
+    def test_reassignments_kafka_cli(self):
+        initial_assignments, all_node_idx, producers = self.initial_setup_steps(
+            producer_config={
+                "topics": [self.topics[0].name, self.topics[1].name],
+                "throughput": 1024
+            })
+
+        self.wait_producers(producers, num_messages=100000)
+
+        reassignments_json = self.make_reassignments_for_cli(
+            all_node_idx, initial_assignments)
+
         kafka_tools = KafkaCliTools(self.redpanda)
         output = kafka_tools.execute_reassign_partitions(
             reassignments=reassignments_json)
@@ -194,9 +284,248 @@ class PartitionReassignmentsTest(RedpandaTest):
                                           self.logger)
 
         output = kafka_tools.verify_reassign_partitions(
-            reassignments=reassignments_json)
-        rp_node_idxs = [
-            str(self.redpanda.node_id(node)) for node in self.redpanda.nodes
-        ]
+            reassignments=reassignments_json, timeout_s=180)
         check_verify_reassign_partitions(output, reassignments_json,
-                                         rp_node_idxs, self.logger)
+                                         self.logger)
+
+    @cluster(num_nodes=6)
+    def test_reassignments(self):
+        all_topic_names = [self.topics[0].name, self.topics[1].name]
+        initial_assignments, all_node_idx, producers = self.initial_setup_steps(
+            producer_config={
+                "topics": all_topic_names,
+                "throughput": 1024
+            })
+
+        self.wait_producers(producers, num_messages=100000)
+
+        reassignments = {}
+        for assignment in initial_assignments:
+            if assignment.name not in reassignments:
+                reassignments[assignment.name] = {}
+
+            for partition in assignment.partitions:
+                assert partition.id not in reassignments[assignment.name]
+                assert len(partition.replicas) == self.REPLICAS_COUNT
+                missing_node_idx = self.get_missing_node_idx(
+                    all_node_idx, partition.replicas)
+                # Trigger replica add and removal by replacing one of the replicas
+                partition.replicas[2] = missing_node_idx
+                reassignments[assignment.name][
+                    partition.id] = partition.replicas
+
+        self.logger.debug(
+            f"Replacing replicas. New assignments: {reassignments}")
+        kcl = KCL(self.redpanda)
+        kcl.alter_partition_reassignments(reassignments)
+
+        all_partition_idx = [p for p in range(self.PARTITION_COUNT)]
+
+        # Test ListPartitionReassignments with specific topic-partitions
+        responses = kcl.list_partition_reassignments({
+            self.topics[0].name:
+            all_partition_idx,
+            self.topics[1].name:
+            all_partition_idx
+        })
+
+        all_node_idx_set = set(all_node_idx)
+        for res in responses:
+            assert res.topic in all_topic_names
+            assert type(res.partition) == int
+            assert res.partition in all_partition_idx
+            assert set(res.replicas).issubset(all_node_idx_set)
+            assert set(res.adding_replicas).issubset(all_node_idx_set)
+            assert set(res.removing_replicas).issubset(all_node_idx_set)
+
+        self.logger.debug("Wait for reassignments to finish")
+
+        # Wait for the reassignment to finish by checking all
+        # in-progress reassignments
+        def reassignments_done():
+            responses = kcl.list_partition_reassignments()
+            self.logger.debug(responses)
+
+            for res in responses:
+                assert res.topic in all_topic_names
+                assert type(res.partition) == int
+                assert res.partition in all_partition_idx
+                assert set(res.replicas).issubset(all_node_idx_set)
+
+                # Retry if any topic_partition has ongoing reassignments
+                if len(res.adding_replicas) > 0 or len(
+                        res.removing_replicas) > 0:
+                    return False
+            return True
+
+        wait_until(reassignments_done, timeout_sec=180, backoff_sec=1)
+
+        # Test even replica count by adding a replica. Expect a failure because
+        # even replication factor is not supported in Redpanda
+        for topic in reassignments:
+            for pid in reassignments[topic]:
+                # Add a node to the replica set
+                missing_node_idx = self.get_missing_node_idx(
+                    all_node_idx, reassignments[topic][pid])
+                reassignments[topic][pid].append(missing_node_idx)
+
+        self.logger.debug(
+            f"Even replica count by adding. Expect fail. New assignments: {reassignments}"
+        )
+
+        def try_even_replication_factor(topics):
+            try:
+                kcl.alter_partition_reassignments(topics)
+                raise Exception(
+                    "Even replica count accepted but it should be rejected")
+            except RuntimeError as ex:
+                if str(ex) == "Number of replicas != topic replication factor":
+                    pass
+                else:
+                    raise
+
+        try_even_replication_factor(reassignments)
+
+        # Test even replica count by removing two replicas. Expect a failure
+        # because even replication factor is not supported in Redpanda
+        for topic in reassignments:
+            for pid in reassignments[topic]:
+                reassignments[topic][pid].pop()
+                reassignments[topic][pid].pop()
+
+        self.logger.debug(
+            f"Even replica count by removal. Expect fail. New assignments: {reassignments}"
+        )
+        try_even_replication_factor(reassignments)
+
+    @cluster(num_nodes=6)
+    def test_reassignments_cancel(self):
+        initial_assignments, all_node_idx, producers = self.initial_setup_steps(
+            producer_config={
+                "topics": [self.topics[0].name, self.topics[1].name],
+                "throughput": 512
+            },
+            # Set a low throttle to slowdown partition move enough that there is
+            # something to cancel
+            recovery_rate=10)
+
+        self.wait_producers(producers, num_messages=1000)
+
+        reassignments_json = self.make_reassignments_for_cli(
+            all_node_idx, initial_assignments)
+
+        kafka_tools = KafkaCliTools(self.redpanda)
+        output = kafka_tools.execute_reassign_partitions(
+            reassignments=reassignments_json)
+        check_execute_reassign_partitions(output, reassignments_json,
+                                          self.logger)
+
+        try:
+            output = kafka_tools.cancel_reassign_partitions(
+                reassignments=reassignments_json)
+            check_cancel_reassign_partitions(output, reassignments_json,
+                                             self.logger)
+        except subprocess.CalledProcessError as e:
+            self.logger.debug(f"Error {e.returncode}, output {e.output}")
+            if "no_reassignment_in_progress" in e.output:
+                pass
+            else:
+                raise
+
+        output = kafka_tools.verify_reassign_partitions(
+            reassignments=reassignments_json, timeout_s=30)
+        check_verify_reassign_partitions(output, reassignments_json,
+                                         self.logger)
+
+
+class PartitionReassignmentsACLsTest(RedpandaTest):
+    topics = [TopicSpec()]
+    password = "password"
+    algorithm = "SCRAM-SHA-256"
+
+    def __init__(self, test_context):
+        security = SecurityConfig()
+        security.kafka_enable_authorization = True
+        security.endpoint_authn_method = 'sasl'
+        super(PartitionReassignmentsACLsTest,
+              self).__init__(test_context=test_context,
+                             num_brokers=4,
+                             log_config=log_config,
+                             security=security)
+
+    @cluster(num_nodes=4)
+    def test_reassignments_with_acls(self):
+        admin = Admin(self.redpanda)
+        username = "regular_user"
+        admin.create_user(username, self.password, self.algorithm)
+
+        # wait for user to propagate to nodes
+        def user_exists():
+            for node in self.redpanda.nodes:
+                users = admin.list_users(node=node)
+                if username not in users:
+                    return False
+            return True
+
+        wait_until(user_exists, timeout_sec=10, backoff_sec=1)
+
+        # Only one partition is in this test and it does not matter if a
+        # partition is moved since this test is intended to check for
+        # ACLs only. So we hardcode in the replica set assignment
+        reassignments = {self.topic: {0: [1, 2, 3]}}
+        self.logger.debug(f"New replica assignments: {reassignments}")
+
+        kcl = KCL(self.redpanda)
+        user_cred = {
+            "user": username,
+            "passwd": self.password,
+            "method": self.algorithm.lower().replace('-', '_')
+        }
+        try:
+            kcl.alter_partition_reassignments(reassignments,
+                                              user_cred=user_cred)
+            raise Exception(
+                f'AlterPartition with user {user_cred} passed. Expected fail.')
+        except subprocess.CalledProcessError as e:
+            if e.output.startswith("CLUSTER_AUTHORIZATION_FAILED"):
+                pass
+            else:
+                raise
+
+        tps_to_list = {self.topic: [0]}
+        try:
+            kcl.list_partition_reassignments(tps_to_list, user_cred=user_cred)
+            raise Exception(
+                f'ListPartition with user {user_cred} passed. Expected fail.')
+        except subprocess.CalledProcessError as e:
+            if e.output.startswith("CLUSTER_AUTHORIZATION_FAILED"):
+                pass
+            else:
+                raise
+
+        super_username, super_password, super_algorithm = self.redpanda.SUPERUSER_CREDENTIALS
+        user_cred = {
+            "user": super_username,
+            "passwd": super_password,
+            "method": super_algorithm.lower().replace('-', '_')
+        }
+        kcl.alter_partition_reassignments(reassignments, user_cred=user_cred)
+
+        def reassignments_done():
+            responses = kcl.list_partition_reassignments(tps_to_list,
+                                                         user_cred=user_cred)
+            self.logger.debug(responses)
+
+            # Any response means the reassignment is on-going, so before
+            # we retry, check that the output is expected
+            if len(responses) > 0:
+                # Should only be one value, if any, since we are reassigning
+                # one partition
+                assert len(responses) == 1
+                res = responses.pop()
+                assert res.replicas == reassignments[self.topic][0]
+                return False
+
+            return True
+
+        wait_until(reassignments_done, timeout_sec=10, backoff_sec=1)

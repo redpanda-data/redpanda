@@ -13,6 +13,7 @@ import re
 import subprocess
 import time
 import itertools
+from typing import Optional
 
 KclPartitionOffset = namedtuple(
     'KclPartitionOffset',
@@ -31,6 +32,10 @@ KclCreatePartitionsRequestTopic = namedtuple('KclCreatePartitionsRequestTopic',
 
 KclOffsetDeleteResponse = namedtuple(
     'KclOffsetDeleteResponse', ['topic', 'partition', 'status', 'error_msg'])
+
+KclListPartitionReassignmentsResponse = namedtuple(
+    'KclListPartitionReassignmentsResponse',
+    ['topic', 'partition', 'replicas', 'adding_replicas', 'removing_replicas'])
 
 
 class KCL:
@@ -222,6 +227,136 @@ class KCL:
             KclOffsetDeleteResponse(x['topic'], int(x['partition']),
                                     x['status'], x['error']) for x in matched
         ]
+
+    def get_user_credentials_cmd(self,
+                                 user_cred: Optional[dict[str, str]] = None):
+        if user_cred is not None:
+            assert "user" in user_cred
+            assert "passwd" in user_cred
+            assert "method" in user_cred
+            return [
+                "-X", f'sasl_user={user_cred["user"]}', "-X",
+                f'sasl_pass={user_cred["passwd"]}', "-X",
+                f'sasl_method={user_cred["method"]}'
+            ]
+
+        return []
+
+    def alter_partition_reassignments(self,
+                                      topics: dict[str, dict[int, list[int]]],
+                                      user_cred: Optional[dict[str,
+                                                               str]] = None):
+        """
+        :param topics: the key is a topic and the value is a dict that maps partition IDs
+                       to new replica assignments
+        :return: list of KclAlterPartitionReassignmentsResponse
+        """
+        cmd = self.get_user_credentials_cmd(user_cred) + [
+            "admin", "partas", "alter"
+        ]
+
+        for topic in topics:
+            assert len(topics[topic]) > 0
+            reassignment_str = f"{topic}:"
+            partitions = []
+            for pid in topics[topic]:
+                if len(topics[topic][pid]) == 0:
+                    raise NotImplementedError(
+                        'Canceling a reassignment is unsupported')
+
+                part_str = f"{pid}->{topics[topic][pid]}"
+                # Remove empty and [] characters
+                part_str = part_str.replace('[', '').replace(']', '')
+                part_str = part_str.replace(' ', '')
+                partitions.append(part_str)
+            join_partitions = ";".join(partitions)
+            reassignment_str += join_partitions
+            cmd.append(reassignment_str)
+
+        lines = self._cmd(cmd).splitlines()
+        self._redpanda.logger.debug(lines)
+        ok_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +OK$")
+        no_broker_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +BROKER_NOT_AVAILABLE.*$"
+        )
+        bad_rep_factor_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +INVALID_REPLICATION_FACTOR.*$"
+        )
+        for l in lines:
+            l = l.strip()
+            self._redpanda.logger.debug(l)
+
+            m = no_broker_re.match(l)
+            # No broker available means the partition did not find any eligible allocation nodes.
+            # See the map from cluster errors to kafka errors in kafka::map_topic_error_code()
+            if m is not None:
+                raise RuntimeError('No eligible allocation nodes')
+
+            m = bad_rep_factor_re.match(l)
+            # Invalid replication factor means the number of replicas for one (or more) partitions
+            # in a request does not match the replication factor for the topic.
+            if m is not None:
+                raise RuntimeError(
+                    'Number of replicas != topic replication factor')
+
+            m = ok_re.match(l)
+            assert m is not None
+
+        return lines
+
+    def list_partition_reassignments(self,
+                                     topics: Optional[dict[str,
+                                                           list[int]]] = None,
+                                     user_cred: Optional[dict[str,
+                                                              str]] = None):
+        """
+        :param topics: dict where topic name is the key and the value is the list
+                       of partition IDs
+        :return: list of KclListPartitionReassignmentsResponse
+        """
+        cmd = self.get_user_credentials_cmd(user_cred) + [
+            "admin", "partas", "list"
+        ]
+
+        lines = None
+        if topics is None:
+            lines = self._cmd(cmd).splitlines()
+        else:
+            for topic in topics:
+                topic_str = f"{topic}:{topics[topic]}"
+                # Remove empty and [] characters
+                topic_str = topic_str.replace('[', '').replace(']', '')
+                topic_str = topic_str.replace(' ', '')
+                cmd.append(topic_str)
+
+            lines = self._cmd(cmd, attempts=1).splitlines()
+        self._redpanda.logger.debug(lines)
+
+        def replicas_as_int(replicas: list[str]):
+            return [int(node_id) for node_id in replicas]
+
+        res_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +\[(?P<replicas>[0-9 ]+?)\] +\[(?P<adding>[0-9 ]*?)\] +\[(?P<removing>[0-9 ]*?)\]$"
+        )
+        ret = []
+        for l in lines:
+            l = l.strip()
+            self._redpanda.logger.debug(l)
+            m = res_re.match(l)
+            if m is not None:
+                replicas = replicas_as_int(list(m["replicas"].replace(' ',
+                                                                      '')))
+                adding_replicas = replicas_as_int(
+                    list(m["adding"].replace(' ', '')))
+                removing_replicas = replicas_as_int(
+                    list(m["removing"].replace(' ', '')))
+                ret.append(
+                    KclListPartitionReassignmentsResponse(
+                        m['topic'], int(m['partition']), replicas,
+                        adding_replicas, removing_replicas))
+
+        return ret
 
     def _cmd(self, cmd, input=None, attempts=5):
         """
