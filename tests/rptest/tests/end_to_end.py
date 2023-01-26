@@ -178,9 +178,7 @@ class EndToEndTest(Test):
                        num_nodes=1,
                        throughput=1000,
                        repeating_keys=None,
-                       enable_idempotence=False,
-                       transactional=False,
-                       tx_inject_aborts=False):
+                       enable_idempotence=False):
         assert self.redpanda
         assert self.topic
         self.producer = VerifiableProducer(
@@ -191,9 +189,7 @@ class EndToEndTest(Test):
             throughput=throughput,
             message_validator=is_int_with_prefix,
             repeating_keys=repeating_keys,
-            enable_idempotence=enable_idempotence,
-            transactional=transactional,
-            tx_inject_aborts=tx_inject_aborts)
+            enable_idempotence=enable_idempotence)
         self.producer.start()
 
     def on_record_consumed(self, record, node):
