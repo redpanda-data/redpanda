@@ -29,8 +29,8 @@ const readmeArtifact = path.join(artifactFolder, readmeName);
 const publishReadme = path.join(publicFolder, readmeName);
 const publishCmd = "cd public && npm publish --access=public";
 
-var version = "1.0.0";
-var publish = true;
+let version = "1.0.0";
+let publish = true;
 
 if (process.argv.length == 4) {
   const arr = process.argv.splice(2);
@@ -49,7 +49,7 @@ if (process.argv.length == 4) {
 }
 
 const wasmPackageJson = `{
-  "name": "@vectorizedio/wasm-api",
+  "name": "@redpanda-data/wasm-api",
   "version": "${version}",
   "description": "wasm api helps to define wasm function",
   "main": "${dependencyName}",
