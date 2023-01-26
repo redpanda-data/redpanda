@@ -150,9 +150,8 @@ void members_backend::handle_single_update(
     vlog(clusterlog.debug, "membership update received: {}", update);
     switch (update.type) {
     case node_update_type::recommissioned: {
-        auto rev = handle_recommissioned_and_get_decomm_revision(update);
+        stop_node_decommissioning(update.id);
         _updates.emplace_back(update);
-        _updates.back().decommission_update_revision = rev;
         _new_updates.signal();
         return;
     }
@@ -703,12 +702,12 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
       meta.update,
       "recommissioning rebalance must be related with node update");
     vassert(
-      meta.decommission_update_revision,
+      meta.update->decommission_update_revision,
       "Decommission update revision must be present for recommission update "
       "metadata");
 
     auto ntps = ntps_moving_from_node_older_than(
-      meta.update->id, meta.decommission_update_revision.value());
+      meta.update->id, meta.update->decommission_update_revision.value());
     // reallocate all partitions for which any of replicas is placed on
     // decommissioned node
     meta.partition_reallocations.reserve(ntps.size());
@@ -1135,30 +1134,6 @@ ss::future<> members_backend::reallocate_replica_set(
         co_return;
     };
     }
-}
-
-model::revision_id
-members_backend::handle_recommissioned_and_get_decomm_revision(
-  members_manager::node_update& update) {
-    if (!_members.local().contains(update.id)) {
-        return model::revision_id{};
-    }
-    // find related decommissioning update
-    auto it = std::find_if(
-      _updates.begin(), _updates.end(), [id = update.id](update_meta& meta) {
-          return meta.update && meta.update->id == id
-                 && meta.update->type == node_update_type::decommissioned;
-      });
-    vassert(
-      it != _updates.end(),
-      "decommissioning update must still be present as node {} was not yet "
-      "removed from the cluster and it is being decommissioned",
-      update.id);
-    model::revision_id decommission_rev(it->update->offset);
-    // erase related decommissioning update
-    _updates.erase(it);
-
-    return decommission_rev;
 }
 
 void members_backend::stop_node_decommissioning(model::node_id id) {

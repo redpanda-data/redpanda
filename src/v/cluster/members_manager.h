@@ -93,8 +93,13 @@ public:
         model::offset offset;
         // indicates if command needs a raft 0 configuration update
         bool need_raft0_update = false;
+        // revision of a related decommission command, present only in
+        // recommission node_update
+        std::optional<model::revision_id> decommission_update_revision;
+
         friend bool operator==(const node_update&, const node_update&)
           = default;
+
         friend std::ostream& operator<<(std::ostream&, const node_update&);
     };
 
@@ -296,6 +301,9 @@ private:
 
     // Gate with which to guard new work (e.g. if stop() has been called).
     ss::gate _gate;
+
+    // Node membership updates that are currently processed by members_backend
+    absl::flat_hash_map<model::node_id, node_update> _in_progress_updates;
 
     // Cluster membership updates that have yet to be released via the call to
     // get_node_updates().
