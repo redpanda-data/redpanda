@@ -13,7 +13,7 @@ on:
     types: [opened, edited]
 jobs:
   render:
-    if: ${{ ! startsWith(github.event.pull_request.title, 'merge-queue') }}
+    if: ${{ ! ( github.event.pull_request.user.login == 'vbotbuildovich' && startsWith(github.event.pull_request.title, 'merge') ) }}
     runs-on: ubuntu-latest
     steps:
       - name: Curl rpchangelog
