@@ -17,6 +17,7 @@ from rptest.services.redpanda import SISettings, MetricsEndpoint
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer)
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.si_utils import S3Snapshot
 
 
 class CloudRetentionTest(PreallocNodesTest):
@@ -110,25 +111,25 @@ class CloudRetentionTest(PreallocNodesTest):
         producer.wait_for_acks(msg_count, timeout_sec=600, backoff_sec=5)
         producer.wait()
         self.logger.info("finished producing")
+        topics = (TopicSpec(name=self.topic_name,
+                            partition_count=num_partitions), )
 
-        def deleted_segments_count() -> int:
-            metrics = self.redpanda.metrics_sample(
-                "deleted_segments",
-                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        def first_segment_missing():
+            s3_snapshot = S3Snapshot(topics,
+                                     self.redpanda.cloud_storage_client,
+                                     si_settings.cloud_storage_bucket,
+                                     self.logger)
+            try:
+                manifest = s3_snapshot.manifest_for_ntp(self.topic_name, 0)
+            except:
+                return False
 
-            assert metrics, "Deleted segments metric is missing"
-            self.logger.debug(f"Samples: {metrics.samples}")
+            if "segments" not in manifest:
+                return False
+            return "0-1-v1.log" not in manifest["segments"], manifest
 
-            deleted = sum(int(s.value) for s in metrics.samples)
-            self.logger.debug(f"Deleted {deleted} segments from the cloud")
-            return deleted
-
-        def check_num_deleted():
-            num_deleted = deleted_segments_count()
-            self.logger.info(f"number of deleted segments: {num_deleted}")
-            return num_deleted > 0
-
-        wait_until(check_num_deleted, timeout_sec=60, backoff_sec=5)
+        # Wait for some segments to be deleted.
+        wait_until(first_segment_missing, timeout_sec=60, backoff_sec=5)
 
         def check_bucket_size():
             try:
