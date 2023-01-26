@@ -25,6 +25,7 @@ public:
       ss::sharded<health_monitor_frontend>& health_monitor,
       ss::sharded<node_status_table>& node_status_table);
 
+    void start();
     ss::future<> stop();
 
 private:

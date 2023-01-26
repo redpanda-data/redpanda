@@ -23,9 +23,9 @@ node_isolation_watcher::node_isolation_watcher(
   ss::sharded<node_status_table>& node_status_table)
   : _metadata_cache(metadata_cache)
   , _health_monitor(health_monitor)
-  , _node_status_table(node_status_table) {
-    start_isolation_watch_timer();
-}
+  , _node_status_table(node_status_table) {}
+
+void node_isolation_watcher::start() { start_isolation_watch_timer(); }
 
 ss::future<> node_isolation_watcher::stop() {
     _isolation_watch_timer.cancel();
