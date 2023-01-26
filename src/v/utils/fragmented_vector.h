@@ -36,14 +36,40 @@
  * all of the space at once we might benefit from the allocator helping with
  * giving us contiguous memory.
  */
-template<typename T, size_t fragment_size = 8192>
+template<typename T, size_t max_fragment_size = 8192>
 class fragmented_vector {
-    static constexpr size_t elems_per_frag = fragment_size / sizeof(T);
+    // calculate the maximum number of elements per fragment while
+    // keeping the element count a power of two
+    static constexpr size_t calc_elems_per_frag(size_t esize) {
+        size_t max = max_fragment_size / esize;
+        assert(max > 0);
+        // round down to a power of two
+        size_t pow2 = 1;
+        while (pow2 * 2 <= max) {
+            pow2 *= 2;
+        }
+        return pow2;
+    }
+
+    static constexpr size_t elems_per_frag = calc_elems_per_frag(sizeof(T));
+
+    static_assert(
+      (elems_per_frag & (elems_per_frag - 1)) == 0,
+      "element count per fragment must be a power of 2");
     static_assert(elems_per_frag >= 1);
 
 public:
-    using this_type = fragmented_vector<T, fragment_size>;
+    using this_type = fragmented_vector<T, max_fragment_size>;
     using value_type = T;
+
+    /**
+     * The maximum number of bytes per fragment as specified in
+     * as part of the type. Note that for most types, the true
+     * number of bytes in a full fragment may as low as half
+     * of this amount (+1) since the number of elements is restricted
+     * to a power of two.
+     */
+    static constexpr size_t max_frag_bytes = max_fragment_size;
 
     fragmented_vector() noexcept = default;
     fragmented_vector& operator=(const fragmented_vector&) noexcept = delete;
@@ -104,6 +130,11 @@ public:
     size_t memory_size() const {
         return _frags.size() * (sizeof(_frags[0]) + elems_per_frag * sizeof(T));
     }
+
+    /**
+     * Returns the (maximum) number of elements in each fragment of this vector.
+     */
+    static size_t elements_per_fragment() { return elems_per_frag; }
 
     /**
      * Assign from a std::vector.
