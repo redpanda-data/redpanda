@@ -118,16 +118,15 @@ class AccessControlListTest(RedpandaTest):
             # has successfully confirmed that redpanda failed to start.
             return
 
-        # base case user is not a superuser and has no configured ACLs
-        if self.security.sasl_enabled() or enable_authz:
+        if self.security.sasl_enabled():
+            # base case user is not a superuser and has no configured ACLs
             self.admin.create_user("base", self.password, self.algorithm)
 
-        # only grant cluster describe permission to user cluster_describe
-        if self.security.sasl_enabled() or enable_authz:
+            # only grant cluster describe permission to user cluster_describe
             self.admin.create_user("cluster_describe", self.password,
                                    self.algorithm)
-        client = self.get_super_client()
-        client.acl_create_allow_cluster("cluster_describe", "describe")
+            client = self.get_super_client()
+            client.acl_create_allow_cluster("cluster_describe", "describe")
 
         # Hack: create a user, so that we can watch for this user in order to
         # confirm that all preceding controller log writes landed: this is
@@ -142,7 +141,7 @@ class AccessControlListTest(RedpandaTest):
                 users = self.admin.list_users(node=node)
                 if checkpoint_user not in users:
                     return False
-                elif self.security.sasl_enabled() or enable_authz:
+                elif self.security.sasl_enabled():
                     assert "base" in users and "cluster_describe" in users
             return True
 
