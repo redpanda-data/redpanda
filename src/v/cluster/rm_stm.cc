@@ -2529,8 +2529,8 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         const auto pid = entry.pid;
         auto it = _log_state.seq_table.find(pid);
         if (it == _log_state.seq_table.end()) {
-            _log_state.seq_table.try_emplace(
-              it, pid, seq_entry_wrapper{.entry = std::move(entry)});
+            seq_entry_wrapper seq{std::move(entry)};
+            _log_state.seq_table.try_emplace(it, pid, std::move(seq));
         } else if (it->second.entry.seq < entry.seq) {
             it->second.entry = std::move(entry);
         }
