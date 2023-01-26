@@ -15,7 +15,12 @@
 #include <cstddef>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 #include <vector>
+
+namespace test_details {
+struct fragmented_vector_accessor;
+}
 
 /**
  * A very very simple fragmented vector that provides random access like a
@@ -243,6 +248,7 @@ public:
     const_iterator cbegin() const { return const_iterator(this, 0); }
     const_iterator cend() const { return const_iterator(this, _size); }
 
+    friend test_details::fragmented_vector_accessor;
 
     friend std::ostream&
     operator<<(std::ostream& os, const fragmented_vector& v) {
