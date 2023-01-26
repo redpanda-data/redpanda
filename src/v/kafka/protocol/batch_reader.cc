@@ -17,7 +17,6 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
-#include <seastar/core/std-coroutine.hh>
 
 namespace kafka {
 

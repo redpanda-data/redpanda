@@ -45,7 +45,6 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/std-coroutine.hh>
 #include <seastar/http/reply.hh>
 
 #include <absl/container/flat_hash_map.h>
