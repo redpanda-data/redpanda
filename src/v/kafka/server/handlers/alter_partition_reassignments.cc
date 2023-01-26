@@ -246,7 +246,10 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
             }
         }
 
-        resp.data.responses.push_back(topic_response);
+        // Insert into the response if there were valid partitions
+        if (std::distance(topic.partitions.begin(), valid_partitions_end) > 0) {
+            resp.data.responses.emplace_back(std::move(topic_response));
+        }
     }
 
     co_return co_await ctx.respond(std::move(resp));
