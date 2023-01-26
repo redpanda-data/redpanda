@@ -23,21 +23,23 @@ storage_resources::storage_resources(
   config::binding<uint64_t> max_concurrent_replay,
   config::binding<uint64_t> compaction_index_memory)
   : _segment_fallocation_step(falloc_step)
-  , _target_replay_bytes(target_replay_bytes)
+  , _global_target_replay_bytes(target_replay_bytes)
   , _max_concurrent_replay(max_concurrent_replay)
   , _compaction_index_mem_limit(compaction_index_memory)
   , _append_chunk_size(config::shard_local_cfg().append_chunk_size())
-  , _offset_translator_dirty_bytes(_target_replay_bytes() / ss::smp::count)
-  , _configuration_manager_dirty_bytes(_target_replay_bytes() / ss::smp::count)
-  , _stm_dirty_bytes(_target_replay_bytes() / ss::smp::count)
+  , _offset_translator_dirty_bytes(
+      _global_target_replay_bytes() / ss::smp::count)
+  , _configuration_manager_dirty_bytes(
+      _global_target_replay_bytes() / ss::smp::count)
+  , _stm_dirty_bytes(_global_target_replay_bytes() / ss::smp::count)
   , _compaction_index_bytes(_compaction_index_mem_limit())
   , _inflight_recovery(
       std::max(_max_concurrent_replay() / ss::smp::count, uint64_t{1}))
   , _inflight_close_flush(
       std::max(_max_concurrent_replay() / ss::smp::count, uint64_t{1})) {
     // Register notifications on configuration changes
-    _target_replay_bytes.watch([this]() {
-        auto v = _target_replay_bytes() / ss::smp::count;
+    _global_target_replay_bytes.watch([this]() {
+        auto v = _global_target_replay_bytes() / ss::smp::count;
 
         _offset_translator_dirty_bytes.set_capacity(v);
         _stm_dirty_bytes.set_capacity(v);
@@ -97,7 +99,8 @@ void storage_resources::update_min_checkpoint_bytes() {
         // Limit the checkpoint frequency to 2x what it would be under
         // uniform traffic to all partitions. This permits us to overshoot
         // target_replay_bytes by approx 50% under non-uniform writes.
-        _min_checkpoint_bytes = _target_replay_bytes() / (_partition_count * 2);
+        _min_checkpoint_bytes = _global_target_replay_bytes()
+                                / (_partition_count * 2);
     } else {
         _min_checkpoint_bytes = 0;
     }
