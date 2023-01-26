@@ -84,25 +84,20 @@ partitions_request_iterator validate_partitions(
   reassignable_topic_response topic_response,
   std::vector<model::node_id> all_node_ids) {
     // An undefined replicas vector is not an error, see "Replicas" in the
-    // AlterPartitionReassignmentsRequest schemata. Instead of checking for
-    // a null replicas vector in every call to validate_replicas, simply put
-    // those elements first and use iterator magic to run validation on
-    // defined replicas only.
-    auto valid_partitions_end = std::partition(
-      begin, end, [](const reassignable_partition& partition) {
-          return !partition.replicas.has_value();
-      });
+    // AlterPartitionReassignmentsRequest schemata. Therefore checks for
+    // replicas.has_value are necessary.
 
     std::vector<reassignable_partition_response> invalid_partitions;
 
-    valid_partitions_end = validate_replicas(
+    auto valid_partitions_end = validate_replicas(
       begin,
-      valid_partitions_end,
+      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Empty replica list specified in partition reassignment.",
       [](const reassignable_partition& partition) {
-          return !partition.replicas->empty();
+          return !partition.replicas.has_value() ? true
+                                                 : !partition.replicas->empty();
       });
 
     valid_partitions_end = validate_replicas(
@@ -112,11 +107,13 @@ partitions_request_iterator validate_partitions(
       error_code::invalid_replica_assignment,
       "Duplicate replica ids in partition reassignment replica list",
       [](const reassignable_partition& partition) {
-          absl::flat_hash_set<model::node_id> replicas_set;
-          for (auto& node_id : *partition.replicas) {
-              auto res = replicas_set.insert(node_id);
-              if (!res.second) {
-                  return false;
+          if (partition.replicas.has_value()) {
+              absl::flat_hash_set<model::node_id> replicas_set;
+              for (const auto& node_id : *partition.replicas) {
+                  auto res = replicas_set.insert(node_id);
+                  if (!res.second) {
+                      return false;
+                  }
               }
           }
           return true;
@@ -129,6 +126,10 @@ partitions_request_iterator validate_partitions(
       error_code::invalid_replica_assignment,
       "Invalid broker id in replica list",
       [](const reassignable_partition& partition) {
+          if (!partition.replicas.has_value()) {
+              return true;
+          }
+
           auto negative_node_id_it = std::find_if(
             partition.replicas->begin(),
             partition.replicas->end(),
@@ -143,6 +144,10 @@ partitions_request_iterator validate_partitions(
       error_code::invalid_replica_assignment,
       "Replica assignment has brokers that are not alive",
       [&all_node_ids](const reassignable_partition& partition) {
+          if (!partition.replicas.has_value()) {
+              return true;
+          }
+
           auto unkown_broker_id_it = std::find_if(
             partition.replicas->begin(),
             partition.replicas->end(),
