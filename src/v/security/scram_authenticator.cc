@@ -10,6 +10,7 @@
  */
 #include "security/scram_authenticator.h"
 
+#include "security/credential_store.h"
 #include "security/errc.h"
 #include "security/logger.h"
 #include "vlog.h"

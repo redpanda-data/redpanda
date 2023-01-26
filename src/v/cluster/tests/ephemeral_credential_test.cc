@@ -14,6 +14,7 @@
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "security/acl.h"
+#include "security/credential_store.h"
 #include "security/scram_authenticator.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"

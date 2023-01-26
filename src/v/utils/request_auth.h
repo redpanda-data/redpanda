@@ -13,10 +13,10 @@
 
 #include "cluster/fwd.h"
 #include "config/property.h"
+#include "security/fwd.h"
+#include "security/types.h"
 
 #include <seastar/http/request.hh>
-
-#include <security/credential_store.h>
 
 /**
  * Helper for HTTP request handlers that would like to enforce

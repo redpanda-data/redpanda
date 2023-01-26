@@ -17,8 +17,8 @@
 #include "model/record.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
-#include "security/credential_store.h"
 #include "security/scram_credential.h"
+#include "security/types.h"
 #include "serde/serde.h"
 #include "utils/named_type.h"
 

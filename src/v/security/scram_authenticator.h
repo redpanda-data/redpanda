@@ -10,7 +10,7 @@
  */
 #pragma once
 #include "security/acl.h"
-#include "security/credential_store.h"
+#include "security/fwd.h"
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
 

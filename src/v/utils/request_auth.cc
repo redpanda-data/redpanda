@@ -14,6 +14,7 @@
 #include "cluster/controller.h"
 #include "config/configuration.h"
 #include "seastar/http/exception.hh"
+#include "security/credential_store.h"
 #include "security/scram_algorithm.h"
 #include "vlog.h"
 
