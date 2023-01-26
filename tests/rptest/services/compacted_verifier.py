@@ -30,6 +30,7 @@ OUTPUT_LOG = "/opt/remote/var/rw.log"
 
 class Workload(str, Enum):
     IDEMPOTENCY = "IDEMPOTENCY"
+    TX = "TX"
 
 
 class CompactedVerifier(Service):

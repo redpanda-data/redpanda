@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import io.vectorized.compaction.idempotency.IdempotentWorkload;
+import io.vectorized.compaction.tx.TxWorkload;
 import spark.*;
 
 public class App {
@@ -65,6 +66,8 @@ public class App {
 
         if (type.equals("IDEMPOTENCY")) {
           workload = new IdempotentWorkload(req.body());
+        } else if (type.equals("TX")) {
+          workload = new TxWorkload(req.body());
         } else {
           throw new Exception("unknown workload: \"" + type + "\"");
         }
