@@ -236,13 +236,7 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
                       "Failed to cancel pending request: ntp {}, ec {}",
                       ntp,
                       clerr);
-                    // Explicitly check for no_update_in_progress here. We could
-                    // change the mapping in map_topic_error_code but that may
-                    // cause a regression since several places call this
-                    // function
-                    auto kerr = clerr == cluster::errc::no_update_in_progress
-                                  ? error_code::no_reassignment_in_progress
-                                  : map_topic_error_code(clerr);
+                    auto kerr = map_topic_error_code(clerr);
                     topic_response.partitions.push_back(
                       reassignable_partition_response{
                         .partition_index = partition.partition_index,
