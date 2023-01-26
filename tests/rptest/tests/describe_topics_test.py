@@ -138,7 +138,7 @@ class DescribeTopicsTest(RedpandaTest):
             "segment.bytes":
             ConfigProperty(
                 config_type="LONG",
-                value="1073741824",
+                value="134217728",
                 doc_string=
                 "Default log segment size in bytes for topics which do not set segment.bytes"
             ),

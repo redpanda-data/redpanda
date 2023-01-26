@@ -36,7 +36,7 @@ configuration::configuration()
     {.needs_restart = needs_restart::no,
      .example = "2147483648",
      .visibility = visibility::tunable},
-    1_GiB,
+    128_MiB,
     {.min = 1_MiB})
   , log_segment_size_min(
       *this,
