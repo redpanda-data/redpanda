@@ -861,7 +861,7 @@ spec:
                       when stopping and exit maintenance mode when up again
                     type: boolean
                   underReplicatedPartitionThreshold:
-                    description: "UnderReplicatedPartitionThreshold regulate when
+                    description: "UnderReplicatedPartitionThreshold controls when
                       rolling update will continue with restarts. The procedure can
                       be described as follows: \n 1. Rolling update checks if Pod
                       specification needs to be replaced and deletes it 2. Deleted

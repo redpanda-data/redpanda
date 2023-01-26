@@ -79,10 +79,7 @@ func (r *ConsoleReconciler) Reconcile(
 		}
 		return ctrl.Result{}, err
 	}
-	if console.GetDeletionTimestamp() != nil {
-		log.Info("not reconciling deleted Console")
-		return ctrl.Result{}, nil
-	}
+
 	// Checks if Console is valid to be created in specified namespace
 	if !console.IsAllowedNamespace() {
 		err := fmt.Errorf("invalid Console namespace") //nolint:goerr113 // no need to declare new error type
@@ -94,8 +91,8 @@ func (r *ConsoleReconciler) Reconcile(
 	if err != nil {
 		// Create event instead of logging the error, so user can see in Console CR instead of checking logs in operator
 		switch {
-		case apierrors.IsNotFound(err):
-			// If deleting and cluster is not found, nothing to do
+		case apierrors.IsNotFound(err) || !cluster.DeletionTimestamp.IsZero():
+			// If deleting and cluster is not found or is in the process of being deleted, nothing to do
 			if console.GetDeletionTimestamp() != nil {
 				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleSAFinalizer)
 				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleACLFinalizer)
@@ -104,7 +101,7 @@ func (r *ConsoleReconciler) Reconcile(
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
-				"Unable to reconcile Console as the referenced Cluster %s is not found", console.GetClusterRef(),
+				"Unable to reconcile Console as the referenced Cluster %s is not found or is being deleted", console.GetClusterRef(),
 			)
 		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured):
 			r.EventRecorder.Eventf(
@@ -120,7 +117,7 @@ func (r *ConsoleReconciler) Reconcile(
 	r.Log.V(debugLogLevel).Info("console", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
 	var s state
 	switch {
-	case console.GetDeletionTimestamp() != nil:
+	case !console.GetDeletionTimestamp().IsZero():
 		s = &Deleting{r}
 	case !console.GenerationMatchesObserved():
 		if err := r.handleSpecChange(ctx, console); err != nil {
