@@ -188,7 +188,8 @@ static ss::future<metadata_response::topic> create_topic(
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = map_topic_error_code(res[0].ec);
-              return ss::make_ready_future<metadata_response::topic>(t);
+              return ss::make_ready_future<metadata_response::topic>(
+                std::move(t));
           }
           auto tp_md = md_cache.get_topic_metadata(res[0].tp_ns);
 
@@ -196,7 +197,8 @@ static ss::future<metadata_response::topic> create_topic(
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = error_code::invalid_topic_exception;
-              return ss::make_ready_future<metadata_response::topic>(t);
+              return ss::make_ready_future<metadata_response::topic>(
+                std::move(t));
           }
 
           return wait_for_topics(
