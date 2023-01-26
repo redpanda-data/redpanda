@@ -57,6 +57,7 @@ enum class odd_even_constraint {
 };
 
 std::string_view to_string_view(visibility v);
+std::string_view to_string_view(odd_even_constraint v);
 
 class base_property {
 public:
@@ -117,6 +118,18 @@ public:
     virtual bool is_array() const = 0;
     virtual std::optional<std::string_view> example() const = 0;
     virtual std::vector<ss::sstring> enum_values() const { return {}; };
+    virtual std::optional<ss::sstring> min_value() const {
+        return std::nullopt;
+    }
+    virtual std::optional<ss::sstring> max_value() const {
+        return std::nullopt;
+    }
+    virtual std::optional<ss::sstring> align_value() const {
+        return std::nullopt;
+    }
+    virtual std::optional<odd_even_constraint> oddeven_value() const {
+        return std::nullopt;
+    }
 
     /**
      * Validation of a proposed new value before it has been assigned

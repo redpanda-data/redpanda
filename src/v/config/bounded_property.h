@@ -178,6 +178,31 @@ public:
         }
     }
 
+    std::optional<ss::sstring> min_value() const override {
+        if (_bounds.min.has_value()) {
+            return ss::format("{}", _bounds.min.value());
+        }
+        return std::nullopt;
+    }
+
+    std::optional<ss::sstring> max_value() const override {
+        if (_bounds.max.has_value()) {
+            return ss::format("{}", _bounds.max.value());
+        }
+        return std::nullopt;
+    }
+
+    std::optional<ss::sstring> align_value() const override {
+        if (_bounds.align.has_value()) {
+            return ss::format("{}", _bounds.align.value());
+        }
+        return std::nullopt;
+    }
+
+    std::optional<odd_even_constraint> oddeven_value() const override {
+        return _bounds.oddeven;
+    }
+
 private:
     /*
      * Pre-generate an example for docs/api, if the explicit property
