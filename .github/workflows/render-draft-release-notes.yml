@@ -1,7 +1,7 @@
 name: Render Draft Release Notes
 on:
   push:
-    branches: [ dev, 'v[0-9]+.[0-9]+.x' ]
+    branches: [ 'v[0-9]+.[0-9]+.x' ]
 jobs:
   render:
     runs-on: ubuntu-latest
