@@ -142,7 +142,6 @@ private:
     state_result<bytes> ssfcap(bytes_view);
     state_result<bytes> ssfreq(bytes_view);
     state_result<void> check();
-    void finish();
     void
     fail_impl(OM_uint32 maj_stat, OM_uint32 min_stat, std::string_view msg);
     template<typename... Args>
@@ -176,6 +175,15 @@ gssapi_authenticator::gssapi_authenticator(
 gssapi_authenticator::~gssapi_authenticator() = default;
 
 ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
+    if (!_impl) {
+        vlog(
+          seclog.warn,
+          "authenticate received after handshake complete {} bytes {}",
+          _state,
+          auth_bytes.size());
+        co_return errc::invalid_gssapi_state;
+    }
+
     vlog(
       seclog.trace,
       "gss {} authenticate received {} bytes",
@@ -191,6 +199,7 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
     if (_state == state::complete) {
         _principal = co_await _worker.submit(
           [this]() { return _impl->principal(); });
+        _impl.reset();
     }
     co_return std::move(res.result);
 }
@@ -404,7 +413,7 @@ gssapi_authenticator::impl::ssfreq(bytes_view auth_bytes) {
 
     bytes ret{};
     vlog(seclog.trace, "gss {} sending {} bytes", _state, ret.size());
-    finish();
+    _state = state::complete;
     return {_state, ret};
 }
 
@@ -476,12 +485,6 @@ gssapi_authenticator::impl::check() {
     _rp_user_principal = get_principal_from_name(source_name);
 
     return {_state, outcome::success()};
-}
-
-void gssapi_authenticator::impl::finish() {
-    _context.reset();
-    _server_creds.reset();
-    _state = state::complete;
 }
 
 void gssapi_authenticator::impl::fail_impl(
