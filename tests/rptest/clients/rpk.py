@@ -353,7 +353,9 @@ class RpkTool:
 
         missing_columns = expected_columns - received_columns
         # sometimes LSO is present, sometimes it isn't
-        missing_columns = missing_columns - {"LAST-STABLE-OFFSET"}
+        # same is true for EPOCH:
+        # https://github.com/redpanda-data/redpanda/issues/8381#issuecomment-1403051606
+        missing_columns = missing_columns - {"LAST-STABLE-OFFSET", "EPOCH"}
 
         if len(missing_columns) != 0:
             missing_columns = ",".join(missing_columns)
@@ -364,6 +366,7 @@ class RpkTool:
         for row in table.rows:
             obj = dict()
             obj["LAST-STABLE-OFFSET"] = "-"
+            obj["EPOCH"] = "-1"
             for i in range(0, len(table.columns)):
                 obj[table.columns[i].name] = row[i]
 
