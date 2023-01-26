@@ -75,6 +75,21 @@ class ControllerEraseTest(RedpandaTest):
             f"Victim node({victim_node}) does not contain expected segments count({transfers_leadership_count + 1}) for controller log"
         )
 
+        bystander_node_last_applied_offset = admin.get_controller_status(
+            bystander_node)["last_applied_offset"]
+
+        def wait_victim_node_apply_segments():
+            return admin.get_controller_status(victim_node)[
+                "last_applied_offset"] >= bystander_node_last_applied_offset
+
+        wait_until(
+            wait_victim_node_apply_segments,
+            timeout_sec=40,
+            backoff_sec=1,
+            err_msg=
+            f"Victim node did not apply {bystander_node_last_applied_offset} offset"
+        )
+
         self.redpanda.stop_node(victim_node)
 
         # Erase controller log on the victim node
@@ -90,6 +105,7 @@ class ControllerEraseTest(RedpandaTest):
         else:
             # Full deletion: remove all log segments.
             victim_path = f"{controller_path}/*"
+
         victim_node.account.remove(victim_path)
 
         # Node should come up cleanly

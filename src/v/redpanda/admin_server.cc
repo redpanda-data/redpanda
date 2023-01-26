@@ -3310,6 +3310,21 @@ void admin_server::register_debug_routes() {
           return ss::make_ready_future<ss::json::json_return_type>(
             _metadata_cache.local().is_node_isolated());
       });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_controller_status,
+      [this](std::unique_ptr<ss::httpd::request>)
+        -> ss::future<ss::json::json_return_type> {
+          return _controller->get_last_applied_offset().then(
+            [this](auto offset) {
+                using result_t = ss::httpd::debug_json::controller_status;
+                result_t ans;
+                ans.last_applied_offset = offset;
+                ans.commited_index = _controller->get_commited_index();
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ans));
+            });
+      });
 }
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_balancer_status_handler(

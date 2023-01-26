@@ -15,6 +15,7 @@
 #include "cluster/controller_stm.h"
 #include "cluster/fwd.h"
 #include "cluster/scheduling/leader_balancer.h"
+#include "model/fundamental.h"
 #include "raft/fwd.h"
 #include "rpc/fwd.h"
 #include "security/fwd.h"
@@ -147,6 +148,14 @@ public:
      * Called when the node is ready to become a leader
      */
     ss::future<> set_ready();
+
+    ss::future<model::offset> get_last_applied_offset() {
+        return _stm.invoke_on(controller_stm_shard, [](auto& stm) {
+            return stm.get_last_applied_offset();
+        });
+    }
+
+    model::offset get_commited_index() { return _raft0->committed_offset(); }
 
 private:
     friend controller_probe;
