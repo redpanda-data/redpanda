@@ -105,6 +105,34 @@ public:
         return _frags.size() * (sizeof(_frags[0]) + elems_per_frag * sizeof(T));
     }
 
+    /**
+     * Assign from a std::vector.
+     */
+    fragmented_vector& operator=(const std::vector<T>& rhs) noexcept {
+        clear();
+
+        for (auto& e : rhs) {
+            push_back(e);
+        }
+
+        return *this;
+    }
+
+    /**
+     * Remove all elements from the vector.
+     *
+     * Unlike std::vector, this also releases all the memory from
+     * the vector (since this vector already the same pointer
+     * and iterator stability guarantees that std::vector provides
+     * based on non-reallocation and capacity()).
+     */
+    void clear() {
+        // do the swap dance to actually clear the memory held by the vector
+        std::vector<std::vector<T>>{}.swap(_frags);
+        _size = 0;
+        _capacity = 0;
+    }
+
     template<bool C>
     class iter {
     public:
