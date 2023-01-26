@@ -30,9 +30,13 @@ deb_deps=(
   curl
   git
   golang-go
+  libabsl-dev
   libkrb5-dev
   libgssapi-krb5-2
+  libprotobuf-dev
+  libprotoc-dev
   libsnappy-dev
+  libxml2-dev
   libxxhash-dev
   libzstd-dev
   llvm
@@ -41,12 +45,15 @@ deb_deps=(
   procps
   python3-jinja2
   python3-venv
+  python3-pip
+  python3-jsonschema
   rapidjson-dev
   zip
   unzip
   libre2-dev
 )
 fedora_deps=(
+  abseil-cpp-devel
   ccache
   clang
   curl
@@ -54,14 +61,18 @@ fedora_deps=(
   golang
   krb5-libs
   krb5-devel
+  libxml2-devel
   libzstd-devel
   libzstd-static
   llvm
   lld
   pkg-config
   procps
+  protobuf-devel
   python3-jinja2
   python3-virtualenv
+  python3-pip
+  python3-jsonschema
   rapidjson-devel
   snappy-devel
   which
@@ -109,6 +120,10 @@ case "$ID" in
     exit 1
     ;;
 esac
+
+# build system
+pip3 install meson
+
 # needed for unit tests
 sysctl -w fs.aio-max-nr=10485760 || true
 curl -1sLf "https://raw.githubusercontent.com/redpanda-data/seastar/master/install-dependencies.sh" | bash
