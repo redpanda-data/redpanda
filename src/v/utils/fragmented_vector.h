@@ -212,6 +212,17 @@ public:
     const_iterator cbegin() const { return const_iterator(this, 0); }
     const_iterator cend() const { return const_iterator(this, _size); }
 
+
+    friend std::ostream&
+    operator<<(std::ostream& os, const fragmented_vector& v) {
+        os << "[";
+        for (auto& e : v) {
+            os << e << ",";
+        }
+        os << "]";
+        return os;
+    }
+
 private:
     fragmented_vector(const fragmented_vector&) noexcept = default;
 
