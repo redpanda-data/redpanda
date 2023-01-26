@@ -31,6 +31,9 @@ redpanda:
       {% if endpoint_authn_method %}
       authentication_method: {{ endpoint_authn_method }}
       {% endif %}
+    - name: kerberoslistener
+      address: "{{fqdn}}"
+      port: {{kafka_kerberos_port}}
   admin:
     - address: 127.0.0.1
       port: 9644

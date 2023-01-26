@@ -613,6 +613,7 @@ class RedpandaService(Service):
     # When configuring multiple listeners for testing, a secondary port to use
     # instead of the default.
     KAFKA_ALTERNATE_PORT = 9093
+    KAFKA_KERBEROS_PORT = 9094
     ADMIN_ALTERNATE_PORT = 9647
 
     CLUSTER_CONFIG_DEFAULTS = {
@@ -1962,6 +1963,15 @@ class RedpandaService(Service):
         with self.config_file_lock:
             return super(RedpandaService, self).render(path, **kwargs)
 
+    @staticmethod
+    def get_node_fqdn(node):
+        ip = socket.gethostbyname(node.account.hostname)
+        hostname = node.account.ssh_output(cmd=f"dig -x {ip} +short").decode(
+            'utf-8').split('\n')[0].removesuffix(".")
+        fqdn = node.account.ssh_output(
+            cmd=f"host {hostname}").decode('utf-8').split(' ')[0]
+        return fqdn
+
     def write_node_conf_file(self,
                              node,
                              override_cfg_params=None,
@@ -1987,6 +1997,10 @@ class RedpandaService(Service):
         # exercise code paths that deal with multiple listeners
         node_ip = socket.gethostbyname(node.account.hostname)
 
+        # Grab the node's FQDN which is needed for Kerberos name
+        # resolution
+        fqdn = self.get_node_fqdn(node)
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
@@ -1996,6 +2010,8 @@ class RedpandaService(Service):
                            seed_servers=self._seed_servers,
                            node_ip=node_ip,
                            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
+                           kafka_kerberos_port=self.KAFKA_KERBEROS_PORT,
+                           fqdn=fqdn,
                            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
                            pandaproxy_config=self._pandaproxy_config,
                            schema_registry_config=self._schema_registry_config,
@@ -2329,12 +2345,18 @@ class RedpandaService(Service):
             for tokens in map(lambda l: l.split(), lines)
         }
 
-    def broker_address(self, node):
+    def broker_address(self, node, listener: str = "dnslistener"):
         assert node in self.nodes, f"where node is {node.name}"
         assert node in self._started
         cfg = self._node_configs[node]
         if cfg['redpanda']['kafka_api']:
-            return f"{node.account.hostname}:{one_or_many(cfg['redpanda']['kafka_api'])['port']}"
+            if isinstance(cfg['redpanda']['kafka_api'], list):
+                for entry in cfg['redpanda']['kafka_api']:
+                    if entry['name'] == listener:
+                        return f'{entry["address"]}:{entry["port"]}'
+            else:
+                entry = cfg["redpanda"]["kafka_api"]
+                return f'{entry["address"]}:{entry["port"]}'
         else:
             return None
 
@@ -2350,11 +2372,15 @@ class RedpandaService(Service):
     def admin_endpoints(self):
         return ",".join(self.admin_endpoints_list())
 
-    def brokers(self, limit=None) -> str:
-        return ",".join(self.brokers_list(limit))
+    def brokers(self, limit=None, listener: str = "dnslistener") -> str:
+        return ",".join(self.brokers_list(limit, listener))
 
-    def brokers_list(self, limit=None) -> list[str]:
-        brokers = [self.broker_address(n) for n in self._started[:limit]]
+    def brokers_list(self,
+                     limit=None,
+                     listener: str = "dnslistener") -> list[str]:
+        brokers = [
+            self.broker_address(n, listener) for n in self._started[:limit]
+        ]
         brokers = [b for b in brokers if b is not None]
         random.shuffle(brokers)
         return brokers

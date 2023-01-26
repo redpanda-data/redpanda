@@ -60,17 +60,6 @@ class RedpandaKerberosTestBase(Test):
 
         self.client = KrbClient(test_context, self.kdc, self.redpanda)
 
-    def _service_principal(self, primary: str, node):
-        ip = socket.gethostbyname(node.account.hostname)
-        out = node.account.ssh_output(cmd=f"dig -x {ip} +short")
-        hostname = out.decode('utf-8').split('\n')[0].removesuffix(".")
-        fqdn = node.account.ssh_output(
-            cmd=f"host {hostname}").decode('utf-8').split(' ')[0]
-        return f"{primary}/{fqdn}@{REALM}"
-
-    def _client_principal(self, primary):
-        return f"{primary}@{REALM}"
-
     def setUp(self):
         self.redpanda.logger.info("Starting KDC")
         self.kdc.start()

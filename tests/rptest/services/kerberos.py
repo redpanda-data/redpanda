@@ -372,7 +372,7 @@ class KrbClient(Service):
         try:
             res = self.nodes[0].account.ssh_output(
                 cmd=
-                f"KRB5_TRACE=/dev/stderr KRB5CCNAME={client_cache} kcat -L -J -b {self.redpanda.brokers()} {sasl_conf}",
+                f'KRB5_TRACE=/dev/stderr KRB5CCNAME={client_cache} kcat -L -J -b {self.redpanda.brokers(listener="kerberoslistener")} {sasl_conf}',
                 allow_fail=False,
                 combine_stderr=False)
             self.logger.debug(f"Metadata request: {res}")
@@ -390,7 +390,7 @@ class KrbClient(Service):
         self.nodes[0].account.create_file(properties_filepath, tmpl)
 
         try:
-            cmd_args = f"--command-config {properties_filepath} --bootstrap-server {self.redpanda.brokers()}"
+            cmd_args = f'--command-config {properties_filepath} --bootstrap-server {self.redpanda.brokers(listener="kerberoslistener")}'
             topics = self.nodes[0].account.ssh_output(
                 cmd=f"/opt/kafka-3.0.0/bin/kafka-topics.sh {cmd_args} --list",
                 allow_fail=False,
@@ -473,9 +473,5 @@ class RedpandaKerberosNode(RedpandaService):
         super().start_node(node, **kwargs)
 
     def _service_principal(self, node, primary: str = "redpanda"):
-        ip = socket.gethostbyname(node.account.hostname)
-        hostname = node.account.ssh_output(cmd=f"dig -x {ip} +short").decode(
-            'utf-8').split('\n')[0].removesuffix(".")
-        fqdn = node.account.ssh_output(
-            cmd=f"host {hostname}").decode('utf-8').split(' ')[0]
+        fqdn = RedpandaService.get_node_fqdn(node)
         return f"{primary}/{fqdn}@{self.realm}"
