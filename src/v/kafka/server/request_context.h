@@ -22,6 +22,7 @@
 #include "kafka/server/server.h"
 #include "kafka/types.h"
 #include "seastarx.h"
+#include "security/fwd.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>

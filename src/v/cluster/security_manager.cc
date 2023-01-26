@@ -13,6 +13,8 @@
 #include "cluster/commands.h"
 #include "model/metadata.h"
 #include "raft/types.h"
+#include "security/authorizer.h"
+#include "security/credential_store.h"
 
 #include <seastar/core/coroutine.hh>
 

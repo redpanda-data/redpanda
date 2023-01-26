@@ -16,6 +16,7 @@
 #include "net/server.h"
 #include "seastarx.h"
 #include "security/acl.h"
+#include "security/authorizer.h"
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "ssx/semaphore.h"

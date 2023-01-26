@@ -11,6 +11,7 @@
 #include "kafka/client/sasl_client.h"
 
 #include "kafka/client/logger.h"
+#include "security/scram_authenticator.h"
 
 namespace kafka::client {
 

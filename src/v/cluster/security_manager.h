@@ -12,8 +12,7 @@
 #pragma once
 #include "cluster/commands.h"
 #include "model/record.h"
-#include "security/authorizer.h"
-#include "security/credential_store.h"
+#include "security/fwd.h"
 
 #include <seastar/core/sharded.hh>
 

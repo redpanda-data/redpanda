@@ -14,8 +14,6 @@
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/protocol/sasl_handshake.h"
 #include "random/generators.h"
-#include "security/scram_algorithm.h"
-#include "security/scram_authenticator.h"
 
 #include <seastar/core/coroutine.hh>
 
