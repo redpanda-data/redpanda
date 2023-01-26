@@ -126,14 +126,17 @@ public:
     impl(
       ss::sstring krb_service_primary,
       ss::sstring keytab,
-      std::vector<gssapi_rule> rules,
-      security::acl_principal& rp_user_principal)
+      std::vector<gssapi_rule> rules)
       : _krb_service_primary{std::move(krb_service_primary)}
       , _keytab{std::move(keytab)}
-      , _rules{std::move(rules)}
-      , _rp_user_principal(rp_user_principal) {}
+      , _rules{std::move(rules)} {}
 
     state_result<bytes> authenticate(bytes auth_bytes);
+    const security::acl_principal& principal() const {
+        return _rp_user_principal;
+    }
+
+private:
     state_result<void> init();
     state_result<bytes> more(bytes_view);
     state_result<bytes> ssfcap(bytes_view);
@@ -156,7 +159,7 @@ public:
     ss::sstring _krb_service_primary;
     ss::sstring _keytab;
     const std::vector<gssapi_rule> _rules;
-    security::acl_principal& _rp_user_principal;
+    security::acl_principal _rp_user_principal;
     state _state{state::init};
     gss::cred_id _server_creds;
     gss::ctx_id _context;
@@ -168,8 +171,7 @@ gssapi_authenticator::gssapi_authenticator(
   , _impl{std::make_unique<impl>(
       config::shard_local_cfg().sasl_kerberos_principal(),
       config::shard_local_cfg().sasl_kerberos_keytab(),
-      std::move(rules),
-      _principal)} {}
+      std::move(rules))} {}
 
 gssapi_authenticator::~gssapi_authenticator() = default;
 
@@ -186,6 +188,10 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
       });
 
     _state = res.state;
+    if (_state == state::complete) {
+        _principal = co_await _worker.submit(
+          [this]() { return _impl->principal(); });
+    }
     co_return std::move(res.result);
 }
 
