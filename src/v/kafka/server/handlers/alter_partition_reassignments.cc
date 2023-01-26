@@ -64,11 +64,23 @@ partitions_request_iterator validate_replicas(
     return valid_range_end;
 }
 
-template<typename ResultIter>
+/**
+ * @brief Validates partitions and places invalid partitions into @p resp_it
+ * @param begin starting position for a vector<reassignable_partition>
+ * @param end stopping position for a vector<reassignable_partition>
+ * @param resp_it  a wrapper to std::back_inserter
+ * @param topic_response a reassignable_topic_response to put errors into
+ * @param alive_nodes list of RP nodes that are live
+ * @param tp_metadata topic metadata used to check replication factor
+ *
+ * @return an iterator that represents the stop position of all valid
+ * partitions
+ */
+template<typename Container>
 partitions_request_iterator validate_partitions(
   partitions_request_iterator begin,
   partitions_request_iterator end,
-  ResultIter resp_it,
+  std::back_insert_iterator<Container> resp_it,
   reassignable_topic_response topic_response,
   std::vector<model::node_id> all_node_ids) {
     // An undefined replicas vector is not an error, see "Replicas" in the
@@ -143,8 +155,11 @@ partitions_request_iterator validate_partitions(
       });
 
     // Store any invalid partitions in the response
-    topic_response.partitions = std::move(invalid_partitions);
-    *resp_it = std::move(topic_response);
+    if (!invalid_partitions.empty()) {
+        topic_response.partitions = std::move(invalid_partitions);
+        // resp_it is a wrapper to std::back_inserter
+        *resp_it = std::move(topic_response);
+    }
 
     return valid_partitions_end;
 }
