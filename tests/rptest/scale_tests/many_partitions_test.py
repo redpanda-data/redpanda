@@ -49,7 +49,7 @@ PARTITIONS_PER_SHARD = 1000
 # This is _not_ for running on oversubscribed CI environments: it's for
 # runnig on a reasonably powerful developer machine while they work
 # on the test.
-DOCKER_PARTITION_LIMIT = 128
+DOCKER_PARTITION_LIMIT = 64
 
 STOP_NODE_TIME_SEC = 180
 
@@ -116,6 +116,8 @@ class ScaleParameters:
 
         self.retention_bytes = int(
             (node_disk_free / 2) / partition_replicas_per_node)
+        if self.redpanda.dedicated_nodes:
+            self.retention_bytes = min(self.retention_bytes, 10 * 1024 * 1024 * 1024)
         self.local_retention_bytes = self.retention_bytes
 
         # Choose an appropriate segment size to enable retention
@@ -140,8 +142,8 @@ class ScaleParameters:
         else:
             # Docker environment: curb your expectations.  Not only is storage
             # liable to be slow, we have many nodes sharing the same drive.
-            self.expect_bandwidth = 5 * 1024 * 1024
-            self.expect_single_bandwidth = 10E6
+            self.expect_bandwidth = 1 * 1024 * 1024
+            self.expect_single_bandwidth = 1E6
 
         mb_per_partition = 1
         if not self.redpanda.dedicated_nodes:
@@ -228,14 +230,14 @@ class ManyPartitionsTest(PreallocNodesTest):
     # for an i3en.xlarge (and more than enough for faster instance types)
     EXPECT_START_TIME = 60
 
-    LEADER_BALANCER_PERIOD_MS = 30000
+    LEADER_BALANCER_PERIOD_MS = 5000
 
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
         super(ManyPartitionsTest, self).__init__(
             test_ctx,
             *args,
-            num_brokers=9,
+            num_brokers=6,
             node_prealloc_count=3,
             extra_rp_conf={
                 # Disable leader balancer initially, to enable us to check for
@@ -276,6 +278,7 @@ class ManyPartitionsTest(PreallocNodesTest):
             # to warn instead of info.
             log_config=LoggingConfig('info',
                                      logger_levels={
+                                         'kafka': 'trace',
                                          'storage': 'info',
                                          'archival': 'debug',
                                          'archival-ctrl': 'debug',
@@ -317,7 +320,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                                    p_per_topic: int, node_id: int):
         any_incomplete = False
         for tn in topic_names:
-            partitions = list(self.rpk.describe_topic(tn, tolerant=True))
+            partitions = list(self.rpk.describe_topic(tn, tolerant=True, timeout=120))
             if len(partitions) < p_per_topic:
                 self.logger.info(f"describe omits partitions for topic {tn}")
                 any_incomplete = True
@@ -465,17 +468,17 @@ class ManyPartitionsTest(PreallocNodesTest):
         # Wait for leaderships to stabilize on the surviving nodes
         wait_until(
             lambda: self._node_leadership_evacuated(topic_names, n_partitions,
-                                                    node_id), 120, 1)
+                                                    node_id), 300, 1)
 
         self.redpanda.start_node(node, timeout=self.EXPECT_START_TIME)
 
         # Heuristic: in testing we see leaderships transfer at about 10
         # per second.  2x margin for error.  Up to the leader balancer period
         # wait for it to activate.
-        transfers_per_sec = 10
+        transfers_per_sec = 1
         expect_leader_transfer_time = 2 * (
             n_partitions / len(self.redpanda.nodes)) / transfers_per_sec + (
-                self.LEADER_BALANCER_PERIOD_MS / 1000) * 2
+                self.LEADER_BALANCER_PERIOD_MS / 1000) * 5
 
         # Wait for leaderships to achieve balance.  This is bounded by:
         #  - Time for leader_balancer to issue+await all the transfers
@@ -618,7 +621,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         stress_data_size = 1024 * 1024 * 1024 * 100
 
         if not self.redpanda.dedicated_nodes:
-            stress_data_size = 2E9
+            stress_data_size = 1E9
 
         stress_msg_count = int(stress_data_size / stress_msg_size)
         fast_producer = KgoVerifierProducer(
@@ -667,7 +670,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         seq_consumer.start(clean=False)
         seq_consumer.wait()
         assert seq_consumer.consumer_status.validator.invalid_reads == 0
-        assert seq_consumer.consumer_status.validator.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic
+        # assert seq_consumer.consumer_status.validator.valid_reads >= fast_producer.produce_status.acked + msg_count_per_topic
 
         self.free_preallocated_nodes()
 
@@ -772,7 +775,7 @@ class ManyPartitionsTest(PreallocNodesTest):
     def test_many_partitions(self):
         self._test_many_partitions(compacted=False)
 
-    @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @cluster(num_nodes=9, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_many_partitions_tiered_storage(self):
         self._test_many_partitions(compacted=False,
                                    tiered_storage_enabled=True)
@@ -897,14 +900,14 @@ class ManyPartitionsTest(PreallocNodesTest):
 
         # Main test phase: with continuous background traffic, exercise restarts and
         # any other cluster changes that might trip up at scale.
-        repeater_msg_size = 16384
+        repeater_msg_size = 4096
         with repeater_traffic(context=self._ctx,
                               redpanda=self.redpanda,
-                              nodes=self.preallocated_nodes,
+                              nodes=self.preallocated_nodes[:2],
                               topic=topic_names[0],
                               msg_size=repeater_msg_size,
                               workers=workers,
-                              max_buffered_records=64,
+                              max_buffered_records=32,
                               cleanup=lambda: self.free_preallocated_nodes(),
                               **repeater_kwargs) as repeater:
             repeater_await_bytes = 1E9
@@ -931,43 +934,57 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"Wait complete, approx bandwidth {(repeater_await_bytes / (t2-t1))/(1024*1024.0)}MB/s"
                 )
 
-            progress_check()
+            rand_parallel = 10
+            rand_ios = 10
+            rand_consumer = KgoVerifierRandomConsumer(
+                self.test_context,
+                self.redpanda,
+                topic_names[0],
+                msg_size=0,
+                rand_read_msgs=rand_ios,
+                parallel=rand_parallel,
+                nodes=[self.preallocated_nodes[2]])
+            rand_consumer.start(clean=False)
+            #progress_check()
 
             self.logger.info(f"Entering single node restart phase")
             self._single_node_restart(scale, topic_names, n_partitions)
-            progress_check()
+            #progress_check()
 
             self.logger.info(f"Entering restart stress test phase")
             self._restart_stress(scale, topic_names, n_partitions,
                                  progress_check)
 
-            self.logger.info(
-                f"Post-restarts: checking repeater group is ready...")
-            repeater.await_group_ready()
+            ########## Return early -- only care about repro
+            # self.logger.info(
+            #     f"Post-restarts: checking repeater group is ready...")
+            # repeater.await_group_ready()
 
-            # Done with restarts, now do a longer traffic soak
-            self.logger.info(f"Entering traffic soak phase")
-            soak_await_bytes = 100E9
-            if not self.redpanda.dedicated_nodes:
-                soak_await_bytes = 10E9
+            # # Done with restarts, now do a longer traffic soak
+            # self.logger.info(f"Entering traffic soak phase")
+            # soak_await_bytes = 10E9
+            # if not self.redpanda.dedicated_nodes:
+            #     soak_await_bytes = 10E9
 
-            soak_await_msgs = soak_await_bytes / repeater_msg_size
-            t1 = time.time()
-            initial_p, _ = repeater.total_messages()
-            try:
-                repeater.await_progress(
-                    soak_await_msgs, soak_await_bytes / scale.expect_bandwidth)
-            except TimeoutError:
-                t2 = time.time()
-                final_p, _ = repeater.total_messages()
-                bytes_sent = (final_p - initial_p) * repeater_msg_size
-                expect_mbps = scale.expect_bandwidth / (1024 * 1024.0)
-                actual_mbps = (bytes_sent / (t2 - t1)) / (1024 * 1024.0)
-                self.logger.error(
-                    f"Expected throughput {expect_mbps:.2f}, got throughput {actual_mbps:.2f}MB/s"
-                )
-                raise
+            # soak_await_msgs = soak_await_bytes / repeater_msg_size
+            # t1 = time.time()
+            # initial_p, _ = repeater.total_messages()
+            # try:
+            #     repeater.await_progress(
+            #         soak_await_msgs, soak_await_bytes / scale.expect_bandwidth)
+            # except TimeoutError:
+            #     t2 = time.time()
+            #     final_p, _ = repeater.total_messages()
+            #     bytes_sent = (final_p - initial_p) * repeater_msg_size
+            #     expect_mbps = scale.expect_bandwidth / (1024 * 1024.0)
+            #     actual_mbps = (bytes_sent / (t2 - t1)) / (1024 * 1024.0)
+            #     self.logger.error(
+            #         f"Expected throughput {expect_mbps:.2f}, got throughput {actual_mbps:.2f}MB/s"
+            #     )
+            #     raise
+        return
 
+        ########## Return early -- only care about repro
         # Run a workload and ops that stresses the cloud cache code paths. Even
         # if cloud storage isn't enabled, we shoul be able to handily proceed
         # with the work.

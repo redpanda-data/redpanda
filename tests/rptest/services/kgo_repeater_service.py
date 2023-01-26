@@ -101,6 +101,10 @@ class KgoRepeaterService(Service):
         if self.max_buffered_records is not None:
             cmd += f" -max-buffered-records={self.max_buffered_records}"
 
+        if True:
+            cmd += " --debug"
+            cmd += " --trace"
+
         if self.use_transactions:
             cmd += f" -use-transactions"
 
