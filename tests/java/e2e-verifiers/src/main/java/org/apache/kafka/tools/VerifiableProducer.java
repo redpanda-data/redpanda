@@ -202,7 +202,7 @@ public class VerifiableProducer implements AutoCloseable {
   // Send messages with a key of 0 incrementing by 1 for
   // each message produced when number specified is reached
   // key is reset to 0
-  private final Long repeatingKeys;
+  private final Integer repeatingKeys;
 
   private int keyCounter;
 
@@ -217,7 +217,7 @@ public class VerifiableProducer implements AutoCloseable {
 
   public VerifiableProducer(
       Properties properties, String topic, int throughput, int maxMessages,
-      Integer valuePrefix, Long createTime, Long repeatingKeys,
+      Integer valuePrefix, Long createTime, Integer repeatingKeys,
       boolean isTransactional, boolean enableRandomAborts, long batchSize) {
 
     this.topic = topic;
@@ -332,7 +332,7 @@ public class VerifiableProducer implements AutoCloseable {
     parser.addArgument("--repeating-keys")
         .action(store())
         .required(false)
-        .type(Long.class)
+        .type(Integer.class)
         .metavar("REPEATING-KEYS")
         .dest("repeatingKeys")
         .help(
@@ -420,7 +420,7 @@ public class VerifiableProducer implements AutoCloseable {
     String configFile = res.getString("producer.config");
     Integer valuePrefix = res.getInt("valuePrefix");
     Long createTime = res.getLong("createTime");
-    Long repeatingKeys = res.getLong("repeatingKeys");
+    Integer repeatingKeys = res.getInt("repeatingKeys");
 
     if (createTime == -1L) createTime = null;
 

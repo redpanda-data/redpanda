@@ -261,8 +261,7 @@ class EndToEndTest(Test):
                        producer_timeout_sec=30,
                        consumer_timeout_sec=30,
                        enable_idempotence=False,
-                       enable_compaction=False,
-                       enable_transactions=False):
+                       enable_compaction=False):
         try:
             self.await_num_produced(min_records, producer_timeout_sec)
 
@@ -272,8 +271,7 @@ class EndToEndTest(Test):
             self.run_consumer_validation(
                 consumer_timeout_sec=consumer_timeout_sec,
                 enable_idempotence=enable_idempotence,
-                enable_compaction=enable_compaction,
-                enable_transactions=enable_transactions)
+                enable_compaction=enable_compaction)
         except BaseException:
             self._collect_all_logs()
             raise
@@ -281,8 +279,7 @@ class EndToEndTest(Test):
     def run_consumer_validation(self,
                                 consumer_timeout_sec=30,
                                 enable_idempotence=False,
-                                enable_compaction=False,
-                                enable_transactions=False) -> None:
+                                enable_compaction=False) -> None:
         try:
             # Take copy of this dict in case a rogue VerifiableProducer
             # thread modifies it.
@@ -297,13 +294,12 @@ class EndToEndTest(Test):
 
             self.consumer.stop()
 
-            self.validate(enable_idempotence, enable_compaction,
-                          enable_transactions)
+            self.validate(enable_idempotence, enable_compaction)
         except BaseException:
             self._collect_all_logs()
             raise
 
-    def validate_compacted(self, enable_transactions):
+    def validate_compacted(self):
 
         consumer_state = {}
 
@@ -318,23 +314,12 @@ class EndToEndTest(Test):
         for k, v in self.producer.not_acked:
             not_acked_producer_state[k].add(v)
 
+        for k, v in self.records_consumed:
+            consumer_state[k] = v
+
         msg = ""
         success = True
         errors = []
-        aborted_kvs_found = []
-
-        for k, v in self.records_consumed:
-            if enable_transactions:
-                # When transactions are enabled, unacked state corresponds to aborted transactions.
-                # Make sure no consumed (key, value) shows up from that list.
-                if k in not_acked_producer_state and v in not_acked_producer_state[
-                        k]:
-                    aborted_kvs_found((k, v))
-            consumer_state[k] = v
-
-        if aborted_kvs_found:
-            return False, "Aborted kvs found: \n" + "\n".join(
-                aborted_kvs_found)
 
         for consumed_key, consumed_value in consumer_state.items():
             # invalid key consumed
@@ -345,17 +330,16 @@ class EndToEndTest(Test):
             if acked_producer_state[consumed_key] == consumed_value:
                 continue
 
-            if not enable_transactions:
-                # we must check not acked state as it might have been caused
-                # by request timeout and a message might still have been consumed by consumer
-                self.logger.debug(
-                    f"Checking not acked produced messages for key: {consumed_key}, "
-                    f"previous acked value: {acked_producer_state[consumed_key]}, "
-                    f"consumed value: {consumed_value}")
-                # consumed value is one of the not acked produced values
-                if consumed_key in not_acked_producer_state and consumed_value in not_acked_producer_state[
-                        consumed_key]:
-                    continue
+            # we must check not acked state as it might have been caused
+            # by request timeout and a message might still have been consumed by consumer
+            self.logger.debug(
+                f"Checking not acked produced messages for key: {consumed_key}, "
+                f"previous acked value: {acked_producer_state[consumed_key]}, "
+                f"consumed value: {consumed_value}")
+            # consumed value is one of the not acked produced values
+            if consumed_key in not_acked_producer_state and consumed_value in not_acked_producer_state[
+                    consumed_key]:
+                continue
 
             # consumed value is not equal to last acked produced value and any of not acked value, error out
             success = False
@@ -373,8 +357,7 @@ class EndToEndTest(Test):
 
         return success, msg
 
-    def validate(self, enable_idempotence, enable_compaction,
-                 enable_transactions):
+    def validate(self, enable_idempotence, enable_compaction):
         self.logger.info("Number of acked records: %d" %
                          len(self.producer.acked))
         self.logger.info("Number of consumed records: %d" %
@@ -383,7 +366,7 @@ class EndToEndTest(Test):
         success = True
         msg = ""
         if enable_compaction:
-            success, msg = self.validate_compacted(enable_transactions)
+            success, msg = self.validate_compacted()
         else:
             # Correctness of the set difference operation depends on using equivalent
             # message_validators in producer and consumer
