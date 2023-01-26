@@ -647,6 +647,9 @@ ss::future<storage::translating_reader> remote_partition::make_reader(
       get_ntp());
     auto impl = std::make_unique<partition_record_batch_reader_impl>(
       config, shared_from_this(), ot_state);
+    vlog(
+      _ctxlog.debug,
+      "AWONG created reader");
     co_return storage::translating_reader{
       model::record_batch_reader(std::move(impl)), std::move(ot_state)};
 }

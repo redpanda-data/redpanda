@@ -130,6 +130,7 @@ remote_segment::remote_segment(
 
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
+    vlog(_ctxlog.info, "AWONG constructed remote segment");
 }
 
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
@@ -264,6 +265,7 @@ ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
       get_base_kafka_offset(),
       0,
       remote_segment_sampling_step_bytes);
+    vlog(_ctxlog.info, "AWONG starting hydrate inner");
     auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
     auto parser = make_remote_segment_index_builder(
       std::move(sparse),
@@ -275,8 +277,10 @@ ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
     auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
         return sref.get().close();
     });
+    vlog(_ctxlog.info, "AWONG waiting for parse and put");
     auto [rparse, rput] = co_await ss::when_all(
       std::move(fparse), std::move(fput));
+    vlog(_ctxlog.info, "AWONG waited for parse and put");
     bool index_prepared = true;
     if (rparse.failed()) {
         auto parse_exception = rparse.get_exception();
@@ -295,10 +299,12 @@ ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
         std::rethrow_exception(put_exception);
     }
     if (index_prepared) {
+        vlog(_ctxlog.info, "AWONG index prepared");
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
         co_await _cache.put(_path().native() + ".index", index_stream);
         _index = std::move(tmpidx);
     }
+    vlog(_ctxlog.info, "AWONG finished hydrate inner");
     co_return size_bytes;
 }
 
@@ -323,6 +329,7 @@ ss::future<> remote_segment::do_hydrate_segment() {
           _wait_list.size());
         throw download_exception(res, _path);
     }
+    vlog(_ctxlog.info, "AWONG finished hydrate");
 }
 
 ss::future<> remote_segment::do_hydrate_txrange() {
@@ -348,12 +355,15 @@ ss::future<> remote_segment::do_hydrate_txrange() {
 
         if (
           res != download_result::success && res != download_result::notfound) {
+            vlog(cst_log.debug, "Download exception!");
+
             throw download_exception(res, _path);
         }
 
         auto [stream, size] = manifest.serialize();
         co_await _cache.put(manifest.get_manifest_path(), stream)
           .finally([&s = stream]() mutable { return s.close(); });
+        vlog(_ctxlog.debug, "AWONG put for tx");
     }
 
     _tx_range = std::move(manifest).get_tx_range();
@@ -556,6 +566,7 @@ combine_statuses(cache_element_status segment, cache_element_status tx_range) {
 }
 
 void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
+    vlog(_ctxlog.info, "AWONG calling wait with error {}", err);
     while (!_wait_list.empty()) {
         auto& p = _wait_list.front();
         p.set_exception(err);
@@ -637,13 +648,21 @@ ss::future<> remote_segment::run_hydrate_bg() {
                           [this] { return do_hydrate_txrange(); });
                     } catch (const download_exception&) {
                         err = std::current_exception();
-                    }
+                    } catch (...) {
+                        err = std::current_exception();
+                    };
+                    vlog(
+                      _ctxlog.info,
+                      "Hydrated segment and tx-manifest {}",
+                      _path);
                     break;
                 case segment_txrange_status::not_available_available:
                     vlog(_ctxlog.info, "Hydrating only segment {}", _path);
                     try {
                         co_await do_hydrate_segment();
                     } catch (const download_exception&) {
+                        err = std::current_exception();
+                    } catch (...) {
                         err = std::current_exception();
                     }
                     break;
@@ -653,14 +672,20 @@ ss::future<> remote_segment::run_hydrate_bg() {
                         co_await do_hydrate_txrange();
                     } catch (const download_exception&) {
                         err = std::current_exception();
+                    } catch (...) {
+                        err = std::current_exception();
                     }
+                    vlog(_ctxlog.info, "Hydrated only tx-manifest {}", _path);
                     break;
                 }
                 if (!err) {
+                    vlog(_ctxlog.info, "AWONG no error -- materializing");
                     if (co_await do_materialize_segment() == false) {
+                        vlog(_ctxlog.info, "AWONG do_materialize_segment false");
                         continue;
                     }
                     if (co_await do_materialize_txrange() == false) {
+                        vlog(_ctxlog.info, "AWONG do_materialize_txrange false");
                         continue;
                     }
                 }
@@ -673,6 +698,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
             vassert(
               _data_file || err,
               "Segment hydration succeded but file isn't available");
+            vlog(_ctxlog.info, "AWONG calling hydration waiters");
             while (!_wait_list.empty()) {
                 auto& p = _wait_list.front();
                 if (err) {
@@ -683,6 +709,8 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 _wait_list.pop_front();
             }
         }
+        vlog(_ctxlog.debug, "Hydration loop shut down");
+        set_waiter_errors(std::make_exception_ptr(ss::gate_closed_exception()));
     } catch (const ss::broken_condition_variable&) {
         vlog(_ctxlog.debug, "Hydration loop shut down");
         set_waiter_errors(std::current_exception());

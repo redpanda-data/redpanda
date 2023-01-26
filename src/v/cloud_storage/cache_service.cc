@@ -485,6 +485,7 @@ ss::future<> cache::put(
             }
         }
     }
+    vlog(cst_log.debug, "File created for {}", key.native());
 
     ss::file_output_stream_options options{};
     options.buffer_size = write_buffer_size;
