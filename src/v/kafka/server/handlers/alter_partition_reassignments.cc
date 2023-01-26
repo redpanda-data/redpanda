@@ -96,8 +96,8 @@ partitions_request_iterator validate_partitions(
     std::vector<reassignable_partition_response> invalid_partitions;
 
     valid_partitions_end = validate_replicas(
+      begin,
       valid_partitions_end,
-      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Empty replica list specified in partition reassignment.",
@@ -106,8 +106,8 @@ partitions_request_iterator validate_partitions(
       });
 
     valid_partitions_end = validate_replicas(
+      begin,
       valid_partitions_end,
-      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Duplicate replica ids in partition reassignment replica list",
@@ -123,8 +123,8 @@ partitions_request_iterator validate_partitions(
       });
 
     valid_partitions_end = validate_replicas(
+      begin,
       valid_partitions_end,
-      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Invalid broker id in replica list",
@@ -137,8 +137,8 @@ partitions_request_iterator validate_partitions(
       });
 
     valid_partitions_end = validate_replicas(
+      begin,
       valid_partitions_end,
-      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Replica assignment has brokers that are not alive",
