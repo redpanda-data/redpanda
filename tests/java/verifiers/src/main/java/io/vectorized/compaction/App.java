@@ -1,11 +1,12 @@
 package io.vectorized.compaction;
 import static spark.Spark.*;
 
-import java.util.ArrayList;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import io.vectorized.compaction.idempotency.IdempotentWorkload;
+import io.vectorized.compaction.tx.TxUniqueKeysWorkload;
 import io.vectorized.compaction.tx.TxWorkload;
+import java.util.ArrayList;
 import spark.*;
 
 public class App {
@@ -68,6 +69,8 @@ public class App {
           workload = new IdempotentWorkload(req.body());
         } else if (type.equals("TX")) {
           workload = new TxWorkload(req.body());
+        } else if (type.equals("TX_UNIQUE_KEYS")) {
+          workload = new TxUniqueKeysWorkload(req.body());
         } else {
           throw new Exception("unknown workload: \"" + type + "\"");
         }

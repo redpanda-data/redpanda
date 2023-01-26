@@ -7,9 +7,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedList;
 import java.util.Properties;
-import java.util.Queue;
 import java.util.Random;
 import java.util.UUID;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -21,45 +19,15 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 
-public class TxWorkload extends GatedWorkload {
+public class TxUniqueKeysWorkload extends GatedWorkload {
   public static class InitBody {
     public String brokers;
     public String topic;
     public int partitions;
-    public int key_set_cardinality;
-  }
-
-  static class WriteInfo {
-    public long id;
-    public String key;
-    public int partition;
-    public long offset;
-  }
-
-  static class LatestValue {
-    public WriteInfo confirmed;
-    public Queue<WriteInfo> attempts;
-
-    public LatestValue() {
-      this.confirmed = null;
-      this.attempts = new LinkedList<>();
-    }
-  }
-
-  static class Value {
-    public long id;
-    public long offset;
-
-    public Value(long id, long offset) {
-      this.id = id;
-      this.offset = offset;
-    }
   }
 
   static class Partition {
     public int id;
-    public HashMap<Long, WriteInfo> writes;       // hashed by WriteInfo.id
-    public HashMap<String, LatestValue> latestKV; // hashed by key
 
     public long countWritten = 0;
     public long countRead = 0;
@@ -68,11 +36,7 @@ public class TxWorkload extends GatedWorkload {
     public long readOffset = -1;
     public boolean consumed = false;
 
-    public Partition(int id) {
-      this.id = id;
-      this.writes = new HashMap<>();
-      this.latestKV = new HashMap<>();
-    }
+    public Partition(int id) { this.id = id; }
   }
 
   private static final int BATCH_SIZE = 10;
@@ -80,7 +44,7 @@ public class TxWorkload extends GatedWorkload {
   HashMap<Integer, Partition> partitions;
   private volatile InitBody args;
 
-  public TxWorkload(String params) {
+  public TxUniqueKeysWorkload(String params) {
     Gson gson = new Gson();
     this.args = gson.fromJson(params, InitBody.class);
   }
@@ -147,10 +111,6 @@ public class TxWorkload extends GatedWorkload {
     }
   }
 
-  private String getKey(Random random) {
-    return "key" + random.nextInt(args.key_set_cardinality);
-  }
-
   private void writeProcess(int pid) throws Exception {
     var random = new Random();
 
@@ -172,6 +132,7 @@ public class TxWorkload extends GatedWorkload {
 
     long id = 0;
     boolean shouldReset = true;
+    boolean shouldRetry = false;
 
     while (state == State.PRODUCING) {
       if (shouldReset) {
@@ -203,54 +164,52 @@ public class TxWorkload extends GatedWorkload {
         }
       }
 
+      log(pid, "tx");
       producer.beginTransaction();
 
-      boolean shouldAbort = random.nextInt(3) == 0;
+      boolean shouldAbort = false;
 
-      HashMap<String, WriteInfo> batch = new HashMap<>();
+      if (!shouldRetry) {
+        shouldAbort = random.nextInt(3) == 0;
+      }
+
+      var txOpId = id;
 
       try {
         for (int i = 0; i < BATCH_SIZE; i++) {
-          var op = new WriteInfo();
-          op.id = id++;
-          op.key = getKey(random);
-          op.partition = pid;
-          op.offset = -1;
+          var opid = txOpId++;
 
-          batch.put(op.key, op);
-
+          var type = "";
           if (shouldAbort) {
-            log(pid, "a\t" + op.id);
+            type = "a";
           } else {
-            log(pid, "w\t" + op.id);
+            type = "w";
           }
-          String value = "" + op.id + "\t" + (shouldAbort ? "a" : "c") + "\t"
-                         + randomString(random, 1024);
+          log(pid, type + "\t" + opid);
+
+          if (!shouldAbort && i == 0) {
+            if (shouldRetry) {
+              type = "<";
+            } else {
+              type = "!";
+            }
+          }
+
+          String value
+              = "" + opid + "\t" + type + "\t" + randomString(random, 1024);
           ProducerRecord<String, String> record
-              = new ProducerRecord<>(args.topic, pid, op.key, value);
-          op.offset = producer.send(record).get().offset();
+              = new ProducerRecord<>(args.topic, pid, "key" + opid, value);
+          producer.send(record);
         }
       } catch (Exception e1) {
         shouldAbort = true;
+        shouldRetry = true;
+
         synchronized (this) {
           log(pid, "err\tsend");
           System.out.println("=== Error on send");
           System.out.println(e1);
           e1.printStackTrace(System.out);
-        }
-      }
-
-      if (!shouldAbort) {
-        synchronized (this) {
-          for (var op : batch.values()) {
-            if (!partition.latestKV.containsKey(op.key)) {
-              partition.latestKV.put(op.key, new LatestValue());
-            }
-            var latestValue = partition.latestKV.get(op.key);
-            if (!shouldAbort) {
-              latestValue.attempts.add(op);
-            }
-          }
         }
       }
 
@@ -261,27 +220,9 @@ public class TxWorkload extends GatedWorkload {
         } else {
           log(pid, "commit");
           producer.commitTransaction();
-          synchronized (this) {
-            partition.countWritten += BATCH_SIZE;
-            for (var op : batch.values()) {
-              if (!partition.latestKV.containsKey(op.key)) {
-                partition.latestKV.put(op.key, new LatestValue());
-              }
-              var latestValue = partition.latestKV.get(op.key);
-              latestValue.confirmed = op;
-              while (latestValue.attempts.size() > 0) {
-                var attempt = latestValue.attempts.remove();
-                if (attempt.id > op.id) {
-                  violation(
-                      op.partition,
-                      "attempts log jumps over " + op.id + " to " + attempt.id);
-                }
-                if (attempt.id == op.id) {
-                  break;
-                }
-              }
-            }
-          }
+          shouldRetry = false;
+          id = txOpId;
+          synchronized (this) { partition.countWritten += BATCH_SIZE; }
         }
       } catch (Exception e1) {
         synchronized (this) {
@@ -291,6 +232,7 @@ public class TxWorkload extends GatedWorkload {
           e1.printStackTrace(System.out);
         }
         shouldReset = true;
+        shouldRetry = true;
         continue;
       }
     }
@@ -344,8 +286,6 @@ public class TxWorkload extends GatedWorkload {
         ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
         "org.apache.kafka.common.serialization.StringDeserializer");
 
-    HashMap<String, Value> kv = new HashMap<>();
-
     KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
     consumer.assign(tps);
     consumer.seekToEnd(tps);
@@ -355,6 +295,7 @@ public class TxWorkload extends GatedWorkload {
 
     long lastOffset = -1;
     long lastOpId = -1;
+    long lastTxId = -1;
 
     while (consumer.position(tp) < end) {
       ConsumerRecords<String, String> records
@@ -370,65 +311,51 @@ public class TxWorkload extends GatedWorkload {
           violation(pid, "read offset " + offset + " after " + lastOffset);
         }
         lastOffset = offset;
+
         synchronized (this) { partition.readOffset = lastOffset; }
+
         var parts = record.value().split("\t");
+
         long opId = Long.parseLong(parts[0]);
-        log(pid, "r\t" + opId + "\t" + offset);
-        if (opId <= lastOpId) {
-          violation(pid, "read opId " + opId + " after " + lastOpId);
-        }
-        lastOpId = opId;
-        if (!parts[1].equals("c")) {
+        log(pid, "g\t" + parts[1] + "\t" + opId + "\t" + offset);
+        if (parts[1].equals("a")) {
           violation(
               pid, "read aborted " + record.key() + "=" + opId + "@" + offset);
+        } else if (parts[1].equals("!")) {
+          if (opId != lastOpId + 1) {
+            violation(
+                pid, "detected gap before " + record.key() + "=" + opId + "@"
+                         + offset + "; last op:" + lastOpId);
+          }
+          lastTxId = opId;
+          lastOpId = opId;
+        } else if (parts[1].equals("<")) {
+          if (opId == lastOpId + 1) {
+            // this a retried tx & the original tx wasn't committed
+          } else if (opId != lastTxId) {
+            violation(
+                pid,
+                "retied tx " + record.key() + "=" + opId + "@" + offset
+                    + " should start where the original starts: " + lastTxId);
+          }
+          lastTxId = opId;
+          lastOpId = opId;
+        } else if (parts[1].equals("w")) {
+          if (opId != lastOpId + 1) {
+            violation(
+                pid, "detected gap before " + record.key() + "=" + opId + "@"
+                         + offset + "; last op:" + lastOpId);
+          }
+          lastOpId = opId;
+        } else {
+          violation(
+              pid, "unknown type " + parts[1] + " at " + record.key() + "="
+                       + opId + "@" + offset + "; last op:" + lastOpId);
         }
-        kv.put(record.key(), new Value(opId, offset));
       }
       synchronized (this) { partition.countRead += read; }
     }
     consumer.close();
-
-    var writtenKV = partition.latestKV;
-
-    for (var key : kv.keySet()) {
-      if (!writtenKV.containsKey(key)) {
-        violation(pid, "read key " + key + " wasn't written");
-      }
-      var readValue = kv.get(key);
-      var writtenValue = writtenKV.get(key);
-      if (writtenValue.confirmed != null
-          && writtenValue.confirmed.id == readValue.id) {
-        if (writtenValue.confirmed.offset != readValue.offset) {
-          violation(
-              pid, "last observed offset=" + readValue.offset + " for key="
-                       + key + " doesn't match last written offset="
-                       + writtenValue.confirmed.offset
-                       + " for the same value=" + readValue.id);
-        }
-      } else {
-        WriteInfo match = null;
-        for (var attempt : writtenValue.attempts) {
-          if (attempt.id == readValue.id) {
-            match = attempt;
-          }
-        }
-        if (match == null) {
-          violation(
-              pid, "can't find an attempt matching read value" + readValue.id);
-        }
-      }
-      writtenKV.remove(key);
-    }
-
-    for (var key : writtenKV.keySet()) {
-      var writtenValue = writtenKV.get(key);
-      if (writtenValue.confirmed != null) {
-        violation(
-            pid, "confirmed write " + key + "=" + writtenValue.confirmed.id
-                     + "@" + writtenValue.confirmed.offset
-                     + " can't be found in final read");
-      }
-    }
 
     synchronized (this) { partition.consumed = true; }
 

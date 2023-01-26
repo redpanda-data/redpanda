@@ -60,3 +60,19 @@ class CompactedVerifierTest(RedpandaTest):
         verifier.remote_wait_producer()
         verifier.remote_start_consumer()
         verifier.remote_wait_consumer()
+
+    @cluster(num_nodes=4)
+    def test_tx_unique_keys(self):
+        verifier = CompactedVerifier(self.test_context, self.redpanda,
+                                     Workload.TX_UNIQUE_KEYS)
+        verifier.start()
+
+        verifier.remote_start_producer(self.redpanda.brokers(), self.topic,
+                                       self.partition_count)
+        self.logger.info(f"Waiting for 100 writes")
+        verifier.ensure_progress(100, 30)
+        self.logger.info(f"Done")
+        verifier.remote_stop_producer()
+        verifier.remote_wait_producer()
+        verifier.remote_start_consumer()
+        verifier.remote_wait_consumer()
