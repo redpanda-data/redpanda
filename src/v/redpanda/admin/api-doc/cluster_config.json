@@ -208,6 +208,26 @@
           "type": "cluster_config_property_metadata_items",
           "description": "Type of items in an array",
           "nullable": true
+        },
+        "min": {
+          "type": "string",
+          "description": "Minimum value of the property (stringized)",
+          "nullable": true
+        },
+        "max": {
+          "type": "string",
+          "description": "Maximum value of the property (stringized)",
+          "nullable": true
+        },
+        "align": {
+          "type": "string",
+          "description": "The factor the property value can only be a multiple of (stringized)",
+          "nullable": true
+        },
+        "oddeven": {
+          "type": "string",
+          "description": "One of odd|even if the value can only be odd or even",
+          "nullable": true
         }
       }
     }
