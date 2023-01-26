@@ -17,7 +17,6 @@
 #include "pandaproxy/reply.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/std-coroutine.hh>
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/reply.hh>
 

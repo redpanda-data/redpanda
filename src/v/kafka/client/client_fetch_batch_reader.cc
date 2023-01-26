@@ -17,7 +17,6 @@
 #include "kafka/protocol/kafka_batch_adapter.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/std-coroutine.hh>
 
 namespace kafka::client {
 

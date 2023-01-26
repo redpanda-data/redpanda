@@ -16,7 +16,6 @@
 #include "net/dns.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/std-coroutine.hh>
 
 namespace kafka::client {
 

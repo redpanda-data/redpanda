@@ -22,7 +22,6 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
-#include <seastar/core/std-coroutine.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/later.hh>
 

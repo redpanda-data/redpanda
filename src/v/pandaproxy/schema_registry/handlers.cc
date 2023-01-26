@@ -31,7 +31,6 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sstring.hh>
-#include <seastar/core/std-coroutine.hh>
 
 #include <exception>
 #include <limits>

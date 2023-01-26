@@ -26,7 +26,6 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/core/std-coroutine.hh>
 
 #include <functional>
 

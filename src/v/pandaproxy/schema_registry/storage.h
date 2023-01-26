@@ -32,7 +32,6 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/std-coroutine.hh>
 
 namespace pandaproxy::schema_registry {
 

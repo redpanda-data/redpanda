@@ -24,7 +24,6 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/core/std-coroutine.hh>
 
 #include <sys/eventfd.h>
 
