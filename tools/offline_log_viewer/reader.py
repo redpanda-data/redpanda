@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 import struct
 import collections
@@ -8,6 +9,8 @@ SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
 
 SerdeEnvelope = collections.namedtuple('SerdeEnvelope',
                                        ('version', 'compat_version', 'size'))
+
+logger = logging.getLogger('reader')
 
 
 class Endianness(Enum):
@@ -117,6 +120,9 @@ class Reader:
                     'envelope': envelope
                 } | type_read(self, envelope.version)
             else:
+                logger.error(
+                    f"can't decode {envelope.version=}, check {type_read=} or {max_version=}"
+                )
                 return {
                     'error': {
                         'max_supported_version': max_version,
