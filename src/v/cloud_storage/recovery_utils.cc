@@ -84,8 +84,8 @@ ss::future<std::vector<recovery_result>> gather_recovery_results(
     std::regex result_expr{fmt::format(
       "{}/(.*?)/(.*?)/(\\d+)_(.*?).(true|false)", recovery_result_prefix)};
 
-    results.reserve(result.value().size());
-    for (const auto& item : result.value()) {
+    results.reserve(result.value().contents.size());
+    for (const auto& item : result.value().contents) {
         std::cmatch matches;
         if (std::regex_match(
               item.key.begin(), item.key.end(), matches, result_expr)) {

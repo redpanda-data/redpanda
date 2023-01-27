@@ -441,7 +441,7 @@ FIXTURE_TEST(test_list_bucket, s3_imposter_fixture) {
     BOOST_REQUIRE(result.has_value());
 
     auto items = result.value();
-    BOOST_REQUIRE_EQUAL(items.size(), 2);
+    BOOST_REQUIRE_EQUAL(items.contents.size(), 2);
 }
 
 FIXTURE_TEST(test_list_bucket_with_prefix, s3_imposter_fixture) {
@@ -458,7 +458,7 @@ FIXTURE_TEST(test_list_bucket_with_prefix, s3_imposter_fixture) {
                      bucket, fib, cloud_storage_clients::object_key{"x"})
                     .get0();
     BOOST_REQUIRE(result.has_value());
-    auto items = result.value();
+    auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 2);
     BOOST_REQUIRE_EQUAL(items[0].key, "a");
     BOOST_REQUIRE_EQUAL(items[1].key, "b");
@@ -483,10 +483,11 @@ FIXTURE_TEST(test_list_bucket_with_filter, s3_imposter_fixture) {
                      bucket,
                      fib,
                      std::nullopt,
+                     std::nullopt,
                      [](const auto& item) { return item.key == "b"; })
                     .get0();
     BOOST_REQUIRE(result.has_value());
-    auto items = result.value();
+    auto items = result.value().contents;
     BOOST_REQUIRE_EQUAL(items.size(), 1);
     BOOST_REQUIRE_EQUAL(items[0].key, "b");
 }

@@ -264,10 +264,9 @@ public:
       std::vector<cloud_storage_clients::object_key> keys,
       retry_chain_node& parent);
 
-    using list_bucket_items
-      = std::vector<cloud_storage_clients::client::list_bucket_item>;
-    using list_result
-      = result<list_bucket_items, cloud_storage_clients::error_outcome>;
+    using list_result = result<
+      cloud_storage_clients::client::list_bucket_result,
+      cloud_storage_clients::error_outcome>;
 
     /// \brief Lists objects in a bucket
     ///
