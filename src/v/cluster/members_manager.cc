@@ -1304,22 +1304,6 @@ members_manager::handle_configuration_update_request(
             errc::join_request_dispatch_error);
       });
 }
-std::ostream&
-operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
-    switch (tp) {
-    case members_manager::node_update_type::added:
-        return o << "added";
-    case members_manager::node_update_type::decommissioned:
-        return o << "decommissioned";
-    case members_manager::node_update_type::recommissioned:
-        return o << "recommissioned";
-    case members_manager::node_update_type::reallocation_finished:
-        return o << "reallocation_finished";
-    case members_manager::node_update_type::removed:
-        return o << "removed";
-    }
-    return o << "unknown";
-}
 
 std::ostream&
 operator<<(std::ostream& o, const members_manager::node_update& u) {

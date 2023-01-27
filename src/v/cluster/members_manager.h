@@ -86,29 +86,6 @@ public:
     static constexpr ss::shard_id shard = 0;
     static constexpr size_t max_updates_queue_size = 100;
 
-    // Update types, used for communication between the manager and backend.
-    //
-    // NOTE: maintenance mode doesn't interact with the members_backend,
-    // instead interacting with each core via their respective drain_manager.
-    enum class node_update_type : int8_t {
-        // A node has been added to the cluster.
-        added,
-
-        // A node has been decommissioned from the cluster.
-        decommissioned,
-
-        // A node has been recommissioned after an incomplete decommission.
-        recommissioned,
-
-        // All reallocations associated with a given node update have completed
-        // (e.g. it's been fully decommissioned, indicating it can no longer be
-        // recommissioned).
-        reallocation_finished,
-
-        // node has been removed from the cluster
-        removed,
-    };
-
     // Node update information to be processed by the members_backend.
     struct node_update {
         model::node_id id;
@@ -343,6 +320,4 @@ private:
     model::offset _first_node_operation_command_offset = model::offset::max();
 };
 
-std::ostream&
-operator<<(std::ostream&, const members_manager::node_update_type&);
 } // namespace cluster

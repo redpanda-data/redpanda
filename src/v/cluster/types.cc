@@ -978,6 +978,22 @@ std::ostream& operator<<(std::ostream& o, const node_metadata& nm) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const node_update_type& tp) {
+    switch (tp) {
+    case node_update_type::added:
+        return o << "added";
+    case node_update_type::decommissioned:
+        return o << "decommissioned";
+    case node_update_type::recommissioned:
+        return o << "recommissioned";
+    case node_update_type::reallocation_finished:
+        return o << "reallocation_finished";
+    case node_update_type::removed:
+        return o << "removed";
+    }
+    return o << "unknown";
+}
+
 std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
     switch (update) {
     case reconfiguration_state::in_progress:

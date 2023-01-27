@@ -101,7 +101,6 @@ public:
 
 private:
     static constexpr model::revision_id raft0_revision{0};
-    using update_t = members_manager::node_update_type;
     struct node_replicas {
         size_t allocated_replicas;
         size_t max_capacity;
