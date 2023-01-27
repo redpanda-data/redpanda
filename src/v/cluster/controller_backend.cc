@@ -768,9 +768,10 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "controller_backend attempted to process an event that should only "
           "be handled by coproc::reconciliation_backend");
     case op_t::del:
-        return delete_partition(delta.ntp, rev).then([] {
-            return std::error_code(errc::success);
-        });
+        return delete_partition(delta.ntp, rev)
+          .then(
+            [this, &delta, rev]() { return cleanup_orphan_files(delta, rev); })
+          .then([] { return std::error_code(errc::success); });
     case op_t::update:
     case op_t::force_abort_update:
     case op_t::cancel_update:
@@ -1528,6 +1529,15 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
           rev,
           std::current_exception());
     }
+}
+
+ss::future<> controller_backend::cleanup_orphan_files(
+  const topic_table::delta& delta, model::revision_id rev) {
+    if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
+        return ss::now();
+    }
+    return _storage.local().log_mgr().remove_orphan(
+      _data_directory, delta.ntp, rev);
 }
 
 ss::future<>
