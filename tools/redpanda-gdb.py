@@ -22,6 +22,7 @@
 # (gdb) source redpanda-gdb.py
 # (gdb) redpanda memory
 #
+import io
 import gdb
 import gdb.printing
 import uuid
@@ -37,6 +38,182 @@ import os
 import subprocess
 import time
 import socket
+
+from enum import Enum
+import struct
+import collections
+from io import BufferedReader, BytesIO
+
+SERDE_ENVELOPE_FORMAT = "<BBI"
+SERDE_ENVELOPE_SIZE = struct.calcsize(SERDE_ENVELOPE_FORMAT)
+
+SerdeEnvelope = collections.namedtuple('SerdeEnvelope',
+                                       ('version', 'compat_version', 'size'))
+
+
+# TODO: export as an external python module to use in gdb script and offline log viewer
+class Endianness(Enum):
+    BIG_ENDIAN = 0
+    LITTLE_ENDIAN = 1
+
+
+class Reader:
+    def __init__(self, stream, endianness=Endianness.LITTLE_ENDIAN):
+        # BytesIO provides .getBuffer(), BufferedReader peek()
+        self.stream = BufferedReader(stream)
+        self.endianness = endianness
+
+    @staticmethod
+    def _decode_zig_zag(v):
+        return (v >> 1) ^ (~(v & 1) + 1)
+
+    def read_varint(self):
+        shift = 0
+        result = 0
+        while True:
+            i = ord(self.stream.read(1))
+            if i & 128:
+                result |= ((i & 0x7f) << shift)
+            else:
+                result |= i << shift
+                break
+            shift += 7
+
+        return Reader._decode_zig_zag(result)
+
+    def with_endianness(self, str):
+        ch = '<' if self.endianness == Endianness.LITTLE_ENDIAN else '>'
+        return f"{ch}{str}"
+
+    def read_int8(self):
+        return struct.unpack(self.with_endianness('b'), self.stream.read(1))[0]
+
+    def read_uint8(self):
+        return struct.unpack(self.with_endianness('B'), self.stream.read(1))[0]
+
+    def read_int16(self):
+        return struct.unpack(self.with_endianness('h'), self.stream.read(2))[0]
+
+    def read_uint16(self):
+        return struct.unpack(self.with_endianness('H'), self.stream.read(2))[0]
+
+    def read_int32(self):
+        return struct.unpack(self.with_endianness('i'), self.stream.read(4))[0]
+
+    def read_uint32(self):
+        return struct.unpack(self.with_endianness('I'), self.stream.read(4))[0]
+
+    def read_int64(self):
+        return struct.unpack(self.with_endianness('q'), self.stream.read(8))[0]
+
+    def read_uint64(self):
+        return struct.unpack(self.with_endianness('Q'), self.stream.read(8))[0]
+
+    def read_serde_enum(self):
+        return self.read_int32()
+
+    def read_iobuf(self):
+        len = self.read_int32()
+        return self.stream.read(len)
+
+    def read_bool(self):
+        return self.read_int8() == 1
+
+    def read_string(self):
+        len = self.read_int32()
+        return self.stream.read(len).decode('utf-8')
+
+    def read_kafka_string(self):
+        len = self.read_int16()
+        return self.stream.read(len).decode('utf-8')
+
+    def read_kafka_bytes(self):
+        len = self.read_int32()
+        return self.stream.read(len)
+
+    def read_optional(self, type_read):
+        present = self.read_int8()
+        if present == 0:
+            return None
+        return type_read(self)
+
+    def read_kafka_optional_string(self):
+        len = self.read_int16()
+        if len == -1:
+            return None
+        return self.stream.read(len).decode('utf-8')
+
+    def read_vector(self, type_read):
+        sz = self.read_int32()
+        ret = []
+        for i in range(0, sz):
+            ret.append(type_read(self))
+        return ret
+
+    def read_envelope(self, type_read=None, max_version=0):
+        header = self.read_bytes(SERDE_ENVELOPE_SIZE)
+        envelope = SerdeEnvelope(*struct.unpack(SERDE_ENVELOPE_FORMAT, header))
+        if type_read is not None:
+            if envelope.version <= max_version:
+                return {
+                    'envelope': envelope
+                } | type_read(self, envelope.version)
+            else:
+                return {
+                    'error': {
+                        'max_supported_version': max_version,
+                        'envelope': envelope
+                    }
+                }
+        return envelope
+
+    def read_serde_vector(self, type_read):
+        sz = self.read_uint32()
+        ret = []
+        for i in range(0, sz):
+            ret.append(type_read(self))
+        return ret
+
+    def read_tristate(self, type_read):
+        state = self.read_int8()
+        t = {}
+        if state == -1:
+            t['state'] = 'disabled'
+        elif state == 0:
+            t['state'] = 'empty'
+        else:
+            t['value'] = type_read(self)
+        return t
+
+    def read_bytes(self, length):
+        return self.stream.read(length)
+
+    def peek(self, length):
+        return self.stream.peek(length)
+
+    def read_uuid(self):
+        return ''.join([
+            f'{self.read_uint8():02x}' + ('-' if k in [3, 5, 7, 9] else '')
+            for k in range(16)
+        ])
+
+    def peek_int8(self):
+        # peek returns the whole memory buffer, slice is needed to conform to struct format string
+        return struct.unpack('<b', self.stream.peek(1)[:1])[0]
+
+    def skip(self, length):
+        self.stream.read(length)
+
+    def remaining(self):
+        return len(self.stream.raw.getbuffer()) - self.stream.tell()
+
+    def read_serde_map(self, k_reader, v_reader):
+        ret = {}
+        for _ in range(self.read_uint32()):
+            key = k_reader(self)
+            val = v_reader(self)
+            ret[key] = val
+        return ret
 
 
 class std_unique_ptr:
@@ -165,9 +342,150 @@ class std_vector:
         return self.__nonzero__()
 
 
+class absl_btree_map_params:
+    def __init__(self, params_type):
+        self.kt = params_type.template_argument(0)
+        self.vt = params_type.template_argument(1)
+        self.cmp = params_type.template_argument(2)
+        self.alloc_t = params_type.template_argument(3)
+        self.target_node_sz = params_type.template_argument(4)
+        self.is_multi = params_type.template_argument(5)
+
+
+class absl_layout:
+    def __init__(self, type, *args):
+        self.types = []
+        alignments = []
+        self.sizes = args
+        for i in range(4):
+            tmpl = type.template_argument(i).strip_typedefs()
+            self.types.append(tmpl)
+            alignments.append(tmpl.alignof)
+
+        self.alignment = max(alignments)
+
+    def element_index(self, type):
+        for i, t in enumerate(self.types):
+            if t == type:
+                return i
+
+    def align(self, a, b):
+        return (a + b - 1) & ~(b - 1)
+
+    def offset(self, type_idx):
+        if type_idx == 0:
+            return 0
+        return self.align(
+            self.offset(type_idx - 1) +
+            self.types[type_idx - 1].sizeof * self.sizes[type_idx - 1],
+            self.types[type_idx].alignof)
+
+    def pointer(self, type, base_ptr):
+
+        ptr = base_ptr + self.offset(self.element_index(type))
+        ptr_type = type.pointer().strip_typedefs()
+        ptr_v = gdb.parse_and_eval(f"({ptr_type}){ptr}")
+        return ptr_v
+
+
+class absl_btree_map_node:
+    def __init__(self, ref: gdb.Value):
+        self.type = ref.type.strip_typedefs()
+        self.ref = ref
+        self.layout_type = gdb.lookup_type(
+            f"{self.type}::layout_type").strip_typedefs()
+        self.slots = gdb.parse_and_eval(f"(int){self.type}::kNodeSlots")
+        self.params = absl_btree_map_params(self.type.template_argument(0))
+        self.internal_layout = absl_layout(self.layout_type, 1, 0, 4,
+                                           self.slots, self.slots + 1)
+        self.leaf_layout = absl_layout(self.layout_type, 1, 0, 4, self.slots,
+                                       0)
+
+    def get_field(self, idx):
+        tp = self.internal_layout.types[idx]
+
+        return self.internal_layout.pointer(tp, self.ref.address)
+
+    def parent(self):
+        return absl_btree_map_node(
+            self.get_field(0).dereference().dereference())
+
+    def slot(self, idx):
+        return self.get_field(3)[idx]
+
+    def finish(self):
+        return self.get_field(2)[2]
+
+    def is_leaf(self):
+        return self.get_field(2)[3] != 0
+
+    def position(self):
+        return self.get_field(2)[0]
+
+    def start(self):
+        return 0
+
+    def is_root(self):
+        return self.parent().is_leaf()
+
+    def child(self, idx):
+        return absl_btree_map_node(
+            self.get_field(4)[idx].dereference().dereference())
+
+    def is_internal(self):
+        return not self.is_leaf()
+
+    def start_child(self):
+        return self.child(self.start())
+
+
 class absl_btree_map:
     def __init__(self, ref):
         self.ref = ref
+        container_type = self.ref.type.strip_typedefs()
+        self.tree = ref['tree_']
+        self.tree_type = self.tree.type
+        self.kt = container_type.template_argument(0)
+        self.vt = container_type.template_argument(1)
+
+        self.root = absl_btree_map_node(self.tree['root_'].dereference())
+        self.rightmost_node = absl_btree_map_node(
+            self.tree['rightmost_']['value'].dereference())
+
+        # iterator part
+        self.node_it = self.leftmost()
+        self.pos_it = self.leftmost().start()
+
+    def leftmost(self):
+        return self.root.parent()
+
+    def __iter__(self):
+
+        while True:
+
+            value = self.node_it.slot(self.pos_it)['value']
+            yield value["first"], value["second"]
+
+            # node_->is_leaf() && ++position_ < node_->finish()
+            self.pos_it += 1
+            if self.node_it.ref.address == self.rightmost_node.ref.address and self.pos_it == self.node_it.finish(
+            ):
+                break
+
+            if self.node_it.is_leaf() and self.pos_it < self.node_it.finish():
+                # already incremented position iterator
+                continue
+            # increment_slow
+            if self.node_it.is_leaf():
+                while self.pos_it == self.node_it.finish(
+                ) and not self.node_it.is_root():
+                    self.pos_it = self.node_it.position()
+                    self.node_it = self.node_it.parent()
+            else:
+                self.node_it = self.node_it.child(self.pos_it + 1)
+                while self.node_it.is_internal():
+                    self.node_it = self.node_it.start_child()
+                self.pos_it = self.node_it.start()
 
     def size(self):
         # the size is the number of elements in the tree. absl also tracks the
@@ -793,6 +1111,20 @@ class segment_set:
             yield segment(seastar_lw_shared_ptr(ptr).get())
 
 
+class model_ntp:
+    def __init__(self, ref):
+        self.ref = ref
+
+    def namespace(self):
+        return self.ref['ns']['_value']
+
+    def topic(self):
+        return self.ref['tp']['topic']['_value']
+
+    def partition(self):
+        return self.ref['tp']['partition']['_value']
+
+
 def template_arguments(gdb_type):
     n = 0
     while True:
@@ -1086,6 +1418,98 @@ class redpanda_storage(gdb.Command):
     def invoke(self, arg, from_tty):
         self.print_segments()
         self.print_readers_cache_memory()
+
+
+class iobuf:
+    def __init__(self, ref):
+        self.size = ref['_size']
+        self.fragments = boost_intrusive_list(ref['_frags'], "hook")
+
+    def __str__(self):
+        return f"{{ size: {self.size} }}"
+
+
+def iobuf_bytes(buf):
+    bytes = io.BytesIO()
+    for f in buf.fragments:
+        used_bytes = f['_used_bytes']
+        buffer = f['_buf']
+        for i in range(used_bytes):
+            bytes.write(
+                int(buffer['_buffer'][i].format_string(format='u')).to_bytes(
+                    1, byteorder='little'))
+    bytes.seek(0)
+    return bytes
+
+
+class batch_cache_range:
+    def __init__(self, ref):
+        self.ref = ref
+        self.valid = ref['_valid']
+        self.arena = iobuf(ref['_arena'])
+        self.offsets = std_vector(ref['_offsets'])
+        self.pinned = ref['_pinned']
+        self.size = ref['_size']
+
+    def __str__(self):
+        return f"{{ address: {self.ref.address}, size: {self.size}, pinned: {self.pinned}, valid: {self.valid}, offsets: [{','.join([ str(o['_value']) for o in self.offsets])}] }}"
+
+
+class batch_cache_entry:
+    def __init__(self, ref):
+        self.ref = ref
+        self.range_offset = ref['_range_offset']
+        self.range = batch_cache_range(ref['_range']['_ptr'].dereference())
+
+    def header(self):
+        bytes = iobuf_bytes(self.range.arena)
+        # seek to given offset
+        bytes.seek(self.range_offset)
+        reader = Reader(bytes)
+        return {
+            'header_crc': reader.read_uint32(),
+            'size': reader.read_int32(),
+            'base_offset': reader.read_int64(),
+            'type': reader.read_int8(),
+            'crc': reader.read_int32(),
+            'attrs': reader.read_int16(),
+            'last_offset_delta': reader.read_int32(),
+            'first_ts': reader.read_int64(),
+            'max_ts': reader.read_int64(),
+            'producer_id': reader.read_int64(),
+            'producer_epoch': reader.read_int16(),
+            'base_sequence': reader.read_int32(),
+            'record_count': reader.read_int32(),
+            'term': reader.read_int64(),
+        }
+
+
+class redpanda_batch_cache(gdb.Command):
+    """Prints content of redpanda batch cache
+    """
+    def __init__(self):
+        gdb.Command.__init__(self, 'redpanda batch_cache', gdb.COMMAND_USER,
+                             gdb.COMPLETE_COMMAND)
+
+    def get_log(self, ns, topic, partition):
+        for ntp, log in find_logs():
+            m_ntp = model_ntp(ntp)
+            if str(m_ntp.namespace()).strip('"') == ns and str(
+                    m_ntp.topic()).strip('"') == topic and partition == str(
+                        m_ntp.partition()):
+                return log
+        return None
+
+    def invoke(self, arg, from_tty):
+        ns, tp, partition = arg.split('/')
+        print(f"# Batch cache for {ns}/{tp}/{partition}")
+        log = self.get_log(ns, tp, partition)
+        for s in log.segments():
+
+            for k, v in s.batch_cache_index():
+                range_offset = k['_value']
+                entry = batch_cache_entry(v)
+                print(f"o: {range_offset}, header: {entry.header()}")
 
 
 class redpanda_small_objects(gdb.Command):
@@ -1919,6 +2343,7 @@ class redpanda_heapprof(gdb.Command):
 redpanda()
 redpanda_memory()
 redpanda_storage()
+redpanda_batch_cache()
 redpanda_task_queues()
 redpanda_smp_queues()
 redpanda_small_objects()
