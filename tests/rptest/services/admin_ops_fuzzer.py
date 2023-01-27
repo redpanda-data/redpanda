@@ -129,8 +129,19 @@ class DeleteTopicOperation(Operation):
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} deletion")
-        topics = ctx.rpk().list_topics()
-        return self.topic not in topics
+
+        # since metadata in Redpanda and Kafka are eventually consistent
+        # we must check all the nodes before proceeding
+        for n in ctx.redpanda.started_nodes():
+            partitions = ctx.admin().get_partitions(node=n)
+            for p in partitions:
+                if p['topic'] == self.topic:
+                    ctx.redpanda.logger.info(
+                        f"found deleted topic {self.topic} on node {n.account.hostname}"
+                    )
+                    return False
+
+        return True
 
     def describe(self):
         return {
