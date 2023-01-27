@@ -238,6 +238,8 @@ inline errc map_server_error(status status) {
         return errc::method_not_found;
     case status::version_not_supported:
         return errc::version_not_supported;
+    case status::service_unavailable:
+        return errc::exponential_backoff;
     default:
         return errc::unknown;
     };
