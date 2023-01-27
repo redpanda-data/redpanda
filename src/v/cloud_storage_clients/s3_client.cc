@@ -170,7 +170,10 @@ request_creator::make_list_objects_v2_request(
     auto host = fmt::format("{}.{}", name(), _ap());
     auto target = fmt::format("/?list-type=2");
     if (prefix.has_value()) {
-        target = fmt::format("/?list-type=2&prefix={}", (*prefix)().string());
+        target = fmt::format("{}&prefix={}", target, (*prefix)().string());
+    }
+    if (delimiter.has_value()) {
+        target = fmt::format("{}&delimiter={}", target, *delimiter);
     }
     header.method(boost::beast::http::verb::get);
     header.target(target);

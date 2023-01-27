@@ -20,6 +20,7 @@
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/outcome/try.hpp>
 #include <boost/uuid/random_generator.hpp>
@@ -29,6 +30,9 @@ namespace {
 
 const std::regex manifest_path_expr{
   R"REGEX(\w+/meta/(.*?)/(.*?)/topic_manifest.json)REGEX"};
+
+// Possible prefix for a path which contains a topic manifest file
+const std::regex prefix_expr{"[a-fA-F0-9]0000000/"};
 
 constexpr size_t list_api_timeout_multiplier{10};
 
@@ -182,10 +186,62 @@ ss::future<> topic_recovery_service::propagate_state(state s) {
     });
 }
 
-static bool
-is_topic_manifest(const cloud_storage_clients::client::list_bucket_item& item) {
-    return std::regex_match(
-      item.key.cbegin(), item.key.cend(), manifest_path_expr);
+static ss::future<result<std::vector<remote_segment_path>, recovery_error_ctx>>
+collect_manifest_paths(
+  remote& remote, ss::abort_source& as, const recovery_task_config& cfg) {
+    const auto& bucket = cfg.bucket;
+    auto rtc = make_rtc(as, cfg);
+
+    // List only the items at the top of the bucket hierarchy. The delimiter
+    // ensures that any "directories" will be collected into the common_prefixes
+    // field of the result.
+    auto top_level = co_await remote.list_objects(
+      bucket, rtc, std::nullopt, '/');
+    if (top_level.has_error()) {
+        vlog(
+          cst_log.error,
+          "Failed to list top level items: {}",
+          top_level.error());
+        co_return recovery_error_ctx::make("failed to list top level items");
+    }
+
+    auto prefixes = top_level.value().common_prefixes;
+    for (const auto& prefix : prefixes) {
+        vlog(cst_log.trace, "found top level prefix: {}", prefix);
+    }
+
+    // Filter out prefixes which do not match the prefix expression that topic
+    // manifests use
+    auto it = std::remove_if(
+      prefixes.begin(), prefixes.end(), [](const auto& prefix) {
+          return !std::regex_match(prefix.cbegin(), prefix.cend(), prefix_expr);
+      });
+    prefixes.erase(it, prefixes.end());
+
+    for (auto& prefix : prefixes) {
+        vlog(cst_log.trace, "found possible topic meta prefix: {}", prefix);
+    }
+
+    std::vector<remote_segment_path> paths;
+    for (const auto& prefix : prefixes) {
+        auto rtc = make_rtc(as, cfg);
+
+        // This request is restricted to prefix, it should only return the
+        // metadata files for a topic.
+        auto meta = co_await remote.list_objects(
+          bucket, rtc, cloud_storage_clients::object_key{prefix});
+        if (meta.has_error()) {
+            vlog(cst_log.error, "Failed to list meta items: {}", meta.error());
+            continue;
+        }
+
+        for (auto&& item : meta.value().contents) {
+            vlog(cst_log.trace, "adding path {} for {}", item.key, prefix);
+            paths.emplace_back(item.key);
+        }
+    }
+
+    co_return paths;
 }
 
 ss::future<result<void, recovery_error_ctx>>
@@ -229,13 +285,12 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     co_await propagate_state(state::scanning_bucket);
     vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
-    auto bucket_contents_result = co_await _remote.local().list_objects(
-      _config.bucket, fib, std::nullopt, is_topic_manifest);
+    auto bucket_contents_result = co_await collect_manifest_paths(
+      _remote.local(), _as, _config);
 
     if (bucket_contents_result.has_error()) {
         auto error = recovery_error_ctx::make(
-          fmt::format(
-            "error while listing items: {}", bucket_contents_result.error()),
+          fmt::format("error while listing items"),
           recovery_error_code::error_listing_items);
         vlog(cst_log.error, "{}", error.context);
         co_await propagate_state(state::inactive);
@@ -365,7 +420,7 @@ topic_recovery_service::create_topics(const recovery_request& request) {
 
 ss::future<std::vector<cloud_storage::topic_manifest>>
 topic_recovery_service::filter_existing_topics(
-  const remote::list_bucket_items& items,
+  std::vector<remote_segment_path> items,
   const recovery_request& request,
   std::optional<model::ns> filter_ns) {
     absl::flat_hash_map<ss::sstring, absl::flat_hash_set<ss::sstring>>
@@ -390,9 +445,10 @@ topic_recovery_service::filter_existing_topics(
         // Although we filter for topic manifest pattern earlier, we still use
         // this regex match here to extract the namespace and topic from the
         // pattern.
-        std::cmatch matches;
+        std::smatch matches;
+        const auto& path = item().string();
         const auto is_topic_manifest = std::regex_match(
-          item.key.cbegin(), item.key.cend(), matches, manifest_path_expr);
+          path.cbegin(), path.cend(), matches, manifest_path_expr);
         if (!is_topic_manifest) {
             continue;
         }
@@ -420,7 +476,7 @@ topic_recovery_service::filter_existing_topics(
             continue;
         }
 
-        if (auto download_r = co_await download_manifest(item.key);
+        if (auto download_r = co_await download_manifest(path);
             download_r.has_value()) {
             manifests.push_back(std::move(download_r.value()));
         }
