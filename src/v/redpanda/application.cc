@@ -1896,6 +1896,9 @@ void application::start_runtime_services(
       })
       .get();
 
+    syschecks::systemd_message("Starting node isolation watcher").get();
+    _node_isolation_watcher->start();
+
     // After we have started internal RPC listener, we may join
     // the cluster (if we aren't already a member)
     controller->get_members_manager()
