@@ -255,6 +255,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> cloud_storage_metadata_sync_timeout_ms;
     property<std::chrono::milliseconds> cloud_storage_housekeeping_interval_ms;
     property<std::chrono::milliseconds> cloud_storage_idle_timeout_ms;
+    property<double> cloud_storage_idle_threshold_rps;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
     property<size_t> cloud_storage_recovery_temporary_retention_bytes_default;
