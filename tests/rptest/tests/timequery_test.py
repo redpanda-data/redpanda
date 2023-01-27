@@ -376,7 +376,20 @@ class TestReadReplicaTimeQuery(RedpandaTest):
         self.logger.info(
             f"Time query {ts} expected offset {offset_src}, read-replica {offset_rr}"
         )
-        assert offset_src == offset_rr, f"Expected offset {offset_src}, got {offset_rr}"
+        matches = offset_src == offset_rr
+        if not matches:
+            try:
+                record = kcat_src.consume_one(self.topic_name, 0, offset_src)
+                self.logger.info(
+                    f"src cluster record at {offset_src}: {record}")
+            except:
+                pass
+            try:
+                record = kcat_rr.consume_one(self.topic_name, 0, offset_rr)
+                self.logger.info(f"rr cluster record at {offset_rr}: {record}")
+            except:
+                pass
+        assert matches, f"Expected offset {offset_src}, got {offset_rr}"
 
     @ducktape_cluster(num_nodes=7)
     def test_timequery(self):
