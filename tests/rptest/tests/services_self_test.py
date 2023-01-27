@@ -101,7 +101,8 @@ class KgoVerifierSelfTest(PreallocNodesTest):
             100,
             2,
             nodes=self.preallocated_nodes,
-            debug_logs=True)
+            debug_logs=True,
+            trace_logs=True)
         rand_consumer.start(clean=False)
 
         seq_consumer = KgoVerifierSeqConsumer(self.test_context,
@@ -109,7 +110,8 @@ class KgoVerifierSelfTest(PreallocNodesTest):
                                               topic,
                                               16384,
                                               nodes=self.preallocated_nodes,
-                                              debug_logs=True)
+                                              debug_logs=True,
+                                              trace_logs=True)
         seq_consumer.start(clean=False)
 
         group_consumer = KgoVerifierConsumerGroupConsumer(
@@ -119,7 +121,8 @@ class KgoVerifierSelfTest(PreallocNodesTest):
             16384,
             2,
             nodes=self.preallocated_nodes,
-            debug_logs=True)
+            debug_logs=True,
+            trace_logs=True)
         group_consumer.start(clean=False)
 
         producer.wait(timeout_sec=60)
