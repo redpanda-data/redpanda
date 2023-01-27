@@ -1139,10 +1139,31 @@ disk_log_impl::make_reader(timequery_config config) {
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
           auto start_offset = _start_offset;
           if (!lease->range.empty()) {
+              const ss::lw_shared_ptr<segment>& segment = *lease->range.begin();
+              std::optional<segment_index::entry> index_entry = std::nullopt;
+
+              // The index (and hence, binary search) is used only if the
+              // timestamps on the batches are monotonically increasing.
+              if (segment->index().batch_timestamps_are_monotonic()) {
+                  index_entry = segment->index().find_nearest(cfg.time);
+              }
+
+              auto offset_within_segment = index_entry
+                                             ? index_entry->offset
+                                             : segment->offsets().base_offset;
+
               // adjust for partial visibility of segment prefix
-              start_offset = std::max(
-                start_offset, (*lease->range.begin())->offsets().base_offset);
+              start_offset = std::max(start_offset, offset_within_segment);
           }
+
+          vlog(
+            stlog.debug,
+            "Starting timequery lookup from offset={} for ts={} in segment "
+            "with start_offset={}",
+            start_offset,
+            cfg.time,
+            _start_offset);
+
           log_reader_config config(
             start_offset,
             cfg.max_offset,
