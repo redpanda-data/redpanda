@@ -13,6 +13,7 @@
 #include "archival/fwd.h"
 #include "archival/logger.h"
 #include "archival/types.h"
+#include "cloud_storage/remote.h"
 #include "config/configuration.h"
 #include "ssx/future-util.h"
 
@@ -53,13 +54,22 @@ upload_housekeeping_service::upload_housekeeping_service(
       config::shard_local_cfg().cloud_storage_idle_timeout_ms.bind())
   , _epoch_duration(
       config::shard_local_cfg().cloud_storage_housekeeping_interval_ms.bind())
+  , _api_idle_threshold(
+      config::shard_local_cfg().cloud_storage_idle_threshold_rps.bind())
   , _time_jitter(100ms)
   , _rtc(_as)
   , _ctxlog(archival_log, _rtc)
   , _filter(_rtc)
-  , _workflow(_rtc, sg) {
+  , _workflow(_rtc, sg)
+  , _api_utilization(
+      std::make_unique<sliding_window_t>(0.0, _idle_timeout(), ma_resolution)) {
     _idle_timer.set_callback([this] { return idle_timer_callback(); });
     _epoch_timer.set_callback([this] { return epoch_timer_callback(); });
+    _idle_timeout.watch([this] {
+        auto initial = _api_utilization->get();
+        _api_utilization = std::make_unique<sliding_window_t>(
+          initial, _idle_timeout(), ma_resolution);
+    });
 }
 
 upload_housekeeping_service::~upload_housekeeping_service() {}
@@ -87,15 +97,32 @@ housekeeping_workflow& upload_housekeeping_service::workflow() {
 ss::future<> upload_housekeeping_service::bg_idle_loop() {
     ss::gate::holder holder(_gate);
     while (!_as.abort_requested()) {
-        co_await _remote.subscribe(_filter);
-        // Restart the timer and delay idle timeout
-        rearm_idle_timer();
-        if (_workflow.state() == housekeeping_state::active) {
-            // Try to pause the housekeeping workflow
-            _workflow.pause();
+        auto event = co_await _remote.subscribe(_filter);
+        double weight = 0;
+        switch (event) {
+        // Write path events
+        case cloud_storage::api_activity_notification::manifest_upload:
+        case cloud_storage::api_activity_notification::segment_upload:
+        case cloud_storage::api_activity_notification::segment_delete:
+            weight = 1;
+            break;
+        // Read path events
+        case cloud_storage::api_activity_notification::manifest_download:
+        case cloud_storage::api_activity_notification::segment_download:
+            weight = 1;
+            break;
+        };
+        _api_utilization->update(weight, ss::lowres_clock::now());
+        if (_api_utilization->get() >= _api_idle_threshold()) {
+            // Restart the timer and delay idle timeout
+            rearm_idle_timer();
+            if (_workflow.state() == housekeeping_state::active) {
+                // Try to pause the housekeeping workflow
+                _workflow.pause();
+            }
+            // NOTE: do not pause if workflow is in housekeeping_state::draining
+            // state.
         }
-        // NOTE: do not pause if workflow is in housekeeping_state::draining
-        // state.
     }
 }
 

@@ -14,6 +14,7 @@
 #include "config/bounded_property.h"
 #include "random/simple_time_jitter.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/moving_average.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -138,9 +139,10 @@ private:
 /// The service uses two timers and subscribes to cloud_storage::remote
 /// notifications. The idle timer fires frequently and triggers transition to
 /// the active state. Every time the service receives notification from the
-/// cloud_storage::remote it resets the timer so if the cloud storage is busy
-/// the idle timer will never be triggered and its callback will never be
-/// called.
+/// cloud_storage::remote it computes the utilization of the cloud storage api
+/// and resets the timer if it's above the threshold so if the cloud storage
+/// is busy the idle timer will never be triggered and its callback will never
+/// be called.
 ///
 /// The 'epoch' timer runs less frequently. Notifications from the cloud
 /// storage do not reset it. So it will be triggered eventually if the cloud
@@ -215,12 +217,17 @@ private:
     config::binding<std::chrono::milliseconds> _idle_timeout;
     /// Timeout that defines the duration of epoch
     config::binding<std::chrono::milliseconds> _epoch_duration;
+    /// Idle threshold
+    config::binding<double> _api_idle_threshold;
     /// Jitter for timers
     simple_time_jitter<ss::lowres_clock> _time_jitter;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     cloud_storage::remote::event_filter _filter;
     housekeeping_workflow _workflow;
+    static constexpr auto ma_resolution = 20ms;
+    using sliding_window_t = timed_moving_average<double, ss::lowres_clock>;
+    std::unique_ptr<sliding_window_t> _api_utilization;
 };
 
 } // namespace archival
