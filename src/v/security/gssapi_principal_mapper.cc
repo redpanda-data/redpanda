@@ -20,6 +20,14 @@
 
 #include <charconv>
 
+/*
+ * some older versions of re2 don't have operator for implicit cast to
+ * string_view so add this helper to support older re2.
+ */
+static std::string_view spv(const re2::StringPiece& sp) {
+    return {sp.data(), sp.size()};
+}
+
 namespace security {
 static constexpr std::string_view gssapi_name_pattern
   = R"(([^/@]*)(/([^/@]*))?@([^/@]*))";
@@ -95,10 +103,10 @@ parse_rules(const std::vector<ss::sstring>& unparsed_rules) {
             }
             rv.emplace_back(
               num_components,
-              format,
-              match_regex,
-              from_pattern,
-              to_pattern,
+              spv(format),
+              spv(match_regex),
+              spv(from_pattern),
+              spv(to_pattern),
               gssapi_rule::repeat{repeat == "g"},
               case_change);
         }
@@ -136,7 +144,9 @@ std::optional<gssapi_name> gssapi_name::parse(std::string_view principal_name) {
           &host_name,
           &realm)) {
         return gssapi_name(
-          ss::sstring(primary), ss::sstring(host_name), ss::sstring(realm));
+          ss::sstring(spv(primary)),
+          ss::sstring(spv(host_name)),
+          ss::sstring(spv(realm)));
     } else {
         if (principal_name.find('@') != std::string_view::npos) {
             vlog(seclog.warn, "Malformed gssapi name: {}", principal_name);

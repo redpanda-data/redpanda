@@ -14,7 +14,7 @@
 
 #include "cloud_storage/topic_recovery_service.h"
 #include "cluster/members_table.h"
-#include "cluster/topic_recovery_status_rpc.h"
+#include "cluster/topic_recovery_status_rpc_service.h"
 #include "rpc/connection_cache.h"
 
 namespace {
