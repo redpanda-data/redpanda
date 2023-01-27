@@ -43,22 +43,75 @@ enum class xml_tag {
 };
 
 struct parser_state {
-    explicit parser_state(std::optional<client::item_filter>);
+    struct impl {
+        explicit impl(std::optional<client::item_filter> = std::nullopt);
+        impl(const impl&) = delete;
+        impl& operator=(const impl&) = delete;
+        impl& operator=(impl&&) = delete;
 
-    /// \brief callbacks for registering with libxml
-    void handle_start_element(std::string_view element_name);
-    void handle_end_element(std::string_view element_name);
-    void handle_characters(std::string_view characters);
+        impl(impl&&) = default;
 
-    client::list_bucket_result parsed_items() const;
+        virtual void handle_start_element(std::string_view element_name) = 0;
+        virtual void handle_end_element(std::string_view element_name) = 0;
+        virtual void handle_characters(std::string_view characters) = 0;
+        client::list_bucket_result parsed_items() const;
+
+        virtual ~impl() = default;
+
+    protected:
+        std::optional<client::item_filter> _item_filter;
+        client::list_bucket_result _items;
+        std::optional<client::list_bucket_item> _current_item;
+
+        xml_tag _current_tag;
+        std::vector<ss::sstring> _tags;
+    };
+
+    explicit parser_state(std::unique_ptr<impl>);
+
+    void handle_start_element(std::string_view element_name) {
+        _impl->handle_start_element(element_name);
+    }
+
+    void handle_end_element(std::string_view element_name) {
+        _impl->handle_end_element(element_name);
+    }
+
+    void handle_characters(std::string_view characters) {
+        _impl->handle_characters(characters);
+    }
+
+    client::list_bucket_result parsed_items() const {
+        return _impl->parsed_items();
+    }
 
 private:
-    client::list_bucket_result _items;
-    std::optional<client::list_bucket_item> _current_item;
+    std::unique_ptr<impl> _impl;
+};
 
-    xml_tag _current_tag;
-    std::vector<ss::sstring> _tags;
-    std::optional<client::item_filter> _item_filter;
+struct aws_parse_impl final : public parser_state::impl {
+    explicit aws_parse_impl(std::optional<client::item_filter> = std::nullopt);
+    void handle_start_element(std::string_view element_name) override;
+    void handle_end_element(std::string_view element_name) override;
+    void handle_characters(std::string_view characters) override;
+
+private:
+    bool is_top_level() const;
+    bool is_in_contents() const;
+    bool is_in_common_prefixes() const;
+};
+
+struct abs_parse_impl final : public parser_state::impl {
+    explicit abs_parse_impl(std::optional<client::item_filter> = std::nullopt);
+    void handle_start_element(std::string_view element_name) override;
+    void handle_end_element(std::string_view element_name) override;
+    void handle_characters(std::string_view characters) override;
+
+private:
+    bool is_top_level() const;
+    bool is_in_blob_properties() const;
+    bool is_in_blob() const;
+    bool is_in_blob_prefixes() const;
 };
 
 class xml_sax_parser {
@@ -77,8 +130,7 @@ public:
     /// constructor to allow for the parser to be initialized after move, for
     /// example when used in a `ss::do_with` construct, so that moving of
     /// internal state is avoided.
-    void start_parse(
-      std::optional<client::item_filter> gather_item_if = std::nullopt);
+    void start_parse(std::unique_ptr<parser_state::impl> impl);
 
     /// \brief This function is expected to be called at the end of a parse
     /// after all the XML content has been processed through parse_chunk, to

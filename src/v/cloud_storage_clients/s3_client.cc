@@ -720,8 +720,9 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
                   resp->as_input_stream(),
                   xml_sax_parser{},
                   [pred = std::move(gather_item_if)](
-                    ss::input_stream<char>& stream, xml_sax_parser& p) {
-                      p.start_parse(std::move(pred));
+                    ss::input_stream<char>& stream, xml_sax_parser& p) mutable {
+                      p.start_parse(
+                        std::make_unique<aws_parse_impl>(std::move(pred)));
                       return ss::do_until(
                                [&stream] { return stream.eof(); },
                                [&stream, &p] {

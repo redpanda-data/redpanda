@@ -43,12 +43,86 @@ static constexpr std::string_view payload = R"XML(
 </ListBucketResult>
 )XML";
 
+static constexpr std::string_view abs_payload = R"XML(
+<EnumerationResults ServiceEndpoint="http://myaccount.blob.core.windows.net/"  ContainerName="mycontainer">  
+  <Prefix>prefix</Prefix>  
+  <Marker>string-value</Marker>  
+  <MaxResults>int-value</MaxResults>  
+  <Delimiter>string-value</Delimiter>  
+  <Blobs>  
+    <Blob>  
+      <Name>blob-name</Name>  
+      <Snapshot>date-time-value</Snapshot>  
+      <VersionId>date-time-vlue</VersionId>
+      <IsCurrentVersion>true</IsCurrentVersion>
+      <Deleted>true</Deleted>
+      <Properties> 
+        <Creation-Time>date-time-value</Creation-Time>
+        <Last-Modified>2021-01-10T02:00:00.000Z</Last-Modified>  
+        <Etag>etag</Etag>
+        <Owner>owner user id</Owner>
+        <Group>owning group id</Group>
+        <Permissions>permission string</Permissions>
+        <Acl>access control list</Acl>
+        <ResourceType>file | directory</ResourceType>
+        <Placeholder>true</Placeholder>
+        <Content-Length>1112</Content-Length>  
+        <Content-Type>blob-content-type</Content-Type>  
+        <Content-Encoding />  
+        <Content-Language />  
+        <Content-MD5 />  
+        <Cache-Control />  
+        <x-ms-blob-sequence-number>sequence-number</x-ms-blob-sequence-number>  
+        <BlobType>BlockBlob|PageBlob|AppendBlob</BlobType>  
+        <AccessTier>tier</AccessTier>  
+        <LeaseStatus>locked|unlocked</LeaseStatus>  
+        <LeaseState>available | leased | expired | breaking | broken</LeaseState>  
+        <LeaseDuration>infinite | fixed</LeaseDuration>  
+        <CopyId>id</CopyId>  
+        <CopyStatus>pending | success | aborted | failed </CopyStatus>  
+        <CopySource>source url</CopySource>  
+        <CopyProgress>bytes copied/bytes total</CopyProgress>  
+        <CopyCompletionTime>datetime</CopyCompletionTime>  
+        <CopyStatusDescription>error string</CopyStatusDescription>  
+        <ServerEncrypted>true</ServerEncrypted> 
+        <CustomerProvidedKeySha256>encryption-key-sha256</CustomerProvidedKeySha256>
+        <EncryptionScope>encryption-scope-name</EncryptionScope>
+        <IncrementalCopy>true</IncrementalCopy>
+        <AccessTierInferred>true</AccessTierInferred>
+        <AccessTierChangeTime>datetime</AccessTierChangeTime>
+        <DeletedTime>datetime</DeletedTime>
+        <RemainingRetentionDays>no-of-days</RemainingRetentionDays>
+        <TagCount>number of tags between 1 to 10</TagCount>
+        <RehydratePriority>rehydrate priority</RehydratePriority>
+        <Expiry-Time>date-time-value</Expiry-Time>
+      </Properties>  
+      <Metadata>     
+        <Name>value</Name>  
+      </Metadata>  
+      <Tags>
+          <TagSet>
+              <Tag>
+                  <Key>TagName</Key>
+                  <Value>TagValue</Value>
+              </Tag>
+          </TagSet>
+      </Tags>
+      <OrMetadata />
+    </Blob>  
+    <BlobPrefix>  
+      <Name>blob-prefix</Name>  
+    </BlobPrefix>  
+  </Blobs>  
+  <NextMarker />  
+</EnumerationResults>
+)XML";
+
 inline ss::logger test_log("test");
 
 BOOST_AUTO_TEST_CASE(test_parse_payload) {
     cloud_storage_clients::xml_sax_parser p{};
     ss::temporary_buffer<char> buffer(payload.data(), payload.size());
-    p.start_parse();
+    p.start_parse(std::make_unique<cloud_storage_clients::aws_parse_impl>());
     p.parse_chunk(std::move(buffer));
     p.end_parse();
     auto result = p.result();
@@ -76,7 +150,7 @@ BOOST_AUTO_TEST_CASE(test_invalid_xml) {
     cloud_storage_clients::xml_sax_parser p{};
     std::string_view bad_payload = "not xml!";
     ss::temporary_buffer<char> buffer(bad_payload.data(), bad_payload.size());
-    p.start_parse();
+    p.start_parse(std::make_unique<cloud_storage_clients::aws_parse_impl>());
 
     // BOOST_REQUIRE_THROWS breaks static analysis because of a use-after-move
     // inference
@@ -87,4 +161,33 @@ BOOST_AUTO_TEST_CASE(test_invalid_xml) {
     } catch (...) {
         BOOST_FAIL("unexpected exception");
     }
+}
+
+BOOST_AUTO_TEST_CASE(test_parse_abs) {
+    cloud_storage_clients::xml_sax_parser p{};
+    ss::temporary_buffer<char> buffer(abs_payload.data(), abs_payload.size());
+
+    p.start_parse(std::make_unique<cloud_storage_clients::abs_parse_impl>());
+    p.parse_chunk(std::move(buffer));
+    p.end_parse();
+
+    auto result = p.result();
+    BOOST_REQUIRE_EQUAL(result.contents.size(), 1);
+    BOOST_REQUIRE_EQUAL(result.contents[0].key, "blob-name");
+    BOOST_REQUIRE_EQUAL(result.contents[0].size_bytes, 1112);
+    BOOST_REQUIRE_EQUAL(result.contents[0].etag, "etag");
+    BOOST_REQUIRE_EQUAL(result.is_truncated, false);
+    BOOST_REQUIRE_EQUAL(result.prefix, "prefix");
+    std::vector<ss::sstring> common_prefixes{"blob-prefix"};
+
+    BOOST_REQUIRE_EQUAL_COLLECTIONS(
+      result.common_prefixes.begin(),
+      result.common_prefixes.end(),
+      common_prefixes.begin(),
+      common_prefixes.end());
+
+    BOOST_REQUIRE(
+      result.contents[0].last_modified
+      == cloud_storage_clients::util::parse_timestamp(
+        "2021-01-10T02:00:00.000Z"));
 }

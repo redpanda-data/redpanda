@@ -15,16 +15,33 @@
 #include "cloud_storage_clients/util.h"
 
 namespace {
-constexpr std::string_view list_bucket_results{"ListBucketResult"};
-constexpr std::string_view contents{"Contents"};
-constexpr std::string_view key{"Key"};
-constexpr std::string_view size{"Size"};
-constexpr std::string_view last_modified{"LastModified"};
-constexpr std::string_view etag{"ETag"};
-constexpr std::string_view is_truncated{"IsTruncated"};
-constexpr std::string_view prefix{"Prefix"};
-constexpr std::string_view next_continuation_token{"NextContinuationToken"};
-constexpr std::string_view common_prefixes{"CommonPrefixes"};
+struct aws_tags {
+    static constexpr std::string_view list_bucket_results{"ListBucketResult"};
+    static constexpr std::string_view contents{"Contents"};
+    static constexpr std::string_view key{"Key"};
+    static constexpr std::string_view size{"Size"};
+    static constexpr std::string_view last_modified{"LastModified"};
+    static constexpr std::string_view etag{"ETag"};
+    static constexpr std::string_view is_truncated{"IsTruncated"};
+    static constexpr std::string_view prefix{"Prefix"};
+    static constexpr std::string_view next_continuation_token{
+      "NextContinuationToken"};
+    static constexpr std::string_view common_prefixes{"CommonPrefixes"};
+};
+
+struct abs_tags {
+    static constexpr std::string_view prefix{"Prefix"};
+    static constexpr std::string_view marker{"Marker"};
+    static constexpr std::string_view blob{"Blob"};
+    static constexpr std::string_view name{"Name"};
+    static constexpr std::string_view size{"Content-Length"};
+    static constexpr std::string_view etag{"Etag"};
+    static constexpr std::string_view last_modified{"Last-Modified"};
+    static constexpr std::string_view blob_prefix{"BlobPrefix"};
+    static constexpr std::string_view enumeration_results{"EnumerationResults"};
+    static constexpr std::string_view properties{"Properties"};
+};
+
 } // namespace
 
 namespace cloud_storage_clients {
@@ -33,51 +50,59 @@ static parser_state* load_state(void* user_data) {
     return reinterpret_cast<parser_state*>(user_data);
 }
 
-static bool is_top_level(const std::vector<ss::sstring>& tags) {
-    return tags.size() == 1 && tags[0] == list_bucket_results;
+bool aws_parse_impl::is_top_level() const {
+    return _tags.size() == 1 && _tags[0] == aws_tags::list_bucket_results;
 }
 
-static bool is_in_contents(const std::vector<ss::sstring>& tags) {
-    return tags.size() == 2 && tags[0] == list_bucket_results
-           && tags[1] == contents;
+bool aws_parse_impl::is_in_contents() const {
+    return _tags.size() == 2 && _tags[0] == aws_tags::list_bucket_results
+           && _tags[1] == aws_tags::contents;
 }
 
-static bool is_in_common_prefixes(const std::vector<ss::sstring>& tags) {
-    return tags.size() == 2 && tags[0] == list_bucket_results
-           && tags[1] == common_prefixes;
+bool aws_parse_impl::is_in_common_prefixes() const {
+    return _tags.size() == 2 && _tags[0] == aws_tags::list_bucket_results
+           && _tags[1] == aws_tags::common_prefixes;
 }
 
-parser_state::parser_state(std::optional<client::item_filter> gather_item_if)
-  : _current_tag(xml_tag::unset)
-  , _item_filter(std::move(gather_item_if)) {}
+parser_state::parser_state(std::unique_ptr<impl> impl)
+  : _impl(std::move(impl)) {}
 
-void parser_state::handle_start_element(std::string_view element_name) {
-    if (element_name == contents && is_top_level(_tags)) {
+parser_state::impl::impl(std::optional<client::item_filter> gather_item_if)
+  : _item_filter(std::move(gather_item_if))
+  , _current_tag(xml_tag::unset) {}
+
+aws_parse_impl::aws_parse_impl(
+  std::optional<client::item_filter> gather_item_if)
+  : parser_state::impl{std::move(gather_item_if)} {}
+
+void aws_parse_impl::handle_start_element(std::string_view element_name) {
+    if (element_name == aws_tags::contents && is_top_level()) {
         // Reinitialize the item in preparation for next values
         _current_item.emplace();
-    } else if (element_name == key && is_in_contents(_tags)) {
+    } else if (element_name == aws_tags::key && is_in_contents()) {
         _current_tag = xml_tag::key;
-    } else if (element_name == size && is_in_contents(_tags)) {
+    } else if (element_name == aws_tags::size && is_in_contents()) {
         _current_tag = xml_tag::size;
-    } else if (element_name == last_modified && is_in_contents(_tags)) {
+    } else if (element_name == aws_tags::last_modified && is_in_contents()) {
         _current_tag = xml_tag::last_modified;
-    } else if (element_name == etag && is_in_contents(_tags)) {
+    } else if (element_name == aws_tags::etag && is_in_contents()) {
         _current_tag = xml_tag::etag;
-    } else if (element_name == is_truncated && is_top_level(_tags)) {
+    } else if (element_name == aws_tags::is_truncated && is_top_level()) {
         _current_tag = xml_tag::is_truncated;
     } else if (
-      element_name == prefix
-      && (is_top_level(_tags) || is_in_common_prefixes(_tags))) {
+      element_name == aws_tags::prefix
+      && (is_top_level() || is_in_common_prefixes())) {
         _current_tag = xml_tag::prefix;
-    } else if (element_name == next_continuation_token && is_top_level(_tags)) {
+    } else if (
+      element_name == aws_tags::next_continuation_token && is_top_level()) {
         _current_tag = xml_tag::next_continuation_token;
     }
     _tags.emplace_back(element_name.data(), element_name.size());
 }
 
-void parser_state::handle_end_element(std::string_view element_name) {
+void aws_parse_impl::handle_end_element(std::string_view element_name) {
     _tags.pop_back();
-    if (element_name == contents && _current_item) {
+    if (element_name == aws_tags::contents && _current_item) {
         if (!_item_filter || _item_filter.value()(_current_item.value())) {
             _items.contents.push_back(std::move(_current_item.value()));
         }
@@ -87,7 +112,7 @@ void parser_state::handle_end_element(std::string_view element_name) {
     _current_tag = xml_tag::unset;
 }
 
-void parser_state::handle_characters(std::string_view characters) {
+void aws_parse_impl::handle_characters(std::string_view characters) {
     switch (_current_tag) {
     case xml_tag::key:
         if (_current_item) {
@@ -131,7 +156,7 @@ void parser_state::handle_characters(std::string_view characters) {
             _items.prefix = {characters.data(), characters.size()};
             // Parsing common prefixes: ListBucketResult -> CommonPrefixes ->
             // Prefix
-        } else if (_tags.size() == 3 && _tags[1] == common_prefixes) {
+        } else if (_tags.size() == 3 && _tags[1] == aws_tags::common_prefixes) {
             _items.common_prefixes.emplace_back(
               characters.data(), characters.size());
         }
@@ -144,7 +169,125 @@ void parser_state::handle_characters(std::string_view characters) {
     }
 }
 
-client::list_bucket_result parser_state::parsed_items() const { return _items; }
+abs_parse_impl::abs_parse_impl(
+  std::optional<client::item_filter> gather_item_if)
+  : parser_state::impl{std::move(gather_item_if)} {}
+
+bool abs_parse_impl::is_top_level() const {
+    return _tags.size() == 1 && _tags[0] == abs_tags::enumeration_results;
+}
+
+bool abs_parse_impl::is_in_blob_properties() const {
+    return _tags.size() == 4 && _tags.back() == abs_tags::properties;
+}
+
+bool abs_parse_impl::is_in_blob() const {
+    return _tags.size() == 3 && _tags.back() == abs_tags::blob;
+}
+
+bool abs_parse_impl::is_in_blob_prefixes() const {
+    return _tags.size() == 3 && _tags.back() == abs_tags::blob_prefix;
+}
+
+void abs_parse_impl::handle_start_element(std::string_view element_name) {
+    if (element_name == abs_tags::blob && _tags.size() == 2) {
+        // Reinitialize the item in preparation for next values
+        _current_item.emplace();
+    } else if (element_name == abs_tags::name) {
+        // The current element is either EnumerationResults->Blobs->Blob->Name
+        if (is_in_blob()) {
+            _current_tag = xml_tag::key;
+            // Or EnumerationResults->Blobs->BlobPrefix->Name
+        } else if (is_in_blob_prefixes()) {
+            _current_tag = xml_tag::prefix;
+        }
+    } else if (element_name == abs_tags::size && is_in_blob_properties()) {
+        _current_tag = xml_tag::size;
+    } else if (
+      element_name == abs_tags::last_modified && is_in_blob_properties()) {
+        _current_tag = xml_tag::last_modified;
+    } else if (element_name == abs_tags::etag && is_in_blob_properties()) {
+        _current_tag = xml_tag::etag;
+    } else if (element_name == abs_tags::marker && is_top_level()) {
+        _current_tag = xml_tag::is_truncated;
+    } else if (element_name == abs_tags::prefix && is_top_level()) {
+        _current_tag = xml_tag::prefix;
+    }
+    _tags.emplace_back(element_name.data(), element_name.size());
+}
+
+void abs_parse_impl::handle_end_element(std::string_view element_name) {
+    _tags.pop_back();
+    if (element_name == abs_tags::blob && _current_item) {
+        if (!_item_filter || _item_filter.value()(_current_item.value())) {
+            _items.contents.push_back(std::move(_current_item.value()));
+        }
+        _current_item.reset();
+    }
+
+    _current_tag = xml_tag::unset;
+}
+
+void abs_parse_impl::handle_characters(std::string_view characters) {
+    switch (_current_tag) {
+    case xml_tag::key:
+        if (_current_item) {
+            _current_item->key = {characters.data(), characters.size()};
+        } else {
+            throw xml_parse_exception{
+              "Invalid state: parsing Name when not in Blob tag"};
+        }
+        break;
+    case xml_tag::size:
+        if (_current_item) {
+            _current_item->size_bytes = std::stoll(
+              {characters.data(), characters.size()});
+        } else {
+            throw xml_parse_exception{
+              "Invalid state: parsing Size when not in Blob tag"};
+        }
+        break;
+    case xml_tag::last_modified:
+        if (_current_item) {
+            _current_item->last_modified = util::parse_timestamp(characters);
+        } else {
+            throw xml_parse_exception{
+              "Invalid state: parsing Last-Modified when not in Blob tag"};
+        }
+        break;
+    case xml_tag::etag:
+        if (_current_item) {
+            _current_item->etag = {characters.data(), characters.size()};
+        } else {
+            throw xml_parse_exception{
+              "Invalid state: parsing ETag when not in Blob tag"};
+        }
+        break;
+    case xml_tag::is_truncated:
+        _items.is_truncated = characters == "true";
+        break;
+    case xml_tag::prefix:
+        // Parsing prefix at the top level: ListBucketResult -> Prefix
+        if (_tags.size() == 2) {
+            _items.prefix = {characters.data(), characters.size()};
+            // Parsing common prefixes: EnumerationResults -> Blobs ->
+            // BlobPrefix -> Name
+        } else if (_tags.size() == 4) {
+            _items.common_prefixes.emplace_back(
+              characters.data(), characters.size());
+        }
+        break;
+    case xml_tag::next_continuation_token:
+        _items.next_continuation_token = {characters.data(), characters.size()};
+        break;
+    case xml_tag::unset:
+        return;
+    }
+}
+
+client::list_bucket_result parser_state::impl::parsed_items() const {
+    return _items;
+}
 
 xml_sax_parser::xml_sax_parser(xml_sax_parser&& other) noexcept {
     vassert(!other._ctx, "parser moved after starting parse operation");
@@ -170,14 +313,13 @@ void xml_sax_parser::parse_chunk(ss::temporary_buffer<char> buffer) {
     }
 }
 
-void xml_sax_parser::start_parse(
-  std::optional<client::item_filter> gather_item_if) {
+void xml_sax_parser::start_parse(std::unique_ptr<parser_state::impl> impl) {
     _handler = std::make_unique<xmlSAXHandler>();
     _handler->startElement = start_element;
     _handler->endElement = end_element;
     _handler->characters = characters;
 
-    _state = std::make_unique<parser_state>(std::move(gather_item_if));
+    _state = std::make_unique<parser_state>(std::move(impl));
     _ctx = xmlCreatePushParserCtxt(
       _handler.get(), _state.get(), nullptr, 0, nullptr);
 }
