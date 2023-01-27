@@ -592,17 +592,18 @@ class PartitionBalancerTest(PartitionBalancerService):
             self.test_context.cluster.alloc(ClusterSpec.simple_linux(6))
             return
 
-        disk_size = 5 * 1024 * 1024 * 1024
+        disk_size = 10 * 1024 * 1024 * 1024
         self.start_redpanda(
             num_nodes=5,
             extra_rp_conf={
                 "storage_min_free_bytes": 10 * 1024 * 1024,
                 "raft_learner_recovery_rate": 100_000_000,
-                "health_monitor_max_metadata_age": 3000
+                "health_monitor_max_metadata_age": 3000,
+                "log_segment_size": 104857600,  # 100 MiB
             },
             environment={"__REDPANDA_TEST_DISK_SIZE": disk_size})
 
-        self.topic = TopicSpec(partition_count=32)
+        self.topic = TopicSpec(partition_count=30)
         self.client().create_topic(self.topic)
 
         def get_avg_disk_usage():
