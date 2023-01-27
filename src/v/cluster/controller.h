@@ -155,7 +155,9 @@ public:
         });
     }
 
-    model::offset get_commited_index() { return _raft0->committed_offset(); }
+    model::offset get_commited_index() const {
+        return _raft0->committed_offset();
+    }
 
 private:
     friend controller_probe;
