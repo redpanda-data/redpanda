@@ -11,6 +11,7 @@
 
 #include "cluster/feature_manager.h"
 #include "cluster/members_table.h"
+#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "vlog.h"
 
@@ -111,12 +112,6 @@ struct barrier_fixture {
         return get_node_state(id)->barrier_state;
     }
 
-    /**
-     * Call this in places where the test wishes to advance
-     * to the next I/O wait.
-     */
-    void drain_tasks() { ss::sleep(10ms).get(); }
-
     std::map<model::node_id, ss::lw_shared_ptr<node_state>> states;
 
     std::map<model::node_id, std::error_code> rpc_rx_errors;
@@ -141,7 +136,7 @@ FIXTURE_TEST(test_barrier_joining_node, barrier_fixture) {
 
     // Populate members_table
     create_brokers(1);
-    drain_tasks();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f.available() && !f.failed());
     f.get();
@@ -179,13 +174,13 @@ FIXTURE_TEST(test_barrier_simple, barrier_fixture) {
     // The nodes that have entered should not give up or error out,
     // even if it is a long time until the last node participates.
     ss::manual_clock::advance(10s);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(!f0.available());
     BOOST_REQUIRE(!f2.available());
 
     auto f1 = get_barrier_state(model::node_id{1})
                 .barrier(feature_barrier_tag{"test"});
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f0.available());
     BOOST_REQUIRE(f1.available());
@@ -217,20 +212,20 @@ FIXTURE_TEST(test_barrier_node_restart, barrier_fixture) {
                 .barrier(feature_barrier_tag{"test"});
 
     // Prompt reactor to process outstanding futures
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f0.available());
     BOOST_REQUIRE(f1.available());
 
     // Prompt reactor to process outstanding futures
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     restart(model::node_id{2});
     f2 = get_barrier_state(model::node_id{2})
            .barrier(feature_barrier_tag{"test"});
 
     // Prompt reactor to process outstanding futures
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     BOOST_REQUIRE(f2.available());
 
@@ -259,12 +254,12 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
                 .barrier(feature_barrier_tag{"test"});
 
     // Without comms to node 2, this barrier should block to complete
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
 
     // Advance clock long enough for them to retry and still see an error
     vlog(logger.debug, "Should have just tried first time and failed");
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     vlog(logger.debug, "Should have just retried and failed again");
 
     rpc_rx_errors.clear();
@@ -273,7 +268,7 @@ FIXTURE_TEST(test_barrier_node_isolated, barrier_fixture) {
     // Advance clock far enough for the nodes to all retry (and succeed) their
     // RPCs
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     vlog(logger.debug, "Should have just retried and succeeded");
 
     BOOST_REQUIRE(f0.available());
@@ -306,12 +301,12 @@ FIXTURE_TEST(test_barrier_exit_early, barrier_fixture) {
     auto f0 = get_barrier_state(model::node_id{0})
                 .barrier(feature_barrier_tag{"test"});
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(!f0.available());
 
     // Exit on node 0, its barrier future should complete with an error
     kill(model::node_id{0});
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(f0.available() && f0.failed());
     try {
         f0.get();
@@ -336,12 +331,12 @@ FIXTURE_TEST(test_barrier_exit_late, barrier_fixture) {
     auto f0 = get_barrier_state(model::node_id{0})
                 .barrier(feature_barrier_tag{"test"});
     ss::manual_clock::advance(1000ms);
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(!f0.available());
 
     // Exit on node 0, its barrier future should complete with an error
     kill(model::node_id{0});
-    ss::sleep(10ms).get();
+    tests::flush_tasks();
     BOOST_REQUIRE(f0.available() && f0.failed());
     try {
         f0.get();
