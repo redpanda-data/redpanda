@@ -51,6 +51,7 @@ struct aws_header_names {
     static constexpr boost::beast::string_view x_amz_tagging = "x-amz-tagging";
     static constexpr boost::beast::string_view x_amz_request_id
       = "x-amz-request-id";
+    static constexpr boost::beast::string_view delimiter = "delimiter";
 };
 
 struct aws_header_values {
@@ -159,7 +160,8 @@ request_creator::make_list_objects_v2_request(
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
-  std::optional<ss::sstring> continuation_token) {
+  std::optional<ss::sstring> continuation_token,
+  std::optional<char> delimiter) {
     // GET /?list-type=2&prefix=photos/2006/&delimiter=/ HTTP/1.1
     // Host: example-bucket.s3.<Region>.amazonaws.com
     // x-amz-date: 20160501T000433Z
@@ -190,6 +192,11 @@ request_creator::make_list_objects_v2_request(
         header.insert(
           aws_header_names::continuation_token,
           {continuation_token->data(), continuation_token->size()});
+    }
+
+    if (delimiter) {
+        header.insert(
+          aws_header_names::delimiter, std::string(1, delimiter.value()));
     }
 
     auto ec = _apply_credentials->add_auth(header);
@@ -650,6 +657,7 @@ s3_client::list_objects(
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
   ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
   std::optional<item_filter> collect_item_if) {
     const object_key dummy{""};
     co_return co_await send_request(
@@ -660,6 +668,7 @@ s3_client::list_objects(
         max_keys,
         continuation_token,
         timeout,
+        delimiter,
         std::move(collect_item_if)),
       name,
       dummy);
@@ -672,13 +681,15 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
   ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
   std::optional<item_filter> collect_item_if) {
     auto header = _requestor.make_list_objects_v2_request(
       name,
       std::move(prefix),
       std::move(start_after),
       max_keys,
-      std::move(continuation_token));
+      std::move(continuation_token),
+      delimiter);
     if (!header) {
         return ss::make_exception_future<list_bucket_result>(
           std::system_error(header.error()));

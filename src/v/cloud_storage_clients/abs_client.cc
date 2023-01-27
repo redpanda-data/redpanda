@@ -253,7 +253,8 @@ abs_request_creator::make_list_blobs_request(
   const bucket_name& name,
   std::optional<object_key> prefix,
   [[maybe_unused]] std::optional<object_key> start_after,
-  std::optional<size_t> max_keys) {
+  std::optional<size_t> max_keys,
+  std::optional<char> delimiter) {
     // GET /{container-id}?restype=container&comp=list&prefix={prefix}...
     // ...&max_results{max_keys}
     // HTTP/1.1 Host: {storage-account-id}.blob.core.windows.net
@@ -267,6 +268,10 @@ abs_request_creator::make_list_blobs_request(
 
     if (max_keys) {
         target += fmt::format("&max_results={}", max_keys.value());
+    }
+
+    if (delimiter) {
+        target += fmt::format("&delimiter={}", delimiter.value());
     }
 
     const boost::beast::string_view host{_ap().data(), _ap().length()};
@@ -592,6 +597,7 @@ abs_client::list_objects(
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
   ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
   std::optional<item_filter> collect_item_if) {
     return send_request(
       do_list_objects(
@@ -601,6 +607,7 @@ abs_client::list_objects(
         max_keys,
         std::move(continuation_token),
         timeout,
+        delimiter,
         std::move(collect_item_if)),
       name,
       object_key{""});
@@ -613,9 +620,10 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
   std::optional<size_t> max_keys,
   [[maybe_unused]] std::optional<ss::sstring> continuation_token,
   ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
   std::optional<item_filter>) {
     auto header = _requestor.make_list_blobs_request(
-      name, std::move(prefix), std::move(start_after), max_keys);
+      name, std::move(prefix), std::move(start_after), max_keys, delimiter);
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());

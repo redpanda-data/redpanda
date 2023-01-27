@@ -131,6 +131,7 @@ public:
         ss::sstring prefix;
         ss::sstring next_continuation_token;
         std::vector<list_bucket_item> contents;
+        std::vector<ss::sstring> common_prefixes;
     };
 
     /// A predicate to allow list_objects to collect items selectively, saving
@@ -146,6 +147,7 @@ public:
     /// \param max_keys optional upper bound on the number of returned keys
     /// \param continuation_token token returned by a previous call
     /// \param timeout operation timeout
+    /// \param delimiter character used to group prefixes when listing
     /// \param collect_item_if if present, only items passing this predicate are
     /// collected.
     /// \return future that becomes ready when the request is completed
@@ -156,6 +158,7 @@ public:
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
       ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<char> delimiter = std::nullopt,
       std::optional<item_filter> collect_item_if = std::nullopt)
       = 0;
 

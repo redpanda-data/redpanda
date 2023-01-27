@@ -700,6 +700,7 @@ ss::future<remote::list_result> remote::list_objects(
   const cloud_storage_clients::bucket_name& bucket,
   retry_chain_node& parent,
   std::optional<cloud_storage_clients::object_key> prefix,
+  std::optional<char> delimiter,
   std::optional<cloud_storage_clients::client::item_filter> item_filter) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
@@ -724,6 +725,7 @@ ss::future<remote::list_result> remote::list_objects(
           std::nullopt,
           continuation_token,
           fib.get_timeout(),
+          delimiter,
           item_filter);
 
         if (res) {

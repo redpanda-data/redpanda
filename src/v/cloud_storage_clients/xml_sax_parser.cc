@@ -24,6 +24,7 @@ constexpr std::string_view etag{"ETag"};
 constexpr std::string_view is_truncated{"IsTruncated"};
 constexpr std::string_view prefix{"Prefix"};
 constexpr std::string_view next_continuation_token{"NextContinuationToken"};
+constexpr std::string_view common_prefixes{"CommonPrefixes"};
 } // namespace
 
 namespace cloud_storage_clients {
@@ -39,6 +40,11 @@ static bool is_top_level(const std::vector<ss::sstring>& tags) {
 static bool is_in_contents(const std::vector<ss::sstring>& tags) {
     return tags.size() == 2 && tags[0] == list_bucket_results
            && tags[1] == contents;
+}
+
+static bool is_in_common_prefixes(const std::vector<ss::sstring>& tags) {
+    return tags.size() == 2 && tags[0] == list_bucket_results
+           && tags[1] == common_prefixes;
 }
 
 parser_state::parser_state(std::optional<client::item_filter> gather_item_if)
@@ -59,7 +65,9 @@ void parser_state::handle_start_element(std::string_view element_name) {
         _current_tag = xml_tag::etag;
     } else if (element_name == is_truncated && is_top_level(_tags)) {
         _current_tag = xml_tag::is_truncated;
-    } else if (element_name == prefix && is_top_level(_tags)) {
+    } else if (
+      element_name == prefix
+      && (is_top_level(_tags) || is_in_common_prefixes(_tags))) {
         _current_tag = xml_tag::prefix;
     } else if (element_name == next_continuation_token && is_top_level(_tags)) {
         _current_tag = xml_tag::next_continuation_token;
@@ -118,7 +126,15 @@ void parser_state::handle_characters(std::string_view characters) {
         _items.is_truncated = characters == "true";
         break;
     case xml_tag::prefix:
-        _items.prefix = {characters.data(), characters.size()};
+        // Parsing prefix at the top level: ListBucketResult -> Prefix
+        if (_tags.size() == 2) {
+            _items.prefix = {characters.data(), characters.size()};
+            // Parsing common prefixes: ListBucketResult -> CommonPrefixes ->
+            // Prefix
+        } else if (_tags.size() == 3 && _tags[1] == common_prefixes) {
+            _items.common_prefixes.emplace_back(
+              characters.data(), characters.size());
+        }
         break;
     case xml_tag::next_continuation_token:
         _items.next_continuation_token = {characters.data(), characters.size()};

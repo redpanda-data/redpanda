@@ -567,6 +567,12 @@ SEASTAR_TEST_CASE(test_list_objects_success) {
 
         BOOST_REQUIRE(!result.value().is_truncated);
         BOOST_REQUIRE_EQUAL(result.value().next_continuation_token, "next");
+        std::vector<ss::sstring> common_prefixes{"test-prefix"};
+        BOOST_REQUIRE_EQUAL_COLLECTIONS(
+          common_prefixes.begin(),
+          common_prefixes.end(),
+          result.value().common_prefixes.begin(),
+          result.value().common_prefixes.end());
         server->stop().get();
     });
 }
@@ -586,6 +592,7 @@ SEASTAR_TEST_CASE(test_list_objects_with_filter) {
                 std::nullopt,
                 std::nullopt,
                 http::default_connect_timeout,
+                std::nullopt,
                 [](const auto& item) { return item.key == "test-key2"; })
               .get0();
 
