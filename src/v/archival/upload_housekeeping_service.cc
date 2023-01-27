@@ -179,6 +179,11 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             return _current_backlog > 0
                    && (_state == housekeeping_state::active || _state == housekeeping_state::draining);
         });
+        vassert(
+          !_pending.empty(),
+          "housekeeping_workflow: pendings empty, state {} backlog {}",
+          _state,
+          _current_backlog);
         auto& top = _pending.front();
         top._hook.unlink();
         _current_job = std::ref(top);
