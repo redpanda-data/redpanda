@@ -7,6 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#pragma once
 
 #include "archival/fwd.h"
 #include "archival/types.h"
