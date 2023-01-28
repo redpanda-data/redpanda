@@ -1258,6 +1258,14 @@ configuration::configuration()
       "threshold the cloud storage is considered being idle.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       1.0)
+  , cloud_storage_enable_segment_merging(
+      *this,
+      "cloud_storage_enable_segment_merging",
+      "Enables adjacent segment merging. The segments are reuploaded if there "
+      "is an opportunity for that and if it will improve the tiered-storage "
+      "performance",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , cloud_storage_max_segments_pending_deletion_per_partition(
       *this,
       "cloud_storage_max_segments_pending_deletion_per_partition",
