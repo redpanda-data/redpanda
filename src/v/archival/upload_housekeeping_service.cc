@@ -22,6 +22,9 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/with_scheduling_group.hh>
 
+#include <chrono>
+#include <exception>
+#include <functional>
 #include <variant>
 
 namespace archival {
@@ -133,18 +136,18 @@ void upload_housekeeping_service::rearm_idle_timer() {
 }
 
 void upload_housekeeping_service::idle_timer_callback() {
-    vlog(_ctxlog.info, "Cloud storage is idle");
+    vlog(_ctxlog.debug, "Cloud storage is idle");
     if (_workflow.state() == housekeeping_state::idle) {
-        vlog(_ctxlog.info, "Activating upload housekeeping");
+        vlog(_ctxlog.debug, "Activating upload housekeeping");
         _workflow.resume(false);
     }
 }
 
 void upload_housekeeping_service::epoch_timer_callback() {
-    vlog(_ctxlog.info, "Cloud storage housekeeping epoch");
+    vlog(_ctxlog.debug, "Cloud storage housekeeping epoch");
     if (_workflow.state() != housekeeping_state::draining) {
         vlog(
-          _ctxlog.info, "Housekeeping epoch timeout, draining the job queue");
+          _ctxlog.debug, "Housekeeping epoch timeout, draining the job queue");
         _workflow.resume(true);
     }
 }
@@ -190,8 +193,59 @@ void housekeeping_workflow::start() {
     });
 }
 
+struct job_exec_timer {
+    std::chrono::microseconds total{std::chrono::milliseconds(0)};
+
+    struct raii_wrapper {
+        explicit raii_wrapper(job_exec_timer& tm)
+          : _tm(tm)
+          , _start(std::chrono::steady_clock::now()) {}
+
+        ~raii_wrapper() {
+            if (!_moved) {
+                auto now = std::chrono::steady_clock::now();
+                _tm.get().total
+                  += std::chrono::duration_cast<std::chrono::microseconds>(
+                    now - _start);
+            }
+        }
+
+        raii_wrapper(raii_wrapper&& other) noexcept
+          : _tm(other._tm)
+          , _start(other._start) {
+            other._moved = true;
+        }
+
+        raii_wrapper& operator=(raii_wrapper&& other) noexcept {
+            _tm = other._tm;
+            _start = other._start;
+            other._moved = true;
+            return *this;
+        }
+
+        raii_wrapper(const raii_wrapper&) = delete;
+        raii_wrapper& operator=(const raii_wrapper&) = delete;
+
+        std::reference_wrapper<job_exec_timer> _tm;
+        std::chrono::steady_clock::time_point _start;
+        bool _moved{false};
+    };
+
+    raii_wrapper time() { return raii_wrapper(*this); }
+
+    void reset() { total = std::chrono::microseconds(0); }
+};
+
 ss::future<> housekeeping_workflow::run_jobs_bg() {
     ss::gate::holder h(_gate);
+    // Holds number of jobs executed in current round
+    size_t jobs_executed = 0;
+    // Holds number of jobs failed in current round
+    size_t jobs_failed = 0;
+    // Tracks time of the current housekeeping run
+    auto start_time = ss::lowres_clock::now();
+    // Tracks job execution time
+    job_exec_timer exec_timer{};
     while (!_as.abort_requested()) {
         vlog(
           archival_log.debug,
@@ -214,7 +268,17 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         auto& top = _pending.front();
         top._hook.unlink();
         _current_job = std::ref(top);
-        co_await top.run(_parent);
+        try {
+            auto r = exec_timer.time();
+            co_await top.run(_parent);
+            jobs_executed++;
+        } catch (...) {
+            vlog(
+              archival_log.warn,
+              "upload housekeeping job error: {}",
+              std::current_exception());
+            jobs_failed++;
+        }
         _current_job.reset();
         if (!top.interrupted()) {
             // If the job was interrupted it's never returned
@@ -224,12 +288,25 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         }
         _current_backlog--;
         if (_current_backlog == 0) {
+            auto full_time = ss::lowres_clock::now() - start_time;
             vlog(
-              archival_log.debug,
-              "housekeeping_workflow, transition to idle state from {}",
-              _state);
+              archival_log.info,
+              "housekeeping_workflow, transition to idle state from {}, {} "
+              "jobs executed, {} jobs failed. Housekeeping round lasted "
+              "approx. {} sec. Job execution time in the round: {} sec",
+              _state,
+              jobs_executed,
+              jobs_failed,
+              std::chrono::duration_cast<std::chrono::seconds>(full_time)
+                .count(),
+              std::chrono::duration_cast<std::chrono::seconds>(exec_timer.total)
+                .count());
             _state = housekeeping_state::idle;
             _current_backlog = _pending.size();
+            jobs_failed = 0;
+            jobs_executed = 0;
+            start_time = ss::lowres_clock::now();
+            exec_timer.reset();
         }
     }
 }
