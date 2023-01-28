@@ -218,14 +218,14 @@ constexpr static std::array feature_schema{
     feature::partition_move_revert_cancel,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
-
-  // For testing, a feature that does not auto-activate
   feature_spec{
     cluster::cluster_version{9},
     "node_isolation",
     feature::node_isolation,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
+
+  // For testing, a feature that does not auto-activate
   feature_spec{
     cluster::cluster_version{2001},
     "__test_alpha",
