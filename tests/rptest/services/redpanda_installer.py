@@ -58,6 +58,14 @@ def int_tuple(str_tuple):
     return (int(str_tuple[0]), int(str_tuple[1]), int(str_tuple[2]))
 
 
+def ver_string(int_tuple):
+    """
+    Converts (1,2,3) into "v1.2.3"
+    """
+    assert len(int_tuple) == 3, int_tuple
+    return f"v{'.'.join(str(i) for i in int_tuple)}"
+
+
 class InstallOptions:
     """
     Options with which to configure the installation of Redpanda in a cluster.
