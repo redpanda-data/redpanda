@@ -181,6 +181,9 @@ build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
 ss::future<const pb::FileDescriptor*> build_file_with_refs(
   pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     for (const auto& ref : schema.refs()) {
+        if (dp.FindFileByName(ref.name)) {
+            continue;
+        }
         auto dep = co_await store.get_subject_schema(
           ref.sub, ref.version, include_deleted::no);
         co_await build_file_with_refs(

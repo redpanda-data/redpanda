@@ -44,3 +44,15 @@ message Test3 {
   Test2 id =  1;
 })",
   pps::schema_type::protobuf};
+
+const auto imported_twice = pps::canonical_schema_definition{
+  R"(
+syntax = "proto3";
+
+import "simple";
+import "imported";
+
+message Test3 {
+  Test2 id =  1;
+})",
+  pps::schema_type::protobuf};
