@@ -181,7 +181,10 @@ std::optional<std::chrono::seconds> group_manager::offset_retention_enabled() {
          * effective behavior of infinite retention.
          *
          * this case also handles the early boot-up ambiguity in which the
-         * original version is indeterminate.
+         * original version is indeterminate. when we are here because the
+         * original cluster version is unknown then because legacy support is
+         * disabled by default the decision is conservative. if it is enabled
+         * then it was explicitly requested and the orig version doesn't matter.
          */
         return config::shard_local_cfg()
           .legacy_group_offset_retention_enabled();
