@@ -67,7 +67,7 @@ jobs:
          echo "" > /tmp/empty_notes
 
       - name: Invoke goreleaser
-        uses: goreleaser/goreleaser-action@v3
+        uses: goreleaser/goreleaser-action@v4
         env:
           QUILL_SIGN_P12: ${{ secrets.QUILL_SIGN_P12_BASE64 }}
           QUILL_SIGN_PASSWORD: ${{ secrets.QUILL_SIGN_PASSWORD }}
