@@ -262,7 +262,26 @@ class RpkTool:
 
     def delete_topic(self, topic):
         cmd = ["delete", topic]
-        return self._run_topic(cmd)
+        output = self._run_topic(cmd)
+        table = parse_rpk_table(output)
+        expected_columns = ["TOPIC", "STATUS"]
+        expected = ",".join(expected_columns)
+        found = ",".join(map(lambda x: x.name, table.columns))
+        if expected != found:
+            raise RpkException(f"expected: {expected}; found: {found}")
+
+        if len(table.rows) != 1:
+            raise RpkException(f"expected one row; found {len(table.rows)}")
+
+        if table.rows[0][1] != "OK":
+            raise RpkException(f"status isn't ok: {table.rows[0][1]}")
+
+        if table.rows[0][0] != topic:
+            raise RpkException(
+                f"output topic {table.rows[0][0]} doesn't match input topic {topic}"
+            )
+
+        return True
 
     def list_topics(self):
         cmd = ["list"]
