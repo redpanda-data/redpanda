@@ -7,6 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#pragma once
 
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
@@ -32,10 +33,13 @@ public:
 
     bool interrupted() const override;
 
-    ss::future<> stop();
+    ss::future<> stop() override;
+
+    void set_enabled(bool) override;
 
 private:
     const bool _is_local;
+    bool _enabled{true};
     model::offset _last;
     ntp_archiver& _archiver;
     retry_chain_logger& _ctxlog;

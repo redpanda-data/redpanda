@@ -45,6 +45,10 @@ public:
 
     bool interrupted() const override { return interrupt_cnt; }
 
+    void set_enabled(bool) override {}
+
+    ss::future<> stop() override { return ss::now(); }
+
     size_t executed{0};
     size_t interrupt_cnt{0};
 

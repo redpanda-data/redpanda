@@ -102,6 +102,13 @@ public:
     /// The job can't be executed if 'interrupted() == true'
     virtual bool interrupted() const = 0;
 
+    /// Enable or disable the job
+    virtual void set_enabled(bool) = 0;
+
+    /// Wait until the job finishes. After the future is ready
+    /// the job is no longer usable.
+    virtual ss::future<> stop() = 0;
+
 private:
     friend class housekeeping_workflow;
     intrusive_list_hook _hook{};

@@ -47,7 +47,12 @@ adjacent_segment_merger::adjacent_segment_merger(
 
 ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 
+void adjacent_segment_merger::set_enabled(bool enabled) { _enabled = enabled; }
+
 ss::future<> adjacent_segment_merger::run(retry_chain_node& rtc) {
+    if (!_enabled || _as.abort_requested()) {
+        co_return;
+    }
     ss::gate::holder h(_gate);
     vlog(_ctxlog.debug, "Adjacent segment merger run begin");
     auto scanner = [this](
