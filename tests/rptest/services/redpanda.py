@@ -1123,6 +1123,7 @@ class RedpandaService(Service):
             f" --redpanda-cfg {RedpandaService.NODE_CONFIG_FILE}"
             f" {self._log_config.to_args()} "
             " --abort-on-seastar-bad-alloc "
+            " --dump-memory-diagnostics-on-alloc-failure-kind=all "
             f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
@@ -1329,8 +1330,8 @@ class RedpandaService(Service):
 
     def start_node_with_rpk(self, node, additional_args="", clean_node=True):
         """
-        Start a single instance of redpanda using rpk. similar to start_node, 
-        this function will not return until redpanda appears to have started 
+        Start a single instance of redpanda using rpk. similar to start_node,
+        this function will not return until redpanda appears to have started
         successfully.
         """
         if clean_node:
