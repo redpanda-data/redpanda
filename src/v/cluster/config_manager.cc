@@ -223,6 +223,13 @@ ss::future<> config_manager::start() {
             handle_cluster_members_update(std::move(current_members));
         });
 
+    _raft0_leader_changed_notification
+      = _leaders.local().register_leadership_change_notification(
+        model::controller_ntp,
+        [this](model::ntp, model::term_id, std::optional<model::node_id>) {
+            _reconcile_wait.signal();
+        });
+
     return ss::now();
 }
 void config_manager::handle_cluster_members_update(
@@ -240,6 +247,8 @@ ss::future<> config_manager::stop() {
     _reconcile_wait.broken();
     _members.local().unregister_members_updated_notification(
       _member_removed_notification);
+    _leaders.local().unregister_leadership_change_notification(
+      _raft0_leader_changed_notification);
     co_await _gate.close();
 }
 
@@ -540,23 +549,16 @@ ss::future<> config_manager::reconcile_status() {
 
     try {
         if (failed || should_send_status()) {
-            // * we were dirty & failed to send our update, sleep until retry
-            // OR
-            // * our status updated while we were sending, wait a short time
-            //   before sending our next update to avoid spamming the leader
-            //   with too many set_status RPCs if we are behind on seeing
-            //   updates to the controller log.
-            co_await ss::sleep_abortable(status_retry, _as.local());
+            co_await _reconcile_wait.wait(status_retry);
         } else {
             // We are clean: sleep until signalled.
-            co_await _reconcile_wait.wait();
+            co_await _reconcile_wait.wait(
+              [this]() { return should_send_status(); });
         }
     } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
     } catch (ss::broken_condition_variable&) {
         // Shutting down - nextiteration will drop out
-    } catch (ss::sleep_aborted&) {
-        // Shutting down - next iteration will drop out
     }
 }
 
