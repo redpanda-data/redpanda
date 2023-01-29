@@ -148,9 +148,9 @@ class InternalTopicProtectionTest(RedpandaTest):
         assert pre_produce_hw < post_produce_hw, "wasn't able to produce to topic"
 
     @cluster(num_nodes=3)
-    @parametrize(client_type="rpk", no_exception_on_delete=True)
-    @parametrize(client_type="kafka_tools", no_exception_on_delete=False)
-    def kafka_nodelete_topics_test(self, client_type, no_exception_on_delete):
+    @parametrize(client_type="rpk")
+    @parametrize(client_type="kafka_tools")
+    def kafka_nodelete_topics_test(self, client_type):
         if client_type == "rpk":
             client = self.rpk
         elif client_type == "kafka_tools":
@@ -171,10 +171,11 @@ class InternalTopicProtectionTest(RedpandaTest):
             {"kafka_nodelete_topics": [test_topic]})
         try:
             client.delete_topic(test_topic)
-        except subprocess.CalledProcessError:
+            assert False, "Call to delete topic must fail"
+        except Exception:
+            self.redpanda.logger.info(
+                f"we were expecting delete_topic to fail", exc_info=True)
             pass
-        else:
-            assert no_exception_on_delete, "Call to delete topic returned sucess"
 
         # allow time for any erronous deletion to be propagated
         time.sleep(10)
