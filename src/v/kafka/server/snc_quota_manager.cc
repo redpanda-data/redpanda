@@ -535,7 +535,12 @@ ss::future<> snc_quota_manager::quota_balancer_update(
         // acquired goes towards the node deficit
         const auto total_quota = co_await container().map_reduce0(
           [](const snc_quota_manager& qm) {
-              return qm.get_quota() - qm._shard_quota_minimum;
+              // minimum quota value for a shard is 1, remove that minimum
+              // from the surrenderable quota amount reported
+              return qm.get_quota()
+                     - ingress_egress_state<quota_t>{
+                       bottomless_token_bucket::min_quota,
+                       bottomless_token_bucket::min_quota};
           },
           ingress_egress_state<quota_t>{0, 0},
           std::plus{});
