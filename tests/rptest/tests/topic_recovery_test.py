@@ -169,18 +169,13 @@ class BaseCase:
                 data = self._s3.get_object_data(self._bucket, partition_uri)
                 obj = json.loads(data)
                 last_offset = obj['last_offset']
-                num_segments = len(obj['segments'])
                 self.logger.info(
                     f"validating partition: {ntp}, rev: {rev}, last offset: {last_offset}"
-                    f", num segments: {num_segments}, hw: {hw}")
+                )
                 # Explanation: high watermark is a kafka offset equal to the last offset in the log + 1.
                 # last_offset in the manifest is the last uploaded redpanda offset. Difference between
-                # kafka and redpanda offsets is equal to the number of non-data records. There will be
-                # min 1 non-data records (a configuration record) and max (1 + num_segments) records
-                # (archival metadata records for each segment). Unfortunately the number of archival metadata
-                # records is non-deterministic as they can end up in the last open segment which is not
-                # uploaded. After bringing everything together we have the following bounds:
-                assert last_offset >= hw >= last_offset - num_segments, \
+                # kafka and redpanda offsets is equal to the number of non-data records.
+                assert last_offset >= hw, \
                     f"High watermark has unexpected value {hw}, last offset: {last_offset}"
 
     def _produce_and_verify(self, topic_spec):
