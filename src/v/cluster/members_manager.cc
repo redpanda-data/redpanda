@@ -23,6 +23,7 @@
 #include "features/feature_table.h"
 #include "model/metadata.h"
 #include "raft/errc.h"
+#include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "redpanda/application.h"
@@ -236,6 +237,24 @@ members_manager::apply_update(model::record_batch b) {
       },
       [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
+          // TODO: remove this part after we introduce simplified raft
+          // configuration handling as this will be commands driven
+          auto raft0_cfg = _raft0->config();
+          if (raft0_cfg.get_state() == raft::configuration_state::joint) {
+              auto it = std::find_if(
+                raft0_cfg.old_config()->learners.begin(),
+                raft0_cfg.old_config()->learners.end(),
+                [id](const raft::vnode& vn) { return vn.id() == id; });
+              /**
+               * If a node is a demoted voter and about to be removed, do not
+               * allow for recommissioning.
+               */
+              if (it != raft0_cfg.old_config()->learners.end()) {
+                  return ss::make_ready_future<std::error_code>(
+                    errc::invalid_node_operation);
+              }
+          }
+
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
