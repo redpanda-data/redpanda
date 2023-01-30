@@ -84,6 +84,7 @@ public:
     ss::future<ss::file> open();
 
     const segment_full_path& path() const { return _path; }
+    size_t size() const { return _state.size(); }
 
     /// \brief erases the underlying file and resets the index
     /// this is used during compacted index recovery, as we must first

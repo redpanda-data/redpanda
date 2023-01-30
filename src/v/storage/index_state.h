@@ -68,6 +68,8 @@ struct index_state
     // of this segment are monontonically increasing.
     bool batch_timestamps_are_monotonic{true};
 
+    size_t size() const { return relative_offset_index.size(); }
+
     bool empty() const { return relative_offset_index.empty(); }
 
     void
