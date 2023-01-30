@@ -51,6 +51,10 @@ class S3Client:
                  logger,
                  endpoint=None,
                  disable_ssl=True):
+
+        logger.debug(
+            f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}"
+        )
         cfg = Config(region_name=region, signature_version='s3v4')
         self._cli = boto3.client('s3',
                                  config=cfg,
@@ -75,10 +79,12 @@ class S3Client:
                 raise err
 
     def delete_bucket(self, name):
+        self.logger.info(f"Deleting bucket {name}...")
         try:
             self._cli.delete_bucket(Bucket=name)
-        except Exception:
-            self.logger.warn("Error deleting bucket, contents:")
+        except Exception as e:
+            self.logger.warn(f"Error deleting bucket {name}: {e}")
+            self.logger.warn(f"Contents of bucket {name}:")
             for o in self.list_objects(name):
                 self.logger.warn(f"  {o.key}")
             raise
@@ -94,7 +100,7 @@ class S3Client:
                 self.logger.debug(f"found key {obj.key}")
         except Exception as e:
             # Expected to fail if bucket doesn't exist
-            self.logger.debug(f"empty_bucket error: {e}")
+            self.logger.debug(f"empty_bucket error on {name}: {e}")
 
         failed_keys = []
         while len(keys):
@@ -138,7 +144,7 @@ class S3Client:
                     raise TimeoutError()
                 sleep(5)
         except ClientError as err:
-            self.logger.debug(f"error response while polling {err}")
+            self.logger.debug(f"error response while polling {bucket}: {err}")
 
     def _wait_key(self, bucket, key, timeout_sec=30):
         """Wait for the key to apper in the bucket"""
@@ -151,7 +157,8 @@ class S3Client:
                 self.logger.debug(f"object {key} is available, head: {meta}")
                 return
             except ClientError as err:
-                self.logger.debug(f"error response while polling {err}")
+                self.logger.debug(
+                    f"error response while polling {bucket}: {err}")
             now = datetime.datetime.now()
             if now > deadline:
                 raise TimeoutError()
@@ -177,7 +184,7 @@ class S3Client:
         try:
             return self._cli.get_object(Bucket=bucket, Key=key)
         except ClientError as err:
-            self.logger.debug(f"error response {err}")
+            self.logger.debug(f"error response getting {bucket}/{key}: {err}")
             if err.response['Error']['Code'] == 'SlowDown':
                 raise SlowDown()
             else:
@@ -189,7 +196,7 @@ class S3Client:
         try:
             return self._cli.head_object(Bucket=bucket, Key=key)
         except ClientError as err:
-            self.logger.debug(f"error response {err}")
+            self.logger.debug(f"error response heading {bucket}/{key}: {err}")
             if err.response['Error']['Code'] == 'SlowDown':
                 raise SlowDown()
             else:
@@ -203,7 +210,7 @@ class S3Client:
                                         Key=key,
                                         Body=bytes(content, encoding='utf-8'))
         except ClientError as err:
-            self.logger.debug(f"error response {err}")
+            self.logger.debug(f"error response putting {bucket}/{key} {err}")
             if err.response['Error']['Code'] == 'SlowDown':
                 raise SlowDown()
             else:
@@ -218,7 +225,7 @@ class S3Client:
                                          Key=dst,
                                          CopySource=src_uri)
         except ClientError as err:
-            self.logger.debug(f"error response {err}")
+            self.logger.debug(f"error response copying {bucket}/{src}: {err}")
             if err.response['Error']['Code'] == 'SlowDown':
                 raise SlowDown()
             else:
@@ -284,7 +291,7 @@ class S3Client:
             else:
                 return self._cli.list_objects_v2(Bucket=bucket, MaxKeys=limit)
         except ClientError as err:
-            self.logger.debug(f"error response {err}")
+            self.logger.debug(f"error response listing {bucket}: {err}")
             if err.response['Error']['Code'] == 'SlowDown':
                 raise SlowDown()
             else:
