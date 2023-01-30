@@ -1143,6 +1143,12 @@ configuration::configuration()
        model::cloud_credentials_source::aws_instance_metadata,
        model::cloud_credentials_source::sts,
        model::cloud_credentials_source::gcp_instance_metadata})
+  , cloud_storage_roles_operation_timeout_ms(
+      *this,
+      "cloud_storage_roles_operation_timeout_ms",
+      "Timeout for IAM role related operations (ms)",
+      {.visibility = visibility::tunable},
+      30s)
   , cloud_storage_reconciliation_ms(
       *this, "cloud_storage_reconciliation_interval_ms")
   , cloud_storage_upload_loop_initial_backoff_ms(
