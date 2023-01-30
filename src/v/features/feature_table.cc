@@ -61,10 +61,16 @@ std::string_view to_string_view(feature f) {
         return "partition_move_cancel_revert";
     case feature::node_isolation:
         return "node_isolation";
+    case feature::group_offset_retention:
+        return "group_offset_retention";
+
+    /*
+     * testing features
+     */
     case feature::test_alpha:
         return "__test_alpha";
     case feature::test_bravo:
-        return "__test_alpha";
+        return "__test_bravo";
     }
     __builtin_unreachable();
 }

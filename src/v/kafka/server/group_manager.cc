@@ -165,12 +165,26 @@ std::optional<std::chrono::seconds> group_manager::offset_retention_enabled() {
         }
 
         /*
+         * this is a legacy / pre-v23 cluster. wait until all of the nodes have
+         * been upgraded before making a final decision to enable offset
+         * retention in order to avoid anomalies since each node independently
+         * applies offset retention policy.
+         */
+        if (!_feature_table.local().is_active(
+              features::feature::group_offset_retention)) {
+            return false;
+        }
+
+        /*
          * this is a legacy / pre-v23.1 cluster. retention will only be enabled
          * if explicitly requested for legacy systems in order to retain the
          * effective behavior of infinite retention.
          *
          * this case also handles the early boot-up ambiguity in which the
-         * original version is indeterminate.
+         * original version is indeterminate. when we are here because the
+         * original cluster version is unknown then because legacy support is
+         * disabled by default the decision is conservative. if it is enabled
+         * then it was explicitly requested and the orig version doesn't matter.
          */
         return config::shard_local_cfg()
           .legacy_group_offset_retention_enabled();
