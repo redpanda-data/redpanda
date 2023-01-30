@@ -23,7 +23,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST
+from rptest.services.redpanda import RedpandaService, LoggingConfig, CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
@@ -44,6 +44,15 @@ V22_1_CHAOS_ALLOW_LOGS = [
     # rpc - Service handler threw an exception: seastar::broken_promise (broken promise)"
     re.compile("rpc - Service handler threw an exception: seastar"),
 ]
+
+log_config = LoggingConfig('info',
+                           logger_levels={
+                               'cluster': 'trace',
+                               'kafka': 'trace',
+                               'raft': 'trace',
+                               'admin_api_server': 'trace',
+                               'kvstore': 'trace'
+                           })
 
 
 class NodeOperationFuzzyTest(EndToEndTest):
@@ -99,6 +108,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         self.redpanda = RedpandaService(self.test_context,
                                         5,
+                                        log_config=log_config,
                                         extra_rp_conf=extra_rp_conf)
         if num_to_upgrade > 0:
             installer = self.redpanda._installer
