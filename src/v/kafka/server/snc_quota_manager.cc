@@ -438,16 +438,16 @@ void dispense_negative_deltas(
 
     const quota_t total_surplus = std::reduce(
       surplus.cbegin(), surplus.cend(), quota_t{0}, std::plus{});
-
     if (delta > -total_surplus) {
+        // distribute the delta between the shards pro rata to their surpluses
         quota_t remainder = delta;
-        // pro rata to surpluses
         for (size_t k = 0; k != ss::smp::count; ++k) {
             const quota_t share = muldiv(delta, surplus.at(k), total_surplus);
             schedule.at(k) += share;
             remainder -= share;
         }
-        // the remainder equally
+        // there may be some undistributed remainder left due to trunction,
+        // and it must be non-positive
         if (remainder > 0) {
             vlog(
               klog.error,
@@ -459,20 +459,22 @@ void dispense_negative_deltas(
               surplus);
             return;
         }
+        // distribute the remainder equally between the shards
         if (remainder < 0) {
-            const quota_t d = (remainder + 1)
-                                / static_cast<quota_t>(schedule.size())
-                              - 1;
+            // shard's share rounded to the floor (towards -inf)
+            const quota_t share = (remainder + 1)
+                                    / static_cast<quota_t>(schedule.size())
+                                  - 1;
             for (quota_t& s : schedule) {
-                const quota_t dd = std::max(d, remainder);
-                remainder -= dd;
-                s += dd;
+                const quota_t d = std::max(share, remainder);
+                remainder -= d;
+                s += d;
             }
         }
 
     } else { // delta <= -total_surplus
 
-        // all surpluses
+        // use the entire amount of surpluses of each shard towards the delta
         for (size_t k = 0; k != ss::smp::count; ++k) {
             const quota_t share = -surplus.at(k);
             schedule.at(k) += share;
@@ -515,17 +517,22 @@ ss::future<> snc_quota_manager::quota_balancer_update(
     ingress_egress_state<quota_t> deltas = {
       .in = shard_quotas_update.in.get_delta_or_0(),
       .eg = shard_quotas_update.eg.get_delta_or_0()};
+
+    // `deltas` are dispensed in full between the shards,
+    // with an attempt of fairness by considering the current load
     if (is_zero(deltas)) {
         co_return;
     }
 
+    // per-shard schedules of quota changes
     ingress_egress_state<std::vector<quota_t>> schedule{
       std::vector<quota_t>(ss::smp::count),
       std::vector<quota_t>(ss::smp::count)};
-
+    // negative deltas are dispensed with consideration of the current load
     if (deltas.in < 0 || deltas.eg < 0) {
         // cap negative delta at -(total surrenderable quota),
-        // diff towards node deficit
+        // difference between the required delta and the delta that can be
+        // acquired goes towards the node deficit
         const auto total_quota = co_await container().map_reduce0(
           [](const snc_quota_manager& qm) {
               return qm.get_quota() - qm._shard_quota_minimum;
@@ -534,6 +541,9 @@ ss::future<> snc_quota_manager::quota_balancer_update(
           std::plus{});
         _node_deficit.in += cap_to_ceiling(deltas.in, -total_quota.in);
         _node_deficit.eg += cap_to_ceiling(deltas.eg, -total_quota.eg);
+        if (!is_zero(_node_deficit)) {
+            vlog(klog.trace, "qb - Node deficit: {}", _node_deficit);
+        }
 
         const auto surplus_aos = co_await container().map(
           [](snc_quota_manager& qm) {
@@ -545,6 +555,7 @@ ss::future<> snc_quota_manager::quota_balancer_update(
         dispense_negative_deltas(schedule.in, deltas.in, surplus_soa.in);
         dispense_negative_deltas(schedule.eg, deltas.eg, surplus_soa.eg);
     }
+    // postive deltas are disensed equally
     if (deltas.in > 0) {
         dispense_equally(schedule.in, deltas.in);
     }
@@ -559,11 +570,11 @@ ss::future<> snc_quota_manager::quota_balancer_update(
       shard_quotas_update,
       schedule);
 
+    // deliver `schedules` to the shards
     co_await container().invoke_on_all([&schedule](snc_quota_manager& qm) {
         qm.adjust_quota(
           {.in = schedule.in.at(ss::this_shard_id()),
            .eg = schedule.eg.at(ss::this_shard_id())});
-        vlog(klog.trace, "qb - Delta updates applied: {}", qm._shard_quota);
     });
 }
 

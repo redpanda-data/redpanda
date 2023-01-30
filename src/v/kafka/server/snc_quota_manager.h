@@ -33,6 +33,8 @@ struct ingress_egress_state {
     T eg;
 };
 
+/// Isolates \ref quota_manager functionality related to
+/// shard/node/cluster (SNC) wide quotas and limits
 class snc_quota_manager
   : public ss::peering_sharded_service<snc_quota_manager> {
 public:
