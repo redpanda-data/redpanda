@@ -29,11 +29,12 @@
 namespace storage {
 
 static inline segment_index::entry translate_index_entry(
-  const index_state& s, std::tuple<uint32_t, uint32_t, uint64_t> entry) {
+  const index_state& s,
+  std::tuple<uint32_t, offset_time_index, uint64_t> entry) {
     auto [relative_offset, relative_time, filepos] = entry;
     return segment_index::entry{
       .offset = model::offset(relative_offset + s.base_offset()),
-      .timestamp = model::timestamp(relative_time + s.base_timestamp()),
+      .timestamp = model::timestamp(relative_time() + s.base_timestamp()),
       .filepos = filepos,
     };
 }
@@ -76,8 +77,10 @@ ss::future<ss::file> segment_index::open() {
 
 void segment_index::reset() {
     auto base = _state.base_offset;
-    _state = {};
+    _state = index_state::make_empty_index(
+      storage::internal::should_apply_delta_time_offset(_feature_table));
     _state.base_offset = base;
+
     _acc = 0;
 }
 
@@ -118,17 +121,14 @@ segment_index::find_nearest(model::timestamp t) {
     if (_state.empty()) {
         return std::nullopt;
     }
-    const uint32_t i = t() - _state.base_timestamp();
-    auto it = std::lower_bound(
-      std::begin(_state.relative_time_index),
-      std::end(_state.relative_time_index),
-      i,
-      std::less<uint32_t>{});
-    if (it == _state.relative_offset_index.end()) {
+
+    const auto delta = t - _state.base_timestamp;
+    const auto entry = _state.find_entry(delta);
+    if (!entry) {
         return std::nullopt;
     }
-    auto dist = std::distance(_state.relative_offset_index.begin(), it);
-    return translate_index_entry(_state, _state.get_entry(dist));
+
+    return translate_index_entry(_state, *entry);
 }
 
 std::optional<segment_index::entry>

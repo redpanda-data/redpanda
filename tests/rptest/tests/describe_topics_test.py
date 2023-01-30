@@ -145,7 +145,7 @@ class DescribeTopicsTest(RedpandaTest):
             "segment.ms":
             ConfigProperty(
                 config_type="LONG",
-                value="-1",
+                value="1209600000",  # 2 weeks in ms
                 doc_string=
                 "Default log segment lifetime in ms for topics which do not set segment.ms"
             )

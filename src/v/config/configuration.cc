@@ -89,7 +89,7 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .example = "3600000",
        .visibility = visibility::user},
-      std::nullopt,
+      std::chrono::weeks{2},
       {.min = 60s})
   , log_segment_ms_min(
       *this,

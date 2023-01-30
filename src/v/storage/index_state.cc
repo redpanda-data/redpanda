@@ -28,6 +28,13 @@
 
 namespace storage {
 
+index_state index_state::make_empty_index(offset_delta_time with_offset) {
+    index_state idx{};
+    idx.with_offset = with_offset;
+
+    return idx;
+}
+
 bool index_state::maybe_index(
   size_t accumulator,
   size_t step,
@@ -52,7 +59,9 @@ bool index_state::maybe_index(
     // by virtue of being the first in the segment.
     if (user_data && non_data_timestamps) {
         vassert(relative_time_index.size() == 1, "");
-        relative_time_index[0] = uint32_t(first_timestamp());
+        relative_time_index[0]
+          = offset_time_index{last_timestamp, with_offset}.raw_value();
+
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
         non_data_timestamps = false;
@@ -88,10 +97,10 @@ bool index_state::maybe_index(
     }
     // always saving the first batch simplifies a lot of book keeping
     if ((accumulator >= step && user_data) || retval) {
-        // We know that a segment cannot be > 4GB
         add_entry(
+          // We know that a segment cannot be > 4GB
           batch_base_offset() - base_offset(),
-          std::max(last_timestamp() - base_timestamp(), int64_t{0}),
+          offset_time_index{last_timestamp - base_timestamp, with_offset},
           starting_position_in_file);
 
         retval = true;
@@ -125,6 +134,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, relative_time_index.copy());
     write(tmp, position_index.copy());
     write(tmp, batch_timestamps_are_monotonic);
+    write(tmp, with_offset);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -202,6 +212,7 @@ void read_nested(
         st.batch_timestamps_are_monotonic = false;
     } else {
         read_nested(p, st.batch_timestamps_are_monotonic, 0U);
+        read_nested(p, st.with_offset, 0U);
     }
 }
 
