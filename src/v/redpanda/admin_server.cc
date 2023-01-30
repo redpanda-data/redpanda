@@ -786,6 +786,7 @@ ss::future<> admin_server::throw_on_error(
         case raft::errc::configuration_change_in_progress:
         case raft::errc::leadership_transfer_in_progress:
         case raft::errc::shutting_down:
+        case raft::errc::replicated_entry_truncated:
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
