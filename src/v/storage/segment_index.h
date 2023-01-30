@@ -73,6 +73,9 @@ public:
     model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
     model::timestamp base_timestamp() const { return _state.base_timestamp; }
+    bool batch_timestamps_are_monotonic() const {
+        return _state.batch_timestamps_are_monotonic;
+    }
 
     ss::future<bool> materialize_index();
     ss::future<> flush();
@@ -105,6 +108,8 @@ private:
     bool _needs_persistence{false};
     index_state _state;
     debug_sanitize_files _sanitize;
+
+    model::timestamp _last_batch_max_timestamp;
 
     /** Constructor with mock file content for unit testing */
     segment_index(

@@ -90,6 +90,11 @@ void segment_index::swap_index_state(index_state&& o) {
 void segment_index::maybe_track(
   const model::record_batch_header& hdr, size_t filepos) {
     _acc += hdr.size_bytes;
+
+    _state.update_batch_timestamps_are_monotonic(
+      hdr.max_timestamp >= _last_batch_max_timestamp);
+    _last_batch_max_timestamp = hdr.max_timestamp;
+
     if (_state.maybe_index(
           _acc,
           _step,
