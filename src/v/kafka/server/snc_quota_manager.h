@@ -186,7 +186,7 @@ private:
     ss::lowres_clock::time_point _balancer_timer_last_ran;
     ss::gate _balancer_gate;
     mutex _balancer_mx;
-    ingress_egress_state<quota_t> _node_deficit;
+    ingress_egress_state<quota_t> _node_deficit{0, 0};
 
     // operational, used on each shard
     ingress_egress_state<std::optional<quota_t>> _node_quota_default;
