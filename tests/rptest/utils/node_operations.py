@@ -354,6 +354,9 @@ class NodeOpsExecutor():
             if operation.wait_for_finish:
                 self.wait_for_rebalanced(operation.node)
         elif operation.type == OperationType.DE_RECOMMISSION:
+            # If node is empty decommission will finish immediately and we won't
+            # be able to recommission it
+            self.wait_for_rebalanced(operation.node)
             self.decommission(operation.node)
 
             self.recommission(operation.node)
