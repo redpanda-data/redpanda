@@ -136,6 +136,11 @@ public:
         return _rp_user_principal;
     }
 
+    void reset() {
+        _context.reset();
+        _server_creds.reset();
+    }
+
 private:
     state_result<void> init();
     state_result<bytes> more(bytes_view);
@@ -197,9 +202,16 @@ ss::future<result<bytes>> gssapi_authenticator::authenticate(bytes auth_bytes) {
 
     _state = res.state;
     if (_state == state::complete) {
-        _principal = co_await _worker.submit(
-          [this]() { return _impl->principal(); });
+        _principal = co_await _worker.submit([this]() {
+            auto principal = _impl->principal();
+            // Clear the gssapi members, as they're no longer required.
+            _impl->reset();
+            return principal;
+        });
+        // Clear the impl struct, as it's no longer required.
         _impl.reset();
+    } else if (_state == state::failed) {
+        co_await _worker.submit([this]() { _impl->reset(); });
     }
     co_return std::move(res.result);
 }
