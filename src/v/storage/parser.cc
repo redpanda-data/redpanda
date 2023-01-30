@@ -89,33 +89,38 @@ static ss::future<result<iobuf>> verify_read_iobuf(
     if (logger) {
         vlog(logger->info, "AWONG verifying read iobuf");
     }
-    return read_iobuf_exactly(in, expected)
-      .then([msg = std::move(msg), expected, recover, logger](iobuf b) {
-          if (logger) {
-              vlog(logger->info, "AWONG read iobuf");
-          }
-          if (likely(b.size_bytes() == expected)) {
-              return ss::make_ready_future<result<iobuf>>(std::move(b));
-          }
-          if (!recover) {
-              stlog.error(
-                "cannot continue parsing. recived size:{} bytes, expected:{} "
-                "bytes. context:{}",
-                b.size_bytes(),
-                expected,
-                msg);
-          } else {
-              stlog.debug(
-                "recovery ended with short read. recived size:{} bytes, "
-                "expected:{} "
-                "bytes. context:{}",
-                b.size_bytes(),
-                expected,
-                msg);
-          }
-          return ss::make_ready_future<result<iobuf>>(
-            parser_errc::input_stream_not_enough_bytes);
-      });
+    iobuf b;
+    try {
+        b = co_await read_iobuf_exactly(in, expected);
+    } catch (...) {
+        if (logger) {
+            vlog(logger->info, "AWONG exception when reading iobuf exactly: {}", std::current_exception());
+        }
+        std::rethrow_exception(std::current_exception());
+    }
+    if (logger) {
+        vlog(logger->info, "AWONG read iobuf");
+    }
+    if (likely(b.size_bytes() == expected)) {
+        co_return b;
+    }
+    if (!recover) {
+        stlog.error(
+          "cannot continue parsing. recived size:{} bytes, expected:{} "
+          "bytes. context:{}",
+          b.size_bytes(),
+          expected,
+          msg);
+    } else {
+        stlog.debug(
+          "recovery ended with short read. recived size:{} bytes, "
+          "expected:{} "
+          "bytes. context:{}",
+          b.size_bytes(),
+          expected,
+          msg);
+    }
+    co_return parser_errc::input_stream_not_enough_bytes;
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_header(retry_chain_logger* logger) {
@@ -291,7 +296,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_records(retry_c
     if (logger) {
         vlog(logger->info, "AWONG got stream");
     }
-    auto record = co_await verify_read_iobuf(st, sz, "parser::consumer_records", _recovery);
+    auto record = co_await verify_read_iobuf(st, sz, "parser::consumer_records", _recovery, logger);
     if (logger) {
         vlog(logger->info, "AWONG verified read iobuf");
     }

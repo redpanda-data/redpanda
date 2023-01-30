@@ -105,6 +105,9 @@ public:
     ss::future<ss::temporary_buffer<Ch>> get(unsigned index) {
         gate_guard g(_gate);
         while (!_gate.is_closed()) {
+            if (_err) {
+                co_return co_await ss::make_exception_future<ss::temporary_buffer<Ch>>(_err);
+            }
             auto gen = _cnt;
             if (auto ob = maybe_get(index); ob.has_value()) {
                 co_return std::move(ob.value());
@@ -171,11 +174,9 @@ private:
                     buf = co_await _in.read_up_to(_max_size);
                 }
             } catch (...) {
-                err = std::current_exception();
-            }
-            if (err) {
-                _pcond.broken();
-                co_return co_await ss::make_exception_future(err);
+                _err = std::current_exception();
+                _pcond.broadcast();
+                co_return;
             }
             ++_cnt;
             _buffer.push_back(data_item{
@@ -194,6 +195,7 @@ private:
     ss::condition_variable _pcond;
     ring_buffer _buffer;
     ss::gate _gate;
+    std::exception_ptr _err{nullptr};
     uint64_t _cnt{0};
 };
 

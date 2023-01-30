@@ -145,7 +145,15 @@ ss::future<reconnect_result_t> client::get_connected(
     const auto interval = 1s; // 500ms;
     while (!_connect_gate.is_closed() && current < deadline) {
         if (_as != nullptr) {
-            _as->check();
+            std::exception_ptr err;
+            try {
+                _as->check();
+            } catch (...) {
+                err = std::current_exception();
+            }
+            if (err) {
+                co_return co_await ss::make_exception_future<reconnect_result_t>(err);
+            }
         }
         // Reconnect attempts have to stop if:
         // - shutdown method was called
@@ -288,6 +296,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
     try {
         _client->check();
     } catch (...) {
+        vlog(_ctxlog.info, "AWONG returning aborted from recv_some");
         return ss::make_exception_future<iobuf>(std::current_exception());
     }
     if (!_prefetch.empty()) {
@@ -297,7 +306,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
     }
     return _client->receive()
       .then([this](ss::temporary_buffer<char> chunk) mutable {
-          vlog(_ctxlog.trace, "chunk received, chunk length {}", chunk.size());
+          vlog(_ctxlog.info, "chunk received, chunk length {}", chunk.size());
           if (chunk.empty()) {
               // NOTE: to make the parser stop we need to use the 'put_eof'
               // method, because it will handle situation when the data is
@@ -354,7 +363,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
           _buffer.trim_front(noctets);
           if (!_buffer.empty()) {
               vlog(
-                _ctxlog.trace,
+                _ctxlog.info,
                 "not all consumed, noctets {}, input size {}, output size "
                 "{}, ec {}",
                 noctets,
@@ -418,6 +427,7 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
     try {
         _client->check();
     } catch (...) {
+        vlog(_ctxlog.info, "AWONG returning aborted from send_some");
         return ss::make_exception_future<>(std::current_exception());
     }
     vlog(_ctxlog.trace, "request_stream.send_some {}", seq.size_bytes());
@@ -496,37 +506,27 @@ struct response_data_source final : ss::data_source_impl {
         return get();
     }
     ss::future<ss::temporary_buffer<char>> get() final {
-        return ss::do_with(
-          ss::temporary_buffer<char>(),
-          [this](ss::temporary_buffer<char>& result) {
-              return ss::repeat([this, &result] {
-                         if (_done || _io->is_done()) {
-                             return ss::make_ready_future<ss::stop_iteration>(
-                               ss::stop_iteration::yes);
-                         }
-                         return _io->recv_some().then([this, &result](
-                                                        iobuf&& bufseq) {
-                             if (_skip) {
-                                 auto n = std::min(bufseq.size_bytes(), _skip);
-                                 bufseq.trim_front(n);
-                                 _skip -= n;
-                             }
-                             if (bufseq.begin() == bufseq.end()) {
-                                 return ss::make_ready_future<
-                                   ss::stop_iteration>(
-                                   _io->is_done() ? ss::stop_iteration::yes
-                                                  : ss::stop_iteration::no);
-                             }
-                             result = iobuf_as_tmpbuf(std::move(bufseq));
-                             return ss::make_ready_future<ss::stop_iteration>(
-                               ss::stop_iteration::yes);
-                         });
-                     })
-                .then([&result] {
-                    return ss::make_ready_future<ss::temporary_buffer<char>>(
-                      std::move(result));
-                });
-          });
+        ss::temporary_buffer<char> result;
+        while (true) {
+            if (_done || _io->is_done()) {
+                break;
+            }
+            auto bufseq = co_await _io->recv_some();
+            if (_skip) {
+                auto n = std::min(bufseq.size_bytes(), _skip);
+                bufseq.trim_front(n);
+                _skip -= n;
+            }
+            if (bufseq.begin() == bufseq.end()) {
+                if (_io->is_done()) {
+                    break;
+                }
+                continue;
+            }
+            result = iobuf_as_tmpbuf(std::move(bufseq));
+            break;
+        }
+        co_return result;
     }
     client::response_stream_ref _io;
     size_t _skip{0};
