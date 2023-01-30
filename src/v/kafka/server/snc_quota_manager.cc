@@ -13,6 +13,8 @@
 #include "kafka/server/logger.h"
 #include "prometheus/prometheus_sanitize.h"
 
+#include <seastar/core/metrics.hh>
+
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
@@ -59,6 +61,71 @@ to_soa_layout(const std::vector<ingress_egress_state<T>>& v) {
 
 namespace {
 
+template<class T>
+void add_ingress_egress_gauges(
+  std::vector<ss::metrics::metric_definition>& metric_defs,
+  ss::metrics::metric_name_type name,
+  T&& value_getter,
+  ss::metrics::description desc,
+  const std::vector<ss::metrics::label>& aggregate_labels) {
+    static const auto direction_label = ss::metrics::label("direction");
+    static const auto label_ingress = direction_label("ingress");
+    static const auto label_egress = direction_label("egress");
+    metric_defs.emplace_back(ss::metrics::make_gauge(
+                               name,
+                               [value_getter] { return value_getter().in; },
+                               desc,
+                               {label_ingress})
+                               .aggregate(aggregate_labels));
+    metric_defs.emplace_back(ss::metrics::make_gauge(
+                               name,
+                               [value_getter] { return value_getter().eg; },
+                               desc,
+                               {label_egress})
+                               .aggregate(aggregate_labels));
+}
+
+} // namespace
+
+void snc_quotas_probe::setup_metrics() {
+    namespace sm = ss::metrics;
+
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+
+    const auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                                    ? std::vector<sm::label>{sm::shard_label}
+                                    : std::vector<sm::label>{};
+    std::vector<ss::metrics::metric_definition> metric_defs;
+
+    if (ss::this_shard_id() == quota_balancer_shard) {
+        metric_defs.emplace_back(sm::make_counter(
+          "balancer_runs",
+          [this] { return _balancer_runs; },
+          sm::description(
+            "Number of times throughput quota balancer has been run")));
+    }
+    add_ingress_egress_gauges(
+      metric_defs,
+      "quota_effective",
+      [this] { return _qm.get_quota(); },
+      sm::description("Currently effective quota, in bytes/s"),
+      aggregate_labels);
+    add_ingress_egress_gauges(
+      metric_defs,
+      "throughput",
+      [this] { return _qm.get_throughput(); },
+      sm::description("Throughput measurement at the time of last "
+                      "balancer run, in bytes/s"),
+      aggregate_labels);
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("kafka:quotas"), metric_defs);
+}
+
+namespace {
+
 quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
     if (node_quota.has_value()) {
         const quota_t v = node_quota.value() / ss::smp::count;
@@ -98,6 +165,7 @@ snc_quota_manager::snc_quota_manager()
            _kafka_quota_balancer_window()},
       .eg {node_to_shard_quota(_node_quota_default.eg),
            _kafka_quota_balancer_window()}}
+  , _probe(*this)
 {
     update_shard_quota_minimum();
     _kafka_throughput_limit_node_bps.in.watch(
@@ -133,6 +201,7 @@ snc_quota_manager::snc_quota_manager()
             });
         });
     }
+    _probe.setup_metrics();
     vlog(klog.debug, "qm - Initial quota: {}", _shard_quota);
 }
 
@@ -306,6 +375,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
     _balancer_gate.check();
     _balancer_timer_last_ran = ss::lowres_clock::now();
     vlog(klog.trace, "qb - Step");
+    _probe.balancer_step();
 
     // determine the borrowers and whether any balancing is needed now
     const auto borrowers = co_await container().map(
@@ -605,6 +675,21 @@ snc_quota_manager::get_deficiency() const noexcept {
 
 ingress_egress_state<quota_t> snc_quota_manager::get_quota() const noexcept {
     return {.in = _shard_quota.in.quota(), .eg = _shard_quota.eg.quota()};
+}
+
+ingress_egress_state<quota_t>
+snc_quota_manager::get_throughput() const noexcept {
+    // currently measured TP is calculated as the effective quota (reported
+    // by `bottomless_token_bucket::quota()`) less the amount that represents
+    // how much of that quota is left in the bucket before it goes to zero
+    // tokens level. Thus the difference represents how much of the effective
+    // quota is used, i.e. the TP as measured by the bottomless_token_bucket.
+    // The value for subtrahend is reported by
+    // `bottomless_token_bucket::get_current_rate()` which is a confusing name
+    // and needs change.
+    return {
+      .in = _shard_quota.in.quota() - _shard_quota.in.get_current_rate(),
+      .eg = _shard_quota.eg.quota() - _shard_quota.eg.get_current_rate()};
 }
 
 ingress_egress_state<quota_t> snc_quota_manager::get_surplus() const noexcept {
