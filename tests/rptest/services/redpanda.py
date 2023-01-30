@@ -446,7 +446,7 @@ class RedpandaService(Service):
         "admin", "admin", "SCRAM-SHA-256")
 
     COV_KEY = "enable_cov"
-    DEFAULT_COV_OPT = False
+    DEFAULT_COV_OPT = "OFF"
 
     # Where we put a compressed binary if saving it after failure
     EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
@@ -2030,7 +2030,15 @@ class RedpandaService(Service):
         return [make_partition(p) for p in topic["partitions"]]
 
     def cov_enabled(self):
-        return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
+        cov_option = self._context.globals.get(self.COV_KEY,
+                                               self.DEFAULT_COV_OPT)
+        if cov_option == "ON":
+            return True
+        elif cov_option == "OFF":
+            return False
+
+        self.logger.warn(f"{self.COV_KEY} should be one of 'ON', or 'OFF'")
+        return False
 
     def save_executable(self):
         """
