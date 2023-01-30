@@ -21,6 +21,7 @@
 #include "storage/parser.h"
 #include "storage/parser_utils.h"
 #include "storage/segment_appender_utils.h"
+#include "utils/retry_chain_node.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -83,9 +84,16 @@ static ss::future<result<iobuf>> verify_read_iobuf(
   ss::input_stream<char>& in,
   size_t expected,
   ss::sstring msg,
-  bool recover = false) {
+  bool recover = false,
+  retry_chain_logger* logger = nullptr) {
+    if (logger) {
+        vlog(logger->info, "AWONG verifying read iobuf");
+    }
     return read_iobuf_exactly(in, expected)
-      .then([msg = std::move(msg), expected, recover](iobuf b) {
+      .then([msg = std::move(msg), expected, recover, logger](iobuf b) {
+          if (logger) {
+              vlog(logger->info, "AWONG read iobuf");
+          }
           if (likely(b.size_bytes() == expected)) {
               return ss::make_ready_future<result<iobuf>>(std::move(b));
           }
@@ -110,14 +118,24 @@ static ss::future<result<iobuf>> verify_read_iobuf(
       });
 }
 
-ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
+ss::future<result<stop_parser>> continuous_batch_parser::consume_header(retry_chain_logger* logger) {
     /**
      * we use a loop to prevent using tail recursion
      **/
     for (;;) {
         if (!_header) {
+            if (logger) {
+                vlog(logger->info, "AWONG reading header");
+            }
             auto r = co_await read_header();
+            if (logger) {
+                vlog(logger->info, "AWONG finished reading header");
+            }
             if (!r) {
+                if (logger) {
+                  vlog(logger->info, "AWONG has_error");
+                  vlog(logger->info, "AWONG error: {}", r.error());
+                }
                 co_return r.error();
             }
             _header = r.value();
@@ -216,23 +234,44 @@ static ss::future<result<model::record_batch_header>> read_header_impl(
 }
 
 ss::future<result<model::record_batch_header>>
-continuous_batch_parser::read_header() {
-    return read_header_impl(get_stream(), *_consumer, _recovery);
+continuous_batch_parser::read_header(retry_chain_logger* logger) {
+    if (logger) {
+        vlog(logger->info, "AWONG getting stream");
+    }
+    auto& st = get_stream();
+    if (logger) {
+        vlog(logger->info, "AWONG got stream; reading header impl");
+    }
+    auto ret = co_await read_header_impl(st, *_consumer, _recovery);
+    if (logger) {
+        vlog(logger->info, "AWONG finished reading header impl");
+    }
+    co_return ret;
 }
 
-ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
-    return consume_header().then([this](result<stop_parser> st) {
-        if (!st) {
-            return ss::make_ready_future<result<stop_parser>>(st.error());
+ss::future<result<stop_parser>> continuous_batch_parser::consume_one(retry_chain_logger* logger) {
+    auto st = co_await consume_header(logger);
+    if (!st) {
+        if (logger) {
+            vlog(logger->info, "AWONG bad error status");
         }
-        if (st.value() == stop_parser::yes) {
-            return ss::make_ready_future<result<stop_parser>>(st.value());
+        co_return result<stop_parser>(st.error());
+    }
+    if (st.value() == stop_parser::yes) {
+        if (logger) {
+            vlog(logger->info, "AWONG stopping");
         }
-        return consume_records().then([this](result<stop_parser> r) {
-            add_bytes_and_reset();
-            return r;
-        });
-    });
+        co_return result<stop_parser>(st.value());
+    }
+    if (logger) {
+        vlog(logger->info, "AWONG consuming records");
+    }
+    auto r = co_await consume_records(logger);
+    if (logger) {
+        vlog(logger->info, "AWONG consumed records");
+    }
+    add_bytes_and_reset();
+    co_return r;
 }
 
 size_t continuous_batch_parser::consumed_batch_bytes() const {
@@ -243,55 +282,72 @@ void continuous_batch_parser::add_bytes_and_reset() {
     _bytes_consumed += consumed_batch_bytes();
     _header = {}; // reset
 }
-ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
+ss::future<result<stop_parser>> continuous_batch_parser::consume_records(retry_chain_logger* logger) {
+    if (logger) {
+        vlog(logger->info, "AWONG consuming");
+    }
     auto sz = _header->size_bytes - model::packed_record_batch_header_size;
-    return verify_read_iobuf(
-             get_stream(), sz, "parser::consume_records", _recovery)
-      .then([this](result<iobuf> record) -> result<stop_parser> {
-          if (!record) {
-              return record.error();
-          }
-          _consumer->consume_records(std::move(record.value()));
-          return result<stop_parser>(_consumer->consume_batch_end());
-      });
+    auto& st = get_stream();
+    if (logger) {
+        vlog(logger->info, "AWONG got stream");
+    }
+    auto record = co_await verify_read_iobuf(st, sz, "parser::consumer_records", _recovery);
+    if (logger) {
+        vlog(logger->info, "AWONG verified read iobuf");
+    }
+    if (!record) {
+        if (logger) {
+            vlog(logger->info, "AWONG record error");
+        }
+        co_return record.error();
+    }
+    _consumer->consume_records(std::move(record.value()));
+    co_return result<stop_parser>(_consumer->consume_batch_end());
 }
 
-ss::future<result<size_t>> continuous_batch_parser::consume() {
+ss::future<result<size_t>> continuous_batch_parser::consume(retry_chain_logger* logger) {
     if (unlikely(_err != parser_errc::none)) {
-        return ss::make_ready_future<result<size_t>>(_err);
+        if (logger) {
+            vlog(logger->info, "AWONG returning err");
+        }
+        co_return result<size_t>(_err);
     }
-    return ss::repeat([this] {
-               return consume_one().then([this](result<stop_parser> s) {
-                   if (!s) {
-                       _err = parser_errc(s.error().value());
-                       return ss::stop_iteration::yes;
-                   }
-                   if (get_stream().eof()) {
-                       return ss::stop_iteration::yes;
-                   }
-                   if (s.value() == stop_parser::yes) {
-                       return ss::stop_iteration::yes;
-                   }
-                   return ss::stop_iteration::no;
-               });
-           })
-      .then([this] {
-          if (_bytes_consumed) {
-              // support partial reads
-              return result<size_t>(_bytes_consumed);
-          }
-          constexpr std::array<parser_errc, 3> benign_error_codes{
-            {parser_errc::none,
-             parser_errc::end_of_stream,
-             parser_errc::fallocated_file_read_zero_bytes_for_header}};
-          if (std::any_of(
-                benign_error_codes.begin(),
-                benign_error_codes.end(),
-                [v = _err](parser_errc e) { return e == v; })) {
-              return result<size_t>(_bytes_consumed);
-          }
-          return result<size_t>(_err);
-      });
+    while (true) {
+        if (logger) {
+            vlog(logger->info, "AWONG still consuming");
+        }
+        auto s = co_await consume_one(logger);
+        if (logger) {
+            vlog(logger->info, "AWONG consumed");
+        }
+        if (!s) {
+            _err = parser_errc(s.error().value());
+            break;
+        }
+        if (get_stream().eof()) {
+            break;
+        }
+        if (s.value() == stop_parser::yes) {
+            break;
+        }
+    }
+    if (logger) {
+        vlog(logger->info, "AWONG done repeating in consume");
+    }
+    if (_bytes_consumed) {
+        co_return result<size_t>(_bytes_consumed);
+    }
+    constexpr std::array<parser_errc, 3> benign_error_codes{
+      {parser_errc::none,
+       parser_errc::end_of_stream,
+       parser_errc::fallocated_file_read_zero_bytes_for_header}};
+    if (std::any_of(
+          benign_error_codes.begin(),
+          benign_error_codes.end(),
+          [v = _err](parser_errc e) { return e == v; })) {
+        co_return result<size_t>(_bytes_consumed);
+    }
+    co_return result<size_t>(_err);
 }
 
 class copy_helper {

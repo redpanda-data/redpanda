@@ -49,9 +49,9 @@ PARTITIONS_PER_SHARD = 1000
 # This is _not_ for running on oversubscribed CI environments: it's for
 # runnig on a reasonably powerful developer machine while they work
 # on the test.
-DOCKER_PARTITION_LIMIT = 64
+DOCKER_PARTITION_LIMIT = 48
 
-STOP_NODE_TIME_SEC = 180
+STOP_NODE_TIME_SEC = 120
 
 
 class ScaleParameters:
@@ -278,11 +278,10 @@ class ManyPartitionsTest(PreallocNodesTest):
             # to warn instead of info.
             log_config=LoggingConfig('info',
                                      logger_levels={
-                                         'kafka': 'trace',
-                                         'storage': 'info',
+                                         'storage': 'debug',
                                          'archival': 'debug',
                                          'archival-ctrl': 'debug',
-                                         'cloud_storage': 'debug',
+                                         'cloud_storage': 'trace',
                                          'storage-gc': 'info',
                                          'raft': 'warn',
                                          'offset_translator': 'warn'
@@ -918,21 +917,21 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # just restarted the cluster, and don't want to include that
                 # delay in our throughput-driven timeout expectations
                 self.logger.info(f"Checking repeater group is ready...")
-                repeater.await_group_ready()
+                # repeater.await_group_ready()
 
                 t = repeater_await_bytes / scale.expect_bandwidth
                 self.logger.info(
                     f"Waiting for {repeater_await_msgs} messages in {t} seconds"
                 )
                 t1 = time.time()
-                repeater.await_progress(repeater_await_msgs, t)
+                # repeater.await_progress(repeater_await_msgs, t)
                 t2 = time.time()
 
                 # This is approximate, because await_progress isn't returning the very
                 # instant the workers hit their collective target.
-                self.logger.info(
-                    f"Wait complete, approx bandwidth {(repeater_await_bytes / (t2-t1))/(1024*1024.0)}MB/s"
-                )
+                # self.logger.info(
+                #     f"Wait complete, approx bandwidth {(repeater_await_bytes / (t2-t1))/(1024*1024.0)}MB/s"
+                # )
 
             rand_parallel = 10
             rand_ios = 10

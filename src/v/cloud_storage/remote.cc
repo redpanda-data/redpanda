@@ -448,6 +448,7 @@ ss::future<download_result> remote::download_segment(
                 boost::beast::http::field::content_length));
             uint64_t content_length = co_await cons_str(
               length, resp.value()->as_input_stream());
+            vlog(ctxlog.debug, "AWONG finished consuming segment stream");
             _probe.successful_download();
             _probe.register_download_size(content_length);
             co_return download_result::success;

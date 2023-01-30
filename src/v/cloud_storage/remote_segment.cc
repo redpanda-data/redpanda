@@ -272,9 +272,12 @@ ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
       tmpidx,
       _base_offset_delta,
       remote_segment_sampling_step_bytes);
-    auto fparse = parser->consume().finally(
-      [parser] { return parser->close(); });
-    auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
+    auto fparse = parser->consume(&_ctxlog).finally(
+      [&, parser] {
+          vlog(_ctxlog.info, "AWONG parser close");
+          return parser->close();
+      });
+    auto fput = _cache.put(_path, sput).finally([&, sref = std::ref(sput)] {
         return sref.get().close();
     });
     vlog(_ctxlog.info, "AWONG waiting for parse and put");

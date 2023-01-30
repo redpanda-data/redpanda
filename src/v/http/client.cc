@@ -77,6 +77,9 @@ client::client(
 
 void client::check() const {
     if (_as) {
+        if (_as->abort_requested()) {
+          vlog(http_log.info, "AWONG abort requested for http client");
+        }
         _as->check();
     }
 }
@@ -282,7 +285,11 @@ ss::future<> client::response_stream::prefetch_headers() {
 }
 
 ss::future<iobuf> client::response_stream::recv_some() {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::make_exception_future<iobuf>(std::current_exception());
+    }
     if (!_prefetch.empty()) {
         // This code will only be executed if 'prefetch_headers' was called. It
         // can only be called once.
@@ -408,7 +415,11 @@ client::request_stream::send_some(ss::temporary_buffer<char>&& buf) {
 }
 
 ss::future<> client::request_stream::send_some(iobuf&& seq) {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::make_exception_future<>(std::current_exception());
+    }
     vlog(_ctxlog.trace, "request_stream.send_some {}", seq.size_bytes());
     if (_serializer.is_header_done()) {
         // Fast path
