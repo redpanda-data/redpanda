@@ -30,6 +30,7 @@
 #include <exception>
 #include <memory>
 #include <thread>
+#include <type_traits>
 
 namespace ssx {
 
@@ -64,17 +65,20 @@ public:
 
     void process(ss::alien::instance& alien, ss::shard_id shard) final {
         try {
-            set_value(alien, shard, _func());
+            if constexpr (std::is_void_v<value_type>) {
+                _func();
+                ss::alien::run_on(
+                  alien, shard, [this]() { _promise.set_value(); });
+            } else {
+                auto v = _func();
+                ss::alien::run_on(
+                  alien, shard, [this, v{std::move(v)}]() mutable {
+                      _promise.set_value(std::move(v));
+                  });
+            }
         } catch (...) {
             set_exception(alien, shard, std::current_exception());
         };
-    }
-
-    void
-    set_value(ss::alien::instance& alien, ss::shard_id shard, value_type v) {
-        ss::alien::run_on(alien, shard, [this, v{std::move(v)}]() mutable {
-            _promise.set_value(std::move(v));
-        });
     }
 
     void set_exception(
