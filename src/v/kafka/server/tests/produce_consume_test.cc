@@ -434,3 +434,50 @@ FIXTURE_TEST(test_node_throughput_limits_balanced, throughput_limits_fixure) {
     // otherwise test is not valid:
     BOOST_REQUIRE_GT(kafka_in_data_len, kafka_out_data_len);
 }
+
+FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
+    namespace ch = std::chrono;
+
+    auto get_balancer_runs = [this] {
+        return app.snc_quota_mgr
+          .map_reduce0(
+            [](const kafka::snc_quota_manager& qm) {
+                return qm.get_snc_quotas_probe().get_balancer_runs();
+            },
+            0,
+            [](uint32_t lhs, uint32_t rhs) { return lhs + rhs; })
+          .get0();
+    };
+
+    auto set_balancer_period = [](const ch::milliseconds d) {
+        ss::smp::invoke_on_all([&] {
+            auto& config = config::shard_local_cfg();
+            config.get("kafka_quota_balancer_node_period_ms").set_value(d);
+        }).get0();
+    };
+
+    wait_for_controller_leadership().get();
+
+    set_balancer_period(25ms);
+    BOOST_TEST_WARN(false, "Starting");
+    ss::sleep(100ms).get0();
+    int br = get_balancer_runs();
+    BOOST_TEST_CHECK(
+      abs(br - 4) <= 1, "Expected 4±1 balancer runs, got " << br);
+
+    set_balancer_period(0ms);
+    int br_last = get_balancer_runs();
+    ss::sleep(100ms).get0();
+    br = get_balancer_runs();
+    BOOST_TEST_CHECK(
+      abs(br - br_last - 0) <= 1,
+      "Expected 0±1 balancer runs, got " << br - br_last);
+
+    set_balancer_period(15ms);
+    br_last = get_balancer_runs();
+    ss::sleep(100ms).get0();
+    br = get_balancer_runs();
+    BOOST_TEST_CHECK(
+      abs(br - br_last - 7) <= 1,
+      "Expected 7±1 balancer runs, got " << br - br_last);
+}

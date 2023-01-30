@@ -95,6 +95,10 @@ public:
     void record_response_tp(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
+    const snc_quotas_probe& get_snc_quotas_probe() const noexcept {
+        return _probe;
+    };
+
     /// Return current effective quota values
     ingress_egress_state<quota_t> get_quota() const noexcept;
 
