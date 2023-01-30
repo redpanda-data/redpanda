@@ -128,14 +128,18 @@ namespace {
 
 quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
     if (node_quota.has_value()) {
-        const quota_t v = node_quota.value() / ss::smp::count;
-        if (v > bottomless_token_bucket::max_quota) {
+        const auto v = std::div(node_quota.value(), ss::smp::count);
+        if (v.quot >= bottomless_token_bucket::max_quota) {
             return bottomless_token_bucket::max_quota;
         }
-        if (v < bottomless_token_bucket::min_quota) {
+        if (v.quot < bottomless_token_bucket::min_quota) {
             return bottomless_token_bucket::min_quota;
         }
-        return v;
+        if (v.rem > ss::this_shard_id()) {
+            return v.quot + 1;
+        } else {
+            return v.quot;
+        }
     } else {
         return bottomless_token_bucket::max_quota;
     }
