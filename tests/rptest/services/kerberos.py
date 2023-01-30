@@ -433,7 +433,11 @@ class RedpandaKerberosNode(RedpandaService):
             keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
             *args,
             **kwargs):
-        super(RedpandaKerberosNode, self).__init__(context, *args, **kwargs)
+        super(RedpandaKerberosNode,
+              self).__init__(context,
+                             enable_kerberos_listener=True,
+                             *args,
+                             **kwargs)
         self.kdc = kdc
         self.realm = realm
         self.keytab_file = keytab_file
