@@ -246,6 +246,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
     auto start_time = ss::lowres_clock::now();
     // Tracks job execution time
     job_exec_timer exec_timer{};
+    run_quota_t quota = run_quota_t(static_cast<int32_t>(_pending.size()));
     while (!_as.abort_requested()) {
         vlog(
           archival_log.debug,
@@ -270,8 +271,9 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         _current_job = std::ref(top);
         try {
             auto r = exec_timer.time();
-            co_await top.run(_parent);
+            auto res = co_await top.run(_parent, quota);
             jobs_executed++;
+            quota = quota - res.consumed;
         } catch (...) {
             vlog(
               archival_log.warn,

@@ -10,6 +10,7 @@
 
 #include "archival/fwd.h"
 #include "archival/logger.h"
+#include "archival/types.h"
 #include "archival/upload_housekeeping_service.h"
 #include "utils/retry_chain_node.h"
 #include "vlog.h"
@@ -31,10 +32,17 @@ public:
     explicit mock_job(std::chrono::milliseconds ms)
       : _delay(ms) {}
 
-    ss::future<> run(retry_chain_node& rtc) override {
+    ss::future<archival::housekeeping_job::run_result>
+    run(retry_chain_node& rtc, archival::run_quota_t quota) override {
+        run_result result{
+          .status = run_status::skipped,
+          .consumed = archival::run_quota_t(0),
+          .remaining = quota,
+        };
         vlog(test_log.info, "mock job executed");
         executed++;
-        return ss::sleep_abortable(_delay, _as);
+        co_await ss::sleep_abortable(_delay, _as);
+        co_return result;
     }
     void interrupt() override {
         BOOST_REQUIRE(interrupt_cnt == 0);

@@ -49,9 +49,15 @@ ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 
 void adjacent_segment_merger::set_enabled(bool enabled) { _enabled = enabled; }
 
-ss::future<> adjacent_segment_merger::run(retry_chain_node& rtc) {
+ss::future<housekeeping_job::run_result>
+adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
+    run_result result{
+      .status = run_status::skipped,
+      .consumed = run_quota_t(0),
+      .remaining = quota,
+    };
     if (!_enabled || _as.abort_requested()) {
-        co_return;
+        co_return result;
     }
     ss::gate::holder h(_gate);
     vlog(_ctxlog.debug, "Adjacent segment merger run begin");
@@ -116,7 +122,7 @@ ss::future<> adjacent_segment_merger::run(retry_chain_node& rtc) {
     auto upl = co_await _archiver.find_reupload_candidate(scanner);
     if (!upl.has_value()) {
         vlog(_ctxlog.debug, "No upload candidates");
-        co_return;
+        co_return result;
     }
     auto next = model::next_offset(upl->candidate.final_offset);
     vlog(
@@ -124,7 +130,11 @@ ss::future<> adjacent_segment_merger::run(retry_chain_node& rtc) {
     auto uploaded = co_await _archiver.upload(std::move(*upl), std::ref(rtc));
     if (uploaded) {
         _last = next;
+        result.local_reuploads += 1;
+        result.manifest_uploads += 1;
+        result.metadata_syncs += 1;
     }
+    co_return result;
 }
 
 void adjacent_segment_merger::interrupt() { _as.request_abort(); }

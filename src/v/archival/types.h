@@ -78,6 +78,11 @@ archival::configuration get_archival_service_config(
   ss::scheduling_group sg = ss::default_scheduling_group(),
   ss::io_priority_class p = ss::default_priority_class());
 
+/// Housekeeping job quota. One share is one segment reupload
+/// or one deletion operation. The value can be negative if the
+/// job overcommitted.
+using run_quota_t = named_type<int32_t, struct _job_quota_tag>;
+
 /// The housekeeping job that performs the long
 /// task incrementally. It can be paused and resumed.
 /// When the underlying partition is stopped or the
@@ -92,8 +97,35 @@ public:
     housekeeping_job& operator=(const housekeeping_job&) = delete;
     housekeeping_job& operator=(housekeeping_job&&) = delete;
 
+    enum class run_status {
+        ok,
+        skipped,
+        failed,
+    };
+
+    struct run_result {
+        run_status status{run_status::ok};
+        run_quota_t consumed{run_quota_t::min()};
+        run_quota_t remaining{run_quota_t::min()};
+        uint32_t local_reuploads{0};
+        uint32_t cloud_reuploads{0};
+        uint32_t deletions{0};
+        uint32_t manifest_uploads{0};
+        uint32_t metadata_syncs{0};
+    };
+
     /// Start the job. The job can be paused (not immediately).
-    virtual ss::future<> run(retry_chain_node&) = 0;
+    ///
+    /// \param rtc is a retry chain node of the housekeeping service
+    /// \param quota is number of actions job can execute during current run
+    ///        the job is not forced to use its entire quota. It's also possible
+    ///        to use more resuorces than the job was given.
+    /// \return a future that will become available when the job is completed.
+    ///         The result of the future contains stats for the current run (
+    ///         number of uploaded segments/manifests, etc).
+    virtual ss::future<run_result>
+    run(retry_chain_node& rtc, run_quota_t quota) = 0;
+
     /// Stop the job. The job object can't be reused after that.
     /// Subsequent calls to 'run' method should fail.
     virtual void interrupt() = 0;

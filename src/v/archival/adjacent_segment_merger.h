@@ -27,7 +27,8 @@ public:
     explicit adjacent_segment_merger(
       ntp_archiver& parent, retry_chain_logger& ctxlog, bool is_local);
 
-    ss::future<> run(retry_chain_node& rtc) override;
+    ss::future<run_result>
+    run(retry_chain_node& rtc, run_quota_t quota) override;
 
     void interrupt() override;
 
