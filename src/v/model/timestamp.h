@@ -65,6 +65,16 @@ public:
 
     auto operator<=>(const timestamp&) const = default;
 
+    timestamp& operator-=(const timestamp& rhs) {
+        _v -= rhs();
+        return *this;
+    }
+
+    friend timestamp operator-(timestamp lhs, const timestamp& rhs) {
+        lhs -= rhs;
+        return lhs;
+    }
+
     friend std::ostream& operator<<(std::ostream&, timestamp);
 
     // ADL helpers for interfacing with the serde library.
