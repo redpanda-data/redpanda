@@ -249,7 +249,8 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
     auto start_time = ss::lowres_clock::now();
     // Tracks job execution time
     job_exec_timer exec_timer{};
-    run_quota_t quota = run_quota_t(static_cast<int32_t>(_pending.size()));
+    run_quota_t quota = run_quota_t(
+      max_reuploads_per_run * static_cast<int32_t>(_pending.size()));
     while (!_as.abort_requested()) {
         vlog(
           archival_log.debug,
@@ -276,7 +277,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             auto r = exec_timer.time();
             auto res = co_await top.run(_parent, quota);
             jobs_executed++;
-            quota = quota - res.consumed;
+            quota = res.remaining;
             maybe_update_probe(res);
         } catch (...) {
             vlog(
@@ -315,7 +316,8 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             jobs_executed = 0;
             start_time = ss::lowres_clock::now();
             exec_timer.reset();
-            quota = run_quota_t(static_cast<int32_t>(_pending.size()));
+            quota = run_quota_t(
+              max_reuploads_per_run * static_cast<int32_t>(_pending.size()));
             if (_probe.has_value()) {
                 _probe->get().housekeeping_rounds(1);
             }
@@ -329,17 +331,18 @@ void housekeeping_workflow::maybe_update_probe(
         return;
     }
     auto& probe = _probe->get();
+    int is_ok = 0;
     switch (res.status) {
     case housekeeping_job::run_status::ok:
-        probe.housekeeping_jobs(1);
+        is_ok = 1;
+    case housekeeping_job::run_status::failed:
+        probe.housekeeping_jobs(is_ok);
+        probe.housekeeping_jobs_failed(1 - is_ok);
         probe.job_cloud_segment_reuploads(res.cloud_reuploads);
         probe.job_local_segment_reuploads(res.local_reuploads);
         probe.job_metadata_reuploads(res.manifest_uploads);
         probe.job_metadata_syncs(res.metadata_syncs);
         probe.job_segment_deletions(res.deletions);
-        break;
-    case housekeeping_job::run_status::failed:
-        probe.housekeeping_jobs_failed(1);
         break;
     case housekeeping_job::run_status::skipped:
         probe.housekeeping_jobs_skipped(1);

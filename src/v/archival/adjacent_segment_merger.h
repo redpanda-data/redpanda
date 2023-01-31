@@ -39,6 +39,10 @@ public:
     void set_enabled(bool) override;
 
 private:
+    std::optional<adjacent_segment_run> scan_manifest(
+      model::offset local_start_offset,
+      const cloud_storage::partition_manifest& manifest);
+
     const bool _is_local;
     bool _enabled{true};
     model::offset _last;

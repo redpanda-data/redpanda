@@ -146,6 +146,9 @@ private:
     intrusive_list_hook _hook{};
 };
 
+/// Number of segment reuploads the job can do per housekeeping run
+static constexpr int max_reuploads_per_run = 4;
+
 /// Represents a series of adjacent segments
 /// The object is used to compute a possible reupload
 /// candidate. The series of segment is supposed to be
