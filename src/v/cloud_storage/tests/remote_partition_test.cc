@@ -451,7 +451,12 @@ static void reupload_compacted_segments(
         delta = delta + model::offset(s.num_config_records);
 
         if (!s.do_not_reupload) {
+            // We are updating manifest before uploading segment: this is not
+            // what the real upload path would do.  It is important that we
+            // assert out if the upload doesn't succeed, to avoid manifest
+            // and object store state getting out of sync.
             m.add(s.sname, meta);
+
             auto url = m.generate_segment_path(*m.get(meta.base_offset));
             vlog(test_log.debug, "reuploading segment {}", url);
             retry_chain_node rtc(10s, 1s);
@@ -464,15 +469,16 @@ static void reupload_compacted_segments(
                   std::make_unique<storage::segment_reader_handle>(
                     make_iobuf_input_stream(bytes_to_iobuf(body))));
             };
-            api
-              .upload_segment(
-                s3::bucket_name("bucket"),
-                url,
-                meta.size_bytes,
-                std::move(reset_stream),
-                rtc,
-                always_continue)
-              .get();
+            auto result = api
+                            .upload_segment(
+                              s3::bucket_name("bucket"),
+                              url,
+                              meta.size_bytes,
+                              std::move(reset_stream),
+                              rtc,
+                              always_continue)
+                            .get();
+            BOOST_REQUIRE_EQUAL(result, cloud_storage::upload_result::success);
         }
     }
     m.advance_insync_offset(m.get_last_offset());
