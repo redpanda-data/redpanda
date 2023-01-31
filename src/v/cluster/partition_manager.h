@@ -87,7 +87,9 @@ public:
       raft::group_id,
       std::vector<model::broker>,
       std::optional<remote_topic_properties> = std::nullopt,
-      std::optional<cloud_storage_clients::bucket_name> = std::nullopt);
+      std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
+      raft::with_learner_recovery_throttle
+      = raft::with_learner_recovery_throttle::yes);
 
     ss::future<> shutdown(const model::ntp& ntp);
 

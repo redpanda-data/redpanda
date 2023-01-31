@@ -17,6 +17,7 @@
 #include "net/unresolved_address.h"
 #include "raft/group_manager.h"
 #include "raft/mux_state_machine.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "storage/api.h"
@@ -108,7 +109,11 @@ struct mux_state_machine_fixture {
                   .then([this](storage::log&& log) mutable {
                       auto group = raft::group_id(0);
                       return _group_mgr.local()
-                        .create_group(group, {self_broker()}, log)
+                        .create_group(
+                          group,
+                          {self_broker()},
+                          log,
+                          raft::with_learner_recovery_throttle::yes)
                         .then([log](ss::lw_shared_ptr<raft::consensus> c) {
                             return c->start().then([c] { return c; });
                         });
