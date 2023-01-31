@@ -117,12 +117,16 @@ class DefaultClient:
         client.create_topic_partitions(topic, count)
 
     def alter_topic_config(self, topic: str, key: str,
-                           value: typing.Union[str, int]):
+                           value: typing.Optional[typing.Union[str, int]]):
         """
         Alter a topic configuration property.
+        if value is None, key is deleted, otherwise is set to the value
         """
         rpk = RpkTool(self._redpanda)
-        rpk.alter_topic_config(topic, key, value)
+        if value is None:
+            rpk.delete_topic_config(topic, key)
+        else:
+            rpk.alter_topic_config(topic, key, value)
 
     def alter_topic_configs(self, topic: str,
                             props: dict[str, typing.Union[str, int]]):
