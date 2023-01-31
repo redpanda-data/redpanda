@@ -14,14 +14,23 @@
 # limitations under the License.
 FROM public.ecr.aws/docker/library/ubuntu:kinetic-20220830
 
+####################################################################################################
+### The Slow Section
+### ================
+###
+### The first half of this Dockerfile is for dependencies that take a long time to download or build,
+### e.g. projects that download many maven dependencies.  In general dependencies in this section
+### should be rarely-updated third party tools.
+#####################################################################################################
+
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
 
-COPY --chown=0:0 tests/docker/ducktape-deps.sh /opt/ducktape-deps.sh
-RUN chmod +x /opt/ducktape-deps.sh
+COPY --chown=0:0 tests/docker/ducktape-deps-slow.sh /opt/ducktape-deps-slow.sh
+RUN chmod +x /opt/ducktape-deps-slow.sh
 
 # Install dependencies of Java client builds.
-RUN /opt/ducktape-deps.sh install_java_client_deps && \
+RUN /opt/ducktape-deps-slow.sh install_java_client_deps && \
     rm -rf /var/lib/apt/lists/*
 
 # Install kafka streams examples.  This is a very slow step (tens of minutes), doing
@@ -42,7 +51,7 @@ RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers
 # - install distro-packaged depedencies
 # - allow user env variables in ssh sessions
 # - install dependencies of 'rpk debug' system scan
-RUN /opt/ducktape-deps.sh install_system_deps && \
+RUN /opt/ducktape-deps-slow.sh install_system_deps && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config && \
     echo 'UsePAM yes' >> /etc/ssh/sshd_config && \
@@ -51,41 +60,56 @@ RUN /opt/ducktape-deps.sh install_system_deps && \
 
 
 # Install the OMB tool
-RUN /opt/ducktape-deps.sh install_omb
+RUN /opt/ducktape-deps-slow.sh install_omb
+
+####################################################################################################
+### The Fast Section
+### ================
+###
+### Everything after this line should build quickly, e.g. tens of seconds rather than minutes.  This
+### is where we put things that change relatively often, like our own verifier code, or things that
+### are so quick that it always makes sense to order them after slower dependencies.
+#####################################################################################################
+
+
+COPY --chown=0:0 tests/docker/ducktape-deps-fast.sh /opt/ducktape-deps-fast.sh
+RUN chmod +x /opt/ducktape-deps-fast.sh
 
 # install kafka binary dependencies, librdkafka dev, kcat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
-RUN /opt/ducktape-deps.sh install_kafka_tools && \
-    /opt/ducktape-deps.sh install_librdkafka && \
-    /opt/ducktape-deps.sh install_kcat
+RUN /opt/ducktape-deps-fast.sh install_kafka_tools && \
+    /opt/ducktape-deps-fast.sh install_librdkafka && \
+    /opt/ducktape-deps-fast.sh install_kcat
+
 
 # install go
-RUN /opt/ducktape-deps.sh install_golang
+RUN /opt/ducktape-deps-fast.sh install_golang
 ENV PATH="${PATH}:/usr/local/go/bin"
 
+
 # Install `kaf`
-RUN /opt/ducktape-deps.sh install_kaf
+RUN /opt/ducktape-deps-fast.sh install_kaf
 
 ENV PATH="${PATH}:/usr/local/go/bin"
 # Compile and install rust-based workload generator.
 # Install & remove compiler in the same step, to avoid bulking
 # out the resulting container image.
-RUN /opt/ducktape-deps.sh install_client_swarm /root
+RUN /opt/ducktape-deps-fast.sh install_client_swarm /root
 
 # Install golang dependencies for kafka clients such as sarama
-RUN /opt/ducktape-deps.sh install_sarama_examples
+RUN /opt/ducktape-deps-fast.sh install_sarama_examples
 
 # Install our in-tree go tests
 COPY --chown=0:0 tests/go /opt/redpanda-tests/go
 RUN cd /opt/redpanda-tests/go/sarama/produce_test && go mod tidy && go build
 
 # Install franz-go
-RUN /opt/ducktape-deps.sh install_franz_bench
+RUN /opt/ducktape-deps-fast.sh install_franz_bench
 
-RUN /opt/ducktape-deps.sh install_kcl
+RUN /opt/ducktape-deps-fast.sh install_kcl
 
 # Install the kgo-verifier tool
-RUN /opt/ducktape-deps.sh install_kgo_verifier
+RUN /opt/ducktape-deps-fast.sh install_kgo_verifier
 
 # Expose port 8080 for any http examples within clients
 EXPOSE 8080
@@ -112,7 +136,7 @@ RUN mkdir /root/external_test_suites && \
     cd /root/external_test_suites/arroyo && \
     python3 -m pip install --force --no-cache-dir -e /root/external_test_suites/arroyo
 
-RUN /opt/ducktape-deps.sh install_addr2line
+RUN /opt/ducktape-deps-fast.sh install_addr2line
 
 RUN mkdir -p /opt/scripts/offline_log_viewer
 COPY --chown=0:0 tools/offline_log_viewer /opt/scripts/offline_log_viewer

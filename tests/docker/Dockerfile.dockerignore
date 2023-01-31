@@ -6,4 +6,5 @@
 !tests/go
 !tools/offline_log_viewer
 !tools/consumer_offsets_recovery
-!tests/docker/ducktape-deps.sh
+!tests/docker/ducktape-deps-slow.sh
+!tests/docker/ducktape-deps-fast.sh

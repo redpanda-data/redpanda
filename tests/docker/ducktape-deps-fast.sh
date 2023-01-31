@@ -1,53 +1,7 @@
 #!/bin/bash
 
 set -e
-
-function install_java_client_deps() {
-  apt update
-  apt install -y \
-    build-essential \
-    default-jdk \
-    git \
-    maven
-}
-
-function install_system_deps() {
-  apt-get update
-  apt-get install -qq \
-    bind9-utils \
-    bind9-dnsutils \
-    bsdmainutils \
-    curl \
-    dmidecode \
-    cmake \
-    krb5-admin-server \
-    krb5-kdc \
-    krb5-user \
-    iproute2 \
-    iptables \
-    libatomic1 \
-    libyajl-dev \
-    libsasl2-dev \
-    libsasl2-modules-gssapi-mit \
-    libssl-dev \
-    net-tools \
-    lsof \
-    pciutils \
-    nodejs \
-    npm \
-    openssh-server \
-    netcat-openbsd \
-    sudo \
-    llvm \
-    python3-pip
-}
-
-function install_omb() {
-  git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git
-  cd /opt/openmessaging-benchmark
-  git reset --hard 6eba1030cb7c199e03f76676b6c2df9dcc3b219d
-  mvn clean package -DskipTests
-}
+set -x
 
 function install_kafka_tools() {
   for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0"; do
