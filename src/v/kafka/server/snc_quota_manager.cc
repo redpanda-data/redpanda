@@ -719,8 +719,27 @@ void snc_quota_manager::maybe_set_quota(
 
 void snc_quota_manager::adjust_quota(
   const ingress_egress_state<quota_t>& delta) noexcept {
-    _shard_quota.in.set_quota(_shard_quota.in.quota() + delta.in);
-    _shard_quota.eg.set_quota(_shard_quota.eg.quota() + delta.eg);
+    const auto f = [](
+                     bottomless_token_bucket& shard_quota,
+                     const quota_t delta,
+                     const char* const side_name) {
+        const quota_t new_quota = shard_quota.quota() + delta;
+        if (unlikely(new_quota < bottomless_token_bucket::min_quota)) {
+            vlog(
+              klog.error,
+              "qm - Adjust quota delta.{} {} would make quota {} less than "
+              "minimum, capping at {}",
+              side_name,
+              delta,
+              shard_quota.quota(),
+              bottomless_token_bucket::min_quota);
+            shard_quota.set_quota(bottomless_token_bucket::min_quota);
+        } else {
+            shard_quota.set_quota(new_quota);
+        }
+    };
+    f(_shard_quota.in, delta.in, "in");
+    f(_shard_quota.eg, delta.eg, "eg");
     vlog(klog.trace, "qm - Adjust quota: {} -> {}", delta, _shard_quota);
 }
 
