@@ -119,6 +119,7 @@ netcheck::run_individual_benchmark(model::node_id peer) {
     }
     result.name = _opts.name;
     result.info = fmt::format("Test performed against node: {}", peer);
+    result.test_type = "network";
     co_return result;
 }
 

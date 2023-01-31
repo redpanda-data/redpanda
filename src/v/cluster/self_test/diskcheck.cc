@@ -157,6 +157,7 @@ diskcheck::run_configured_benchmarks(ss::file& file) {
     auto result = write_metrics.to_st_result();
     result.name = _opts.name;
     result.info = "write run";
+    result.test_type = "disk";
     if (_cancelled) {
         result.warning = "Run was manually cancelled";
     }
@@ -167,6 +168,7 @@ diskcheck::run_configured_benchmarks(ss::file& file) {
         auto result = read_metrics.to_st_result();
         result.name = _opts.name;
         result.info = "read run";
+        result.test_type = "disk";
         if (_cancelled) {
             result.warning = "Run was manually cancelled";
         }

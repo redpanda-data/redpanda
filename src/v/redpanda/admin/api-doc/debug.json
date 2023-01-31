@@ -260,6 +260,10 @@
                     "type": "string",
                     "description": "Additional test labels, metadata and/or information"
                 },
+                "test_type": {
+                    "type": "string",
+                    "description": "Type of self test, one of either disk/network"
+                },
                 "duration": {
                     "type": "long",
                     "description": "Length of time the test took to complete"

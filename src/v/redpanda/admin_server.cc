@@ -3177,12 +3177,20 @@ admin_server::self_test_stop_handler(std::unique_ptr<ss::httpd::request> req) {
 static ss::httpd::debug_json::self_test_result
 self_test_result_to_json(const cluster::self_test_result& str) {
     ss::httpd::debug_json::self_test_result r;
+    r.test_id = ss::sstring(str.test_id);
+    r.name = str.name;
+    r.info = str.info;
+    r.test_type = str.test_type;
+    r.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   str.duration)
+                   .count();
+    r.timeouts = str.timeouts;
+    if (str.warning) {
+        r.warning = *str.warning;
+    }
     if (str.error) {
         r.error = *str.error;
         return r;
-    }
-    if (str.warning) {
-        r.warning = *str.warning;
     }
     r.p50 = str.p50;
     r.p90 = str.p90;
@@ -3191,13 +3199,6 @@ self_test_result_to_json(const cluster::self_test_result& str) {
     r.max_latency = str.max;
     r.rps = str.rps;
     r.bps = str.bps;
-    r.timeouts = str.timeouts;
-    r.test_id = ss::sstring(str.test_id);
-    r.name = str.name;
-    r.info = str.info;
-    r.duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-                   str.duration)
-                   .count();
     return r;
 }
 

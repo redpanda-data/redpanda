@@ -10,6 +10,7 @@
 package system
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
@@ -33,6 +34,25 @@ func UnameAndDistro(timeout time.Duration) (string, error) {
 		res += " " + ls[0]
 	}
 	return res, nil
+}
+
+// Returns a string representation of the input in terms of Gib/Mib/Kib or bits
+// depending on how large the input is.
+func BitsToHuman(bytes float64) string {
+	bits := bytes * 8
+	asGib := bits / (1 << 30)
+	asMib := bits / (1 << 20)
+	asKib := bits / (1 << 10)
+	if asGib > 1.0 {
+		return fmt.Sprintf("%.2fGib", asGib)
+	}
+	if asMib > 1.0 {
+		return fmt.Sprintf("%.2fMib", asMib)
+	}
+	if asKib > 1.0 {
+		return fmt.Sprintf("%.2fKib", asKib)
+	}
+	return fmt.Sprintf("%v", bytes)
 }
 
 func int8ToString(ints [65]int8) string {
