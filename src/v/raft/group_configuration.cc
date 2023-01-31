@@ -224,10 +224,8 @@ bool group_configuration::is_allowed_to_request_votes(vnode id) const {
     if (old_it != _old->voters.cend()) {
         return true;
     }
-    // look in learners
-    old_it = std::find(_old->learners.cbegin(), _old->learners.cend(), id);
 
-    return old_it != _old->learners.cend();
+    return false;
 }
 
 bool group_configuration::contains_broker(model::node_id id) const {
