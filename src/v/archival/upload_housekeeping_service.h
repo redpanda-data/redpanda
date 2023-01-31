@@ -25,6 +25,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <boost/intrusive/list_hook.hpp>
 
@@ -56,9 +57,13 @@ std::ostream& operator<<(std::ostream& o, housekeeping_state s);
 /// the idle state.
 class housekeeping_workflow {
 public:
+    using probe_opt_t
+      = std::optional<std::reference_wrapper<upload_housekeeping_probe>>;
+
     explicit housekeeping_workflow(
       retry_chain_node& parent,
-      ss::scheduling_group sg = ss::default_scheduling_group());
+      ss::scheduling_group sg = ss::default_scheduling_group(),
+      probe_opt_t probe = std::nullopt);
 
     void register_job(housekeeping_job&);
 
@@ -92,11 +97,17 @@ public:
 
 private:
     ss::future<> run_jobs_bg();
+    using probe_upd_func = ss::noncopyable_function<void(
+      std::reference_wrapper<upload_housekeeping_probe>)>;
+
+    /// Update metrics
+    void maybe_update_probe(const housekeeping_job::run_result& res);
 
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node& _parent;
     ss::scheduling_group _sg;
+    probe_opt_t _probe;
     housekeeping_state _state{housekeeping_state::idle};
     intrusive_list<housekeeping_job, &housekeeping_job::_hook> _pending;
     std::optional<std::reference_wrapper<housekeeping_job>> _current_job;
@@ -226,11 +237,11 @@ private:
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     cloud_storage::remote::event_filter _filter;
+    upload_housekeeping_probe _probe;
     housekeeping_workflow _workflow;
     static constexpr auto ma_resolution = 20ms;
     using sliding_window_t = timed_moving_average<double, ss::lowres_clock>;
     std::unique_ptr<sliding_window_t> _api_utilization;
-    upload_housekeeping_probe _probe;
 };
 
 } // namespace archival

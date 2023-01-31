@@ -167,9 +167,12 @@ void upload_housekeeping_service::deregister_jobs(
 }
 
 housekeeping_workflow::housekeeping_workflow(
-  retry_chain_node& parent, ss::scheduling_group sg)
+  retry_chain_node& parent,
+  ss::scheduling_group sg,
+  std::optional<std::reference_wrapper<upload_housekeeping_probe>> probe)
   : _parent(parent)
-  , _sg(sg) {}
+  , _sg(sg)
+  , _probe(probe) {}
 
 void housekeeping_workflow::register_job(housekeeping_job& job) {
     _pending.push_back(job);
@@ -274,12 +277,15 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             auto res = co_await top.run(_parent, quota);
             jobs_executed++;
             quota = quota - res.consumed;
+            maybe_update_probe(res);
         } catch (...) {
             vlog(
               archival_log.warn,
               "upload housekeeping job error: {}",
               std::current_exception());
             jobs_failed++;
+            maybe_update_probe(
+              {.status = housekeeping_job::run_status::failed});
         }
         _current_job.reset();
         if (!top.interrupted()) {
@@ -309,8 +315,36 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
             jobs_executed = 0;
             start_time = ss::lowres_clock::now();
             exec_timer.reset();
+            quota = run_quota_t(static_cast<int32_t>(_pending.size()));
+            if (_probe.has_value()) {
+                _probe->get().housekeeping_rounds(1);
+            }
         }
     }
+}
+
+void housekeeping_workflow::maybe_update_probe(
+  const housekeeping_job::run_result& res) {
+    if (!_probe.has_value()) {
+        return;
+    }
+    auto& probe = _probe->get();
+    switch (res.status) {
+    case housekeeping_job::run_status::ok:
+        probe.housekeeping_jobs(1);
+        probe.job_cloud_segment_reuploads(res.cloud_reuploads);
+        probe.job_local_segment_reuploads(res.local_reuploads);
+        probe.job_metadata_reuploads(res.manifest_uploads);
+        probe.job_metadata_syncs(res.metadata_syncs);
+        probe.job_segment_deletions(res.deletions);
+        break;
+    case housekeeping_job::run_status::failed:
+        probe.housekeeping_jobs_failed(1);
+        break;
+    case housekeeping_job::run_status::skipped:
+        probe.housekeeping_jobs_skipped(1);
+        break;
+    };
 }
 
 void housekeeping_workflow::resume(bool drain) {
@@ -321,8 +355,14 @@ void housekeeping_workflow::resume(bool drain) {
     }
     if (drain == true) {
         _state = housekeeping_state::draining;
+        if (_probe.has_value()) {
+            _probe->get().housekeeping_drains(1);
+        }
     } else {
         _state = housekeeping_state::active;
+        if (_probe.has_value()) {
+            _probe->get().housekeeping_resumes(1);
+        }
     }
     vlog(
       archival_log.debug,
@@ -335,6 +375,9 @@ void housekeeping_workflow::resume(bool drain) {
 void housekeeping_workflow::pause() {
     if (_state == housekeeping_state::active) {
         _state = housekeeping_state::pause;
+        if (_probe.has_value()) {
+            _probe->get().housekeeping_pauses(1);
+        }
     }
     // Can't pause draining or stopping states.
     // Doesn't make any sense to pause idle state.
