@@ -143,7 +143,15 @@ ss::future<> rpc_server::dispatch_method_once(
                    */
                   reply_buf.set_version(transport_version::max_supported);
                   return send_reply_skip_payload(ctx, std::move(reply_buf))
-                    .then([ctx] { ctx->signal_body_parse(); });
+                    .then_wrapped([ctx](ss::future<> f) {
+                        // If the connection is closed then this can be an
+                        // exceptional future.
+                        if (f.failed()) {
+                            ctx->body_parse_exception(f.get_exception());
+                        } else {
+                            ctx->signal_body_parse();
+                        }
+                    });
               }
               auto it = std::find_if(
                 _services.begin(),
@@ -162,7 +170,15 @@ ss::future<> rpc_server::dispatch_method_once(
                   reply_buf.set_version(ctx->get_header().version);
                   reply_buf.set_status(rpc::status::method_not_found);
                   return send_reply_skip_payload(ctx, std::move(reply_buf))
-                    .then([ctx] { ctx->signal_body_parse(); });
+                    .then_wrapped([ctx](ss::future<> f) {
+                        // If the connection is closed then this can be an
+                        // exceptional future.
+                        if (f.failed()) {
+                            ctx->body_parse_exception(f.get_exception());
+                        } else {
+                            ctx->signal_body_parse();
+                        }
+                    });
               }
 
               method* m = it->get()->method_from_id(method_id);
