@@ -110,7 +110,6 @@ public:
         return o << "{}";
     };
 
-private:
     std::optional<T>& get_optional() {
         return std::get<std::optional<T>>(_value);
     }
@@ -119,6 +118,7 @@ private:
         return std::get<std::optional<T>>(_value);
     }
 
+private:
     using underlying_t = std::variant<std::monostate, std::optional<T>>;
     underlying_t _value;
 };

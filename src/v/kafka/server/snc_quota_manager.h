@@ -106,24 +106,6 @@ public:
     ingress_egress_state<quota_t> get_throughput() const noexcept;
 
 private:
-    /// Describes an instruction to the balancer how to alter effective shard
-    /// quotas When \p amount_is == \p delta, \p amount should be dispensed
-    /// among shard quotas (if positive) or collected from shard quotas (if
-    /// negative). When \p amount_is == \p value, \p amount contains the new
-    /// shard quota value and each shard quota should be reset to that value
-    /// regardless of what is there now.
-    struct dispense_quota_amount {
-        snc_quota_manager::quota_t amount{0};
-        enum class amount_t { delta, value };
-        amount_t amount_is{amount_t::delta};
-        bool empty() const noexcept {
-            return amount == 0 && amount_is == amount_t::delta;
-        }
-        snc_quota_manager::quota_t get_delta_or_0() const noexcept;
-        std::optional<snc_quota_manager::quota_t> get_value() const noexcept;
-    };
-    friend struct fmt::formatter<dispense_quota_amount>;
-
     // Returns value based on upstream values, not the _node_quota_default
     ingress_egress_state<std::optional<quota_t>>
     calc_node_quota_default() const;
@@ -147,8 +129,9 @@ private:
     /// A step of balancer that applies any updates from configuration changes.
     /// Spawned by configration bindings watching changes of the properties.
     /// Runs on the balancer shard only.
-    ss::future<>
-      quota_balancer_update(ingress_egress_state<dispense_quota_amount>);
+    ss::future<> quota_balancer_update(
+      ingress_egress_state<std::optional<quota_t>> old_node_quota_default,
+      ingress_egress_state<std::optional<quota_t>> new_node_quota_default);
 
     /// Update time position of the buckets of the shard so that
     /// get_deficiency() and get_surplus() will return actual data

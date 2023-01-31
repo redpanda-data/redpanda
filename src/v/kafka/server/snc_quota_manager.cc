@@ -12,6 +12,7 @@
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "tristate.h"
 
 #include <seastar/core/metrics.hh>
 
@@ -303,25 +304,10 @@ void snc_quota_manager::update_node_quota_default() {
     if (ss::this_shard_id() == quota_balancer_shard) {
         // downstream updates:
         // - shard effective quota (via _shard_quotas_update):
-        const auto calc_diff = [](
-                                 const std::optional<quota_t>& qold,
-                                 const std::optional<quota_t>& qnew) {
-            dispense_quota_amount diff;
-            if (qold && qnew) {
-                diff.amount = *qnew - *qold;
-                diff.amount_is = dispense_quota_amount::amount_t::delta;
-            } else if (qold || qnew) {
-                diff.amount = node_to_shard_quota(qnew);
-                diff.amount_is = dispense_quota_amount::amount_t::value;
-            }
-            return diff;
-        };
-        ingress_egress_state<dispense_quota_amount> shard_quotas_update{
-          .in = calc_diff(_node_quota_default.in, new_node_quota_default.in),
-          .eg = calc_diff(_node_quota_default.eg, new_node_quota_default.eg)};
         ssx::spawn_with_gate(
-          _balancer_gate, [this, update = shard_quotas_update] {
-              return quota_balancer_update(update);
+          _balancer_gate,
+          [this, qold = _node_quota_default, qnew = new_node_quota_default] {
+              return quota_balancer_update(qold, qnew);
           });
     }
     _node_quota_default = new_node_quota_default;
@@ -569,28 +555,59 @@ void dispense_negative_deltas(
 } // namespace
 
 ss::future<> snc_quota_manager::quota_balancer_update(
-  ingress_egress_state<dispense_quota_amount> shard_quotas_update) {
+  const ingress_egress_state<std::optional<quota_t>> old_node_quota_default,
+  const ingress_egress_state<std::optional<quota_t>> new_node_quota_default) {
     const auto units = co_await _balancer_mx.get_units();
     _balancer_gate.check();
-    vlog(klog.trace, "qb - Update: {}", shard_quotas_update);
+    vlog(
+      klog.trace,
+      "qb - Update: {} -> {}",
+      old_node_quota_default,
+      new_node_quota_default);
+
+    // compare the old and the new default quotas, considering their presence
+    // if both are present, the difference goes to `deltas` and will be
+    // dispensed between shards, positive or negative
+    // if only one is present, the new value goes towards `amounts`, preserving
+    // presence information. `tristate` encapsulates that value adding the
+    // 'disabled' state to that meaning that no change is required
+    ingress_egress_state<quota_t> deltas{0, 0};
+    ingress_egress_state<tristate<quota_t>> amounts;
+    const auto calc_diff = [](
+                             quota_t& delta,
+                             tristate<quota_t>& amount,
+                             const std::optional<quota_t>& qold,
+                             const std::optional<quota_t>& qnew) {
+        if (qold && qnew) {
+            delta = *qnew - *qold;
+        } else if (qold || qnew) {
+            amount = tristate<quota_t>(qnew);
+        }
+    };
+    calc_diff(
+      deltas.in,
+      amounts.in,
+      old_node_quota_default.in,
+      new_node_quota_default.in);
+    calc_diff(
+      deltas.eg,
+      amounts.eg,
+      old_node_quota_default.eg,
+      new_node_quota_default.eg);
 
     // deliver shard quota updates of value type
-    if (
-      shard_quotas_update.in.amount_is == dispense_quota_amount::amount_t::value
-      || shard_quotas_update.eg.amount_is
-           == dispense_quota_amount::amount_t::value) {
-        co_await container().invoke_on_all(
-          [shard_quotas_update](snc_quota_manager& qm) {
-              qm.maybe_set_quota(
-                {.in = shard_quotas_update.in.get_value(),
-                 .eg = shard_quotas_update.eg.get_value()});
-          });
+    if (!amounts.in.is_disabled() || !amounts.eg.is_disabled()) {
+        co_await container().invoke_on_all([amounts](snc_quota_manager& qm) {
+            ingress_egress_state<std::optional<quota_t>> new_quota;
+            if (!amounts.in.is_disabled()) {
+                new_quota.in = node_to_shard_quota(amounts.in.get_optional());
+            }
+            if (!amounts.eg.is_disabled()) {
+                new_quota.eg = node_to_shard_quota(amounts.eg.get_optional());
+            }
+            qm.maybe_set_quota(new_quota);
+        });
     }
-
-    // deliver deltas and try to dispense them fairly and in full
-    ingress_egress_state<quota_t> deltas = {
-      .in = shard_quotas_update.in.get_delta_or_0(),
-      .eg = shard_quotas_update.eg.get_delta_or_0()};
 
     // `deltas` are dispensed in full between the shards,
     // with an attempt of fairness by considering the current load
@@ -642,12 +659,7 @@ ss::future<> snc_quota_manager::quota_balancer_update(
         dispense_equally(schedule.eg, deltas.eg);
     }
 
-    vlog(
-      klog.debug,
-      "qb - Dispense delta updates {} of {} as {}",
-      deltas,
-      shard_quotas_update,
-      schedule);
+    vlog(klog.debug, "qb - Dispense delta updates {} as {}", deltas, schedule);
 
     // deliver `schedules` to the shards
     co_await container().invoke_on_all([&schedule](snc_quota_manager& qm) {
@@ -784,29 +796,6 @@ struct fmt::formatter<kafka::borrower_t> : parseless_formatter {
     auto format(const kafka::borrower_t& v, Ctx& ctx) const {
         return fmt::format_to(
           ctx.out(), "{{{}, {}}}", v.shard_id, v.borrowers_count);
-    }
-};
-
-template<>
-struct fmt::formatter<kafka::snc_quota_manager::dispense_quota_amount>
-  : parseless_formatter {
-    template<typename Ctx>
-    auto format(
-      const kafka::snc_quota_manager::dispense_quota_amount& v,
-      Ctx& ctx) const {
-        const char* ai_name;
-        switch (v.amount_is) {
-        case kafka::snc_quota_manager::dispense_quota_amount::amount_t::delta:
-            ai_name = "delta";
-            break;
-        case kafka::snc_quota_manager::dispense_quota_amount::amount_t::value:
-            ai_name = "value";
-            break;
-        default:
-            ai_name = "?";
-            break;
-        }
-        return fmt::format_to(ctx.out(), "{{{}: {}}}", ai_name, v.amount);
     }
 };
 
