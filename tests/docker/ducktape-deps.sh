@@ -46,7 +46,9 @@ function install_omb() {
   git -C /opt clone https://github.com/redpanda-data/openmessaging-benchmark.git
   cd /opt/openmessaging-benchmark
   git reset --hard 6eba1030cb7c199e03f76676b6c2df9dcc3b219d
-  mvn clean package -DskipTests
+  mvn -pl \
+    -driver-pravega,-driver-pulsar,-driver-rabbitmq,-driver-artemis,-driver-bookkeeper,-driver-rocketmq,-driver-nats,-driver-nats-streaming,-driver-nsq,-driver-jms,-driver-redis \
+    -DskipTests clean package
 }
 
 function install_kafka_tools() {
