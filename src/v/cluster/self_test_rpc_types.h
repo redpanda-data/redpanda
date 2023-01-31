@@ -185,19 +185,19 @@ struct netcheck_opts
 struct self_test_result
   : serde::
       envelope<self_test_result, serde::version<0>, serde::compat_version<0>> {
-    double p50;
-    double p90;
-    double p99;
-    double p999;
-    double max;
-    uint64_t rps;
-    uint64_t bps;
-    uint32_t timeouts;
+    double p50{0};
+    double p90{0};
+    double p99{0};
+    double p999{0};
+    double max{0};
+    uint64_t rps{0};
+    uint64_t bps{0};
+    uint32_t timeouts{0};
     uuid_t test_id;
     ss::sstring name;
     ss::sstring info;
     ss::sstring test_type;
-    ss::lowres_clock::duration duration;
+    ss::lowres_clock::duration duration{};
     std::optional<ss::sstring> warning;
     std::optional<ss::sstring> error;
 
