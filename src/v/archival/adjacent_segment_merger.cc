@@ -124,6 +124,7 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
 
 ss::future<housekeeping_job::run_result>
 adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
+    ss::gate::holder h(_gate);
     run_result result{
       .status = run_status::skipped,
       .consumed = run_quota_t(0),
@@ -136,7 +137,6 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
         if (result.remaining <= 0) {
             co_return result;
         }
-        ss::gate::holder h(_gate);
         vlog(_ctxlog.debug, "Adjacent segment merger run begin");
         auto scanner = [this](
                          model::offset local_start_offset,
