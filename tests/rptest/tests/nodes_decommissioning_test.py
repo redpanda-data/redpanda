@@ -200,10 +200,11 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
     def _set_recovery_rate(self, rate):
-        # using rpk tool here not to check the versions of a config on each node
-        # as throttling recovery may prevent configuration to be delivered to all nodes
-        rpk = RpkTool(self.redpanda)
-        rpk.cluster_config_set("raft_learner_recovery_rate", str(rate))
+        # use admin API to leverage the retry policy when controller returns 503
+        patch_result = Admin(self.redpanda).patch_cluster_config(
+            upsert={"raft_learner_recovery_rate": rate})
+        self.logger.debug(
+            f"setting recovery rate to {rate} result: {patch_result}")
 
     # after node was removed the state should be consistent on all other not removed nodes
     def _check_state_consistent(self, decommissioned_id):
