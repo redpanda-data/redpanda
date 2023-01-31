@@ -9,10 +9,7 @@ import (
 
 	"github.com/cloudhut/common/rest"
 	"github.com/go-logr/logr"
-	"github.com/redpanda-data/console/backend/pkg/connect"
-	"github.com/redpanda-data/console/backend/pkg/kafka"
-	"github.com/redpanda-data/console/backend/pkg/proto"
-	"github.com/redpanda-data/console/backend/pkg/schema"
+	"github.com/redpanda-data/console/backend/pkg/config"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
@@ -90,11 +87,11 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	}
 	username := string(secret.Data[corev1.BasicAuthUsernameKey])
 
-	config, err := cm.generateConsoleConfig(ctx, username)
+	configuration, err := cm.generateConsoleConfig(ctx, username)
 	if err != nil {
 		return err
 	}
-	cm.log.V(debugLogLevel).Info("Creating new ConfigMap", "data", config)
+	cm.log.V(debugLogLevel).Info("Creating new ConfigMap", "data", configuration)
 
 	// Create new ConfigMap instead of updating existing so Deployment will trigger a reconcile
 	immutable := true
@@ -105,7 +102,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 			Labels:       labels.ForConsole(cm.consoleobj),
 		},
 		Data: map[string]string{
-			"config.yaml": config,
+			"config.yaml": configuration,
 		},
 		Immutable: &immutable,
 	}
@@ -161,13 +158,15 @@ func (cm *ConfigMap) generateConsoleConfig(
 		return "", err
 	}
 
+	consoleConfig.SecretStore = cm.genSecretStore()
+
 	consoleConfig.Cloud = cm.genCloud()
 
-	config, err := yaml.Marshal(consoleConfig)
+	configuration, err := yaml.Marshal(consoleConfig)
 	if err != nil {
 		return "", err
 	}
-	return string(config), nil
+	return string(configuration), nil
 }
 
 func (cm *ConfigMap) genRedpanda() (r Redpanda) {
@@ -254,6 +253,10 @@ func (cm *ConfigMap) genCloud() CloudConfig {
 }
 
 var (
+	// gcpCredentialsFilepath is the path to the service account JSON file that is
+	// used to authenticate API calls with the given service account.
+	gcpCredentialsFilepath = "/secret/gcp-service-account.json" //nolint:gosec // not a secret
+
 	// DefaultJWTSecretKey is the default key required in secret referenced by `SecretKeyRef`.
 	// The secret should consist of JWT used to authenticate into google SSO.
 	DefaultJWTSecretKey = "jwt"
@@ -330,6 +333,56 @@ func (cm *ConfigMap) genLogin(
 		return enterpriseLogin, nil
 	}
 	return e, nil
+}
+
+func (cm *ConfigMap) genSecretStore() EnterpriseSecretStore {
+	if cm.consoleobj.Spec.SecretStore == nil {
+		return EnterpriseSecretStore{}
+	}
+
+	ss := cm.consoleobj.Spec.SecretStore
+	smGCP := EnterpriseSecretManagerGCP{}
+	if ss.GCPSecretManager != nil {
+		smGCP = EnterpriseSecretManagerGCP{
+			Enabled:   ss.GCPSecretManager.Enabled,
+			ProjectID: ss.GCPSecretManager.ProjectID,
+			Labels:    ss.GCPSecretManager.Labels,
+		}
+		if ss.GCPSecretManager.CredentialsSecretRef != nil {
+			smGCP.CredentialsFilepath = gcpCredentialsFilepath
+		}
+	}
+
+	smAWS := EnterpriseSecretManagerAWS{}
+	if ss.AWSSecretManager != nil {
+		smAWS = EnterpriseSecretManagerAWS{
+			Enabled:  ss.AWSSecretManager.Enabled,
+			Region:   ss.AWSSecretManager.Region,
+			KmsKeyID: ss.AWSSecretManager.KmsKeyID,
+			Tags:     ss.AWSSecretManager.Tags,
+		}
+	}
+
+	kc := EnterpriseSecretStoreKafkaConnect{}
+	if ss.KafkaConnect != nil {
+		kc = EnterpriseSecretStoreKafkaConnect{
+			Enabled: ss.KafkaConnect.Enabled,
+		}
+		for i := 0; i < len(ss.KafkaConnect.Clusters); i++ {
+			c := ss.KafkaConnect.Clusters[i]
+			kc.Clusters = append(kc.Clusters, EnterpriseSecretStoreKafkaConnectCluster{
+				Name:                   c.Name,
+				SecretNamePrefixAppend: c.SecretNamePrefixAppend,
+			})
+		}
+	}
+	return EnterpriseSecretStore{
+		Enabled:          ss.Enabled,
+		SecretNamePrefix: ss.SecretNamePrefix,
+		GCPSecretManager: smGCP,
+		AWSSecretManager: smAWS,
+		KafkaConnect:     kc,
+	}
 }
 
 func (cm *ConfigMap) genLicense(ctx context.Context) (string, error) {
@@ -431,21 +484,21 @@ func (s *SecretTLSCa) useCaCert() bool {
 	return !s.UsePublicCerts && s.NodeSecretRef != nil
 }
 
-func (cm *ConfigMap) genKafka(username string) kafka.Config {
-	k := kafka.Config{
+func (cm *ConfigMap) genKafka(username string) config.Kafka {
+	k := config.Kafka{
 		Brokers:  getBrokers(cm.clusterobj),
 		ClientID: fmt.Sprintf("redpanda-console-%s-%s", cm.consoleobj.GetNamespace(), cm.consoleobj.GetName()),
 	}
 
-	schemaRegistry := schema.Config{Enabled: false}
+	schemaRegistry := config.Schema{Enabled: false}
 	if y := cm.consoleobj.Spec.SchemaRegistry.Enabled; y {
-		tls := schema.TLSConfig{Enabled: false}
+		tls := config.SchemaTLS{Enabled: false}
 		if yy := cm.clusterobj.IsSchemaRegistryTLSEnabled(); yy {
 			ca := &SecretTLSCa{
 				NodeSecretRef:  cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
 				UsePublicCerts: UsePublicCerts,
 			}
-			tls = schema.TLSConfig{
+			tls = config.SchemaTLS{
 				Enabled:    y,
 				CaFilepath: ca.FilePath(SchemaRegistryTLSCaFilePath),
 			}
@@ -454,16 +507,16 @@ func (cm *ConfigMap) genKafka(username string) kafka.Config {
 				tls.KeyFilepath = SchemaRegistryTLSKeyFilePath
 			}
 		}
-		schemaRegistry = schema.Config{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
+		schemaRegistry = config.Schema{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
 		if cm.clusterobj.IsSchemaRegistryAuthHTTPBasic() {
 			schemaRegistry.Username = username
 		}
 
 		// Default protobuf values to enable decoding in SchemaRegistry
 		// REF https://app.zenhub.com/workspaces/cloud-62684e2c6635e100149514fd/issues/redpanda-data/cloud/2834
-		k.Protobuf = proto.Config{
+		k.Protobuf = config.Proto{
 			Enabled: y,
-			SchemaRegistry: proto.SchemaRegistryConfig{
+			SchemaRegistry: config.ProtoSchemaRegistry{
 				Enabled:         y,
 				RefreshInterval: time.Second * 10,
 			},
@@ -471,10 +524,10 @@ func (cm *ConfigMap) genKafka(username string) kafka.Config {
 	}
 	k.Schema = schemaRegistry
 
-	tls := kafka.TLSConfig{Enabled: false}
+	tls := config.KafkaTLS{Enabled: false}
 	if l := cm.clusterobj.KafkaListener(); l.IsMutualTLSEnabled() {
 		ca := &SecretTLSCa{NodeSecretRef: l.TLS.NodeSecretRef}
-		tls = kafka.TLSConfig{
+		tls = config.KafkaTLS{
 			Enabled:      true,
 			CaFilepath:   ca.FilePath(KafkaTLSCaFilePath),
 			CertFilepath: KafkaTLSCertFilePath,
@@ -483,11 +536,11 @@ func (cm *ConfigMap) genKafka(username string) kafka.Config {
 	}
 	k.TLS = tls
 
-	sasl := kafka.SASLConfig{Enabled: false}
+	sasl := config.KafkaSASL{Enabled: false}
 	// Set defaults because Console complains SASL mechanism is not set even if SASL is disabled
 	sasl.SetDefaults()
 	if yes := cm.clusterobj.IsSASLOnInternalEnabled(); yes {
-		sasl = kafka.SASLConfig{
+		sasl = config.KafkaSASL{
 			Enabled:   yes,
 			Username:  username,
 			Mechanism: admin.ScramSha256,
@@ -513,8 +566,8 @@ func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
 
 func (cm *ConfigMap) genConnect(
 	ctx context.Context,
-) (conn connect.Config, err error) {
-	clusters := []connect.ConfigCluster{}
+) (conn config.Connect, err error) {
+	clusters := []config.ConnectCluster{}
 	for _, c := range cm.consoleobj.Spec.Connect.Clusters {
 		cluster, err := cm.buildConfigCluster(ctx, c)
 		if err != nil {
@@ -523,7 +576,7 @@ func (cm *ConfigMap) genConnect(
 		clusters = append(clusters, *cluster)
 	}
 
-	return connect.Config{
+	return config.Connect{
 		Enabled:        cm.consoleobj.Spec.Connect.Enabled,
 		Clusters:       clusters,
 		ConnectTimeout: cm.consoleobj.Spec.Connect.ConnectTimeout.Duration,
@@ -541,8 +594,8 @@ func getOrEmpty(key string, data map[string][]byte) string {
 
 func (cm *ConfigMap) buildConfigCluster(
 	ctx context.Context, c redpandav1alpha1.ConnectCluster,
-) (*connect.ConfigCluster, error) {
-	cluster := &connect.ConfigCluster{Name: c.Name, URL: c.URL}
+) (*config.ConnectCluster, error) {
+	cluster := &config.ConnectCluster{Name: c.Name, URL: c.URL}
 
 	if c.BasicAuthRef != nil {
 		ref := corev1.Secret{}

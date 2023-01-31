@@ -92,7 +92,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{Port: kafkaPort},
@@ -287,7 +287,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -389,7 +389,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -466,7 +466,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -539,7 +539,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -633,7 +633,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -732,7 +732,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -935,7 +935,7 @@ func getVersionedRedpanda(
 		Spec: v1alpha1.ClusterSpec{
 			Image:         "vectorized/redpanda",
 			Version:       version,
-			Replicas:      pointer.Int32Ptr(1),
+			Replicas:      pointer.Int32(1),
 			Configuration: config,
 			Resources:     rpresources,
 		},
