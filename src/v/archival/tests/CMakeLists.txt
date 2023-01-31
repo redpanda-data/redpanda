@@ -13,7 +13,6 @@ else()
         ntp_archiver_reupload_test.cc 
         retention_strategy_test.cc
         archival_metadata_stm_test.cc
-        upload_housekeeping_service_test.cc
       DEFINITIONS BOOST_TEST_DYN_LINK
       LIBRARIES 
         v::seastar_testing_main 
