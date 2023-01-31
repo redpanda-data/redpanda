@@ -91,7 +91,7 @@ func (r *ConsoleReconciler) Reconcile(
 	if err != nil {
 		// Create event instead of logging the error, so user can see in Console CR instead of checking logs in operator
 		switch {
-		case apierrors.IsNotFound(err) || !cluster.DeletionTimestamp.IsZero():
+		case apierrors.IsNotFound(err) || (cluster != nil && !cluster.DeletionTimestamp.IsZero()):
 			// If deleting and cluster is not found or is in the process of being deleted, nothing to do
 			if console.GetDeletionTimestamp() != nil {
 				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleSAFinalizer)

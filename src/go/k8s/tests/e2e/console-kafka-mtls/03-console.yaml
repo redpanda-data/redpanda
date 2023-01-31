@@ -12,6 +12,6 @@ spec:
     name: cluster
     namespace: console-kafka-mtls
   deployment:
-    image: vectorized/console:master-173596f
+    image: vectorized/console:v2.1.1
   connect:
     enabled: false

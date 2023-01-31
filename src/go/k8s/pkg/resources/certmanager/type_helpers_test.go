@@ -376,7 +376,7 @@ func TestClusterCertificates(t *testing.T) {
 				types.NamespacedName{
 					Name:      "test",
 					Namespace: "test",
-				}, fake.NewClientBuilder().WithRuntimeObjects(&secret, &issuer).Build(), "cluster.local", "cluster2.local", scheme.Scheme, logr.DiscardLogger{})
+				}, fake.NewClientBuilder().WithRuntimeObjects(&secret, &issuer).Build(), "cluster.local", "cluster2.local", scheme.Scheme, logr.Discard())
 			require.NoError(t, err)
 			resources, err := cc.Resources(context.TODO())
 			require.NoError(t, err)

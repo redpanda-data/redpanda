@@ -60,6 +60,11 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 		return err
 	}
 
+	containers, err := d.getContainers(ctx, ss)
+	if err != nil {
+		return err
+	}
+
 	objLabels := labels.ForConsole(d.consoleobj)
 	obj := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -80,7 +85,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 				},
 				Spec: corev1.PodSpec{
 					Volumes:                       d.getVolumes(ss),
-					Containers:                    d.getContainers(ss),
+					Containers:                    containers,
 					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout.Duration),
 					ServiceAccountName:            sa,
 				},
@@ -137,14 +142,23 @@ func (d *Deployment) Key() types.NamespacedName {
 func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      d.consoleobj.GetName(),
-			Namespace: d.consoleobj.GetNamespace(),
-			Labels:    labels.ForConsole(d.consoleobj),
+			Name:        d.consoleobj.GetName(),
+			Namespace:   d.consoleobj.GetNamespace(),
+			Labels:      labels.ForConsole(d.consoleobj),
+			Annotations: map[string]string{},
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ServiceAccount",
 			APIVersion: "v1",
 		},
+	}
+
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.GCPSecretManager != nil && ss.GCPSecretManager.ServiceAccountNameAnnotation != "" {
+		sa.ObjectMeta.Annotations["iam.gke.io/gcp-service-account"] = ss.GCPSecretManager.ServiceAccountNameAnnotation
+	}
+
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.AWSSecretManager != nil && ss.AWSSecretManager.ServiceAccountRoleARNAnnotation != "" {
+		sa.ObjectMeta.Annotations["eks.amazonaws.com/role-arn"] = ss.AWSSecretManager.ServiceAccountRoleARNAnnotation
 	}
 
 	err := controllerutil.SetControllerReference(d.consoleobj, sa, d.scheme)
@@ -333,9 +347,19 @@ const (
 	enterpriseGoogleSAMountName = "enterprise-google-sa"
 	enterpriseGoogleSAMountPath = "/etc/console/enterprise/google"
 
+	gcpServiceAccountVolume = "gcp-service-account"
+
 	prometheusBasicAuthPasswordEnvVar     = "CLOUD_PROMETHEUSENDPOINT_BASICAUTH_PASSWORD"
 	kafkaSASLBasicAuthPasswordEnvVar      = "KAFKA_SASL_PASSWORD"           //nolint:gosec // not a secret
 	schemaRegistryBasicAuthPasswordEnvVar = "KAFKA_SCHEMAREGISTRY_PASSWORD" //nolint:gosec // not a secret
+
+	awsAccessKeyIDEnvVar     = "AWS_ACCESS_KEY_ID"
+	awsSecretAccessKeyEnvVar = "AWS_SECRET_ACCESS_KEY" //nolint:gosec // not a secret
+	awsSessionTokenEnvVar    = "AWS_SESSION_TOKEN"     //nolint:gosec // not a hardcoded credentials
+
+	awsAccessKeyIDKey  = "AccessKeyId"
+	awsSecretAccessKey = "SecretAccessKey"
+	awsSessionTokenKey = "SessionToken"
 )
 
 func (d *Deployment) getVolumes(ss map[string]string) []corev1.Volume {
@@ -400,6 +424,17 @@ func (d *Deployment) getVolumes(ss map[string]string) []corev1.Volume {
 		})
 	}
 
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.GCPSecretManager != nil && ss.GCPSecretManager.CredentialsSecretRef != nil {
+		volumes = append(volumes, corev1.Volume{
+			Name: gcpServiceAccountVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: ss.GCPSecretManager.CredentialsSecretRef.Name,
+				},
+			},
+		})
+	}
+
 	if secretName, ok := ss[kafkaSyncedSecretKey]; ok && d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
 		volumes = append(volumes, corev1.Volume{
 			Name: tlsKafkaMountName,
@@ -428,7 +463,7 @@ func (d *Deployment) getVolumes(ss map[string]string) []corev1.Volume {
 // ConsoleContainerName is the Console container name
 var ConsoleContainerName = "console"
 
-func (d *Deployment) getContainers(ss map[string]string) []corev1.Container {
+func (d *Deployment) getContainers(ctx context.Context, ss map[string]string) ([]corev1.Container, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      configMountName,
@@ -472,6 +507,14 @@ func (d *Deployment) getContainers(ss map[string]string) []corev1.Container {
 		})
 	}
 
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.GCPSecretManager != nil && ss.GCPSecretManager.CredentialsSecretRef != nil {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      gcpServiceAccountVolume,
+			ReadOnly:  true,
+			MountPath: gcpCredentialsFilepath,
+		})
+	}
+
 	if _, ok := ss[kafkaSyncedSecretKey]; ok && d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      tlsKafkaMountName,
@@ -488,6 +531,11 @@ func (d *Deployment) getContainers(ss map[string]string) []corev1.Container {
 		})
 	}
 
+	env, err := d.genEnvVars(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return []corev1.Container{
 		{
 			Name:  ConsoleContainerName,
@@ -501,12 +549,13 @@ func (d *Deployment) getContainers(ss map[string]string) []corev1.Container {
 				},
 			},
 			VolumeMounts: volumeMounts,
-			Env:          d.genEnvVars(),
+			Env:          env,
 		},
-	}
+	}, nil
 }
 
-func (d *Deployment) genEnvVars() (envars []corev1.EnvVar) {
+//nolint:funlen // the function could be refactored later
+func (d *Deployment) genEnvVars(ctx context.Context) (envars []corev1.EnvVar, err error) {
 	if d.clusterobj.IsSASLOnInternalEnabled() {
 		envars = append(envars, corev1.EnvVar{
 			Name: kafkaSASLBasicAuthPasswordEnvVar,
@@ -553,5 +602,60 @@ func (d *Deployment) genEnvVars() (envars []corev1.EnvVar) {
 		})
 	}
 
-	return envars
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.AWSSecretManager != nil && ss.AWSSecretManager.AWSCredentialsRef != nil {
+		s := &corev1.Secret{}
+		err = d.Get(ctx, client.ObjectKey{Namespace: d.consoleobj.Namespace, Name: ss.AWSSecretManager.AWSCredentialsRef.Name}, s)
+		if err != nil {
+			return envars, fmt.Errorf("getting aws crential secret: %w", err)
+		}
+
+		if _, ok := s.Data[awsAccessKeyIDKey]; !ok {
+			return envars, fmt.Errorf("missing %s key in aws crential secret: %w", awsAccessKeyIDKey, err)
+		}
+
+		envars = append(envars, corev1.EnvVar{
+			Name: awsAccessKeyIDEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: awsAccessKeyIDKey,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: ss.AWSSecretManager.AWSCredentialsRef.Name,
+					},
+				},
+			},
+		})
+
+		if _, ok := s.Data[awsSecretAccessKey]; !ok {
+			return envars, fmt.Errorf("missing %s key in aws crential secret: %w", awsSecretAccessKey, err)
+		}
+
+		envars = append(envars, corev1.EnvVar{
+			Name: awsSecretAccessKeyEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: awsSecretAccessKey,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: ss.AWSSecretManager.AWSCredentialsRef.Name,
+					},
+				},
+			},
+		})
+
+		// AWS Session Token is optional
+		if _, ok := s.Data[awsSessionTokenKey]; ok {
+			envars = append(envars, corev1.EnvVar{
+				Name: awsSessionTokenEnvVar,
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						Key: awsSessionTokenKey,
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: ss.AWSSecretManager.AWSCredentialsRef.Name,
+						},
+					},
+				},
+			})
+		}
+	}
+
+	return envars, nil
 }

@@ -335,7 +335,7 @@ func (r *StatefulSetResource) obj(
 				Spec: corev1.PodSpec{
 					ServiceAccountName: r.getServiceAccountName(),
 					SecurityContext: &corev1.PodSecurityContext{
-						FSGroup: pointer.Int64Ptr(fsGroup),
+						FSGroup: pointer.Int64(fsGroup),
 					},
 					Volumes: append([]corev1.Volume{
 						{
@@ -435,8 +435,8 @@ func (r *StatefulSetResource) obj(
 								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
-								RunAsUser:  pointer.Int64Ptr(userID),
-								RunAsGroup: pointer.Int64Ptr(groupID),
+								RunAsUser:  pointer.Int64(userID),
+								RunAsGroup: pointer.Int64(groupID),
 							},
 							Resources: corev1.ResourceRequirements{
 								Limits:   r.pandaCluster.Spec.Resources.Limits,
@@ -507,8 +507,8 @@ func (r *StatefulSetResource) obj(
 								},
 							}, r.getPorts()...),
 							SecurityContext: &corev1.SecurityContext{
-								RunAsUser:  pointer.Int64Ptr(userID),
-								RunAsGroup: pointer.Int64Ptr(groupID),
+								RunAsUser:  pointer.Int64(userID),
+								RunAsGroup: pointer.Int64(groupID),
 							},
 							Resources: corev1.ResourceRequirements{
 								Limits:   r.pandaCluster.Spec.Resources.Limits,
@@ -596,8 +596,8 @@ func (r *StatefulSetResource) obj(
 }
 
 // getPrestopHook creates a hook that drains the node before shutting down.
-func (r *StatefulSetResource) getHook(script string) *corev1.Handler {
-	return &corev1.Handler{
+func (r *StatefulSetResource) getHook(script string) *corev1.LifecycleHandler {
+	return &corev1.LifecycleHandler{
 		Exec: &corev1.ExecAction{
 			Command: []string{
 				scriptMountPath + "/" + script,

@@ -829,7 +829,7 @@ func getInitialTestCluster(
 		Spec: v1alpha1.ClusterSpec{
 			Image:    "vectorized/redpanda",
 			Version:  versionWithCentralizedConfiguration,
-			Replicas: pointer.Int32Ptr(1),
+			Replicas: pointer.Int32(1),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI: []v1alpha1.KafkaAPI{
 					{
