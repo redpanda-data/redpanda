@@ -510,6 +510,186 @@ spec:
                 required:
                 - enabled
                 type: object
+              secretStore:
+                description: SecretStore contains the configuration for the cloud
+                  provider secret manager
+                properties:
+                  awsSecretManager:
+                    description: SecretManagerAWS is the configuration object for
+                      using Amazon's secret manager.
+                    properties:
+                      AWSCredentialsRef:
+                        description: AWSCredentialsRef refers to Kubernetes secret
+                          where AWS access key id and secret access key is taken and
+                          used as environments variable
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      enabled:
+                        description: Enabled is whether AWS secret manager is enabled.
+                          Only one store can be enabled at a time.
+                        type: boolean
+                      kmsKeyId:
+                        description: "KmsKeyID is the ARN, key ID, or alias of the
+                          KMS key that Secrets Manager uses to encrypt the secret
+                          value in the secret. \n To use a KMS key in a different
+                          account, use the key ARN or the alias ARN. \n If you don't
+                          specify this value, then Secrets Manager uses the key aws/secretsmanager.
+                          If that key doesn't yet exist, then Secrets Manager creates
+                          it for you automatically the first time it encrypts the
+                          secret value. \n If the secret is in a different Amazon
+                          Web Services account from the credentials calling the API,
+                          then you can't use aws/secretsmanager to encrypt the secret,
+                          and you must create and use a customer managed KMS key."
+                        type: string
+                      region:
+                        description: Region in which service is deployed so that related
+                          resources like secrets are put to the same region
+                        type: string
+                      serviceAccountRoleARNAnnotation:
+                        description: ServiceAccountRoleARNAnnotation will be included
+                          in the Service Account definition. That Kubernetes Service
+                          Account will be used in Kubernetes Deployment Spec of Console
+                          Ref https://docs.aws.amazon.com/eks/latest/userguide/iam-roles-for-service-accounts.html
+                        type: string
+                      tags:
+                        additionalProperties:
+                          type: string
+                        description: "Tags is a list of tags to attach to the secret.
+                          Each tag is a key and value a pair of strings in a JSON
+                          text string, for example: \n [{\"Key\":\"CostCenter\",\"Value\":\"12345\"},{\"Key\":\"environment\",\"Value\":\"production\"}]
+                          \n Secrets Manager tag key names are case sensitive. A tag
+                          with the key \"ABC\" is a different tag from one with key
+                          \"abc\". \n Tags can be used for permissions, so that you
+                          can namespace your secrets within a single secret store.
+                          Console will also only allow the deletion of secrets that
+                          posses the configured tags. Tags default to: \"owner\":
+                          \"console\""
+                        type: object
+                    required:
+                    - enabled
+                    - region
+                    type: object
+                  enabled:
+                    type: boolean
+                  gcpSecretManager:
+                    description: SecretManagerGCP is the configuration object for
+                      using Google Cloud's secret manager.
+                    properties:
+                      credentialsSecretRef:
+                        description: CredentialsSecretRef points to Kubernetes secret
+                          where service account will be mounted to Console and used
+                          to authenticate again GCP API.
+                        properties:
+                          key:
+                            description: Key in Secret data to get value from
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                            type: string
+                          namespace:
+                            description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      enabled:
+                        description: Enabled is whether GCP secret manager is enabled.
+                          Only one store can be enabled at a time.
+                        type: boolean
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: "Labels help you to organize your project, add
+                          arbitrary labels as key/value pairs to your resources. Use
+                          labels to indicate different environments, services, teams,
+                          and so on. Console may use additional labels for each secret.
+                          \n Use a label with key \"owner\" to namespace secrets within
+                          a secret manager. This label will always be set for the
+                          creation and listing of all secrets. If you change the value
+                          after secrets have been created, Console will no longer
+                          return them and consider them as managed by another application.
+                          The owner label is optional but recommended. \n Labels default
+                          to: \"owner\": \"console\""
+                        type: object
+                      projectId:
+                        description: ProjectID is the GCP project in which to store
+                          the secrets.
+                        type: string
+                      serviceAccountNameAnnotation:
+                        description: ServiceAccountNameAnnotation will be included
+                          in the Service Account definition. That Kubernetes Service
+                          Account will be used in Kubernetes Deployment Spec of Console
+                          Ref https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity
+                        type: string
+                    required:
+                    - enabled
+                    - projectId
+                    type: object
+                  kafkaConnect:
+                    description: SecretStoreKafkaConnect is a configuration block
+                      that specifies what configured Kafka connect clusters support
+                      loading secrets from the configured secret store. The frontend
+                      will only store sensitive connector configurations in the secret
+                      store if the respective kafka connect cluster is listed in this
+                      configuration.
+                    properties:
+                      clusters:
+                        description: Clusters is the list of Kafka connect clusters
+                          which the secret store shall be used for.
+                        items:
+                          description: SecretStoreKafkaConnectCluster configures the
+                            Kafka connect clusters that support loading secrets from
+                            the configured secret store.
+                          properties:
+                            name:
+                              description: Name refers to the Kafka connect cluster
+                                name that has been given in the connect configuration.
+                                This name must match some cluster name or the configuration
+                                will be rejected.
+                              type: string
+                            secretNamePrefixAppend:
+                              description: "SecretNamePrefixAppend is an optional
+                                string that shall be appended to the global secretNamePrefix.
+                                This config is helpful if you want to use a specific
+                                prefix for secrets belonging to this Kafka connect
+                                cluster. You may want to do this if you want to restrict
+                                the permissions for the kafka connect workers reading
+                                these secrets. \n Example: secretstore.secretNamePrefix
+                                is set to: \"redpanda/prod/\" secretstore.kafkaConnect.clusters.dwh.secretNamePrefixAppend
+                                is set to: \"dwh/\" => Secrets will be created with
+                                the prefix \"redpanda/prod/dwh/\" so that you can
+                                apply special iam permissions in your cloud account."
+                              type: string
+                          required:
+                          - name
+                          - secretNamePrefixAppend
+                          type: object
+                        type: array
+                      enabled:
+                        type: boolean
+                    required:
+                    - clusters
+                    - enabled
+                    type: object
+                  secretNamePrefix:
+                    description: "SecretNamePrefix is the prefix that shall be used
+                      for each secret name that will be stored. The prefix is used
+                      for namespacing your secrets, so that one secret store can be
+                      used by multiple tenants. For AWS it's common to use a path-like
+                      structure whereas GCP does not allow slashes. \n Examples: AWS:
+                      redpanda/analytics/prod/console/ GCP: redpanda-analytics-prod-console-
+                      \n Changing this prefix won't let you access secrets created
+                      under a different prefix."
+                    type: string
+                required:
+                - enabled
+                - secretNamePrefix
+                type: object
               serveFrontend:
                 default: true
                 description: Only relevant for developers, who might want to run the
