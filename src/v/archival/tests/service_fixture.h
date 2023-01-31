@@ -141,10 +141,6 @@ public:
     /// Wait unill all information will be replicated and the local node
     /// will become a leader for 'ntp'.
     void wait_for_partition_leadership(const model::ntp& ntp);
-    void delete_topic(model::ns ns, model::topic topic);
-    void wait_for_topic_deletion(const model::ntp& ntp);
-    void add_topic_with_random_data(const model::ntp& ntp, int num_batches);
-    void wait_for_lso(const model::ntp&);
     /// Provides access point for segment_matcher CRTP template
     storage::api& get_local_storage_api();
     /// \brief Init storage api for tests that require only storage
@@ -158,19 +154,6 @@ public:
     std::vector<segment_layout> get_layouts(const model::ntp& ntp) const {
         return layouts.find(ntp)->second;
     }
-
-    ss::future<> add_topic_with_single_partition(model::ntp ntp) {
-        co_await wait_for_controller_leadership();
-        co_await add_topic(model::topic_namespace_view(
-          model::topic_namespace(ntp.ns, ntp.tp.topic)));
-    }
-
-    ss::future<> add_topic_with_archival_enabled(
-      model::topic_namespace_view tp_ns, int partitions = 1);
-
-    ss::future<> create_archival_snapshot(
-      const storage::ntp_config& cfg,
-      cloud_storage::partition_manifest manifest);
 
 private:
     void initialize_shard(

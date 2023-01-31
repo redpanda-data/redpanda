@@ -222,61 +222,6 @@ void archiver_fixture::wait_for_partition_leadership(const model::ntp& ntp) {
     }).get();
 }
 
-void archiver_fixture::wait_for_lso(const model::ntp& ntp) {
-    vlog(fixt_log.trace, "waiting for partition lso{}", ntp);
-    tests::cooperative_spin_wait_with_timeout(10s, [this, ntp] {
-        return app.partition_manager.local().get(ntp)->last_stable_offset()
-               >= model::offset(1);
-    }).get();
-}
-
-void archiver_fixture::delete_topic(model::ns ns, model::topic topic) {
-    vlog(fixt_log.trace, "delete topic {}/{}", ns(), topic());
-    app.controller->get_topics_frontend()
-      .local()
-      .delete_topics(
-        {model::topic_namespace(std::move(ns), std::move(topic))},
-        model::timeout_clock::now() + 100ms)
-      .get();
-}
-void archiver_fixture::wait_for_topic_deletion(const model::ntp& ntp) {
-    tests::cooperative_spin_wait_with_timeout(10s, [this, ntp] {
-        return !app.partition_manager.local().get(ntp);
-    }).get();
-}
-void archiver_fixture::add_topic_with_random_data(
-  const model::ntp& ntp, int num_batches) {
-    // In order to be picked up by archival service the topic should
-    // exist in partition manager and on disk
-    auto builder = get_started_log_builder(ntp);
-    builder->add_segment(model::offset(0)).get();
-    builder
-      ->add_random_batches(
-        model::offset(0), num_batches, storage::maybe_compress_batches::yes)
-      .get();
-    builder->stop().get();
-    builder.reset();
-    add_topic_with_archival_enabled(model::topic_namespace_view(ntp)).get();
-}
-ss::future<> archiver_fixture::add_topic_with_archival_enabled(
-  model::topic_namespace_view tp_ns, int partitions) {
-    cluster::topic_configuration cfg(tp_ns.ns, tp_ns.tp, partitions, 1);
-    cfg.properties.shadow_indexing = model::shadow_indexing_mode::archival;
-    std::vector<cluster::custom_assignable_topic_configuration> cfgs = {
-      cluster::custom_assignable_topic_configuration(std::move(cfg))};
-    return app.controller->get_topics_frontend()
-      .local()
-      .create_topics(std::move(cfgs), model::no_timeout)
-      .then([this](std::vector<cluster::topic_result> results) {
-          return wait_for_topics(std::move(results));
-      });
-}
-ss::future<> archiver_fixture::create_archival_snapshot(
-  const storage::ntp_config& cfg, cloud_storage::partition_manifest manifest) {
-    return cluster::archival_metadata_stm::make_snapshot(
-      cfg, manifest, model::offset(0));
-}
-
 storage::api& archiver_fixture::get_local_storage_api() {
     return app.storage.local();
 }
