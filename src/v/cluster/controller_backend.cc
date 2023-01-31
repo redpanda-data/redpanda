@@ -377,148 +377,6 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
     return result_delta;
 }
 
-ss::future<>
-controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
-    // find last delta that has to be applied
-    auto bootstrap_deltas = calculate_bootstrap_deltas(_self, deltas);
-    vlog(
-      clusterlog.trace,
-      "[{}] bootstrapping with deltas {}",
-      ntp,
-      bootstrap_deltas);
-
-    // if empty do nothing
-    if (bootstrap_deltas.empty()) {
-        return ss::now();
-    }
-
-    auto& first_meta = bootstrap_deltas.front();
-    vlog(
-      clusterlog.info,
-      "[{}] Bootstrapping deltas: first - {}, last - {}",
-      ntp,
-      first_meta.delta,
-      bootstrap_deltas.back());
-    // if first operation is a cross core update, find initial revision on
-    // current node and store it in bootstrap map
-    using op_t = topic_table::delta::op_type;
-    if (is_cross_core_update(_self, first_meta.delta)) {
-        vlog(
-          clusterlog.trace,
-          "[{}] first bootstrap delta is a cross core update, looking for "
-          "initial revision",
-          ntp);
-        // find operation that created current partition on this node
-        auto it = std::find_if(
-          deltas.rbegin(), deltas.rend(), [this](const delta_metadata& md) {
-              if (md.delta.type == op_t::add) {
-                  return true;
-              }
-              return md.delta.type == op_t::update_finished
-                     && !contains_node(_self, md.delta.new_assignment.replicas);
-          });
-
-        vassert(
-          it != deltas.rend(),
-          "if partition {} was moved from different core it had to exists on "
-          "current node previously",
-          ntp);
-        // if we found update finished operation it is preceding operation that
-        // created partition on current node
-        vlog(
-          clusterlog.trace,
-          "[{}] first operation that doesn't contain current node - {}",
-          ntp,
-          *it);
-        /**
-         * At this point we may have two situations
-         * 1. replica was created on current node shard when partition was
-         *    created, with addition delta, in this case `it` contains this
-         *    addition delta.
-         *
-         * 2. replica was moved to this node with `update` delta type, in this
-         *    case `it` contains either `update_finished` delta from previous
-         *    operation or `add` delta from previous operation. In this case
-         *    operation does not contain current node and we need to execute
-         *    operation that is following the found one as this is the first
-         *    operation that created replica on current node
-         *
-         */
-        if (!contains_node(_self, it->delta.new_assignment.replicas)) {
-            vassert(
-              it != deltas.rbegin(),
-              "operation {} must have following operation that created a "
-              "replica on current node",
-              *it);
-            it = std::prev(it);
-        }
-        vlog(
-          clusterlog.trace, "[{}] initial revision source delta: {}", ntp, *it);
-        // persist revision in order to create partition with correct revision
-        _bootstrap_revisions[ntp] = model::revision_id(it->delta.offset());
-    }
-    // apply all deltas following the one found previously
-    deltas = std::move(bootstrap_deltas);
-    return reconcile_ntp(deltas);
-}
-
-ss::future<> controller_backend::fetch_deltas() {
-    return _topics.local()
-      .wait_for_changes(_as.local())
-      .then([this](std::vector<topic_table::delta> deltas) {
-          return ss::with_semaphore(
-            _topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
-                for (auto& d : deltas) {
-                    auto ntp = d.ntp;
-                    _topic_deltas[ntp].emplace_back(std::move(d));
-                }
-            });
-      });
-}
-
-void controller_backend::start_topics_reconciliation_loop() {
-    ssx::spawn_with_gate(_gate, [this] {
-        return ss::do_until(
-          [this] { return _as.local().abort_requested(); },
-          [this] {
-              return fetch_deltas()
-                .then([this] { return reconcile_topics(); })
-                .handle_exception_type(
-                  [](const ss::abort_requested_exception&) {
-                      // Shutting down: don't log this exception as an error
-                      vlog(
-                        clusterlog.debug,
-                        "Abort requested while reconciling topics");
-                  })
-                .handle_exception([](const std::exception_ptr& e) {
-                    vlog(
-                      clusterlog.error,
-                      "Error while reconciling topics - {}",
-                      e);
-                });
-          });
-    });
-}
-
-void controller_backend::housekeeping() {
-    ssx::background
-      = ssx::spawn_with_gate_then(_gate, [this] {
-            auto f = ss::now();
-            if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
-                f = reconcile_topics();
-            }
-            return f.finally([this] {
-                if (!_gate.is_closed()) {
-                    _housekeeping_timer.arm(_housekeeping_timer_interval);
-                }
-            });
-        }).handle_exception([](const std::exception_ptr& e) {
-            // we ignore the exception as controller backend will retry in next
-            // loop
-            vlog(clusterlog.warn, "error during reconciliation - {}", e);
-        });
-}
-
 namespace {
 using deltas_t = controller_backend::deltas_t;
 deltas_t::iterator
@@ -606,6 +464,188 @@ bool is_finishing_operation(
 }
 
 } // namespace
+
+ss::future<>
+controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
+    // find last delta that has to be applied
+    auto bootstrap_deltas = calculate_bootstrap_deltas(_self, deltas);
+    vlog(
+      clusterlog.trace,
+      "[{}] bootstrapping with deltas {}",
+      ntp,
+      bootstrap_deltas);
+
+    // if empty do nothing
+    if (bootstrap_deltas.empty()) {
+        return ss::now();
+    }
+
+    auto& first_meta = bootstrap_deltas.front();
+    vlog(
+      clusterlog.info,
+      "[{}] Bootstrapping deltas: first - {}, last - {}",
+      ntp,
+      first_meta.delta,
+      bootstrap_deltas.back());
+    // if first operation is a cross core update, find initial revision on
+    // current node and store it in bootstrap map
+    using op_t = topic_table::delta::op_type;
+    if (is_cross_core_update(_self, first_meta.delta)) {
+        vlog(
+          clusterlog.trace,
+          "[{}] first bootstrap delta is a cross core update, looking for "
+          "initial revision",
+          ntp);
+
+        auto update_finished_it = std::find_if(
+          bootstrap_deltas.begin(),
+          bootstrap_deltas.end(),
+          [&first_meta](const delta_metadata& md) {
+              auto delta = md.delta;
+              return delta.type == op_t::update_finished
+                     && delta.new_assignment.replicas
+                          == first_meta.delta.new_assignment.replicas;
+          });
+
+        auto interrupting_op_it = find_interrupting_operation(
+          bootstrap_deltas.begin(), bootstrap_deltas);
+
+        if (update_finished_it != bootstrap_deltas.end()) {
+            vlog(
+              clusterlog.trace,
+              "cross core update already finished: {}",
+              *update_finished_it);
+        }
+
+        if (interrupting_op_it != bootstrap_deltas.end()) {
+            vlog(
+              clusterlog.trace,
+              "cross core update interrupted: {}",
+              *interrupting_op_it);
+        }
+
+        if (
+          interrupting_op_it != bootstrap_deltas.end()
+          || update_finished_it != bootstrap_deltas.end()) {
+            // wait for the other shard to finish
+
+            // find operation that created current partition on this node
+            auto it = std::find_if(
+              deltas.rbegin(), deltas.rend(), [this](const delta_metadata& md) {
+                  if (md.delta.type == op_t::add) {
+                      return true;
+                  }
+                  return md.delta.type == op_t::update_finished
+                         && !contains_node(
+                           _self, md.delta.new_assignment.replicas);
+              });
+
+            vassert(
+              it != deltas.rend(),
+              "if partition {} was moved from different core it had to exists "
+              "on "
+              "current node previously",
+              ntp);
+            // if we found update finished operation it is preceding operation
+            // that created partition on current node
+            vlog(
+              clusterlog.trace,
+              "[{}] first operation that doesn't contain current node - {}",
+              ntp,
+              *it);
+            /**
+             * At this point we may have two situations
+             * 1. replica was created on current node shard when partition was
+             *    created, with addition delta, in this case `it` contains this
+             *    addition delta.
+             *
+             * 2. replica was moved to this node with `update` delta type, in
+             * this case `it` contains either `update_finished` delta from
+             * previous operation or `add` delta from previous operation. In
+             * this case operation does not contain current node and we need to
+             * execute operation that is following the found one as this is the
+             * first operation that created replica on current node
+             *
+             */
+            if (!contains_node(_self, it->delta.new_assignment.replicas)) {
+                vassert(
+                  it != deltas.rbegin(),
+                  "operation {} must have following operation that created a "
+                  "replica on current node",
+                  *it);
+                it = std::prev(it);
+            }
+            vlog(
+              clusterlog.trace,
+              "[{}] initial revision source delta: {}",
+              ntp,
+              *it);
+            // persist revision in order to create partition with correct
+            // revision
+            _bootstrap_revisions[ntp] = model::revision_id(it->delta.offset());
+        }
+    }
+    // apply all deltas following the one found previously
+    deltas = std::move(bootstrap_deltas);
+    return reconcile_ntp(deltas);
+}
+
+ss::future<> controller_backend::fetch_deltas() {
+    return _topics.local()
+      .wait_for_changes(_as.local())
+      .then([this](std::vector<topic_table::delta> deltas) {
+          return ss::with_semaphore(
+            _topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
+                for (auto& d : deltas) {
+                    auto ntp = d.ntp;
+                    _topic_deltas[ntp].emplace_back(std::move(d));
+                }
+            });
+      });
+}
+
+void controller_backend::start_topics_reconciliation_loop() {
+    ssx::spawn_with_gate(_gate, [this] {
+        return ss::do_until(
+          [this] { return _as.local().abort_requested(); },
+          [this] {
+              return fetch_deltas()
+                .then([this] { return reconcile_topics(); })
+                .handle_exception_type(
+                  [](const ss::abort_requested_exception&) {
+                      // Shutting down: don't log this exception as an error
+                      vlog(
+                        clusterlog.debug,
+                        "Abort requested while reconciling topics");
+                  })
+                .handle_exception([](const std::exception_ptr& e) {
+                    vlog(
+                      clusterlog.error,
+                      "Error while reconciling topics - {}",
+                      e);
+                });
+          });
+    });
+}
+
+void controller_backend::housekeeping() {
+    ssx::background
+      = ssx::spawn_with_gate_then(_gate, [this] {
+            auto f = ss::now();
+            if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
+                f = reconcile_topics();
+            }
+            return f.finally([this] {
+                if (!_gate.is_closed()) {
+                    _housekeeping_timer.arm(_housekeeping_timer_interval);
+                }
+            });
+        }).handle_exception([](const std::exception_ptr& e) {
+            // we ignore the exception as controller backend will retry in next
+            // loop
+            vlog(clusterlog.warn, "error during reconciliation - {}", e);
+        });
+}
 
 ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     bool stop = false;
