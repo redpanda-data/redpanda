@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "model/record.h"
 #include "storage/logger.h"
+#include "storage/parser_errc.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -312,6 +313,14 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                 stlog.info,
                 "stopped reading stream: {}",
                 recs.error().message());
+
+              auto const batch_parse_err
+                = recs.error() == parser_errc::header_only_crc_missmatch
+                  || recs.error() == parser_errc::input_stream_not_enough_bytes;
+
+              if (batch_parse_err) {
+                  _probe.batch_parse_error();
+              }
               return _iterator.close().then(
                 [] { return ss::make_ready_future<storage_t>(); });
           }
