@@ -76,7 +76,10 @@ void group_manager::set_ready() {
 ss::future<> group_manager::stop_heartbeats() { return _heartbeats.stop(); }
 
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
-  raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
+  raft::group_id id,
+  std::vector<model::broker> nodes,
+  storage::log log,
+  with_learner_recovery_throttle enable_learner_recovery_throttle) {
     auto revision = log.config().get_revision();
     auto raft_cfg = raft::group_configuration(std::move(nodes), revision);
 
@@ -99,7 +102,10 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
           trigger_leadership_notification(std::move(st));
       },
       _storage,
-      _recovery_throttle,
+      enable_learner_recovery_throttle
+        ? std::make_optional<std::reference_wrapper<recovery_throttle>>(
+          _recovery_throttle)
+        : std::nullopt,
       _recovery_mem_quota,
       _feature_table,
       _is_ready ? std::nullopt : std::make_optional(min_voter_priority));

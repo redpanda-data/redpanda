@@ -793,6 +793,9 @@ struct scheduling_config {
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
 std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
+
+using with_learner_recovery_throttle
+  = ss::bool_class<struct with_recovery_throttle_tag>;
 } // namespace raft
 
 namespace reflection {

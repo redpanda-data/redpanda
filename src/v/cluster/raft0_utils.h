@@ -34,7 +34,10 @@ static ss::future<consensus_ptr> create_raft0(
       .manage(
         storage::ntp_config(model::controller_ntp, data_directory),
         raft::group_id(0),
-        std::move(initial_brokers))
+        std::move(initial_brokers),
+        std::nullopt,
+        std::nullopt,
+        raft::with_learner_recovery_throttle::no)
       .then([&st](consensus_ptr p) {
           // Add raft 0 to shard table
           return st
