@@ -322,12 +322,13 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
-    // Hold sempahore units to enable other code to know that we are in
-    // the process of doing uploads + wait for us to drop out if they
-    // e.g. set _paused.
-    auto units = co_await ss::get_units(_uploads_active, 1);
-
     while (can_update_archival_metadata()) {
+        // Hold sempahore units to enable other code to know that we are in
+        // the process of doing uploads + wait for us to drop out if they
+        // e.g. set _paused.
+        vassert(!_paused, "can_update_archival_metadata must ensure !_paused");
+        auto units = co_await ss::get_units(_uploads_active, 1);
+
         // Bump up archival STM's state to make sure that it's not lagging
         // behind too far. If the STM is lagging behind we will have to read a
         // lot of data next time we upload something.
@@ -391,6 +392,10 @@ ss::future<> ntp_archiver::upload_until_term_change() {
         }
 
         update_probe();
+
+        // Drop _uploads_active lock: we are not considered active while
+        // sleeping for backoff at the end of the loop.
+        units.return_all();
 
         if (non_compacted_upload_result.num_succeeded == 0) {
             // The backoff algorithm here is used to prevent high CPU

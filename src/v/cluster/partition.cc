@@ -20,6 +20,8 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
 
+#include <seastar/util/defer.hh>
+
 namespace cluster {
 
 static bool is_id_allocator_topic(model::ntp ntp) {
@@ -621,7 +623,8 @@ ss::future<std::error_code>
 partition::transfer_leadership(std::optional<model::node_id> target) {
     vlog(
       clusterlog.debug,
-      "Transferring leadership to {}",
+      "Transferring {} leadership to {}",
+      ntp(),
       target.value_or(model::node_id{-1}));
 
     // Some state machines need a preparatory phase to efficiently transfer
@@ -633,6 +636,29 @@ partition::transfer_leadership(std::optional<model::node_id> target) {
     } else if (_tm_stm) {
         stm_prepare_lock = co_await _tm_stm->prepare_transfer_leadership();
     }
+
+    std::optional<ss::deferred_action<std::function<void()>>> complete_archiver;
+    auto archival_timeout
+      = config::shard_local_cfg().cloud_storage_graceful_transfer_timeout_ms();
+    if (_archiver && archival_timeout.has_value()) {
+        complete_archiver.emplace(
+          [a = _archiver.get()]() { a->complete_transfer_leadership(); });
+        bool archiver_clean = co_await _archiver->prepare_transfer_leadership(
+          archival_timeout.value());
+        if (!archiver_clean) {
+            // This is legal: if we are very tight on bandwidth to S3, then it
+            // can take longer than the available timeout for an upload of
+            // a large segment to complete.  If this happens, we will leak
+            // an object, but retain a consistent+correct manifest when
+            // the new leader writes it.
+            vlog(
+              clusterlog.warn,
+              "Timed out waiting for {} uploads to complete before "
+              "transferring leadership: proceeding anyway",
+              ntp());
+        }
+    }
+
     co_return co_await _raft->do_transfer_leadership(target);
 }
 
