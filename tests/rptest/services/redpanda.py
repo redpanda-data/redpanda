@@ -2536,7 +2536,9 @@ class RedpandaServiceCloud(KubeServiceMixin, RedpandaServiceABC):
     ) -> None:
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
-        not permitted by `allow_list`
+        not permitted by `allow_list`. The `allow_list` is a list of
+        unanchored regexes (i.e., they match if they occur anywhere in the
+        line even without leading and trailing wildcards).
 
         :param allow_list: list of compiled regexes, or None for default
         :return: None
@@ -3144,7 +3146,9 @@ class RedpandaService(Service, RedpandaServiceABC):
     ):
         """
         Raise a BadLogLines exception if any nodes' logs contain errors not
-        permitted by `allow_list`
+        permitted by `allow_list`. The `allow_list` is a list of unanchored
+        regexes (i.e., they match if they occur anywhere in the line even
+        without leading and trailing wildcards).
 
         :param allow_list: LogAllowList of additional lines to ignore (default
             ignores are always included)
