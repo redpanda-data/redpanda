@@ -520,46 +520,32 @@ ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   bool expect_no_such_key) {
     auto header = _requestor.make_get_object_request(name, key);
     if (!header) {
-        return ss::make_exception_future<http::client::response_stream_ref>(
-          std::system_error(header.error()));
+        throw std::system_error(header.error());
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
-    return _client.request(std::move(header.value()), timeout)
-      .then([expect_no_such_key](http::client::response_stream_ref&& ref) {
-          // here we didn't receive any bytes from the socket and
-          // ref->is_header_done() is 'false', we need to prefetch
-          // the header first
-          return ref->prefetch_headers().then(
-            [ref = std::move(ref), expect_no_such_key]() mutable {
-                vassert(ref->is_header_done(), "Header is not received");
-                const auto result = ref->get_headers().result();
-                if (result != boost::beast::http::status::ok) {
-                    // Got error response, consume the response body and produce
-                    // rest api error
-                    if (
-                      expect_no_such_key
-                      && result == boost::beast::http::status::not_found) {
-                        vlog(
-                          s3_log.debug,
-                          "S3 replied with expected error: {:l}",
-                          ref->get_headers());
-                    } else {
-                        vlog(
-                          s3_log.warn,
-                          "S3 replied with error: {:l}",
-                          ref->get_headers());
-                    }
-                    return util::drain_response_stream(std::move(ref))
-                      .then([result](iobuf&& res) {
-                          return parse_rest_error_response<
-                            http::client::response_stream_ref>(
-                            result, std::move(res));
-                      });
-                }
-                return ss::make_ready_future<http::client::response_stream_ref>(
-                  std::move(ref));
-            });
-      });
+    auto ref = co_await _client.request(std::move(header.value()), timeout);
+    co_await ref->prefetch_headers();
+    vassert(ref->is_header_done(), "Header is not received");
+    const auto result = ref->get_headers().result();
+    if (result != boost::beast::http::status::ok) {
+        // Got error response, consume the response body and produce rest api error
+        if (
+          expect_no_such_key
+          && result == boost::beast::http::status::not_found) {
+            vlog(
+              s3_log.debug,
+              "S3 replied with expected error: {:l}",
+              ref->get_headers());
+        } else {
+            vlog(
+              s3_log.warn,
+              "S3 replied with error: {:l}",
+              ref->get_headers());
+        }
+        auto res = co_await util::drain_response_stream(std::move(ref));
+        co_return co_await parse_rest_error_response<http::client::response_stream_ref>(result, std::move(res));
+    }
+    co_return ref;
 }
 
 ss::future<result<s3_client::head_object_result, error_outcome>>

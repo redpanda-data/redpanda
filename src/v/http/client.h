@@ -135,6 +135,10 @@ public:
         /// Can be used instead of 'recv_some'.
         ss::input_stream<char> as_input_stream();
 
+        prefix_logger& logger() {
+            return _ctxlog;
+        }
+
     private:
         client* _client;
         prefix_logger _ctxlog;

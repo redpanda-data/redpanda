@@ -32,6 +32,7 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/fstream.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/io_priority_class.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -270,29 +271,39 @@ ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
       tmpidx,
       _base_offset_delta,
       remote_segment_sampling_step_bytes);
-    auto fparse = parser->consume().finally(
-      [parser] { return parser->close(); });
-    auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
+    auto fparse = parser->consume(&_ctxlog).finally(
+      [&, parser] {
+          vlog(_ctxlog.info, "AWONG parser close");
+          return parser->close();
+      });
+    auto fput = _cache.put(_path, sput).finally([&, sref = std::ref(sput)] {
         return sref.get().close();
     });
-    auto [rparse, rput] = co_await ss::when_all(
-      std::move(fparse), std::move(fput));
+    vlog(_ctxlog.info, "AWONG waiting for parse and put");
     bool index_prepared = true;
-    if (rparse.failed()) {
-        auto parse_exception = rparse.get_exception();
-        vlog(
-          _ctxlog.warn,
-          "Failed to build a remote_segment index, error: {}",
-          parse_exception);
-        index_prepared = false;
-    }
-    if (rput.failed()) {
-        auto put_exception = rput.get_exception();
-        vlog(
-          _ctxlog.warn,
-          "Failed to write a segment file to cache, error: {}",
-          put_exception);
-        std::rethrow_exception(put_exception);
+    try {
+        auto [rparse, rput] = co_await ss::when_all(
+          std::move(fparse), std::move(fput));
+        vlog(_ctxlog.info, "AWONG waited for parse and put");
+        if (rparse.failed()) {
+            auto parse_exception = rparse.get_exception();
+            vlog(
+              _ctxlog.warn,
+              "Failed to build a remote_segment index, error: {}",
+              parse_exception);
+            index_prepared = false;
+        }
+        if (rput.failed()) {
+            auto put_exception = rput.get_exception();
+            vlog(
+              _ctxlog.warn,
+              "Failed to write a segment file to cache, error: {}",
+              put_exception);
+            std::rethrow_exception(put_exception);
+        }
+    } catch (...) {
+        vlog(_ctxlog.info, "AWONG failed waiting for parse and put: {}", std::current_exception());
+        std::rethrow_exception(std::current_exception());
     }
     if (index_prepared) {
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
