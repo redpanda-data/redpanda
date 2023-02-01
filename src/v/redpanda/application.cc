@@ -555,7 +555,32 @@ ss::app_template::config application::setup_app_config() {
 
 void application::hydrate_config(const po::variables_map& cfg) {
     std::filesystem::path cfg_path(cfg["redpanda-cfg"].as<std::string>());
-    const YAML::Node config = YAML::Load(read_fully_to_string(cfg_path).get0());
+
+    // Retain the original bytes loaded so that we can hexdump them later
+    // if YAML Parse fails.
+    // Related: https://github.com/redpanda-data/redpanda/issues/3798
+    auto yaml_raw_bytes = read_fully_tmpbuf(cfg_path).get0();
+    auto yaml_raw_str = ss::to_sstring(yaml_raw_bytes.clone());
+    YAML::Node config;
+    try {
+        config = YAML::Load(yaml_raw_str);
+    } catch (const YAML::ParserException& e) {
+        // For most parse errors we do not want to do a binary dump.  For
+        // "unknown escape character" we dump it, to debug issue #3789 where
+        // apparently valid config files can cause this exception.
+        if (e.msg.find("unknown escape character") != std::string::npos) {
+            vlog(_log.error, "Dumping config on 'unknown escape character':");
+            iobuf iob;
+            iob.append(std::move(yaml_raw_bytes));
+
+            // A reasonable config file is usually only hundreds of bytes.
+            auto hexdump = iob.hexdump(16384);
+            vlog(_log.error, "{}", hexdump);
+        }
+
+        throw;
+    }
+
     auto config_printer = [this](std::string_view service, const auto& cfg) {
         std::vector<ss::sstring> items;
         cfg.for_each([&items, &service](const auto& item) {
