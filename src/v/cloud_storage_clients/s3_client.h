@@ -93,13 +93,16 @@ public:
     /// \param region to connect
     /// \param max_keys is a max number of returned objects
     /// \param offset is an offset of the first returned object
+    /// \param continuation_token used to paginate list results
+    /// \param delimiter used to group results with common prefixes
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_list_objects_v2_request(
       const bucket_name& name,
       std::optional<object_key> prefix,
       std::optional<object_key> start_after,
       std::optional<size_t> max_keys,
-      std::optional<ss::sstring> continuation_token);
+      std::optional<ss::sstring> continuation_token,
+      std::optional<char> delimiter = std::nullopt);
 
 private:
     access_point_uri _ap;
@@ -170,8 +173,9 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      ss::lowres_clock::duration timeout
-      = http::default_connect_timeout) override;
+      ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<char> delimiter = std::nullopt,
+      std::optional<item_filter> collect_item_if = std::nullopt) override;
 
     ss::future<result<no_response, error_outcome>> delete_object(
       const bucket_name& bucket,
@@ -209,7 +213,9 @@ private:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      ss::lowres_clock::duration timeout = http::default_connect_timeout);
+      ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<char> delimiter = std::nullopt,
+      std::optional<item_filter> collect_item_if = std::nullopt);
 
     ss::future<> do_delete_object(
       const bucket_name& bucket,

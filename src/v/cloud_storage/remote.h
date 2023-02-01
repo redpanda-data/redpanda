@@ -273,20 +273,26 @@ public:
       std::vector<cloud_storage_clients::object_key> keys,
       retry_chain_node& parent);
 
-    using list_bucket_items
-      = std::vector<cloud_storage_clients::client::list_bucket_item>;
-    using list_result
-      = result<list_bucket_items, cloud_storage_clients::error_outcome>;
+    using list_result = result<
+      cloud_storage_clients::client::list_bucket_result,
+      cloud_storage_clients::error_outcome>;
 
     /// \brief Lists objects in a bucket
     ///
     /// \param name The bucket to delete from
     /// \param parent The retry chain node to manage timeouts
     /// \param prefix Optional prefix to restrict listing of objects
+    /// \param delimiter A character to use as a delimiter when grouping list
+    /// results
+    /// \param item_filter Optional filter to apply to items before
+    /// collecting
     ss::future<list_result> list_objects(
       const cloud_storage_clients::bucket_name& name,
       retry_chain_node& parent,
-      std::optional<cloud_storage_clients::object_key> prefix = std::nullopt);
+      std::optional<cloud_storage_clients::object_key> prefix = std::nullopt,
+      std::optional<char> delimiter = std::nullopt,
+      std::optional<cloud_storage_clients::client::item_filter> item_filter
+      = std::nullopt);
 
     /// \brief Upload small objects to bucket. Suitable for uploading simple
     /// strings, does not check for leadership before upload like the segment

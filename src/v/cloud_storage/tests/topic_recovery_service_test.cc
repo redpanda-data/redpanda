@@ -35,13 +35,15 @@ const ss::sstring no_manifests = R"XML(
     </ListBucketResult>
     )XML";
 
-const ss::sstring a_manifest = R"XML(
+const ss::sstring top_level_result = R"XML(
     <ListBucketResult>
       <IsTruncated>false</IsTruncated>
       <Contents>
-          <Key>head/meta/kafka/foobar/topic_manifest.json</Key>
       </Contents>
       <NextContinuationToken>n</NextContinuationToken>
+      <CommonPrefixes>
+        <Prefix>b0000000/</Prefix>
+      </CommonPrefixes>
     </ListBucketResult>
     )XML";
 
@@ -75,6 +77,27 @@ const ss::sstring topic_manifest_json = R"JSON({
     })JSON";
 
 const model::topic_namespace tp_ns{model::ns{"kafka"}, model::topic{"test"}};
+
+const s3_imposter_fixture::expectation root_level{
+  .url = "/?list-type=2&delimiter=/",
+  .body = top_level_result,
+};
+
+const s3_imposter_fixture::expectation meta_level{
+  .url = "/?list-type=2&prefix=b0000000/",
+  .body = valid_manifest_list,
+};
+
+const s3_imposter_fixture::expectation manifest{
+  .url = "/b0000000/meta/kafka/test/topic_manifest.json",
+  .body = topic_manifest_json,
+};
+
+const s3_imposter_fixture::expectation recovery_state{
+  .url = "/?list-type=2&prefix=recovery_state",
+  .body = recovery_results,
+};
+
 } // namespace
 
 class fixture
@@ -140,7 +163,7 @@ FIXTURE_TEST(start_with_good_request, fixture) {
 
 FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = no_manifests}});
+      {{.url = root_level.url, .body = no_manifests}});
 
     auto& service = app.topic_recovery_service;
     auto result = service.local().start_recovery({});
@@ -155,9 +178,9 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     wait_for_n_requests(1, equals::yes);
 
     const auto& list_topics_req = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, "/?list-type=2");
+    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
 
-    // Wait until recovery exists after finding no topics to create
+    // Wait until recovery exits after finding no topics to create
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return service.local().is_active() == false;
     }).get();
@@ -176,37 +199,39 @@ void do_test(fixture& f) {
 
     BOOST_REQUIRE_EQUAL(result, expected);
 
-    // Wait until two requests are received:
-    // 1. to list bucket for manifest files
-    // 2. to download manifest
-    f.wait_for_n_requests(2, fixture::equals::yes);
+    // Wait until three requests are received:
+    // 1. to list bucket for topic meta prefixes
+    // 2. to list the topic meta prefix itself
+    // 3. to download manifest
+    f.wait_for_n_requests(3, fixture::equals::yes);
 
     const auto& list_topics_req = f.get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, "/?list-type=2");
+    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
 
-    const auto& get_manifest_req = f.get_requests()[1];
-    BOOST_REQUIRE_EQUAL(
-      get_manifest_req._url, "/head/meta/kafka/foobar/topic_manifest.json");
+    const auto& list_prefix_req = f.get_requests()[1];
+    BOOST_REQUIRE_EQUAL(list_prefix_req._url, meta_level.url);
 
-    // Wait until recovery exists after finding no topics to create
+    const auto& get_manifest_req = f.get_requests()[2];
+    BOOST_REQUIRE_EQUAL(get_manifest_req._url, manifest.url);
+
+    // Wait until recovery exits after finding no topics to create
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return service.local().is_active() == false;
     }).get();
 
-    BOOST_REQUIRE_EQUAL(f.get_requests().size(), 2);
+    BOOST_REQUIRE_EQUAL(f.get_requests().size(), 3);
 }
 
 FIXTURE_TEST(recovery_with_unparseable_topic_manifest, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = a_manifest},
-       {.url = "/head/meta/kafka/foobar/topic_manifest.json",
-        .body = "bad json"}});
+      {root_level, meta_level, {.url = manifest.url, .body = "bad json"}});
     do_test(*this);
 }
 
 FIXTURE_TEST(recovery_with_missing_topic_manifest, fixture) {
     set_expectations_and_listen({
-      {.url = "/?list-type=2", .body = a_manifest},
+      root_level,
+      meta_level,
     });
     do_test(*this);
 }
@@ -221,9 +246,7 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
                                  .create_topics(topic_cfg, model::no_timeout)
                                  .get();
     wait_for_topics(std::move(topic_create_result)).get();
-    set_expectations_and_listen({
-      {.url = "/?list-type=2", .body = valid_manifest_list},
-    });
+    set_expectations_and_listen({root_level, meta_level});
 
     auto& service = app.topic_recovery_service;
     auto result = service.local().start_recovery({});
@@ -233,25 +256,24 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
-    wait_for_n_requests(1, equals::yes);
+    wait_for_n_requests(2, equals::yes);
 
     const auto& list_topics_req = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, "/?list-type=2");
+    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
+
+    const auto& prefix_req = get_requests()[1];
+    BOOST_REQUIRE_EQUAL(prefix_req._url, meta_level.url);
 
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return service.local().is_active() == false;
     }).get();
 
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 1);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 }
 
 FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = valid_manifest_list},
-       {.url = "/b0000000/meta/kafka/test/topic_manifest.json",
-        .body = topic_manifest_json},
-       {.url = "/?list-type=2&prefix=recovery_state",
-        .body = recovery_results}});
+      {root_level, meta_level, manifest, recovery_state});
 
     auto& service = app.topic_recovery_service;
     auto result = service.local().start_recovery({});
@@ -261,14 +283,16 @@ FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
-    wait_for_n_requests(2);
+    wait_for_n_requests(3);
 
     const auto& list_topics_req = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(list_topics_req._url, "/?list-type=2");
+    BOOST_REQUIRE_EQUAL(list_topics_req._url, root_level.url);
 
-    const auto& get_manifest = get_requests()[1];
-    BOOST_REQUIRE_EQUAL(
-      get_manifest._url, "/b0000000/meta/kafka/test/topic_manifest.json");
+    const auto& prefix_req = get_requests()[1];
+    BOOST_REQUIRE_EQUAL(prefix_req._url, meta_level.url);
+
+    const auto& get_manifest = get_requests()[2];
+    BOOST_REQUIRE_EQUAL(get_manifest._url, manifest.url);
 
     // Wait for the topic to appear
     wait_for_topic(tp_ns);
@@ -293,40 +317,33 @@ FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
         .cloud_storage_recovery_temporary_retention_bytes_default.value());
     // We will have at least three requests, there could be more depending on
     // partition recovery manager:
-    // 1. list results
-    // 2. download manifest
-    // 3. try to clear recovery results from previous runs
-    BOOST_REQUIRE_GE(get_requests().size(), 3);
+    // 1. list prefixes
+    // 2. list prefix content
+    // 3. download manifest
+    // 4. try to clear recovery results from previous runs
+    BOOST_REQUIRE_GE(get_requests().size(), 4);
 }
 
 FIXTURE_TEST(recovery_result_clear_before_start, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = valid_manifest_list},
-       {.url = "/b0000000/meta/kafka/test/topic_manifest.json",
-        .body = topic_manifest_json},
-       {.url = "/?list-type=2&prefix=recovery_state",
-        .body = recovery_results}});
+      {root_level, meta_level, manifest, recovery_state});
 
     auto& service = app.topic_recovery_service;
     service.local().start_recovery({});
-    wait_for_n_requests(4);
+    wait_for_n_requests(5);
 
-    const auto& delete_request = get_requests()[3];
+    const auto& delete_request = get_requests()[4];
     BOOST_REQUIRE_EQUAL(delete_request._url, "/?delete");
     BOOST_REQUIRE_EQUAL(delete_request._method, "POST");
 }
 
 FIXTURE_TEST(recovery_download_tracking, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = valid_manifest_list},
-       {.url = "/b0000000/meta/kafka/test/topic_manifest.json",
-        .body = topic_manifest_json},
-       {.url = "/?list-type=2&prefix=recovery_state",
-        .body = recovery_results}});
+      {root_level, meta_level, manifest, recovery_state});
 
     auto& service = app.topic_recovery_service;
     service.local().start_recovery({});
-    wait_for_n_requests(2);
+    wait_for_n_requests(3);
     wait_for_topic(tp_ns);
 
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
@@ -342,10 +359,10 @@ FIXTURE_TEST(recovery_download_tracking, fixture) {
 }
 
 FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
-    set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = valid_manifest_list},
-       {.url = "/b0000000/meta/kafka/test/topic_manifest.json",
-        .body = topic_manifest_json}});
+    set_expectations_and_listen({
+      root_level,
+      meta_level,
+    });
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
@@ -354,22 +371,18 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
     auto& service = app.topic_recovery_service;
     service.local().start_recovery(r);
 
-    wait_for_n_requests(1, equals::yes);
+    wait_for_n_requests(2, equals::yes);
 
     tests::cooperative_spin_wait_with_timeout(10s, [&service] {
         return !service.local().is_active();
     }).get();
 
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 1);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 2);
 }
 
 FIXTURE_TEST(recovery_with_topic_name_pattern_with_match, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = valid_manifest_list},
-       {.url = "/b0000000/meta/kafka/test/topic_manifest.json",
-        .body = topic_manifest_json},
-       {.url = "/?list-type=2&prefix=recovery_state",
-        .body = recovery_results}});
+      {root_level, meta_level, manifest, recovery_state});
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
@@ -378,17 +391,13 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_with_match, fixture) {
     auto& service = app.topic_recovery_service;
     service.local().start_recovery(r);
 
-    wait_for_n_requests(4);
+    wait_for_n_requests(5);
     wait_for_topic(tp_ns);
 }
 
 FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = valid_manifest_list},
-       {.url = "/b0000000/meta/kafka/test/topic_manifest.json",
-        .body = topic_manifest_json},
-       {.url = "/?list-type=2&prefix=recovery_state",
-        .body = recovery_results}});
+      {root_level, meta_level, manifest, recovery_state});
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
@@ -398,7 +407,7 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
     auto& service = app.topic_recovery_service;
     service.local().start_recovery(r);
 
-    wait_for_n_requests(4);
+    wait_for_n_requests(5);
     wait_for_topic(tp_ns);
     auto topic = app.controller->get_topics_state().local().get_topic_cfg(
       tp_ns);
@@ -411,11 +420,7 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
 
 FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
     set_expectations_and_listen(
-      {{.url = "/?list-type=2", .body = valid_manifest_list},
-       {.url = "/b0000000/meta/kafka/test/topic_manifest.json",
-        .body = topic_manifest_json},
-       {.url = "/?list-type=2&prefix=recovery_state",
-        .body = recovery_results}});
+      {root_level, meta_level, manifest, recovery_state});
 
     ss::httpd::request r;
     r._headers = {{"Content-Type", "application/json"}};
@@ -425,7 +430,7 @@ FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
     auto& service = app.topic_recovery_service;
     service.local().start_recovery(r);
 
-    wait_for_n_requests(4);
+    wait_for_n_requests(5);
     wait_for_topic(tp_ns);
     auto topic = app.controller->get_topics_state().local().get_topic_cfg(
       tp_ns);

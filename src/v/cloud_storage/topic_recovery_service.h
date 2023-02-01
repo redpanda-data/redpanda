@@ -116,7 +116,7 @@ private:
     /// process.
     ss::future<std::vector<cloud_storage::topic_manifest>>
     filter_existing_topics(
-      const remote::list_bucket_items& items,
+      std::vector<remote_segment_path> items,
       const recovery_request& request,
       std::optional<model::ns> filter_ns);
 

@@ -736,7 +736,9 @@ ss::future<upload_result> remote::delete_objects(
 ss::future<remote::list_result> remote::list_objects(
   const cloud_storage_clients::bucket_name& bucket,
   retry_chain_node& parent,
-  std::optional<cloud_storage_clients::object_key> prefix) {
+  std::optional<cloud_storage_clients::object_key> prefix,
+  std::optional<char> delimiter,
+  std::optional<cloud_storage_clients::client::item_filter> item_filter) {
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -749,7 +751,7 @@ ss::future<remote::list_result> remote::list_objects(
     std::optional<ss::sstring> continuation_token = std::nullopt;
 
     // Gathers the items from a series of successful ListObjectsV2 calls
-    list_bucket_items items;
+    cloud_storage_clients::client::list_bucket_result list_bucket_result;
 
     // Keep iterating until the ListObjectsV2 calls has more items to return
     while (!_gate.is_closed() && permit.is_allowed && !result) {
@@ -759,7 +761,9 @@ ss::future<remote::list_result> remote::list_objects(
           std::nullopt,
           std::nullopt,
           continuation_token,
-          fib.get_timeout());
+          fib.get_timeout(),
+          delimiter,
+          item_filter);
 
         if (res) {
             auto list_result = res.value();
@@ -770,14 +774,28 @@ ss::future<remote::list_result> remote::list_objects(
             std::copy(
               std::make_move_iterator(list_result.contents.begin()),
               std::make_move_iterator(list_result.contents.end()),
-              std::back_inserter(items));
+              std::back_inserter(list_bucket_result.contents));
+
+            // Move common prefixes to the result, only if they have not been
+            // copied yet. These values will remain the same during pagination
+            // of list call results, so they should only be copied once.
+            if (
+              list_bucket_result.common_prefixes.empty()
+              && !list_result.common_prefixes.empty()) {
+                std::copy(
+                  std::make_move_iterator(list_result.common_prefixes.begin()),
+                  std::make_move_iterator(list_result.common_prefixes.end()),
+                  std::back_inserter(list_bucket_result.common_prefixes));
+            }
+
+            list_bucket_result.prefix = list_result.prefix;
 
             // Continue to list the remaining items
             if (items_remaining) {
                 continue;
             }
 
-            co_return items;
+            co_return list_bucket_result;
         }
 
         lease.client->shutdown();

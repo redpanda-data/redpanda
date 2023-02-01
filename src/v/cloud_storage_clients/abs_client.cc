@@ -14,6 +14,7 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/util.h"
+#include "cloud_storage_clients/xml_sax_parser.h"
 #include "vlog.h"
 
 #include <utility>
@@ -43,49 +44,6 @@ constexpr boost::beast::string_view tags_name = "x-ms-tags";
 constexpr boost::beast::string_view delete_snapshot_name
   = "x-ms-delete-snapshots";
 constexpr boost::beast::string_view delete_snapshot_value = "include";
-
-cloud_storage_clients::abs_client::list_bucket_result
-iobuf_to_list_bucket_result(iobuf buf) {
-    using namespace cloud_storage_clients;
-
-    try {
-        abs_client::list_bucket_result result;
-        auto root = util::iobuf_to_ptree(std::move(buf), abs_log);
-        auto enum_results = root.get_child("EnumerationResults");
-
-        if (auto prefix = enum_results.get_child_optional("Prefix"); prefix) {
-            result.prefix = prefix->get_value<ss::sstring>();
-        }
-
-        if (auto marker = enum_results.get_child_optional("Marker"); marker) {
-            result.is_truncated = true;
-        } else {
-            result.is_truncated = false;
-        }
-
-        auto blobs = enum_results.get_child("Blobs");
-        for (auto& [tag, blob] : blobs) {
-            abs_client::list_bucket_item item;
-            item.key = blob.get<ss::sstring>("Name");
-            item.size_bytes = blob.get<size_t>("Properties.Content-Length");
-            item.etag = blob.get<ss::sstring>("Properties.Etag");
-            // TODO(vlad): Why doesn't ss::sstring work here?
-            const auto last_modified = blob.get<std::string>(
-              "Properties.Last-Modified");
-            item.last_modified = util::parse_timestamp(last_modified);
-
-            result.contents.push_back(std::move(item));
-        }
-
-        return result;
-    } catch (...) {
-        vlog(
-          abs_log.error,
-          "Failed to parse List Container response: ",
-          std::current_exception());
-        throw;
-    }
-}
 
 bool is_error_retryable(
   const cloud_storage_clients::abs_rest_error_response& err) {
@@ -253,7 +211,8 @@ abs_request_creator::make_list_blobs_request(
   const bucket_name& name,
   std::optional<object_key> prefix,
   [[maybe_unused]] std::optional<object_key> start_after,
-  std::optional<size_t> max_keys) {
+  std::optional<size_t> max_keys,
+  std::optional<char> delimiter) {
     // GET /{container-id}?restype=container&comp=list&prefix={prefix}...
     // ...&max_results{max_keys}
     // HTTP/1.1 Host: {storage-account-id}.blob.core.windows.net
@@ -267,6 +226,10 @@ abs_request_creator::make_list_blobs_request(
 
     if (max_keys) {
         target += fmt::format("&max_results={}", max_keys.value());
+    }
+
+    if (delimiter) {
+        target += fmt::format("&delimiter={}", delimiter.value());
     }
 
     const boost::beast::string_view host{_ap().data(), _ap().length()};
@@ -591,7 +554,9 @@ abs_client::list_objects(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
+  std::optional<item_filter> collect_item_if) {
     return send_request(
       do_list_objects(
         name,
@@ -599,7 +564,9 @@ abs_client::list_objects(
         std::move(start_after),
         max_keys,
         std::move(continuation_token),
-        timeout),
+        timeout,
+        delimiter,
+        std::move(collect_item_if)),
       name,
       object_key{""});
 }
@@ -610,9 +577,11 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   [[maybe_unused]] std::optional<ss::sstring> continuation_token,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
+  std::optional<item_filter> gather_item_if) {
     auto header = _requestor.make_list_blobs_request(
-      name, std::move(prefix), std::move(start_after), max_keys);
+      name, std::move(prefix), std::move(start_after), max_keys, delimiter);
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());
@@ -628,12 +597,30 @@ ss::future<abs_client::list_bucket_result> abs_client::do_list_objects(
     vassert(response_stream->is_header_done(), "Header is not received");
     const auto status = response_stream->get_headers().result();
 
-    iobuf buf = co_await util::drain_response_stream(response_stream);
     if (status != boost::beast::http::status::ok) {
+        iobuf buf = co_await util::drain_response_stream(response_stream);
         throw parse_rest_error_response(status, std::move(buf));
-    } else {
-        co_return iobuf_to_list_bucket_result(std::move(buf));
     }
+
+    co_return co_await ss::do_with(
+      response_stream->as_input_stream(),
+      xml_sax_parser{},
+      [](ss::input_stream<char>& stream, xml_sax_parser& p) mutable {
+          p.start_parse(std::make_unique<abs_parse_impl>());
+          return ss::do_until(
+                   [&stream] { return stream.eof(); },
+                   [&stream, &p] {
+                       return stream.read().then(
+                         [&p](ss::temporary_buffer<char>&& chunk) {
+                             p.parse_chunk(std::move(chunk));
+                         });
+                   })
+            .then([&stream] { return stream.close(); })
+            .then([&p] {
+                p.end_parse();
+                return p.result();
+            });
+      });
 }
 
 } // namespace cloud_storage_clients

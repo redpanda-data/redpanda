@@ -71,12 +71,14 @@ public:
     /// \param prefix prefix of returned blob's names
     /// \param start_after is always ignored
     /// \param max_keys is the max number of returned objects
+    /// \param delimiter used to group common prefixes
     /// \return initialized and signed http header or error
     result<http::client::request_header> make_list_blobs_request(
       const bucket_name& name,
       std::optional<object_key> prefix,
       std::optional<object_key> start_after,
-      std::optional<size_t> max_keys);
+      std::optional<size_t> max_keys,
+      std::optional<char> delimiter = std::nullopt);
 
 private:
     access_point_uri _ap;
@@ -158,8 +160,9 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      ss::lowres_clock::duration timeout
-      = http::default_connect_timeout) override;
+      ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<char> delimiter = std::nullopt,
+      std::optional<item_filter> collect_item_if = std::nullopt) override;
 
     /// Send Delete Blob request
     /// \param name is a container name
@@ -216,7 +219,9 @@ private:
       std::optional<object_key> start_after,
       std::optional<size_t> max_keys,
       std::optional<ss::sstring> continuation_token,
-      ss::lowres_clock::duration timeout);
+      ss::lowres_clock::duration timeout,
+      std::optional<char> delimiter = std::nullopt,
+      std::optional<item_filter> collect_item_if = std::nullopt);
 
     abs_request_creator _requestor;
     http::client _client;

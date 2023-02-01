@@ -131,7 +131,13 @@ public:
         ss::sstring prefix;
         ss::sstring next_continuation_token;
         std::vector<list_bucket_item> contents;
+        std::vector<ss::sstring> common_prefixes;
     };
+
+    /// A predicate to allow list_objects to collect items selectively, saving
+    /// memory. This cannot be ss::noncopyable_function because remote needs to
+    /// copy this object for calls in a loop.
+    using item_filter = std::function<bool(const list_bucket_item&)>;
 
     /// List the objects in a bucket
     ///
@@ -139,7 +145,11 @@ public:
     /// \param prefix optional prefix of objects to list
     /// \param start_after optional object key to start listing after
     /// \param max_keys optional upper bound on the number of returned keys
-    /// \param body is an input_stream that can be used to read body
+    /// \param continuation_token token returned by a previous call
+    /// \param timeout operation timeout
+    /// \param delimiter character used to group prefixes when listing
+    /// \param collect_item_if if present, only items passing this predicate are
+    /// collected.
     /// \return future that becomes ready when the request is completed
     virtual ss::future<result<list_bucket_result, error_outcome>> list_objects(
       const bucket_name& name,
@@ -147,7 +157,9 @@ public:
       std::optional<object_key> start_after = std::nullopt,
       std::optional<size_t> max_keys = std::nullopt,
       std::optional<ss::sstring> continuation_token = std::nullopt,
-      ss::lowres_clock::duration timeout = http::default_connect_timeout)
+      ss::lowres_clock::duration timeout = http::default_connect_timeout,
+      std::optional<char> delimiter = std::nullopt,
+      std::optional<item_filter> collect_item_if = std::nullopt)
       = 0;
 
     /// Delete object from cloud storage

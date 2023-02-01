@@ -14,6 +14,7 @@
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/s3_error.h"
 #include "cloud_storage_clients/util.h"
+#include "cloud_storage_clients/xml_sax_parser.h"
 #include "hashing/secure.h"
 #include "http/client.h"
 #include "net/types.h"
@@ -52,6 +53,7 @@ struct aws_header_names {
     static constexpr boost::beast::string_view x_amz_tagging = "x-amz-tagging";
     static constexpr boost::beast::string_view x_amz_request_id
       = "x-amz-request-id";
+    static constexpr boost::beast::string_view delimiter = "delimiter";
 };
 
 struct aws_header_values {
@@ -160,7 +162,8 @@ request_creator::make_list_objects_v2_request(
   std::optional<object_key> prefix,
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
-  std::optional<ss::sstring> continuation_token) {
+  std::optional<ss::sstring> continuation_token,
+  std::optional<char> delimiter) {
     // GET /?list-type=2&prefix=photos/2006/&delimiter=/ HTTP/1.1
     // Host: example-bucket.s3.<Region>.amazonaws.com
     // x-amz-date: 20160501T000433Z
@@ -169,7 +172,10 @@ request_creator::make_list_objects_v2_request(
     auto host = fmt::format("{}.{}", name(), _ap());
     auto target = fmt::format("/?list-type=2");
     if (prefix.has_value()) {
-        target = fmt::format("/?list-type=2&prefix={}", (*prefix)().string());
+        target = fmt::format("{}&prefix={}", target, (*prefix)().string());
+    }
+    if (delimiter.has_value()) {
+        target = fmt::format("{}&delimiter={}", target, *delimiter);
     }
     header.method(boost::beast::http::verb::get);
     header.target(target);
@@ -191,6 +197,11 @@ request_creator::make_list_objects_v2_request(
         header.insert(
           aws_header_names::continuation_token,
           {continuation_token->data(), continuation_token->size()});
+    }
+
+    if (delimiter) {
+        header.insert(
+          aws_header_names::delimiter, std::string(1, delimiter.value()));
     }
 
     auto ec = _apply_credentials->add_auth(header);
@@ -325,49 +336,6 @@ request_creator::make_delete_objects_request(
 }
 
 // client //
-
-static s3_client::list_bucket_result iobuf_to_list_bucket_result(iobuf&& buf) {
-    try {
-        for (auto& frag : buf) {
-            vlog(
-              s3_log.trace,
-              "iobuf_to_list_bucket_result part {}",
-              ss::sstring{frag.get(), frag.size()});
-        }
-        s3_client::list_bucket_result result;
-        auto root = util::iobuf_to_ptree(std::move(buf), s3_log);
-        for (const auto& [tag, value] : root.get_child("ListBucketResult")) {
-            if (tag == "Contents") {
-                s3_client::list_bucket_item item;
-                for (const auto& [item_tag, item_value] : value) {
-                    if (item_tag == "Key") {
-                        item.key = item_value.get_value<ss::sstring>();
-                    } else if (item_tag == "Size") {
-                        item.size_bytes = item_value.get_value<size_t>();
-                    } else if (item_tag == "LastModified") {
-                        item.last_modified = util::parse_timestamp(
-                          item_value.get_value<ss::sstring>());
-                    } else if (item_tag == "ETag") {
-                        item.etag = item_value.get_value<ss::sstring>();
-                    }
-                }
-                result.contents.push_back(std::move(item));
-            } else if (tag == "IsTruncated") {
-                // read value as bool
-                result.is_truncated = value.get_value<bool>();
-            } else if (tag == "Prefix") {
-                result.prefix = value.get_value<ss::sstring>("");
-            } else if (tag == "NextContinuationToken") {
-                result.next_continuation_token = value.get_value<ss::sstring>(
-                  "");
-            }
-        }
-        return result;
-    } catch (...) {
-        vlog(s3_log.error, "!!error parse result {}", std::current_exception());
-        throw;
-    }
-}
 
 template<class ResultT = void>
 ss::future<ResultT>
@@ -697,11 +665,20 @@ s3_client::list_objects(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
+  std::optional<item_filter> collect_item_if) {
     const object_key dummy{""};
     co_return co_await send_request(
       do_list_objects_v2(
-        name, prefix, start_after, max_keys, continuation_token, timeout),
+        name,
+        prefix,
+        start_after,
+        max_keys,
+        continuation_token,
+        timeout,
+        delimiter,
+        std::move(collect_item_if)),
       name,
       dummy);
 }
@@ -712,34 +689,60 @@ ss::future<s3_client::list_bucket_result> s3_client::do_list_objects_v2(
   std::optional<object_key> start_after,
   std::optional<size_t> max_keys,
   std::optional<ss::sstring> continuation_token,
-  ss::lowres_clock::duration timeout) {
+  ss::lowres_clock::duration timeout,
+  std::optional<char> delimiter,
+  std::optional<item_filter> collect_item_if) {
     auto header = _requestor.make_list_objects_v2_request(
       name,
       std::move(prefix),
       std::move(start_after),
       max_keys,
-      continuation_token);
+      std::move(continuation_token),
+      delimiter);
     if (!header) {
         return ss::make_exception_future<list_bucket_result>(
           std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
-      .then([](const http::client::response_stream_ref& resp) mutable {
-          return util::drain_chunked_response_stream(resp).then(
-            [resp](iobuf outbuf) {
+      .then([pred = std::move(collect_item_if)](
+              const http::client::response_stream_ref& resp) mutable {
+          return resp->prefetch_headers().then(
+            [resp, gather_item_if = std::move(pred)]() mutable {
                 const auto& header = resp->get_headers();
                 if (header.result() != boost::beast::http::status::ok) {
-                    // We received error response so the outbuf contains
-                    // error digest instead of the result of the query
                     vlog(s3_log.warn, "S3 replied with error: {:l}", header);
-                    return parse_rest_error_response<
-                      s3_client::list_bucket_result>(
-                      header.result(), std::move(outbuf));
+
+                    // In the error path we drain the response stream fully, the
+                    // error response should not be very large.
+                    return util::drain_chunked_response_stream(resp).then(
+                      [result = header.result()](iobuf buf) {
+                          return parse_rest_error_response<list_bucket_result>(
+                            result, std::move(buf));
+                      });
                 }
-                auto res = iobuf_to_list_bucket_result(std::move(outbuf));
-                return ss::make_ready_future<list_bucket_result>(
-                  std::move(res));
+
+                return ss::do_with(
+                  resp->as_input_stream(),
+                  xml_sax_parser{},
+                  [pred = std::move(gather_item_if)](
+                    ss::input_stream<char>& stream, xml_sax_parser& p) mutable {
+                      p.start_parse(
+                        std::make_unique<aws_parse_impl>(std::move(pred)));
+                      return ss::do_until(
+                               [&stream] { return stream.eof(); },
+                               [&stream, &p] {
+                                   return stream.read().then(
+                                     [&p](ss::temporary_buffer<char>&& chunk) {
+                                         p.parse_chunk(std::move(chunk));
+                                     });
+                               })
+                        .then([&stream] { return stream.close(); })
+                        .then([&p] {
+                            p.end_parse();
+                            return p.result();
+                        });
+                  });
             });
       });
 }
