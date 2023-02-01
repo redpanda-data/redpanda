@@ -450,7 +450,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
     }
 }
 
-namespace {
+namespace detail {
 
 /// Split \p value between the elements of vector \p target in full, adding them
 /// to the elements already in the vector.
@@ -583,7 +583,8 @@ void dispense_negative_deltas(
     }
 }
 
-} // namespace
+} // namespace detail
+using namespace detail;
 
 ss::future<> snc_quota_manager::quota_balancer_update(
   const ingress_egress_state<std::optional<quota_t>> old_node_quota_default,

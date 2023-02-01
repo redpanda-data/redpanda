@@ -180,4 +180,17 @@ private:
     snc_quotas_probe _probe;
 };
 
+// Names exposed in this namespace are for unit test integration only
+namespace detail {
+snc_quota_manager::quota_t cap_to_ceiling(
+  snc_quota_manager::quota_t& value, snc_quota_manager::quota_t limit);
+void dispense_negative_deltas(
+  std::vector<snc_quota_manager::quota_t>& schedule,
+  snc_quota_manager::quota_t delta,
+  std::vector<snc_quota_manager::quota_t> quotas);
+void dispense_equally(
+  std::vector<snc_quota_manager::quota_t>& target,
+  snc_quota_manager::quota_t value);
+} // namespace detail
+
 } // namespace kafka
