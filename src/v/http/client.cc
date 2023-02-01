@@ -142,7 +142,11 @@ ss::future<reconnect_result_t> client::get_connected(
     const auto interval = 1s; // 500ms;
     while (!_connect_gate.is_closed() && current < deadline) {
         if (_as != nullptr) {
-            _as->check();
+            try {
+                _as->check();
+            } catch (...) {
+                co_return ss::coroutine::exception(std::current_exception());
+            }
         }
         // Reconnect attempts have to stop if:
         // - shutdown method was called
@@ -282,7 +286,11 @@ ss::future<> client::response_stream::prefetch_headers() {
 }
 
 ss::future<iobuf> client::response_stream::recv_some() {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::current_exception_as_future<iobuf>();
+    }
     if (!_prefetch.empty()) {
         // This code will only be executed if 'prefetch_headers' was called. It
         // can only be called once.
@@ -408,7 +416,11 @@ client::request_stream::send_some(ss::temporary_buffer<char>&& buf) {
 }
 
 ss::future<> client::request_stream::send_some(iobuf&& seq) {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::current_exception_as_future();
+    }
     vlog(_ctxlog.trace, "request_stream.send_some {}", seq.size_bytes());
     if (_serializer.is_header_done()) {
         // Fast path

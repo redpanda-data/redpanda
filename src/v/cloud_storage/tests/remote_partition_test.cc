@@ -28,6 +28,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
+#include "ssx/future-util.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/segment.h"
@@ -2176,6 +2177,62 @@ FIXTURE_TEST(
           headers_read.size(),
           total_batches - num_conf_batches - num_tx_batches);
     }
+}
+
+namespace {
+
+ss::future<> scan(
+  remote_partition& partition,
+  const storage::log_reader_config& reader_config,
+  ss::gate& g) {
+    gate_guard guard{g};
+    while (!g.is_closed()) {
+        try {
+            auto translating_reader = co_await partition.make_reader(
+              reader_config);
+            auto reader = std::move(translating_reader.reader);
+            auto headers_read = co_await reader.consume(
+              test_consumer(), model::no_timeout);
+        } catch (...) {
+            test_log.info("Error scanning: {}", std::current_exception());
+        }
+    }
+}
+
+} // namespace
+
+FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
+    constexpr int num_segments = 1000;
+    const auto [segment_layout, num_data_batches] = generate_segment_layout(
+      num_segments, 42, false);
+    auto segments = setup_s3_imposter(*this, segment_layout);
+    auto base = segments[0].base_offset;
+
+    auto remote_conf = this->get_configuration();
+    remote api(connection_limit(10), remote_conf, config_file);
+    api.start().get();
+    auto action = ss::defer([&api] { api.stop().get(); });
+
+    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
+      manifest_ntp, manifest_revision);
+
+    storage::log_reader_config reader_config(
+      base, model::offset::max(), ss::default_priority_class());
+    static auto bucket = cloud_storage_clients::bucket_name("bucket");
+    auto manifest = hydrate_manifest(api, bucket);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api, this->cache.local(), bucket);
+    partition->start().get();
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    ss::gate g;
+    ssx::background = scan(*partition, reader_config, g);
+    ss::maybe_yield().get();
+    ss::maybe_yield().get();
+    ss::maybe_yield().get();
+    ss::sleep(std::chrono::milliseconds(10)).get();
+    api.shutdown_connections();
+    g.close().get();
 }
 
 FIXTURE_TEST(
