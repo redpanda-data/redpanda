@@ -83,6 +83,12 @@ struct compacted_index {
         // version *must* be the last field
         int8_t version{current_version};
 
+        static constexpr size_t footer_size = sizeof(size) + sizeof(keys)
+                                              + sizeof(size_deprecated)
+                                              + sizeof(keys_deprecated)
+                                              + sizeof(flags) + sizeof(crc)
+                                              + sizeof(version);
+
         friend std::ostream&
         operator<<(std::ostream& o, const compacted_index::footer& f) {
             return o << "{size:" << f.size << ", keys:" << f.keys
@@ -90,6 +96,19 @@ struct compacted_index {
                      << ", version: " << (int)f.version << "}";
         }
     };
+
+    struct footer_v1 {
+        uint32_t size{0};
+        uint32_t keys{0};
+        footer_flags flags{0};
+        uint32_t crc{0}; // crc32
+        int8_t version{1};
+
+        static constexpr size_t footer_size = sizeof(size) + sizeof(keys)
+                                              + sizeof(flags) + sizeof(crc)
+                                              + sizeof(version);
+    };
+
     enum class recovery_state {
         /**
          * Index may be missing when either was deleted or not stored when
@@ -109,10 +128,6 @@ struct compacted_index {
          */
         index_recovered
     };
-    static constexpr size_t footer_size
-      = sizeof(footer::size) + sizeof(footer::keys)
-        + sizeof(footer::size_deprecated) + sizeof(footer::keys_deprecated)
-        + sizeof(footer::flags) + sizeof(footer::crc) + sizeof(footer::version);
 
     struct needs_rebuild_error final : public std::runtime_error {
     public:
