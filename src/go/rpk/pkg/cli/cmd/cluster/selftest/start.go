@@ -87,9 +87,9 @@ command.`,
 
 	// Collect arguments via command line
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Acknowledge warning prompt skipping read from stdin")
-	cmd.Flags().UintVar(&diskDurationMs, "disk-duration-ms", 5000,
+	cmd.Flags().UintVar(&diskDurationMs, "disk-duration-ms", 30000,
 		"The duration in milliseconds of individual disk test runs")
-	cmd.Flags().UintVar(&netDurationMs, "network-duration-ms", 5000,
+	cmd.Flags().UintVar(&netDurationMs, "network-duration-ms", 30000,
 		"The duration in milliseconds of individual disk test runs")
 	cmd.Flags().IntSliceVar(&onNodes, "participant-node-ids", nil,
 		"ids of nodes that the tests will run on. Omitting this implies all nodes.")
