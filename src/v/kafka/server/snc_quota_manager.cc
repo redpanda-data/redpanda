@@ -417,10 +417,10 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
     using split_t = decltype(std::div(quota_t{}, shard_count_t{}));
     ingress_egress_state<split_t> split{{0, 0}, {0, 0}};
     if (borrowers_count.in > 0) {
-        split.in = std::ldiv(collected.in, borrowers_count.in);
+        split.in = std::div(collected.in, borrowers_count.in);
     }
     if (borrowers_count.eg > 0) {
-        split.eg = std::ldiv(collected.eg, borrowers_count.eg);
+        split.eg = std::div(collected.eg, borrowers_count.eg);
     }
 
     const auto equal_share_or_0 =
