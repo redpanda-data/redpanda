@@ -56,20 +56,12 @@
 namespace cluster {
 namespace {
 
-inline bool contains_node(
-  model::node_id id, const std::vector<model::broker_shard>& replicas) {
-    return std::any_of(
-      replicas.cbegin(), replicas.cend(), [id](const model::broker_shard& bs) {
-          return bs.node_id == id;
-      });
-}
-
 bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
     if (!delta.previous_replica_set) {
         return false;
     }
     return has_local_replicas(self, delta.new_assignment.replicas)
-           && contains_node(self, *delta.previous_replica_set)
+           && contains_node(*delta.previous_replica_set, self)
            && !has_local_replicas(self, *delta.previous_replica_set);
 }
 
@@ -219,7 +211,7 @@ std::error_code check_configuration_update(
           change_revision);
         return errc::partition_configuration_revision_not_updated;
     }
-    const bool includes_self = contains_node(self, bs);
+    const bool includes_self = contains_node(bs, self);
 
     /*
      * if configuration includes current node, we expect configuration to be
@@ -981,7 +973,7 @@ controller_backend::process_partition_reconfiguration(
          * 1) shutdown partition instance
          * 2) create instance on target remote core
          */
-        if (contains_node(_self, target_assignment.replicas)) {
+        if (contains_node(target_assignment.replicas, _self)) {
             co_return co_await shutdown_on_current_shard(
               std::move(ntp), command_rev);
         }
@@ -1006,7 +998,7 @@ controller_backend::process_partition_reconfiguration(
         // Wait fo the operation to be finished on one of the nodes
         co_return errc::waiting_for_reconfiguration_finish;
     }
-    const auto cross_core_move = contains_node(_self, previous_replicas)
+    const auto cross_core_move = contains_node(previous_replicas, _self)
                                  && !has_local_replicas(
                                    _self, previous_replicas);
     /**
