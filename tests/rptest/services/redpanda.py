@@ -68,7 +68,12 @@ DEFAULT_LOG_ALLOW_LIST = [
     # This is expected when tests are intentionally run on low memory configurations
     re.compile(r"Memory: '\d+' below recommended"),
     # A client disconnecting is not bad behaviour on redpanda's part
-    re.compile(r"kafka rpc protocol.*(Connection reset by peer|Broken pipe)")
+    re.compile(r"kafka rpc protocol.*(Connection reset by peer|Broken pipe)"),
+
+    # With our current settings (--abort-on-seastar-bad-alloc) this will immediately
+    # be followed by a crash, and we'd rather the "repanda crashed" diagnostic instead
+    # of the bad log lines diagnostic as the failure reason for the test.
+    re.compile(r"Dumping seastar memory diagnostics")
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
