@@ -671,7 +671,6 @@ class RpkTool:
                         network_duration_ms=None,
                         only_disk=False,
                         only_network=False,
-                        only_connectivity=False,
                         node_ids=None):
         cmd = [
             self._rpk_binary(), '--api-urls',
@@ -685,8 +684,6 @@ class RpkTool:
             cmd += ['--only-disk-test']
         if only_network is True:
             cmd += ['--only-network-test']
-        if only_connectivity is True:
-            cmd += ['--only-connectivity-test']
         if node_ids is not None:
             ids = ",".join([str(x) for x in node_ids])
             cmd += ['--participants-node-ids', ids]
