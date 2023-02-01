@@ -593,7 +593,13 @@ members_manager::dispatch_join_to_seed_server(
     return f.then_wrapped([it, this, req](ss::future<ret_t> fut) {
         try {
             auto r = fut.get0();
-            if (r && r.value().success) {
+            if (r.has_error() || !r.value().success) {
+                vlog(
+                  clusterlog.warn,
+                  "Error joining cluster using {} seed server - {}",
+                  it->addr,
+                  r.has_error() ? r.error().message() : "not allowed to join");
+            } else {
                 return ss::make_ready_future<ret_t>(r);
             }
         } catch (...) {
@@ -783,7 +789,22 @@ members_manager::handle_join_request(join_node_request const req) {
                 co_return ret_t(
                   join_node_reply{false, model::unassigned_node_id});
             }
+            // if node was removed from the cluster doesn't allow it to rejoin
+            // with the same UUID
+            if (_members_table.local()
+                  .get_removed_node_metadata_ref(it->second)
+                  .has_value()) {
+                vlog(
+                  clusterlog.warn,
+                  "Preventing decommissioned node {} with UUID {} from joining "
+                  "the cluster",
+                  it->second,
+                  it->first);
+                co_return ret_t(
+                  join_node_reply{false, model::unassigned_node_id});
+            }
         }
+
         // Proceed to adding the node ID to the controller Raft group.
         // Presumably the node that made this join request started its Raft
         // subsystem with the node ID and is waiting to join the group.

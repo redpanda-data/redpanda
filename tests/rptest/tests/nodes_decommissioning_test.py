@@ -623,3 +623,52 @@ class NodesDecommissioningTest(EndToEndTest):
                                          omit_seeds_on_idx_one=False)
 
                 wait_until(has_partitions, 180, 2)
+
+    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    @parametrize(new_bootstrap=True)
+    @parametrize(new_bootstrap=False)
+    def test_node_is_not_allowed_to_join_after_restart(self, new_bootstrap):
+        self.start_redpanda(num_nodes=4, new_bootstrap=new_bootstrap)
+        self._create_topics()
+
+        admin = Admin(self.redpanda)
+
+        to_decommission = self.redpanda.nodes[-1]
+        to_decommission_id = self.redpanda.node_id(to_decommission)
+        self.logger.info(f"decommissioning node: {to_decommission_id}")
+        admin.decommission_broker(to_decommission_id)
+        self._wait_for_node_removed(to_decommission_id)
+
+        # restart decommissioned node without cleaning up the data directory,
+        # the node should not be allowed to join the cluster
+        # back as it was decommissioned
+        self.redpanda.stop_node(to_decommission)
+        self.redpanda.start_node(to_decommission,
+                                 auto_assign_node_id=new_bootstrap,
+                                 omit_seeds_on_idx_one=not new_bootstrap,
+                                 skip_readiness_check=True)
+
+        # wait until decommissioned node attempted to join the cluster back
+        def tried_to_join():
+            # allow fail as `grep` return 1 when no entries matches
+            # the ssh access shouldn't be a problem as only few lines are transferred
+            logs = to_decommission.account.ssh_output(
+                f'tail -n 200 {RedpandaService.STDOUT_STDERR_CAPTURE} | grep members_manager | grep WARN',
+                allow_fail=True).decode()
+
+            # check if there are at least 3 failed join attempts
+            return sum([
+                1 for l in logs.splitlines() if "Error joining cluster" in l
+            ]) >= 3
+
+        wait_until(tried_to_join, 20, 1)
+
+        assert len(admin.get_brokers(node=self.redpanda.nodes[0])) == 3
+        self.redpanda.stop_node(to_decommission)
+        # clean node and restart it, it should join the cluster
+        self.redpanda.clean_node(to_decommission, preserve_logs=True)
+        self.redpanda.start_node(to_decommission,
+                                 omit_seeds_on_idx_one=not new_bootstrap,
+                                 auto_assign_node_id=new_bootstrap)
+
+        assert len(admin.get_brokers(node=self.redpanda.nodes[0])) == 4
