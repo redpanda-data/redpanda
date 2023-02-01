@@ -46,6 +46,7 @@ type bundleParams struct {
 	logsLimitBytes          int
 	controllerLogLimitBytes int
 	timeout                 time.Duration
+	metricsInterval         time.Duration
 }
 
 func NewCommand(fs afero.Fs) *cobra.Command {
@@ -76,7 +77,8 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		controllerLogsSizeLimit string
 		namespace               string
 
-		timeout time.Duration
+		timeout         time.Duration
+		metricsInterval time.Duration
 	)
 	command := &cobra.Command{
 		Use:   "bundle",
@@ -120,6 +122,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 				logsLimitBytes:          int(logsLimit),
 				controllerLogLimitBytes: int(controllerLogsLimit),
 				timeout:                 timeout,
+				metricsInterval:         metricsInterval,
 			}
 
 			// to execute the appropriate bundle we look for
@@ -158,8 +161,14 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
-		10*time.Second,
+		12*time.Second,
 		"How long to wait for child commands to execute (e.g. '30s', '1.5m')",
+	)
+	command.Flags().DurationVar(
+		&metricsInterval,
+		"metrics-interval",
+		10*time.Second,
+		"Interval between metrics snapshots (e.g. '30s', '1.5m')",
 	)
 	command.Flags().StringVar(
 		&logsSince,

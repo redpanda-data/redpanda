@@ -77,7 +77,7 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	} else {
 		steps = append(steps, []step{
 			saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.cfg, adminAddresses),
-			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.cfg, adminAddresses),
+			saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.cfg, adminAddresses, bp.metricsInterval),
 		}...)
 	}
 	for _, s := range steps {
@@ -193,7 +193,7 @@ func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, 
 //   - Node Config: /v1/node_config
 //   - Prometheus Metrics: /metrics and /public_metrics
 //   - Cluster View: v1/cluster_view
-func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cfg *config.Config, adminAddresses []string) step {
+func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cfg *config.Config, adminAddresses []string, metricsInterval time.Duration) step {
 	return func() error {
 		var rerrs *multierror.Error
 		var funcs []func() error
@@ -213,18 +213,37 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, c
 				continue
 			}
 
+			aName := sanitizeName(a)
 			r := []func() error{
 				func() error {
-					return requestAndSave(ctx, ps, fmt.Sprintf("admin/node_config_%v.json", a), cl.RawNodeConfig)
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/node_config_%v.json", aName), cl.RawNodeConfig)
 				},
 				func() error {
-					return requestAndSave(ctx, ps, fmt.Sprintf("admin/cluster_view_%v.json", a), cl.ClusterView)
+					return requestAndSave(ctx, ps, fmt.Sprintf("admin/cluster_view_%v.json", aName), cl.ClusterView)
 				},
 				func() error {
-					return requestAndSave(ctx, ps, fmt.Sprintf("metrics/metric_%v.txt", a), cl.PrometheusMetrics)
+					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_metric.txt", aName), cl.PrometheusMetrics)
+					if err != nil {
+						return err
+					}
+					select {
+					case <-time.After(metricsInterval):
+						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metric.txt", aName), cl.PrometheusMetrics)
+					case <-ctx.Done():
+						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metric.txt", aName), cl.PrometheusMetrics)
+					}
 				},
 				func() error {
-					return requestAndSave(ctx, ps, fmt.Sprintf("metrics/public_metrics_%v.txt", a), cl.PublicMetrics)
+					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_public_metrics.txt", aName), cl.PublicMetrics)
+					if err != nil {
+						return err
+					}
+					select {
+					case <-time.After(metricsInterval):
+						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_public_metrics.txt", aName), cl.PublicMetrics)
+					case <-ctx.Done():
+						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_public_metrics.txt", aName), cl.PublicMetrics)
+					}
 				},
 			}
 			funcs = append(funcs, r...)
@@ -410,4 +429,16 @@ func parseJournalTime(str string, now time.Time) (time.Time, error) {
 		}
 		return adjustedTime, nil
 	}
+}
+
+// sanitizeName replace any of the following characters with "-": "<", ">", ":",
+// `"`, "/", "|", "?", "*". This is to avoid having forbidden names in Windows
+// environments.
+func sanitizeName(name string) string {
+	forbidden := []string{"<", ">", ":", `"`, "/", `\`, "|", "?", "*"}
+	r := name
+	for _, s := range forbidden {
+		r = strings.Replace(r, s, "-", -1)
+	}
+	return r
 }
