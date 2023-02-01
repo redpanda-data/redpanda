@@ -72,7 +72,9 @@ public:
     void start() {
         // Run produce in the background until stopped
         // or produced everything.
-        (void)produce();
+        (void)produce().handle_exception([this] (std::exception_ptr) {
+            _pcond.broken();
+        });
     }
 
     /// Stop consuming the input stream
@@ -177,8 +179,7 @@ private:
                 err = std::current_exception();
             }
             if (err) {
-                _pcond.broken();
-                std::rethrow_exception(err);
+                co_return co_await ss::make_exception_future(err);
             }
             ++_cnt;
             _buffer.push_back(data_item{
