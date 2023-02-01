@@ -669,6 +669,7 @@ inline void rjson_serialize(
     write_member(w, "retention_duration", itu.retention_duration);
     write_member(w, "shadow_indexing", itu.shadow_indexing);
     write_member(w, "remote_delete", itu.remote_delete);
+    write_member(w, "segment_ms", itu.segment_ms);
     w.EndObject();
 }
 
@@ -683,6 +684,7 @@ read_value(json::Value const& rd, cluster::incremental_topic_updates& itu) {
     read_member(rd, "retention_duration", itu.retention_duration);
     read_member(rd, "shadow_indexing", itu.shadow_indexing);
     read_member(rd, "remote_delete", itu.remote_delete);
+    read_member(rd, "segment_ms", itu.segment_ms);
 }
 
 inline void rjson_serialize(
