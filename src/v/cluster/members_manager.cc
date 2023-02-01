@@ -764,7 +764,20 @@ members_manager::handle_join_request(join_node_request const req) {
                 co_return ret_t(
                   join_node_reply{false, model::unassigned_node_id});
             }
+            // if node was removed from the cluster doesn't allow it to rejoin
+            // with the same UUID
+            if (_members_table.local().contains_removed(it->second)) {
+                vlog(
+                  clusterlog.warn,
+                  "Preventing decommissioned node {} with UUID {} from joining "
+                  "the cluster",
+                  it->second,
+                  it->first);
+                co_return ret_t(
+                  join_node_reply{false, model::unassigned_node_id});
+            }
         }
+
         // Proceed to adding the node ID to the controller Raft group.
         // Presumably the node that made this join request started its Raft
         // subsystem with the node ID and is waiting to join the group.
