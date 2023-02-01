@@ -1547,7 +1547,9 @@ class RedpandaService(Service):
     def raise_on_bad_logs(self, allow_list=None):
         """
         Raise a BadLogLines exception if any nodes' logs contain errors
-        not permitted by `allow_list`
+        not permitted by `allow_list`. The `allow_list` is a list of
+        unanchored regexes (i.e., they match if they occur anywhere in the
+        line even without leading and trailing wildcards).
 
         :param logger: the test's logger, so that reports of bad lines are
                        prefixed with test name.
