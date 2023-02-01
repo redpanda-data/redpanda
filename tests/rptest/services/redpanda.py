@@ -713,6 +713,13 @@ class RedpandaService(Service):
         preamble, res_args = self._resource_settings.to_cli(
             dedicated_node=self._dedicated_nodes)
 
+        # each node will create its own copy of the .profraw file
+        # since each node creates a redpanda broker.
+        if self.cov_enabled():
+            self._environment.update(
+                dict(LLVM_PROFILE_FILE=
+                     f"\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\""))
+
         # Pass environment variables via FOO=BAR shell expressions
         env_preamble = " ".join(
             [f"{k}={v}" for (k, v) in self._environment.items()])
@@ -724,12 +731,6 @@ class RedpandaService(Service):
             f" --logger-log-level=exception=debug:archival=debug:io=debug:cloud_storage=debug "
             f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
-
-        # set llvm_profile var for code coverae
-        # each node will create its own copy of the .profraw file
-        # since each node creates a redpanda broker.
-        if self.cov_enabled():
-            cmd = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" " + cmd
 
         node.account.ssh(cmd)
 
