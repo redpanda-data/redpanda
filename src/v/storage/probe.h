@@ -94,6 +94,10 @@ public:
     void set_compaction_ratio(double r) { _compaction_ratio = r; }
 
     int64_t get_batch_parse_errors() const { return _batch_parse_errors; }
+    /**
+     * Clears all probe related metrics
+     */
+    void clear_metrics() { _metrics.clear(); }
 
 private:
     uint64_t _partition_bytes = 0;

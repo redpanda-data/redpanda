@@ -100,8 +100,8 @@ ss::future<> disk_log_impl::remove() {
           remove_segment_permanently(s, "disk_log_impl::remove()"));
     }
 
-    co_await _readers_cache->stop().then(
-      [this, permanent_delete = std::move(permanent_delete)]() mutable {
+    co_await _readers_cache->stop()
+      .then([this, permanent_delete = std::move(permanent_delete)]() mutable {
           // wait for all futures
           return ss::when_all_succeed(
                    permanent_delete.begin(), permanent_delete.end())
@@ -118,7 +118,8 @@ ss::future<> disk_log_impl::remove() {
                   kvstore::key_space::storage,
                   internal::clean_segment_key(config().ntp()));
             });
-      });
+      })
+      .finally([this] { _probe.clear_metrics(); });
 }
 
 ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
@@ -152,6 +153,8 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
                 });
           });
     });
+
+    _probe.clear_metrics();
 
     if (_segs.size() && !errors) {
         auto clean_seg = _segs.back()->filename();
