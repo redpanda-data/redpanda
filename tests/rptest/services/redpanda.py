@@ -1114,7 +1114,8 @@ class RedpandaService(Service):
                    first_start=False,
                    expect_fail: bool = False,
                    auto_assign_node_id: bool = False,
-                   omit_seeds_on_idx_one: bool = True):
+                   omit_seeds_on_idx_one: bool = True,
+                   skip_readiness_check: bool = False):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -1159,7 +1160,7 @@ class RedpandaService(Service):
                     err_msg=
                     f"Redpanda processes did not terminate on {node.name} during startup as expected"
                 )
-            else:
+            elif not skip_readiness_check:
                 wait_until(
                     lambda: self.__is_status_ready(node),
                     timeout_sec=timeout,
