@@ -36,6 +36,7 @@
 #include <boost/numeric/conversion/cast.hpp>
 #include <fmt/ostream.h>
 
+#include <iterator>
 #include <type_traits>
 
 namespace kafka {
@@ -167,7 +168,7 @@ static ss::future<metadata_response::topic> create_topic(
         metadata_response::topic t;
         t.name = std::move(topic);
         t.error_code = error_code::broker_not_available;
-        return ss::make_ready_future<metadata_response::topic>(t);
+        return ss::make_ready_future<metadata_response::topic>(std::move(t));
     }
     // default topic configuration
     cluster::topic_configuration cfg{
@@ -326,8 +327,11 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
     return ss::when_all_succeed(new_topics.begin(), new_topics.end())
       .then([res = std::move(res)](
               std::vector<metadata_response::topic> topics) mutable {
-          res.insert(res.end(), topics.begin(), topics.end());
-          return res;
+          res.insert(
+            res.end(),
+            std::make_move_iterator(topics.begin()),
+            std::make_move_iterator(topics.end()));
+          return std::move(res);
       });
 }
 
