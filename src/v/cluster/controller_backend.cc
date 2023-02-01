@@ -318,6 +318,94 @@ ss::future<> controller_backend::bootstrap_controller_backend() {
     });
 }
 
+namespace {
+using deltas_t = controller_backend::deltas_t;
+deltas_t::iterator
+find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
+    /**
+     * Find interrupting operation following the one that is currently
+     * processed. Following rules apply:
+     *
+     * - all operations i.e. update, cancel_update, and force abort must be
+     * interrupted by deletion
+     *
+     * - update & cancel update operations may be interrupted by
+     * force_abort_update operation
+     *
+     * - update operation may be interrupted by cancel_update operation or
+     * force_abort_update operation
+     *
+     */
+
+    // only reconfiguration operations may be interrupted
+    if (!current_it->delta.is_reconfiguration_operation()) {
+        return deltas.end();
+    }
+
+    return std::find_if(
+      current_it,
+      deltas.end(),
+      [&current_it](const controller_backend::delta_metadata& m) {
+          switch (m.delta.type) {
+          case topic_table::delta::op_type::del:
+              return true;
+          case topic_table::delta::op_type::cancel_update:
+              return current_it->delta.type
+                       == topic_table::delta::op_type::update
+                     && m.delta.new_assignment.replicas
+                          == current_it->delta.previous_replica_set;
+          case topic_table::delta::op_type::force_abort_update:
+              return (
+                current_it->delta.type == topic_table::delta::op_type::update
+                && m.delta.new_assignment.replicas
+                     == current_it->delta.previous_replica_set) || (
+                current_it->delta.type == topic_table::delta::op_type::cancel_update
+                && m.delta.new_assignment.replicas
+                     == current_it->delta.new_assignment.replicas);
+          default:
+              return false;
+          }
+      });
+}
+ss::future<std::error_code> revert_configuration_update(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replicas,
+  const topic_table_delta::revision_map_t& replica_revisions,
+  model::revision_id rev,
+  ss::lw_shared_ptr<partition> p,
+  members_table& members) {
+    auto brokers = create_brokers_set(replicas, replica_revisions, members);
+    vlog(
+      clusterlog.debug,
+      "[{}] reverting already finished reconfiguration. Revision: {}, replica "
+      "set: {}",
+      ntp,
+      rev,
+      replicas);
+    co_return co_await p->update_replica_set(std::move(brokers), rev);
+}
+
+bool is_finishing_operation(
+  const topic_table::delta& operation, const topic_table::delta& candidate) {
+    if (candidate.type != topic_table_delta::op_type::update_finished) {
+        return false;
+    }
+
+    if (operation.new_assignment == candidate.new_assignment) {
+        return true;
+    }
+    if (
+      operation.type == topic_table_delta::op_type::cancel_update
+      || operation.type == topic_table_delta::op_type::force_abort_update) {
+        return operation.previous_replica_set
+               == candidate.new_assignment.replicas;
+    }
+
+    return false;
+}
+
+} // namespace
+
 ss::future<> controller_backend::do_bootstrap() {
     return ss::parallel_for_each(
       _topic_deltas.begin(),
@@ -518,94 +606,6 @@ void controller_backend::housekeeping() {
             vlog(clusterlog.warn, "error during reconciliation - {}", e);
         });
 }
-
-namespace {
-using deltas_t = controller_backend::deltas_t;
-deltas_t::iterator
-find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
-    /**
-     * Find interrupting operation following the one that is currently
-     * processed. Following rules apply:
-     *
-     * - all operations i.e. update, cancel_update, and force abort must be
-     * interrupted by deletion
-     *
-     * - update & cancel update operations may be interrupted by
-     * force_abort_update operation
-     *
-     * - update operation may be interrupted by cancel_update operation or
-     * force_abort_update operation
-     *
-     */
-
-    // only reconfiguration operations may be interrupted
-    if (!current_it->delta.is_reconfiguration_operation()) {
-        return deltas.end();
-    }
-
-    return std::find_if(
-      current_it,
-      deltas.end(),
-      [&current_it](const controller_backend::delta_metadata& m) {
-          switch (m.delta.type) {
-          case topic_table::delta::op_type::del:
-              return true;
-          case topic_table::delta::op_type::cancel_update:
-              return current_it->delta.type
-                       == topic_table::delta::op_type::update
-                     && m.delta.new_assignment.replicas
-                          == current_it->delta.previous_replica_set;
-          case topic_table::delta::op_type::force_abort_update:
-              return (
-                current_it->delta.type == topic_table::delta::op_type::update
-                && m.delta.new_assignment.replicas
-                     == current_it->delta.previous_replica_set) || (
-                current_it->delta.type == topic_table::delta::op_type::cancel_update
-                && m.delta.new_assignment.replicas
-                     == current_it->delta.new_assignment.replicas);
-          default:
-              return false;
-          }
-      });
-}
-ss::future<std::error_code> revert_configuration_update(
-  const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
-  model::revision_id rev,
-  ss::lw_shared_ptr<partition> p,
-  members_table& members) {
-    auto brokers = create_brokers_set(replicas, replica_revisions, members);
-    vlog(
-      clusterlog.debug,
-      "[{}] reverting already finished reconfiguration. Revision: {}, replica "
-      "set: {}",
-      ntp,
-      rev,
-      replicas);
-    co_return co_await p->update_replica_set(std::move(brokers), rev);
-}
-
-bool is_finishing_operation(
-  const topic_table::delta& operation, const topic_table::delta& candidate) {
-    if (candidate.type != topic_table_delta::op_type::update_finished) {
-        return false;
-    }
-
-    if (operation.new_assignment == candidate.new_assignment) {
-        return true;
-    }
-    if (
-      operation.type == topic_table_delta::op_type::cancel_update
-      || operation.type == topic_table_delta::op_type::force_abort_update) {
-        return operation.previous_replica_set
-               == candidate.new_assignment.replicas;
-    }
-
-    return false;
-}
-
-} // namespace
 
 ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     bool stop = false;
