@@ -36,6 +36,7 @@
 #include <boost/numeric/conversion/cast.hpp>
 #include <fmt/ostream.h>
 
+#include <iterator>
 #include <type_traits>
 
 namespace kafka {
@@ -107,7 +108,6 @@ metadata_response::topic make_topic_response_from_topic_metadata(
   const cluster::topic_metadata& tp_md,
   const is_node_isolated_or_decommissioned is_node_isolated) {
     metadata_response::topic tp;
-    tp.partitions.reserve(tp_md.get_assignments().size());
     tp.error_code = error_code::none;
     model::topic_namespace_view tp_ns = tp_md.get_configuration().tp_ns;
     tp.name = tp_md.get_configuration().tp_ns.tp;
@@ -167,7 +167,7 @@ static ss::future<metadata_response::topic> create_topic(
         metadata_response::topic t;
         t.name = std::move(topic);
         t.error_code = error_code::broker_not_available;
-        return ss::make_ready_future<metadata_response::topic>(t);
+        return ss::make_ready_future<metadata_response::topic>(std::move(t));
     }
     // default topic configuration
     cluster::topic_configuration cfg{
@@ -188,7 +188,8 @@ static ss::future<metadata_response::topic> create_topic(
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = map_topic_error_code(res[0].ec);
-              return ss::make_ready_future<metadata_response::topic>(t);
+              return ss::make_ready_future<metadata_response::topic>(
+                std::move(t));
           }
           auto tp_md = md_cache.get_topic_metadata(res[0].tp_ns);
 
@@ -196,7 +197,8 @@ static ss::future<metadata_response::topic> create_topic(
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = error_code::invalid_topic_exception;
-              return ss::make_ready_future<metadata_response::topic>(t);
+              return ss::make_ready_future<metadata_response::topic>(
+                std::move(t));
           }
 
           return wait_for_topics(
@@ -324,8 +326,11 @@ static ss::future<std::vector<metadata_response::topic>> get_topic_metadata(
     return ss::when_all_succeed(new_topics.begin(), new_topics.end())
       .then([res = std::move(res)](
               std::vector<metadata_response::topic> topics) mutable {
-          res.insert(res.end(), topics.begin(), topics.end());
-          return res;
+          res.insert(
+            res.end(),
+            std::make_move_iterator(topics.begin()),
+            std::make_move_iterator(topics.end()));
+          return std::move(res);
       });
 }
 

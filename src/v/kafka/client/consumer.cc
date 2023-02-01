@@ -265,8 +265,8 @@ consumer::get_subscribed_topic_metadata() {
           std::vector<metadata_response::topic> topics;
           topics.reserve(_subscribed_topics.size());
           std::set_intersection(
-            res.data.topics.begin(),
-            res.data.topics.end(),
+            std::make_move_iterator(res.data.topics.begin()),
+            std::make_move_iterator(res.data.topics.end()),
             _subscribed_topics.begin(),
             _subscribed_topics.end(),
             std::back_inserter(topics),
