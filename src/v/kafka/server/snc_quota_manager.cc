@@ -483,72 +483,103 @@ quota_t cap_to_ceiling(quota_t& value, const quota_t limit) {
     return 0;
 }
 
-/// If \p delta is negative, splits its value accourding to \p surplus values:
-/// - amount under total surplus is split pro rata to \p surplus amounts
-/// - amount over total surplus is split equally. Values in \p schedule
-/// are added to.
-/// \pre schedule.size() == surplus.size()
+/// If \p delta is negative, splits its value pro rata to \p quotas values and
+/// into the slices limited by \p quota values. The slices are added to the
+/// elements of \p schedule.
+/// \pre sum(\p quotas) < abs(delta)
+/// \pre schedule.size() == quotas.size()
+/// \pre 0 <= quotas[i] for any i
 void dispense_negative_deltas(
-  std::vector<quota_t>& schedule,
-  quota_t& delta,
-  const std::vector<quota_t>& surplus) {
+  std::vector<quota_t>& schedule, quota_t delta, std::vector<quota_t> quotas) {
+    if (unlikely(schedule.size() != quotas.size())) {
+        vlog(
+          klog.error,
+          "Schedule and quotas sizes must be equal. schedule: {}, quotas: {}",
+          schedule,
+          quotas);
+        return;
+    }
     if (delta >= 0) {
         return;
     }
 
-    const quota_t total_surplus = std::reduce(
-      surplus.cbegin(), surplus.cend(), quota_t{0}, std::plus{});
-    if (delta > -total_surplus) {
-        // distribute the delta between the shards pro rata to their surpluses
-        quota_t remainder = delta;
-        for (size_t k = 0; k != ss::smp::count; ++k) {
-            const quota_t share = muldiv(delta, surplus.at(k), total_surplus);
-            schedule.at(k) += share;
-            remainder -= share;
-        }
-        // there may be some undistributed remainder left due to trunction,
-        // and it must be non-positive
-        if (remainder > 0) {
-            vlog(
-              klog.error,
-              "qb - Expected {} <= 0; delta: {}, total_surplus: {}, surpluses: "
-              "{}",
-              remainder,
-              delta,
-              total_surplus,
-              surplus);
-            return;
-        }
-        // distribute the remainder equally between the shards
-        if (remainder < 0) {
-            // shard's share rounded to the floor (towards -inf)
-            const quota_t share = (remainder + 1)
-                                    / static_cast<quota_t>(schedule.size())
-                                  - 1;
-            for (quota_t& s : schedule) {
-                const quota_t d = std::max(share, remainder);
-                remainder -= d;
-                s += d;
+    vlog(
+      klog.trace,
+      "qb - dispense_negative_deltas ( schedule: {}, quotas: {}, delta: {}",
+      schedule,
+      quotas,
+      delta);
+
+    const auto total_quotas = std::reduce(
+      quotas.cbegin(), quotas.cend(), quota_t{0}, std::plus{});
+    if (total_quotas != 0) {
+        // dispense delta pro rate to quotas
+        const double delta_d = delta;
+        for (size_t k = 0; k != schedule.size(); ++k) {
+            // cannot use integer arithmetic here because it is not uncommon for
+            // all the multipliers and the divisor to be fairly large int64s
+            quota_t share = std::llround(delta_d * quotas[k] / total_quotas);
+            // share can happen to be slightly bigger than the remaining delta
+            // at the last few iterations due to FP rounding, don't let it stay
+            // so
+            if (const quota_t overshare = std::abs(share) - std::abs(delta);
+                overshare > 0) {
+                if (unlikely(overshare > static_cast<quota_t>(k) + 1)) {
+                    vlog(
+                      klog.error,
+                      "qb - share {} ≫ delta_remainder {}, delta: {}, quotas: "
+                      "{}, quotas: {}, k: {}",
+                      share,
+                      delta,
+                      delta_d,
+                      quotas,
+                      quotas,
+                      k);
+                }
+                share = delta;
             }
-        }
-
-    } else { // delta <= -total_surplus
-
-        // use the entire amount of surpluses of each shard towards the delta
-        for (size_t k = 0; k != ss::smp::count; ++k) {
-            const quota_t share = -surplus.at(k);
-            schedule.at(k) += share;
+            // limit share to the value of quota on the shard
+            if (share < -quotas[k]) {
+                share = -quotas[k];
+            }
+            quotas[k] -= std::abs(share);
+            schedule[k] += share;
             delta -= share;
         }
-        // the rest equally
-        auto share = std::div(delta, ss::smp::count);
-        for (quota_t& s : schedule) {
-            s += share.quot;
-            if (share.rem < 0) {
-                s += -1;
-                share.quot -= -1;
-            }
-        }
+    }
+
+    // the remaining delta after this operation should not be larger than
+    // schedule.size() because the amount has been dispensed
+    // pro rata to the quotas, and the original delta is never bigger than
+    // the sum of quotas
+    if (delta == 0) {
+        return;
+    }
+    if (unlikely(static_cast<uint64_t>(-delta) > schedule.size())) {
+        vlog(klog.error, "qb - Remaining delta is too big: {}", delta);
+    }
+
+    // distribute the remaining delta equally between the shards that still have
+    // some quota left
+    const size_t quotas_left = std::count_if(
+      quotas.cbegin(), quotas.cend(), [](const quota_t v) { return v > 0; });
+    if (unlikely(quotas_left == 0)) {
+        vlog(
+          klog.error,
+          "qb - No shards to distribute the remianing delta: {}",
+          delta);
+        return;
+    }
+    // shard share rounded to the floor (towards -inf)
+    const quota_t share = (delta + 1) / static_cast<quota_t>(quotas_left) - 1;
+    for (size_t k = 0; k != schedule.size(); ++k) {
+        const auto d = std::max<quota_t>({share, delta, -quotas[k]});
+        delta -= d;
+        schedule[k] += d;
+        quotas[k] += d;
+    }
+    if (delta != 0) {
+        vlog(klog.error, "qb - Undispensed remaining delta: {}", delta);
     }
 }
 
@@ -624,7 +655,7 @@ ss::future<> snc_quota_manager::quota_balancer_update(
         // cap negative delta at -(total surrenderable quota),
         // difference between the required delta and the delta that can be
         // acquired goes towards the node deficit
-        const auto total_quota = co_await container().map_reduce0(
+        const auto quotas = co_await container().map(
           [](const snc_quota_manager& qm) {
               // minimum quota value for a shard is 1, remove that minimum
               // from the surrenderable quota amount reported
@@ -632,24 +663,24 @@ ss::future<> snc_quota_manager::quota_balancer_update(
                      - ingress_egress_state<quota_t>{
                        bottomless_token_bucket::min_quota,
                        bottomless_token_bucket::min_quota};
-          },
+          });
+        const auto total_quota = std::reduce(
+          quotas.cbegin(),
+          quotas.cend(),
           ingress_egress_state<quota_t>{0, 0},
           std::plus{});
+
         _node_deficit.in += cap_to_ceiling(deltas.in, -total_quota.in);
         _node_deficit.eg += cap_to_ceiling(deltas.eg, -total_quota.eg);
         if (!is_zero(_node_deficit)) {
             vlog(klog.trace, "qb - Node deficit: {}", _node_deficit);
         }
 
-        const auto surplus_aos = co_await container().map(
-          [](snc_quota_manager& qm) {
-              qm.refill_buckets(clock::now());
-              return qm.get_surplus();
-          });
-
-        const auto surplus_soa = to_soa_layout(surplus_aos);
-        dispense_negative_deltas(schedule.in, deltas.in, surplus_soa.in);
-        dispense_negative_deltas(schedule.eg, deltas.eg, surplus_soa.eg);
+        auto quotas_soa = to_soa_layout(quotas);
+        dispense_negative_deltas(
+          schedule.in, deltas.in, std::move(quotas_soa.in));
+        dispense_negative_deltas(
+          schedule.eg, deltas.eg, std::move(quotas_soa.eg));
     }
     // postive deltas are disensed equally
     if (deltas.in > 0) {
@@ -753,24 +784,6 @@ void snc_quota_manager::adjust_quota(
     f(_shard_quota.in, delta.in, "in");
     f(_shard_quota.eg, delta.eg, "eg");
     vlog(klog.trace, "qm - Adjust quota: {} -> {}", delta, _shard_quota);
-}
-
-snc_quota_manager::quota_t
-snc_quota_manager::dispense_quota_amount::get_delta_or_0() const noexcept {
-    if (amount_is == amount_t::delta) {
-        return amount;
-    } else {
-        return 0;
-    }
-}
-
-std::optional<snc_quota_manager::quota_t>
-snc_quota_manager::dispense_quota_amount::get_value() const noexcept {
-    if (amount_is == amount_t::value) {
-        return amount;
-    } else {
-        return std::nullopt;
-    }
 }
 
 } // namespace kafka
