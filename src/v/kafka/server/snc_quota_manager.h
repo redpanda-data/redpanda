@@ -149,8 +149,8 @@ private:
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
     config::binding<std::chrono::milliseconds>
       _kafka_quota_balancer_node_period;
-    config::binding<double> _kafka_quota_balancer_min_shard_thoughput_ratio;
-    config::binding<quota_t> _kafka_quota_balancer_min_shard_thoughput_bps;
+    config::binding<double> _kafka_quota_balancer_min_shard_throughput_ratio;
+    config::binding<quota_t> _kafka_quota_balancer_min_shard_throughput_bps;
 
     // operational, only used in the balancer shard
     ss::timer<ss::lowres_clock> _balancer_timer;

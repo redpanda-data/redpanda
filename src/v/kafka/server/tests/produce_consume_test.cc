@@ -241,7 +241,7 @@ struct throughput_limits_fixure : prod_consume_fixture {
         _rate_minimum = rate_minimum;
         ss::smp::invoke_on_all([rate_minimum] {
             config::shard_local_cfg()
-              .get("kafka_quota_balancer_min_shard_thoughput_bps")
+              .get("kafka_quota_balancer_min_shard_throughput_bps")
               .set_value(rate_minimum);
         }).get0();
     }
@@ -414,7 +414,7 @@ FIXTURE_TEST(test_node_throughput_limits_balanced, throughput_limits_fixure) {
       std::make_optional(rate_limit_out));
     config_set("fetch_max_bytes", batch_size);
     config_set("max_kafka_throttle_delay_ms", 60'000ms);
-    config_set("kafka_quota_balancer_min_shard_thoughput_ratio", 0.);
+    config_set("kafka_quota_balancer_min_shard_throughput_ratio", 0.);
     config_set_window_width(100ms);
     config_set_balancer_period(50ms);
     config_set_rate_minimum(250);

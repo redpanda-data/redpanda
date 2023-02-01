@@ -86,12 +86,12 @@ snc_quota_manager::snc_quota_manager()
       config::shard_local_cfg().kafka_quota_balancer_window.bind())
   , _kafka_quota_balancer_node_period(
       config::shard_local_cfg().kafka_quota_balancer_node_period.bind())
-  , _kafka_quota_balancer_min_shard_thoughput_ratio(
+  , _kafka_quota_balancer_min_shard_throughput_ratio(
       config::shard_local_cfg()
-        .kafka_quota_balancer_min_shard_thoughput_ratio.bind())
-  , _kafka_quota_balancer_min_shard_thoughput_bps(
+        .kafka_quota_balancer_min_shard_throughput_ratio.bind())
+  , _kafka_quota_balancer_min_shard_throughput_bps(
       config::shard_local_cfg()
-        .kafka_quota_balancer_min_shard_thoughput_bps.bind())
+        .kafka_quota_balancer_min_shard_throughput_bps.bind())
   , _node_quota_default{calc_node_quota_default()}
   , _shard_quota{
       .in {node_to_shard_quota(_node_quota_default.in),
@@ -120,9 +120,9 @@ snc_quota_manager::snc_quota_manager()
             arm_balancer_timer();
         }
     });
-    _kafka_quota_balancer_min_shard_thoughput_ratio.watch(
+    _kafka_quota_balancer_min_shard_throughput_ratio.watch(
       [this] { update_shard_quota_minimum(); });
-    _kafka_quota_balancer_min_shard_thoughput_bps.watch(
+    _kafka_quota_balancer_min_shard_throughput_bps.watch(
       [this] { update_shard_quota_minimum(); });
 
     if (ss::this_shard_id() == quota_balancer_shard) {
@@ -261,9 +261,9 @@ void snc_quota_manager::update_shard_quota_minimum() {
         const auto shard_quota_default = node_to_shard_quota(
           node_quota_default);
         return std::max<quota_t>(
-          _kafka_quota_balancer_min_shard_thoughput_ratio()
+          _kafka_quota_balancer_min_shard_throughput_ratio()
             * shard_quota_default,
-          _kafka_quota_balancer_min_shard_thoughput_bps());
+          _kafka_quota_balancer_min_shard_throughput_bps());
     };
     _shard_quota_minimum.in = f(_node_quota_default.in);
     _shard_quota_minimum.eg = f(_node_quota_default.eg);
