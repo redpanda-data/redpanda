@@ -236,6 +236,10 @@ DEFAULT_LOG_ALLOW_LIST: list[CompiledLogAllowElem] = [
         r"Accessing .*, unexpected REST API error \"http status: Bad Request, error body: 400 Bad Request\" detected, code: _unknown_error_code_, request_id: , resource:"
     ),
     re.compile(r"Configuring topic .* with id .*SEGV.*"),
+    # With our current settings (--abort-on-seastar-bad-alloc) this will immediately
+    # be followed by a crash, and we'd rather the "redpanda crashed" diagnostic instead
+    # of the bad log lines diagnostic as the failure reason for the test.
+    re.compile(r"Dumping seastar memory diagnostics"),
 ]
 
 # Log errors that are expected in tests that restart nodes mid-test
