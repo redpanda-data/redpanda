@@ -108,7 +108,6 @@ metadata_response::topic make_topic_response_from_topic_metadata(
   const cluster::topic_metadata& tp_md,
   const is_node_isolated_or_decommissioned is_node_isolated) {
     metadata_response::topic tp;
-    tp.partitions.reserve(tp_md.get_assignments().size());
     tp.error_code = error_code::none;
     model::topic_namespace_view tp_ns = tp_md.get_configuration().tp_ns;
     tp.name = tp_md.get_configuration().tp_ns.tp;
