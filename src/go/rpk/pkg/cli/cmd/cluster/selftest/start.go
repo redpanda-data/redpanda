@@ -125,7 +125,7 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 			SkipRead:    false,
 			DataSize:    1 * units.GiB,
 			RequestSize: 512 * units.KiB,
-			DurationMs:  durationNet,
+			DurationMs:  durationDisk,
 			Parallelism: 2,
 			Type:        admin.DiskcheckTagIdentifier,
 		},
