@@ -35,9 +35,16 @@ public:
     rpc_server(const rpc_server&) = delete;
     rpc_server& operator=(const rpc_server&) = delete;
 
+    void set_all_services_added() { _all_services_added = true; }
+
+    void set_use_service_unavailable() { _service_unavailable_allowed = true; }
+
     // Adds the given services to the protocol.
     // May be called whether or not the server has already been started.
     void add_services(std::vector<std::unique_ptr<service>> services) {
+        vassert(
+          !_all_services_added,
+          "Adding service after all services already added");
         if (!config::shard_local_cfg().disable_metrics()) {
             for (auto& s : services) {
                 s->setup_metrics();
@@ -64,6 +71,9 @@ private:
     ss::future<> send_reply(ss::lw_shared_ptr<server_context_impl>, netbuf);
     ss::future<>
       send_reply_skip_payload(ss::lw_shared_ptr<server_context_impl>, netbuf);
+
+    bool _all_services_added{false};
+    bool _service_unavailable_allowed{false};
     std::vector<std::unique_ptr<service>> _services;
 };
 

@@ -1743,10 +1743,23 @@ void application::start_runtime_services(
           return ft.await_feature_then(
             features::feature::rpc_v2_by_default, [this] {
                 if (ss::this_shard_id() == 0) {
-                    vlog(_log.info, "Activating RPC protocol v2");
+                    vlog(_log.debug, "Activating RPC protocol v2");
                 }
                 _connection_cache.local().set_default_transport_version(
                   rpc::transport_version::v2);
+            });
+      });
+    ssx::background = feature_table.invoke_on_all(
+      [this](features::feature_table& ft) {
+          return ft.await_feature_then(
+            features::feature::rpc_transport_unknown_errc, [this] {
+                if (ss::this_shard_id() == 0) {
+                    vlog(
+                      _log.debug, "All nodes support unknown RPC error codes");
+                }
+                // Redpanda versions <= v22.3.x don't properly parse error
+                // codes they don't know about.
+                _rpc.local().set_use_service_unavailable();
             });
       });
 
@@ -1878,6 +1891,9 @@ void application::start_runtime_services(
               smp_service_groups.cluster_smp_sg(),
               std::ref(topic_recovery_service)));
           s.add_services(std::move(runtime_services));
+
+          // Done! Disallow unknown method errors.
+          s.set_all_services_added();
       })
       .get();
 

@@ -152,15 +152,22 @@ ss::future<> rpc_server::dispatch_method_once(
                     return srvc->method_from_id(method_id) != nullptr;
                 });
               if (unlikely(it == _services.end())) {
+                  ss::sstring msg_suffix;
+                  rpc::status s = rpc::status::method_not_found;
+                  if (!_all_services_added && _service_unavailable_allowed) {
+                      msg_suffix = "during startup. Ignoring...";
+                      s = rpc::status::service_unavailable;
+                  }
                   vlog(
                     rpclog.debug,
-                    "Received a request for an unknown method {} from {}",
+                    "Received a request for an unknown method {} from {}{}",
                     method_id,
-                    ctx->conn->addr);
+                    ctx->conn->addr,
+                    msg_suffix);
                   probe().method_not_found();
                   netbuf reply_buf;
                   reply_buf.set_version(ctx->get_header().version);
-                  reply_buf.set_status(rpc::status::method_not_found);
+                  reply_buf.set_status(s);
                   return send_reply_skip_payload(ctx, std::move(reply_buf))
                     .then([ctx] { ctx->signal_body_parse(); });
               }
