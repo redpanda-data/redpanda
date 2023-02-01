@@ -232,12 +232,14 @@ inline errc map_server_error(status status) {
         return errc::success;
     case status::request_timeout:
         return errc::client_request_timeout;
-    case rpc::status::server_error:
+    case status::server_error:
         return errc::service_error;
     case status::method_not_found:
         return errc::method_not_found;
     case status::version_not_supported:
         return errc::version_not_supported;
+    default:
+        return errc::unknown;
     };
 };
 

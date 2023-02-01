@@ -52,6 +52,7 @@ enum class feature : std::uint64_t {
     partition_move_revert_cancel = 1ULL << 18U,
     node_isolation = 1ULL << 19U,
     group_offset_retention = 1ULL << 20U,
+    rpc_transport_unknown_errc = 1ULL << 21U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 62U,
@@ -229,6 +230,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{9},
     "group_offset_retention",
     feature::group_offset_retention,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{9},
+    "rpc_transport_unknown_errc",
+    feature::rpc_transport_unknown_errc,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 

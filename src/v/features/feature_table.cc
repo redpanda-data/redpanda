@@ -63,6 +63,8 @@ std::string_view to_string_view(feature f) {
         return "node_isolation";
     case feature::group_offset_retention:
         return "group_offset_retention";
+    case feature::rpc_transport_unknown_errc:
+        return "rpc_transport_unknown_errc";
 
     /*
      * testing features
