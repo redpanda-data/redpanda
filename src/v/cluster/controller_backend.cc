@@ -320,8 +320,14 @@ ss::future<> controller_backend::bootstrap_controller_backend() {
 
 namespace {
 using deltas_t = controller_backend::deltas_t;
-deltas_t::iterator
-find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
+
+bool is_interrupting_operation(
+  const deltas_t::iterator current_op, const topic_table::delta& candidate) {
+    if (!current_op->delta.is_reconfiguration_operation()) {
+        return false;
+    }
+
+    const auto& current = current_op->delta;
     /**
      * Find interrupting operation following the one that is currently
      * processed. Following rules apply:
@@ -336,7 +342,29 @@ find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
      * force_abort_update operation
      *
      */
+    switch (candidate.type) {
+    case topic_table::delta::op_type::del:
+        return true;
+    case topic_table::delta::op_type::cancel_update:
+        return current.type == topic_table::delta::op_type::update
+               && candidate.new_assignment.replicas
+                    == current.previous_replica_set;
+    case topic_table::delta::op_type::force_abort_update:
+        return (
+                current.type == topic_table::delta::op_type::update
 
+                && candidate.new_assignment.replicas
+                     == current.previous_replica_set) || (
+                current.type == topic_table::delta::op_type::cancel_update
+                && candidate.new_assignment.replicas
+                     == current.new_assignment.replicas);
+    default:
+        return false;
+    }
+}
+
+deltas_t::iterator
+find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
     // only reconfiguration operations may be interrupted
     if (!current_it->delta.is_reconfiguration_operation()) {
         return deltas.end();
@@ -346,27 +374,10 @@ find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
       current_it,
       deltas.end(),
       [&current_it](const controller_backend::delta_metadata& m) {
-          switch (m.delta.type) {
-          case topic_table::delta::op_type::del:
-              return true;
-          case topic_table::delta::op_type::cancel_update:
-              return current_it->delta.type
-                       == topic_table::delta::op_type::update
-                     && m.delta.new_assignment.replicas
-                          == current_it->delta.previous_replica_set;
-          case topic_table::delta::op_type::force_abort_update:
-              return (
-                current_it->delta.type == topic_table::delta::op_type::update
-                && m.delta.new_assignment.replicas
-                     == current_it->delta.previous_replica_set) || (
-                current_it->delta.type == topic_table::delta::op_type::cancel_update
-                && m.delta.new_assignment.replicas
-                     == current_it->delta.new_assignment.replicas);
-          default:
-              return false;
-          }
+          return is_interrupting_operation(current_it, m.delta);
       });
 }
+
 ss::future<std::error_code> revert_configuration_update(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
