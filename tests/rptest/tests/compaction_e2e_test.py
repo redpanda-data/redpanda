@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import sys
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -37,6 +37,8 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
 
         return [len(p.segments) for p in topic_partitions]
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8491
+    # https://github.com/redpanda-data/redpanda/issues/8486
     @cluster(num_nodes=4)
     @matrix(
         initial_cleanup_policy=[
