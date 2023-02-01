@@ -26,6 +26,9 @@ class SegmentMsTest(RedpandaTest):
     TEST_NUM_SEGMENTS = 3
     ERROR_MARGIN = 1
 
+    def __init__(self, test_context):
+        super().__init__(test_context=test_context, num_brokers=1)
+
     def _total_segments_count(self, topic_spec: TopicSpec, partition=0):
         return next(segments_count(self.redpanda, topic_spec.name, partition))
 
@@ -83,7 +86,7 @@ class SegmentMsTest(RedpandaTest):
 
         return start_count, stop_count
 
-    @cluster(num_notes=1)
+    @cluster(num_nodes=3)
     @defaults(use_alter_cfg=[False, True])
     @parametrize(server_cfg=None, topic_cfg=None)
     @parametrize(server_cfg=SERVER_SEGMENT_MS, topic_cfg=-1)
@@ -94,7 +97,7 @@ class SegmentMsTest(RedpandaTest):
             self.TEST_NUM_SEGMENTS)
         assert start_count == stop_count, f"{start_count=} != {stop_count=}"
 
-    @cluster(num_nodes=1)
+    @cluster(num_nodes=3)
     @defaults(use_alter_cfg=[False, True])
     @parametrize(server_cfg=None, topic_cfg=90000)
     @parametrize(server_cfg=SERVER_SEGMENT_MS, topic_cfg=None)
