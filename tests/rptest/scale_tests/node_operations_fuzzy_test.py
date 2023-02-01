@@ -124,6 +124,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
                                         5,
                                         log_config=log_config,
                                         extra_rp_conf=extra_rp_conf)
+        upgraded_nodes = []
         if num_to_upgrade > 0:
             installer = self.redpanda._installer
             installer.install(
@@ -131,11 +132,22 @@ class NodeOperationFuzzyTest(EndToEndTest):
                 installer.highest_from_prior_feature_version(
                     RedpandaInstaller.HEAD))
             self.redpanda.start()
-            installer.install(self.redpanda.nodes[:num_to_upgrade],
-                              RedpandaInstaller.HEAD)
-            self.redpanda.restart_nodes(self.redpanda.nodes[:num_to_upgrade])
+            upgraded_nodes = self.redpanda.nodes[:num_to_upgrade]
+            installer.install(upgraded_nodes, RedpandaInstaller.HEAD)
+            self.redpanda.restart_nodes(upgraded_nodes)
         else:
             self.redpanda.start(auto_assign_node_id=True)
+
+        active_nodes = set([self.redpanda.idx(n) for n in self.redpanda.nodes])
+        upgraded_nodes = set([self.redpanda.idx(n) for n in upgraded_nodes])
+        # This conditional modifies the active_nodes set to intentionally
+        # remove one non-upgraded node from being restarted. This is to prevent
+        # situations where the entire cluster could be restarted, preventing
+        # nodes which haven't been upgraded from rejoining.
+        if len(upgraded_nodes) > 0:
+            non_upgraded_nodes = active_nodes - upgraded_nodes
+            random_non_upgraded_node = random.choice(list(non_upgraded_nodes))
+            active_nodes.remove(random_non_upgraded_node)
 
         # create some topics
         topics = self._create_random_topics(10, compacted_topics)
@@ -149,7 +161,6 @@ class NodeOperationFuzzyTest(EndToEndTest):
                             repeating_keys=100 if compacted_topics else None)
         self.start_consumer(1, verify_offsets=not compacted_topics)
         # wait for some records to be produced
-
         self.await_startup(min_records=3 * self.producer_throughput)
 
         # start admin ops fuzzer to simulate day 2 operations
@@ -158,7 +169,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
                                                 min_replication=3)
 
         self.admin_fuzz.start()
-        active_nodes = set([self.redpanda.idx(n) for n in self.redpanda.nodes])
+
         fi = None
         if enable_failures:
             fi = FailureInjectorBackgroundThread(self.redpanda, self.logger,
