@@ -16,6 +16,7 @@
 #include "utils/gate_guard.h"
 #include "vassert.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/coroutine.hh>
@@ -106,6 +107,9 @@ public:
         gate_guard g(_gate);
         while (!_gate.is_closed()) {
             auto gen = _cnt;
+            if (_producer_error) {
+                std::rethrow_exception(_producer_error);
+            }
             if (auto ob = maybe_get(index); ob.has_value()) {
                 co_return std::move(ob.value());
             }
@@ -114,7 +118,8 @@ public:
             // - There is not data in the buffer because consumers are faster
             // then the producer.
             try {
-                co_await _pcond.wait([this, gen] { return _cnt != gen; });
+                co_await _pcond.wait(
+                  [this, gen] { return _cnt != gen || _producer_error; });
             } catch (const ss::broken_condition_variable&) {
             }
         }
@@ -161,20 +166,25 @@ private:
     /// the resulting buffers to clients
     ss::future<> produce() {
         gate_guard g(_gate);
-        while (!_in.eof() && !_gate.is_closed()) {
-            auto units = co_await ss::get_units(_sem, 1);
-            ss::temporary_buffer<Ch> buf;
-            if (_max_size == 0) {
-                buf = co_await _in.read();
-            } else {
-                buf = co_await _in.read_up_to(_max_size);
+        try {
+            while (!_in.eof() && !_gate.is_closed()) {
+                auto units = co_await ss::get_units(_sem, 1);
+                ss::temporary_buffer<Ch> buf;
+                if (_max_size == 0) {
+                    buf = co_await _in.read();
+                } else {
+                    buf = co_await _in.read_up_to(_max_size);
+                }
+                ++_cnt;
+                _buffer.push_back(data_item{
+                  .buf = std::move(buf),
+                  .units = std::move(units),
+                  .mask = _bitmask});
+                _pcond.broadcast();
             }
-            ++_cnt;
-            _buffer.push_back(data_item{
-              .buf = std::move(buf),
-              .units = std::move(units),
-              .mask = _bitmask});
-            _pcond.broadcast();
+        } catch (...) {
+            _producer_error = std::current_exception();
+            _pcond.broken();
         }
     }
 
@@ -187,6 +197,7 @@ private:
     ring_buffer _buffer;
     ss::gate _gate;
     uint64_t _cnt{0};
+    std::exception_ptr _producer_error{nullptr};
 };
 
 template<class Ch>
