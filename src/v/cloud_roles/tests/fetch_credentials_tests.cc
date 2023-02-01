@@ -8,9 +8,11 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "bytes/iobuf.h"
+#include "cloud_roles/logger.h"
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_roles/tests/test_definitions.h"
+#include "config/configuration.h"
+#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/http_imposter.h"
 
@@ -349,4 +351,38 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
     gate.close().get();
 
     BOOST_REQUIRE(has_call(cloud_role_tests::aws_role_query_url));
+}
+
+FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
+    // This test asserts that if the remote endpoint is not reachable, the
+    // refresh operation will attempt to retry. In order not to expose the retry
+    // counter or make similar changes to the class just for testing, this test
+    // scans the log for the message emitted when a ss::timed_out_error is seen.
+    std::stringstream ss;
+    cloud_roles::clrl_log.set_ostream(ss);
+    ss::abort_source as;
+    ss::gate gate;
+    std::optional<cloud_roles::credentials> c;
+
+    one_shot_fetch s(c, as);
+
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::aws_instance_metadata,
+      gate,
+      as,
+      s,
+      cloud_roles::aws_region_name{""},
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number});
+
+    config::shard_local_cfg()
+      .cloud_storage_roles_operation_timeout_ms.set_value(
+        std::chrono::milliseconds{100ms});
+    refresh.start();
+
+    tests::cooperative_spin_wait_with_timeout(5s, [&ss] {
+        return ss.str().find("api request failed (retrying after cool-off "
+                             "period): timedout")
+               != std::string::npos;
+    }).get();
+    gate.close().get();
 }
