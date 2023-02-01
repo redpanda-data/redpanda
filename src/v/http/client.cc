@@ -361,8 +361,23 @@ ss::future<iobuf> client::response_stream::recv_some() {
           return _client->stop().then(
             [err] { return ss::make_exception_future<iobuf>(err); });
       })
+      .handle_exception_type([this](const boost::system::system_error& ec) {
+          vlog(_ctxlog.warn, "receive error {}", ec);
+          try {
+              _client->check();
+          } catch (...) {
+              return ss::make_exception_future<iobuf>(std::current_exception());
+          }
+          _client->shutdown();
+          return ss::make_exception_future<iobuf>(ec);
+      })
       .handle_exception_type([this](const std::system_error& ec) {
           vlog(_ctxlog.warn, "receive error {}", ec);
+          try {
+              _client->check();
+          } catch (...) {
+              return ss::make_exception_future<iobuf>(std::current_exception());
+          }
           _client->shutdown();
           return ss::make_exception_future<iobuf>(ec);
       });
