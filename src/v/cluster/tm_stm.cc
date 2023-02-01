@@ -262,17 +262,13 @@ ss::future<> tm_stm::checkpoint_ongoing_txs() {
       txes_to_checkpoint.size());
 }
 
-ss::future<std::error_code>
-tm_stm::transfer_leadership(std::optional<model::node_id> target) {
-    vlog(
-      txlog.trace,
-      "transfering leadership to {}",
-      target.value_or(model::node_id(-1)));
+ss::future<ss::basic_rwlock<>::holder> tm_stm::prepare_transfer_leadership() {
+    vlog(txlog.trace, "Preparing for leadership transfer");
     auto units = co_await _cache.local().write_lock();
     // This is a best effort basis, we checkpoint as many as we can
     // and stop at the first error.
     co_await checkpoint_ongoing_txs();
-    co_return co_await _c->do_transfer_leadership(target);
+    co_return units;
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>>

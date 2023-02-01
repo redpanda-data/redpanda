@@ -619,13 +619,21 @@ void partition::set_topic_config(
 
 ss::future<std::error_code>
 partition::transfer_leadership(std::optional<model::node_id> target) {
+    vlog(
+      clusterlog.debug,
+      "Transferring leadership to {}",
+      target.value_or(model::node_id{-1}));
+
+    // Some state machines need a preparatory phase to efficiently transfer
+    // leadership: invoke this, and hold the lock that they return until
+    // the leadership transfer attempt is complete.
+    ss::basic_rwlock<>::holder stm_prepare_lock;
     if (_rm_stm) {
-        return _rm_stm->transfer_leadership(target);
+        stm_prepare_lock = co_await _rm_stm->prepare_transfer_leadership();
     } else if (_tm_stm) {
-        return _tm_stm->transfer_leadership(target);
-    } else {
-        return _raft->do_transfer_leadership(target);
+        stm_prepare_lock = co_await _tm_stm->prepare_transfer_leadership();
     }
+    co_return co_await _raft->do_transfer_leadership(target);
 }
 
 std::ostream& operator<<(std::ostream& o, const partition& x) {
