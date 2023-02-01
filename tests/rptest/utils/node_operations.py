@@ -250,6 +250,15 @@ class NodeOpsExecutor():
         self.logger.info(
             f"executor - waiting for node {node_id} to be removed")
 
+        # wait for node to be removed of decommissioning to stop making progress
+        waiter = NodeDecommissionWaiter(self.redpanda,
+                                        node_id=node_id,
+                                        logger=self.logger,
+                                        progress_timeout=60)
+
+        waiter.wait_for_removal()
+
+        # just confirm if node removal was propagated to the the majority of nodes
         def is_node_removed(node_to_query, node_id):
             try:
                 brokers = self.get_statuses(node_to_query)
