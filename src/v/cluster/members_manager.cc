@@ -593,7 +593,13 @@ members_manager::dispatch_join_to_seed_server(
     return f.then_wrapped([it, this, req](ss::future<ret_t> fut) {
         try {
             auto r = fut.get0();
-            if (r && r.value().success) {
+            if (r.has_error() || !r.value().success) {
+                vlog(
+                  clusterlog.warn,
+                  "Error joining cluster using {} seed server - {}",
+                  it->addr,
+                  r.has_error() ? r.error().message() : "not allowed to join");
+            } else {
                 return ss::make_ready_future<ret_t>(r);
             }
         } catch (...) {
