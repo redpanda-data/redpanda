@@ -317,6 +317,15 @@ public:
      */
     ss::future<> await_feature(feature f) { return await_feature(f, _as); };
 
+    /**
+     * Like await_feature, but runs the given function once the feature is
+     * successfully activated.
+     *
+     * If the feature never activates (i.e. if shutting down while waiting),
+     * the given function is not run.
+     */
+    ss::future<> await_feature_then(feature f, std::function<void(void)> fn);
+
     ss::future<> await_feature_preparing(feature f, ss::abort_source& as);
 
     ss::future<> stop();
@@ -351,6 +360,8 @@ public:
     // feature table to the desired version synchronously, early in the
     // lifetime of a node.
     void bootstrap_active_version(cluster::cluster_version);
+
+    void abort_for_tests() { _as.request_abort(); }
 
 private:
     // Only for use by our friends feature backend & manager
