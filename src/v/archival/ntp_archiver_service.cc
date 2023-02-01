@@ -144,10 +144,11 @@ ss::future<> ntp_archiver::upload_until_abort() {
     }
 
     while (!_as.abort_requested()) {
-        if (!_parent.is_elected_leader()) {
+        if (!_parent.is_elected_leader() || _paused) {
             bool shutdown = false;
             try {
-                vlog(_rtclog.debug, "upload loop waiting for leadership");
+                vlog(
+                  _rtclog.debug, "upload loop waiting for leadership/unpause");
                 co_await _leader_cond.wait();
             } catch (const ss::broken_condition_variable&) {
                 // stop() was called
@@ -164,6 +165,9 @@ ss::future<> ntp_archiver::upload_until_abort() {
         }
 
         _start_term = _parent.term();
+        if (!can_update_archival_metadata()) {
+            continue;
+        }
         vlog(_rtclog.debug, "upload loop starting in term {}", _start_term);
 
         co_await ss::with_scheduling_group(
@@ -192,11 +196,12 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
     }
 
     while (!_as.abort_requested()) {
-        if (!_parent.is_elected_leader()) {
+        if (!_parent.is_elected_leader() || _paused) {
             bool shutdown = false;
             try {
                 vlog(
-                  _rtclog.debug, "sync manifest loop waiting for leadership");
+                  _rtclog.debug,
+                  "sync manifest loop waiting for leadership/unpause");
                 co_await _leader_cond.wait();
             } catch (const ss::broken_condition_variable&) {
                 shutdown = true;
@@ -213,6 +218,10 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
         }
 
         _start_term = _parent.term();
+        if (!can_update_archival_metadata()) {
+            continue;
+        }
+
         vlog(
           _rtclog.debug, "sync manifest loop starting in term {}", _start_term);
 
@@ -312,6 +321,11 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
+
+    // Hold sempahore units to enable other code to know that we are in
+    // the process of doing uploads + wait for us to drop out if they
+    // e.g. set _paused.
+    auto units = co_await ss::get_units(_uploads_active, 1);
 
     while (can_update_archival_metadata()) {
         // Bump up archival STM's state to make sure that it's not lagging
@@ -542,10 +556,12 @@ void ntp_archiver::update_probe() {
 
 bool ntp_archiver::can_update_archival_metadata() const {
     return !_as.abort_requested() && !_gate.is_closed()
-           && _parent.is_elected_leader() && _parent.term() == _start_term;
+           && _parent.is_elected_leader() && _parent.term() == _start_term
+           && !_paused;
 }
 
 ss::future<> ntp_archiver::stop() {
+    _uploads_active.broken();
     _leader_cond.broken();
     if (_local_segment_merger) {
         if (!_local_segment_merger->interrupted()) {
@@ -1577,6 +1593,31 @@ size_t ntp_archiver::get_local_segment_size() const {
           log_segment_size);
     }
     return log_segment_size;
+}
+
+ss::future<bool>
+ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
+    _paused = true;
+
+    try {
+        co_await ss::get_units(_uploads_active, 1, timeout);
+        co_return true;
+    } catch (const ss::semaphore_timed_out&) {
+        // In this situation, it is possible that the old leader (this node)
+        // will leave an orphan object behind in object storage, because
+        // the next manifest written by the new leader will not refer to
+        // this object.
+        //
+        // This is not a correctness issue, but consumes some disk space, and
+        // these objects may also be left behind when the topic is later
+        // deleted.
+        co_return false;
+    }
+}
+
+void ntp_archiver::complete_transfer_leadership() {
+    _paused = false;
+    _leader_cond.signal();
 }
 
 } // namespace archival

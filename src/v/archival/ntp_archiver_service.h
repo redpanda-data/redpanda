@@ -220,6 +220,20 @@ public:
     /// Get segment size for the partition
     size_t get_local_segment_size() const;
 
+    /// Ahead of a leadership transfer, finish any pending uploads and stop
+    /// the upload loop, so that we do not leave orphan objects behind if
+    /// a leadership transfer happens between writing a segment and writing
+    /// the manifest.
+    /// \param timeout: block for this long waiting for uploads to finish
+    ///                 before returning.  Return false if timeout expires.
+    /// \return true if uploads have cleanly quiesced within timeout.
+    ss::future<bool> prepare_transfer_leadership(ss::lowres_clock::duration);
+
+    /// After a leadership transfer attempt (whether it proceeded or not),
+    /// permit this archiver to proceed as normal: if it is still the leader
+    /// it will resume uploads.
+    void complete_transfer_leadership();
+
 private:
     ss::future<bool> do_upload_local(
       upload_candidate_with_locks candidate,
@@ -399,6 +413,15 @@ private:
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
     ss::lowres_clock::time_point _last_upload_time;
+
+    // Used during leadership transfer: instructs the archiver to
+    // not proceed with uploads, even if it has leadership.
+    bool _paused{false};
+
+    // Held while the inner segment upload/manifest sync loop is running,
+    // to enable code that uses _paused to wait until ongoing activity
+    // has stopped.
+    ss::semaphore _uploads_active{1};
 
     config::binding<std::chrono::milliseconds> _housekeeping_interval;
     simple_time_jitter<ss::lowres_clock> _housekeeping_jitter;
