@@ -35,6 +35,7 @@
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_frontend.h"
 #include "cluster/shard_table.h"
+#include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
@@ -118,7 +119,9 @@ admin_server::admin_server(
   ss::sharded<cluster::node_status_table>& node_status_table,
   ss::sharded<cluster::self_test_frontend>& self_test_frontend,
   pandaproxy::schema_registry::api* schema_registry,
-  ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc)
+  ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
+  ss::sharded<cluster::topic_recovery_status_frontend>&
+    topic_recovery_status_frontend)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -132,7 +135,8 @@ admin_server::admin_server(
   , _node_status_table(node_status_table)
   , _self_test_frontend(self_test_frontend)
   , _schema_registry(schema_registry)
-  , _topic_recovery_service(topic_recovery_svc) {}
+  , _topic_recovery_service(topic_recovery_svc)
+  , _topic_recovery_status_frontend(topic_recovery_status_frontend) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
@@ -3571,6 +3575,47 @@ admin_server::initiate_topic_scan_and_recovery(
     co_return ss::json::json_return_type{payload};
 }
 
+static void serialize_topic_recovery_status(
+  const cluster::status_response& cluster_status,
+  ss::httpd::shadow_indexing_json::topic_recovery_status& json_resp) {
+    json_resp.state = fmt::format("{}", cluster_status.state);
+    for (const auto& count : cluster_status.download_counts) {
+        ss::httpd::shadow_indexing_json::topic_download_counts c;
+        c.topic_namespace = fmt::format("{}", count.tp_ns);
+        c.pending_downloads = count.pending_downloads;
+        c.successful_downloads = count.successful_downloads;
+        c.failed_downloads = count.failed_downloads;
+        json_resp.topic_download_counts.push(c);
+    }
+
+    ss::httpd::shadow_indexing_json::recovery_request_params r;
+    r.topic_names_pattern = cluster_status.request.topic_names_pattern.value_or(
+      "none");
+    r.retention_bytes = cluster_status.request.retention_bytes.value_or(-1);
+    r.retention_ms = cluster_status.request.retention_ms.value_or(-1ms).count();
+    json_resp.request = r;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::query_automated_recovery(std::unique_ptr<ss::httpd::request>) {
+    ss::httpd::shadow_indexing_json::topic_recovery_status ret;
+    ret.state = "inactive";
+
+    if (
+      !_topic_recovery_status_frontend.local_is_initialized()
+      || !_topic_recovery_service.local_is_initialized()) {
+        co_return ret;
+    }
+
+    auto status = co_await _topic_recovery_status_frontend.local().status();
+    if (!status) {
+        co_return ret;
+    }
+
+    serialize_topic_recovery_status(status.value(), ret);
+    co_return ret;
+}
+
 void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
@@ -3583,6 +3628,10 @@ void admin_server::register_shadow_indexing_routes() {
       [this](auto req) {
           return initiate_topic_scan_and_recovery(std::move(req));
       });
+
+    register_route<superuser>(
+      ss::httpd::shadow_indexing_json::query_automated_recovery,
+      [this](auto req) { return query_automated_recovery(std::move(req)); });
 }
 
 constexpr std::string_view to_string_view(service_kind kind) {

@@ -39,7 +39,7 @@
       ]
     },
     {
-      "path": "/v1/cloud_storage/initiate_topic_scan_and_recovery",
+      "path": "/v1/cloud_storage/automated_recovery",
       "operations": [
         {
           "method": "POST",
@@ -59,6 +59,12 @@
               "message": "Topic scan was initiated successfully"
             }
           ]
+        },
+        {
+          "method": "GET",
+          "summary": "Query status of automated topic recovery",
+          "operationId": "query_automated_recovery",
+          "nickname": "query_automated_recovery"
         }
       ]
     }
@@ -71,6 +77,54 @@
         "status": {
           "type": "string",
           "description": "current status of recovery process"
+        }
+      }
+    },
+    "topic_download_counts": {
+      "id": "topic_download_counts",
+      "properties": {
+        "topic_namespace": {
+          "type": "string"
+        },
+        "pending_downloads": {
+          "type": "int"
+        },
+        "successful_downloads": {
+          "type": "int"
+        },
+        "failed_downloads": {
+          "type": "int"
+        }
+      }
+    },
+    "recovery_request_params": {
+      "id": "recovery_request_params",
+      "properties": {
+        "topic_names_pattern": {
+          "type": "string"
+        },
+        "retention_bytes": {
+          "type": "int"
+        },
+        "retention_ms": {
+          "type": "int"
+        }
+      }
+    },
+    "topic_recovery_status": {
+      "id": "topic_recovery_status",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "topic_download_counts": {
+          "type": "array",
+          "items": {
+            "type": "topic_download_counts"
+          }
+        },
+        "request": {
+          "type": "recovery_request_params"
         }
       }
     }
