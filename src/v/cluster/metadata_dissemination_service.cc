@@ -366,6 +366,9 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
             });
       })
       .then([this] { cleanup_finished_updates(); })
+      .handle_exception([](const std::exception_ptr& e) {
+          vlog(clusterlog.warn, "failed to disseminate leadership: {}", e);
+      })
       .finally([this] { _dispatch_timer.arm(_dissemination_interval); });
 }
 
