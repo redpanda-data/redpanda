@@ -3180,18 +3180,21 @@ ss::future<> group::do_abort_old_txes() {
 
 ss::future<> group::try_abort_old_tx(model::producer_identity pid) {
     return get_tx_lock(pid.get_id())->with([this, pid]() {
+        vlog(_ctx_txlog.trace, "attempting to expire pid:{}", pid);
+
+        auto expiration_it = _expiration_info.find(pid);
+        if (expiration_it != _expiration_info.end()) {
+            if (!expiration_it->second.is_expired()) {
+                vlog(_ctx_txlog.trace, "pid:{} isn't expired, skipping", pid);
+                return ss::now();
+            }
+        }
+
         return do_try_abort_old_tx(pid);
     });
 }
 
 ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
-    auto expiration_it = _expiration_info.find(pid);
-    if (expiration_it != _expiration_info.end()) {
-        if (!expiration_it->second.is_expired()) {
-            co_return;
-        }
-    }
-
     auto p_it = _prepared_txs.find(pid);
     if (p_it != _prepared_txs.end()) {
         auto tx_seq = p_it->second.tx_seq;
@@ -3202,23 +3205,26 @@ ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
           pid,
           tx_seq,
           config::shard_local_cfg().rm_sync_timeout_ms.value());
-        if (r.ec == cluster::tx_errc::none) {
-            if (r.commited) {
-                auto res = co_await do_commit(_id, pid);
-                if (res.ec != cluster::tx_errc::none) {
-                    vlog(
-                      _ctxlog.error,
-                      "Can not commit prepared tx with pid({})",
-                      pid);
-                }
-            } else if (r.aborted) {
-                auto res = co_await do_abort(_id, pid, tx_seq);
-                if (res.ec != cluster::tx_errc::none) {
-                    vlog(
-                      _ctxlog.error,
-                      "Can not abort prepared tx with pid({})",
-                      pid);
-                }
+        if (r.ec != cluster::tx_errc::none) {
+            co_return;
+        }
+        if (r.commited) {
+            auto res = co_await do_commit(_id, pid);
+            if (res.ec != cluster::tx_errc::none) {
+                vlog(
+                  _ctxlog.warn,
+                  "commit of prepared tx pid:{} failed with ec:{}",
+                  pid,
+                  res.ec);
+            }
+        } else if (r.aborted) {
+            auto res = co_await do_abort(_id, pid, tx_seq);
+            if (res.ec != cluster::tx_errc::none) {
+                vlog(
+                  _ctxlog.warn,
+                  "abort of prepared tx pid:{} failed with ec:{}",
+                  pid,
+                  res.ec);
             }
         }
     } else {
