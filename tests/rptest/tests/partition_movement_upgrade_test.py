@@ -62,7 +62,8 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
             topic_name,
             self._message_size,
             readers=5,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+            debug_logs=True)
         self.consumer.start(clean=False)
 
     def verify(self):

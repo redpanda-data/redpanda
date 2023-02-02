@@ -318,6 +318,105 @@ ss::future<> controller_backend::bootstrap_controller_backend() {
     });
 }
 
+namespace {
+using deltas_t = controller_backend::deltas_t;
+
+bool is_interrupting_operation(
+  const deltas_t::iterator current_op, const topic_table::delta& candidate) {
+    if (!current_op->delta.is_reconfiguration_operation()) {
+        return false;
+    }
+
+    const auto& current = current_op->delta;
+    /**
+     * Find interrupting operation following the one that is currently
+     * processed. Following rules apply:
+     *
+     * - all operations i.e. update, cancel_update, and force abort must be
+     * interrupted by deletion
+     *
+     * - update & cancel update operations may be interrupted by
+     * force_abort_update operation
+     *
+     * - update operation may be interrupted by cancel_update operation or
+     * force_abort_update operation
+     *
+     */
+    switch (candidate.type) {
+    case topic_table::delta::op_type::del:
+        return true;
+    case topic_table::delta::op_type::cancel_update:
+        return current.type == topic_table::delta::op_type::update
+               && candidate.new_assignment.replicas
+                    == current.previous_replica_set;
+    case topic_table::delta::op_type::force_abort_update:
+        return (
+                current.type == topic_table::delta::op_type::update
+
+                && candidate.new_assignment.replicas
+                     == current.previous_replica_set) || (
+                current.type == topic_table::delta::op_type::cancel_update
+                && candidate.new_assignment.replicas
+                     == current.new_assignment.replicas);
+    default:
+        return false;
+    }
+}
+
+deltas_t::iterator
+find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
+    // only reconfiguration operations may be interrupted
+    if (!current_it->delta.is_reconfiguration_operation()) {
+        return deltas.end();
+    }
+
+    return std::find_if(
+      current_it,
+      deltas.end(),
+      [&current_it](const controller_backend::delta_metadata& m) {
+          return is_interrupting_operation(current_it, m.delta);
+      });
+}
+
+ss::future<std::error_code> revert_configuration_update(
+  const model::ntp& ntp,
+  const std::vector<model::broker_shard>& replicas,
+  const topic_table_delta::revision_map_t& replica_revisions,
+  model::revision_id rev,
+  ss::lw_shared_ptr<partition> p,
+  members_table& members) {
+    auto brokers = create_brokers_set(replicas, replica_revisions, members);
+    vlog(
+      clusterlog.debug,
+      "[{}] reverting already finished reconfiguration. Revision: {}, replica "
+      "set: {}",
+      ntp,
+      rev,
+      replicas);
+    co_return co_await p->update_replica_set(std::move(brokers), rev);
+}
+
+bool is_finishing_operation(
+  const topic_table::delta& operation, const topic_table::delta& candidate) {
+    if (candidate.type != topic_table_delta::op_type::update_finished) {
+        return false;
+    }
+
+    if (operation.new_assignment == candidate.new_assignment) {
+        return true;
+    }
+    if (
+      operation.type == topic_table_delta::op_type::cancel_update
+      || operation.type == topic_table_delta::op_type::force_abort_update) {
+        return operation.previous_replica_set
+               == candidate.new_assignment.replicas;
+    }
+
+    return false;
+}
+
+} // namespace
+
 ss::future<> controller_backend::do_bootstrap() {
     return ss::parallel_for_each(
       _topic_deltas.begin(),
@@ -408,54 +507,89 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
           "[{}] first bootstrap delta is a cross core update, looking for "
           "initial revision",
           ntp);
-        // find operation that created current partition on this node
-        auto it = std::find_if(
-          deltas.rbegin(), deltas.rend(), [this](const delta_metadata& md) {
-              if (md.delta.type == op_t::add) {
-                  return true;
-              }
-              return md.delta.type == op_t::update_finished
-                     && !contains_node(_self, md.delta.new_assignment.replicas);
+
+        // Check if this update already finished or interrupted.
+        auto first_meta_it = bootstrap_deltas.begin();
+        auto update_finished = std::find_if(
+          first_meta_it,
+          bootstrap_deltas.end(),
+          [&first_meta_it](const delta_metadata& md) {
+              return is_finishing_operation(first_meta_it->delta, md.delta)
+                     || is_interrupting_operation(first_meta_it, md.delta);
           });
 
-        vassert(
-          it != deltas.rend(),
-          "if partition {} was moved from different core it had to exists on "
-          "current node previously",
-          ntp);
-        // if we found update finished operation it is preceding operation that
-        // created partition on current node
-        vlog(
-          clusterlog.trace,
-          "[{}] first operation that doesn't contain current node - {}",
-          ntp,
-          *it);
-        /**
-         * At this point we may have two situations
-         * 1. replica was created on current node shard when partition was
-         *    created, with addition delta, in this case `it` contains this
-         *    addition delta.
-         *
-         * 2. replica was moved to this node with `update` delta type, in this
-         *    case `it` contains either `update_finished` delta from previous
-         *    operation or `add` delta from previous operation. In this case
-         *    operation does not contain current node and we need to execute
-         *    operation that is following the found one as this is the first
-         *    operation that created replica on current node
-         *
-         */
-        if (!contains_node(_self, it->delta.new_assignment.replicas)) {
+        if (update_finished != bootstrap_deltas.end()) {
+            // Cross core move already finished / interrupted. So the current
+            // shard needs to bootstrap the ntp on its own, populate the needed
+            // revision in bootstrap_revisions.
+            vlog(
+              clusterlog.trace,
+              "[{}] Cross core move finished/interrupted with {}",
+              update_finished->delta.ntp,
+              *update_finished);
+
+            // find operation that created current partition on this node
+            auto it = std::find_if(
+              deltas.rbegin(), deltas.rend(), [this](const delta_metadata& md) {
+                  if (md.delta.type == op_t::add) {
+                      return true;
+                  }
+                  return md.delta.type == op_t::update_finished
+                         && !contains_node(
+                           _self, md.delta.new_assignment.replicas);
+              });
+
             vassert(
-              it != deltas.rbegin(),
-              "operation {} must have following operation that created a "
-              "replica on current node",
+              it != deltas.rend(),
+              "if partition {} was moved from different core it had to exists "
+              "on "
+              "current node previously",
+              ntp);
+            // if we found update finished operation it is preceding operation
+            // that created partition on current node
+            vlog(
+              clusterlog.trace,
+              "[{}] first operation that doesn't contain current node - {}",
+              ntp,
               *it);
-            it = std::prev(it);
+            /**
+             * At this point we may have two situations
+             * 1. replica was created on current node shard when partition was
+             *    created, with addition delta, in this case `it` contains this
+             *    addition delta.
+             *
+             * 2. replica was moved to this node with `update` delta type, in
+             * this case `it` contains either `update_finished` delta from
+             * previous operation or `add` delta from previous operation. In
+             * this case operation does not contain current node and we need to
+             * execute operation that is following the found one as this is the
+             * first operation that created replica on current node
+             *
+             */
+            if (!contains_node(_self, it->delta.new_assignment.replicas)) {
+                vassert(
+                  it != deltas.rbegin(),
+                  "operation {} must have following operation that created a "
+                  "replica on current node",
+                  *it);
+                it = std::prev(it);
+            }
+            vlog(
+              clusterlog.trace,
+              "[{}] initial revision source delta: {}",
+              ntp,
+              *it);
+            // persist revision in order to create partition with correct
+            // revision
+            _bootstrap_revisions[ntp] = model::revision_id(it->delta.offset());
+        } else {
+            vlog(
+              clusterlog.trace,
+              "[{}] Detected a pending cross core move via {}, skipping "
+              "bootstrap version generation ",
+              first_meta.delta.ntp,
+              first_meta.delta);
         }
-        vlog(
-          clusterlog.trace, "[{}] initial revision source delta: {}", ntp, *it);
-        // persist revision in order to create partition with correct revision
-        _bootstrap_revisions[ntp] = model::revision_id(it->delta.offset());
     }
     // apply all deltas following the one found previously
     deltas = std::move(bootstrap_deltas);
@@ -518,94 +652,6 @@ void controller_backend::housekeeping() {
             vlog(clusterlog.warn, "error during reconciliation - {}", e);
         });
 }
-
-namespace {
-using deltas_t = controller_backend::deltas_t;
-deltas_t::iterator
-find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
-    /**
-     * Find interrupting operation following the one that is currently
-     * processed. Following rules apply:
-     *
-     * - all operations i.e. update, cancel_update, and force abort must be
-     * interrupted by deletion
-     *
-     * - update & cancel update operations may be interrupted by
-     * force_abort_update operation
-     *
-     * - update operation may be interrupted by cancel_update operation or
-     * force_abort_update operation
-     *
-     */
-
-    // only reconfiguration operations may be interrupted
-    if (!current_it->delta.is_reconfiguration_operation()) {
-        return deltas.end();
-    }
-
-    return std::find_if(
-      current_it,
-      deltas.end(),
-      [&current_it](const controller_backend::delta_metadata& m) {
-          switch (m.delta.type) {
-          case topic_table::delta::op_type::del:
-              return true;
-          case topic_table::delta::op_type::cancel_update:
-              return current_it->delta.type
-                       == topic_table::delta::op_type::update
-                     && m.delta.new_assignment.replicas
-                          == current_it->delta.previous_replica_set;
-          case topic_table::delta::op_type::force_abort_update:
-              return (
-                current_it->delta.type == topic_table::delta::op_type::update
-                && m.delta.new_assignment.replicas
-                     == current_it->delta.previous_replica_set) || (
-                current_it->delta.type == topic_table::delta::op_type::cancel_update
-                && m.delta.new_assignment.replicas
-                     == current_it->delta.new_assignment.replicas);
-          default:
-              return false;
-          }
-      });
-}
-ss::future<std::error_code> revert_configuration_update(
-  const model::ntp& ntp,
-  const std::vector<model::broker_shard>& replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
-  model::revision_id rev,
-  ss::lw_shared_ptr<partition> p,
-  members_table& members) {
-    auto brokers = create_brokers_set(replicas, replica_revisions, members);
-    vlog(
-      clusterlog.debug,
-      "[{}] reverting already finished reconfiguration. Revision: {}, replica "
-      "set: {}",
-      ntp,
-      rev,
-      replicas);
-    co_return co_await p->update_replica_set(std::move(brokers), rev);
-}
-
-bool is_finishing_operation(
-  const topic_table::delta& operation, const topic_table::delta& candidate) {
-    if (candidate.type != topic_table_delta::op_type::update_finished) {
-        return false;
-    }
-
-    if (operation.new_assignment == candidate.new_assignment) {
-        return true;
-    }
-    if (
-      operation.type == topic_table_delta::op_type::cancel_update
-      || operation.type == topic_table_delta::op_type::force_abort_update) {
-        return operation.previous_replica_set
-               == candidate.new_assignment.replicas;
-    }
-
-    return false;
-}
-
-} // namespace
 
 ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
     bool stop = false;
