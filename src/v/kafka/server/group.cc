@@ -1786,9 +1786,23 @@ cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc ec) {
 ss::future<cluster::begin_group_tx_reply>
 group::begin_tx(cluster::begin_group_tx_request r) {
     if (_partition->term() != _term) {
+        vlog(
+          _ctx_txlog.trace,
+          "processing name:begin_tx pid:{} tx_seq:{} timeout:{} => stale "
+          "leader",
+          r.pid,
+          r.tx_seq,
+          r.timeout);
         co_return make_begin_tx_reply(cluster::tx_errc::stale);
     }
 
+    vlog(
+      _ctx_txlog.trace,
+      "processing name:begin_tx pid:{} tx_seq:{} timeout:{} in term:{}",
+      r.pid,
+      r.tx_seq,
+      r.timeout,
+      _term);
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
     if (fence_it == _fence_pid_epoch.end()) {
         // intentionally empty
@@ -1800,7 +1814,28 @@ group::begin_tx(cluster::begin_group_tx_request r) {
           fence_it->second);
         co_return make_begin_tx_reply(cluster::tx_errc::fenced);
     } else if (r.pid.get_epoch() > fence_it->second) {
-        // TODO: proactively cancel an ongoing txn
+        // there is a fence, it might be that tm_stm failed, forget about
+        // an ongoing transaction, assigned next pid for the same tx.id and
+        // started a new transaction without aborting the previous one.
+        //
+        // at the same time it's possible that it already aborted the old
+        // tx before starting this. do_abort_tx is idempotent so calling it
+        // just in case to proactivly abort the tx instead of waiting for
+        // the timeout
+
+        auto old_pid = model::producer_identity{
+          r.pid.get_id(), fence_it->second};
+        auto ar = co_await do_try_abort_old_tx(old_pid);
+        if (ar != cluster::tx_errc::none) {
+            vlog(
+              _ctx_txlog.trace,
+              "can't begin tx {} because abort of a prev tx {} failed with {}; "
+              "retrying",
+              r.pid,
+              old_pid,
+              ar);
+            co_return make_begin_tx_reply(cluster::tx_errc::stale);
+        }
     }
 
     auto txseq_it = _tx_seqs.find(r.pid.get_id());
@@ -3166,17 +3201,23 @@ ss::future<> group::do_abort_old_txes() {
 
 ss::future<> group::try_abort_old_tx(model::producer_identity pid) {
     return get_tx_lock(pid.get_id())->with([this, pid]() {
-        return do_try_abort_old_tx(pid);
+        vlog(_ctx_txlog.trace, "attempting to expire pid:{}", pid);
+
+        auto expiration_it = _expiration_info.find(pid);
+        if (expiration_it != _expiration_info.end()) {
+            if (!expiration_it->second.is_expired()) {
+                vlog(_ctx_txlog.trace, "pid:{} isn't expired, skipping", pid);
+                return ss::now();
+            }
+        }
+
+        return do_try_abort_old_tx(pid).discard_result();
     });
 }
 
-ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
-    auto expiration_it = _expiration_info.find(pid);
-    if (expiration_it != _expiration_info.end()) {
-        if (!expiration_it->second.is_expired()) {
-            co_return;
-        }
-    }
+ss::future<cluster::tx_errc>
+group::do_try_abort_old_tx(model::producer_identity pid) {
+    vlog(_ctx_txlog.trace, "aborting pid:{}", pid);
 
     auto p_it = _prepared_txs.find(pid);
     if (p_it != _prepared_txs.end()) {
@@ -3188,35 +3229,64 @@ ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
           pid,
           tx_seq,
           config::shard_local_cfg().rm_sync_timeout_ms.value());
-        if (r.ec == cluster::tx_errc::none) {
-            if (r.commited) {
-                auto res = co_await do_commit(_id, pid);
-                if (res.ec != cluster::tx_errc::none) {
-                    vlog(
-                      _ctxlog.error,
-                      "Can not commit prepared tx with pid({})",
-                      pid);
-                }
-            } else if (r.aborted) {
-                auto res = co_await do_abort(_id, pid, tx_seq);
-                if (res.ec != cluster::tx_errc::none) {
-                    vlog(
-                      _ctxlog.error,
-                      "Can not abort prepared tx with pid({})",
-                      pid);
-                }
-            }
+        if (r.ec != cluster::tx_errc::none) {
+            co_return r.ec;
         }
-    } else {
-        auto v_it = _volatile_txs.find(pid);
-        if (v_it == _volatile_txs.end()) {
-            co_return;
+        if (r.commited) {
+            auto res = co_await do_commit(_id, pid);
+            if (res.ec != cluster::tx_errc::none) {
+                vlog(
+                  _ctxlog.warn,
+                  "commit of prepared tx pid:{} failed with ec:{}",
+                  pid,
+                  res.ec);
+            }
+            co_return res.ec;
+        } else if (r.aborted) {
+            auto res = co_await do_abort(_id, pid, tx_seq);
+            if (res.ec != cluster::tx_errc::none) {
+                vlog(
+                  _ctxlog.warn,
+                  "abort of prepared tx pid:{} failed with ec:{}",
+                  pid,
+                  res.ec);
+            }
+            co_return res.ec;
         }
 
-        auto res = co_await do_abort(_id, pid, v_it->second.tx_seq);
-        if (res.ec != cluster::tx_errc::none) {
-            vlog(_ctxlog.error, "Can not abort volatile tx with pid({})", pid);
+        co_return cluster::tx_errc::stale;
+    } else {
+        model::tx_seq tx_seq;
+        if (is_transaction_ga()) {
+            auto txseq_it = _tx_seqs.find(pid.get_id());
+            if (txseq_it == _tx_seqs.end()) {
+                vlog(
+                  _ctx_txlog.trace, "skipping pid:{} (can't find tx_seq)", pid);
+                co_return cluster::tx_errc::none;
+            }
+            tx_seq = txseq_it->second;
+        } else {
+            auto v_it = _volatile_txs.find(pid);
+            if (v_it == _volatile_txs.end()) {
+                vlog(
+                  _ctx_txlog.trace,
+                  "skipping pid:{} (can't find volatile)",
+                  pid);
+                co_return cluster::tx_errc::none;
+            }
+            tx_seq = v_it->second.tx_seq;
         }
+
+        auto res = co_await do_abort(_id, pid, tx_seq);
+        if (res.ec != cluster::tx_errc::none) {
+            vlog(
+              _ctxlog.warn,
+              "abort of pid:{} tx_seq:{} failed with {}",
+              pid,
+              tx_seq,
+              res.ec);
+        }
+        co_return res.ec;
     }
 }
 
