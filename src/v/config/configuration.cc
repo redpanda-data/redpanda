@@ -1746,9 +1746,9 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       750ms,
       {.min = 0ms})
-  , kafka_quota_balancer_min_shard_thoughput_ratio(
+  , kafka_quota_balancer_min_shard_throughput_ratio(
       *this,
-      "kafka_quota_balancer_min_shard_thoughput_ratio",
+      "kafka_quota_balancer_min_shard_throughput_ratio",
       "The lowest value of the throughput quota a shard can get in the process "
       "of quota balancing, expressed as a ratio of default shard quota. "
       "0 means there is no minimum, 1 means no quota can be taken away "
@@ -1756,9 +1756,9 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       0.01,
       &validate_0_to_1_ratio)
-  , kafka_quota_balancer_min_shard_thoughput_bps(
+  , kafka_quota_balancer_min_shard_throughput_bps(
       *this,
-      "kafka_quota_balancer_min_shard_thoughput_bps",
+      "kafka_quota_balancer_min_shard_throughput_bps",
       "The lowest value of the throughput quota a shard can get in the process "
       "of quota balancing, in bytes/s. 0 means there is no minimum.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},

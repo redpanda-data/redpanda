@@ -33,6 +33,30 @@ struct ingress_egress_state {
     T eg;
 };
 
+class snc_quotas_probe {
+public:
+    snc_quotas_probe(class snc_quota_manager& qm)
+      : _qm(qm) {}
+    snc_quotas_probe(const snc_quotas_probe&) = delete;
+    snc_quotas_probe& operator=(const snc_quotas_probe&) = delete;
+    snc_quotas_probe(snc_quotas_probe&&) = delete;
+    snc_quotas_probe& operator=(snc_quotas_probe&&) = delete;
+    ~snc_quotas_probe() noexcept = default;
+
+    void balancer_step() { ++_balancer_runs; }
+
+    void setup_metrics();
+
+    uint64_t get_balancer_runs() const noexcept { return _balancer_runs; }
+
+private:
+    class snc_quota_manager& _qm;
+    ss::metrics::metric_groups _metrics;
+    uint64_t _balancer_runs = 0;
+};
+
+/// Isolates \ref quota_manager functionality related to
+/// shard/node/cluster (SNC) wide quotas and limits
 class snc_quota_manager
   : public ss::peering_sharded_service<snc_quota_manager> {
 public:
@@ -71,25 +95,17 @@ public:
     void record_response_tp(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
-private:
-    /// Describes an instruction to the balancer how to alter effective shard
-    /// quotas When \p amount_is == \p delta, \p amount should be dispensed
-    /// among shard quotas (if positive) or collected from shard quotas (if
-    /// negative). When \p amount_is == \p value, \p amount contains the new
-    /// shard quota value and each shard quota should be reset to that value
-    /// regardless of what is there now.
-    struct dispense_quota_amount {
-        snc_quota_manager::quota_t amount{0};
-        enum class amount_t { delta, value };
-        amount_t amount_is{amount_t::delta};
-        bool empty() const noexcept {
-            return amount == 0 && amount_is == amount_t::delta;
-        }
-        snc_quota_manager::quota_t get_delta_or_0() const noexcept;
-        std::optional<snc_quota_manager::quota_t> get_value() const noexcept;
+    const snc_quotas_probe& get_snc_quotas_probe() const noexcept {
+        return _probe;
     };
-    friend struct fmt::formatter<dispense_quota_amount>;
 
+    /// Return current effective quota values
+    ingress_egress_state<quota_t> get_quota() const noexcept;
+
+    /// Return current measured throughput values
+    ingress_egress_state<quota_t> get_throughput() const noexcept;
+
+private:
     // Returns value based on upstream values, not the _node_quota_default
     ingress_egress_state<std::optional<quota_t>>
     calc_node_quota_default() const;
@@ -113,15 +129,13 @@ private:
     /// A step of balancer that applies any updates from configuration changes.
     /// Spawned by configration bindings watching changes of the properties.
     /// Runs on the balancer shard only.
-    ss::future<>
-      quota_balancer_update(ingress_egress_state<dispense_quota_amount>);
+    ss::future<> quota_balancer_update(
+      ingress_egress_state<std::optional<quota_t>> old_node_quota_default,
+      ingress_egress_state<std::optional<quota_t>> new_node_quota_default);
 
     /// Update time position of the buckets of the shard so that
     /// get_deficiency() and get_surplus() will return actual data
     void refill_buckets(const clock::time_point now) noexcept;
-
-    /// Return current quota values
-    ingress_egress_state<quota_t> get_quota() const noexcept;
 
     /// If the current quota is sufficient for the shard, returns 0,
     /// otherwise returns a positive value
@@ -147,20 +161,23 @@ private:
     config::binding<std::chrono::milliseconds> _kafka_quota_balancer_window;
     config::binding<std::chrono::milliseconds>
       _kafka_quota_balancer_node_period;
-    config::binding<double> _kafka_quota_balancer_min_shard_thoughput_ratio;
-    config::binding<quota_t> _kafka_quota_balancer_min_shard_thoughput_bps;
+    config::binding<double> _kafka_quota_balancer_min_shard_throughput_ratio;
+    config::binding<quota_t> _kafka_quota_balancer_min_shard_throughput_bps;
 
     // operational, only used in the balancer shard
     ss::timer<ss::lowres_clock> _balancer_timer;
     ss::lowres_clock::time_point _balancer_timer_last_ran;
     ss::gate _balancer_gate;
     mutex _balancer_mx;
-    ingress_egress_state<quota_t> _node_deficit;
+    ingress_egress_state<quota_t> _node_deficit{0, 0};
 
     // operational, used on each shard
     ingress_egress_state<std::optional<quota_t>> _node_quota_default;
     ingress_egress_state<quota_t> _shard_quota_minimum;
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
+
+    // service
+    snc_quotas_probe _probe;
 };
 
 } // namespace kafka
