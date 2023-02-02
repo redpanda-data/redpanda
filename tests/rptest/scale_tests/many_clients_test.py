@@ -88,9 +88,12 @@ class ManyClientsTest(RedpandaTest):
                                  group="testgroup",
                                  save_msgs=False)
 
-        producer = ProducerSwarm(self.test_context, self.redpanda, TOPIC_NAME,
-                                 PRODUCER_COUNT, RECORDS_PER_PRODUCER,
-                                 PRODUCER_TIMEOUT_MS)
+        producer = ProducerSwarm(self.test_context,
+                                 self.redpanda,
+                                 TOPIC_NAME,
+                                 PRODUCER_COUNT,
+                                 RECORDS_PER_PRODUCER,
+                                 timeout_ms=PRODUCER_TIMEOUT_MS)
         producer.start()
         consumer_a.start()
         consumer_b.start()
