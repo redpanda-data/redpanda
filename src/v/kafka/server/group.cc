@@ -2343,8 +2343,17 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
           model::timestamp::now().value() + r.data.retention_time_ms);
     }();
 
+    const auto get_commit_timestamp =
+      [](const offset_commit_request_partition& p) {
+          if (p.commit_timestamp == -1) {
+              return model::timestamp::now();
+          }
+          return model::timestamp(p.commit_timestamp);
+      };
+
     for (const auto& t : r.data.topics) {
         for (const auto& p : t.partitions) {
+            const auto commit_timestamp = get_commit_timestamp(p);
             update_store_offset_builder(
               builder,
               t.name,
@@ -2352,7 +2361,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
               p.committed_offset,
               p.committed_leader_epoch,
               p.committed_metadata.value_or(""),
-              model::timestamp(p.commit_timestamp),
+              commit_timestamp,
               expiry_timestamp);
 
             model::topic_partition tp(t.name, p.partition_index);
@@ -2369,7 +2378,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
               .offset = p.committed_offset,
               .metadata = p.committed_metadata.value_or(""),
               .committed_leader_epoch = p.committed_leader_epoch,
-              .commit_timestamp = model::timestamp(p.commit_timestamp),
+              .commit_timestamp = commit_timestamp,
               .expiry_timestamp = expiry_timestamp,
             };
 
