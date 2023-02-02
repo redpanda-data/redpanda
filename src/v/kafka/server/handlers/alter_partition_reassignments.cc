@@ -275,7 +275,11 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
                                 ntp,
                                 model::timeout_clock::now()
                                   + request.data.timeout_ms);
-                if (errc) {
+                if (!errc) {
+                    topic_response.partitions.push_back(
+                      reassignable_partition_response{
+                        .partition_index = partition.partition_index});
+                } else {
                     auto clerr = static_cast<cluster::errc>(errc.value());
                     vlog(
                       klog.debug,
