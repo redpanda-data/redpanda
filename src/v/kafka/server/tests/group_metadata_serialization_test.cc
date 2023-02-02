@@ -114,12 +114,13 @@ FIXTURE_TEST(metadata_rt_test, fixture) {
     roundtrip_test(offset_key);
     // version 1
     kafka::offset_metadata_value offset_md_v1;
-    offset_md_v1.version = kafka::group_metadata_version(1);
 
     offset_md_v1.offset = random_named_int<model::offset>();
     offset_md_v1.metadata = random_named_string<ss::sstring>();
     offset_md_v1.commit_timestamp = model::timestamp::now();
     offset_md_v1.expiry_timestamp = model::timestamp::now();
+    // a non-{-1} timestamp results in v1 being chosen
+    vassert(offset_md_v1.expiry_timestamp != model::timestamp(-1), "force v1");
 
     roundtrip_test(offset_md_v1);
 

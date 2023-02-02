@@ -138,7 +138,6 @@ struct offset_metadata_key {
  */
 struct offset_metadata_value {
     static constexpr group_metadata_version latest_version{3};
-    group_metadata_version version = latest_version;
     model::offset offset;
     // present only in version >= 3
     kafka::leader_epoch leader_epoch = invalid_leader_epoch;
