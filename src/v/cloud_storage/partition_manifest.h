@@ -13,11 +13,12 @@
 #include "absl/container/btree_map.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
-#include "json/document.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
 #include "utils/tracking_allocator.h"
+
+#include <seastar/core/shared_ptr.hh>
 
 #include <deque>
 
@@ -280,7 +281,8 @@ public:
                && _start_offset == other._start_offset
                && _last_uploaded_compacted_offset
                     == other._last_uploaded_compacted_offset
-               && _insync_offset == other._insync_offset;
+               && _insync_offset == other._insync_offset
+               && _replaced == other._replaced;
     }
 
     /// Remove segment record from manifest
@@ -323,6 +325,25 @@ private:
     /// Move segments from _segments to _replaced
     void move_aligned_offset_range(
       model::offset begin_inclusive, model::offset end_inclusive);
+
+    struct serialization_cursor;
+    using serialization_cursor_ptr = ss::lw_shared_ptr<serialization_cursor>;
+    /// Make serialization cursor
+    serialization_cursor_ptr make_cursor(std::ostream& out) const;
+    /// Write prologue
+    void serialize_begin(serialization_cursor_ptr cursor) const;
+    /// Write next chunk of body
+    void serialize_segments(serialization_cursor_ptr cursor) const;
+    /// Write next chunk of body
+    void serialize_replaced(serialization_cursor_ptr cursor) const;
+    /// Write epilogue
+    void serialize_end(serialization_cursor_ptr cursor) const;
+    /// Serialize normal manifest entry
+    void serialize_segment_meta(
+      const segment_meta& meta, serialization_cursor_ptr cursor) const;
+    /// Serialize removed manifest entry
+    void serialize_removed_segment_meta(
+      const lw_segment_meta& meta, serialization_cursor_ptr cursor) const;
 
     model::ntp _ntp;
     model::initial_revision_id _rev;

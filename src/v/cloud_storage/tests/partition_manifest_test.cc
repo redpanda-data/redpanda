@@ -1119,7 +1119,6 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
         accessor::add_replaced_segment(
           &m, segment_name(segment.first), segment.second);
     }
-
     auto [is, size] = m.serialize();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
