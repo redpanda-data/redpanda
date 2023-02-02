@@ -124,11 +124,16 @@ class NodeDecommissionWaiter():
                 decommission_status = self.admin.get_decommission_status(
                     self.node_id, self._not_decommissioned_node())
             except requests.exceptions.HTTPError as e:
-                if e.response.status_code == 400:
-                    time.sleep(1)
-                    continue
-                else:
-                    raise e
+                self.logger.info(
+                    f"unable to get decommission status, HTTP error",
+                    exc_info=True)
+                time.sleep(1)
+                continue
+            except Exception as e:
+                self.logger.warn(f"unable to get decommission status",
+                                 exc_info=True)
+                time.sleep(1)
+                continue
 
             self.logger.debug(
                 f"Node {self.node_id} decommission status: {decommission_status}"
