@@ -99,6 +99,7 @@ ss::future<segment_set> recover_segments(
   size_t read_buf_size,
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
 
 } // namespace storage

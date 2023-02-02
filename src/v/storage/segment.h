@@ -25,6 +25,7 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/rwlock.hh>
+#include <seastar/core/sharded.hh>
 
 #include <exception>
 #include <optional>
@@ -262,7 +263,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -274,7 +276,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags

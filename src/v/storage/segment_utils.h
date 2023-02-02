@@ -62,7 +62,8 @@ make_concatenated_segment(
   segment_full_path,
   std::vector<ss::lw_shared_ptr<segment>>,
   compaction_config,
-  storage_resources& resources);
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table);
 
 ss::future<> write_concatenated_compacted_index(
   std::filesystem::path,

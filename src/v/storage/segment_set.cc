@@ -365,7 +365,8 @@ static ss::future<segment_set::underlying_t> open_segments(
   ss::abort_source& as,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     using segs_type = segment_set::underlying_t;
     return ss::do_with(
       segs_type{},
@@ -375,7 +376,8 @@ static ss::future<segment_set::underlying_t> open_segments(
        sanitize_fileops,
        buf_size,
        read_ahead,
-       &resources](segs_type& segs) {
+       &resources,
+       &feature_table](segs_type& segs) {
           auto f = directory_walker::walk(
             ss::sstring(ppath),
             [&as,
@@ -385,7 +387,8 @@ static ss::future<segment_set::underlying_t> open_segments(
              &segs,
              buf_size,
              read_ahead,
-             &resources](ss::directory_entry seg) {
+             &resources,
+             &feature_table](ss::directory_entry seg) {
                 // abort if requested
                 if (as.abort_requested()) {
                     return ss::now();
@@ -410,7 +413,8 @@ static ss::future<segment_set::underlying_t> open_segments(
                          cache_factory(),
                          buf_size,
                          read_ahead,
-                         resources)
+                         resources,
+                         feature_table)
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
@@ -435,7 +439,8 @@ ss::future<segment_set> recover_segments(
   size_t read_buf_size,
   unsigned read_readahead_count,
   std::optional<ss::sstring> last_clean_segment,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     return ss::recursive_touch_directory(ss::sstring(path))
       .then([&as,
              path,
@@ -443,7 +448,8 @@ ss::future<segment_set> recover_segments(
              sanitize_fileops,
              read_buf_size,
              read_readahead_count,
-             &resources] {
+             &resources,
+             &feature_table] {
           return open_segments(
             path,
             sanitize_fileops,
@@ -451,7 +457,8 @@ ss::future<segment_set> recover_segments(
             as,
             read_buf_size,
             read_readahead_count,
-            resources);
+            resources,
+            feature_table);
       })
       .then([&as,
              is_compaction_enabled,

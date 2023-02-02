@@ -1486,7 +1486,8 @@ void application::wire_up_bootstrap_services() {
           log_cfg.reclaim_opts.background_reclaimer_sg
             = _scheduling_groups.cache_background_reclaim_sg();
           return log_cfg;
-      })
+      },
+      std::ref(feature_table))
       .get();
 
     // Hook up local_monitor to update storage_resources when disk state changes

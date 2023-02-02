@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -18,6 +19,7 @@
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/unaligned.hh>
 
 #include <memory>
@@ -54,6 +56,7 @@ public:
       segment_full_path path,
       model::offset base,
       size_t step,
+      ss::sharded<features::feature_table>& feature_table,
       debug_sanitize_files);
 
     ~segment_index() noexcept = default;
@@ -97,6 +100,7 @@ private:
 
     segment_full_path _path;
     size_t _step;
+    std::reference_wrapper<ss::sharded<features::feature_table>> _feature_table;
     size_t _acc{0};
     bool _needs_persistence{false};
     index_state _state;
@@ -107,7 +111,8 @@ private:
       segment_full_path path,
       ss::file mock_file,
       model::offset base,
-      size_t step);
+      size_t step,
+      ss::sharded<features::feature_table>& feature_table);
 
     // For unit testing only.  If this is set, then open() returns
     // the contents of mock_file instead of opening the path in _name.

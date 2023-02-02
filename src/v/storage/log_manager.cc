@@ -124,10 +124,14 @@ log_config::log_config(
   , compaction_sg(compaction_sg) {}
 
 log_manager::log_manager(
-  log_config config, kvstore& kvstore, storage_resources& resources) noexcept
+  log_config config,
+  kvstore& kvstore,
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) noexcept
   : _config(std::move(config))
   , _kvstore(kvstore)
   , _resources(resources)
+  , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
     _housekeeping_timer.set_callback([this] { trigger_housekeeping(); });
@@ -276,7 +280,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
             read_ahead,
             _config.sanitize_fileops,
             create_cache(ntp.cache_enabled()),
-            _resources);
+            _resources,
+            _feature_table);
       });
 }
 
@@ -358,10 +363,11 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
       last_clean_segment,
-      _resources);
+      _resources,
+      _feature_table);
 
     auto l = storage::make_disk_backed_log(
-      std::move(cfg), *this, std::move(segments), _kvstore);
+      std::move(cfg), *this, std::move(segments), _kvstore, _feature_table);
     auto [it, success] = _logs.emplace(
       l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);

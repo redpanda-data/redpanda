@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "storage/disk_log_appender.h"
 #include "storage/failure_probes.h"
@@ -53,7 +54,12 @@ public:
      */
     static constexpr size_t segment_size_hard_limit = 3_GiB;
 
-    disk_log_impl(ntp_config, log_manager&, segment_set, kvstore&);
+    disk_log_impl(
+      ntp_config,
+      log_manager&,
+      segment_set,
+      kvstore&,
+      ss::sharded<features::feature_table>& feature_table);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = default;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
@@ -184,6 +190,7 @@ private:
     float _segment_size_jitter;
     segment_set _segs;
     kvstore& _kvstore;
+    ss::sharded<features::feature_table>& _feature_table;
     model::offset _start_offset;
     // Used to serialize updates to _start_offset. See the update_start_offset
     // method.

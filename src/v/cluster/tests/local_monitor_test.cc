@@ -54,10 +54,17 @@ local_monitor_fixture::local_monitor_fixture()
       log_conf.base_dir,
       storage::debug_sanitize_files::yes);
 
+    _feature_table.start().get();
+    _feature_table
+      .invoke_on_all(
+        [](features::feature_table& f) { f.testing_activate_all(); })
+      .get();
+
     _storage_api
       .start(
         [kvstore_conf]() { return kvstore_conf; },
-        [log_conf]() { return log_conf; })
+        [log_conf]() { return log_conf; },
+        std::ref(_feature_table))
       .get0();
 
     clusterlog.info("{}: create", __func__);
@@ -87,6 +94,7 @@ local_monitor_fixture::~local_monitor_fixture() {
     }
     _storage_api.stop().get0();
     _storage_node_api.stop().get0();
+    _feature_table.stop().get();
 }
 
 node::local_state local_monitor_fixture::update_state() {

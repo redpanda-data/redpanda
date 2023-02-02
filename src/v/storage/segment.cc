@@ -605,7 +605,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     if (path.get_version() != record_version_type::v1) {
         throw std::runtime_error(fmt::format(
           "Segment has invalid version {} != {} path {}",
@@ -622,6 +623,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
       rdr->path().to_index(),
       path.get_base_offset(),
       segment_index::default_data_buffer_step,
+      feature_table,
       sanitize_fileops);
 
     co_return ss::make_lw_shared<segment>(
@@ -644,7 +646,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     auto path = segment_full_path(ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
@@ -653,7 +656,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              std::move(batch_cache),
              buf_size,
              read_ahead,
-             resources)
+             resources,
+             feature_table)
       .then([path, &ntpc, sanitize_fileops, pc, &resources](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(

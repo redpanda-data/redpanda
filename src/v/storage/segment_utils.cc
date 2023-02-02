@@ -616,7 +616,8 @@ make_concatenated_segment(
   segment_full_path path,
   std::vector<ss::lw_shared_ptr<segment>> segments,
   compaction_config cfg,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     // read locks on source segments
     std::vector<ss::rwlock::holder> locks;
     locks.reserve(segments.size());
@@ -627,8 +628,8 @@ make_concatenated_segment(
         generations.push_back(segment->get_generation_id());
     }
 
-    // fast check if we should abandon all the expensive i/o work if we happened
-    // to be racing with an operation like truncation or shutdown.
+    // fast check if we should abandon all the expensive i/o work if we
+    // happened to be racing with an operation like truncation or shutdown.
     for (const auto& segment : segments) {
         if (unlikely(segment->is_closed())) {
             throw std::runtime_error(fmt::format(
@@ -684,6 +685,7 @@ make_concatenated_segment(
       index_name,
       offsets.base_offset,
       segment_index::default_data_buffer_step,
+      feature_table,
       cfg.sanitize);
 
     co_return std::make_tuple(
@@ -767,7 +769,8 @@ ss::future<> do_write_concatenated_compacted_index(
                   .handle_exception([](const std::exception_ptr& e) {
                       vlog(
                         gclog.info,
-                        "compacted index is corrupted, skipping concatenation "
+                        "compacted index is corrupted, skipping "
+                        "concatenation "
                         "- {}",
                         e);
                       return false;

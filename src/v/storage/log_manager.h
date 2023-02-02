@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
@@ -154,7 +155,10 @@ struct log_config {
 class log_manager {
 public:
     explicit log_manager(
-      log_config, kvstore& kvstore, storage_resources&) noexcept;
+      log_config,
+      kvstore& kvstore,
+      storage_resources&,
+      ss::sharded<features::feature_table>&) noexcept;
 
     ss::future<log> manage(ntp_config);
 
@@ -229,6 +233,7 @@ private:
     log_config _config;
     kvstore& _kvstore;
     storage_resources& _resources;
+    ss::sharded<features::feature_table>& _feature_table;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _housekeeping_timer;
     logs_type _logs;

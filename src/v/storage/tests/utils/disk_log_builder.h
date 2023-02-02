@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -395,6 +396,7 @@ private:
       const log_append_config& config,
       should_flush_after flush);
 
+    ss::sharded<features::feature_table> _feature_table;
     storage::log_config _log_config;
     storage::api _storage;
     std::optional<log> _log;
