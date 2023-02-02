@@ -35,7 +35,7 @@ class EndToEndTopicRecovery(RedpandaTest):
 
     topics = (TopicSpec(), )
 
-    def __init__(self, test_context):
+    def __init__(self, test_context, enable_kerberos_listener=False):
         extra_rp_conf = dict(
             enable_leader_balancer=False,
             partition_autobalancing_mode="off",
@@ -51,6 +51,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         self._bucket = si_settings.cloud_storage_bucket
         super().__init__(test_context=test_context,
                          si_settings=si_settings,
+                         enable_kerberos_listener=enable_kerberos_listener,
                          extra_rp_conf=extra_rp_conf)
         self._ctx = test_context
         self._producer = None
@@ -351,3 +352,97 @@ class EndToEndTopicRecovery(RedpandaTest):
         assert restore_hwm == hwm
 
         validate()
+
+
+class Issue7758non_repro(EndToEndTopicRecovery):
+    def __init__(self, test_context):
+        super().__init__(test_context=test_context,
+                         enable_kerberos_listener=True)
+
+    @cluster(num_nodes=4)
+    def test_case(self):
+        num_messages = 2
+        msg_size = 5000
+        topic = TopicSpec()
+        self.logger.info("start")
+        producer = KgoVerifierProducer(self._ctx, self.redpanda, topic,
+                                       msg_size, num_messages,
+                                       [self._verifier_node])
+
+        self.init_producer(msg_size, num_messages)
+        producer = self._producer
+        producer.start(clean=False)
+        producer.wait()
+        assert producer.produce_status.acked >= num_messages
+        self.logger.info("waiting S3")
+        wait_until(lambda: self._s3_has_all_data(num_messages),
+                   timeout_sec=100,
+                   backoff_sec=5,
+                   err_msg="Not all data is uploaded to S3 bucket")
+
+        self.logger.info("final iteration")
+        self._stop_redpanda_nodes()
+        # wipe and recovery seems important
+        self._wipe_data()
+
+        # Run recovery
+        self._start_redpanda_nodes()
+        self._restore_topic(topic, {'retention.local.target.bytes': 512})
+
+        consumer = KgoVerifierSeqConsumer(self._ctx,
+                                          self.redpanda,
+                                          topic,
+                                          msg_size,
+                                          nodes=[self._verifier_node])
+        self.init_consumer(msg_size)
+        consumer = self._consumer
+        consumer.start(clean=False)
+        # we just care for the consumer to receive some data
+        consumer.wait(timeout_sec=100)
+
+
+class Issue7758repro(EndToEndTopicRecovery):
+    def __init__(self, test_context):
+        super().__init__(test_context=test_context,
+                         enable_kerberos_listener=True)
+
+    @cluster(num_nodes=4)
+    def test_case(self):
+        num_messages = 2
+        msg_size = 5000
+        topic = TopicSpec()
+        self.logger.info("start")
+        producer = KgoVerifierProducer(self._ctx, self.redpanda, topic,
+                                       msg_size, num_messages,
+                                       [self._verifier_node])
+
+        self.init_producer(msg_size, num_messages)
+        producer = self._producer
+        producer.start(clean=False)
+        producer.wait()
+        assert producer.produce_status.acked >= num_messages
+        self.logger.info("waiting S3")
+        wait_until(lambda: self._s3_has_all_data(num_messages),
+                   timeout_sec=100,
+                   backoff_sec=5,
+                   err_msg="Not all data is uploaded to S3 bucket")
+
+        self.logger.info("final iteration")
+        self._stop_redpanda_nodes()
+        # wipe and recovery seems important
+        self._wipe_data()
+
+        # Run recovery
+        self._start_redpanda_nodes()
+        self._restore_topic(topic, {'retention.local.target.bytes': 512})
+
+        consumer = KgoVerifierSeqConsumer(self._ctx,
+                                          self.redpanda,
+                                          topic,
+                                          msg_size,
+                                          nodes=[self._verifier_node])
+        self.init_consumer(msg_size)
+        consumer = self._consumer
+        consumer.start(clean=False)
+        # we just care for the consumer to receive some data
+        consumer.wait(timeout_sec=100)
