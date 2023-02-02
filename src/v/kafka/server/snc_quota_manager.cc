@@ -65,8 +65,8 @@ quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
         if (v > bottomless_token_bucket::max_quota) {
             return bottomless_token_bucket::max_quota;
         }
-        if (v < 1) {
-            return quota_t{1};
+        if (v < bottomless_token_bucket::min_quota) {
+            return bottomless_token_bucket::min_quota;
         }
         return v;
     } else {

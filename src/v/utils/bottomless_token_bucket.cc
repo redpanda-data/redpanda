@@ -23,7 +23,8 @@ void bottomless_token_bucket::use(
 }
 
 void bottomless_token_bucket::set_quota_impl(const quota_t quota) noexcept {
-    vassert(quota > 0, "Token bucket quota must be positive ({})", quota);
+    vassert(
+      quota >= min_quota, "Token bucket quota must be positive ({})", quota);
     vassert(
       quota <= max_quota,
       "Token bucket quota too large ({} > {})",

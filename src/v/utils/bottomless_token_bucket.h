@@ -61,6 +61,8 @@ public:
       static_cast<quota_t>(std::numeric_limits<int32_t>::max())
       * time_res_t::period::den};
 
+    static constexpr quota_t min_quota{1};
+
     /// Token bucket is initialized full of tokens
     bottomless_token_bucket(
       const quota_t quota, const time_res_t width) noexcept {
