@@ -82,7 +82,8 @@ partitions_request_iterator validate_partitions(
   partitions_request_iterator end,
   std::back_insert_iterator<Container> resp_it,
   reassignable_topic_response topic_response,
-  std::vector<model::node_id> all_node_ids) {
+  std::vector<model::node_id> all_node_ids,
+  std::optional<cluster::topic_metadata> tp_metadata) {
     // An undefined replicas vector is not an error, see "Replicas" in the
     // AlterPartitionReassignmentsRequest schemata. Therefore checks for
     // replicas.has_value are necessary.
@@ -159,6 +160,28 @@ partitions_request_iterator validate_partitions(
           return unkown_broker_id_it == partition.replicas->end();
       });
 
+    valid_partitions_end = validate_replicas(
+      begin,
+      valid_partitions_end,
+      std::back_inserter(invalid_partitions),
+      error_code::invalid_replication_factor,
+      "Number of replicas does not match the topic replication factor",
+      [&tp_metadata](const reassignable_partition& partition) {
+          if (!partition.replicas.has_value()) {
+              return true;
+          }
+
+          if (
+            !tp_metadata.has_value()
+            || !tp_metadata.value().is_topic_replicable()) {
+              return false;
+          }
+
+          auto tp_replication_factor
+            = tp_metadata.value().get_replication_factor();
+          return size_t(tp_replication_factor) == partition.replicas->size();
+      });
+
     // Store any invalid partitions in the response
     if (!invalid_partitions.empty()) {
         topic_response.partitions = std::move(invalid_partitions);
@@ -194,13 +217,16 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
 
     for (auto& topic : request.data.topics) {
         reassignable_topic_response topic_response{.name = topic.name};
+        auto tp_metadata = ctx.metadata_cache().get_topic_metadata(
+          model::topic_namespace{model::kafka_namespace, topic.name});
 
         auto valid_partitions_end = validate_partitions(
           topic.partitions.begin(),
           topic.partitions.end(),
           std::back_inserter(resp.data.responses),
           topic_response,
-          all_node_ids);
+          all_node_ids,
+          tp_metadata);
 
         for (auto it = topic.partitions.begin(); it != valid_partitions_end;
              ++it) {
