@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cloud_storage/topic_recovery_service.h"
 #include "serde/envelope.h"
 
 #include <compare>
@@ -24,11 +25,58 @@ struct status_request
     using rpc_adl_exempt = std::true_type;
 };
 
+struct topic_downloads
+  : serde::
+      envelope<topic_downloads, serde::version<0>, serde::compat_version<0>> {
+    model::topic_namespace tp_ns;
+    int pending_downloads;
+    int successful_downloads;
+    int failed_downloads;
+
+    auto serde_fields() {
+        return std::tie(
+          tp_ns, pending_downloads, successful_downloads, failed_downloads);
+    }
+
+    friend bool operator==(const topic_downloads&, const topic_downloads&)
+      = default;
+};
+
+struct recovery_request_params
+  : serde::envelope<
+      recovery_request_params,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    std::optional<ss::sstring> topic_names_pattern;
+    std::optional<size_t> retention_bytes;
+    std::optional<std::chrono::milliseconds> retention_ms;
+
+    void populate(const std::optional<cloud_storage::recovery_request>& r);
+
+    auto serde_fields() {
+        return std::tie(topic_names_pattern, retention_bytes, retention_ms);
+    }
+
+    friend bool
+    operator==(const recovery_request_params&, const recovery_request_params&)
+      = default;
+};
+
+std::ostream& operator<<(std::ostream&, const recovery_request_params&);
+
 struct status_response
   : serde::
       envelope<status_response, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
-    bool is_active;
+    cloud_storage::topic_recovery_service::state state;
+    std::vector<topic_downloads> download_counts;
+    recovery_request_params request;
+    auto serde_fields() { return std::tie(state, download_counts, request); }
+
+    bool is_active() const;
+
+    friend bool operator==(const status_response&, const status_response&)
+      = default;
 };
 
 } // namespace cluster

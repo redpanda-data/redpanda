@@ -78,7 +78,7 @@ std::ostream& operator<<(std::ostream& os, const init_recovery_result& result) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const topic_download_status& tds) {
+std::ostream& operator<<(std::ostream& os, const topic_download_counts& tds) {
     fmt::print(
       os,
       "{{pending_downloads: {}, successful_downloads: {}, failed_downloads: "
@@ -189,6 +189,14 @@ ss::future<> topic_recovery_service::propagate_state(state s) {
     });
 }
 
+topic_recovery_service::recovery_status
+topic_recovery_service::current_recovery_status() const {
+    return topic_recovery_service::recovery_status{
+      .state = _state,
+      .download_counts = _download_counts,
+      .request = _recovery_request};
+}
+
 static ss::future<result<std::vector<remote_segment_path>, recovery_error_ctx>>
 collect_manifest_paths(
   remote& remote, ss::abort_source& as, const recovery_task_config& cfg) {
@@ -284,6 +292,8 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
           recovery_error_code::recovery_already_running);
     }
 
+    _recovery_request.emplace(request);
+
     co_await propagate_state(state::scanning_bucket);
     vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
     auto bucket_contents_result = co_await collect_manifest_paths(
@@ -294,6 +304,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
           fmt::format("error while listing items"),
           recovery_error_code::error_listing_items);
         vlog(cst_log.error, "{}", error.context);
+        _recovery_request = std::nullopt;
         co_await propagate_state(state::inactive);
         co_return error;
     }
@@ -305,6 +316,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     if (manifests.empty()) {
         vlog(cst_log.info, "exiting recovery, no topics to create");
+        _recovery_request = std::nullopt;
         co_await propagate_state(state::inactive);
         co_return outcome::success();
     }
@@ -313,7 +325,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     for (const auto& manifest : manifests) {
         vlog(cst_log.debug, "topic manifest: {}", manifest.get_manifest_path());
     }
-    _recovery_status.clear();
+    _download_counts.clear();
 
     auto clear_fib = make_rtc(_as, _config);
     co_await clear_recovery_results(
@@ -331,13 +343,13 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
         for (const auto& r : create_topics_results) {
             if (r.ec != cluster::errc::success) {
                 vlog(cst_log.warn, "topic creation failed: {}", r);
-                _recovery_status.erase(r.tp_ns);
+                _download_counts.erase(r.tp_ns);
             } else {
                 vlog(
                   cst_log.debug,
                   "topic created: {}, expected downloads: {}",
                   r,
-                  _recovery_status[r.tp_ns].pending_downloads);
+                  _download_counts[r.tp_ns].pending_downloads);
             }
         }
 
@@ -350,6 +362,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     }
 
     if (result.has_error()) {
+        _recovery_request = std::nullopt;
         co_await propagate_state(state::inactive);
     }
     co_return result;
@@ -581,12 +594,12 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
     auto results = co_await gather_recovery_results(
       _remote.local(), _config.bucket, fib);
     for (const auto& result : results) {
-        if (!_recovery_status.contains(result.tp_ns)) {
+        if (!_download_counts.contains(result.tp_ns)) {
             vlog(cst_log.debug, "unexpected status file: {}", result.tp_ns);
             continue;
         }
 
-        auto& status = _recovery_status[result.tp_ns];
+        auto& status = _download_counts[result.tp_ns];
         status.pending_downloads -= 1;
 
         if (result.result) {
@@ -613,7 +626,7 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
     co_await clear_recovery_results(
       _remote.local(), _config.bucket, clear_fib, std::move(results));
 
-    for (const auto& [tp_ns, status] : _recovery_status) {
+    for (const auto& [tp_ns, status] : _download_counts) {
         // Try again if any ntp has pending downloads
         if (status.pending_downloads > 0) {
             _pending_status_timer.arm(
@@ -625,7 +638,8 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
     }
 
     // Finished with all downloads
-    _recovery_status.clear();
+    _download_counts.clear();
+    _recovery_request = std::nullopt;
 
     co_await reset_topic_configurations();
     co_await propagate_state(state::inactive);
@@ -634,8 +648,8 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
 ss::future<> topic_recovery_service::check_for_downloads() {
     // We need a lock here because if the check for downloads runs in parallel,
     // which is possible when there are many result files to process and one
-    // call is still running while, the status hashmap can get corrupted due to
-    // double processing of result files.
+    // call is still running while another gets scheduled, the status hashmap
+    // can get corrupted due to double processing of result files.
     return ss::with_semaphore(
       _download_check_sem, 1, [this] { return do_check_for_downloads(); });
 }
@@ -656,9 +670,47 @@ void topic_recovery_service::populate_recovery_status() {
         }
         auto topic = ntp_cfg->tp_ns.tp;
         auto expected = ntp_cfg->partition_count * ntp_cfg->replication_factor;
-        _recovery_status.emplace(
-          ntp_cfg->tp_ns, topic_download_status{expected, 0, 0});
+        _download_counts.emplace(
+          ntp_cfg->tp_ns, topic_download_counts{expected, 0, 0});
     }
+}
+
+std::ostream&
+operator<<(std::ostream& os, const topic_recovery_service::state& state) {
+    switch (state) {
+    case topic_recovery_service::state::inactive:
+        os << "inactive";
+        break;
+    case topic_recovery_service::state::starting:
+        os << "starting";
+        break;
+    case topic_recovery_service::state::scanning_bucket:
+        os << "scanning_bucket";
+        break;
+    case topic_recovery_service::state::creating_topics:
+        os << "creating_topics";
+        break;
+    case topic_recovery_service::state::recovering_data:
+        os << "recovering_data";
+        break;
+    }
+    return os;
+}
+
+std::ostream&
+operator<<(std::ostream& os, const topic_recovery_service::recovery_status& r) {
+    std::string request = "none";
+    if (r.request.has_value()) {
+        request = fmt::format("{}", r.request);
+    }
+
+    fmt::print(
+      os,
+      "{{state: {}, topics being downloaded: {}, recovery request: {}}}",
+      r.state,
+      r.download_counts.size(),
+      request);
+    return os;
 }
 
 } // namespace cloud_storage

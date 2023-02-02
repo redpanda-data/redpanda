@@ -351,10 +351,12 @@ FIXTURE_TEST(recovery_download_tracking, fixture) {
                == cloud_storage::topic_recovery_service::state::recovering_data;
     }).get();
 
-    auto status = service.local().current_recovery_status();
+    auto download_counts
+      = service.local().current_recovery_status().download_counts;
     BOOST_REQUIRE_EQUAL(
-      status[tp_ns].failed_downloads + status[tp_ns].pending_downloads
-        + status[tp_ns].successful_downloads,
+      download_counts[tp_ns].failed_downloads
+        + download_counts[tp_ns].pending_downloads
+        + download_counts[tp_ns].successful_downloads,
       1);
 }
 
@@ -439,4 +441,41 @@ FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
       topic->properties.retention_local_target_bytes.has_optional_value());
     BOOST_REQUIRE_EQUAL(
       topic->properties.retention_local_target_bytes.value(), 10000);
+}
+
+FIXTURE_TEST(recovery_status, fixture) {
+    set_expectations_and_listen(
+      {root_level, meta_level, manifest, recovery_state});
+
+    ss::httpd::request r;
+    r._headers = {{"Content-Type", "application/json"}};
+    r.content_length = 1;
+    r.content
+      = R"JSON({"topic_names_pattern": ".*es*", "retention_bytes": 10000})JSON";
+    auto& service = app.topic_recovery_service;
+    service.local().start_recovery(r);
+
+    // capture a status where the recovery is running. if the recovery finishes
+    // too fast the test may miss it.
+    cloud_storage::topic_recovery_service::recovery_status status;
+    tests::cooperative_spin_wait_with_timeout(60s, [&service, &status] {
+        status = service.local().current_recovery_status();
+        return service.local().current_recovery_status().request.has_value();
+    }).get();
+
+    BOOST_REQUIRE_NE(
+      status.state, cloud_storage::topic_recovery_service::state::inactive);
+
+    cloud_storage::recovery_request rr{r};
+    BOOST_REQUIRE(status.request.has_value());
+    BOOST_REQUIRE_EQUAL(status.request.value().topic_names_pattern(), ".*es*");
+    BOOST_REQUIRE_EQUAL(status.request.value().retention_bytes(), 10000);
+    BOOST_REQUIRE(!status.request.value().retention_ms().has_value());
+}
+
+FIXTURE_TEST(recovery_status_default, fixture) {
+    auto state
+      = app.topic_recovery_service.local().current_recovery_status().state;
+    BOOST_REQUIRE_EQUAL(
+      state, cloud_storage::topic_recovery_service::state::inactive);
 }

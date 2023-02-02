@@ -46,13 +46,13 @@ struct recovery_task_config {
     static recovery_task_config make_config();
 };
 
-struct topic_download_status {
+struct topic_download_counts {
     int pending_downloads;
     int successful_downloads;
     int failed_downloads;
 };
 
-std::ostream& operator<<(std::ostream&, const topic_download_status&);
+std::ostream& operator<<(std::ostream&, const topic_download_counts&);
 
 struct topic_recovery_service
   : ss::peering_sharded_service<topic_recovery_service> {
@@ -64,8 +64,14 @@ struct topic_recovery_service
         recovering_data,
     };
 
-    using recovery_status
-      = absl::flat_hash_map<model::topic_namespace, topic_download_status>;
+    using download_counts
+      = absl::flat_hash_map<model::topic_namespace, topic_download_counts>;
+
+    struct recovery_status {
+        state state;
+        download_counts download_counts;
+        std::optional<recovery_request> request;
+    };
 
     topic_recovery_service(
       ss::sharded<remote>& remote,
@@ -96,9 +102,7 @@ struct topic_recovery_service
 
     state current_state() const { return _state; }
 
-    const recovery_status& current_recovery_status() const {
-        return _recovery_status;
-    }
+    recovery_status current_recovery_status() const;
 
 private:
     /// \brief The recovery process runs on a single shard. The status of the
@@ -170,7 +174,9 @@ private:
     // A map of the number of downloads expected per NTP. As downloads finish,
     // the number goes down. Once all downloads for all NTPs are finished
     // (whether successful or failures) the current recovery attempt ends.
-    recovery_status _recovery_status;
+    download_counts _download_counts;
+
+    std::optional<recovery_request> _recovery_request;
 
     // Used to schedule the download check periodically.
     ss::timer<ss::lowres_clock> _pending_status_timer;
@@ -182,5 +188,10 @@ private:
     // original value from manifest once recovery has ended.
     std::optional<std::vector<topic_manifest>> _downloaded_manifests;
 };
+
+std::ostream&
+operator<<(std::ostream&, const topic_recovery_service::recovery_status&);
+
+std::ostream& operator<<(std::ostream&, const topic_recovery_service::state&);
 
 } // namespace cloud_storage
