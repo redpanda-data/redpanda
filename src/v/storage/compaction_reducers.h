@@ -110,9 +110,13 @@ private:
 class copy_data_segment_reducer : public compaction_reducer {
 public:
     copy_data_segment_reducer(
-      compacted_offset_list l, segment_appender* a, bool internal_topic)
+      compacted_offset_list l,
+      segment_appender* a,
+      bool internal_topic,
+      offset_delta_time apply_offset)
       : _list(std::move(l))
       , _appender(a)
+      , _idx(index_state::make_empty_index(apply_offset))
       , _internal_topic(internal_topic) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch);

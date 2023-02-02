@@ -394,7 +394,8 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
           cfg,
           _probe,
           *_readers_cache,
-          _manager.resources());
+          _manager.resources(),
+          storage::internal::should_apply_delta_time_offset(_feature_table));
 
         vlog(
           gclog.debug,
@@ -540,7 +541,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
       cfg,
       _probe,
       *_readers_cache,
-      _manager.resources());
+      _manager.resources(),
+      storage::internal::should_apply_delta_time_offset(_feature_table));
     _probe.delete_segment(*replacement.get());
     vlog(gclog.debug, "Final compacted segment {}", replacement);
 

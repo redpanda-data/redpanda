@@ -48,6 +48,8 @@ segment_index::segment_index(
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
+  , _state(index_state::make_empty_index(
+      storage::internal::should_apply_delta_time_offset(_feature_table)))
   , _sanitize(sanitize) {
     _state.base_offset = base;
 }
@@ -61,6 +63,8 @@ segment_index::segment_index(
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
+  , _state(index_state::make_empty_index(
+      storage::internal::should_apply_delta_time_offset(_feature_table)))
   , _mock_file(mock_file) {
     _state.base_offset = base;
 }

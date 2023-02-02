@@ -37,7 +37,8 @@ ss::future<compaction_result> self_compact_segment(
   storage::compaction_config,
   storage::probe&,
   storage::readers_cache&,
-  storage::storage_resources&);
+  storage::storage_resources&,
+  offset_delta_time apply_offset);
 
 /*
  * Concatentate segments into a minimal new segment.
@@ -199,5 +200,8 @@ inline bool is_compactible(const model::record_batch& b) {
       b.header().type == model::record_batch_type::raft_configuration
       || b.header().type == model::record_batch_type::archival_metadata);
 }
+
+offset_delta_time should_apply_delta_time_offset(
+  ss::sharded<features::feature_table>& feature_table);
 
 } // namespace storage::internal
