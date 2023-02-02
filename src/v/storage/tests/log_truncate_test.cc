@@ -640,3 +640,60 @@ FIXTURE_TEST(test_prefix_truncate_then_truncate_all, storage_test_fixture) {
     BOOST_CHECK_EQUAL(read_batches[0].base_offset(), model::offset{10});
     BOOST_CHECK_EQUAL(read_batches[0].last_offset(), model::offset{12});
 }
+
+FIXTURE_TEST(test_index_max_timestamp_update, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log
+      = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+    append_batch(
+      log,
+      model::test::make_random_batch(
+        model::offset{0},
+        10,
+        true,
+        model::record_batch_type::raft_data,
+        std::vector<size_t>(10, 1024),
+        model::timestamp(10000)));
+    // The max timestamp for this batch will be 20009
+    // as there are 10 records in it and the base is 20000.
+    append_batch(
+      log,
+      model::test::make_random_batch(
+        model::offset{10},
+        10,
+        true,
+        model::record_batch_type::raft_data,
+        std::vector<size_t>(10, 1024),
+        model::timestamp(20000)));
+    append_batch(
+      log,
+      model::test::make_random_batch(
+        model::offset{20},
+        10,
+        true,
+        model::record_batch_type::raft_data,
+        std::vector<size_t>(10, 1024),
+        model::timestamp(30000)));
+
+    log
+      .truncate(storage::truncate_config(
+        model::offset{20}, ss::default_priority_class()))
+      .get();
+
+    storage::disk_log_impl& impl = *reinterpret_cast<storage::disk_log_impl*>(
+      log.get_impl());
+
+    // The maximum timestamp in the index should be the maximum
+    // timestamp of the batch preceeding the batch where the truncation
+    // occurred. In this case, truncation happened in the last batch,
+    // so we require the max timestmap to be that of the previous second
+    // batch.
+    BOOST_REQUIRE(impl.segment_count() == 1);
+    const auto& seg = impl.segments().front();
+    BOOST_REQUIRE(seg->index().max_timestamp() == model::timestamp{20009});
+}

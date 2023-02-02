@@ -90,7 +90,8 @@ public:
     ss::future<> close();
     ss::future<> flush();
     ss::future<> release_appender(readers_cache*);
-    ss::future<> truncate(model::offset, size_t physical);
+    ss::future<> truncate(
+      model::offset, size_t physical, model::timestamp new_max_timestamp);
 
     /// main write interface
     /// auto indexes record_batch
@@ -181,7 +182,10 @@ private:
     void set_close();
     void cache_truncate(model::offset offset);
     void check_segment_not_closed(const char* msg);
-    ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
+    ss::future<> do_truncate(
+      model::offset prev_last_offset,
+      size_t physical,
+      model::timestamp new_max_timestamp);
     ss::future<> do_close();
     ss::future<> do_flush();
     ss::future<> do_release_appender(

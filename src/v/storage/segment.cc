@@ -280,18 +280,23 @@ ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
       });
 }
 
-ss::future<>
-segment::truncate(model::offset prev_last_offset, size_t physical) {
+ss::future<> segment::truncate(
+  model::offset prev_last_offset,
+  size_t physical,
+  model::timestamp new_max_timestamp) {
     check_segment_not_closed("truncate()");
     return write_lock().then(
-      [this, prev_last_offset, physical](ss::rwlock::holder h) {
-          return do_truncate(prev_last_offset, physical)
+      [this, prev_last_offset, physical, new_max_timestamp](
+        ss::rwlock::holder h) {
+          return do_truncate(prev_last_offset, physical, new_max_timestamp)
             .finally([h = std::move(h)] {});
       });
 }
 
-ss::future<>
-segment::do_truncate(model::offset prev_last_offset, size_t physical) {
+ss::future<> segment::do_truncate(
+  model::offset prev_last_offset,
+  size_t physical,
+  model::timestamp new_max_timestamp) {
     _tracker.committed_offset = prev_last_offset;
     _tracker.stable_offset = prev_last_offset;
     _tracker.dirty_offset = prev_last_offset;
@@ -317,8 +322,9 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
         f = f.then([this] { return remove_compacted_index(_reader.path()); });
     }
 
-    f = f.then(
-      [this, prev_last_offset] { return _idx.truncate(prev_last_offset); });
+    f = f.then([this, prev_last_offset, new_max_timestamp] {
+        return _idx.truncate(prev_last_offset, new_max_timestamp);
+    });
 
     // physical file only needs *one* truncation call
     if (_appender) {

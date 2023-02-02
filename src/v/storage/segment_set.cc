@@ -306,7 +306,8 @@ static ss::future<segment_set> unsafe_do_recover(
             }
             s->truncate(
                recovered.last_offset.value(),
-               recovered.truncate_file_pos.value())
+               recovered.truncate_file_pos.value(),
+               recovered.last_max_timestamp.value())
               .get();
             // persist index
             s->index().flush().get();

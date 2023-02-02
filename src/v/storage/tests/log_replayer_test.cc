@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "features/feature_table.h"
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
@@ -19,7 +20,6 @@
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
 #include "utils/file_sanitizer.h"
-#include "features/feature_table.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/thread.hh>

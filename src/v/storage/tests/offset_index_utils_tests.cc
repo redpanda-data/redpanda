@@ -133,7 +133,7 @@ FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
     _idx->maybe_track(
       modify_get(model::offset{948}, 1667), 727007); // not indexed
     // test range truncation next
-    _idx->truncate(model::offset(926)).get();
+    _idx->truncate(model::offset(926), model::timestamp{100}).get();
     index_entry_expect(879, 323968);
     index_entry_expect(901, 458048);
     {
@@ -148,4 +148,6 @@ FIXTURE_TEST(bucket_truncate, offset_index_utils_fixture) {
         BOOST_REQUIRE_EQUAL(p->offset, model::offset(901));
         BOOST_REQUIRE_EQUAL(p->filepos, 458048);
     }
+
+    BOOST_REQUIRE(_idx->max_timestamp() == model::timestamp{100});
 }

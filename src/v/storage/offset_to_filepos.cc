@@ -48,9 +48,13 @@ namespace storage {
 namespace internal {
 
 offset_to_filepos_consumer::offset_to_filepos_consumer(
-  model::offset log_start_offset, model::offset target, size_t initial)
+  model::offset log_start_offset,
+  model::offset target,
+  size_t initial,
+  model::timestamp initial_timestamp)
   : _target_last_offset(target)
   , _prev_batch_last_offset(model::prev_offset(log_start_offset))
+  , _prev_batch_max_timestamp(initial_timestamp)
   , _accumulator(initial)
   , _prev(initial) {}
 
@@ -60,7 +64,7 @@ offset_to_filepos_consumer::operator()(::model::record_batch batch) {
     _accumulator += batch.size_bytes();
 
     if (_target_last_offset <= batch.base_offset()) {
-        _filepos = {_prev_batch_last_offset, _prev};
+        _filepos = {_prev_batch_last_offset, _prev, _prev_batch_max_timestamp};
         co_return ss::stop_iteration::yes;
     }
     if (
@@ -76,6 +80,8 @@ offset_to_filepos_consumer::operator()(::model::record_batch batch) {
     }
 
     _prev_batch_last_offset = batch.last_offset();
+    _prev_batch_max_timestamp = std::max(
+      batch.header().first_timestamp, batch.header().max_timestamp);
     co_return ss::stop_iteration::no;
 }
 

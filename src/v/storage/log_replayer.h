@@ -12,6 +12,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/fwd.h"
 
@@ -28,8 +29,9 @@ public:
     struct checkpoint {
         std::optional<model::offset> last_offset;
         std::optional<size_t> truncate_file_pos;
+        std::optional<model::timestamp> last_max_timestamp;
         explicit operator bool() const {
-            return last_offset && truncate_file_pos;
+            return last_offset && truncate_file_pos && last_max_timestamp;
         }
     };
 

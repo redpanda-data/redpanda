@@ -79,7 +79,7 @@ public:
 
     ss::future<bool> materialize_index();
     ss::future<> flush();
-    ss::future<> truncate(model::offset);
+    ss::future<> truncate(model::offset, model::timestamp);
 
     ss::future<ss::file> open();
 

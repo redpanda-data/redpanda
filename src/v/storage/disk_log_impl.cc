@@ -1402,9 +1402,11 @@ ss::future<> disk_log_impl::do_truncate(
     auto pidx = last->index().find_nearest(
       std::max(start, model::prev_offset(cfg.base_offset)));
     size_t initial_size = 0;
+    model::timestamp initial_timestamp = last->index().max_timestamp();
     if (pidx) {
         start = pidx->offset;
         initial_size = pidx->filepos;
+        initial_timestamp = pidx->timestamp;
     }
 
     auto initial_generation_id = last->get_generation_id();
@@ -1416,7 +1418,7 @@ ss::future<> disk_log_impl::do_truncate(
       log_reader_config(start, model::offset::max(), cfg.prio));
     auto phs = co_await std::move(reader).consume(
       internal::offset_to_filepos_consumer(
-        start, cfg.base_offset, initial_size),
+        start, cfg.base_offset, initial_size, initial_timestamp),
       model::no_timeout);
 
     // all segments were deleted, return
@@ -1450,7 +1452,7 @@ ss::future<> disk_log_impl::do_truncate(
           initial_size,
           *this));
     }
-    auto [prev_last_offset, file_position] = phs.value();
+    auto [prev_last_offset, file_position, new_max_timestamp] = phs.value();
 
     if (file_position == 0) {
         _segs.pop_back();
@@ -1461,15 +1463,17 @@ ss::future<> disk_log_impl::do_truncate(
     auto cache_lock = co_await _readers_cache->evict_truncate(cfg.base_offset);
 
     try {
-        co_return co_await last_ptr->truncate(prev_last_offset, file_position);
+        co_return co_await last_ptr->truncate(
+          prev_last_offset, file_position, new_max_timestamp);
     } catch (...) {
         vassert(
           false,
           "Could not truncate:{} logical max:{}, physical "
-          "offset:{} on segment:{} - log:{}",
+          "offset:{}, new max timestamp:{} on segment:{} - log:{}",
           std::current_exception(),
-          phs->first,
-          phs->second,
+          prev_last_offset,
+          file_position,
+          new_max_timestamp,
           last,
           *this);
     }

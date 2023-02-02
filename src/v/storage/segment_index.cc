@@ -100,7 +100,8 @@ void segment_index::maybe_track(
 
     _state.update_batch_timestamps_are_monotonic(
       hdr.max_timestamp >= _last_batch_max_timestamp);
-    _last_batch_max_timestamp = hdr.max_timestamp;
+    _last_batch_max_timestamp = std::max(
+      hdr.first_timestamp, hdr.max_timestamp);
 
     if (_state.maybe_index(
           _acc,
@@ -160,7 +161,8 @@ segment_index::find_nearest(model::offset o) {
     return std::nullopt;
 }
 
-ss::future<> segment_index::truncate(model::offset o) {
+ss::future<>
+segment_index::truncate(model::offset o, model::timestamp new_max_timestamp) {
     if (o < _state.base_offset) {
         co_return;
     }
@@ -186,11 +188,7 @@ ss::future<> segment_index::truncate(model::offset o) {
             _state.max_timestamp = _state.base_timestamp;
             _state.max_offset = _state.base_offset;
         } else {
-            const auto last_entry = _state.get_entry(_state.size() - 1);
-            const auto translated_entry = translate_index_entry(
-              _state, last_entry);
-
-            _state.max_timestamp = translated_entry.timestamp;
+            _state.max_timestamp = new_max_timestamp;
             _state.max_offset = o;
         }
     }

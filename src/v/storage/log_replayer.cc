@@ -62,6 +62,8 @@ public:
         if (is_valid_batch_crc()) {
             _cfg.last_offset = _header.last_offset();
             _cfg.truncate_file_pos = _file_pos_to_end_of_batch;
+            _cfg.last_max_timestamp = std::max(
+              _header.first_timestamp, _header.max_timestamp);
             const auto physical_base_offset = _file_pos_to_end_of_batch
                                               - _header.size_bytes;
             _seg->index().maybe_track(_header, physical_base_offset);
