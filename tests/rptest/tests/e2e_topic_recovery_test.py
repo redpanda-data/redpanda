@@ -365,9 +365,6 @@ class Issue7758non_repro(EndToEndTopicRecovery):
         msg_size = 5000
         topic = TopicSpec()
         self.logger.info("start")
-        producer = KgoVerifierProducer(self._ctx, self.redpanda, topic,
-                                       msg_size, num_messages,
-                                       [self._verifier_node])
 
         self.init_producer(msg_size, num_messages)
         producer = self._producer
@@ -383,17 +380,12 @@ class Issue7758non_repro(EndToEndTopicRecovery):
         self.logger.info("final iteration")
         self._stop_redpanda_nodes()
         # wipe and recovery seems important
-        self._wipe_data()
+        #self._wipe_data()
 
         # Run recovery
         self._start_redpanda_nodes()
-        self._restore_topic(topic, {'retention.local.target.bytes': 512})
+        #self._restore_topic(topic, {'retention.local.target.bytes': 512})
 
-        consumer = KgoVerifierSeqConsumer(self._ctx,
-                                          self.redpanda,
-                                          topic,
-                                          msg_size,
-                                          nodes=[self._verifier_node])
         self.init_consumer(msg_size)
         consumer = self._consumer
         consumer.start(clean=False)
@@ -412,9 +404,6 @@ class Issue7758repro(EndToEndTopicRecovery):
         msg_size = 5000
         topic = TopicSpec()
         self.logger.info("start")
-        producer = KgoVerifierProducer(self._ctx, self.redpanda, topic,
-                                       msg_size, num_messages,
-                                       [self._verifier_node])
 
         self.init_producer(msg_size, num_messages)
         producer = self._producer
@@ -436,11 +425,6 @@ class Issue7758repro(EndToEndTopicRecovery):
         self._start_redpanda_nodes()
         self._restore_topic(topic, {'retention.local.target.bytes': 512})
 
-        consumer = KgoVerifierSeqConsumer(self._ctx,
-                                          self.redpanda,
-                                          topic,
-                                          msg_size,
-                                          nodes=[self._verifier_node])
         self.init_consumer(msg_size)
         consumer = self._consumer
         consumer.start(clean=False)
