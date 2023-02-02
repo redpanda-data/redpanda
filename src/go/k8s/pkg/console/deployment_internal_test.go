@@ -1,9 +1,12 @@
 package console
 
 import (
+	"context"
 	"testing"
 
+	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -99,8 +102,9 @@ func TestGenEnvVars(t *testing.T) { //nolint:funlen // test table is long
 			ObjectMeta: nsn,
 			Spec:       tt.clusterSpec,
 		}
-		deployment := NewDeployment(nil, nil, console, cluster, nil, nil)
-		genEnvVars := deployment.genEnvVars()
+		deployment := NewDeployment(nil, nil, console, cluster, nil, logr.Discard())
+		genEnvVars, err := deployment.genEnvVars(context.Background())
+		assert.NoError(t, err)
 
 		for _, e := range tt.expectedEnvars {
 			var found bool
