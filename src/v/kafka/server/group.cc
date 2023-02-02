@@ -1786,9 +1786,23 @@ cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc ec) {
 ss::future<cluster::begin_group_tx_reply>
 group::begin_tx(cluster::begin_group_tx_request r) {
     if (_partition->term() != _term) {
+        vlog(
+          _ctx_txlog.trace,
+          "processing name:begin_tx pid:{} tx_seq:{} timeout:{} => stale "
+          "leader",
+          r.pid,
+          r.tx_seq,
+          r.timeout);
         co_return make_begin_tx_reply(cluster::tx_errc::stale);
     }
 
+    vlog(
+      _ctx_txlog.trace,
+      "processing name:begin_tx pid:{} tx_seq:{} timeout:{} in term:{}",
+      r.pid,
+      r.tx_seq,
+      r.timeout,
+      _term);
     auto fence_it = _fence_pid_epoch.find(r.pid.get_id());
     if (fence_it == _fence_pid_epoch.end()) {
         // intentionally empty
