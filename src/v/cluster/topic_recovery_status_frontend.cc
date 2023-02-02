@@ -32,6 +32,37 @@ topic_recovery_status_frontend::topic_recovery_status_frontend(
   , _connections{connections}
   , _members{members} {}
 
+ss::future<std::optional<status_response>>
+topic_recovery_status_frontend::status() const {
+    auto nodes = _members.local().node_ids();
+    auto result = co_await ssx::parallel_transform(
+      nodes.begin(), nodes.end(), [this](auto node_id) {
+          return _connections.local()
+            .with_node_client<topic_recovery_status_rpc_client_protocol>(
+              _self,
+              ss::this_shard_id(),
+              node_id,
+              rpc_timeout_ms,
+              [](topic_recovery_status_rpc_client_protocol p) {
+                  return p.get_status(
+                    status_request{}, rpc::client_opts{rpc_timeout_ms});
+              });
+      });
+
+    if (auto it = std::find_if(
+          result.begin(),
+          result.end(),
+          [](const auto& node_result) {
+              return node_result.has_value()
+                     && node_result.value().data.is_active();
+          });
+        it != result.end()) {
+        co_return it->value().data;
+    }
+
+    co_return std::nullopt;
+}
+
 ss::future<bool> topic_recovery_status_frontend::is_recovery_running(
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_service,
   skip_this_node skip_this_node) const {
@@ -68,7 +99,8 @@ ss::future<bool> topic_recovery_status_frontend::is_recovery_running(
       [](auto&& node_result) {
           // If we failed to get status from a node, assume that recovery is not
           // active
-          return node_result.has_value() && node_result.value().data.is_active;
+          return node_result.has_value()
+                 && node_result.value().data.is_active();
       });
 }
 
