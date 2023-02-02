@@ -485,37 +485,27 @@ struct response_data_source final : ss::data_source_impl {
         return get();
     }
     ss::future<ss::temporary_buffer<char>> get() final {
-        return ss::do_with(
-          ss::temporary_buffer<char>(),
-          [this](ss::temporary_buffer<char>& result) {
-              return ss::repeat([this, &result] {
-                         if (_done || _io->is_done()) {
-                             return ss::make_ready_future<ss::stop_iteration>(
-                               ss::stop_iteration::yes);
-                         }
-                         return _io->recv_some().then([this, &result](
-                                                        iobuf&& bufseq) {
-                             if (_skip) {
-                                 auto n = std::min(bufseq.size_bytes(), _skip);
-                                 bufseq.trim_front(n);
-                                 _skip -= n;
-                             }
-                             if (bufseq.begin() == bufseq.end()) {
-                                 return ss::make_ready_future<
-                                   ss::stop_iteration>(
-                                   _io->is_done() ? ss::stop_iteration::yes
-                                                  : ss::stop_iteration::no);
-                             }
-                             result = iobuf_as_tmpbuf(std::move(bufseq));
-                             return ss::make_ready_future<ss::stop_iteration>(
-                               ss::stop_iteration::yes);
-                         });
-                     })
-                .then([&result] {
-                    return ss::make_ready_future<ss::temporary_buffer<char>>(
-                      std::move(result));
-                });
-          });
+        ss::temporary_buffer<char> result;
+        while (true) {
+            if (_done || _io->is_done()) {
+                break;
+            }
+            auto bufseq = co_await _io->recv_some();
+            if (_skip) {
+                auto n = std::min(bufseq.size_bytes(), _skip);
+                bufseq.trim_front(n);
+                _skip -= n;
+            }
+            if (bufseq.begin() == bufseq.end()) {
+                if (_io->is_done()) {
+                    break;
+                }
+                continue;
+            }
+            result = iobuf_as_tmpbuf(std::move(bufseq));
+            break;
+        }
+        co_return result;
     }
     client::response_stream_ref _io;
     size_t _skip{0};
@@ -579,15 +569,11 @@ ss::future<client::response_stream_ref> client::request(
 
 ss::future<client::response_stream_ref> client::request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
-    return make_request(std::move(header), timeout)
-      .then([](request_response_t reqresp) mutable {
-          auto [request, response] = std::move(reqresp);
-          return request->send_some(iobuf())
-            .then([request = request]() { return request->send_eof(); })
-            .then([response = response] {
-                return ss::make_ready_future<response_stream_ref>(response);
-            });
-      });
+    auto [request, response] = co_await make_request(
+      std::move(header), timeout);
+    co_await request->send_some(iobuf());
+    co_await request->send_eof();
+    co_return response;
 }
 
 ss::output_stream<char> client::request_stream::as_output_stream() {
