@@ -93,7 +93,7 @@ rp_test(
   BINARY_NAME leader_balancer_test
   SOURCES leader_balancer_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::cluster
+  LIBRARIES Boost::unit_test_framework v::cluster v::ssx
   LABELS cluster
 )
 
@@ -102,7 +102,7 @@ rp_test(
   BINARY_NAME leader_balancer_bench
   SOURCES leader_balancer_bench.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Seastar::seastar_perf_testing v::cluster
+  LIBRARIES Seastar::seastar_perf_testing v::cluster v::ssx
   LABELS cluster
 )
 
@@ -111,6 +111,6 @@ rp_test(
   BINARY_NAME metrics_reporter_test
   SOURCES metrics_reporter_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::cluster
+  LIBRARIES Boost::unit_test_framework v::cluster v::ssx
   LABELS cluster
 )

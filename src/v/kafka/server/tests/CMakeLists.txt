@@ -8,7 +8,7 @@ rp_test(
     topic_utils_test.cc
     handler_interface_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework v::kafka v::coproc
+  LIBRARIES Boost::unit_test_framework v::kafka v::coproc v::ssx
   LABELS kafka
 )
 
@@ -36,7 +36,7 @@ rp_test(
   FIXTURE_TEST
   BINARY_NAME kafka_server
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::application v::raft v::kafka v::config v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::application v::raft v::kafka v::config v::storage_test_utils v::ssx
   ARGS "-- -c 1"
   LABELS kafka
 )

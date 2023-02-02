@@ -2,7 +2,7 @@ rp_test(
     BINARY_NAME self_test_test
     SOURCES self_test_request_test.cc
     DEFINITIONS BOOST_TEST_DYN_LINK
-    LIBRARIES v::seastar_testing_main v::cluster
+    LIBRARIES v::seastar_testing_main v::cluster v::ssx
     LABELS self_test
 )
 
@@ -10,6 +10,6 @@ rp_test(
     BINARY_NAME self_test_framework_test
     SOURCES self_test_config_test.cc
     DEFINITIONS BOOST_TEST_DYN_LINK
-    LIBRARIES Boost::unit_test_framework v::cluster
+    LIBRARIES Boost::unit_test_framework v::cluster v::ssx
     LABELS self_test
 )

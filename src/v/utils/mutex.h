@@ -37,6 +37,9 @@ public:
     mutex()
       : _sem(1, "mutex") {}
 
+    mutex(ss::sstring name)
+      : _sem(1, std::move(name)) {}
+
     template<typename Func>
     auto with(Func&& func) noexcept {
         return ss::with_semaphore(_sem, 1, std::forward<Func>(func));
