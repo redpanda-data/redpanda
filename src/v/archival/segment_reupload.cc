@@ -34,7 +34,7 @@ segment_collector::segment_collector(
 void segment_collector::collect_segments(segment_collector_mode mode) {
     if (_manifest.size() == 0) {
         vlog(
-          archival_log.info,
+          archival_log.debug,
           "No segments to collect for ntp {}, manifest empty",
           _manifest.get_ntp());
         return;
