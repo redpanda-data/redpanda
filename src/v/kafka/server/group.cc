@@ -3222,14 +3222,35 @@ ss::future<> group::do_try_abort_old_tx(model::producer_identity pid) {
             }
         }
     } else {
-        auto v_it = _volatile_txs.find(pid);
-        if (v_it == _volatile_txs.end()) {
-            co_return;
+        model::tx_seq tx_seq;
+        if (is_transaction_ga()) {
+            auto txseq_it = _tx_seqs.find(pid.get_id());
+            if (txseq_it == _tx_seqs.end()) {
+                vlog(
+                  _ctx_txlog.trace, "skipping pid:{} (can't find tx_seq)", pid);
+                co_return;
+            }
+            tx_seq = txseq_it->second;
+        } else {
+            auto v_it = _volatile_txs.find(pid);
+            if (v_it == _volatile_txs.end()) {
+                vlog(
+                  _ctx_txlog.trace,
+                  "skipping pid:{} (can't find volatile)",
+                  pid);
+                co_return;
+            }
+            tx_seq = v_it->second.tx_seq;
         }
 
-        auto res = co_await do_abort(_id, pid, v_it->second.tx_seq);
+        auto res = co_await do_abort(_id, pid, tx_seq);
         if (res.ec != cluster::tx_errc::none) {
-            vlog(_ctxlog.error, "Can not abort volatile tx with pid({})", pid);
+            vlog(
+              _ctxlog.warn,
+              "abort of pid:{} tx_seq:{} failed with {}",
+              pid,
+              tx_seq,
+              res.ec);
         }
     }
 }
