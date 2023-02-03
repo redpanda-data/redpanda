@@ -230,6 +230,9 @@ private:
       ss::lw_shared_ptr<attached_partition>,
       std::optional<model::node_id> leader_id);
 
+    ss::future<> write_version_fence(
+      model::term_id, ss::lw_shared_ptr<attached_partition>);
+
     ss::future<> recover_partition(
       model::term_id,
       ss::lw_shared_ptr<attached_partition>,

@@ -23,6 +23,12 @@ namespace kafka {
 
 struct group_recovery_consumer_state {
     absl::node_hash_map<kafka::group_id, group_stm> groups;
+    /*
+     * set to true if during recovery an offset retention feature fence is
+     * observed. after recovery, if the fence has not been observed, then the
+     * fence will be written following activation of offset retention feature.
+     */
+    bool has_offset_retention_feature_fence{false};
 };
 
 class group_recovery_consumer {
