@@ -90,11 +90,10 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         replicas = set()
         for tp_d in topic_descriptions:
             for p in tp_d.partitions:
-                self.logger.debug(f"{tp_d.name}/{p.id} replicas: {p.replicas}")
                 for r in p.replicas:
                     if r == node_id:
                         replicas.add(f'{tp_d.name}/{p}')
-
+        self.logger.info(f"node {node_id} has {len(replicas)} replicas")
         return replicas
 
     @cluster(num_nodes=6)
