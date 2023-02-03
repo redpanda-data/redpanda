@@ -436,8 +436,8 @@ cluster::hard_constraint_evaluator make_throwning_hard_evaluator() {
         bool evaluate(const cluster::allocation_node&) const final {
             throw std::runtime_error("evaluation exception");
         }
-        void print(std::ostream& o) const final {
-            fmt::print(o, "exception throwing hard constraint evaluator");
+        ss::sstring name() const final {
+            return "exception throwing hard constraint evaluator";
         }
     };
 
@@ -449,8 +449,8 @@ cluster::hard_constraint_evaluator make_false_evaluator() {
         bool evaluate(const cluster::allocation_node&) const final {
             return false;
         }
-        void print(std::ostream& o) const final {
-            fmt::print(o, "false returning constraint evaluator");
+        ss::sstring name() const final {
+            return "false returning constraint evaluator";
         }
     };
 
@@ -462,9 +462,7 @@ cluster::hard_constraint_evaluator make_nop_evaluator() {
         bool evaluate(const cluster::allocation_node&) const final {
             return true;
         }
-        void print(std::ostream& o) const final {
-            fmt::print(o, "false returning constraint evaluator");
-        }
+        ss::sstring name() const final { return "NOP evaluator"; }
     };
 
     return cluster::hard_constraint_evaluator(std::make_unique<impl>());

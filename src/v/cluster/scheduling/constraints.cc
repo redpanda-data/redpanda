@@ -14,9 +14,13 @@
 #include "cluster/scheduling/allocation_state.h"
 #include "cluster/scheduling/types.h"
 #include "model/metadata.h"
+#include "ssx/sformat.h"
 
 #include <absl/container/flat_hash_set.h>
 #include <fmt/ostream.h>
+
+#include <ios>
+#include <sstream>
 
 namespace cluster {
 
@@ -27,8 +31,8 @@ hard_constraint_evaluator not_fully_allocated() {
             return !node.is_full();
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "node must have empty allocations slots");
+        ss::sstring name() const final {
+            return "node must have empty allocations slots";
         }
     };
 
@@ -42,9 +46,7 @@ hard_constraint_evaluator is_active() {
             return node.is_active();
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "node must be active");
-        }
+        ss::sstring name() const final { return "node must be active"; }
     };
 
     return hard_constraint_evaluator(std::make_unique<impl>());
@@ -60,8 +62,8 @@ hard_constraint_evaluator on_node(model::node_id id) {
             return node.id() == _id;
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "with node id equal to {}", _id);
+        ss::sstring name() const final {
+            return ssx::sformat("on node: {}", _id);
         }
 
     private:
@@ -86,18 +88,20 @@ hard_constraint_evaluator on_nodes(const std::vector<model::node_id>& ids) {
             return _ids.contains(node.id());
         }
 
-        void print(std::ostream& o) const final {
+        ss::sstring name() const final {
             if (_ids.empty()) {
-                fmt::print(o, "on nodes: []");
+                return ssx::sformat("on nodes: []");
             }
+            std::stringstream sstream;
             auto it = _ids.begin();
-            fmt::print(o, "on nodes: [{}", *it);
+            fmt::print(sstream, "on nodes: [{}", *it);
             ++it;
             for (; it != _ids.end(); ++it) {
-                fmt::print(o, ",{}", *it);
+                fmt::print(sstream, ",{}", *it);
             }
 
-            fmt::print(o, "]");
+            fmt::print(sstream, "]");
+            return sstream.str();
         }
 
     private:
@@ -122,8 +126,8 @@ distinct_from(const std::vector<model::broker_shard>& current) {
               });
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "distinct from: {}", _replicas);
+        ss::sstring name() const final {
+            return ssx::sformat("distinct from: {}", _replicas);
         }
 
     private:
@@ -163,10 +167,9 @@ hard_constraint_evaluator disk_not_overflowed_by_partition(
             return false;
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(
-              o,
-              "partition with size {} doesn't overfill disk",
+        ss::sstring name() const final {
+            return ssx::sformat(
+              "partition with size of {} doesn't overfill disk",
               _partition_size);
         }
 
@@ -191,9 +194,7 @@ soft_constraint_evaluator least_allocated() {
                    / node.max_capacity();
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "least allocated node");
-        }
+        ss::sstring name() const final { return "least allocated node"; }
     };
 
     return soft_constraint_evaluator(std::make_unique<impl>());
@@ -209,8 +210,8 @@ least_allocated_in_domain(const partition_allocation_domain domain) {
                     * node.domain_partition_capacity(domain))
                    / node.max_capacity();
         }
-        void print(std::ostream& o) const final {
-            fmt::print(o, "least allocated node in domain {}", domain);
+        ss::sstring name() const final {
+            return ssx::sformat("least allocated node in domain {}", domain);
         }
         partition_allocation_domain domain;
     };
@@ -246,9 +247,7 @@ hard_constraint_evaluator distinct_rack(
             return true;
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "distinct rack");
-        }
+        ss::sstring name() const final { return "distinct rack"; }
 
         const std::vector<model::broker_shard>& _replicas;
         const allocation_state& _state;
@@ -292,9 +291,7 @@ soft_constraint_evaluator least_disk_filled(
             return 0;
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "least filled disk");
-        }
+        ss::sstring name() const final { return "least filled disk"; }
 
         const double _max_disk_usage_ratio;
         const absl::flat_hash_map<model::node_id, node_disk_space>&
@@ -317,8 +314,9 @@ make_soft_constraint(hard_constraint_evaluator hard_constraint) {
                      : 0;
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(o, "soft constraint adapter of ({})", _hard_constraint);
+        ss::sstring name() const final {
+            return ssx::sformat(
+              "soft constraint adapter of ({})", _hard_constraint);
         }
 
         const hard_constraint_evaluator _hard_constraint;
