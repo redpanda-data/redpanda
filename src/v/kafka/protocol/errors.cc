@@ -183,6 +183,8 @@ std::string_view error_code_to_str(error_code error) {
         return "group_max_size_reached";
     case error_code::no_reassignment_in_progress:
         return "no_reassignment_in_progress";
+    case error_code::group_subscribed_to_topic:
+        return "group_subscribed_to_topic";
     case error_code::fenced_instance_id:
         return "fenced_instance_id";
     case error_code::invalid_record:
