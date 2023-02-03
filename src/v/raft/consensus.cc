@@ -77,7 +77,8 @@ offset_translator_batch_types(const model::ntp& ntp) {
     if (ntp.ns == model::kafka_namespace) {
         return {
           model::record_batch_type::raft_configuration,
-          model::record_batch_type::archival_metadata};
+          model::record_batch_type::archival_metadata,
+          model::record_batch_type::version_fence};
     } else {
         return {};
     }

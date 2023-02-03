@@ -446,6 +446,20 @@ void feature_table::testing_activate_all() {
     on_update();
 }
 
+feature_table::version_fence
+feature_table::decode_version_fence(model::record_batch batch) {
+    auto records = batch.copy_records();
+    if (records.empty()) {
+        throw std::runtime_error("");
+    }
+    auto& rec = records.front();
+    auto key = serde::from_iobuf<ss::sstring>(rec.release_key());
+    if (key != version_fence_batch_key) {
+        throw std::runtime_error("");
+    }
+    return serde::from_iobuf<version_fence>(rec.release_value());
+}
+
 } // namespace features
 
 namespace cluster {
