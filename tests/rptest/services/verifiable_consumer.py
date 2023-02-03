@@ -212,7 +212,7 @@ class VerifiableConsumer(BackgroundThreadService):
         self.session_timeout_sec = session_timeout_sec
         self.enable_autocommit = enable_autocommit
         self.assignment_strategy = assignment_strategy
-        self.prop_file = "isolation.level=read_committed"
+        self.prop_file = ""
         self.stop_timeout_sec = stop_timeout_sec
         self.on_record_consumed = on_record_consumed
         self.verify_offsets = verify_offsets
