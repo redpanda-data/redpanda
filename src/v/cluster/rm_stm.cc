@@ -1210,20 +1210,28 @@ rm_stm::do_mark_expired(model::producer_identity pid) {
     co_return std::error_code(tx_errc::none);
 }
 
-bool rm_stm::check_seq(model::batch_identity bid) {
-    auto& seq = _log_state.seq_table[bid.pid].entry;
+bool rm_stm::check_seq(model::batch_identity bid, model::term_id term) {
+    auto& seq_it = _log_state.seq_table[bid.pid];
     auto last_write_timestamp = model::timestamp::now().value();
 
-    if (!is_sequence(seq.seq, bid.first_seq)) {
+    if (!is_sequence(seq_it.entry.seq, bid.first_seq)) {
+        vlog(
+          _ctx_log.warn,
+          "provided seq:{} for pid:{} isn't a continuation of the last known "
+          "seq:{}",
+          bid.first_seq,
+          bid.pid,
+          seq_it.entry.seq);
         return false;
     }
 
-    seq.update(bid.last_seq, kafka::offset{-1});
+    seq_it.entry.update(bid.last_seq, kafka::offset{-1});
 
-    seq.pid = bid.pid;
-    seq.last_write_timestamp = last_write_timestamp;
+    seq_it.entry.pid = bid.pid;
+    seq_it.entry.last_write_timestamp = last_write_timestamp;
+    seq_it.term = term;
     _oldest_session = std::min(
-      _oldest_session, model::timestamp(seq.last_write_timestamp));
+      _oldest_session, model::timestamp(seq_it.entry.last_write_timestamp));
 
     return true;
 }
@@ -1262,15 +1270,16 @@ void rm_stm::set_seq(model::batch_identity bid, kafka::offset last_offset) {
     }
 }
 
-void rm_stm::reset_seq(model::batch_identity bid) {
+void rm_stm::reset_seq(model::batch_identity bid, model::term_id term) {
     _log_state.erase_pid_from_seq_table(bid.pid);
-    auto& seq = _log_state.seq_table[bid.pid].entry;
-    seq.seq = bid.last_seq;
-    seq.last_offset = kafka::offset{-1};
-    seq.pid = bid.pid;
-    seq.last_write_timestamp = model::timestamp::now().value();
+    auto& seq_it = _log_state.seq_table[bid.pid];
+    seq_it.term = term;
+    seq_it.entry.seq = bid.last_seq;
+    seq_it.entry.last_offset = kafka::offset{-1};
+    seq_it.entry.pid = bid.pid;
+    seq_it.entry.last_write_timestamp = model::timestamp::now().value();
     _oldest_session = std::min(
-      _oldest_session, model::timestamp(seq.last_write_timestamp));
+      _oldest_session, model::timestamp(seq_it.entry.last_write_timestamp));
 }
 
 ss::future<result<kafka_result>>
@@ -1348,27 +1357,66 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     if (_log_state.ongoing_map.contains(bid.pid)) {
         // this isn't the first attempt in the tx we should try dedupe
-        auto cached_offset = known_seq(bid);
-        if (cached_offset) {
-            if (cached_offset.value() < kafka::offset{0}) {
+        auto pid_seq = _log_state.seq_table.find(bid.pid);
+        if (pid_seq == _log_state.seq_table.end()) {
+            if (!check_seq(bid, synced_term)) {
+                co_return errc::sequence_out_of_order;
+            }
+        } else if (pid_seq->second.entry.seq == bid.last_seq) {
+            if (pid_seq->second.entry.last_offset() == -1) {
+                if (pid_seq->second.term == synced_term) {
+                    vlog(
+                      _ctx_log.debug,
+                      "Status of the original attempt pid:{} seq:{} is "
+                      "unknown. Returning not_leader_for_partition to trigger "
+                      "retry.",
+                      bid.pid,
+                      bid.last_seq);
+                    co_return errc::not_leader;
+                } else {
+                    // when the term a tx originated on doesn't match the
+                    // current term it means that the re-election happens; upon
+                    // re-election we sync and it catches up with all records
+                    // replicated in previous term. since the cached offset for
+                    // a given seq is still -1 it means that the replication
+                    // hasn't passed so we updating the term to pretent that the
+                    // retry (seqs match) put it there
+                    pid_seq->second.term = synced_term;
+                }
+            } else {
                 vlog(
-                  _ctx_log.debug,
-                  "Status of the original attempt pid:{} seq:{} is unknown. "
-                  "Returning not_leader_for_partition to trigger retry.",
+                  _ctx_log.trace,
+                  "cache hit for pid:{} seq:{}",
                   bid.pid,
                   bid.last_seq);
-                co_return errc::not_leader;
+                co_return kafka_result{
+                  .last_offset = pid_seq->second.entry.last_offset};
             }
-            vlog(_ctx_log.trace, "cache hit for pid:{}", bid.pid);
-            co_return kafka_result{.last_offset = cached_offset.value()};
-        }
-
-        if (!check_seq(bid)) {
-            co_return errc::sequence_out_of_order;
+        } else {
+            for (auto& entry : pid_seq->second.entry.seq_cache) {
+                if (entry.seq == bid.last_seq) {
+                    if (entry.offset() == -1) {
+                        vlog(
+                          _ctx_log.error,
+                          "cache hit for pid:{} seq:{} resolves to -1 offset",
+                          bid.pid,
+                          entry.seq);
+                    }
+                    vlog(
+                      _ctx_log.trace,
+                      "cache hit for pid:{} seq:{}",
+                      bid.pid,
+                      entry.seq);
+                    co_return kafka_result{.last_offset = entry.offset};
+                }
+            }
+            if (!check_seq(bid, synced_term)) {
+                co_return errc::sequence_out_of_order;
+            }
         }
     } else {
         // this is the first attempt in the tx, reset dedupe cache
-        reset_seq(bid);
+        reset_seq(bid, synced_term);
 
         _mem_state.estimated[bid.pid] = _insync_offset;
     }
@@ -2474,12 +2522,15 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
       std::make_move_iterator(data.abort_indexes.end()));
     for (auto& entry : data.seqs) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
-          entry.pid, seq_entry_wrapper{.entry = std::move(entry)});
+          entry.pid,
+          seq_entry_wrapper{
+            .term = model::term_id(-1), .entry = std::move(entry)});
         // try_emplace does not move from r-value reference if the insertion
         // didn't take place so the clang-tidy warning is a false positive
         // NOLINTNEXTLINE(hicpp-invalid-access-moved)
         if (!inserted && seq_it->second.entry.seq < entry.seq) {
             seq_it->second.entry = std::move(entry);
+            seq_it->second.term = model::term_id(-1);
         }
     }
 

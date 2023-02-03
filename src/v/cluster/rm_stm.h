@@ -311,10 +311,10 @@ private:
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
     ss::future<> save_abort_snapshot(abort_snapshot);
 
-    bool check_seq(model::batch_identity);
+    bool check_seq(model::batch_identity, model::term_id);
     std::optional<kafka::offset> known_seq(model::batch_identity) const;
     void set_seq(model::batch_identity, kafka::offset);
-    void reset_seq(model::batch_identity);
+    void reset_seq(model::batch_identity, model::term_id);
     std::optional<int32_t> tail_seq(model::producer_identity) const;
 
     ss::future<result<kafka_result>> do_replicate(
@@ -384,6 +384,7 @@ private:
     }
 
     struct seq_entry_wrapper {
+        model::term_id term;
         seq_entry entry;
         safe_intrusive_list_hook _hook;
     };
