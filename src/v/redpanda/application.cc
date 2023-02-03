@@ -354,11 +354,7 @@ int application::run(int ac, char** av) {
                 check_for_crash_loop();
                 setup_metrics();
                 wire_up_and_start(app_signal);
-                // We schedule the deletion _after_ the application fully
-                // starts up. This ensures that any errors like
-                // misconfigurations are also treated as unclean shutdowns
-                // thus avoiding crashloops.
-                schedule_crash_tracker_file_cleanup();
+                post_start_tasks();
                 app_signal.wait().get();
                 vlog(_log.info, "Stopping...");
             } catch (const ss::abort_requested_exception&) {
@@ -2138,4 +2134,26 @@ void application::load_feature_table_snapshot() {
     // Having loaded a snapshot, do our strict check for version compat.
     feature_table.local().assert_compatible_version(
       config::node().upgrade_override_checks);
+}
+
+/**
+ * Contains tasks that should only run after all other services have been
+ * initialized and started.
+ */
+void application::post_start_tasks() {
+    // This warning is set after we start RP since we want to allow
+    // services to make large allocations if need be during startup.
+    auto warning_threshold
+      = config::node().memory_allocation_warning_threshold();
+    if (warning_threshold.has_value()) {
+        ss::smp::invoke_on_all([threshold = warning_threshold.value()] {
+            ss::memory::set_large_allocation_warning_threshold(threshold);
+        }).get();
+    }
+
+    // We schedule the deletion _after_ the application fully
+    // starts up. This ensures that any errors like
+    // misconfigurations are also treated as unclean shutdowns
+    // thus avoiding crashloops.
+    schedule_crash_tracker_file_cleanup();
 }
