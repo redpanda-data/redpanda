@@ -137,6 +137,13 @@ func (r *Cluster) Default() {
 			r.Spec.Configuration.KafkaAPI[i].AuthenticationMethod = noneAuthorizationMechanism
 		}
 	}
+
+	if r.Spec.RestartConfig == nil {
+		r.Spec.RestartConfig = &RestartConfig{
+			DisableMaintenanceModeHooks:       nil,
+			UnderReplicatedPartitionThreshold: 0,
+		}
+	}
 }
 
 var defaultAdditionalConfiguration = map[string]int{
@@ -148,7 +155,7 @@ var defaultAdditionalConfiguration = map[string]int{
 // setDefaultAdditionalConfiguration sets additional configuration fields based
 // on the best practices
 func (r *Cluster) setDefaultAdditionalConfiguration() {
-	if *r.Spec.Replicas >= minimumReplicas {
+	if r.Spec.Replicas != nil && *r.Spec.Replicas >= minimumReplicas {
 		if r.Spec.AdditionalConfiguration == nil {
 			r.Spec.AdditionalConfiguration = make(map[string]string)
 		}
@@ -684,14 +691,17 @@ func (r *Cluster) validateRedpandaResources(
 
 func (r *Cluster) validateLicense(old *Cluster) field.ErrorList {
 	var allErrs field.ErrorList
+	// Cluster has finalizers now, no validation if it is deleting
+	if r.GetDeletionTimestamp() != nil {
+		return allErrs
+	}
 	if l := r.Spec.LicenseRef; l != nil {
-		key := &SecretKeyRef{Namespace: l.Namespace, Name: l.Name, Key: l.Key}
-		secret, err := key.GetSecret(context.Background(), kclient)
+		secret, err := l.GetSecret(context.Background(), kclient)
 		if err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("licenseRef"), r.Spec.LicenseRef, err.Error()))
 		}
 		if secret != nil {
-			if _, err := key.GetValue(secret, DefaultLicenseSecretKey); err != nil {
+			if _, err := l.GetValue(secret, DefaultLicenseSecretKey); err != nil {
 				allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("licenseRef"), r.Spec.LicenseRef, err.Error()))
 			}
 		}
