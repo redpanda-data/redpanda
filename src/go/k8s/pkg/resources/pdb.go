@@ -86,7 +86,7 @@ func (r *PDBResource) obj() (k8sclient.Object, error) {
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PodDisruptionBudget",
-			APIVersion: "policy/v1beta1",
+			APIVersion: "policy/v1",
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			MinAvailable:   r.pandaCluster.Spec.PodDisruptionBudget.MinAvailable,
