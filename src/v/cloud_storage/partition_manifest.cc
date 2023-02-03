@@ -28,7 +28,9 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/util/later.hh>
 
 #include <fmt/ostream.h>
 #include <rapidjson/error/en.h>
@@ -1166,23 +1168,6 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
     }
 }
 
-serialized_json_stream partition_manifest::serialize() const {
-    iobuf serialized;
-    iobuf_ostreambuf obuf(serialized);
-    std::ostream os(&obuf);
-    serialize(os);
-    if (!os.good()) {
-        throw std::runtime_error(fmt_with_ctx(
-          fmt::format,
-          "could not serialize partition manifest {}",
-          get_manifest_path()));
-    }
-    size_t size_bytes = serialized.size_bytes();
-    return {
-      .stream = make_iobuf_input_stream(std::move(serialized)),
-      .size_bytes = size_bytes};
-}
-
 struct partition_manifest::serialization_cursor {
     serialization_cursor(std::ostream& out, size_t max_segments)
       : wrapper(out)
@@ -1201,6 +1186,30 @@ struct partition_manifest::serialization_cursor {
     bool replaced_done{false};
     bool epilogue_done{false};
 };
+
+ss::future<serialized_json_stream> partition_manifest::serialize() const {
+    iobuf serialized;
+    iobuf_ostreambuf obuf(serialized);
+    std::ostream os(&obuf);
+    serialization_cursor_ptr c = make_cursor(os);
+    serialize_begin(c);
+    while (!c->segments_done) {
+        serialize_segments(c);
+        co_await ss::maybe_yield();
+    }
+    serialize_replaced(c);
+    serialize_end(c);
+    if (!os.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "could not serialize partition manifest {}",
+          get_manifest_path()));
+    }
+    size_t size_bytes = serialized.size_bytes();
+    co_return serialized_json_stream{
+      .stream = make_iobuf_input_stream(std::move(serialized)),
+      .size_bytes = size_bytes};
+}
 
 void partition_manifest::serialize(std::ostream& out) const {
     serialization_cursor_ptr c = make_cursor(out);

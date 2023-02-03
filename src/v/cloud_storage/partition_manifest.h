@@ -266,7 +266,7 @@ public:
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    serialized_json_stream serialize() const override;
+    ss::future<serialized_json_stream> serialize() const override;
 
     /// Serialize manifest object
     ///
@@ -325,6 +325,8 @@ private:
     /// Move segments from _segments to _replaced
     void move_aligned_offset_range(
       model::offset begin_inclusive, model::offset end_inclusive);
+
+    friend class serialization_cursor_data_source;
 
     struct serialization_cursor;
     using serialization_cursor_ptr = ss::lw_shared_ptr<serialization_cursor>;
