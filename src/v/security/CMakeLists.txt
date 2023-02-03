@@ -9,6 +9,7 @@ v_cc_library(
     mtls.cc
     license.cc
     krb5.cc
+    krb5_configurator.cc
     gssapi_principal_mapper.cc
   DEPS
     v::bytes
