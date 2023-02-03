@@ -149,6 +149,12 @@ node_config::node_config() noexcept
       "than the cluster's consensus version",
       {.visibility = visibility::tunable},
       false)
+  , memory_allocation_warning_threshold(
+      *this,
+      "memory_allocation_warning_threshold",
+      "Enables log messages for allocations greater than the given size.",
+      {.visibility = visibility::tunable},
+      std::nullopt)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
