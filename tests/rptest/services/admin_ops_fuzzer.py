@@ -15,6 +15,7 @@ from threading import Event, Condition
 import threading
 import time
 from ducktape.utils.util import wait_until
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from time import sleep
 
@@ -215,23 +216,21 @@ class AddPartitionsOperation(Operation):
         self.topic = None
         self.total = None
         self.current = None
-        self.to_add = None
 
     def execute(self, ctx):
         if self.topic is None:
             self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
-        rpk = ctx.rpk()
         if self.total is None:
             self.current = len(
-                list(rpk.describe_topic(self.topic, tolerant=True)))
-            self.to_add = random.randint(1, 5)
-            self.total = self.current + self.to_add
+                list(ctx.rpk().describe_topic(self.topic, tolerant=True)))
+            self.total = random.randint(self.current + 1, self.current + 5)
         ctx.redpanda.logger.info(
-            f"Updating topic: {self.topic} partitions count, current: {self.current} adding: {self.to_add} partitions"
+            f"Updating topic: {self.topic} partitions count. Current partition count: {self.current} new partition count: {self.total}"
         )
-        rpk.add_topic_partitions(self.topic, self.to_add)
+        cli = KafkaCliTools(ctx.redpanda)
+        cli.create_topic_partitions(self.topic, self.total)
         return True
 
     def validate(self, ctx):
