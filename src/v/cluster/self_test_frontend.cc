@@ -12,6 +12,7 @@
 #include "cluster/self_test_frontend.h"
 
 #include "cluster/logger.h"
+#include "cluster/self_test/netcheck.h"
 #include "cluster/self_test_backend.h"
 #include "ssx/future-util.h"
 #include "vlog.h"
@@ -125,23 +126,6 @@ ss::future<> self_test_frontend::start() { return ss::now(); }
 
 ss::future<> self_test_frontend::stop() { co_await _gate.close(); }
 
-/// Returns groupings of nodes that the network bench will run between. Simple
-/// for loop groups unique pairs of nodes with eachother.
-static absl::flat_hash_map<model::node_id, std::vector<model::node_id>>
-network_test_plan(std::vector<model::node_id> nodes) {
-    /// Choose unique pairs of nodes - order doesn't matter. This creates a list
-    /// of client/server pairs where there are no instances of a pair for which
-    /// the client/server roles are reversed. The intention is to only perform
-    /// the netcheck benchmark one time per unique pair.
-    absl::flat_hash_map<model::node_id, std::vector<model::node_id>> plan;
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        for (size_t j = i + 1; j < nodes.size(); ++j) {
-            plan[nodes[i]].emplace_back(nodes[j]);
-        }
-    }
-    return plan;
-}
-
 ss::future<uuid_t> self_test_frontend::start_test(
   start_test_request req, std::vector<model::node_id> ids) {
     auto gate_holder = _gate.hold();
@@ -176,7 +160,7 @@ ss::future<uuid_t> self_test_frontend::start_test(
 
     /// Invoke command to start test on all nodes, using the same test id
     const auto test_id = uuid_t::create();
-    const auto network_plan = network_test_plan(ids);
+    const auto network_plan = self_test::netcheck::network_test_plan(ids);
     co_await invoke_on_all_nodes(
       [test_id, ids_set, req, &network_plan](model::node_id nid, auto& handle) {
           /// Clear last results of nodes who don't participate in this run

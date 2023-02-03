@@ -18,6 +18,7 @@
 
 #include <seastar/core/coroutine.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/range/irange.hpp>
 
 namespace cluster::self_test {
@@ -47,6 +48,23 @@ void netcheck::validate_options(const netcheck_opts& opts) {
         throw netcheck_option_out_of_range(
           "Duration must be between 1 second and 5 minutes");
     }
+}
+
+/// Returns groupings of nodes that the network bench will run between. Simple
+/// for loop groups unique pairs of nodes with eachother.
+netcheck::plan_t
+netcheck::network_test_plan(std::vector<model::node_id> nodes) {
+    /// Choose unique pairs of nodes - order doesn't matter. This creates a list
+    /// of client/server pairs where there are no instances of a pair for which
+    /// the client/server roles are reversed. The intention is to only perform
+    /// the netcheck benchmark one time per unique pair.
+    plan_t plan;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        for (size_t j = i + 1; j < nodes.size(); ++j) {
+            plan[nodes[i]].emplace_back(nodes[j]);
+        }
+    }
+    return plan;
 }
 
 netcheck::netcheck(

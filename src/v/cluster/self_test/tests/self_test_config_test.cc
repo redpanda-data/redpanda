@@ -13,6 +13,7 @@
 #include "cluster/self_test/netcheck.h"
 #include "json/document.h"
 
+#include <boost/math/special_functions/binomial.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 
@@ -155,4 +156,57 @@ BOOST_AUTO_TEST_CASE(test_self_test_json_serde) {
     BOOST_CHECK_EQUAL(net_opts.request_size, 54321);
     BOOST_CHECK_EQUAL(net_opts.duration, 7100ms);
     BOOST_CHECK_EQUAL(net_opts.parallelism, 25);
+}
+
+BOOST_AUTO_TEST_CASE(test_self_test_network_plan) {
+    namespace cft = cluster::self_test;
+
+    /// Returns a list of model::node_ids from 0 up until 'biggest'
+    const auto make_nodes = [](uint16_t biggest) {
+        std::vector<model::node_id> node_ids;
+        auto range = boost::irange(uint16_t(0), biggest);
+        std::transform(
+          range.begin(),
+          range.end(),
+          std::back_inserter(node_ids),
+          [](uint16_t id) { return model::node_id(id); });
+        return node_ids;
+    };
+
+    /// Returns the number of network tests to be performed in a single plan
+    const auto num_tests = [](const cft::netcheck::plan_t& plan) {
+        return std::accumulate(
+          plan.begin(), plan.end(), 0, [](size_t acc, const auto& p) {
+              return acc + p.second.size();
+          });
+    };
+
+    /// Returns false if any duplicate pairings exist
+    const auto verify_pairings = [](const cft::netcheck::plan_t& plan) {
+        for (const auto& [client, servers] : plan) {
+            for (const auto& server : servers) {
+                auto found = plan.find(server);
+                if (found == plan.end()) {
+                    continue;
+                }
+                const auto& as_client = found->second;
+                if (
+                  std::find(as_client.begin(), as_client.end(), client)
+                  != as_client.end()) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    };
+
+    for (unsigned int i = 2; i < 100; ++i) {
+        auto nodes = make_nodes(i);
+        auto results = cft::netcheck::network_test_plan(nodes);
+        /// math::binominal_coefficent calculates the number of combinations of
+        /// i in groups of 2
+        BOOST_CHECK_EQUAL(
+          num_tests(results), boost::math::binomial_coefficient<double>(i, 2));
+        BOOST_CHECK(verify_pairings(results));
+    }
 }
