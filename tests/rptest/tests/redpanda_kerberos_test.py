@@ -105,7 +105,6 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
                             sasl_mechanism=mechanism)
 
         client_user_principal = f"User:client"
-        super_rpk.sasl_create_user(client_user_principal, "rp123", mechanism)
 
         # Create a topic that's visible to "client" iff acl = True
         super_rpk.create_topic("needs_acl")
@@ -230,8 +229,6 @@ class RedpandaKerberosRulesTesting(RedpandaKerberosTestBase):
                             username=username,
                             password=password,
                             sasl_mechanism=mechanism)
-
-        super_rpk.sasl_create_user(f"User:{rp_user}", "rp123", mechanism)
 
         for topic, principal in acl:
             super_rpk.create_topic(topic)
