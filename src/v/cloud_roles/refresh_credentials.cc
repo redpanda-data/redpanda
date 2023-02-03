@@ -22,6 +22,8 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 
+#include <exception>
+
 namespace cloud_roles {
 
 /// These environment variables can be used to override the default hostname and
@@ -58,12 +60,16 @@ ss::future<> refresh_credentials::do_start() {
     return ss::do_until(
       [this] { return _gate.is_closed() || _as.abort_requested(); },
       [this] {
-          return fetch_and_update_credentials().handle_exception_type(
-            [](const ss::sleep_aborted& ex) {
+          return fetch_and_update_credentials()
+            .handle_exception_type([](const ss::sleep_aborted& ex) {
                 vlog(
                   clrl_log.info,
                   "stopping refresh_credentials loop: {}",
                   ex.what());
+            })
+            .handle_exception([this](const std::exception_ptr& ex) {
+                vlog(clrl_log.error, "error refreshing credentials: {}", ex);
+                _impl->increment_retries();
             });
       });
 }
