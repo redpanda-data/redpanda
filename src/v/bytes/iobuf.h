@@ -199,7 +199,7 @@ inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
 inline bool iobuf::operator!=(std::string_view o) const {
     return !(*this == o);
 }
-inline bool iobuf::empty() const { return _frags.empty(); }
+inline bool iobuf::empty() const { return _size == 0; }
 inline size_t iobuf::size_bytes() const { return _size; }
 
 inline size_t iobuf::available_bytes() const {
