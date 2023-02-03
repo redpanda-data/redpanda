@@ -53,8 +53,6 @@ func NewPDB(
 }
 
 // Ensure will create/update PDB resource based on configuration inside our CR.
-// For now we're creating v1beta1 version of PDB because v1 is available only
-// from k8s version 1.21+
 func (r *PDBResource) Ensure(ctx context.Context) error {
 	if r.pandaCluster.Spec.PodDisruptionBudget == nil || !r.pandaCluster.Spec.PodDisruptionBudget.Enabled {
 		return nil
