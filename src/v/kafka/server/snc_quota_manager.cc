@@ -464,10 +464,10 @@ void dispense_equally(std::vector<quota_t>& target, const quota_t value) {
         v += share.quot;
         if (share.rem > 0) {
             v += 1;
-            share.quot -= 1;
+            share.rem -= 1;
         } else if (share.rem < 0) {
             v -= 1;
-            share.quot += 1;
+            share.rem += 1;
         }
     }
 }
