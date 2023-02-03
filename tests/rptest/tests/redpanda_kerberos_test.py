@@ -20,8 +20,8 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError
-from rptest.services.redpanda import LoggingConfig, SecurityConfig
+from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError, KRB5_CONF_PATH
+from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
 
 LOG_CONFIG = LoggingConfig('info',
                            logger_levels={
@@ -37,11 +37,14 @@ class RedpandaKerberosTestBase(Test):
     """
     Base class for tests that use the Redpanda service with Kerberos
     """
-    def __init__(self,
-                 test_context,
-                 num_nodes=5,
-                 sasl_mechanisms=["SCRAM", "GSSAPI"],
-                 **kwargs):
+    def __init__(
+            self,
+            test_context,
+            num_nodes=5,
+            sasl_mechanisms=["SCRAM", "GSSAPI"],
+            keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
+            krb5_conf_path=KRB5_CONF_PATH,
+            **kwargs):
         super(RedpandaKerberosTestBase, self).__init__(test_context, **kwargs)
 
         self.kdc = KrbKdc(test_context, realm=REALM)
@@ -53,6 +56,8 @@ class RedpandaKerberosTestBase(Test):
         self.redpanda = RedpandaKerberosNode(test_context,
                                              kdc=self.kdc,
                                              realm=REALM,
+                                             keytab_file=keytab_file,
+                                             krb5_conf_path=krb5_conf_path,
                                              num_brokers=num_nodes - 2,
                                              log_config=LOG_CONFIG,
                                              security=security,
