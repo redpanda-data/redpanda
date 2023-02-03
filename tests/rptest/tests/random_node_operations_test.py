@@ -28,6 +28,11 @@ class RandomNodeOperationsTest(EndToEndTest):
     consumer_timeout = 180
     producer_timeout = 180
 
+    def __init__(self, test_context):
+        self.admin_fuzz = None
+        super(RandomNodeOperationsTest,
+              self).__init__(test_context=test_context)
+
     def producer_throughput(self):
         return 1000 if self.debug_mode else 10000
 
@@ -47,6 +52,12 @@ class RandomNodeOperationsTest(EndToEndTest):
 
         self.topic = random.choice(topics).name
 
+    def tearDown(self):
+        if self.admin_fuzz is not None:
+            self.admin_fuzz.stop()
+
+        return super().tearDown()
+
     @skip_debug_mode
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
@@ -55,6 +66,7 @@ class RandomNodeOperationsTest(EndToEndTest):
         self,
         enable_failures,
     ):
+
         lock = threading.Lock()
         extra_rp_conf = {
             "default_topic_replications": 3,
@@ -79,11 +91,11 @@ class RandomNodeOperationsTest(EndToEndTest):
 
         # start admin operations fuzzer, it will provide a stream of
         # admin day 2 operations executed during the test
-        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
-                                           min_replication=3,
-                                           operations_interval=3)
+        self.admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                                min_replication=3,
+                                                operations_interval=3)
 
-        admin_fuzz.start()
+        self.admin_fuzz.start()
         self.active_node_idxs = set(
             [self.redpanda.idx(n) for n in self.redpanda.nodes])
 
@@ -102,8 +114,9 @@ class RandomNodeOperationsTest(EndToEndTest):
             self.logger.info(f"starting operation {i+1}/{op_cnt}")
             executor.execute_operation(op)
 
-        admin_fuzz.wait(20, 180)
-        admin_fuzz.stop()
+        self.admin_fuzz.wait(20, 180)
+        self.admin_fuzz.stop()
+
         if enable_failures:
             fi.stop()
         self.run_validation(min_records=self.min_producer_records(),

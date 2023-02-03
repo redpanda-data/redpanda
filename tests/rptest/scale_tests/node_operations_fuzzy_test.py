@@ -64,6 +64,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
     consumer_timeout = 180
     producer_timeout = 180
 
+    def __init__(self, test_context):
+        self.admin_fuzz = None
+        super(NodeOperationFuzzyTest, self).__init__(test_context=test_context)
+
     def _create_random_topics(self, count, compacted):
         max_partitions = 10
 
@@ -81,6 +85,12 @@ class NodeOperationFuzzyTest(EndToEndTest):
 
         return topics
 
+    def tearDown(self):
+        if self.admin_fuzz is not None:
+            self.admin_fuzz.stop()
+
+        return super().tearDown()
+
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + V22_1_CHAOS_ALLOW_LOGS +
              PREV_VERSION_LOG_ALLOW_LIST)
@@ -89,6 +99,7 @@ class NodeOperationFuzzyTest(EndToEndTest):
             compacted_topics=[True, False])
     def test_node_operations(self, enable_failures, num_to_upgrade,
                              compacted_topics):
+
         lock = threading.Lock()
         # allocate 5 nodes for the cluster
         extra_rp_conf = {
@@ -139,11 +150,11 @@ class NodeOperationFuzzyTest(EndToEndTest):
         self.await_startup(min_records=3 * self.producer_throughput)
 
         # start admin ops fuzzer to simulate day 2 operations
-        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
-                                           operations_interval=3,
-                                           min_replication=3)
+        self.admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                                operations_interval=3,
+                                                min_replication=3)
 
-        admin_fuzz.start()
+        self.admin_fuzz.start()
         active_nodes = set([self.redpanda.idx(n) for n in self.redpanda.nodes])
         fi = None
         if enable_failures:
@@ -164,8 +175,9 @@ class NodeOperationFuzzyTest(EndToEndTest):
         if fi:
             fi.stop()
 
-        admin_fuzz.wait(20, 180)
-        admin_fuzz.stop()
+        self.admin_fuzz.wait(20, 180)
+        self.admin_fuzz.stop()
+
         self.run_validation(min_records=self.min_produced_records,
                             enable_idempotence=False,
                             producer_timeout_sec=self.producer_timeout,
