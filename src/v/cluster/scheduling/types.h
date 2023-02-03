@@ -34,7 +34,7 @@ class hard_constraint_evaluator final {
 public:
     struct impl {
         virtual bool evaluate(const allocation_node&) const = 0;
-        virtual void print(std::ostream&) const = 0;
+        virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
     };
 
@@ -55,10 +55,12 @@ public:
         return _impl->evaluate(node);
     }
 
+    ss::sstring name() const { return _impl->name(); }
+
 private:
     friend std::ostream&
     operator<<(std::ostream& o, const hard_constraint_evaluator& e) {
-        e._impl->print(o);
+        fmt::print("hard constraint: [{}]", e.name());
         return o;
     }
 
@@ -70,7 +72,7 @@ public:
     static constexpr uint64_t max_score = 10'000'000;
     struct impl {
         virtual uint64_t score(const allocation_node&) const = 0;
-        virtual void print(std::ostream&) const = 0;
+        virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
     };
 
@@ -97,10 +99,12 @@ public:
         return ret;
     };
 
+    ss::sstring name() const { return _impl->name(); }
+
 private:
     friend std::ostream&
     operator<<(std::ostream& o, const soft_constraint_evaluator& e) {
-        e._impl->print(o);
+        fmt::print("soft constraint: [{}]", e.name());
         return o;
     }
 

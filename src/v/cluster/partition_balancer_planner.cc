@@ -16,6 +16,9 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
+#include "ssx/sformat.h"
+
+#include <seastar/core/sstring.hh>
 
 #include <optional>
 
@@ -34,9 +37,8 @@ distinct_from(const absl::flat_hash_set<model::node_id>& nodes) {
             return !_nodes.contains(node.id());
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(
-              o,
+        ss::sstring name() const final {
+            return ssx::sformat(
               "distinct from nodes: {}",
               std::vector(_nodes.begin(), _nodes.end()));
         }
