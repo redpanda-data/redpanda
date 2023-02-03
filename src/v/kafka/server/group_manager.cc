@@ -734,6 +734,7 @@ ss::future<> group_manager::do_recover_group(
                 .metadata = meta.metadata.metadata,
                 .commit_timestamp = meta.metadata.commit_timestamp,
                 .expiry_timestamp = expiry_timestamp,
+                .non_reclaimable = meta.metadata.non_reclaimable,
               });
         }
 

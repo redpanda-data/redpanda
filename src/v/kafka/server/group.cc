@@ -2356,6 +2356,15 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
               expiry_timestamp);
 
             model::topic_partition tp(t.name, p.partition_index);
+
+            /*
+             * .non_reclaimable defaults to false and this metadata will end up
+             * replacing the metadata in existing registered offsets. this has
+             * the effect that if a committed offset was recovered as
+             * legacy/pre-v23 and is non-reclaimable that it then becomes
+             * reclaimable, which is the behavior we want. it is effectively no
+             * longer a legacy committed offset.
+             */
             offset_metadata md{
               .offset = p.committed_offset,
               .metadata = p.committed_metadata.value_or(""),
@@ -3424,6 +3433,10 @@ std::vector<model::topic_partition> group::filter_expired_offsets(
     const auto now = model::timestamp::now();
     std::vector<model::topic_partition> offsets;
     for (const auto& offset : _offsets) {
+        if (offset.second->metadata.non_reclaimable) {
+            continue;
+        }
+
         /*
          * an offset won't be removed if its topic has an active subscription or
          * there are pending offset commits for the offset's topic.

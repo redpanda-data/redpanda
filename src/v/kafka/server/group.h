@@ -157,6 +157,13 @@ public:
         kafka::leader_epoch committed_leader_epoch;
         model::timestamp commit_timestamp;
         std::optional<model::timestamp> expiry_timestamp;
+        /*
+         * this is an offset that was written prior to upgrading to redpanda
+         * with offset retention support. because these offsets did not
+         * persistent retention metadata we act conservatively and skip
+         * automatic reclaim. offset delete api can be used to remove them.
+         */
+        bool non_reclaimable{false};
 
         friend std::ostream& operator<<(std::ostream&, const offset_metadata&);
     };

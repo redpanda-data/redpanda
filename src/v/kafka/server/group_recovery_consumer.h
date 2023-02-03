@@ -24,9 +24,11 @@ namespace kafka {
 struct group_recovery_consumer_state {
     absl::node_hash_map<kafka::group_id, group_stm> groups;
     /*
-     * set to true if during recovery an offset retention feature fence is
-     * observed. after recovery, if the fence has not been observed, then the
-     * fence will be written following activation of offset retention feature.
+     * recovered committed offsets are by default non-reclaimable, and marked as
+     * reclaimable if this flag is set to true. the flag is set to true if and
+     * when the fence is observed during recovery. after recovery, if the fence
+     * has not been observed, then the fence will be written once the offset
+     * retention feature is activated. see group::offset_metadata for more info.
      */
     bool has_offset_retention_feature_fence{false};
 };
