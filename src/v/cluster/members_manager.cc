@@ -1121,7 +1121,8 @@ operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
 
 std::ostream&
 operator<<(std::ostream& o, const members_manager::node_update& u) {
-    fmt::print(o, "{{node_id: {}, type: {}}}", u.id, u.type);
+    fmt::print(
+      o, "{{node_id: {}, type: {}, offset: {}}}", u.id, u.type, u.offset);
     return o;
 }
 

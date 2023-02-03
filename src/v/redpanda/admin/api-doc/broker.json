@@ -66,6 +66,23 @@
             "path": "/v1/brokers/{id}/decommission",
             "operations": [
                 {
+                    "method": "GET",
+                    "summary": "get broker decommission progress",
+                    "type": "void",
+                    "nickname": "get_decommission",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "id",
+                            "in": "path",
+                            "required": true,
+                            "type": "long"
+                        }
+                    ]
+                },
+                {
                     "method": "PUT",
                     "summary": "decommission broker",
                     "type": "void",
@@ -308,6 +325,75 @@
                 "failed": {
                     "type": "long",
                     "description": "failed transfer partition count"
+                }
+            }
+        },
+        "decommission_status": {
+            "id": "decommission_status",
+            "description": "Node decommissioning status",
+            "properties": {
+                "finished": {
+                    "type": "boolean",
+                    "description": "indicate if decommissioning is finished"
+                },
+                "replicas_left": {
+                    "type": "long",
+                    "description": "number of replicas left on a node"
+                },
+                "partitions": {
+                    "type": "array",
+                    "items": {
+                        "type": "partition_reconfiguration_status"
+                    },
+                    "description": "Array of partition reconfiguration statues"
+                }
+            }
+        },
+        "partition_reconfiguration_status": {
+            "id": "partition_reconfiguration_status",
+            "description": "Partition reconfiguration status",
+            "properties": {
+                "ns": {
+                    "type": "string",
+                    "description": "namespace"
+                },
+                "topic": {
+                    "type": "string",
+                    "description": "topic"
+                },
+                "partition": {
+                    "type": "int",
+                    "description": "partition"
+                },
+                "moving_to": {
+                    "type": "broker_shard",
+                    "description": "information where the partition is being moved"
+                },
+                "bytes_left_to_move": {
+                    "type": "long",
+                    "description": "bytes left to move to new replica"
+                },
+                "bytes_moved": {
+                    "type": "long",
+                    "description": "bytes moved to target broker"
+                },
+                "partition_size": {
+                    "type": "long",
+                    "description": "current size of partition"
+                }
+            }
+        },
+        "broker_shard": {
+            "id": "broker_shard",
+            "description": "Replica placement",
+            "properties": {
+                "node_id": {
+                    "type": "int",
+                    "description": "id of a node"
+                },
+                "core": {
+                    "type": "int",
+                    "description": "id of a core on a given node"
                 }
             }
         }

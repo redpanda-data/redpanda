@@ -77,6 +77,9 @@ public:
         absl::flat_hash_map<partition_allocation_domain, double>
           last_unevenness_error;
         absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
+        // revision of a related decommission command, present only in
+        // recommission update_meta
+        std::optional<model::revision_id> decommission_update_revision;
     };
 
     members_backend(
@@ -107,7 +110,8 @@ private:
     using node_replicas_map_t
       = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
     void start_reconciliation_loop();
-    ss::future<> reconcile();
+    ss::future<> reconciliation_loop();
+    ss::future<std::error_code> reconcile();
     ss::future<> reallocate_replica_set(partition_reallocation&);
 
     ss::future<> try_to_finish_update(update_meta&);
@@ -115,7 +119,8 @@ private:
 
     ss::future<> handle_updates();
     void handle_single_update(members_manager::node_update);
-    void handle_recommissioned(const members_manager::node_update&);
+    model::revision_id handle_recommissioned_and_get_decomm_revision(
+      members_manager::node_update&);
     void stop_node_decommissioning(model::node_id);
     void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
@@ -153,19 +158,9 @@ private:
     // replicas reallocations in progress
     std::vector<update_meta> _updates;
     std::chrono::milliseconds _retry_timeout;
-    ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
     config::binding<size_t> _max_concurrent_reallocations;
-
-    /**
-     * store revision of node decommissioning update, decommissioning command
-     * revision is stored when node is being decommissioned, it is used to
-     * determine which partition movements were scheduled before the node was
-     * decommissioned, recommissioning process will not abort those movements.
-     */
-    absl::flat_hash_map<model::node_id, model::revision_id>
-      _decommission_command_revision;
 };
 std::ostream&
 operator<<(std::ostream&, const members_backend::reallocation_state&);
