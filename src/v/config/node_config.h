@@ -65,6 +65,7 @@ public:
     // If true, permit any version of redpanda to start, even
     // if potentially incompatible with existing system state.
     property<bool> upgrade_override_checks;
+    property<std::optional<size_t>> memory_allocation_warning_threshold;
 
     // build pidfile path: `<data_directory>/pid.lock`
     std::filesystem::path pidfile_path() const {
