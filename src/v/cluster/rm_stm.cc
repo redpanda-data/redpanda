@@ -2412,6 +2412,16 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
+template<class T>
+static void move_snapshot_wo_seqs(rm_stm::tx_snapshot& target, T& source) {
+    target.fenced = std::move(source.fenced);
+    target.ongoing = std::move(source.ongoing);
+    target.prepared = std::move(source.prepared);
+    target.aborted = std::move(source.aborted);
+    target.abort_indexes = std::move(source.abort_indexes);
+    target.offset = std::move(source.offset);
+}
+
 ss::future<>
 rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     tx_snapshot data;
@@ -2420,12 +2430,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         data = reflection::adl<tx_snapshot>{}.from(data_parser);
     } else if (hdr.version == tx_snapshot_v2::version) {
         auto data_v2 = reflection::adl<tx_snapshot_v2>{}.from(data_parser);
-        data.fenced = std::move(data_v2.fenced);
-        data.ongoing = std::move(data_v2.ongoing);
-        data.prepared = std::move(data_v2.prepared);
-        data.aborted = std::move(data_v2.aborted);
-        data.abort_indexes = std::move(data_v2.abort_indexes);
-        data.offset = std::move(data_v2.offset);
+        move_snapshot_wo_seqs(data, data_v2);
         data.seqs = std::move(data_v2.seqs);
 
         for (auto& entry : data_v2.prepared) {
@@ -2439,12 +2444,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
     } else if (hdr.version == tx_snapshot_v1::version) {
         auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
-        data.fenced = std::move(data_v1.fenced);
-        data.ongoing = std::move(data_v1.ongoing);
-        data.prepared = std::move(data_v1.prepared);
-        data.aborted = std::move(data_v1.aborted);
-        data.abort_indexes = std::move(data_v1.abort_indexes);
-        data.offset = std::move(data_v1.offset);
+        move_snapshot_wo_seqs(data, data_v1);
         for (auto& seq_v1 : data_v1.seqs) {
             seq_entry seq;
             seq.pid = seq_v1.pid;
@@ -2475,12 +2475,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
     } else if (hdr.version == tx_snapshot_v0::version) {
         auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
-        data.fenced = std::move(data_v0.fenced);
-        data.ongoing = std::move(data_v0.ongoing);
-        data.prepared = std::move(data_v0.prepared);
-        data.aborted = std::move(data_v0.aborted);
-        data.abort_indexes = std::move(data_v0.abort_indexes);
-        data.offset = std::move(data_v0.offset);
+        move_snapshot_wo_seqs(data, data_v0);
         for (auto seq_v0 : data_v0.seqs) {
             auto seq = seq_entry{
               .pid = seq_v0.pid,
