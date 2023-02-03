@@ -96,6 +96,23 @@ path_type_map = {
             }
         }
     },
+    "OffsetDeleteRequestData": {
+        "GroupId": ("kafka::group_id", "string"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32")
+            }
+        }
+    },
+    "OffsetDeleteResponseData": {
+        "ErrorCode": ("kafka::error_code", "int16"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "ErrorCode": ("kafka::error_code", "int16"),
+            }
+        }
+    },
     "TxnOffsetCommitRequestData": {
         "MemberId": ("kafka::member_id", "string"),
         "GroupInstanceId": ("kafka::group_instance_id", "string"),
@@ -508,6 +525,10 @@ STRUCT_TYPES = [
     "CreatePartitionsTopic",
     "CreatePartitionsTopicResult",
     "CreatePartitionsAssignment",
+    "OffsetDeleteRequestTopic",
+    "OffsetDeleteRequestPartition",
+    "OffsetDeleteResponseTopic",
+    "OffsetDeleteResponsePartition",
     "OffsetForLeaderTopic",
     "OffsetForLeaderPartition",
     "OffsetForLeaderTopicResult",
