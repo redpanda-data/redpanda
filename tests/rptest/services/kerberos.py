@@ -346,6 +346,7 @@ class KrbClient(Service):
         node.account.ssh(
             f"rm -fr {self.redpanda.PERSISTENT_ROOT}/client.keytab /etc/krb5.keytab",
             allow_fail=True)
+        node.account.ssh(f"rm -fr /tmp/*.krb5ccache", allow_fail=True)
 
     def add_primary(self, primary: str, realm: str = None):
         self.logger.info(
