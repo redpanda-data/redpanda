@@ -44,7 +44,7 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services import tls
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import RedpandaInstaller
+from rptest.services.redpanda_installer import RedpandaInstaller, VERSION_RE as RI_VERSION_RE, int_tuple as ri_int_tuple
 from rptest.services.rolling_restarter import RollingRestarter
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.utils import BadLogLines, NodeCrash
@@ -1903,6 +1903,10 @@ class RedpandaService(Service):
         assert len(version_lines) == 1, version_lines
         return VERSION_LINE_RE.findall(version_lines[0])[0]
 
+    def get_version_int_tuple(self, node):
+        version_str = self.get_version(node)
+        return ri_int_tuple(RI_VERSION_RE.findall(version_str)[0])
+
     def stop(self, **kwargs):
         """
         Override default stop() to execude stop_node in parallel
@@ -2103,6 +2107,17 @@ class RedpandaService(Service):
         # resolution
         fqdn = self.get_node_fqdn(node)
 
+        try:
+            cur_ver = self.get_version_int_tuple(node)
+        except:
+            cur_ver = None
+
+        # This node property isn't available on versions of RP older than 23.2.
+        if cur_ver and cur_ver >= (23, 2, 0):
+            memory_allocation_warning_threshold_bytes = 256 * 1024  # 256 KiB
+        else:
+            memory_allocation_warning_threshold_bytes = None
+
         conf = self.render("redpanda.yaml",
                            node=node,
                            data_dir=RedpandaService.DATA_DIR,
@@ -2120,7 +2135,9 @@ class RedpandaService(Service):
                            superuser=self._superuser,
                            sasl_enabled=self.sasl_enabled(),
                            endpoint_authn_method=self.endpoint_authn_method(),
-                           auto_auth=self._security.auto_auth)
+                           auto_auth=self._security.auto_auth,
+                           memory_allocation_warning_threshold=
+                           memory_allocation_warning_threshold_bytes)
 
         if override_cfg_params or self._extra_node_conf[node]:
             doc = yaml.full_load(conf)
