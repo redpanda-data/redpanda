@@ -72,6 +72,13 @@ public:
                 return ss::make_exception_future<Ret>(
                   broker_error(_node_id, error_code::broker_not_available));
             })
+          .handle_exception_type([this](const std::system_error& e) {
+              if (net::is_reconnect_error(e)) {
+                  return ss::make_exception_future<Ret>(
+                    broker_error(_node_id, error_code::broker_not_available));
+              }
+              return ss::make_exception_future<Ret>(e);
+          })
           .finally([b = shared_from_this()]() {});
     }
 
