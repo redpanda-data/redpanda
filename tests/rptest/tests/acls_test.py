@@ -448,7 +448,10 @@ class AccessControlListTestUpgrade(AccessControlListTest):
 
     # Test that a cluster configured with enable_sasl can be upgraded
     # from v22.1.x, and still have sasl enabled. See PR 5292.
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=[
+                 r'rpc - .* The TLS connection was non-properly terminated.*'
+             ])
     def test_upgrade_sasl(self):
         old_version, old_version_str = self.installer.install(
             self.redpanda.nodes, (22, 1))
