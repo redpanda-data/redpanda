@@ -31,6 +31,8 @@ namespace net {
 bool is_reconnect_error(const std::system_error& e);
 std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr);
 
+bool is_auth_error(std::exception_ptr);
+
 class connection : public boost::intrusive::list_base_hook<> {
 public:
     connection(

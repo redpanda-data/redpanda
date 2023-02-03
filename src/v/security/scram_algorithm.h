@@ -11,6 +11,7 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "hashing/secure.h"
+#include "net/types.h"
 #include "random/generators.h"
 #include "security/scram_credential.h"
 #include "ssx/sformat.h"
@@ -36,15 +37,10 @@
  */
 namespace security {
 
-class scram_exception final : public std::exception {
+class scram_exception final : public net::authentication_exception {
 public:
     explicit scram_exception(ss::sstring msg) noexcept
-      : _msg(std::move(msg)) {}
-
-    const char* what() const noexcept final { return _msg.c_str(); }
-
-private:
-    ss::sstring _msg;
+      : net::authentication_exception(std::move(msg)) {}
 };
 
 /**

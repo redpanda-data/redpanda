@@ -118,13 +118,26 @@ static inline void print_exceptional_future(
     auto disconnected = is_disconnect_exception(ex);
 
     if (!disconnected) {
-        vlog(
-          rpc::rpclog.error,
-          "{} - Error[{}] remote address: {} - {}",
-          proto->name(),
-          ctx,
-          address,
-          ex);
+        if (is_auth_error(ex)) {
+            vlog(
+              rpc::rpclog.warn,
+              "{} - Authentication Failure[{}] remote address: {} - {}",
+              proto->name(),
+              ctx,
+              address,
+              ex);
+        } else {
+            // Authentication exceptions are logged at WARN, not ERROR, because
+            // they generally point to a misbehaving client rather than a fault
+            // in the server.
+            vlog(
+              rpc::rpclog.error,
+              "{} - Error[{}] remote address: {} - {}",
+              proto->name(),
+              ctx,
+              address,
+              ex);
+        }
     } else {
         vlog(
           rpc::rpclog.info,
