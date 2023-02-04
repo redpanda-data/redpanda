@@ -23,8 +23,10 @@ metadata:
   name: update-image-cluster-and-node-port
 spec:
   image: "vectorized/redpanda"
-  version: "v21.11.1"
-  replicas: 2
+  version: "v22.1.10"
+  replicas: 3
+  restartConfig:
+    underReplicatedPartitionThreshold: 0.00
   resources:
     requests:
       cpu: 100m

@@ -12,7 +12,7 @@ spec:
     name: cluster
     namespace: console-admin-api
   deployment:
-    image: vectorized/console-unstable:feature-embedded-console-2f4209d
+    image: vectorized/console:v2.1.1
   connect:
     enabled: false
   redpanda:

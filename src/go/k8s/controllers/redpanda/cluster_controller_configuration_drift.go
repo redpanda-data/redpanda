@@ -66,6 +66,10 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
+	if redpandaCluster.GetDeletionTimestamp() != nil {
+		log.Info("not reconciling deleted Cluster")
+		return ctrl.Result{}, nil
+	}
 
 	if !featuregates.CentralizedConfiguration(redpandaCluster.Spec.Version) {
 		return ctrl.Result{RequeueAfter: r.getDriftCheckPeriod()}, nil
