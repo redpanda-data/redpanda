@@ -771,6 +771,16 @@ class ManyPartitionsTest(PreallocNodesTest):
             f"Running partition scale test with {n_partitions} partitions on {n_topics} topics"
         )
 
+        # Enable large node-wide thoughput limits to verify they work at scale
+        # To avoid affecting the result of the test with the limit, set them
+        # somewhat above expect_bandwidth value per node
+        self.redpanda.add_extra_rp_conf({
+            'kafka_throughput_limit_node_in_bps':
+            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3),
+            'kafka_throughput_limit_node_out_bps':
+            int(scale.expect_bandwidth / len(self.redpanda.nodes) * 3)
+        })
+
         self.redpanda.start(parallel=True)
 
         self.logger.info("Entering topic creation")
