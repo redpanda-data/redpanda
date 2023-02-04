@@ -82,7 +82,8 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::group_id group,
   std::vector<model::broker> initial_nodes,
   std::optional<remote_topic_properties> rtp,
-  std::optional<s3::bucket_name> read_replica_bucket) {
+  std::optional<s3::bucket_name> read_replica_bucket,
+  raft::with_learner_recovery_throttle enable_learner_recovery_throttle) {
     gate_guard guard(_gate);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
     auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]
@@ -151,7 +152,7 @@ ss::future<consensus_ptr> partition_manager::manage(
 
     ss::lw_shared_ptr<raft::consensus> c
       = co_await _raft_manager.local().create_group(
-        group, std::move(initial_nodes), log);
+        group, std::move(initial_nodes), log, enable_learner_recovery_throttle);
 
     auto p = ss::make_lw_shared<partition>(
       c,

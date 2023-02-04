@@ -59,7 +59,10 @@ public:
     ss::future<> stop_heartbeats();
 
     ss::future<ss::lw_shared_ptr<raft::consensus>> create_group(
-      raft::group_id id, std::vector<model::broker> nodes, storage::log log);
+      raft::group_id id,
+      std::vector<model::broker> nodes,
+      storage::log log,
+      with_learner_recovery_throttle enable_learner_recovery_throttle);
 
     ss::future<> shutdown(ss::lw_shared_ptr<raft::consensus>);
 
