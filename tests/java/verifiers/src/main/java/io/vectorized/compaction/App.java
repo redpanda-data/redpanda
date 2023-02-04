@@ -16,13 +16,15 @@ public class App {
     public long min_writes = 0;
     public long min_reads = 0;
 
-    public ArrayList<ConsumerMetrics> consumers = new ArrayList<>();
+    public ArrayList<PartitionMetrics> partitions = new ArrayList<>();
   }
 
-  public static class ConsumerMetrics {
+  public static class PartitionMetrics {
     public int partition;
     public long end_offset = -1;
     public long read_offset = -1;
+    public long read_position = -1;
+    public long written_offset = -1;
     public boolean consumed = false;
   }
 
