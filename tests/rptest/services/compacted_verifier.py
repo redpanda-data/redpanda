@@ -251,6 +251,8 @@ class CompactedVerifier(Service):
                 return (True, self._remote_info())
             except CrushedException:
                 raise
+            except ConsistencyViolationException:
+                raise
             except:
                 self._redpanda.logger.debug(
                     "Got error on fetching info, retrying?!", exc_info=True)
