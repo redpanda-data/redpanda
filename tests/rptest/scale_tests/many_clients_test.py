@@ -46,6 +46,9 @@ class ManyClientsTest(RedpandaTest):
             # produce at a much higher rate and cause RP to run out of memory.
             'target_quota_byte_rate':
             31460000,  # 30MiB/s of throughput per shard
+            # Same intention as above but utilizing node-wide throughput limit
+            'kafka_throughput_limit_node_in_bps':
+            104857600,  # 100MiB/s per node
         }
         super().__init__(*args, **kwargs)
 
