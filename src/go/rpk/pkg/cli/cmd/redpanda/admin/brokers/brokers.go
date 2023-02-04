@@ -26,6 +26,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	cmd.AddCommand(
 		newListCommand(fs),
 		newDecommissionBroker(fs),
+		newDecommissionBrokerStatus(fs),
 		newRecommissionBroker(fs),
 	)
 	return cmd
