@@ -64,8 +64,10 @@ public class TxWorkload extends GatedWorkload {
     public long countWritten = 0;
     public long countRead = 0;
 
+    public long writtenOffset = -1;
     public long endOffset = -1;
     public long readOffset = -1;
+    public long readPosition = -1;
     public boolean consumed = false;
 
     public Partition(int id) {
@@ -172,6 +174,7 @@ public class TxWorkload extends GatedWorkload {
 
     long id = 0;
     boolean shouldReset = true;
+    long lastOffset = -1;
 
     while (state == State.PRODUCING) {
       if (shouldReset) {
@@ -229,6 +232,14 @@ public class TxWorkload extends GatedWorkload {
           ProducerRecord<String, String> record
               = new ProducerRecord<>(args.topic, pid, op.key, value);
           op.offset = producer.send(record).get().offset();
+
+          if (lastOffset >= op.offset) {
+            violation(
+                pid, "offsets must me monotonic, written " + op.offset
+                         + " while " + lastOffset + " was already known");
+            return;
+          }
+          lastOffset = op.offset;
         }
       } catch (Exception e1) {
         shouldAbort = true;
@@ -262,6 +273,7 @@ public class TxWorkload extends GatedWorkload {
           log(pid, "commit");
           producer.commitTransaction();
           synchronized (this) {
+            partition.writtenOffset = lastOffset;
             partition.countWritten += BATCH_SIZE;
             for (var op : batch.values()) {
               if (!partition.latestKV.containsKey(op.key)) {
@@ -314,13 +326,15 @@ public class TxWorkload extends GatedWorkload {
         metrics.min_writes
             = Math.min(metrics.min_writes, partition.countWritten);
 
-        var consumer = new App.ConsumerMetrics();
-        consumer.partition = partition.id;
-        consumer.end_offset = partition.endOffset;
-        consumer.read_offset = partition.readOffset;
-        consumer.consumed = partition.consumed;
+        var info = new App.PartitionMetrics();
+        info.partition = partition.id;
+        info.end_offset = partition.endOffset;
+        info.read_offset = partition.readOffset;
+        info.read_position = partition.readPosition;
+        info.consumed = partition.consumed;
+        info.written_offset = partition.writtenOffset;
 
-        metrics.consumers.add(consumer);
+        metrics.partitions.add(info);
       }
     }
     return metrics;
@@ -350,13 +364,18 @@ public class TxWorkload extends GatedWorkload {
     consumer.assign(tps);
     consumer.seekToEnd(tps);
     long end = consumer.position(tp);
-    synchronized (this) { partition.endOffset = end; }
+    long written = -1;
+    synchronized (this) {
+      partition.endOffset = end;
+      written = partition.writtenOffset;
+    }
     consumer.seekToBeginning(tps);
 
     long lastOffset = -1;
     long lastOpId = -1;
 
-    while (consumer.position(tp) < end) {
+    while (consumer.position(tp) < end && consumer.position(tp) <= written) {
+      synchronized (this) { partition.readPosition = consumer.position(tp); }
       ConsumerRecords<String, String> records
           = consumer.poll(Duration.ofMillis(10000));
       var it = records.iterator();
@@ -386,6 +405,7 @@ public class TxWorkload extends GatedWorkload {
       }
       synchronized (this) { partition.countRead += read; }
     }
+    synchronized (this) { partition.readPosition = consumer.position(tp); }
     consumer.close();
 
     var writtenKV = partition.latestKV;

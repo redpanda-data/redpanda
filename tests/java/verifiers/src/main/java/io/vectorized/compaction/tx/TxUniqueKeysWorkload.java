@@ -10,6 +10,7 @@ import java.util.HashMap;
 import java.util.Properties;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.Future;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -17,6 +18,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
 
 public class TxUniqueKeysWorkload extends GatedWorkload {
@@ -32,8 +34,10 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
     public long countWritten = 0;
     public long countRead = 0;
 
+    public long writtenOffset = -1;
     public long endOffset = -1;
     public long readOffset = -1;
+    public long readPosition = -1;
     public boolean consumed = false;
 
     public Partition(int id) { this.id = id; }
@@ -133,6 +137,7 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
     long id = 0;
     boolean shouldReset = true;
     boolean shouldRetry = false;
+    long lastOffset = -1;
 
     while (state == State.PRODUCING) {
       if (shouldReset) {
@@ -163,6 +168,8 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
           continue;
         }
       }
+
+      Future<RecordMetadata> f = null;
 
       log(pid, "tx");
       producer.beginTransaction();
@@ -199,7 +206,7 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
               = "" + opid + "\t" + type + "\t" + randomString(random, 1024);
           ProducerRecord<String, String> record
               = new ProducerRecord<>(args.topic, pid, "key" + opid, value);
-          producer.send(record);
+          f = producer.send(record);
         }
       } catch (Exception e1) {
         shouldAbort = true;
@@ -222,7 +229,18 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
           producer.commitTransaction();
           shouldRetry = false;
           id = txOpId;
-          synchronized (this) { partition.countWritten += BATCH_SIZE; }
+          var offset = f.get().offset();
+          if (lastOffset >= offset) {
+            violation(
+                pid, "offsets must me monotonic, written " + offset + " while "
+                         + lastOffset + " was already known");
+            return;
+          }
+          lastOffset = offset;
+          synchronized (this) {
+            partition.countWritten += BATCH_SIZE;
+            partition.writtenOffset = lastOffset;
+          }
         }
       } catch (Exception e1) {
         synchronized (this) {
@@ -256,13 +274,15 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
         metrics.min_writes
             = Math.min(metrics.min_writes, partition.countWritten);
 
-        var consumer = new App.ConsumerMetrics();
-        consumer.partition = partition.id;
-        consumer.end_offset = partition.endOffset;
-        consumer.read_offset = partition.readOffset;
-        consumer.consumed = partition.consumed;
+        var info = new App.PartitionMetrics();
+        info.partition = partition.id;
+        info.end_offset = partition.endOffset;
+        info.read_offset = partition.readOffset;
+        info.read_position = partition.readPosition;
+        info.written_offset = partition.writtenOffset;
+        info.consumed = partition.consumed;
 
-        metrics.consumers.add(consumer);
+        metrics.partitions.add(info);
       }
     }
     return metrics;
@@ -290,14 +310,19 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
     consumer.assign(tps);
     consumer.seekToEnd(tps);
     long end = consumer.position(tp);
-    synchronized (this) { partition.endOffset = end; }
+    long written = -1;
+    synchronized (this) {
+      partition.endOffset = end;
+      written = partition.writtenOffset;
+    }
     consumer.seekToBeginning(tps);
 
     long lastOffset = -1;
     long lastOpId = -1;
     long lastTxId = -1;
 
-    while (consumer.position(tp) < end) {
+    while (consumer.position(tp) < end && consumer.position(tp) <= written) {
+      synchronized (this) { partition.readPosition = consumer.position(tp); }
       ConsumerRecords<String, String> records
           = consumer.poll(Duration.ofMillis(10000));
       var it = records.iterator();
@@ -355,6 +380,7 @@ public class TxUniqueKeysWorkload extends GatedWorkload {
       }
       synchronized (this) { partition.countRead += read; }
     }
+    synchronized (this) { partition.readPosition = consumer.position(tp); }
     consumer.close();
 
     synchronized (this) { partition.consumed = true; }
