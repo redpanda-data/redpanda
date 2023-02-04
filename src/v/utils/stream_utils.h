@@ -72,7 +72,9 @@ public:
     void start() {
         // Run produce in the background until stopped
         // or produced everything.
-        (void)produce();
+        (void)produce().handle_exception([this] (std::exception_ptr) {
+            _pcond.broken();
+        });
     }
 
     /// Stop consuming the input stream
@@ -105,6 +107,9 @@ public:
     ss::future<ss::temporary_buffer<Ch>> get(unsigned index) {
         gate_guard g(_gate);
         while (!_gate.is_closed()) {
+            if (_err) {
+                co_return co_await ss::make_exception_future<ss::temporary_buffer<Ch>>(_err);
+            }
             auto gen = _cnt;
             if (auto ob = maybe_get(index); ob.has_value()) {
                 co_return std::move(ob.value());
@@ -160,14 +165,21 @@ private:
     /// Constantly pull data from input stream and produce
     /// the resulting buffers to clients
     ss::future<> produce() {
-        gate_guard g(_gate);
         while (!_in.eof() && !_gate.is_closed()) {
             auto units = co_await ss::get_units(_sem, 1);
             ss::temporary_buffer<Ch> buf;
-            if (_max_size == 0) {
-                buf = co_await _in.read();
-            } else {
-                buf = co_await _in.read_up_to(_max_size);
+            std::exception_ptr err;
+            try {
+                if (_max_size == 0) {
+                    buf = co_await _in.read();
+                } else {
+                    buf = co_await _in.read_up_to(_max_size);
+                }
+            } catch (...) {
+                err = std::current_exception();
+            }
+            if (err) {
+                co_return co_await ss::make_exception_future(err);
             }
             ++_cnt;
             _buffer.push_back(data_item{
@@ -186,6 +198,7 @@ private:
     ss::condition_variable _pcond;
     ring_buffer _buffer;
     ss::gate _gate;
+    std::exception_ptr _err{nullptr};
     uint64_t _cnt{0};
 };
 

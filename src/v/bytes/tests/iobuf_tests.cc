@@ -18,13 +18,64 @@
 #include "bytes/tests/utils.h"
 #include "bytes/utils.h"
 
+#include <seastar/core/abort_source.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/range/algorithm/for_each.hpp>
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
+#include <exception>
+
+
+struct mock_source_impl final : ss::data_source_impl {
+public:
+  explicit mock_source_impl() = default;
+
+  void abort_source_throw() {
+      ss::abort_source as;
+      as.request_abort();
+      as.check();
+  }
+
+  ss::future<> future_throw() {
+      try {
+          abort_source_throw();
+      } catch (...) {
+          return ss::make_exception_future<>(std::current_exception());
+      }
+      return ss::make_ready_future<>();
+  }
+
+  ss::future<ss::temporary_buffer<char>> get() final {
+      auto r = ss::temporary_buffer<char>::copy_of("fooooooooooo");
+      if (got_some) {
+          co_await future_throw();
+      }
+      got_some = true;
+      co_return r;
+  }
+  ss::future<> close() final {
+      co_return;
+  }
+  ss::future<ss::temporary_buffer<char>> skip(uint64_t n) final {
+      co_return co_await get();
+  }
+  bool got_some{false};
+};
+
+SEASTAR_THREAD_TEST_CASE(test_source_impl) {
+    auto ds1 = ss::data_source(std::make_unique<mock_source_impl>());
+    auto in1 = ss::input_stream<char>(std::move(ds1));
+    auto ds2 = ss::data_source(std::make_unique<mock_source_impl>());
+    auto in2 = ss::input_stream<char>(std::move(ds2));
+    auto [buf1, buf2] = when_all(read_iobuf_exactly(in1, 100), read_iobuf_exactly(in2, 100)).get();
+    BOOST_CHECK(buf1.failed());
+    BOOST_CHECK(buf2.failed());
+}
 
 SEASTAR_THREAD_TEST_CASE(test_appended_data_is_retained) {
     iobuf buf;

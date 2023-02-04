@@ -28,6 +28,8 @@
 
 #include <variant>
 
+class retry_chain_logger;
+
 namespace storage {
 
 class batch_consumer {
@@ -107,22 +109,22 @@ public:
     ~continuous_batch_parser() noexcept = default;
 
     // continues to parse until stop_parser is reached or end of stream
-    ss::future<result<size_t>> consume();
+    ss::future<result<size_t>> consume(retry_chain_logger* = nullptr);
 
     /// \brief cleans up async resources like the input stream
     ss::future<> close() { return _input.close(); }
 
 private:
     /// \brief consumes _one_ full batch.
-    ss::future<result<batch_consumer::stop_parser>> consume_one();
+    ss::future<result<batch_consumer::stop_parser>> consume_one(retry_chain_logger* = nullptr);
 
     /// \brief read and parses header from input_file_stream
-    ss::future<result<model::record_batch_header>> read_header();
+    ss::future<result<model::record_batch_header>> read_header(retry_chain_logger* = nullptr);
     /// \brief parses and _stores_ the header into _header variable
-    ss::future<result<batch_consumer::stop_parser>> consume_header();
+    ss::future<result<batch_consumer::stop_parser>> consume_header(retry_chain_logger* = nullptr);
 
     /// consume the [un]compressed records
-    ss::future<result<batch_consumer::stop_parser>> consume_records();
+    ss::future<result<batch_consumer::stop_parser>> consume_records(retry_chain_logger* = nullptr);
 
     size_t consumed_batch_bytes() const;
     void add_bytes_and_reset();

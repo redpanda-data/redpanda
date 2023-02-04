@@ -526,6 +526,7 @@ bool ntp_archiver::can_update_archival_metadata() const {
 }
 
 ss::future<> ntp_archiver::stop() {
+    archival_log.debug("Stopping ntp archiver: {}", _ntp);
     _leader_cond.broken();
     if (_local_segment_merger) {
         co_await dynamic_cast<adjacent_segment_merger*>(
@@ -534,6 +535,7 @@ ss::future<> ntp_archiver::stop() {
     }
     _as.request_abort();
     co_await _gate.close();
+    archival_log.debug("Stopped ntp archiver: {}", _ntp);
 }
 
 const model::ntp& ntp_archiver::get_ntp() const { return _ntp; }

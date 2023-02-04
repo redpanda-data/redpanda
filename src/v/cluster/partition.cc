@@ -326,6 +326,7 @@ ss::future<> partition::start() {
 }
 
 ss::future<> partition::stop() {
+    vlog(clusterlog.debug, "Stopping partition: {}", ntp());
     _as.request_abort();
 
     auto f = ss::now();
@@ -334,33 +335,65 @@ ss::future<> partition::stop() {
         f = f.then([this] {
             _upload_housekeeping.local().deregister_jobs(
               _archiver->get_housekeeping_jobs());
+            vlog(clusterlog.debug, "Stopping archiver on partition: {}", ntp());
             return _archiver->stop();
         });
     }
 
     if (_archival_meta_stm) {
-        f = f.then([this] { return _archival_meta_stm->stop(); });
+        f = f.then([this] {
+            vlog(
+              clusterlog.debug,
+              "Stopping archival stm on partition: {}",
+              ntp());
+            return _archival_meta_stm->stop();
+        });
     }
 
     if (_cloud_storage_partition) {
-        f = f.then([this] { return _cloud_storage_partition->stop(); });
+        f = f.then([this] {
+            vlog(
+              clusterlog.debug,
+              "Stopping cloud storage on partition: {}",
+              ntp());
+            return _cloud_storage_partition->stop();
+        });
     }
 
     if (_id_allocator_stm) {
-        f = f.then([this] { return _id_allocator_stm->stop(); });
+        f = f.then([this] {
+            vlog(
+              clusterlog.debug,
+              "Stopping id_allocator on partition: {}",
+              ntp());
+            return _id_allocator_stm->stop();
+        });
     }
 
     if (_log_eviction_stm) {
-        f = f.then([this] { return _log_eviction_stm->stop(); });
+        f = f.then([this] {
+            vlog(
+              clusterlog.debug,
+              "Stopping log_eviction on partition: {}",
+              ntp());
+            return _log_eviction_stm->stop();
+        });
     }
 
     if (_rm_stm) {
-        f = f.then([this] { return _rm_stm->stop(); });
+        f = f.then([this] {
+            vlog(clusterlog.debug, "Stopping rm on partition: {}", ntp());
+            return _rm_stm->stop();
+        });
     }
 
     if (_tm_stm) {
-        f = f.then([this] { return _tm_stm->stop(); });
+        f = f.then([this] {
+            vlog(clusterlog.debug, "Stopping tm on partition: {}", ntp());
+            return _tm_stm->stop();
+        });
     }
+    f = f.then([&] { vlog(clusterlog.debug, "Stopped partition: {}", ntp()); });
 
     // no state machine
     return f;

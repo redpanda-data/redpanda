@@ -12,9 +12,12 @@
 #include "bytes/details/io_allocation_size.h"
 #include "bytes/iostream.h"
 #include "bytes/scattered_message.h"
+#include "utils/retry_chain_node.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/bitops.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>
@@ -57,22 +60,17 @@ write_iobuf_to_output_stream(iobuf buf, ss::output_stream<char>& output) {
 }
 
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
-    return ss::do_with(iobuf{}, n, [&in](iobuf& b, size_t& n) {
-        return ss::do_until(
-                 [&n] { return n == 0; },
-                 [&n, &in, &b] {
-                     return in.read_up_to(n).then(
-                       [&n, &b](ss::temporary_buffer<char> buf) {
-                           if (buf.empty()) {
-                               n = 0;
-                               return;
-                           }
-                           n -= buf.size();
-                           b.append(std::move(buf));
-                       });
-                 })
-          .then([&b] { return std::move(b); });
-    });
+    iobuf b;
+    while (n != 0) {
+        auto buf = co_await in.read_up_to(n);
+        if (buf.empty()) {
+            n = 0;
+            co_return b;
+        }
+        n -= buf.size();
+        b.append(std::move(buf));
+    }
+    co_return b;
 }
 
 ss::output_stream<char> make_iobuf_ref_output_stream(iobuf& io) {
