@@ -141,7 +141,12 @@ class NodeOperationFuzzyTest(EndToEndTest):
                                                  lock)
             fi.start()
 
-        executor = NodeOpsExecutor(self.redpanda, self.logger, lock)
+        # Versions below v22.3.x don't support omitting node ID, so use the old
+        # style of configuration when old nodes are present.
+        executor = NodeOpsExecutor(self.redpanda,
+                                   self.logger,
+                                   lock,
+                                   has_pre_22_3_nodes=num_to_upgrade > 0)
         fi = None
         if enable_failures:
             fi = FailureInjectorBackgroundThread(self.redpanda, self.logger,
