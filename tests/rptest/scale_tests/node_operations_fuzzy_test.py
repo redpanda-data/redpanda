@@ -85,7 +85,8 @@ class NodeOperationFuzzyTest(EndToEndTest):
         extra_rp_conf = {
             # make segments small to ensure that they are compacted during
             # the test (only sealed i.e. not being written segments are compacted)
-            "compacted_log_segment_size": 5 * (2 ^ 20)
+            "compacted_log_segment_size": 5 * (2 ^ 20),
+            "raft_learner_recovery_rate": 512 * (1024 * 1024)
         }
         if num_to_upgrade > 0:
             # Use the deprecated config to bootstrap older nodes.
@@ -101,7 +102,10 @@ class NodeOperationFuzzyTest(EndToEndTest):
                                         extra_rp_conf=extra_rp_conf)
         if num_to_upgrade > 0:
             installer = self.redpanda._installer
-            installer.install(self.redpanda.nodes, (22, 1, 4))
+            installer.install(
+                self.redpanda.nodes,
+                installer.highest_from_prior_feature_version(
+                    RedpandaInstaller.HEAD))
             self.redpanda.start()
             installer.install(self.redpanda.nodes[:num_to_upgrade],
                               RedpandaInstaller.HEAD)
@@ -137,7 +141,12 @@ class NodeOperationFuzzyTest(EndToEndTest):
                                                  lock)
             fi.start()
 
-        executor = NodeOpsExecutor(self.redpanda, self.logger, lock)
+        # Versions below v22.3.x don't support omitting node ID, so use the old
+        # style of configuration when old nodes are present.
+        executor = NodeOpsExecutor(self.redpanda,
+                                   self.logger,
+                                   lock,
+                                   has_pre_22_3_nodes=num_to_upgrade > 0)
         fi = None
         if enable_failures:
             fi = FailureInjectorBackgroundThread(self.redpanda, self.logger,

@@ -163,12 +163,18 @@ class NodeDecommissionWaiter():
 
 
 class NodeOpsExecutor():
-    def __init__(self, redpanda: RedpandaService, logger,
-                 lock: threading.Lock):
+    def __init__(self,
+                 redpanda: RedpandaService,
+                 logger,
+                 lock: threading.Lock,
+                 has_pre_22_3_nodes=False):
         self.redpanda = redpanda
         self.logger = logger
         self.timeout = 360
         self.lock = lock
+        self.has_pre_22_3_nodes = has_pre_22_3_nodes
+        self.next_id = max(
+            [self.redpanda.node_id(n) for n in self.redpanda.nodes]) + 1
 
     def node_id(self, idx):
         return self.redpanda.node_id(self.redpanda.get_node(idx),
@@ -270,6 +276,11 @@ class NodeOpsExecutor():
                                  preserve_current_install=True)
         self.redpanda.set_seed_servers(self.redpanda.started_nodes())
 
+    def get_next_id(self):
+        id = self.next_id
+        self.next_id += 1
+        return id
+
     def recommission(self, idx: int):
         node_id = self.node_id(idx)
         self.logger.info(f"executor - recommissioning {node_id} (idx: {idx})")
@@ -308,10 +319,22 @@ class NodeOpsExecutor():
 
         node = self.redpanda.get_node(idx)
 
-        self.redpanda.start_node(node,
-                                 timeout=self.timeout,
-                                 auto_assign_node_id=True,
-                                 omit_seeds_on_idx_one=False)
+        if self.has_pre_22_3_nodes:
+            # Versions below v22.3.x don't support omitting node ID, so use the
+            # old style of configuration when old nodes are present.
+            # Since we're adding a node, don't bother even considering omitting
+            # the seed servers config: this is not the root node.
+            override_cfg_params = {"node_id": self.get_next_id()}
+            self.redpanda.start_node(node,
+                                     timeout=self.timeout,
+                                     override_cfg_params=override_cfg_params,
+                                     auto_assign_node_id=False,
+                                     omit_seeds_on_idx_one=False)
+        else:
+            self.redpanda.start_node(node,
+                                     timeout=self.timeout,
+                                     auto_assign_node_id=True,
+                                     omit_seeds_on_idx_one=False)
 
         self.logger.info(
             f"added node: {idx} with new node id: {self.node_id(idx)}")
