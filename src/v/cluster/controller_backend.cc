@@ -43,6 +43,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/util/later.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
 
@@ -318,10 +319,76 @@ void controller_backend::setup_metrics() {
             "Number of partitions with ongoing/requested operations")),
       });
 }
+/**
+ * Create snapshot of topic table that contains all ntp that
+ * must be presented on local disk storage and their revision
+ * This snapshot will help to define orphan topic files
+ * If topic is not presented in this snapshot or its revision
+ * its revision is less than in this snapshot then this topic
+ * directory is orphan
+ */
+static absl::flat_hash_map<model::ntp, model::revision_id>
+create_topic_table_snapshot(
+  ss::sharded<cluster::topic_table>& topics, model::node_id current_node) {
+    absl::flat_hash_map<model::ntp, model::revision_id> snapshot;
+
+    for (const auto& nt : topics.local().all_topics()) {
+        auto ntp_view = model::topic_namespace_view(nt);
+        auto ntp_meta = topics.local().get_topic_metadata(ntp_view);
+        if (!ntp_meta) {
+            continue;
+        }
+        for (const auto& p : ntp_meta->get_assignments()) {
+            auto ntp = model::ntp(nt.ns, nt.tp, p.id);
+            if (!ntp_meta->is_topic_replicable()) {
+                snapshot.emplace(ntp, 0);
+                continue;
+            }
+            auto revision_id = ntp_meta->get_revision();
+            if (cluster::contains_node(p.replicas, current_node)) {
+                snapshot.emplace(ntp, revision_id);
+                continue;
+            }
+            auto target_replica_set = topics.local().get_target_replica_set(
+              ntp);
+            if (
+              target_replica_set
+              && cluster::contains_node(*target_replica_set, current_node)) {
+                snapshot.emplace(ntp, revision_id);
+                continue;
+            }
+            auto previous_replica_set = topics.local().get_previous_replica_set(
+              ntp);
+            if (
+              previous_replica_set
+              && cluster::contains_node(*previous_replica_set, current_node)) {
+                snapshot.emplace(ntp, revision_id);
+                continue;
+            }
+        }
+    }
+    return snapshot;
+}
 
 ss::future<> controller_backend::start() {
     setup_metrics();
     return bootstrap_controller_backend().then([this] {
+        if (ss::this_shard_id() == cluster::controller_stm_shard) {
+            auto bootstrap_revision = _topics.local().last_applied_revision();
+            auto snapshot = create_topic_table_snapshot(_topics, _self);
+            ssx::spawn_with_gate(
+              _gate,
+              [this, bootstrap_revision, snapshot = std::move(snapshot)] {
+                  return clear_orphan_topic_files(
+                           bootstrap_revision, std::move(snapshot))
+                    .handle_exception([](const std::exception_ptr& err) {
+                        vlog(
+                          clusterlog.error,
+                          "Exception while cleaning oprhan files {}",
+                          err);
+                    });
+              });
+        }
         start_topics_reconciliation_loop();
         _housekeeping_timer.set_callback([this] { housekeeping(); });
         _housekeeping_timer.arm(_housekeeping_timer_interval);
@@ -574,6 +641,56 @@ ss::future<> controller_backend::fetch_deltas() {
                     _topic_deltas[ntp].emplace_back(std::move(d));
                 }
             });
+      });
+}
+
+/**
+ * Topic files is qualified as orphan if we don't have it in topic table
+ * or it's revision is less than revision it topic table
+ * And it's revision is less than topic table snapshot revision
+ */
+bool topic_files_are_orphan(
+  const model::ntp& ntp,
+  storage::partition_path::metadata ntp_directory_data,
+  const absl::flat_hash_map<model::ntp, model::revision_id>&
+    topic_table_snapshot,
+  model::revision_id last_applied_revision) {
+    vlog(clusterlog.debug, "Checking topic files for ntp {} are orphan", ntp);
+
+    if (ntp_directory_data.revision_id > last_applied_revision) {
+        return false;
+    }
+    if (
+      topic_table_snapshot.contains(ntp)
+      && ntp_directory_data.revision_id
+           >= topic_table_snapshot.find(ntp)->second) {
+        return false;
+    }
+    return true;
+}
+
+ss::future<> controller_backend::clear_orphan_topic_files(
+  model::revision_id bootstrap_revision,
+  absl::flat_hash_map<model::ntp, model::revision_id> topic_table_snapshot) {
+    vlog(
+      clusterlog.info,
+      "Cleaning up orphan topic files. bootstrap_revision: {}",
+      bootstrap_revision);
+    // Init with default namespace to clean if there is no topics
+    absl::flat_hash_set<model::ns> namespaces = {{model::kafka_namespace}};
+    for (const auto& t : _topics.local().all_topics()) {
+        namespaces.emplace(t.ns);
+    }
+
+    return _storage.local().log_mgr().remove_orphan_files(
+      _data_directory,
+      std::move(namespaces),
+      [&,
+       bootstrap_revision,
+       topic_table_snapshot = std::move(topic_table_snapshot)](
+        model::ntp ntp, storage::partition_path::metadata p) {
+          return topic_files_are_orphan(
+            ntp, p, topic_table_snapshot, bootstrap_revision);
       });
 }
 
