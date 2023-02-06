@@ -38,10 +38,16 @@ struct base_fixture {
     base_fixture()
       : _test_dir(
         fmt::format("test_{}", random_generators::gen_alphanum_string(6))) {
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
         _api
           .start(
             [this]() { return make_kv_cfg(); },
-            [this]() { return make_log_cfg(); })
+            [this]() { return make_log_cfg(); },
+            std::ref(_feature_table))
           .get();
         _api.invoke_on_all(&storage::api::start).get();
     }
@@ -74,9 +80,13 @@ struct base_fixture {
     model::ntp test_ntp = model::ntp(
       model::ns("test"), model::topic("tp"), model::partition_id(0));
     ss::sstring _test_dir;
+    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<storage::api> _api;
 
-    ~base_fixture() { _api.stop().get(); }
+    ~base_fixture() {
+        _api.stop().get();
+        _feature_table.stop().get();
+    }
 };
 
 void validate_translation(

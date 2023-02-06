@@ -50,7 +50,8 @@ struct config_manager_fixture {
               base_dir,
               100_MiB,
               storage::debug_sanitize_files::yes);
-        }))
+        },
+        _feature_table))
       , _logger(
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))
@@ -59,16 +60,25 @@ struct config_manager_fixture {
           raft::group_id(1),
           _storage,
           _logger) {
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
         _storage.start().get0();
     }
 
     ss::sstring base_dir = "test_cfg_manager_"
                            + random_generators::gen_alphanum_string(6);
+    ss::sharded<features::feature_table> _feature_table;
     storage::api _storage;
     raft::ctx_log _logger;
     raft::configuration_manager _cfg_mgr;
 
-    ~config_manager_fixture() { _storage.stop().get0(); }
+    ~config_manager_fixture() {
+        _feature_table.stop().get();
+        _storage.stop().get0();
+    }
 
     raft::group_configuration random_configuration() {
         std::vector<model::broker> nodes;

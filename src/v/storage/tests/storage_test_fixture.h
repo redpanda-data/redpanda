@@ -13,6 +13,7 @@
 
 #include "compression/compression.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/record.h"
@@ -186,6 +187,7 @@ public:
     ss::sstring test_dir;
     storage::kvstore kvstore;
     storage::storage_resources resources;
+    ss::sharded<features::feature_table> feature_table;
 
     std::optional<model::timestamp> ts_cursor;
 
@@ -197,7 +199,8 @@ public:
             config::mock_binding(10ms),
             test_dir,
             storage::debug_sanitize_files::yes),
-          resources) {
+          resources,
+          feature_table) {
         configure_unit_test_logging();
         // avoid double metric registrations
         ss::smp::invoke_on_all([] {
@@ -206,10 +209,19 @@ public:
               .get("log_segment_size_min")
               .set_value(std::optional<uint64_t>{});
         }).get0();
+        feature_table.start().get();
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         kvstore.start().get();
     }
 
-    ~storage_test_fixture() { kvstore.stop().get(); }
+    ~storage_test_fixture() {
+        kvstore.stop().get();
+        feature_table.stop().get();
+    }
 
     /**
      * Only safe to call if you have generated some batches: this gives you
@@ -221,13 +233,14 @@ public:
 
     /// Creates a log manager in test directory
     storage::log_manager make_log_manager(storage::log_config cfg) {
-        return storage::log_manager(std::move(cfg), kvstore, resources);
+        return storage::log_manager(
+          std::move(cfg), kvstore, resources, feature_table);
     }
 
     /// Creates a log manager in test directory with default config
     storage::log_manager make_log_manager() {
         return storage::log_manager(
-          default_log_config(test_dir), kvstore, resources);
+          default_log_config(test_dir), kvstore, resources, feature_table);
     }
 
     /// \brief randomizes the configuration options

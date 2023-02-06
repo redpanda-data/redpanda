@@ -99,7 +99,10 @@ public:
         /* your sub-system here */
     };
 
-    explicit kvstore(kvstore_config kv_conf, storage_resources&);
+    explicit kvstore(
+      kvstore_config kv_conf,
+      storage_resources&,
+      ss::sharded<features::feature_table>& feature_table);
 
     ss::future<> start();
     ss::future<> stop();
@@ -116,6 +119,7 @@ public:
 private:
     kvstore_config _conf;
     storage_resources& _resources;
+    ss::sharded<features::feature_table>& _feature_table;
     ntp_config _ntpc;
     ss::gate _gate;
     ss::abort_source _as;

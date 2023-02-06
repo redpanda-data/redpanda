@@ -54,13 +54,18 @@ using namespace std::literals::chrono_literals;
 namespace storage {
 
 disk_log_impl::disk_log_impl(
-  ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore)
+  ntp_config cfg,
+  log_manager& manager,
+  segment_set segs,
+  kvstore& kvstore,
+  ss::sharded<features::feature_table>& feature_table)
   : log::impl(std::move(cfg))
   , _manager(manager)
   , _segment_size_jitter(
       internal::random_jitter(_manager.config().segment_size_jitter))
   , _segs(std::move(segs))
   , _kvstore(kvstore)
+  , _feature_table(feature_table)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
   , _max_segment_size(compute_max_segment_size())
@@ -392,7 +397,8 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
           cfg,
           _probe,
           *_readers_cache,
-          _manager.resources());
+          _manager.resources(),
+          storage::internal::should_apply_delta_time_offset(_feature_table));
 
         vlog(
           gclog.debug,
@@ -525,7 +531,7 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
     auto staging_path = target->reader().path().to_compaction_staging();
     auto [replacement, generations]
       = co_await storage::internal::make_concatenated_segment(
-        staging_path, segments, cfg, _manager.resources());
+        staging_path, segments, cfg, _manager.resources(), _feature_table);
 
     // compact the combined data in the replacement segment. the partition size
     // tracking needs to be adjusted as compaction routines assume the segment
@@ -538,7 +544,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
       cfg,
       _probe,
       *_readers_cache,
-      _manager.resources());
+      _manager.resources(),
+      storage::internal::should_apply_delta_time_offset(_feature_table));
     _probe.delete_segment(*replacement.get());
     vlog(gclog.debug, "Final compacted segment {}", replacement);
 
@@ -1135,10 +1142,31 @@ disk_log_impl::make_reader(timequery_config config) {
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
           auto start_offset = _start_offset;
           if (!lease->range.empty()) {
+              const ss::lw_shared_ptr<segment>& segment = *lease->range.begin();
+              std::optional<segment_index::entry> index_entry = std::nullopt;
+
+              // The index (and hence, binary search) is used only if the
+              // timestamps on the batches are monotonically increasing.
+              if (segment->index().batch_timestamps_are_monotonic()) {
+                  index_entry = segment->index().find_nearest(cfg.time);
+              }
+
+              auto offset_within_segment = index_entry
+                                             ? index_entry->offset
+                                             : segment->offsets().base_offset;
+
               // adjust for partial visibility of segment prefix
-              start_offset = std::max(
-                start_offset, (*lease->range.begin())->offsets().base_offset);
+              start_offset = std::max(start_offset, offset_within_segment);
           }
+
+          vlog(
+            stlog.debug,
+            "Starting timequery lookup from offset={} for ts={} in segment "
+            "with start_offset={}",
+            start_offset,
+            cfg.time,
+            _start_offset);
+
           log_reader_config config(
             start_offset,
             cfg.max_offset,
@@ -1377,9 +1405,11 @@ ss::future<> disk_log_impl::do_truncate(
     auto pidx = last->index().find_nearest(
       std::max(start, model::prev_offset(cfg.base_offset)));
     size_t initial_size = 0;
+    model::timestamp initial_timestamp = last->index().max_timestamp();
     if (pidx) {
         start = pidx->offset;
         initial_size = pidx->filepos;
+        initial_timestamp = pidx->timestamp;
     }
 
     auto initial_generation_id = last->get_generation_id();
@@ -1391,7 +1421,7 @@ ss::future<> disk_log_impl::do_truncate(
       log_reader_config(start, model::offset::max(), cfg.prio));
     auto phs = co_await std::move(reader).consume(
       internal::offset_to_filepos_consumer(
-        start, cfg.base_offset, initial_size),
+        start, cfg.base_offset, initial_size, initial_timestamp),
       model::no_timeout);
 
     // all segments were deleted, return
@@ -1425,7 +1455,7 @@ ss::future<> disk_log_impl::do_truncate(
           initial_size,
           *this));
     }
-    auto [prev_last_offset, file_position] = phs.value();
+    auto [prev_last_offset, file_position, new_max_timestamp] = phs.value();
 
     if (file_position == 0) {
         _segs.pop_back();
@@ -1436,15 +1466,17 @@ ss::future<> disk_log_impl::do_truncate(
     auto cache_lock = co_await _readers_cache->evict_truncate(cfg.base_offset);
 
     try {
-        co_return co_await last_ptr->truncate(prev_last_offset, file_position);
+        co_return co_await last_ptr->truncate(
+          prev_last_offset, file_position, new_max_timestamp);
     } catch (...) {
         vassert(
           false,
           "Could not truncate:{} logical max:{}, physical "
-          "offset:{} on segment:{} - log:{}",
+          "offset:{}, new max timestamp:{} on segment:{} - log:{}",
           std::current_exception(),
-          phs->first,
-          phs->second,
+          prev_last_offset,
+          file_position,
+          new_max_timestamp,
           last,
           *this);
     }
@@ -1655,9 +1687,13 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
 }
 
 log make_disk_backed_log(
-  ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore) {
+  ntp_config cfg,
+  log_manager& manager,
+  segment_set segs,
+  kvstore& kvstore,
+  ss::sharded<features::feature_table>& feature_table) {
     auto ptr = ss::make_shared<disk_log_impl>(
-      std::move(cfg), manager, std::move(segs), kvstore);
+      std::move(cfg), manager, std::move(segs), kvstore, feature_table);
     return log(ptr);
 }
 

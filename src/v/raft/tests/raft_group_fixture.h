@@ -128,7 +128,8 @@ struct raft_node {
                   storage_dir,
                   segment_size,
                   storage::debug_sanitize_files::yes);
-            })
+            },
+            std::ref(feature_table))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 

@@ -31,7 +31,8 @@ disk_log_builder::disk_log_builder(storage::log_config config)
             _log_config.base_dir,
             debug_sanitize_files::yes);
       },
-      [this]() { return _log_config; }) {}
+      [this]() { return _log_config; },
+      _feature_table) {}
 
 // Batch generation
 ss::future<> disk_log_builder::add_random_batch(
@@ -92,11 +93,16 @@ ss::future<> disk_log_builder::start(model::ntp ntp) {
 }
 
 ss::future<> disk_log_builder::start(storage::ntp_config cfg) {
-    return _storage.start().then([this, cfg = std::move(cfg)]() mutable {
-        return _storage.log_mgr()
-          .manage(std::move(cfg))
-          .then([this](storage::log log) { _log = log; });
-    });
+    co_await _feature_table.start();
+    co_await _feature_table.invoke_on_all(
+      [](features::feature_table& f) { f.testing_activate_all(); });
+
+    co_return co_await _storage.start().then(
+      [this, cfg = std::move(cfg)]() mutable {
+          return _storage.log_mgr()
+            .manage(std::move(cfg))
+            .then([this](storage::log log) { _log = log; });
+      });
 }
 
 ss::future<> disk_log_builder::truncate(model::offset o) {
@@ -115,7 +121,9 @@ ss::future<> disk_log_builder::gc(
       _abort_source));
 }
 
-ss::future<> disk_log_builder::stop() { return _storage.stop(); }
+ss::future<> disk_log_builder::stop() {
+    return _storage.stop().then([this]() { return _feature_table.stop(); });
+}
 
 // Low lever interface access
 // Access log impl

@@ -23,6 +23,7 @@ struct local_monitor_fixture {
     ~local_monitor_fixture();
 
     std::filesystem::path _test_path;
+    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<storage::api> _storage_api;
     ss::sharded<storage::node_api> _storage_node_api;
     cluster::node::local_monitor _local_monitor;

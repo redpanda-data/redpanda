@@ -30,6 +30,13 @@ static inline ss::future<> persist_log_file(
     return ss::async([base_dir = std::move(base_dir),
                       file_ntp = std::move(file_ntp),
                       batches = std::move(batches)]() mutable {
+        ss::sharded<features::feature_table> feature_table;
+        feature_table.start().get();
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         storage::api storage(
           [base_dir]() {
               return storage::kvstore_config(
@@ -44,7 +51,8 @@ static inline ss::future<> persist_log_file(
                 base_dir,
                 1_GiB,
                 storage::debug_sanitize_files::yes);
-          });
+          },
+          feature_table);
         storage.start().get();
         auto& mgr = storage.log_mgr();
         try {
@@ -65,8 +73,10 @@ static inline ss::future<> persist_log_file(
               })
               .get();
             storage.stop().get();
+            feature_table.stop().get();
         } catch (...) {
             storage.stop().get();
+            feature_table.stop().get();
             throw;
         }
     });
@@ -91,6 +101,13 @@ static inline ss::future<ss::circular_buffer<model::record_batch>>
 read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
     return ss::async([base_dir = std::move(base_dir),
                       file_ntp = std::move(file_ntp)]() mutable {
+        ss::sharded<features::feature_table> feature_table;
+        feature_table.start().get();
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         storage::api storage(
           [base_dir]() {
               return storage::kvstore_config(
@@ -105,7 +122,8 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                 base_dir,
                 1_GiB,
                 storage::debug_sanitize_files::yes);
-          });
+          },
+          feature_table);
         storage.start().get();
         auto& mgr = storage.log_mgr();
         try {
@@ -124,9 +142,11 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
                   })
                   .get0();
             storage.stop().get();
+            feature_table.stop().get();
             return batches;
         } catch (...) {
             storage.stop().get();
+            feature_table.stop().get();
             throw;
         }
     });

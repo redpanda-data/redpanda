@@ -29,11 +29,12 @@
 namespace storage {
 
 static inline segment_index::entry translate_index_entry(
-  const index_state& s, std::tuple<uint32_t, uint32_t, uint64_t> entry) {
+  const index_state& s,
+  std::tuple<uint32_t, offset_time_index, uint64_t> entry) {
     auto [relative_offset, relative_time, filepos] = entry;
     return segment_index::entry{
       .offset = model::offset(relative_offset + s.base_offset()),
-      .timestamp = model::timestamp(relative_time + s.base_timestamp()),
+      .timestamp = model::timestamp(relative_time() + s.base_timestamp()),
       .filepos = filepos,
     };
 }
@@ -42,17 +43,28 @@ segment_index::segment_index(
   segment_full_path path,
   model::offset base,
   size_t step,
+  ss::sharded<features::feature_table>& feature_table,
   debug_sanitize_files sanitize)
   : _path(std::move(path))
   , _step(step)
+  , _feature_table(std::ref(feature_table))
+  , _state(index_state::make_empty_index(
+      storage::internal::should_apply_delta_time_offset(_feature_table)))
   , _sanitize(sanitize) {
     _state.base_offset = base;
 }
 
 segment_index::segment_index(
-  segment_full_path path, ss::file mock_file, model::offset base, size_t step)
+  segment_full_path path,
+  ss::file mock_file,
+  model::offset base,
+  size_t step,
+  ss::sharded<features::feature_table>& feature_table)
   : _path(std::move(path))
   , _step(step)
+  , _feature_table(std::ref(feature_table))
+  , _state(index_state::make_empty_index(
+      storage::internal::should_apply_delta_time_offset(_feature_table)))
   , _mock_file(mock_file) {
     _state.base_offset = base;
 }
@@ -69,8 +81,10 @@ ss::future<ss::file> segment_index::open() {
 
 void segment_index::reset() {
     auto base = _state.base_offset;
-    _state = {};
+    _state = index_state::make_empty_index(
+      storage::internal::should_apply_delta_time_offset(_feature_table));
     _state.base_offset = base;
+
     _acc = 0;
 }
 
@@ -83,6 +97,12 @@ void segment_index::swap_index_state(index_state&& o) {
 void segment_index::maybe_track(
   const model::record_batch_header& hdr, size_t filepos) {
     _acc += hdr.size_bytes;
+
+    _state.update_batch_timestamps_are_monotonic(
+      hdr.max_timestamp >= _last_batch_max_timestamp);
+    _last_batch_max_timestamp = std::max(
+      hdr.first_timestamp, hdr.max_timestamp);
+
     if (_state.maybe_index(
           _acc,
           _step,
@@ -106,17 +126,14 @@ segment_index::find_nearest(model::timestamp t) {
     if (_state.empty()) {
         return std::nullopt;
     }
-    const uint32_t i = t() - _state.base_timestamp();
-    auto it = std::lower_bound(
-      std::begin(_state.relative_time_index),
-      std::end(_state.relative_time_index),
-      i,
-      std::less<uint32_t>{});
-    if (it == _state.relative_offset_index.end()) {
+
+    const auto delta = t - _state.base_timestamp;
+    const auto entry = _state.find_entry(delta);
+    if (!entry) {
         return std::nullopt;
     }
-    auto dist = std::distance(_state.relative_offset_index.begin(), it);
-    return translate_index_entry(_state, _state.get_entry(dist));
+
+    return translate_index_entry(_state, *entry);
 }
 
 std::optional<segment_index::entry>
@@ -144,7 +161,8 @@ segment_index::find_nearest(model::offset o) {
     return std::nullopt;
 }
 
-ss::future<> segment_index::truncate(model::offset o) {
+ss::future<>
+segment_index::truncate(model::offset o, model::timestamp new_max_timestamp) {
     if (o < _state.base_offset) {
         co_return;
     }
@@ -170,8 +188,7 @@ ss::future<> segment_index::truncate(model::offset o) {
             _state.max_timestamp = _state.base_timestamp;
             _state.max_offset = _state.base_offset;
         } else {
-            _state.max_timestamp = model::timestamp(
-              _state.relative_time_index.back() + _state.base_timestamp());
+            _state.max_timestamp = new_max_timestamp;
             _state.max_offset = o;
         }
     }

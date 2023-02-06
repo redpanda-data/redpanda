@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -222,6 +223,11 @@ class log_manager;
 class segment_set;
 class kvstore;
 log make_memory_backed_log(ntp_config);
-log make_disk_backed_log(ntp_config, log_manager&, segment_set, kvstore&);
+log make_disk_backed_log(
+  ntp_config,
+  log_manager&,
+  segment_set,
+  kvstore&,
+  ss::sharded<features::feature_table>& feature_table);
 
 } // namespace storage

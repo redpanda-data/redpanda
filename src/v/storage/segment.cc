@@ -280,18 +280,23 @@ ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
       });
 }
 
-ss::future<>
-segment::truncate(model::offset prev_last_offset, size_t physical) {
+ss::future<> segment::truncate(
+  model::offset prev_last_offset,
+  size_t physical,
+  model::timestamp new_max_timestamp) {
     check_segment_not_closed("truncate()");
     return write_lock().then(
-      [this, prev_last_offset, physical](ss::rwlock::holder h) {
-          return do_truncate(prev_last_offset, physical)
+      [this, prev_last_offset, physical, new_max_timestamp](
+        ss::rwlock::holder h) {
+          return do_truncate(prev_last_offset, physical, new_max_timestamp)
             .finally([h = std::move(h)] {});
       });
 }
 
-ss::future<>
-segment::do_truncate(model::offset prev_last_offset, size_t physical) {
+ss::future<> segment::do_truncate(
+  model::offset prev_last_offset,
+  size_t physical,
+  model::timestamp new_max_timestamp) {
     _tracker.committed_offset = prev_last_offset;
     _tracker.stable_offset = prev_last_offset;
     _tracker.dirty_offset = prev_last_offset;
@@ -317,8 +322,9 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
         f = f.then([this] { return remove_compacted_index(_reader.path()); });
     }
 
-    f = f.then(
-      [this, prev_last_offset] { return _idx.truncate(prev_last_offset); });
+    f = f.then([this, prev_last_offset, new_max_timestamp] {
+        return _idx.truncate(prev_last_offset, new_max_timestamp);
+    });
 
     // physical file only needs *one* truncation call
     if (_appender) {
@@ -605,7 +611,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     if (path.get_version() != record_version_type::v1) {
         throw std::runtime_error(fmt::format(
           "Segment has invalid version {} != {} path {}",
@@ -622,6 +629,7 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
       rdr->path().to_index(),
       path.get_base_offset(),
       segment_index::default_data_buffer_step,
+      feature_table,
       sanitize_fileops);
 
     co_return ss::make_lw_shared<segment>(
@@ -644,7 +652,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     auto path = segment_full_path(ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
@@ -653,7 +662,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
              std::move(batch_cache),
              buf_size,
              read_ahead,
-             resources)
+             resources,
+             feature_table)
       .then([path, &ntpc, sanitize_fileops, pc, &resources](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(

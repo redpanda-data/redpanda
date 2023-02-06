@@ -25,6 +25,7 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/rwlock.hh>
+#include <seastar/core/sharded.hh>
 
 #include <exception>
 #include <optional>
@@ -89,7 +90,8 @@ public:
     ss::future<> close();
     ss::future<> flush();
     ss::future<> release_appender(readers_cache*);
-    ss::future<> truncate(model::offset, size_t physical);
+    ss::future<> truncate(
+      model::offset, size_t physical, model::timestamp new_max_timestamp);
 
     /// main write interface
     /// auto indexes record_batch
@@ -180,7 +182,10 @@ private:
     void set_close();
     void cache_truncate(model::offset offset);
     void check_segment_not_closed(const char* msg);
-    ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
+    ss::future<> do_truncate(
+      model::offset prev_last_offset,
+      size_t physical,
+      model::timestamp new_max_timestamp);
     ss::future<> do_close();
     ss::future<> do_flush();
     ss::future<> do_release_appender(
@@ -262,7 +267,8 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -274,7 +280,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags

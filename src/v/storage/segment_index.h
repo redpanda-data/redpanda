@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -18,6 +19,7 @@
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/unaligned.hh>
 
 #include <memory>
@@ -54,6 +56,7 @@ public:
       segment_full_path path,
       model::offset base,
       size_t step,
+      ss::sharded<features::feature_table>& feature_table,
       debug_sanitize_files);
 
     ~segment_index() noexcept = default;
@@ -70,14 +73,18 @@ public:
     model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
     model::timestamp base_timestamp() const { return _state.base_timestamp; }
+    bool batch_timestamps_are_monotonic() const {
+        return _state.batch_timestamps_are_monotonic;
+    }
 
     ss::future<bool> materialize_index();
     ss::future<> flush();
-    ss::future<> truncate(model::offset);
+    ss::future<> truncate(model::offset, model::timestamp);
 
     ss::future<ss::file> open();
 
     const segment_full_path& path() const { return _path; }
+    size_t size() const { return _state.size(); }
 
     /// \brief erases the underlying file and resets the index
     /// this is used during compacted index recovery, as we must first
@@ -97,17 +104,21 @@ private:
 
     segment_full_path _path;
     size_t _step;
+    std::reference_wrapper<ss::sharded<features::feature_table>> _feature_table;
     size_t _acc{0};
     bool _needs_persistence{false};
     index_state _state;
     debug_sanitize_files _sanitize;
+
+    model::timestamp _last_batch_max_timestamp;
 
     /** Constructor with mock file content for unit testing */
     segment_index(
       segment_full_path path,
       ss::file mock_file,
       model::offset base,
-      size_t step);
+      size_t step,
+      ss::sharded<features::feature_table>& feature_table);
 
     // For unit testing only.  If this is set, then open() returns
     // the contents of mock_file instead of opening the path in _name.

@@ -340,7 +340,8 @@ ss::future<storage::index_state> do_copy_segment_data(
   compaction_config cfg,
   storage::probe& pb,
   ss::rwlock::holder h,
-  storage_resources& resources) {
+  storage_resources& resources,
+  offset_delta_time apply_offset) {
     auto idx_path = s->reader().path().to_compacted_index();
     return make_reader_handle(idx_path, cfg.sanitize)
       .then([s, cfg, idx_path](ss::file f) {
@@ -351,7 +352,7 @@ ss::future<storage::index_state> do_copy_segment_data(
                 return reader.close().then_wrapped([](ss::future<>) {});
             });
       })
-      .then([cfg, s, &pb, h = std::move(h), &resources](
+      .then([cfg, s, &pb, h = std::move(h), &resources, apply_offset](
               compacted_offset_list list) mutable {
           const auto tmpname = s->reader().path().to_staging();
           return make_segment_appender(
@@ -362,11 +363,19 @@ ss::future<storage::index_state> do_copy_segment_data(
                    std::nullopt,
                    cfg.iopc,
                    resources)
-            .then([l = std::move(list), &pb, h = std::move(h), cfg, s, tmpname](
-                    segment_appender_ptr w) mutable {
+            .then([l = std::move(list),
+                   &pb,
+                   h = std::move(h),
+                   cfg,
+                   s,
+                   tmpname,
+                   apply_offset](segment_appender_ptr w) mutable {
                 auto raw = w.get();
                 auto red = copy_data_segment_reducer(
-                  std::move(l), raw, s->path().is_internal_topic());
+                  std::move(l),
+                  raw,
+                  s->path().is_internal_topic(),
+                  apply_offset);
                 auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
                 vlog(
                   gclog.trace,
@@ -445,7 +454,8 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
   compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
-  storage_resources& resources) {
+  storage_resources& resources,
+  offset_delta_time apply_offset) {
     vlog(gclog.trace, "self compacting segment {}", s->reader().path());
     auto read_holder = co_await s->read_lock();
     auto segment_generation = s->get_generation_id();
@@ -458,7 +468,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
     // copy the bytes after segment is good - note that we
     // need to do it with the READ-lock, not the write lock
     auto idx = co_await do_copy_segment_data(
-      s, cfg, pb, std::move(read_holder), resources);
+      s, cfg, pb, std::move(read_holder), resources, apply_offset);
 
     auto rdr_holder = co_await readers_cache.evict_segment_readers(s);
 
@@ -549,7 +559,8 @@ ss::future<compaction_result> self_compact_segment(
   compaction_config cfg,
   storage::probe& pb,
   storage::readers_cache& readers_cache,
-  storage_resources& resources) {
+  storage_resources& resources,
+  offset_delta_time apply_offset) {
     if (s->has_appender()) {
         throw std::runtime_error(fmt::format(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s));
@@ -573,7 +584,7 @@ ss::future<compaction_result> self_compact_segment(
     case compacted_index::recovery_state::index_recovered: {
         auto sz_before = s->size_bytes();
         auto sz_after = co_await do_self_compact_segment(
-          s, cfg, pb, readers_cache, resources);
+          s, cfg, pb, readers_cache, resources, apply_offset);
         // compaction wasn't executed, return
         if (!sz_after) {
             co_return compaction_result(sz_before);
@@ -604,7 +615,7 @@ ss::future<compaction_result> self_compact_segment(
           "rebuilt index: {}, attempting compaction again",
           idx_path);
         co_return co_await self_compact_segment(
-          s, stm_manager, cfg, pb, readers_cache, resources);
+          s, stm_manager, cfg, pb, readers_cache, resources, apply_offset);
     }
     }
     __builtin_unreachable();
@@ -616,7 +627,8 @@ make_concatenated_segment(
   segment_full_path path,
   std::vector<ss::lw_shared_ptr<segment>> segments,
   compaction_config cfg,
-  storage_resources& resources) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
     // read locks on source segments
     std::vector<ss::rwlock::holder> locks;
     locks.reserve(segments.size());
@@ -627,8 +639,8 @@ make_concatenated_segment(
         generations.push_back(segment->get_generation_id());
     }
 
-    // fast check if we should abandon all the expensive i/o work if we happened
-    // to be racing with an operation like truncation or shutdown.
+    // fast check if we should abandon all the expensive i/o work if we
+    // happened to be racing with an operation like truncation or shutdown.
     for (const auto& segment : segments) {
         if (unlikely(segment->is_closed())) {
             throw std::runtime_error(fmt::format(
@@ -684,6 +696,7 @@ make_concatenated_segment(
       index_name,
       offsets.base_offset,
       segment_index::default_data_buffer_step,
+      feature_table,
       cfg.sanitize);
 
     co_return std::make_tuple(
@@ -767,7 +780,8 @@ ss::future<> do_write_concatenated_compacted_index(
                   .handle_exception([](const std::exception_ptr& e) {
                       vlog(
                         gclog.info,
-                        "compacted index is corrupted, skipping concatenation "
+                        "compacted index is corrupted, skipping "
+                        "concatenation "
                         "- {}",
                         e);
                       return false;
@@ -895,6 +909,13 @@ bytes clean_segment_key(model::ntp ntp) {
     iobuf buf;
     reflection::serialize(buf, kvstore_key_type::clean_segment, std::move(ntp));
     return iobuf_to_bytes(buf);
+}
+
+offset_delta_time should_apply_delta_time_offset(
+  ss::sharded<features::feature_table>& feature_table) {
+    return offset_delta_time{
+      feature_table.local_is_initialized()
+      && feature_table.local().is_active(features::feature::node_isolation)};
 }
 
 } // namespace storage::internal

@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "features/feature_table.h"
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
@@ -31,6 +32,7 @@ using namespace storage; // NOLINT
 namespace storage {
 class log_replayer_fixture {
 public:
+    ss::sharded<features::feature_table> _feature_table;
     ss::lw_shared_ptr<segment> _seg;
     std::optional<log_replayer> replayer_opt;
     storage::storage_resources resources;
@@ -38,6 +40,12 @@ public:
                             + random_generators::gen_alphanum_string(20);
 
     void initialize(model::offset base) {
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         auto fd = ss::open_file_dma(
                     base_name, ss::open_flags::create | ss::open_flags::rw)
                     .get0();
@@ -56,7 +64,8 @@ public:
           segment_full_path::mock(base_name + ".index"),
           std::move(fidx),
           base,
-          4096);
+          4096,
+          _feature_table);
         auto reader = segment_reader(
           segment_full_path::mock(base_name),
           128_KiB,
@@ -74,7 +83,10 @@ public:
         replayer_opt = log_replayer(*_seg);
     }
 
-    ~log_replayer_fixture() { _seg->close().get(); }
+    ~log_replayer_fixture() {
+        _seg->close().get();
+        _feature_table.stop().get();
+    }
 
     void write_garbage() { do_write_garbage(base_name); }
 

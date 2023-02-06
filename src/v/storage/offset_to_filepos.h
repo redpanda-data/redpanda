@@ -31,10 +31,14 @@ namespace internal {
 
 class offset_to_filepos_consumer {
 public:
-    using type = std::optional<std::pair<model::offset, size_t>>;
+    using type
+      = std::optional<std::tuple<model::offset, size_t, model::timestamp>>;
 
     offset_to_filepos_consumer(
-      model::offset log_start_offset, model::offset target, size_t initial);
+      model::offset log_start_offset,
+      model::offset target,
+      size_t initial,
+      model::timestamp initial_timestamp);
 
     ss::future<ss::stop_iteration> operator()(::model::record_batch batch);
 
@@ -44,6 +48,7 @@ private:
     type _filepos;
     model::offset _target_last_offset;
     model::offset _prev_batch_last_offset;
+    model::timestamp _prev_batch_max_timestamp;
     size_t _accumulator;
     size_t _prev;
 };

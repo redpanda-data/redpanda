@@ -8,7 +8,7 @@ v_cc_library(
     "utils/disk_log_builder.cc"
     "utils/log_gap_analysis.cc"
   DEPS
-    v::storage v::model_test_utils
+    v::storage v::model_test_utils v::features
 )
 
 rp_test(
