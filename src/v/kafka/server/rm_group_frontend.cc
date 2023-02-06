@@ -190,10 +190,11 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     vlog(
       cluster::txlog.trace,
       "dispatching name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
-      "from:{}, to:{}",
+      "timeout:{} from:{}, to:{}",
       group_id,
       pid,
       tx_seq,
+      timeout,
       _self,
       leader);
     auto reply = co_await dispatch_begin_group_tx(
@@ -247,10 +248,12 @@ ss::future<cluster::begin_group_tx_reply>
 rm_group_frontend::begin_group_tx_locally(cluster::begin_group_tx_request req) {
     vlog(
       cluster::txlog.trace,
-      "processing name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}",
+      "processing name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, "
+      "timeout: {}",
       req.group_id,
       req.pid,
-      req.tx_seq);
+      req.tx_seq,
+      req.timeout);
     auto reply = co_await _group_router.local().begin_tx(req);
     vlog(
       cluster::txlog.trace,
