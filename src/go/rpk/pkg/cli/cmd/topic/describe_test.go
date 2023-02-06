@@ -42,12 +42,13 @@ func TestDescribePartitions(t *testing.T) {
 			expHeaders: []string{
 				"partition",
 				"leader",
+				"epoch",
 				"replicas",
 				"log-start-offset",
 				"high-watermark",
 			},
 			expRows: [][]interface{}{
-				{int32(0), int32(0), []int32{0, 1, 2}, int64(0), int64(1)},
+				{int32(0), int32(0), int32(-1), []int32{0, 1, 2}, int64(0), int64(1)},
 			},
 		},
 
@@ -58,7 +59,7 @@ func TestDescribePartitions(t *testing.T) {
 				{
 					Partition:       1,
 					Leader:          0,
-					ErrorCode:       1, // optional, uised
+					ErrorCode:       1,
 					LeaderEpoch:     0, // optional, used
 					Replicas:        []int32{0, 1},
 					OfflineReplicas: []int32{2, 3}, // optional, used
@@ -109,6 +110,7 @@ func TestDescribePartitions(t *testing.T) {
 			expHeaders: []string{
 				"partition",
 				"leader",
+				"epoch",
 				"replicas",
 				"log-start-offset",
 				"high-watermark",
