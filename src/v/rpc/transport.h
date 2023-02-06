@@ -76,7 +76,7 @@ private:
     using sequence_t = named_type<uint64_t, struct sequence_tag>;
     struct entry {
         std::unique_ptr<netbuf> buffer;
-        client_opts::resource_units_t resource_units;
+        uint32_t correlation_id;
     };
     using requests_queue_t
       = absl::btree_map<sequence_t, std::unique_ptr<entry>>;
@@ -91,10 +91,27 @@ private:
     void dispatch_send();
 
     ss::future<result<std::unique_ptr<streaming_context>>>
-    make_response_handler(netbuf&, const rpc::client_opts&, sequence_t);
+    make_response_handler(netbuf&, rpc::client_opts&, sequence_t);
 
     ssx::semaphore _memory;
-    absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
+
+    /**
+     * @brief Holds resource units from client_opts and the the response handler
+     * for an outstanding request.
+     */
+    struct response_entry {
+        client_opts::resource_units_t resource_units;
+        internal::response_handler handler;
+    };
+
+    /**
+     * Map of response handlers to use when processing a buffer read from the
+     * wire.
+     *
+     * NOTE: _correlation_idx is unrelated to the sequence type used to define
+     * on-wire ordering below.
+     */
+    absl::flat_hash_map<uint32_t, std::unique_ptr<response_entry>>
       _correlations;
     uint32_t _correlation_idx{0};
     ss::metrics::metric_groups _metrics;

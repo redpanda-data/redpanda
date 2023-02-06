@@ -68,7 +68,7 @@ void transport::fail_outstanding_futures() noexcept {
     // must close the socket
     shutdown();
     for (auto& [_, p] : _correlations) {
-        p->set_value(errc::disconnected_endpoint);
+        p->handler.set_value(errc::disconnected_endpoint);
     }
     _last_seq = sequence_t{0};
     _seq = sequence_t{0};
@@ -128,7 +128,7 @@ transport::send(netbuf b, rpc::client_opts opts) {
 
 ss::future<result<std::unique_ptr<streaming_context>>>
 transport::make_response_handler(
-  netbuf& b, const rpc::client_opts& opts, sequence_t seq) {
+  netbuf& b, rpc::client_opts& opts, sequence_t seq) {
     if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
         _probe.client_correlation_error();
         vlog(
@@ -139,25 +139,27 @@ transport::make_response_handler(
                                  "registered correlation_id");
     }
     const uint32_t idx = ++_correlation_idx;
-    auto item = std::make_unique<internal::response_handler>();
-    auto item_raw_ptr = item.get();
+    b.set_correlation_id(idx);
+
+    auto entry = std::make_unique<response_entry>();
+
+    // Normally resource_units will be released when we send the request to
+    // remote server. But if a timeout or disconnect happens before sending,
+    // they must be released when the caller is notified with the result.
+    entry->resource_units = std::move(opts.resource_units);
+
+    auto handler_raw_ptr = &entry->handler;
     // capture the future _before_ inserting promise in the map
     // in case there is a concurrent error w/ the connection and it
     // fails the future before we return from this function
-    auto response_future = item_raw_ptr->get_future();
-    b.set_correlation_id(idx);
-    auto [_, success] = _correlations.emplace(idx, std::move(item));
+    auto response_future = handler_raw_ptr->get_future();
+
+    auto [_, success] = _correlations.emplace(idx, std::move(entry));
     if (unlikely(!success)) {
         throw std::logic_error(
           fmt::format("Tried to reuse correlation id: {}", idx));
     }
-    item_raw_ptr->with_timeout(opts.timeout, [this, idx, seq] {
-        /*
-         * remove pending entry from requests queue. If a timeout occurred
-         * before an entry was sent we can not keep the entry alive as it may
-         * contain caller semaphore units, the units must be released when we
-         * notify caller with the result.
-         */
+    handler_raw_ptr->with_timeout(opts.timeout, [this, idx, seq] {
         _requests_queue.erase(seq);
         auto it = _correlations.find(idx);
         if (likely(it != _correlations.end())) {
@@ -191,21 +193,22 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
 
           // send
           auto sz = b.buffer().size_bytes();
+          auto corr = b.correlation_id();
           return get_units(_memory, sz)
-            .then([this,
-                   b = std::move(b),
-                   f = std::move(f),
-                   seq,
-                   u = std::move(opts.resource_units)](
+            .then([this, b = std::move(b), f = std::move(f), seq, corr](
                     ssx::semaphore_units units) mutable {
-                auto e = entry{
-                  .buffer = std::make_unique<netbuf>(std::move(b)),
-                  .resource_units = std::move(u),
-                };
+                // Check that the request hasn't been finished yet.
+                // If it has (due to timeout or disconnect), we don't need to
+                // send it.
+                if (_correlations.contains(corr)) {
+                    auto e = entry{
+                      .buffer = std::make_unique<netbuf>(std::move(b)),
+                      .correlation_id = corr};
 
-                _requests_queue.emplace(
-                  seq, std::make_unique<entry>(std::move(e)));
-                dispatch_send();
+                    _requests_queue.emplace(
+                      seq, std::make_unique<entry>(std::move(e)));
+                    dispatch_send();
+                }
                 return std::move(f).finally([u = std::move(units)] {});
             })
             .finally([this, seq] {
@@ -230,15 +233,27 @@ void transport::dispatch_send() {
                   auto it = _requests_queue.begin();
                   _last_seq = it->first;
                   auto buffer = std::move(it->second->buffer).get();
+                  auto corr = it->second->correlation_id;
+                  _requests_queue.erase(it);
+
+                  auto resp_it = _correlations.find(corr);
+                  if (resp_it == _correlations.end()) {
+                      // request had already completed even before we sent it
+                      // (probably due to timeout or disconnect). We don't need
+                      // to do anything.
+                      return ss::now();
+                  }
+                  auto& resp_entry = resp_it->second;
+
                   // These units are released once we are out of scope here
                   // and that is intentional because the underlying write call
                   // to the batched output stream guarantees us the in-order
                   // delivery of the dispatched write calls, which is the intent
                   // of holding on to the units up until this point.
-                  auto units = std::move(it->second->resource_units);
+                  auto units = std::move(resp_entry->resource_units);
                   auto v = std::move(*buffer).as_scattered();
                   auto msg_size = v.size();
-                  _requests_queue.erase(it->first);
+
                   auto f = _out.write(std::move(v));
                   return std::move(f).finally(
                     [this, msg_size] { _probe.add_bytes_sent(msg_size); });
@@ -290,7 +305,7 @@ ss::future<> transport::dispatch(header h) {
     // of broken promises
     auto pr = std::move(it->second);
     _correlations.erase(it);
-    pr->set_value(std::move(ctx));
+    pr->handler.set_value(std::move(ctx));
     _probe.request_completed();
     return fut;
 }
@@ -300,7 +315,7 @@ void transport::setup_metrics(const std::optional<ss::sstring>& service_name) {
 }
 
 transport::~transport() {
-    vlog(rpclog.debug, "RPC Client probes: {}", _probe);
+    vlog(rpclog.debug, "RPC Client to {} probes: {}", server_address(), _probe);
     vassert(
       !is_valid(),
       "connection '{}' is still valid. must call stop() before destroying",
