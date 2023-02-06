@@ -25,12 +25,20 @@ import (
 
 func newAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 	var num int
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "add-partitions [TOPICS...] --num [#]",
 		Short: "Add partitions to existing topics",
 		Args:  cobra.MinimumNArgs(1),
 		Long:  `Add partitions to existing topics.`,
 		Run: func(cmd *cobra.Command, topics []string) {
+			if !force {
+				for _, t := range topics {
+					if t == "__consumer_offsets" || t == "_schemas" || t == "__transaction_state" || t == "coprocessor_internal_topic" {
+						out.Exit("Unable to change %s without the --force flag.", t)
+					}
+				}
+			}
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
@@ -71,5 +79,6 @@ func newAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVarP(&num, "num", "n", 0, "Number of partitions to add to each topic")
+	cmd.Flags().BoolVarP(&force, "force", "f", false, "Force change the partition count in internal topics, e.g. __consumer_offsets.")
 	return cmd
 }
