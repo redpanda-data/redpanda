@@ -12,6 +12,7 @@ import json
 import re
 import subprocess
 import time
+import itertools
 
 KclPartitionOffset = namedtuple(
     'KclPartitionOffset',
@@ -27,6 +28,9 @@ KclCreateTopicsRequestTopic = namedtuple(
 
 KclCreatePartitionsRequestTopic = namedtuple('KclCreatePartitionsRequestTopic',
                                              ['topic', 'count', 'assignment'])
+
+KclOffsetDeleteResponse = namedtuple(
+    'KclOffsetDeleteResponse', ['topic', 'partition', 'status', 'error_msg'])
 
 
 class KCL:
@@ -182,6 +186,43 @@ class KCL:
 
         return self._cmd(cmd, attempts=1)
 
+    def offset_delete(self, group: str, topic_partitions: dict):
+        """
+        kcl group offset-delete <group> -t <topic>:partition_1,partition_2,... -t ...
+        """
+
+        # First convert partitions from integers to strings
+        as_strings = {
+            k: ",".join([str(x) for x in v])
+            for k, v in topic_partitions.items()
+        }
+
+        # Group each kv pair to string item like '<topic>:p1,p2,p3'
+        request_args = [f"{x}:{y}" for x, y in as_strings.items()]
+
+        # Append each arg with the -t (topic) flag
+        # interleaves a list of -t strings with each argument producing
+        # [-t, arg1, -t arg2, ... , -t argn]
+        request_args_w_flags = list(
+            itertools.chain(
+                *zip(["-t"
+                      for _ in range(0, len(request_args))], request_args)))
+
+        # Send request and parse output
+        cmd = ['group', 'offset-delete', group] + request_args_w_flags
+        output = self._cmd(cmd).splitlines()
+        regex = re.compile(
+            r"\s*(?P<topic>\S*)\s*(?P<partition>\d*)\s*(?P<status>\w+):?(?P<error>.*)"
+        )
+        matched = [regex.match(x) for x in output]
+        failed_matches = [x for x in matched if x is None]
+        if len(failed_matches) > 0:
+            raise RuntimeError("Failed to parse KCL offset-delete output")
+        return [
+            KclOffsetDeleteResponse(x['topic'], int(x['partition']),
+                                    x['status'], x['error']) for x in matched
+        ]
+
     def _cmd(self, cmd, input=None, attempts=5):
         """
 
@@ -191,6 +232,7 @@ class KCL:
         brokers = self._redpanda.brokers()
         cmd = ["kcl", "-X", f"seed_brokers={brokers}", "--no-config-file"
                ] + cmd
+        self._redpanda.logger.debug(cmd)
         assert attempts > 0
         for retry in reversed(range(attempts)):
             try:
