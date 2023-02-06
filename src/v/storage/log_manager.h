@@ -11,9 +11,11 @@
 
 #pragma once
 
+#include "cluster/topic_table.h"
 #include "config/property.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
 #include "storage/batch_cache.h"
@@ -168,6 +170,16 @@ public:
      * rebalancing partitions across the cluster, etc...
      */
     ss::future<> remove(model::ntp);
+    /**
+     * This function walsk through entire directory structure in an async fiber
+     * to remove all orphan files in that directory. It checks if file is orphan
+     * with special orphan_filter
+     */
+    ss::future<> remove_orphan_files(
+      ss::sstring data_directory_path,
+      absl::flat_hash_set<model::ns> namespaces,
+      ss::noncopyable_function<bool(model::ntp, partition_path::metadata)>
+        orphan_filter);
 
     ss::future<> stop();
 
