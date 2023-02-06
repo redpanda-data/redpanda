@@ -219,7 +219,7 @@ func tune(
 	if rebootRequired {
 		red := color.New(color.FgRed).SprintFunc()
 		fmt.Printf(
-			"%s: Reboot system and run 'rpk tune %s' again\n",
+			"%s: Reboot system and run 'rpk redpanda tune %s' again\n",
 			red("IMPORTANT"),
 			strings.Join(tunerNames, ","),
 		)

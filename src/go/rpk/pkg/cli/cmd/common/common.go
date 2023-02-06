@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const FeedbackMsg = `We'd love to hear about your experience with redpanda:
+const FeedbackMsg = `We'd love to hear about your experience with Redpanda:
 https://redpanda.com/feedback`
 
 func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
