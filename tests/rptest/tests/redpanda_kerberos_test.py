@@ -93,11 +93,6 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
                   fail: bool):
 
         self.client.add_primary(primary="client")
-        feature_name = "kafka_gssapi"
-        self.redpanda.logger.info(f"Principals: {self.kdc.list_principals()}")
-        admin = Admin(self.redpanda)
-        admin.put_feature(feature_name, {"state": "active"})
-        self.redpanda.await_feature_active(feature_name, timeout_sec=30)
 
         username, password, mechanism = self.redpanda.SUPERUSER_CREDENTIALS
         super_rpk = RpkTool(self.redpanda,
@@ -218,12 +213,6 @@ class RedpandaKerberosRulesTesting(RedpandaKerberosTestBase):
                                     kerberos_principal: str, rp_user: str,
                                     expected_topics: [str], acl: [(str, str)]):
         self.client.add_primary(primary=kerberos_principal)
-        feature_name = "kafka_gssapi"
-        self.redpanda.logger.info(f"Principals: {self.kdc.list_principals()}")
-        admin = Admin(self.redpanda)
-        admin.put_feature(feature_name, {"state": "active"})
-
-        self.redpanda.await_feature_active(feature_name, timeout_sec=30)
 
         username, password, mechanism = self.redpanda.SUPERUSER_CREDENTIALS
         super_rpk = RpkTool(self.redpanda,
@@ -294,13 +283,8 @@ class RedpandaKerberosConfigTest(RedpandaKerberosTestBase):
     def test_non_default(self):
         req_principal = "client"
         self.client.add_primary(primary=req_principal)
-        feature_name = "kafka_gssapi"
-        self.redpanda.logger.info(f"Principals: {self.kdc.list_principals()}")
+
         admin = Admin(self.redpanda)
-        admin.put_feature(feature_name, {"state": "active"})
-
-        self.redpanda.await_feature_active(feature_name, timeout_sec=5)
-
         keytab = admin.get_cluster_config()['sasl_kerberos_keytab']
 
         def keytab_not_found():
