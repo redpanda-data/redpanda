@@ -172,7 +172,7 @@ class CloudStorageCompactionTest(EndToEndTest):
              ])
     @parametrize(cloud_storage_type=CloudStorageType.ABS)
     @parametrize(cloud_storage_type=CloudStorageType.S3)
-    def test_read_from_replica(self):
+    def test_read_from_replica(self, cloud_storage_type):
         self.start_workload()
         self.start_consumer(num_nodes=2,
                             redpanda_cluster=self.rr_cluster,
