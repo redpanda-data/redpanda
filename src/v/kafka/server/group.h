@@ -279,6 +279,11 @@ public:
         return _leader && _leader.value() == member_id;
     }
 
+    /// Check if this is a consumer_group or not
+    bool is_consumer_group() const {
+        return _protocol_type == consumer_group_protocol_type;
+    }
+
     /// Get the group's configured protocol type (if any).
     const std::optional<kafka::protocol_type>& protocol_type() const {
         return _protocol_type;

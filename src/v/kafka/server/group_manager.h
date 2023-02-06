@@ -19,6 +19,7 @@
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/list_groups.h"
 #include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/txn_offset_commit.h"
@@ -163,6 +164,9 @@ public:
     /// \brief Handle a OffsetFetch request
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);
+
+    ss::future<offset_delete_response>
+    offset_delete(offset_delete_request&& request);
 
     // returns the set of registered groups, and an error if one occurred while
     // retrieving the group list (e.g. coordinator_load_in_progress).

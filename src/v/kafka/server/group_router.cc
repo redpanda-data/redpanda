@@ -261,6 +261,11 @@ group_router::offset_fetch(offset_fetch_request&& request) {
     return route(std::move(request), &group_manager::offset_fetch);
 }
 
+ss::future<offset_delete_response>
+group_router::offset_delete(offset_delete_request&& request) {
+    return route(std::move(request), &group_manager::offset_delete);
+}
+
 group::offset_commit_stages
 group_router::offset_commit(offset_commit_request&& request) {
     return route_stages(std::move(request), &group_manager::offset_commit);

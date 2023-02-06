@@ -18,6 +18,7 @@
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/group_metadata.h"
@@ -1185,6 +1186,59 @@ group_manager::offset_fetch(offset_fetch_request&& r) {
     }
 
     return group->handle_offset_fetch(std::move(r)).finally([group] {});
+}
+
+ss::future<offset_delete_response>
+group_manager::offset_delete(offset_delete_request&& r) {
+    auto error = validate_group_status(
+      r.ntp, r.data.group_id, offset_delete_api::key);
+    if (error != error_code::none) {
+        co_return offset_delete_response(error);
+    }
+
+    auto group = get_group(r.data.group_id);
+    if (!group || group->in_state(group_state::dead)) {
+        co_return offset_delete_response(error_code::group_id_not_found);
+    }
+
+    if (!group->in_state(group_state::empty) && !group->is_consumer_group()) {
+        co_return offset_delete_response(error_code::non_empty_group);
+    }
+
+    std::vector<model::topic_partition> requested_deletions;
+    for (const auto& topic : r.data.topics) {
+        for (const auto& partition : topic.partitions) {
+            requested_deletions.emplace_back(
+              topic.name, partition.partition_index);
+        }
+    }
+
+    auto deleted_offsets = group->delete_offsets(requested_deletions);
+    co_await delete_offsets(group, deleted_offsets);
+
+    absl::flat_hash_set<model::topic_partition> deleted_offsets_set;
+    for (auto& tp : deleted_offsets) {
+        deleted_offsets_set.insert(std::move(tp));
+    }
+
+    absl::
+      flat_hash_map<model::topic, std::vector<offset_delete_response_partition>>
+        response_data;
+    for (const auto& tp : requested_deletions) {
+        auto error = kafka::error_code::none;
+        if (!deleted_offsets_set.contains(tp)) {
+            error = kafka::error_code::group_subscribed_to_topic;
+        }
+        response_data[tp.topic].emplace_back(offset_delete_response_partition{
+          .partition_index = tp.partition, .error_code = error});
+    }
+
+    offset_delete_response response(kafka::error_code::none);
+    for (auto& [t, ps] : response_data) {
+        response.data.topics.emplace_back(
+          offset_delete_response_topic{.name = t, .partitions = std::move(ps)});
+    }
+    co_return response;
 }
 
 std::pair<error_code, std::vector<listed_group>>
