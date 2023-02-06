@@ -41,6 +41,7 @@
 #include "kafka/server/handlers/list_transactions.h"
 #include "kafka/server/handlers/metadata.h"
 #include "kafka/server/handlers/offset_commit.h"
+#include "kafka/server/handlers/offset_delete.h"
 #include "kafka/server/handlers/offset_fetch.h"
 #include "kafka/server/handlers/offset_for_leader_epoch.h"
 #include "kafka/server/handlers/produce.h"
@@ -64,6 +65,7 @@ using request_types = make_request_types<
   list_offsets_handler,
   metadata_handler,
   offset_fetch_handler,
+  offset_delete_handler,
   find_coordinator_handler,
   list_groups_handler,
   api_versions_handler,
