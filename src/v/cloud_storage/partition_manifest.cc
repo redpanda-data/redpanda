@@ -1168,6 +1168,12 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
     }
 }
 
+// This object is supposed to track state of the asynchronous
+// serialization process. It stores information about the part
+// which was serialized so far. Methods like serialize_begin,
+// serialized_end, serialize_segment are using it to pause and
+// resume operation. It's not supposed to be reused or used for
+// any other purpose.
 struct partition_manifest::serialization_cursor {
     serialization_cursor(std::ostream& out, size_t max_segments)
       : wrapper(out)
@@ -1188,6 +1194,7 @@ struct partition_manifest::serialization_cursor {
 };
 
 ss::future<serialized_json_stream> partition_manifest::serialize() const {
+    auto iso = _insync_offset;
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -1196,6 +1203,14 @@ ss::future<serialized_json_stream> partition_manifest::serialize() const {
     while (!c->segments_done) {
         serialize_segments(c);
         co_await ss::maybe_yield();
+        if (iso != _insync_offset) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Manifest changed duing serialization, in sync offset moved from "
+              "{} to {}",
+              iso,
+              _insync_offset));
+        }
     }
     serialize_replaced(c);
     serialize_end(c);
