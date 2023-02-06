@@ -78,6 +78,19 @@ class S3Client:
             if err.response['Error']['Code'] != 'BucketAlreadyOwnedByYou':
                 raise err
 
+        # For debugging mysterious NoSuchBucket errors during tests: try listing the bucket right after
+        # creating it.
+        # Related: https://github.com/redpanda-data/redpanda/issues/8490
+        try:
+            self._cli.list_objects_v2(Bucket=name)
+        except:
+            self.logger.error(
+                f"Listing {name} failed immediately after creation succeeded")
+            raise
+        else:
+            self.logger.info(
+                "Listing {name} succeeded immediately after creation")
+
     def delete_bucket(self, name):
         self.logger.info(f"Deleting bucket {name}...")
         try:
@@ -307,7 +320,18 @@ class S3Client:
         token = None
         truncated = True
         while truncated:
-            res = self._list_objects(bucket, token, limit=100)
+            try:
+                res = self._list_objects(bucket, token, limit=100)
+            except:
+                # For debugging NoSuchBucket errors in tests: if we can't list
+                # this bucket, then try to list what buckets exist.
+                # Related: https://github.com/redpanda-data/redpanda/issues/8490
+                self.logger.error(
+                    f"Error in list_objects '{bucket}', listing all buckets")
+                for k, v in self.list_buckets().items():
+                    self.logger.error(f"Listed bucket {k}: {v}")
+                raise
+
             token = res.get('NextContinuationToken')
             truncated = bool(res['IsTruncated'])
             if 'Contents' in res:
