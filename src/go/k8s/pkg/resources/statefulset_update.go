@@ -184,7 +184,7 @@ func (r *StatefulSetResource) rollingUpdate(
 			Path:   "v1/status/ready",
 		}
 
-		r.logger.Info("Verify that Ready endpoint returns HTTP status OK")
+		r.logger.Info("Verify that Ready endpoint returns HTTP status OK", "pod-name", pod.Name)
 		if err = r.queryRedpandaStatus(ctx, &adminURL); err != nil {
 			return fmt.Errorf("unable to query Redpanda ready status: %w", err)
 		}
