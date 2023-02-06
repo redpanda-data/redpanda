@@ -785,6 +785,8 @@ private:
     cluster::abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
 
+    bool has_offsets() const;
+
     bool has_pending_transaction(const model::topic_partition& tp) {
         if (std::any_of(
               _pending_offset_commits.begin(),

@@ -3533,6 +3533,11 @@ group::get_expired_offsets(std::chrono::seconds retention_period) {
     }
 }
 
+bool group::has_offsets() const {
+    return !_offsets.empty() || !_pending_offset_commits.empty()
+           || !_volatile_txs.empty() || !_tx_seqs.empty();
+}
+
 std::vector<model::topic_partition>
 group::delete_expired_offsets(std::chrono::seconds retention_period) {
     /*
@@ -3547,11 +3552,6 @@ group::delete_expired_offsets(std::chrono::seconds retention_period) {
     /*
      * maybe mark the group as dead
      */
-    const auto has_offsets = [this] {
-        return !_offsets.empty() || !_pending_offset_commits.empty()
-               || !_volatile_txs.empty() || !_tx_seqs.empty();
-    };
-
     if (in_state(group_state::empty) && !has_offsets()) {
         set_state(group_state::dead);
     }
