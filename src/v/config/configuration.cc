@@ -1777,7 +1777,7 @@ configuration::configuration()
       "considering itself to be isolated",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       3000,
-      {.min = 100, .max = 10000}) {}
+      {.min = 100}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
