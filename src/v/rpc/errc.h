@@ -24,6 +24,10 @@ enum class errc {
     service_error,
     method_not_found,
     version_not_supported,
+
+    // Used when receiving an undefined errc (e.g. from a newer version of
+    // Redpanda).
+    unknown = std::numeric_limits<uint8_t>::max(),
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "rpc::errc"; }
@@ -43,7 +47,7 @@ struct errc_category final : public std::error_category {
         case errc::version_not_supported:
             return "rpc::errc::version_not_supported";
         default:
-            return "rpc::errc::unknown";
+            return "rpc::errc::unknown(" + std::to_string(c) + ")";
         }
     }
 };

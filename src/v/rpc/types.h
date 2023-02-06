@@ -182,6 +182,11 @@ enum class status : uint32_t {
     request_timeout = 408,
     server_error = 500,
     version_not_supported = 505,
+
+    // NOTE: Redpanda versions <= 22.3.x won't properly parse error codes they
+    // don't know about; error codes below should be used only if
+    // feature::rpc_transport_unknown_errc is active.
+    service_unavailable = 503,
 };
 
 enum class transport_version : uint8_t {

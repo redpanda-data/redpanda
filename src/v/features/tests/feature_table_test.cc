@@ -228,6 +228,35 @@ FIXTURE_TEST(feature_table_preparing, feature_table_fixture) {
     f_active.get();
 }
 
+FIXTURE_TEST(feature_table_then, feature_table_fixture) {
+    set_active_version(cluster_version{1});
+    bool activated = false;
+
+    // Wait for the feature and then activate. We should fire off its 'then'
+    // function.
+    auto wait_cloud_then_set = ft.await_feature_then(
+      feature::cloud_retention, [&] { activated = true; });
+    BOOST_REQUIRE(!activated);
+    set_active_version(cluster_version{7});
+    execute_action("cloud_retention", action_t::activate);
+    execute_action("cloud_retention", action_t::complete_preparing);
+    BOOST_REQUIRE_EQUAL(ft.get_active_version(), cluster_version{7});
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(wait_cloud_then_set.available());
+    wait_cloud_then_set.get();
+    BOOST_REQUIRE(activated);
+
+    // Now try again but abort. 'then' shouldn't complete.
+    activated = false;
+    auto wait_alpha_then_set = ft.await_feature_then(
+      feature::test_alpha, [&] { activated = true; });
+    BOOST_REQUIRE(!activated);
+    ft.abort_for_tests();
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(wait_alpha_then_set.available());
+    BOOST_REQUIRE(!activated);
+}
+
 FIXTURE_TEST(feature_uniqueness, feature_table_fixture) {
     for (const auto& schema : feature_schema) {
         feature current_feature = schema.bits;

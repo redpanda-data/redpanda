@@ -1765,28 +1765,26 @@ void application::start_runtime_services(
   cluster::cluster_discovery& cd, ::stop_signal& app_signal) {
     ssx::background = feature_table.invoke_on_all(
       [this](features::feature_table& ft) {
-          return ft.await_feature(features::feature::rpc_v2_by_default)
-            .then([this] {
+          return ft.await_feature_then(
+            features::feature::rpc_v2_by_default, [this] {
                 if (ss::this_shard_id() == 0) {
-                    vlog(_log.info, "Activating RPC protocol v2");
+                    vlog(_log.debug, "Activating RPC protocol v2");
                 }
                 _connection_cache.local().set_default_transport_version(
                   rpc::transport_version::v2);
-            })
-            .handle_exception([this](const std::exception_ptr& e) {
-                try {
-                    std::rethrow_exception(e);
-                } catch (ss::abort_requested_exception&) {
-                    // Shutting down
-                } catch (...) {
-                    // Should never happen, abort is the only exception that
-                    // await_feature can throw, other than perhaps bad_alloc.
+            });
+      });
+    ssx::background = feature_table.invoke_on_all(
+      [this](features::feature_table& ft) {
+          return ft.await_feature_then(
+            features::feature::rpc_transport_unknown_errc, [this] {
+                if (ss::this_shard_id() == 0) {
                     vlog(
-                      _log.error,
-                      "Unexpected error awaiting RPCv2 feature: {} {}",
-                      std::current_exception(),
-                      ss::current_backtrace());
+                      _log.debug, "All nodes support unknown RPC error codes");
                 }
+                // Redpanda versions <= v22.3.x don't properly parse error
+                // codes they don't know about.
+                _rpc.local().set_use_service_unavailable();
             });
       });
 
@@ -1918,6 +1916,9 @@ void application::start_runtime_services(
               smp_service_groups.cluster_smp_sg(),
               std::ref(topic_recovery_service)));
           s.add_services(std::move(runtime_services));
+
+          // Done! Disallow unknown method errors.
+          s.set_all_services_added();
       })
       .get();
 

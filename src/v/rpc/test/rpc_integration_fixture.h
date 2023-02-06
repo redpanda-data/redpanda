@@ -111,6 +111,11 @@ public:
           _sg, _ssg, std::forward<Args>(args)...);
     }
 
+    T& server() {
+        check_server();
+        return *_server;
+    }
+
 private:
     void check_server() override {
         if (!_server) {

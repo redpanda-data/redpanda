@@ -848,6 +848,7 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::missing_node_rpc_client:
         case rpc::errc::method_not_found:
         case rpc::errc::version_not_supported:
+        case rpc::errc::unknown:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected error: {}", ec.message()));
         }

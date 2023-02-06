@@ -14,6 +14,8 @@
 #include "cluster/types.h"
 #include "features/logger.h"
 
+#include <seastar/core/abort_source.hh>
+
 // The feature table is closely related to cluster and uses many types from it
 using namespace cluster;
 
@@ -63,6 +65,8 @@ std::string_view to_string_view(feature f) {
         return "node_isolation";
     case feature::group_offset_retention:
         return "group_offset_retention";
+    case feature::rpc_transport_unknown_errc:
+        return "rpc_transport_unknown_errc";
 
     /*
      * testing features
@@ -355,6 +359,25 @@ ss::future<> feature_table::await_feature(feature f, ss::abort_source& as) {
           "Waiting for feature active {}",
           to_string_view(f));
         return _waiters_active.await(f, as);
+    }
+}
+
+ss::future<>
+feature_table::await_feature_then(feature f, std::function<void(void)> fn) {
+    try {
+        co_await await_feature(f);
+        fn();
+    } catch (ss::abort_requested_exception&) {
+        // Shutting down
+    } catch (...) {
+        // Should never happen, abort is the only exception that await_feature
+        // can throw, other than perhaps bad_alloc.
+        vlog(
+          featureslog.error,
+          "Unexpected error awaiting {} feature: {} {}",
+          to_string_view(f),
+          std::current_exception(),
+          ss::current_backtrace());
     }
 }
 
