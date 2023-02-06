@@ -50,10 +50,11 @@ void node_isolation_watcher::update_isolation_status() {
 ss::future<> node_isolation_watcher::do_update_isolation_status() {
     bool isolated_status = co_await is_node_isolated();
     if (isolated_status != _last_is_isolated_status) {
-        vlog(
-          clusterlog.warn,
-          "Change is_isolated status. Is node isolated: {}",
-          isolated_status);
+        if (isolated_status) {
+            vlog(clusterlog.error, "Node is isolated");
+        } else {
+            vlog(clusterlog.info, "Node is not isolated anymore");
+        }
         co_await _metadata_cache.invoke_on_all(
           [isolated_status](cluster::metadata_cache& mc) {
               mc.set_is_node_isolated_status(isolated_status);

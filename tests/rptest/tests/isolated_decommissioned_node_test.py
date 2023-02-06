@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
+
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from ducktape.utils.util import wait_until
@@ -20,6 +22,11 @@ from ducktape.mark import parametrize
 import time
 import uuid
 import time
+
+LOG_ALLOW_LIST = [
+    # cluster - node_isolation_watcher.cc:54 - Node is isolated"
+    "Node is isolated",
+]
 
 
 def on_delivery(err, msg):
@@ -85,7 +92,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
 
         assert num_consumed == self.max_records, f"Can not consume all data. Consumed: {num_consumed}, expected: {self.max_records}"
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=LOG_ALLOW_LIST)
     def create_topic_on_isolated_node_test(self):
         # Idea of this test it to pass only isolated broker to client and expect that client will get another brokers list and will communicate with them
         topic = self.topics[0]
@@ -102,7 +109,7 @@ class IsolatedDecommissionedNodeTest(PreallocNodesTest):
                 admin.NewTopic("123", replication_factor=1, num_partitions=1)
             ])
 
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3, log_allow_list=LOG_ALLOW_LIST)
     @parametrize(isolation_handler_mode=True)
     @parametrize(isolation_handler_mode=False)
     def discover_leader_for_topic_test(self, isolation_handler_mode):
