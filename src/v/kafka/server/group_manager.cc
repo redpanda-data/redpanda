@@ -251,8 +251,12 @@ ss::future<size_t> group_manager::delete_expired_offsets(
     /*
      * delete expired offsets from the group
      */
-    const auto offsets = group->delete_expired_offsets(retention_period);
+    auto offsets = group->delete_expired_offsets(retention_period);
+    return delete_offsets(group, std::move(offsets));
+}
 
+ss::future<size_t> group_manager::delete_offsets(
+  group_ptr group, std::vector<model::topic_partition> offsets) {
     /*
      * build tombstones to persistent offset deletions. the group itself may
      * also be set to dead state in which case we may be able to delete the

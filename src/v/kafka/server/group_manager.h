@@ -235,6 +235,9 @@ private:
       ss::lw_shared_ptr<attached_partition>,
       group_recovery_consumer_state);
 
+    ss::future<size_t> delete_offsets(
+      group_ptr group, std::vector<model::topic_partition> offsets);
+
     ss::future<> do_recover_group(
       model::term_id,
       ss::lw_shared_ptr<attached_partition>,
