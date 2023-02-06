@@ -657,6 +657,14 @@ public:
     std::vector<model::topic_partition>
     delete_expired_offsets(std::chrono::seconds retention_period);
 
+    /*
+     *  Delete group offsets that do not have subscriptions.
+     *
+     *  Returns the set of offsets that were deleted.
+     */
+    std::vector<model::topic_partition>
+    delete_offsets(std::vector<model::topic_partition> offsets);
+
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
