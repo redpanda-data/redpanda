@@ -16,7 +16,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import SISettings, MetricsEndpoint, CloudStorageType, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoint, CloudStorageType, CHAOS_LOG_ALLOW_LIST
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer)
 from rptest.utils.mode_checks import skip_debug_mode
@@ -39,9 +39,10 @@ class CloudRetentionTest(PreallocNodesTest):
         pass
 
     @cluster(num_nodes=4)
-    @matrix(max_consume_rate_mb=[20, None])
+    @matrix(max_consume_rate_mb=[20, None],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
     @skip_debug_mode
-    def test_cloud_retention(self, max_consume_rate_mb):
+    def test_cloud_retention(self, max_consume_rate_mb, cloud_storage_type):
         """
         Test cloud retention with an ongoing workload. The consume load comes
         in two flavours:

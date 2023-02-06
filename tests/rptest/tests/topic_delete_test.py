@@ -445,7 +445,9 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         log_allow_list=[
             'exception while executing partition operation: {type: deletion'
         ])
-    def topic_delete_unavailable_test(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def topic_delete_unavailable_test(self, cloud_storage_type):
         """
         Test deleting while the S3 backend is unavailable: we should see
         that local deletion proceeds, and remote deletion eventually
