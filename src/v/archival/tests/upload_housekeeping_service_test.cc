@@ -32,9 +32,16 @@ public:
     explicit mock_job(std::chrono::milliseconds ms)
       : _delay(ms) {}
 
+    mock_job()
+      : _delay(100ms)
+      , _throw(true) {}
+
     ss::future<archival::housekeeping_job::run_result>
     run(retry_chain_node& rtc, archival::run_quota_t quota) override {
         ss::gate::holder h(_gate);
+        if (_throw) {
+            throw std::runtime_error("Job failed");
+        }
         run_result result{
           .status = run_status::skipped,
           .consumed = archival::run_quota_t(0),
@@ -70,6 +77,7 @@ private:
     std::chrono::milliseconds _delay;
     ss::abort_source _as;
     ss::gate _gate;
+    bool _throw{false};
 };
 
 void wait_for_workflow_state(
@@ -211,6 +219,29 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_no_jobs) {
         job1.stop().get();
         job2.stop().get();
         vlog(test_log.info, "both jobs stopped");
+    }
+    wf.stop().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_job_throws) {
+    retry_chain_node rtc(abort_never);
+    archival::housekeeping_workflow wf(rtc);
+    {
+        mock_job job1; // This job will throw
+        mock_job job2(10s);
+        wf.register_job(job1);
+        wf.register_job(job2);
+        wf.start();
+        wf.resume(false);
+        wait_for_job_execution(wf);
+        wf.deregister_job(job1);
+        wf.deregister_job(job2);
+        BOOST_REQUIRE_EQUAL(job1.executed, 0);
+        BOOST_REQUIRE_EQUAL(job2.executed, 1);
+        BOOST_REQUIRE(job1.interrupted());
+        BOOST_REQUIRE(job2.interrupted());
+        job1.stop().get();
+        job2.stop().get();
     }
     wf.stop().get();
 }
