@@ -1711,6 +1711,26 @@ configuration::configuration()
       "in controller configuration operations limit",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , kafka_throughput_limit_cluster_in_bps(
+      *this,
+      "kafka_throughput_limit_cluster_in_bps",
+      "Cluster wide throughput ingress limit - maximum kafka traffic "
+      "throughput allowed on the ingress side of the entire cluster, in "
+      "bytes/s. Default is no limit. In the current version, it is not yet "
+      "guaranteed to limit the throughput.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1})
+  , kafka_throughput_limit_cluster_out_bps(
+      *this,
+      "kafka_throughput_limit_cluster_out_bps",
+      "Cluster wide throughput egress limit - maximum kafka traffic "
+      "throughput allowed on the egress side of the entire cluster, in "
+      "bytes/s. Default is no limit. In the current version, it is not yet "
+      "guaranteed to limit the throughput.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 1})
   , kafka_throughput_limit_node_in_bps(
       *this,
       "kafka_throughput_limit_node_in_bps",
