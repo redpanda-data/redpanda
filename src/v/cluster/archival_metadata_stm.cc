@@ -484,7 +484,7 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
 
     auto batch = std::move(b).build();
     auto ec = co_await do_replicate_commands(std::move(batch), deadline, as);
-    if (!ec) {
+    if (ec) {
         co_return ec;
     }
 
