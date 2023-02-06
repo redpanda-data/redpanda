@@ -25,6 +25,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/record.h"
+#include "raft/types.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 
@@ -408,6 +409,12 @@ ss::future<> group_manager::do_detach_partition(model::ntp ntp) {
         }
         ++g_it;
     }
+    // if p has background work that won't complete without an abort being
+    // requested, then do that now because once the partition is removed from
+    // the _partitions container it won't be available in group_manager::stop.
+    if (!p->as.abort_requested()) {
+        p->as.request_abort();
+    }
     _partitions.erase(ntp);
     _partitions.rehash(0);
 
@@ -657,6 +664,21 @@ ss::future<> group_manager::recover_partition(
   model::term_id term,
   ss::lw_shared_ptr<attached_partition> p,
   group_recovery_consumer_state ctx) {
+    /*
+     * write the offset retention feature fence. this is done in the background
+     * because we need to await the offset retention feature. however, if that
+     * is done  inline here then we'll prevent consumer group partition from
+     * recovering and operating during a mix-version rolling upgrade.
+     */
+    if (!ctx.has_offset_retention_feature_fence) {
+        vlog(
+          klog.info,
+          "Scheduling write of offset retention feature fence for partition {}",
+          p->partition);
+        ssx::spawn_with_gate(
+          _gate, [this, term, p] { return write_version_fence(term, p); });
+    }
+
     static constexpr size_t group_batch_size = 64;
     for (auto& [_, group] : _groups) {
         if (group->partition()->ntp() == p->partition->ntp()) {
@@ -712,6 +734,7 @@ ss::future<> group_manager::do_recover_group(
                 .metadata = meta.metadata.metadata,
                 .commit_timestamp = meta.metadata.commit_timestamp,
                 .expiry_timestamp = expiry_timestamp,
+                .non_reclaimable = meta.metadata.non_reclaimable,
               });
         }
 
@@ -738,6 +761,75 @@ ss::future<> group_manager::do_recover_group(
         }
     }
     co_return;
+}
+
+ss::future<> group_manager::write_version_fence(
+  model::term_id term, ss::lw_shared_ptr<attached_partition> p) {
+    // how long to delay retrying a fence write if an error occurs
+    constexpr auto fence_write_retry_delay = 10s;
+
+    co_await _feature_table.local().await_feature(
+      features::feature::group_offset_retention, p->as);
+
+    while (true) {
+        if (p->as.abort_requested() || _gate.is_closed()) {
+            break;
+        }
+
+        auto batch = _feature_table.local().encode_version_fence(
+          cluster::cluster_version{9});
+        auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+        try {
+            auto result = co_await p->partition->raft()->replicate(
+              term,
+              std::move(reader),
+              raft::replicate_options(raft::consistency_level::quorum_ack));
+
+            if (result) {
+                vlog(
+                  klog.info,
+                  "Prepared partition {} for consumer offset retention feature "
+                  "during upgrade",
+                  p->partition->ntp());
+                break;
+
+            } else if (result.error() == raft::errc::shutting_down) {
+                vlog(
+                  klog.debug,
+                  "Cannot write offset retention version fence for partition "
+                  "{}: shutting down",
+                  p->partition->ntp());
+                break;
+
+            } else if (result.error() == raft::errc::not_leader) {
+                vlog(
+                  klog.debug,
+                  "Cannot write offset retention version fence for partition "
+                  "{}: not leader",
+                  p->partition->ntp());
+                break;
+
+            } else {
+                vlog(
+                  klog.warn,
+                  "Could not write offset retention feature fence for "
+                  "partition {}: {} {}",
+                  p->partition->ntp(),
+                  result.error().message(),
+                  result.error());
+            }
+        } catch (...) {
+            vlog(
+              klog.error,
+              "Exception occurred writing offset retention feature fence for "
+              "partition {}: {}",
+              p->partition,
+              std::current_exception());
+        }
+
+        co_await ss::sleep_abortable(fence_write_retry_delay, p->as);
+    }
 }
 
 group::join_group_stages group_manager::join_group(join_group_request&& r) {

@@ -40,6 +40,7 @@ enum class record_batch_type : int8_t {
     cluster_config_cmd = 20,         // cluster config deltas and status
     feature_update = 21,             // Node logical versions updates
     cluster_bootstrap_cmd = 22,      // cluster bootsrap command
+    version_fence = 23,              // version fence/epoch
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);

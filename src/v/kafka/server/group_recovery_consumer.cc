@@ -111,6 +111,13 @@ group_recovery_consumer::operator()(model::record_batch batch) {
     } else if (batch.header().type == model::record_batch_type::tx_fence) {
         apply_tx_fence(std::move(batch));
         co_return ss::stop_iteration::no;
+    } else if (batch.header().type == model::record_batch_type::version_fence) {
+        auto fence = features::feature_table::decode_version_fence(
+          std::move(batch));
+        if (fence.active_version >= cluster::cluster_version{9}) {
+            _state.has_offset_retention_feature_fence = true;
+        }
+        co_return ss::stop_iteration::no;
     } else {
         vlog(klog.trace, "ignoring batch with type {}", batch.header().type);
         co_return ss::stop_iteration::no;
@@ -220,6 +227,9 @@ void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
         // always take the latest entry in the log.
         auto [group_it, _] = _state.groups.try_emplace(
           md.key.group_id, group_stm());
+        if (_state.has_offset_retention_feature_fence) {
+            md.value->non_reclaimable = false;
+        }
         group_it->second.update_offset(
           tp, _batch_base_offset, std::move(*md.value));
     } else {

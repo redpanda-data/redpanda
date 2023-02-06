@@ -353,6 +353,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::feature_update";
     case record_batch_type::cluster_bootstrap_cmd:
         return o << "batch_type::cluster_bootstrap_cmd";
+    case record_batch_type::version_fence:
+        return o << "batch_type::version_fence";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";

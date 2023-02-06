@@ -198,7 +198,8 @@ struct clean_segment_value
 inline bool is_compactible(const model::record_batch& b) {
     return !(
       b.header().type == model::record_batch_type::raft_configuration
-      || b.header().type == model::record_batch_type::archival_metadata);
+      || b.header().type == model::record_batch_type::archival_metadata
+      || b.header().type == model::record_batch_type::version_fence);
 }
 
 offset_delta_time should_apply_delta_time_offset(

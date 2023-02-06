@@ -138,7 +138,6 @@ struct offset_metadata_key {
  */
 struct offset_metadata_value {
     static constexpr group_metadata_version latest_version{3};
-    group_metadata_version version = latest_version;
     model::offset offset;
     // present only in version >= 3
     kafka::leader_epoch leader_epoch = invalid_leader_epoch;
@@ -146,6 +145,13 @@ struct offset_metadata_value {
     model::timestamp commit_timestamp;
     // present only in version 1
     model::timestamp expiry_timestamp{-1};
+
+    /*
+     * this field is not written, and is only meaningful when filled in by the
+     * the consumer offset recovery process. see group::offset_metadata for more
+     * information on how it is used.
+     */
+    bool non_reclaimable{true};
 
     friend std::ostream&
     operator<<(std::ostream&, const offset_metadata_value&);
