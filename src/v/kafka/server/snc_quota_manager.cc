@@ -362,11 +362,11 @@ void snc_quota_manager::arm_balancer_timer() {
         // and on the first iteration
         if (
           _balancer_timer_last_ran.time_since_epoch()
-          != ss::lowres_clock::duration::zero()) {
+          != ss::lowres_clock::duration{}) {
             vlog(
               klog.warn,
-              "qb - Quota balancer is invoked too often ({}), "
-              "enforcing minimum sleep time",
+              "qb - Quota balancer is invoked too often ({}), enforcing "
+              "minimum sleep time. Consider increasing the balancer period.",
               arm_until - now);
         }
         arm_until = closest_arm_until;
