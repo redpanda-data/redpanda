@@ -212,7 +212,7 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{9},
     "kafka_gssapi",
     feature::kafka_gssapi,
-    feature_spec::available_policy::explicit_only,
+    feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
   feature_spec{
     cluster::cluster_version{9},
