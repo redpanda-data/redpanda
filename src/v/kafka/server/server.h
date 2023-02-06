@@ -22,6 +22,7 @@
 #include "net/server.h"
 #include "security/fwd.h"
 #include "security/gssapi_principal_mapper.h"
+#include "security/krb5_configurator.h"
 #include "security/mtls.h"
 #include "ssx/fwd.h"
 #include "utils/ema.h"
@@ -168,6 +169,7 @@ private:
     kafka::fetch_metadata_cache _fetch_metadata_cache;
     security::tls::principal_mapper _mtls_principal_mapper;
     security::gssapi_principal_mapper _gssapi_principal_mapper;
+    security::krb5::configurator _krb_configurator;
 
     class latency_probe _probe;
     ssx::thread_worker& _thread_worker;

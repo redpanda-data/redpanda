@@ -119,6 +119,7 @@ server::server(
       config::shard_local_cfg().kafka_mtls_principal_mapping_rules.bind())
   , _gssapi_principal_mapper(
       config::shard_local_cfg().sasl_kerberos_principal_mapping.bind())
+  , _krb_configurator(config::shard_local_cfg().sasl_kerberos_config.bind())
   , _thread_worker(tw) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);

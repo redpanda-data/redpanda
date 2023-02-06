@@ -13,6 +13,7 @@ import socket
 import time
 
 import ducktape.errors
+from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.errors import TimeoutError
 from ducktape.mark import parametrize
 from ducktape.tests.test import Test
@@ -20,8 +21,8 @@ from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError
-from rptest.services.redpanda import LoggingConfig, SecurityConfig
+from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError, KRB5_CONF_PATH, render_krb5_config
+from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
 
 LOG_CONFIG = LoggingConfig('info',
                            logger_levels={
@@ -37,11 +38,14 @@ class RedpandaKerberosTestBase(Test):
     """
     Base class for tests that use the Redpanda service with Kerberos
     """
-    def __init__(self,
-                 test_context,
-                 num_nodes=5,
-                 sasl_mechanisms=["SCRAM", "GSSAPI"],
-                 **kwargs):
+    def __init__(
+            self,
+            test_context,
+            num_nodes=5,
+            sasl_mechanisms=["SCRAM", "GSSAPI"],
+            keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
+            krb5_conf_path=KRB5_CONF_PATH,
+            **kwargs):
         super(RedpandaKerberosTestBase, self).__init__(test_context, **kwargs)
 
         self.kdc = KrbKdc(test_context, realm=REALM)
@@ -53,6 +57,8 @@ class RedpandaKerberosTestBase(Test):
         self.redpanda = RedpandaKerberosNode(test_context,
                                              kdc=self.kdc,
                                              realm=REALM,
+                                             keytab_file=keytab_file,
+                                             krb5_conf_path=krb5_conf_path,
                                              num_brokers=num_nodes - 2,
                                              log_config=LOG_CONFIG,
                                              security=security,
@@ -100,7 +106,6 @@ class RedpandaKerberosTest(RedpandaKerberosTestBase):
                             sasl_mechanism=mechanism)
 
         client_user_principal = f"User:client"
-        super_rpk.sasl_create_user(client_user_principal, "rp123", mechanism)
 
         # Create a topic that's visible to "client" iff acl = True
         super_rpk.create_topic("needs_acl")
@@ -226,8 +231,6 @@ class RedpandaKerberosRulesTesting(RedpandaKerberosTestBase):
                             password=password,
                             sasl_mechanism=mechanism)
 
-        super_rpk.sasl_create_user(f"User:{rp_user}", "rp123", mechanism)
-
         for topic, principal in acl:
             super_rpk.create_topic(topic)
             super_rpk.sasl_allow_principal(principal,
@@ -263,3 +266,77 @@ class RedpandaKerberosRulesTesting(RedpandaKerberosTestBase):
         except RpkException as e:
             self.logger.debug(f"Message: {e.stderr}")
             assert f"Invalid rule: {expected_error}" in e.stderr
+
+
+class RedpandaKerberosConfigTest(RedpandaKerberosTestBase):
+    KEYTAB_FILE = f"{RedpandaService.PERSISTENT_ROOT}/redpanda_not_default.keytab"
+    KRB5_CONF_PATH = f"{RedpandaService.PERSISTENT_ROOT}/krb5_not_default.conf"
+
+    def __init__(self, test_context, **kwargs):
+        super(RedpandaKerberosConfigTest,
+              self).__init__(test_context,
+                             num_nodes=3,
+                             keytab_file=self.KEYTAB_FILE,
+                             krb5_conf_path=self.KRB5_CONF_PATH,
+                             **kwargs)
+
+    def setUp(self):
+        super(RedpandaKerberosConfigTest, self).setUp()
+        krb5_config = render_krb5_config(kdc_node=self.kdc.nodes[0],
+                                         realm="INCORRECT.EXAMPLE")
+        for node in self.redpanda.nodes:
+            self.logger.debug(
+                f"Rendering incorrect KRB5 config for {node.name} using KDC node {self.kdc.nodes[0].name}"
+            )
+            node.account.create_file(KRB5_CONF_PATH, krb5_config)
+
+    @cluster(num_nodes=3)
+    def test_non_default(self):
+        req_principal = "client"
+        self.client.add_primary(primary=req_principal)
+        feature_name = "kafka_gssapi"
+        self.redpanda.logger.info(f"Principals: {self.kdc.list_principals()}")
+        admin = Admin(self.redpanda)
+        admin.put_feature(feature_name, {"state": "active"})
+
+        self.redpanda.await_feature_active(feature_name, timeout_sec=5)
+
+        keytab = admin.get_cluster_config()['sasl_kerberos_keytab']
+
+        def keytab_not_found():
+            return self.redpanda.search_log_any(
+                f"Key table file '{keytab}' not found")
+
+        def log_has_default_realm(realm: str):
+            return self.redpanda.search_log_any(f"Default realm: '{realm}'")
+
+        def has_metadata():
+            metadata = self.client.metadata(req_principal)
+            self.logger.debug(f"Metadata (GSSAPI): {metadata}")
+            return len(metadata['brokers']) != 0
+
+        try:
+            has_metadata()
+            assert False
+        except RemoteCommandError as err:
+            self.logger.info(f"err: {err}")
+            assert b"ccselect can't find appropriate cache for server principal redpanda/" in err.msg
+
+        wait_until(keytab_not_found, 5)
+
+        self.redpanda.set_cluster_config(
+            {"sasl_kerberos_keytab": self.KEYTAB_FILE})
+
+        try:
+            has_metadata()
+        except Exception:
+            pass
+
+        wait_until(lambda: log_has_default_realm("INCORRECT.EXAMPLE"), 5)
+
+        self.redpanda.set_cluster_config(
+            {"sasl_kerberos_config": self.KRB5_CONF_PATH})
+
+        wait_until(has_metadata, 5)
+
+        wait_until(lambda: log_has_default_realm(REALM), 5)

@@ -47,7 +47,7 @@ KRB5KDC_PID_PATH = "/var/run/krb5kdc.pid"
 KADMIND_PID_PATH = "/var/run/kadmind.pid"
 KDC_DB_PATH = "/var/lib/krb5kdc/principal"
 
-REMOTE_KADMIN_TMPL = 'kadmin -r {realm} -p {principal} -w {password} -q "{command}"'
+REMOTE_KADMIN_TMPL = 'KRB5_CONFIG={krb5_conf_path} kadmin -r {realm} -p {principal} -w {password} -q "{command}"'
 LOCAL_KADMIN_TMPL = 'kadmin.local -q "{cmd}"'
 ADD_PRINCIPAL_TMPL = 'add_principal {keytype} {principal}'
 KTADD_TMPL = 'ktadd -k {keytab_file} {principal}'
@@ -74,14 +74,19 @@ class AuthenticationError(Exception):
         return repr(self.message)
 
 
-def render_krb5_config(kdc_node, realm: str, file_path: str = KRB5_CONF_PATH):
+def render_krb5_config(kdc_node, realm: str):
     return KRB5_CONF_TMPL.format(node=kdc_node, realm=realm)
 
 
-def render_remote_kadmin_command(command, realm, principal, password):
+def render_remote_kadmin_command(command,
+                                 realm,
+                                 principal,
+                                 password,
+                                 krb5_conf_path=KRB5_CONF_PATH):
     return REMOTE_KADMIN_TMPL.format(realm=realm,
                                      principal=principal,
                                      password=password,
+                                     krb5_conf_path=krb5_conf_path,
                                      command=command)
 
 
@@ -341,6 +346,7 @@ class KrbClient(Service):
         node.account.ssh(
             f"rm -fr {self.redpanda.PERSISTENT_ROOT}/client.keytab /etc/krb5.keytab",
             allow_fail=True)
+        node.account.ssh(f"rm -fr /tmp/*.krb5ccache", allow_fail=True)
 
     def add_primary(self, primary: str, realm: str = None):
         self.logger.info(
@@ -431,6 +437,7 @@ class RedpandaKerberosNode(RedpandaService):
             kdc: KrbKdc,
             realm: str,
             keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
+            krb5_conf_path=KRB5_CONF_PATH,
             *args,
             **kwargs):
         super(RedpandaKerberosNode,
@@ -441,10 +448,13 @@ class RedpandaKerberosNode(RedpandaService):
         self.kdc = kdc
         self.realm = realm
         self.keytab_file = keytab_file
+        self.krb5_conf_path = krb5_conf_path
 
     def clean_node(self, node, **kwargs):
         super().clean_node(node, **kwargs)
         node.account.ssh(f"rm -fr {self.keytab_file}", allow_fail=True)
+        if self.krb5_conf_path != KRB5_CONF_PATH:
+            node.account.ssh(f"rm -fr {self.krb5_conf_path}", allow_fail=True)
 
     def start_node(self, node, **kwargs):
         self.logger.debug(
@@ -452,8 +462,10 @@ class RedpandaKerberosNode(RedpandaService):
         )
         krb5_config = render_krb5_config(kdc_node=self.kdc.nodes[0],
                                          realm=self.kdc.realm)
-        self.logger.debug(f"KRB5 config to {KRB5_CONF_PATH}: {krb5_config}")
-        node.account.create_file(KRB5_CONF_PATH, krb5_config)
+        self.logger.debug(
+            f"KRB5 config to {self.krb5_conf_path}: {krb5_config}")
+        node.account.ssh(f"mkdir -p {os.path.dirname(self.krb5_conf_path)}")
+        node.account.create_file(self.krb5_conf_path, krb5_config)
         principal = self._service_principal(node)
         self.logger.debug(f"Principal for {node.name}: {principal}")
         self.logger.debug(f"Adding principal {principal} to KDC")
@@ -461,7 +473,8 @@ class RedpandaKerberosNode(RedpandaService):
             command=render_add_principal_command(principal=principal),
             realm=self.kdc.realm,
             principal=self.kdc.kadmin_principal,
-            password=self.kdc.kadmin_password)
+            password=self.kdc.kadmin_password,
+            krb5_conf_path=self.krb5_conf_path)
         self.logger.debug(f"principal add command: {cmd}")
         node.account.ssh(cmd=cmd, allow_fail=False)
         self.logger.debug(
@@ -470,7 +483,8 @@ class RedpandaKerberosNode(RedpandaService):
             principal=principal, keytab_file=self.keytab_file),
                                            realm=self.kdc.realm,
                                            principal=self.kdc.kadmin_principal,
-                                           password=self.kdc.kadmin_password)
+                                           password=self.kdc.kadmin_password,
+                                           krb5_conf_path=self.krb5_conf_path)
         self.logger.debug(f"ktadd command: {cmd}")
         node.account.ssh(f"mkdir -p {os.path.dirname(self.keytab_file)}")
         node.account.ssh(cmd=cmd, allow_fail=False)

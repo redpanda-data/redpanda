@@ -186,6 +186,7 @@ struct configuration final : public config_store {
     property<int16_t> id_allocator_batch_size;
     property<bool> enable_sasl;
     property<std::vector<ss::sstring>> sasl_mechanisms;
+    property<ss::sstring> sasl_kerberos_config;
     property<ss::sstring> sasl_kerberos_keytab;
     property<ss::sstring> sasl_kerberos_principal;
     property<std::vector<ss::sstring>> sasl_kerberos_principal_mapping;

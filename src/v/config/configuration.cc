@@ -887,6 +887,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"SCRAM"},
       validate_sasl_mechanisms)
+  , sasl_kerberos_config(
+      *this,
+      "sasl_kerberos_config",
+      "The location of the Kerberos krb5.conf file for Redpanda",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      "/etc/krb5.conf")
   , sasl_kerberos_keytab(
       *this,
       "sasl_kerberos_keytab",
