@@ -48,8 +48,12 @@ private:
           ss::io_priority_class::register_one("compaction", 200))
       , _raft_learner_recovery_priority(
           ss::io_priority_class::register_one("raft-learner-recovery", 100))
+      // User reads via Tiered Storage.  Lower priority than raft writes, to
+      // mitigate promotion to tiered storage cache starving out producers.
       , _shadow_indexing_priority(
-          ss::io_priority_class::register_one("shadow-indexing", 1000))
+          ss::io_priority_class::register_one("shadow-indexing", 500))
+      // Background uploads to tiered storage: not user-visible latency, lowest
+      // priority.
       , _archival_priority(
           ss::io_priority_class::register_one("archival", 200)) {}
 
