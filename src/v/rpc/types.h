@@ -218,6 +218,11 @@ public:
     void set_version(transport_version v) { _hdr.version = v; }
     iobuf& buffer();
 
+    /**
+     * @brief Get the correlation ID, if set or 0 otherwise.
+     */
+    uint32_t correlation_id() const { return _hdr.correlation_id; }
+
 private:
     size_t _min_compression_bytes{1024};
     header _hdr;
