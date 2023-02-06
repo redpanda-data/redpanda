@@ -408,6 +408,12 @@ ss::future<> group_manager::do_detach_partition(model::ntp ntp) {
         }
         ++g_it;
     }
+    // if p has background work that won't complete without an abort being
+    // requested, then do that now because once the partition is removed from
+    // the _partitions container it won't be available in group_manager::stop.
+    if (!p->as.abort_requested()) {
+        p->as.request_abort();
+    }
     _partitions.erase(ntp);
     _partitions.rehash(0);
 
