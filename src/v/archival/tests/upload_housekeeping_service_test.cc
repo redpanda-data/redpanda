@@ -34,19 +34,25 @@ public:
 
     ss::future<archival::housekeeping_job::run_result>
     run(retry_chain_node& rtc, archival::run_quota_t quota) override {
+        ss::gate::holder h(_gate);
         run_result result{
           .status = run_status::skipped,
           .consumed = archival::run_quota_t(0),
           .remaining = quota,
         };
-        vlog(test_log.info, "mock job executed");
+        vlog(test_log.info, "mock job started");
         executed++;
-        co_await ss::sleep_abortable(_delay, _as);
+        try {
+            co_await ss::sleep_abortable(_delay, _as);
+        } catch (ss::abort_requested_exception&) {
+            vlog(test_log.info, "mock job sleep interrupted");
+        }
+        vlog(test_log.info, "mock job exited");
         co_return result;
     }
     void interrupt() override {
         BOOST_REQUIRE(interrupt_cnt == 0);
-        vlog(test_log.info, "mock job interrupted");
+        vlog(test_log.info, "interrupt mock job");
         interrupt_cnt++;
         _as.request_abort();
     }
@@ -55,7 +61,7 @@ public:
 
     void set_enabled(bool) override {}
 
-    ss::future<> stop() override { return ss::now(); }
+    ss::future<> stop() override { return _gate.close(); }
 
     size_t executed{0};
     size_t interrupt_cnt{0};
@@ -63,6 +69,7 @@ public:
 private:
     std::chrono::milliseconds _delay;
     ss::abort_source _as;
+    ss::gate _gate;
 };
 
 void wait_for_workflow_state(
@@ -180,5 +187,30 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_interrupt) {
     BOOST_REQUIRE(job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 0);
     BOOST_REQUIRE(!job2.interrupted());
+    wf.stop().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_no_jobs) {
+    retry_chain_node rtc(abort_never);
+    archival::housekeeping_workflow wf(rtc);
+    {
+        mock_job job1(10s);
+        mock_job job2(10ms);
+        wf.register_job(job1);
+        wf.register_job(job2);
+        wf.start();
+        wf.resume(false);
+        wait_for_job_execution(wf);
+        wf.deregister_job(job1);
+        wf.deregister_job(job2);
+        vlog(test_log.info, "both jobs deregistered");
+        BOOST_REQUIRE_EQUAL(job1.executed, 1);
+        BOOST_REQUIRE_EQUAL(job2.executed, 0);
+        BOOST_REQUIRE(job1.interrupted());
+        BOOST_REQUIRE(job2.interrupted());
+        job1.stop().get();
+        job2.stop().get();
+        vlog(test_log.info, "both jobs stopped");
+    }
     wf.stop().get();
 }

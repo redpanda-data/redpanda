@@ -103,6 +103,8 @@ private:
     /// Update metrics
     void maybe_update_probe(const housekeeping_job::run_result& res);
 
+    bool jobs_available() const;
+
     ss::gate _gate;
     ss::abort_source _as;
     retry_chain_node& _parent;

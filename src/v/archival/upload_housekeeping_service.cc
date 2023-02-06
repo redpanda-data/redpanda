@@ -182,12 +182,19 @@ void housekeeping_workflow::register_job(housekeeping_job& job) {
 void housekeeping_workflow::deregister_job(housekeeping_job& job) {
     if (_current_job.has_value() && &(_current_job->get()) == &job) {
         // Current job is running
+        vlog(archival_log.debug, "interrupt currently running job");
         _current_job->get().interrupt();
     } else {
+        vlog(archival_log.debug, "interrupt backlog job");
         job.interrupt();
         job._hook.unlink();
     }
     _current_backlog--;
+    vlog(
+      archival_log.debug,
+      "deregistered job, current backlog {}, num pending jobs {}",
+      _current_backlog,
+      _pending.size());
 }
 
 void housekeeping_workflow::start() {
@@ -239,6 +246,11 @@ struct job_exec_timer {
     void reset() { total = std::chrono::microseconds(0); }
 };
 
+bool housekeeping_workflow::jobs_available() const {
+    return (_current_backlog > 0 && _pending.size() > 0)
+           && (_state == housekeeping_state::active || _state == housekeeping_state::draining);
+}
+
 ss::future<> housekeeping_workflow::run_jobs_bg() {
     ss::gate::holder h(_gate);
     // Holds number of jobs executed in current round
@@ -261,10 +273,10 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         // the loop is processing jobs in round-robin fashion until the
         // backlog size reaches zero. After that the status changes to idle and
         // backlog size to the total number of housekeeping jobs.
-        co_await _cvar.wait([this] {
-            return _current_backlog > 0
-                   && (_state == housekeeping_state::active || _state == housekeeping_state::draining);
-        });
+        co_await _cvar.wait([this] { return jobs_available(); });
+        if (_as.abort_requested()) {
+            co_return;
+        }
         vassert(
           !_pending.empty(),
           "housekeeping_workflow: pendings empty, state {} backlog {}",
@@ -387,9 +399,11 @@ void housekeeping_workflow::pause() {
 }
 
 ss::future<> housekeeping_workflow::stop() {
+    vlog(archival_log.info, "stopping upload housekeeping job");
     _as.request_abort();
     _cvar.broken();
     if (_current_job.has_value() && !_current_job->get().interrupted()) {
+        vlog(archival_log.info, "stop interrupts active job");
         _current_job->get().interrupt();
     }
     return _gate.close();
