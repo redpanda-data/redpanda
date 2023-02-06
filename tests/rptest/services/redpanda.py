@@ -631,6 +631,13 @@ class RedpandaService(Service):
         # inspecting storage internals (e.g. number of segments after writing a certain
         # amount of data).
         'log_segment_size_jitter_percent': 0,
+
+        # This is high enough not to interfere with the logic in any tests, while also
+        # providing some background coverage of the connection limit code (i.e. that it
+        # doesn't crash, it doesn't limit when it shouldn't)
+        'kafka_connections_max': 2048,
+        'kafka_connections_max_per_ip': 1024,
+        'kafka_connections_max_overrides': ["1.2.3.4:5"],
     }
 
     logs = {
