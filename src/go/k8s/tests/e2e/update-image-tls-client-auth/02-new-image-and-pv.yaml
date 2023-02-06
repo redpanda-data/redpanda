@@ -4,7 +4,7 @@ data:
 kind: Secret
 metadata:
   creationTimestamp: null
-  name: archival
+  name: archival-update-image-tls-client-auth
   namespace: default
 ---
 apiVersion: redpanda.vectorized.io/v1alpha1
@@ -18,7 +18,7 @@ spec:
     accessKey: XXX
     secretKeyRef:
       namespace: default
-      name: archival
+      name: archival-update-image-tls-client-auth
     region: europe-west1
     bucket: X
     apiEndpoint: storage.googleapis.com
