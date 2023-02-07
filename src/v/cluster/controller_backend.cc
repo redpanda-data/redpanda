@@ -1636,7 +1636,7 @@ ss::future<std::error_code> controller_backend::create_partition(
 
     if (!cfg) {
         // partition was already removed, do nothing
-        return ss::make_ready_future<std::error_code>(errc::success);
+        co_return errc::success;
     }
 
     auto f = ss::now();
@@ -1649,7 +1649,7 @@ ss::future<std::error_code> controller_backend::create_partition(
     // used
     auto initial_rev = _topics.local().get_initial_revision(ntp);
     if (!initial_rev) {
-        return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+        co_return errc::topic_not_exists;
     }
     // no partition exists, create one
     if (likely(!partition)) {
@@ -1660,42 +1660,43 @@ ss::future<std::error_code> controller_backend::create_partition(
         }
         // we use offset as an rev as it is always increasing and it
         // increases while ntp is being created again
-        f = _partition_manager.local()
-              .manage(
-                cfg->make_ntp_config(
-                  _data_directory, ntp.tp.partition, rev, initial_rev.value()),
-                group_id,
-                std::move(members),
-                cfg->properties.remote_topic_properties,
-                read_replica_bucket)
-              .discard_result();
+        try {
+            co_await _partition_manager.local().manage(
+              cfg->make_ntp_config(
+                _data_directory, ntp.tp.partition, rev, initial_rev.value()),
+              group_id,
+              std::move(members),
+              cfg->properties.remote_topic_properties,
+              read_replica_bucket);
+
+            co_await add_to_shard_table(
+              ntp, group_id, ss::this_shard_id(), rev);
+
+        } catch (...) {
+            vlog(
+              clusterlog.warn,
+              "[{}] failed to create partition with revision {} - {}",
+              ntp,
+              rev,
+              std::current_exception());
+            co_return errc::failed_to_create_partition;
+        }
     } else {
         // old partition still exists, wait for it to be removed
         if (partition->get_revision_id() < rev) {
-            return ss::make_ready_future<std::error_code>(
-              errc::partition_already_exists);
+            co_return errc::partition_already_exists;
         }
     }
 
-    return f
-      .then([this, ntp, group_id, rev]() mutable {
-          // we create only partitions that belongs to current shard
-          return add_to_shard_table(
-            std::move(ntp), group_id, ss::this_shard_id(), rev);
-      })
-      .then([this, ntp = std::move(ntp), cfg = std::move(*cfg)] {
-          // Tip off the 0th partition of each topic with its topic
-          // configuration, so that its archiver can upload a topic manifest.
-          if (ntp.tp.partition == 0) {
-              auto partition = _partition_manager.local().get(ntp);
-              if (partition) {
-                  partition->set_topic_config(
-                    std::make_unique<topic_configuration>(cfg));
-              }
-          }
-          return ss::now();
-      })
-      .then([] { return make_error_code(errc::success); });
+    if (ntp.tp.partition == 0) {
+        auto partition = _partition_manager.local().get(ntp);
+        if (partition) {
+            partition->set_topic_config(
+              std::make_unique<topic_configuration>(std::move(*cfg)));
+        }
+    }
+
+    co_return errc::success;
 }
 controller_backend::cross_shard_move_request::cross_shard_move_request(
   model::revision_id rev, raft::group_configuration cfg)
