@@ -19,7 +19,6 @@ from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_v
 from ducktape.errors import TimeoutError as DucktapeTimeoutError
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
-from ducktape.mark import ok_to_fail
 
 
 class FeaturesTestBase(RedpandaTest):
@@ -227,7 +226,6 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         self.installer.install(self.redpanda.nodes, self.previous_version)
         self.redpanda.start()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8662
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_upgrade(self):
         """

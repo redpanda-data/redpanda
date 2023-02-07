@@ -163,6 +163,16 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
               [v = cmd.value.founding_version](features::feature_table& ft) {
                   ft.bootstrap_active_version(v);
               });
+        } else if (
+          _feature_table.local().get_original_version()
+          == cluster::invalid_version) {
+            // Special case for systems pre-dating the original_version field:
+            // they may have loaded a snapshot that doesn't contain an original
+            // version, so must populate it from updates.
+            co_await _feature_table.invoke_on_all(
+              [v = cmd.value.founding_version](features::feature_table& ft) {
+                  ft.bootstrap_original_version(v);
+              });
         }
 
         // If we didn't already save a snapshot, create it so that subsequent

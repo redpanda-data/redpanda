@@ -362,6 +362,10 @@ public:
     // lifetime of a node.
     void bootstrap_active_version(cluster::cluster_version);
 
+    // During upgrades from Redpanda <= 22.3 where the feature table snapshot
+    // does not contain original_version, we infer it from a bootstrap event.
+    void bootstrap_original_version(cluster::cluster_version);
+
     void abort_for_tests() { _as.request_abort(); }
 
     /*

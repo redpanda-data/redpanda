@@ -245,6 +245,20 @@ void feature_table::bootstrap_active_version(cluster_version v) {
     on_update();
 }
 
+void feature_table::bootstrap_original_version(cluster_version v) {
+    if (ss::this_shard_id() == ss::shard_id{0}) {
+        vlog(
+          featureslog.info,
+          "Set original_version from bootstrap version {}",
+          v);
+    }
+
+    _original_version = v;
+
+    // No on_update() call needed: bootstrap version is only advisory and
+    // does not drive the feature state machines.
+}
+
 /**
  * Call this after changing any state.
  *
