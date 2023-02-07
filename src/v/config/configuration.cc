@@ -908,7 +908,7 @@ configuration::configuration()
   , sasl_kerberos_principal_mapping(
       *this,
       "sasl_kerberos_principal_mapping",
-      "Rules for mapping Kerberos Service Principal Name (SPN) to Redpanda",
+      "Rules for mapping Kerberos Principal Names to Redpanda User Principals",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       {"DEFAULT"},
       security::validate_kerberos_mapping_rules)
