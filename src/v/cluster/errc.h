@@ -66,6 +66,7 @@ enum class errc : int16_t {
     throttling_quota_exceeded,
     cluster_already_exists,
     no_partition_assignments,
+    failed_to_create_partition,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -189,6 +190,8 @@ struct errc_category final : public std::error_category {
                    "created";
         case errc::no_partition_assignments:
             return "No replica assignments for the requested partition";
+        case errc::failed_to_create_partition:
+            return "Failed to create partition replica instance";
         }
         return "cluster::errc::unknown";
     }
