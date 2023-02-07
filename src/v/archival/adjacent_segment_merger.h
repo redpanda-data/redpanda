@@ -7,6 +7,7 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#pragma once
 
 #include "archival/ntp_archiver_service.h"
 #include "archival/types.h"
@@ -26,16 +27,27 @@ public:
     explicit adjacent_segment_merger(
       ntp_archiver& parent, retry_chain_logger& ctxlog, bool is_local);
 
-    ss::future<> run(retry_chain_node& rtc) override;
+    ss::future<run_result>
+    run(retry_chain_node& rtc, run_quota_t quota) override;
 
     void interrupt() override;
 
     bool interrupted() const override;
 
-    ss::future<> stop();
+    ss::future<> stop() override;
+
+    void set_enabled(bool) override;
+
+    void acquire() override;
+    void release() override;
 
 private:
+    std::optional<adjacent_segment_run> scan_manifest(
+      model::offset local_start_offset,
+      const cloud_storage::partition_manifest& manifest);
+
     const bool _is_local;
+    bool _enabled{true};
     model::offset _last;
     ntp_archiver& _archiver;
     retry_chain_logger& _ctxlog;
@@ -43,6 +55,7 @@ private:
     config::binding<std::optional<size_t>> _min_segment_size;
     ss::abort_source _as;
     ss::gate _gate;
+    ss::gate::holder _holder;
 };
 
 } // namespace archival

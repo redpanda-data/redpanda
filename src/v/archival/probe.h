@@ -77,4 +77,77 @@ private:
       ssx::metrics::public_metrics_handle};
 };
 
+/// Metrics probe for upload housekeeping service
+/// and its jobs. It tracks the following metrics:
+///
+/// - Service metrics:
+///   - total number of housekeeping rounds (counter)
+///   - total number of housekeeping jobs (counter)
+///   - total number of failed jobs (counter)
+///   - total number of skipped jobs (counter)
+/// - Service state transitions:
+///   - number of pauses (counter)
+///   - number of resumes (counter)
+///   - number of drains (counter)
+/// - Job metrics:
+///   - number of segment reuploads from local data(counter)
+///   - number of segment reuploads from cloud data(counter)
+///   - number of manifest reuploads (counter)
+///   - number of deletions (counter)
+///   - number of metadata sync requests (counter)
+class upload_housekeeping_probe {
+    // the only user of this metrics probe
+    friend class upload_housekeeping_service;
+
+public:
+    upload_housekeeping_probe();
+
+    // These metrics are updated by the service
+    void housekeeping_rounds(uint64_t add) { _housekeeping_rounds += add; }
+    void housekeeping_jobs(uint64_t add) { _housekeeping_jobs += add; }
+    void housekeeping_jobs_failed(uint64_t add) {
+        _housekeeping_jobs_failed += add;
+    }
+    void housekeeping_jobs_skipped(uint64_t add) {
+        _housekeeping_jobs_skipped += add;
+    }
+
+    void housekeeping_resumes(uint64_t add) { _housekeeping_resumes += add; }
+    void housekeeping_pauses(uint64_t add) { _housekeeping_pauses += add; }
+    void housekeeping_drains(uint64_t add) { _housekeeping_drains += add; }
+
+    // These metrics are updated by housekeeping jobs
+    void job_local_segment_reuploads(uint64_t add) {
+        _local_segment_reuploads += add;
+    }
+    void job_cloud_segment_reuploads(uint64_t add) {
+        _cloud_segment_reuploads += add;
+    }
+    void job_metadata_syncs(uint64_t add) { _metadata_syncs += add; }
+    void job_metadata_reuploads(uint64_t add) { _manifest_reuploads += add; }
+    void job_segment_deletions(uint64_t add) { _segment_deletions += add; }
+
+private:
+    // service metrics
+    uint64_t _housekeeping_rounds{0};
+    uint64_t _housekeeping_jobs{0};
+    uint64_t _housekeeping_jobs_failed{0};
+    uint64_t _housekeeping_jobs_skipped{0};
+    // service state transitions
+    uint64_t _housekeeping_resumes{0};
+    uint64_t _housekeeping_pauses{0};
+    uint64_t _housekeeping_drains{0};
+    // housekeeping job metrics
+    uint64_t _local_segment_reuploads{0};
+    uint64_t _cloud_segment_reuploads{0};
+    uint64_t _manifest_reuploads{0};
+    uint64_t _segment_deletions{0};
+    uint64_t _metadata_syncs{0};
+
+    ss::metrics::metric_groups _service_metrics{
+      ssx::metrics::public_metrics_handle};
+    ss::metrics::metric_groups _jobs_metrics{
+      ssx::metrics::public_metrics_handle};
+};
+
 } // namespace archival

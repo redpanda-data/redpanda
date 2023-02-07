@@ -117,7 +117,21 @@ get_archival_service_config(ss::scheduling_group sg, ss::io_priority_class p) {
 
 bool adjacent_segment_run::maybe_add_segment(
   const cloud_storage::segment_meta& s, size_t max_size) {
-    vlog(archival_log.debug, "Looking at segment meta: {}", s);
+    vlog(
+      archival_log.debug,
+      "{} Segments collected, looking at segment meta: {}, current run meta: "
+      "{}",
+      num_segments,
+      s,
+      meta);
+    if (num_segments == 1 && meta.size_bytes + s.size_bytes > max_size) {
+        // Corner case, we hit a segment which is smaller than the max_size
+        // but it's larger than max_size when combined with its neighbor. In
+        // this case we need to skip previous the segment.
+        num_segments = 0;
+        segments.clear();
+        meta = {};
+    }
     if (num_segments == 0) {
         // Find the begining of the small segment
         // run.
@@ -135,6 +149,15 @@ bool adjacent_segment_run::maybe_add_segment(
                 // inconsistencies (overlapping offsets, etc).
                 num_segments = 0;
                 meta = {};
+                segments.clear();
+                vlog(
+                  archival_log.debug,
+                  "Reseting the upload, current committed offset: {}, next "
+                  "base offset: {}, meta: {}",
+                  meta.committed_offset,
+                  s.base_offset,
+                  meta);
+                return false;
             }
             // Move the end of the small segment run forward
             meta.committed_offset = s.committed_offset;

@@ -122,4 +122,89 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
          .aggregate(aggregate_labels)});
 }
 
+upload_housekeeping_probe::upload_housekeeping_probe() {
+    namespace sm = ss::metrics;
+
+    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
+                              ? std::vector<sm::label>{sm::shard_label}
+                              : std::vector<sm::label>{};
+
+    _service_metrics.add_group(
+      prometheus_sanitize::metrics_name("upload_housekeeping"),
+      {
+        sm::make_counter(
+          "rounds",
+          [this] { return _housekeeping_rounds; },
+          sm::description("Number of upload housekeeping rounds"))
+          .aggregate(aggregate_labels),
+        sm::make_total_bytes(
+          "jobs_completed",
+          [this] { return _housekeeping_jobs; },
+          sm::description("Number of executed housekeeping jobs"))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "jobs_failed",
+          [this] { return _housekeeping_jobs_failed; },
+          sm::description("Number of failed housekeeping jobs"))
+          .aggregate(aggregate_labels),
+        sm::make_counter(
+          "jobs_skipped",
+          [this] { return _housekeeping_jobs_skipped; },
+          sm::description("Number of skipped housekeeping jobs"))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "resumes",
+          [this] { return _housekeeping_resumes; },
+          sm::description("Number of times upload housekeeping was resumed"))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "pauses",
+          [this] { return _housekeeping_pauses; },
+          sm::description("Number of times upload housekeeping was paused"))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "drains",
+          [this] { return _housekeeping_drains; },
+          sm::description(
+            "Number of times upload housekeeping queue was drained"))
+          .aggregate(aggregate_labels),
+      });
+
+    _jobs_metrics.add_group(
+      prometheus_sanitize::metrics_name("upload_housekeeping_jobs"),
+      {
+        sm::make_gauge(
+          "local_segment_reuploads",
+          [this] { return _local_segment_reuploads; },
+          sm::description(
+            "Number of segment reuploads from local data directory"))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "cloud_segment_reuploads",
+          [this] { return _cloud_segment_reuploads; },
+          sm::description(
+            "Number of segment reuploads from cloud storage sources (cloud "
+            "storage cache or direct download from cloud storage)"))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "manifest_reuploads",
+          [this] { return _manifest_reuploads; },
+          sm::description(
+            "Number of manifest reuploads performed by all housekeeping jobs"))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "segment_deletions",
+          [this] { return _segment_deletions; },
+          sm::description(
+            "Number of segments deleted by all housekeeping jobs"))
+          .aggregate(aggregate_labels),
+        sm::make_gauge(
+          "metadata_syncs",
+          [this] { return _metadata_syncs; },
+          sm::description("Number of archival configuration updates performed "
+                          "by all housekeeping jobs"))
+          .aggregate(aggregate_labels),
+      });
+}
+
 } // namespace archival

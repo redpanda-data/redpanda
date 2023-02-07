@@ -7,13 +7,16 @@
  *
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
+#pragma once
 
 #include "archival/fwd.h"
+#include "archival/probe.h"
 #include "archival/types.h"
 #include "cloud_storage/remote.h"
 #include "config/bounded_property.h"
 #include "random/simple_time_jitter.h"
 #include "utils/intrusive_list_helpers.h"
+#include "utils/moving_average.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
@@ -22,6 +25,7 @@
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <boost/intrusive/list_hook.hpp>
 
@@ -53,9 +57,13 @@ std::ostream& operator<<(std::ostream& o, housekeeping_state s);
 /// the idle state.
 class housekeeping_workflow {
 public:
+    using probe_opt_t
+      = std::optional<std::reference_wrapper<upload_housekeeping_probe>>;
+
     explicit housekeeping_workflow(
       retry_chain_node& parent,
-      ss::scheduling_group sg = ss::default_scheduling_group());
+      ss::scheduling_group sg = ss::default_scheduling_group(),
+      probe_opt_t probe = std::nullopt);
 
     void register_job(housekeeping_job&);
 
@@ -89,17 +97,24 @@ public:
 
 private:
     ss::future<> run_jobs_bg();
+    using probe_upd_func = ss::noncopyable_function<void(
+      std::reference_wrapper<upload_housekeeping_probe>)>;
+
+    /// Update metrics
+    void maybe_update_probe(const housekeeping_job::run_result& res);
+
+    bool jobs_available() const;
 
     ss::gate _gate;
+    ss::gate _exec_gate;
     ss::abort_source _as;
     retry_chain_node& _parent;
     ss::scheduling_group _sg;
+    probe_opt_t _probe;
     housekeeping_state _state{housekeeping_state::idle};
     intrusive_list<housekeeping_job, &housekeeping_job::_hook> _pending;
-    std::optional<std::reference_wrapper<housekeeping_job>> _current_job;
-    // Number of jobs that has to be processed during current
-    // housekeeping epoch.
-    size_t _current_backlog{0};
+    intrusive_list<housekeeping_job, &housekeeping_job::_hook> _running;
+    intrusive_list<housekeeping_job, &housekeeping_job::_hook> _executed;
     ss::condition_variable _cvar;
 };
 
@@ -138,9 +153,10 @@ private:
 /// The service uses two timers and subscribes to cloud_storage::remote
 /// notifications. The idle timer fires frequently and triggers transition to
 /// the active state. Every time the service receives notification from the
-/// cloud_storage::remote it resets the timer so if the cloud storage is busy
-/// the idle timer will never be triggered and its callback will never be
-/// called.
+/// cloud_storage::remote it computes the utilization of the cloud storage api
+/// and resets the timer if it's above the threshold so if the cloud storage
+/// is busy the idle timer will never be triggered and its callback will never
+/// be called.
 ///
 /// The 'epoch' timer runs less frequently. Notifications from the cloud
 /// storage do not reset it. So it will be triggered eventually if the cloud
@@ -215,12 +231,18 @@ private:
     config::binding<std::chrono::milliseconds> _idle_timeout;
     /// Timeout that defines the duration of epoch
     config::binding<std::chrono::milliseconds> _epoch_duration;
+    /// Idle threshold
+    config::binding<double> _api_idle_threshold;
     /// Jitter for timers
     simple_time_jitter<ss::lowres_clock> _time_jitter;
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     cloud_storage::remote::event_filter _filter;
+    upload_housekeeping_probe _probe;
     housekeeping_workflow _workflow;
+    static constexpr auto ma_resolution = 20ms;
+    using sliding_window_t = timed_moving_average<double, ss::lowres_clock>;
+    std::unique_ptr<sliding_window_t> _api_utilization;
 };
 
 } // namespace archival

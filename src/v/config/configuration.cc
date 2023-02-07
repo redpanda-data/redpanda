@@ -1250,11 +1250,28 @@ configuration::configuration()
   , cloud_storage_idle_timeout_ms(
       *this,
       "cloud_storage_idle_timeout_ms",
-      "Timeout used to detect idle state of the cloud storage API. If no API "
-      "requests are made for at least idle timeout milliseconds the cloud "
-      "storage is considered idle.",
+      "Timeout used to detect idle state of the cloud storage API. If the "
+      "average cloud storage request rate is below this threshold for a "
+      "configured amount of time the cloud storage is considered idle and the "
+      "housekeeping jobs are started.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , cloud_storage_idle_threshold_rps(
+      *this,
+      "cloud_storage_idle_threshold_rps",
+      "The cloud storage request rate threshold for idle state detection. If "
+      "the average request rate for the configured period is lower than this "
+      "threshold the cloud storage is considered being idle.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      1.0)
+  , cloud_storage_enable_segment_merging(
+      *this,
+      "cloud_storage_enable_segment_merging",
+      "Enables adjacent segment merging. The segments are reuploaded if there "
+      "is an opportunity for that and if it will improve the tiered-storage "
+      "performance",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , cloud_storage_max_segments_pending_deletion_per_partition(
       *this,
       "cloud_storage_max_segments_pending_deletion_per_partition",

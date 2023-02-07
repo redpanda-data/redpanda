@@ -10,11 +10,13 @@
 
 #include "archival/fwd.h"
 #include "archival/logger.h"
+#include "archival/types.h"
 #include "archival/upload_housekeeping_service.h"
 #include "utils/retry_chain_node.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -31,19 +33,50 @@ public:
     explicit mock_job(std::chrono::milliseconds ms)
       : _delay(ms) {}
 
-    ss::future<> run(retry_chain_node& rtc) override {
-        vlog(test_log.info, "mock job executed");
+    mock_job()
+      : _delay(100ms)
+      , _throw(true) {}
+
+    ss::future<archival::housekeeping_job::run_result>
+    run(retry_chain_node& rtc, archival::run_quota_t quota) override {
+        ss::gate::holder h(_gate);
+        if (_throw) {
+            throw std::runtime_error("Job failed");
+        }
+        run_result result{
+          .status = run_status::skipped,
+          .consumed = archival::run_quota_t(0),
+          .remaining = quota,
+        };
+        vlog(test_log.info, "mock job started");
         executed++;
-        return ss::sleep_abortable(_delay, _as);
+        try {
+            co_await ss::sleep_abortable(_delay, _as);
+        } catch (ss::abort_requested_exception&) {
+            vlog(test_log.info, "mock job sleep interrupted");
+        }
+        vlog(test_log.info, "mock job exited");
+        co_return result;
     }
     void interrupt() override {
         BOOST_REQUIRE(interrupt_cnt == 0);
-        vlog(test_log.info, "mock job interrupted");
+        vlog(test_log.info, "interrupt mock job");
         interrupt_cnt++;
         _as.request_abort();
     }
 
     bool interrupted() const override { return interrupt_cnt; }
+
+    void set_enabled(bool) override {}
+
+    ss::future<> stop() override { return _gate.close(); }
+
+    void acquire() override {
+        ss::gate::holder holder(_gate);
+        _holder = std::move(holder);
+    }
+
+    void release() override { _holder.release(); }
 
     size_t executed{0};
     size_t interrupt_cnt{0};
@@ -51,6 +84,9 @@ public:
 private:
     std::chrono::milliseconds _delay;
     ss::abort_source _as;
+    ss::gate _gate;
+    ss::gate::holder _holder;
+    bool _throw{false};
 };
 
 void wait_for_workflow_state(
@@ -94,11 +130,15 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_stop) {
     wf.start();
     wf.resume(false);
     wait_for_job_execution(wf);
+    wf.deregister_job(job1);
+    wf.deregister_job(job2);
     wf.stop().get();
     BOOST_REQUIRE_EQUAL(job1.executed, 1);
     BOOST_REQUIRE(job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 0);
-    BOOST_REQUIRE(!job2.interrupted());
+    BOOST_REQUIRE(job2.interrupted());
+    job1.stop().get();
+    job2.stop().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_pause) {
@@ -123,6 +163,8 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_pause) {
     BOOST_REQUIRE(!job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 1);
     BOOST_REQUIRE(!job2.interrupted());
+    wf.deregister_job(job1);
+    wf.deregister_job(job2);
     wf.stop().get();
 }
 
@@ -150,6 +192,10 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_drain) {
     BOOST_REQUIRE(!job3.interrupted());
     BOOST_REQUIRE_EQUAL(job4.executed, 1);
     BOOST_REQUIRE(!job4.interrupted());
+    wf.deregister_job(job1);
+    wf.deregister_job(job2);
+    wf.deregister_job(job3);
+    wf.deregister_job(job4);
     wf.stop().get();
 }
 
@@ -168,5 +214,54 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_interrupt) {
     BOOST_REQUIRE(job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 0);
     BOOST_REQUIRE(!job2.interrupted());
+    wf.deregister_job(job2);
+    wf.stop().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_no_jobs) {
+    retry_chain_node rtc(abort_never);
+    archival::housekeeping_workflow wf(rtc);
+    {
+        mock_job job1(10s);
+        mock_job job2(10ms);
+        wf.register_job(job1);
+        wf.register_job(job2);
+        wf.start();
+        wf.resume(false);
+        wait_for_job_execution(wf);
+        wf.deregister_job(job1);
+        wf.deregister_job(job2);
+        vlog(test_log.info, "both jobs deregistered");
+        BOOST_REQUIRE_EQUAL(job1.executed, 1);
+        BOOST_REQUIRE_EQUAL(job2.executed, 0);
+        BOOST_REQUIRE(job1.interrupted());
+        BOOST_REQUIRE(job2.interrupted());
+        job1.stop().get();
+        job2.stop().get();
+        vlog(test_log.info, "both jobs stopped");
+    }
+    wf.stop().get();
+}
+
+SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_job_throws) {
+    retry_chain_node rtc(abort_never);
+    archival::housekeeping_workflow wf(rtc);
+    {
+        mock_job job1; // This job will throw
+        mock_job job2(10s);
+        wf.register_job(job1);
+        wf.register_job(job2);
+        wf.start();
+        wf.resume(false);
+        wait_for_job_execution(wf);
+        wf.deregister_job(job1);
+        wf.deregister_job(job2);
+        BOOST_REQUIRE_EQUAL(job1.executed, 0);
+        BOOST_REQUIRE_EQUAL(job2.executed, 1);
+        BOOST_REQUIRE(job1.interrupted());
+        BOOST_REQUIRE(job2.interrupted());
+        job1.stop().get();
+        job2.stop().get();
+    }
     wf.stop().get();
 }
