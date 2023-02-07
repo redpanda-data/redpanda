@@ -668,28 +668,31 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
             ++it;
             continue;
         }
-        auto interrupt_it = find_interrupting_operation(it, deltas);
-        if (interrupt_it != deltas.end()) {
-            vlog(
-              clusterlog.trace,
-              "[{}] cancelling current: {} operation with: {}",
-              it->delta.ntp,
-              *it,
-              *interrupt_it);
-            while (it != interrupt_it) {
-                if (
-                  it->delta.type
-                  == topic_table_delta::op_type::update_properties) {
-                    co_await process_partition_properties_update(
-                      it->delta.ntp, it->delta.new_assignment);
-                }
-                ++it;
-            }
-        }
+
         try {
             auto ec = co_await execute_partition_op(*it);
             if (ec) {
                 if (it->delta.is_reconfiguration_operation()) {
+                    auto interrupt_it = find_interrupting_operation(it, deltas);
+                    if (interrupt_it != deltas.end()) {
+                        vlog(
+                          clusterlog.trace,
+                          "[{}] cancelling current: {} operation with: {}",
+                          it->delta.ntp,
+                          *it,
+                          *interrupt_it);
+                        while (it != interrupt_it) {
+                            if (
+                              it->delta.type
+                              == topic_table_delta::op_type::
+                                update_properties) {
+                                co_await process_partition_properties_update(
+                                  it->delta.ntp, it->delta.new_assignment);
+                            }
+                            ++it;
+                        }
+                        continue;
+                    }
                     /**
                      * do not skip cross core partition updates waiting for
                      * partition to be shut down on the other core
