@@ -14,7 +14,7 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
+from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
@@ -258,7 +258,6 @@ class AccessControlListTest(RedpandaTest):
         client_auth - Controls the value of require_client_auth RP config
     '''
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8202
     @cluster(num_nodes=3, log_allow_list=["Validation errors in node config"])
     @matrix(use_tls=[True, False],
             use_sasl=[True, False],
@@ -282,12 +281,29 @@ class AccessControlListTest(RedpandaTest):
 
         self.logger.info(f"startup_should_fail={startup_should_fail}")
 
-        self.prepare_cluster(use_tls,
-                             use_sasl,
-                             enable_authz,
-                             authn_method,
-                             client_auth=client_auth,
-                             expect_fail=startup_should_fail)
+        prepare_failed_auth = False
+        try:
+            self.prepare_cluster(use_tls,
+                                 use_sasl,
+                                 enable_authz,
+                                 authn_method,
+                                 client_auth=client_auth,
+                                 expect_fail=startup_should_fail)
+        except RpkException as e:
+            if "CLUSTER_AUTHORIZATION_FAILED" not in str(e):
+                raise
+            prepare_failed_auth = True
+
+        # these combinations end up causing anonymous user and so we get authz
+        # failed rejected when preparing the cluster above.
+        if authn_method == "none" and enable_authz is True:
+            assert prepare_failed_auth
+        elif authn_method == "none" and enable_authz is None and use_sasl:
+            assert prepare_failed_auth
+        elif authn_method is None and enable_authz is True:
+            assert prepare_failed_auth
+        else:
+            assert not prepare_failed_auth
 
         if startup_should_fail:
             return
@@ -322,7 +338,6 @@ class AccessControlListTest(RedpandaTest):
     # * redpanda.service.admin: the default admin client
     # * admin: used for acl bootstrap
     # * cluster_describe: the principal under test
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8202
     @cluster(num_nodes=3)
     # DEFAULT: The whole SAN
     @parametrize(rules="DEFAULT", fail=True)
@@ -349,11 +364,24 @@ class AccessControlListTest(RedpandaTest):
         """
         security::acl_operation::describe, security::default_cluster_name
         """
-        self.prepare_cluster(use_tls=True,
-                             use_sasl=False,
-                             enable_authz=True,
-                             authn_method="mtls_identity",
-                             principal_mapping_rules=rules)
+        prepare_failed_auth = False
+        try:
+            self.prepare_cluster(use_tls=True,
+                                 use_sasl=False,
+                                 enable_authz=True,
+                                 authn_method="mtls_identity",
+                                 principal_mapping_rules=rules)
+        except RpkException as e:
+            if "CLUSTER_AUTHORIZATION_FAILED" not in str(e):
+                raise
+            prepare_failed_auth = True
+
+        # fail will be cluster auth when preparing, but one case the failure
+        # comes later (see below in check permissions)
+        if fail and "service.admin" not in rules:
+            assert prepare_failed_auth
+        else:
+            assert not prepare_failed_auth
 
         self.check_permissions(pass_w_cluster_user=not fail,
                                err_msg='check_permissions failed')
