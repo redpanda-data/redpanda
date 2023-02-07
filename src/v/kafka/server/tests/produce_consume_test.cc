@@ -433,6 +433,54 @@ FIXTURE_TEST(test_node_throughput_limits_balanced, throughput_limits_fixure) {
 
     // otherwise test is not valid:
     BOOST_REQUIRE_GT(kafka_in_data_len, kafka_out_data_len);
+
+    if (ss::smp::count <= 2) {
+        // the following tests are only valid when shards count is greater
+        // than the # of partintions produced to / consumed from
+        return;
+    }
+
+    const auto collect_quotas_minmax =
+      [this](
+        std::function<kafka::snc_quota_manager::quota_t(
+          const kafka::snc_quota_manager&)> mapper,
+        const char* const direction) {
+          const auto quotas = app.snc_quota_mgr.map(std::move(mapper)).get0();
+          info("quotas_{}: {}", direction, quotas);
+          const auto quotas_minmax = std::minmax_element(
+            quotas.cbegin(), quotas.cend());
+          return std::pair{*quotas_minmax.first, *quotas_minmax.second};
+      };
+
+    const auto quotas_b_minmax_in = collect_quotas_minmax(
+      [](const kafka::snc_quota_manager& qm) { return qm.get_quota().in; },
+      "in");
+    const auto quotas_b_minmax_eg = collect_quotas_minmax(
+      [](const kafka::snc_quota_manager& qm) { return qm.get_quota().eg; },
+      "eg");
+
+    // verify that the effective quota is distributed very unevenly
+    BOOST_CHECK_GT(quotas_b_minmax_in.second, quotas_b_minmax_in.first * 5);
+    BOOST_CHECK_GT(quotas_b_minmax_eg.second, quotas_b_minmax_eg.first * 5);
+
+    // verify that the minimum quota has been honoured
+    BOOST_CHECK_GE(quotas_b_minmax_in.first, _rate_minimum);
+    BOOST_CHECK_GE(quotas_b_minmax_in.first, _rate_minimum);
+
+    // disable the balancer; that should reset effective quotas to default
+    config_set_balancer_period(0ms);
+
+    const auto quotas_e_minmax_in = collect_quotas_minmax(
+      [](const kafka::snc_quota_manager& qm) { return qm.get_quota().in; },
+      "in");
+    const auto quotas_e_minmax_eg = collect_quotas_minmax(
+      [](const kafka::snc_quota_manager& qm) { return qm.get_quota().eg; },
+      "eg");
+
+    // when the balancer is off, effective quotas is reset to default quotas
+    // which are evenly distributed across shards: max-min<=1
+    BOOST_CHECK_LE(quotas_e_minmax_in.second, quotas_e_minmax_in.first + 1);
+    BOOST_CHECK_LE(quotas_e_minmax_eg.second, quotas_e_minmax_eg.first + 1);
 }
 
 FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {

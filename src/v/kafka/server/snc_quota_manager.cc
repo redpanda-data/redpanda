@@ -192,6 +192,10 @@ snc_quota_manager::snc_quota_manager()
             // because the timer is never armed on the others
             arm_balancer_timer();
         }
+        // if the balancer is disabled, this is where the quotas are reset to
+        // default. This needs to be called on every shard because the effective
+        // balance is updated directly in this case.
+        update_node_quota_default();
     });
     _kafka_quota_balancer_min_shard_throughput_ratio.watch(
       [this] { update_shard_quota_minimum(); });
@@ -301,17 +305,35 @@ snc_quota_manager::get_quota_balancer_node_period() const {
 void snc_quota_manager::update_node_quota_default() {
     const ingress_egress_state<std::optional<quota_t>> new_node_quota_default
       = calc_node_quota_default();
-    if (ss::this_shard_id() == quota_balancer_shard) {
-        // downstream updates:
-        // - shard effective quota (via _shard_quotas_update):
-        ssx::spawn_with_gate(
-          _balancer_gate,
-          [this, qold = _node_quota_default, qnew = new_node_quota_default] {
-              return quota_balancer_update(qold, qnew);
-          });
+    if (_kafka_quota_balancer_node_period() == 0ms) {
+        // set effective shard quotas to default shard quotas only if
+        // the balancer is off. This resets all the uneven distribution of
+        // effective quotas done by the balancer to the uniform  default once
+        // the balancer is turned off. We don't need to do that in the update
+        // fiber (the one synchonized with the balancer) because
+        // - the balancer won't run (it's disabled)
+        // - the update fiber won't run
+        // Ignore _shard_quota_minimum because it only applies when quotas
+        // are adjusted during balancing
+        maybe_set_quota(
+          {.in = node_to_shard_quota(new_node_quota_default.in),
+           .eg = node_to_shard_quota(new_node_quota_default.eg)});
+    } else {
+        // the balancer is on, so the update will be calculated on shard0 and
+        // distributed between the shards synchronously to balancer runs
+        if (ss::this_shard_id() == quota_balancer_shard) {
+            // dependent update: effective shard quotas
+            ssx::spawn_with_gate(
+              _balancer_gate,
+              [this,
+               qold = _node_quota_default,
+               qnew = new_node_quota_default] {
+                  return quota_balancer_update(qold, qnew);
+              });
+        }
     }
     _node_quota_default = new_node_quota_default;
-    // - shard minimum quota:
+    // dependent update: shard minimum quota
     update_shard_quota_minimum();
 }
 
@@ -340,11 +362,11 @@ void snc_quota_manager::arm_balancer_timer() {
         // and on the first iteration
         if (
           _balancer_timer_last_ran.time_since_epoch()
-          != ss::lowres_clock::duration::zero()) {
+          != ss::lowres_clock::duration{}) {
             vlog(
               klog.warn,
-              "qb - Quota balancer is invoked too often ({}), "
-              "enforcing minimum sleep time",
+              "qb - Quota balancer is invoked too often ({}), enforcing "
+              "minimum sleep time. Consider increasing the balancer period.",
               arm_until - now);
         }
         arm_until = closest_arm_until;
