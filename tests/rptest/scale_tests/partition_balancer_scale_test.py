@@ -17,6 +17,7 @@ from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.clients.types import TopicSpec
 from ducktape.mark import parametrize
+from rptest.utils.node_operations import NodeDecommissionWaiter
 
 
 class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
@@ -89,11 +90,10 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         replicas = set()
         for tp_d in topic_descriptions:
             for p in tp_d.partitions:
-                self.logger.debug(f"{tp_d.name}/{p.id} replicas: {p.replicas}")
                 for r in p.replicas:
                     if r == node_id:
                         replicas.add(f'{tp_d.name}/{p}')
-
+        self.logger.info(f"node {node_id} has {len(replicas)} replicas")
         return replicas
 
     @cluster(num_nodes=6)
@@ -222,24 +222,12 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         )
         admin.decommission_broker(decommissioned_id)
 
-        def decommission_ended():
-            replicas = self.node_replicas([topic.name], decommissioned_id)
-            self.logger.debug(
-                f"decommissioned node {decommissioned_id} hosts {len(replicas)} replicas"
-            )
-            if len(replicas) != 0:
-                return False
-            all_brokers = set()
-            for n in self.redpanda.nodes:
-                current_id = self.redpanda.node_id(n)
-                if current_id == decommissioned_id:
-                    continue
-                brokers = admin.get_brokers(node=n)
-                for i in [b['node_id'] for b in brokers]:
-                    all_brokers.add(i)
-            return decommissioned_id not in all_brokers
+        waiter = NodeDecommissionWaiter(self.redpanda,
+                                        decommissioned_id,
+                                        self.logger,
+                                        progress_timeout=timeout)
+        waiter.wait_for_removal()
 
-        wait_until(decommission_ended, timeout, 5)
         # restart node
         to_restart = None
         for n in self.redpanda.nodes:
