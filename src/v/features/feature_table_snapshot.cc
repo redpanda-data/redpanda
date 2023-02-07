@@ -36,6 +36,7 @@ feature_table_snapshot feature_table_snapshot::from(const feature_table& ft) {
 }
 
 void feature_table_snapshot::apply(feature_table& ft) const {
+    vlog(featureslog.debug, "Applying feature table snapshot: {}", *this);
     ft.set_active_version(version);
     ft._license = license;
     for (auto& snap_state : ft._feature_state) {
@@ -67,6 +68,24 @@ void feature_table_snapshot::apply(feature_table& ft) const {
 
 bytes feature_table_snapshot::kvstore_key() {
     return iobuf_to_bytes(serde::to_iobuf(ss::sstring("feature_table")));
+}
+
+std::ostream& operator<<(std::ostream& os, const feature_state_snapshot& s) {
+    fmt::print(os, "{{name: {}, state: {}}}", s.name, s.state);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const feature_table_snapshot& s) {
+    fmt::print(
+      os,
+      "{{applied_offset: {}, version: {}, states: {}, license: {}, "
+      "original_version: {}}}",
+      s.applied_offset,
+      s.version,
+      s.states,
+      s.license,
+      s.original_version);
+    return os;
 }
 
 } // namespace features

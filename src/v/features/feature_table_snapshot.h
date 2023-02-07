@@ -37,6 +37,9 @@ struct feature_state_snapshot
     feature_state::state state;
 
     auto serde_fields() { return std::tie(name, state); }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_state_snapshot&);
 };
 
 /**
@@ -68,6 +71,9 @@ struct feature_table_snapshot
 
     /// Key for storing the snapshot in the shard 0 kvstore.
     static bytes kvstore_key();
+
+    friend std::ostream&
+    operator<<(std::ostream&, const feature_table_snapshot&);
 };
 
 } // namespace features

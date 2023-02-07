@@ -24,25 +24,27 @@ feature_backend::apply_update(model::record_batch b) {
     const auto base_offset = b.base_offset();
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
+    // Special case for systems pre-dating the original_version field: they may
+    // have loaded a snapshot that doesn't contain an original version, so must
+    // populate it from updates.
+    if (
+      _feature_table.local().get_original_version()
+      == cluster::invalid_version) {
+        co_await ss::visit(
+          cmd,
+          [this](feature_update_cmd update) {
+              vlog(
+                clusterlog.info,
+                "No original version detected, using logical version {}",
+                update.key.logical_version);
+              return _feature_table.invoke_on_all(
+                [v = update.key.logical_version](features::feature_table& ft) {
+                    ft.set_original_version(v);
+                });
+          },
+          [](feature_update_license_update_cmd) { return ss::now(); });
+    }
     if (base_offset <= _feature_table.local().get_applied_offset()) {
-        // Special case for systems pre-dating the original_version field: they
-        // may have loaded a snapshot that doesn't contain an original version,
-        // so must populate it from updates.
-        if (
-          _feature_table.local().get_original_version()
-          == cluster::invalid_version) {
-            co_await ss::visit(
-              cmd,
-              [this](feature_update_cmd update) {
-                  return _feature_table.invoke_on_all(
-                    [v = update.key.logical_version](
-                      features::feature_table& ft) {
-                        ft.set_original_version(v);
-                    });
-              },
-              [](feature_update_license_update_cmd) { return ss::now(); });
-        }
-
         co_return errc::success;
     }
 
