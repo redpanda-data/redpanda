@@ -19,7 +19,7 @@ require (
 	github.com/redpanda-data/console/backend v0.0.0-20230127151144-d7e74c934120
 	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230104182309-7698d02c437e
 	github.com/stretchr/testify v1.8.1
-	github.com/twmb/franz-go v1.11.6
+	github.com/twmb/franz-go v1.12.0
 	github.com/twmb/franz-go/pkg/kadm v1.7.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -89,7 +89,7 @@ require (
 	github.com/spf13/cast v1.3.1 // indirect
 	github.com/spf13/cobra v1.6.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/twmb/franz-go/pkg/kmsg v1.3.0 // indirect
+	github.com/twmb/franz-go/pkg/kmsg v1.4.0 // indirect
 	github.com/twmb/tlscfg v1.2.1 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
