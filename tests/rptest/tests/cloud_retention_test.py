@@ -8,16 +8,20 @@
 # by the Apache License, Version 2.0
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
+from ducktape.mark import matrix, parametrize
+from ducktape.errors import TimeoutError
+
 from rptest.services.cluster import cluster
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import SISettings, MetricsEndpoint
+from rptest.services.redpanda import SISettings, MetricsEndpoint, CloudStorageType, CHAOS_LOG_ALLOW_LIST
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer)
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import S3Snapshot
+from rptest.services.action_injector import ActionConfig, random_process_kills
 
 
 class CloudRetentionTest(PreallocNodesTest):
@@ -151,3 +155,87 @@ class CloudRetentionTest(PreallocNodesTest):
         self.logger.info("finished consuming")
         assert consumer.consumer_status.validator.valid_reads > \
             segment_size * num_partitions / msg_size
+
+
+class CloudRetentionTimelyGCTest(RedpandaTest):
+    segment_size = 256 * 1024
+    retention_bytes = 10 * segment_size
+
+    topics = (TopicSpec(name="panda-topic",
+                        partition_count=1,
+                        replication_factor=3,
+                        retention_bytes=retention_bytes,
+                        segment_bytes=segment_size), )
+
+    def __init__(self, test_context):
+        si_settings = SISettings(test_context,
+                                 log_segment_size=self.segment_size)
+        self.s3_bucket_name = si_settings.cloud_storage_bucket
+        super().__init__(
+            test_context,
+            si_settings=si_settings,
+            extra_rp_conf={'cloud_storage_housekeeping_interval_ms': 1000 * 2})
+
+    @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
+    @skip_debug_mode
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_retention_with_node_failures(self, cloud_storage_type):
+        max_overshoot_percentage = 100
+        runtime = 120
+
+        # Write fast enough that in the test's runtime, we would certainly
+        # overshoot the retention size substantially if retention wasn't working.
+        write_rate = (self.retention_bytes * 4.0) / runtime
+
+        # Write enough data to last the runtime.
+        msg_size = 128
+        msg_count = write_rate * runtime // msg_size
+
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_count=msg_count,
+                                       msg_size=msg_size,
+                                       rate_limit_bps=write_rate)
+        producer.start()
+
+        def cloud_log_size() -> int:
+            s3_snapshot = S3Snapshot(self.topics,
+                                     self.redpanda.cloud_storage_client,
+                                     self.s3_bucket_name, self.logger)
+            if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
+                self.logger.debug(f"No manifest present yet")
+                return 0
+
+            cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
+            ratio = cloud_log_size / self.retention_bytes
+            overshoot_percentage = max(ratio - 1, 0) * 100
+
+            self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
+            self.logger.debug(f"Overshot by {overshoot_percentage}%")
+
+            if overshoot_percentage > max_overshoot_percentage:
+                raise RuntimeError(
+                    f"Cloud log size {overshoot_percentage}% greater than configured"
+                    f" retention (max allowed {max_overshoot_percentage}%)")
+
+            return cloud_log_size
+
+        pkill_config = ActionConfig(cluster_start_lead_time_sec=10,
+                                    min_time_between_actions_sec=10,
+                                    max_time_between_actions_sec=20)
+        with random_process_kills(self.redpanda, pkill_config) as ctx:
+            try:
+                wait_until(lambda: cloud_log_size() == -1,
+                           timeout_sec=runtime,
+                           backoff_sec=5)
+            except TimeoutError as e:
+                # This is the success path. Timing out means that
+                # we've stayed below the max cloud log size threshold
+                # for the duration of the test.
+                pass
+            finally:
+                producer.stop()
+
+        ctx.assert_actions_triggered()
