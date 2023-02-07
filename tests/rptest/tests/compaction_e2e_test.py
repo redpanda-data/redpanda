@@ -37,7 +37,6 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
 
         return [len(p.segments) for p in topic_partitions]
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8491
     # https://github.com/redpanda-data/redpanda/issues/8486
     @cluster(num_nodes=4)
     @matrix(
@@ -132,7 +131,7 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
             f"Stopped producer, segments per partition: {current_segments_per_partition}"
         )
         # make compaction frequent
-        self.logger.info(f"setting log_compaction_interval_ms to {3600}")
+        self.logger.info(f"setting log_compaction_interval_ms to {3000}")
         rpk.cluster_config_set("log_compaction_interval_ms", str(3000))
         self.logger.info(f"waiting for compaction to happen")
 
