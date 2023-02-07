@@ -7,8 +7,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import time
+from functools import partial
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
+from rptest.clients.kcl import KCL
+from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from ducktape.mark import parametrize
 from rptest.services.admin import Admin
 from ducktape.utils.util import wait_until
@@ -181,3 +184,135 @@ class OffsetRetentionTest(RedpandaTest):
         # after waiting for twice the retention period, it should be gone
         time.sleep(self.period * 2 - self.period / 2)
         assert not offsets_exist()
+
+
+class OffsetDeletionTest(RedpandaTest):
+    topics = (TopicSpec(partition_count=3), )
+    group = "hey_hey_group"
+
+    def __init__(self, test_context):
+        super(OffsetDeletionTest, self).__init__(test_context=test_context)
+
+        self.rpk = RpkTool(self.redpanda)
+        self.kcl = KCL(self.redpanda)
+
+    def make_consumer(self, topic, session_timeout_ms=60000):
+        return KafkaCliConsumer(
+            self.test_context,
+            self.redpanda,
+            topic=topic,
+            group=self.group,
+            from_beginning=True,
+            consumer_properties={'session.timeout.ms': session_timeout_ms},
+            instance_name=f'cli-consumer-offset-delete-test-{topic}')
+
+    @cluster(num_nodes=5)
+    def test_offset_deletion(self):
+        def wait_for_partitions_in_group(n):
+            desc = self.rpk.group_describe(self.group)
+            return len(desc.partitions) == n
+
+        def assert_status(output, expected_status, expected_topic):
+            for response in output:
+                assert response.topic == expected_topic, f"Expected: {expected_topic} Observed: {response.topic}"
+                assert response.status == expected_status, response.status
+
+        # Produce some data to a topic and consume assigning new consumer group
+        for _ in range(0, 10):
+            self.rpk.produce(self.topic, "k", "v", partition=0)
+            self.rpk.produce(self.topic, "k", "v", partition=1)
+            self.rpk.produce(self.topic, "k", "v", partition=2)
+        self.rpk.consume(self.topic, n=3, group=self.group)
+        wait_until(partial(wait_for_partitions_in_group, 3),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        # Assert offset-delete errors when request contains missing topic-partitions
+        missing_topic = f"{self.topic}-foo"
+        missing_topic_partitions = {missing_topic: [0, 1, 2]}
+        output = self.kcl.offset_delete(self.group, missing_topic_partitions)
+        assert len(output) == 3
+        assert_status(output, 'UNKNOWN_TOPIC_OR_PARTITION', missing_topic)
+
+        topic_partitions = {self.topic: [0, 1, 2]}
+
+        # Assert offset-delete errors when non-existent group is passed in
+        # TODO: Re-add this once rpk support for offset-delete exists
+        # try:
+        #     self.kcl.offset_delete("missing", topic_partitions)
+        #     assert False, "Expected KCL exception"
+        # except KCLException as e:
+        #     assert e.error == 'GROUP_ID_NOT_FOUND', e.error
+
+        # Assert offset-delete errors when attempting to delete offsets of topic
+        # partitions still assigned to an active group
+        consumer = self.make_consumer(self.topic)
+        consumer.start()
+        consumer.wait_for_messages(1)
+        wait_until(partial(wait_for_partitions_in_group, 3),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        output = self.kcl.offset_delete(self.group, topic_partitions)
+        assert len(output) == 3
+        assert_status(output, 'GROUP_SUBSCRIBED_TO_TOPIC', self.topic)
+
+        consumer.stop()
+        consumer.wait()
+        consumer.free()
+
+        # Assert offset-delete removes offsets of dead groups
+        output = self.kcl.offset_delete(self.group, topic_partitions)
+        assert len(output) == 3
+        assert_status(output, 'OK', self.topic)
+
+        desc = self.rpk.group_describe(self.group)
+        assert len(desc.partitions) == 0
+
+        # Assert offset-delete removes offsets of unsubscribed topic/partitions
+        # within an active group
+        new_topic = "foo"
+        self.rpk.create_topic(new_topic, partitions=3)
+        for i in range(0, 3):
+            self.rpk.produce(new_topic, "k", "v", partition=i)
+
+        # Add two new consumers to the group
+        consumer_a = self.make_consumer(self.topic)
+        min_default_group_session_timeout_ms = 6000
+        consumer_b = self.make_consumer(new_topic,
+                                        min_default_group_session_timeout_ms)
+        consumer_a.start()
+        consumer_b.start()
+
+        # Wait until both have joined the group
+        wait_until(partial(wait_for_partitions_in_group, 6),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        # Have them both consume some data
+        consumer_a.wait_for_messages(1)
+        consumer_b.wait_for_messages(1)
+
+        # Shutdown one consumer
+        consumer_b.stop()
+        consumer_b.wait()
+
+        # After consumer_b shuts down wait for the group rebalance to occur
+        # and unsubscription of topic/partitions it was assigned to
+        wait_until(partial(wait_for_partitions_in_group, 3),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        # Remove the offsets that it had been keeping in redpanda
+        output = self.kcl.offset_delete(self.group, {new_topic: [0, 1, 2, 3]})
+        assert len(output) == 4
+        good_responses = [x for x in output if x.partition != 3]
+        bad_responses = [x for x in output if x.partition == 3]
+        assert len(good_responses) == 3
+        assert len(bad_responses) == 1
+        assert_status(good_responses, "OK", new_topic)
+        assert_status(bad_responses, "UNKNOWN_TOPIC_OR_PARTITION", new_topic)
+
+        # Shutdown other consumer
+        consumer_a.stop()
+        consumer_a.wait()
