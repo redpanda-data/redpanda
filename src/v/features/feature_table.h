@@ -365,7 +365,7 @@ public:
     void abort_for_tests() { _as.request_abort(); }
 
     /*
-     * The verison fence is the structure encoded into a verison fence batch
+     * The version fence is the structure encoded into a version fence batch
      * type and is intended to hold information that is useful for partitioning
      * the contents of a log with respect the time at which version and feature
      * metadata events occurred.

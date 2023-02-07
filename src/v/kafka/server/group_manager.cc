@@ -776,6 +776,7 @@ ss::future<> group_manager::write_version_fence(
             break;
         }
 
+        // cluster v9 is where offset retention is enabled
         auto batch = _feature_table.local().encode_version_fence(
           cluster::cluster_version{9});
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
@@ -792,7 +793,7 @@ ss::future<> group_manager::write_version_fence(
                   "Prepared partition {} for consumer offset retention feature "
                   "during upgrade",
                   p->partition->ntp());
-                break;
+                co_return;
 
             } else if (result.error() == raft::errc::shutting_down) {
                 vlog(
@@ -800,7 +801,7 @@ ss::future<> group_manager::write_version_fence(
                   "Cannot write offset retention version fence for partition "
                   "{}: shutting down",
                   p->partition->ntp());
-                break;
+                co_return;
 
             } else if (result.error() == raft::errc::not_leader) {
                 vlog(
@@ -808,7 +809,7 @@ ss::future<> group_manager::write_version_fence(
                   "Cannot write offset retention version fence for partition "
                   "{}: not leader",
                   p->partition->ntp());
-                break;
+                co_return;
 
             } else {
                 vlog(
