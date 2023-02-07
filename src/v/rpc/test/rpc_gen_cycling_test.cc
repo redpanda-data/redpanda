@@ -369,10 +369,47 @@ FIXTURE_TEST(timeout_test_cleanup_resources, rpc_integration_fixture) {
     BOOST_REQUIRE_EQUAL(
       echo_resp.get0().error(), rpc::errc::client_request_timeout);
     // Verify that the resources are released correctly after timeout.
-    tests::cooperative_spin_wait_with_timeout(5s, [&] {
-        return lock.try_get_units().has_value();
-    }).get();
+    BOOST_REQUIRE(lock.try_get_units().has_value());
     client.stop().get();
+}
+
+FIXTURE_TEST(test_cleanup_on_timeout_before_sending, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect(model::no_timeout).get();
+    auto stop_client = ss::defer([&] { client.stop().get(); });
+
+    size_t num_reqs = 10;
+
+    // Dispatch several requests with zero timeout. Presumably, some of them
+    // will timeout before even sending a message to the server. Even in this
+    // case resource units must be returned before the request finishes.
+    std::vector<ss::future<>> requests;
+    for (size_t i = 0; i < num_reqs; ++i) {
+        auto lock = ss::make_lw_shared<::mutex>();
+
+        auto units = lock->try_get_units();
+        BOOST_REQUIRE(units);
+        std::vector<ssx::semaphore_units> units_vec;
+        units_vec.push_back(std::move(*units));
+        auto opts = rpc::client_opts(rpc::clock_type::now());
+        opts.resource_units = ss::make_foreign(
+          ss::make_lw_shared(std::move(units_vec)));
+
+        auto f = client.sleep_for(echo::sleep_req{.secs = 1}, std::move(opts))
+                   .then([lock, i](auto result) {
+                       info("finished request {}", i);
+                       BOOST_REQUIRE_EQUAL(
+                         result.error(), rpc::errc::client_request_timeout);
+                       BOOST_REQUIRE(lock->ready());
+                   });
+        requests.push_back(std::move(f));
+    }
+
+    ss::when_all_succeed(requests.begin(), requests.end()).get();
 }
 
 FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
