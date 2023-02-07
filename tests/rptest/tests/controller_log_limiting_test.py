@@ -10,7 +10,6 @@
 import time
 import json
 from subprocess import CalledProcessError
-from ducktape.mark import ok_to_fail
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.end_to_end import EndToEndTest

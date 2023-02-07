@@ -11,7 +11,7 @@ import random
 import time
 
 from ducktape.errors import TimeoutError
-from ducktape.mark import ok_to_fail, parametrize, matrix
+from ducktape.mark import parametrize, matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 

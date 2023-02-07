@@ -12,7 +12,7 @@ import json
 from typing import Optional
 
 from ducktape.utils.util import wait_until
-from ducktape.mark import matrix, parametrize, ok_to_fail
+from ducktape.mark import matrix, parametrize
 from requests.exceptions import HTTPError
 
 from rptest.services.cluster import cluster

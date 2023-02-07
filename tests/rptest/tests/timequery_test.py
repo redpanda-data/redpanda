@@ -21,7 +21,7 @@ from rptest.util import (wait_until, segments_count, wait_for_segments_removal)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
-from ducktape.mark import (parametrize, ok_to_fail)
+from ducktape.mark import parametrize
 
 from rptest.services.kafka import KafkaServiceAdapter
 from kafkatest.services.kafka import KafkaService
