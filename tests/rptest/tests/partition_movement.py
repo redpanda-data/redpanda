@@ -129,6 +129,22 @@ class PartitionMovementMixin():
 
         wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=2)
 
+    def _wait_post_cancel(self, topic, partition, prev_assignments,
+                          new_assignment, timeout_sec):
+        admin = Admin(self.redpanda)
+        result_configuration = admin.wait_stable_configuration(
+            topic=topic, partition=partition, timeout_s=timeout_sec)
+        movement_cancelled = self._equal_assignments(
+            result_configuration.replicas, prev_assignments)
+
+        # Can happen if movement was already in un revertable state
+        movement_finished = False
+        if new_assignment is not None:
+            movement_finished = self._equal_assignments(
+                result_configuration.replicas, new_assignment)
+
+        assert movement_cancelled or movement_finished
+
     def _do_move_and_verify(self, topic, partition, timeout_sec):
         admin = Admin(self.redpanda)
 
@@ -230,9 +246,16 @@ class PartitionMovementMixin():
                              partition,
                              previous_assignment,
                              unclean_abort,
+                             new_assignment=None,
                              timeout=90):
         """
-        Request partition movement to interrupt and validates resulting cancellation against previous assignment
+        Request partition movement to interrupt and validates
+        resulting cancellation against previous assignment
+
+        Move can also be already in no return state, then
+        result can be equal to initial movement assignment. (PR 8393)
+        When request cancellation without throttling recovery rate
+        or partition is empty, initial movement assignment must be provided
         """
         self._wait_for_move_in_progress(topic, partition)
         admin = Admin(self.redpanda)
@@ -246,5 +269,6 @@ class PartitionMovementMixin():
             assert e.response.status_code == 400
             return
 
-        # wait for previous assignment
-        self._wait_post_move(topic, partition, previous_assignment, timeout)
+        # wait for previous assignment or new assigment if movement cannot be cancelled
+        self._wait_post_cancel(topic, partition, previous_assignment,
+                               new_assignment, timeout)
