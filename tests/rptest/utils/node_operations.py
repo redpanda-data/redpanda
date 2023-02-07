@@ -19,6 +19,7 @@ from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.admin import Admin
 from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda_installer import VERSION_RE, int_tuple
 
 
 class OperationType(Enum):
@@ -89,9 +90,21 @@ class NodeDecommissionWaiter():
         self.last_partitions_bytes_left = None
         self.progress_timeout = progress_timeout
 
-    def _not_decommissioned_node(self):
+    def _nodes_with_decommission_progress_api(self):
+        def has_decommission_progress_api(node):
+            v = int_tuple(
+                VERSION_RE.findall(self.redpanda.get_version(node))[0])
+            # decommission progress api is available since v22.3.12
+            return v[0] >= 23 or (v[0] == 22 and v[1] == 3 and v[2] >= 12)
+
         return [
             n for n in self.redpanda.started_nodes()
+            if has_decommission_progress_api(n)
+        ]
+
+    def _not_decommissioned_node(self):
+        return [
+            n for n in self._nodes_with_decommission_progress_api()
             if self.redpanda.node_id(n) != self.node_id
         ][0]
 
