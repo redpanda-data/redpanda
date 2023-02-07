@@ -12,7 +12,6 @@ package common
 import (
 	"context"
 	"io"
-	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -43,7 +42,7 @@ type Client interface {
 		networkingConfig *network.NetworkingConfig,
 		platform *specs.Platform,
 		containerName string,
-	) (container.ContainerCreateCreatedBody, error)
+	) (container.CreateResponse, error)
 
 	ContainerStart(
 		ctx context.Context,
@@ -54,7 +53,7 @@ type Client interface {
 	ContainerStop(
 		ctx context.Context,
 		containerID string,
-		timeout *time.Duration,
+		options container.StopOptions,
 	) error
 
 	ContainerList(

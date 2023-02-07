@@ -14,9 +14,9 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -62,7 +62,7 @@ func TestStop(t *testing.T) {
 					MockContainerStop: func(
 						_ context.Context,
 						_ string,
-						_ *time.Duration,
+						_ container.StopOptions,
 					) error {
 						return errors.New("Don't stop me now")
 					},

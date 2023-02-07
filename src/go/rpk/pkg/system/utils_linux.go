@@ -23,3 +23,11 @@ func uname() (string, error) {
 	str += int8ToString(uname.Version)
 	return str, nil
 }
+
+func int8ToString(ints [65]int8) string {
+	var bs [65]byte
+	for i, in := range ints {
+		bs[i] = byte(in)
+	}
+	return string(bs[:])
+}

@@ -11,8 +11,6 @@ package disk
 
 import (
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -70,16 +68,6 @@ func deviceFromSystemPath(syspath string, fs afero.Fs) (BlockDevice, error) {
 		devnode: filepath.Join("/dev", deviceAttrs["DEVNAME"]),
 		parent:  parent,
 	}, nil
-}
-
-func readSyspath(major, minor uint32) (string, error) {
-	blockBasePath := "/sys/dev/block"
-	path := fmt.Sprintf("%s/%d:%d", blockBasePath, major, minor)
-	linkpath, err := os.Readlink(path)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Abs(filepath.Join(blockBasePath, linkpath))
 }
 
 func parseUeventFile(lines []string) (map[string]string, error) {
