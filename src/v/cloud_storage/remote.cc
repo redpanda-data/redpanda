@@ -225,7 +225,7 @@ ss::future<upload_result> remote::upload_manifest(
     while (!_gate.is_closed() && permit.is_allowed && !result.has_value()) {
         notify_external_subscribers(
           api_activity_notification::manifest_upload, parent);
-        auto [is, size] = manifest.serialize();
+        auto [is, size] = co_await manifest.serialize();
         const auto res = co_await lease.client->put_object(
           bucket, path, size, std::move(is), tags, fib.get_timeout());
 

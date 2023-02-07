@@ -16,6 +16,7 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "hashing/xx.h"
+#include "json/document.h"
 #include "json/istreamwrapper.h"
 #include "json/ostreamwrapper.h"
 #include "json/writer.h"
@@ -27,6 +28,9 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/iostream.hh>
+#include <seastar/core/shared_ptr.hh>
+#include <seastar/util/later.hh>
 
 #include <fmt/ostream.h>
 #include <rapidjson/error/en.h>
@@ -1164,11 +1168,52 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
     }
 }
 
-serialized_json_stream partition_manifest::serialize() const {
+// This object is supposed to track state of the asynchronous
+// serialization process. It stores information about the part
+// which was serialized so far. Methods like serialize_begin,
+// serialized_end, serialize_segment are using it to pause and
+// resume operation. It's not supposed to be reused or used for
+// any other purpose.
+struct partition_manifest::serialization_cursor {
+    serialization_cursor(std::ostream& out, size_t max_segments)
+      : wrapper(out)
+      , writer(wrapper)
+      , max_segments_per_call(max_segments) {}
+
+    json::OStreamWrapper wrapper;
+    json::Writer<json::OStreamWrapper> writer;
+    // Next serialized offset
+    model::offset next_offset{};
+    size_t segments_serialized{0};
+    size_t max_segments_per_call{0};
+    // Flags that indicate serialization progress
+    bool prologue_done{false};
+    bool segments_done{false};
+    bool replaced_done{false};
+    bool epilogue_done{false};
+};
+
+ss::future<serialized_json_stream> partition_manifest::serialize() const {
+    auto iso = _insync_offset;
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
-    serialize(os);
+    serialization_cursor_ptr c = make_cursor(os);
+    serialize_begin(c);
+    while (!c->segments_done) {
+        serialize_segments(c);
+        co_await ss::maybe_yield();
+        if (iso != _insync_offset) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "Manifest changed duing serialization, in sync offset moved from "
+              "{} to {}",
+              iso,
+              _insync_offset));
+        }
+    }
+    serialize_replaced(c);
+    serialize_end(c);
     if (!os.good()) {
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
@@ -1176,14 +1221,30 @@ serialized_json_stream partition_manifest::serialize() const {
           get_manifest_path()));
     }
     size_t size_bytes = serialized.size_bytes();
-    return {
+    co_return serialized_json_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }
 
 void partition_manifest::serialize(std::ostream& out) const {
-    json::OStreamWrapper wrapper(out);
-    json::Writer<json::OStreamWrapper> w(wrapper);
+    serialization_cursor_ptr c = make_cursor(out);
+    serialize_begin(c);
+    while (!c->segments_done) {
+        serialize_segments(c);
+    }
+    serialize_replaced(c);
+    serialize_end(c);
+}
+
+partition_manifest::serialization_cursor_ptr
+partition_manifest::make_cursor(std::ostream& out) const {
+    return ss::make_lw_shared<serialization_cursor>(out, 500);
+}
+
+void partition_manifest::serialize_begin(
+  partition_manifest::serialization_cursor_ptr cursor) const {
+    vassert(cursor->prologue_done == false, "Prologue is already serialized");
+    auto& w = cursor->writer;
     w.StartObject();
     w.Key("version");
     w.Int(static_cast<int>(manifest_version::v1));
@@ -1209,114 +1270,169 @@ void partition_manifest::serialize(std::ostream& out) const {
         w.Key("last_uploaded_compacted_offset");
         w.Int64(_last_uploaded_compacted_offset());
     }
-    auto serialize_meta = [this, &w](const segment_meta& meta) {
+    cursor->prologue_done = true;
+}
+
+void partition_manifest::serialize_segment_meta(
+  const segment_meta& meta, serialization_cursor_ptr cursor) const {
+    vassert(
+      meta.segment_term != model::term_id{},
+      "Term id is not initialized, base offset {}",
+      meta.base_offset);
+    auto& w = cursor->writer;
+    auto sn = generate_local_segment_name(meta.base_offset, meta.segment_term);
+    w.Key(sn());
+    w.StartObject();
+    w.Key("is_compacted");
+    w.Bool(meta.is_compacted);
+    w.Key("size_bytes");
+    w.Int64(meta.size_bytes);
+    w.Key("committed_offset");
+    w.Int64(meta.committed_offset());
+    w.Key("base_offset");
+    w.Int64(meta.base_offset());
+    if (meta.base_timestamp != model::timestamp::missing()) {
+        w.Key("base_timestamp");
+        w.Int64(meta.base_timestamp.value());
+    }
+    if (meta.max_timestamp != model::timestamp::missing()) {
+        w.Key("max_timestamp");
+        w.Int64(meta.max_timestamp.value());
+    }
+    if (meta.delta_offset != model::offset_delta::min()) {
+        w.Key("delta_offset");
+        w.Int64(meta.delta_offset());
+    }
+    if (meta.ntp_revision != _rev) {
         vassert(
-          meta.segment_term != model::term_id{},
-          "Term id is not initialized, base offset {}",
-          meta.base_offset);
-        auto sn = generate_local_segment_name(
-          meta.base_offset, meta.segment_term);
-        w.Key(sn());
-        w.StartObject();
-        w.Key("is_compacted");
-        w.Bool(meta.is_compacted);
-        w.Key("size_bytes");
-        w.Int64(meta.size_bytes);
-        w.Key("committed_offset");
-        w.Int64(meta.committed_offset());
-        w.Key("base_offset");
-        w.Int64(meta.base_offset());
-        if (meta.base_timestamp != model::timestamp::missing()) {
-            w.Key("base_timestamp");
-            w.Int64(meta.base_timestamp.value());
-        }
-        if (meta.max_timestamp != model::timestamp::missing()) {
-            w.Key("max_timestamp");
-            w.Int64(meta.max_timestamp.value());
-        }
-        if (meta.delta_offset != model::offset_delta::min()) {
-            w.Key("delta_offset");
-            w.Int64(meta.delta_offset());
-        }
-        if (meta.ntp_revision != _rev) {
-            vassert(
-              meta.ntp_revision != model::initial_revision_id(),
-              "ntp {}: missing ntp_revision for segment {} in the manifest",
-              _ntp,
-              sn);
-            w.Key("ntp_revision");
-            w.Int64(meta.ntp_revision());
-        }
-        if (meta.archiver_term != model::term_id::min()) {
-            w.Key("archiver_term");
-            w.Int64(meta.archiver_term());
-        }
-        w.Key("segment_term");
-        w.Int64(meta.segment_term());
-        if (
-          meta.sname_format == segment_name_format::v2
-          && meta.delta_offset_end != model::offset_delta::min()) {
-            w.Key("delta_offset_end");
-            w.Int64(meta.delta_offset_end());
-        }
-        if (meta.sname_format != segment_name_format::v1) {
-            w.Key("sname_format");
-            w.Int64(static_cast<int16_t>(meta.sname_format));
-        }
-        w.EndObject();
-    };
-    auto serialize_lw_meta = [this, &w](const lw_segment_meta& meta) {
-        // Here we are serializing all fields stored in 'lw_segment_meta'.
-        // The remaining fields are also added but they values are not
-        // significant.
+          meta.ntp_revision != model::initial_revision_id(),
+          "ntp {}: missing ntp_revision for segment {} in the manifest",
+          _ntp,
+          sn);
+        w.Key("ntp_revision");
+        w.Int64(meta.ntp_revision());
+    }
+    if (meta.archiver_term != model::term_id::min()) {
+        w.Key("archiver_term");
+        w.Int64(meta.archiver_term());
+    }
+    w.Key("segment_term");
+    w.Int64(meta.segment_term());
+    if (
+      meta.sname_format == segment_name_format::v2
+      && meta.delta_offset_end != model::offset_delta::min()) {
+        w.Key("delta_offset_end");
+        w.Int64(meta.delta_offset_end());
+    }
+    if (meta.sname_format != segment_name_format::v1) {
+        w.Key("sname_format");
+        w.Int64(static_cast<int16_t>(meta.sname_format));
+    }
+    w.EndObject();
+}
+
+void partition_manifest::serialize_removed_segment_meta(
+  const lw_segment_meta& meta, serialization_cursor_ptr cursor) const {
+    // Here we are serializing all fields stored in 'lw_segment_meta'.
+    // The remaining fields are also added but they values are not
+    // significant.
+    vassert(
+      meta.segment_term != model::term_id{},
+      "Term id is not initialized, base offset {}",
+      meta.base_offset);
+    auto& w = cursor->writer;
+    auto sn = generate_local_segment_name(meta.base_offset, meta.segment_term);
+    w.Key(sn());
+    w.StartObject();
+    w.Key("size_bytes");
+    w.Int64(static_cast<int64_t>(meta.size_bytes));
+    w.Key("committed_offset");
+    w.Int64(meta.committed_offset());
+    w.Key("base_offset");
+    w.Int64(meta.base_offset());
+    if (meta.ntp_revision != _rev) {
         vassert(
-          meta.segment_term != model::term_id{},
-          "Term id is not initialized, base offset {}",
-          meta.base_offset);
-        auto sn = generate_local_segment_name(
-          meta.base_offset, meta.segment_term);
-        w.Key(sn());
-        w.StartObject();
-        w.Key("size_bytes");
-        w.Int64(static_cast<int64_t>(meta.size_bytes));
-        w.Key("committed_offset");
-        w.Int64(meta.committed_offset());
-        w.Key("base_offset");
-        w.Int64(meta.base_offset());
-        if (meta.ntp_revision != _rev) {
-            vassert(
-              meta.ntp_revision != model::initial_revision_id(),
-              "ntp {}: missing ntp_revision for segment {} in the manifest",
-              _ntp,
-              sn);
-            w.Key("ntp_revision");
-            w.Int64(meta.ntp_revision());
-        }
-        if (meta.archiver_term != model::term_id::min()) {
-            w.Key("archiver_term");
-            w.Int64(meta.archiver_term());
-        }
-        w.Key("segment_term");
-        w.Int64(meta.segment_term());
-        w.EndObject();
-    };
-    if (!_segments.empty()) {
+          meta.ntp_revision != model::initial_revision_id(),
+          "ntp {}: missing ntp_revision for segment {} in the manifest",
+          _ntp,
+          sn);
+        w.Key("ntp_revision");
+        w.Int64(meta.ntp_revision());
+    }
+    if (meta.archiver_term != model::term_id::min()) {
+        w.Key("archiver_term");
+        w.Int64(meta.archiver_term());
+    }
+    w.Key("segment_term");
+    w.Int64(meta.segment_term());
+    w.EndObject();
+}
+
+void partition_manifest::serialize_segments(
+  partition_manifest::serialization_cursor_ptr cursor) const {
+    vassert(cursor->segments_done == false, "Segments are already serialized");
+    if (_segments.empty()) {
+        cursor->next_offset = model::offset{};
+        cursor->segments_done = true;
+        return;
+    }
+    auto& w = cursor->writer;
+    if (cursor->next_offset == model::offset{} && !_segments.empty()) {
+        // The method is called first time
         w.Key("segments");
         w.StartObject();
-        for (const auto& [key, meta] : _segments) {
-            serialize_meta(meta);
-        }
-        w.EndObject();
+        cursor->next_offset = _segments.begin()->second.base_offset;
     }
+    if (!_segments.empty()) {
+        auto it = _segments.lower_bound(cursor->next_offset);
+        for (; it != _segments.end(); it++) {
+            const auto& [key, meta] = *it;
+            serialize_segment_meta(meta, cursor);
+            cursor->segments_serialized++;
+            if (cursor->segments_serialized >= cursor->max_segments_per_call) {
+                cursor->segments_serialized = 0;
+                it++;
+                break;
+            }
+        }
+        if (it == _segments.end()) {
+            cursor->next_offset = _last_offset;
+        } else {
+            // We hit the limit on number of serialized segment
+            // metadata objects and 'it' points to the first segment
+            // which is not serialized yet.
+            cursor->next_offset = it->second.base_offset;
+        }
+    }
+    if (cursor->next_offset == _last_offset && !_segments.empty()) {
+        // next_offset will overshoot by one
+        w.EndObject();
+        cursor->segments_done = true;
+    }
+}
+
+void partition_manifest::serialize_replaced(
+  partition_manifest::serialization_cursor_ptr cursor) const {
+    vassert(
+      cursor->replaced_done == false,
+      "Replaced segments are already serialized");
+    auto& w = cursor->writer;
     if (!_replaced.empty()) {
         w.Key("replaced");
         w.StartObject();
         for (const auto& meta : _replaced) {
-            serialize_lw_meta(meta);
+            serialize_removed_segment_meta(meta, cursor);
         }
         w.EndObject();
     }
-    w.EndObject();
+    cursor->replaced_done = true;
+}
+
+void partition_manifest::serialize_end(serialization_cursor_ptr cursor) const {
+    vassert(
+      cursor->epilogue_done == false, "Manifest is already fully serialized");
+    cursor->writer.EndObject();
+    cursor->epilogue_done = true;
 }
 
 bool partition_manifest::delete_permanently(

@@ -1231,9 +1231,6 @@ ss::future<> ntp_archiver::housekeeping() {
             auto units = co_await ss::get_units(_mutex, 1, _as);
             co_await apply_retention();
             co_await garbage_collect();
-        }
-
-        if (can_update_archival_metadata()) {
             co_await upload_manifest();
         }
     } catch (std::exception& e) {
