@@ -669,6 +669,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       properties.remote_delete,
       overrides.remote_delete,
       storage::ntp_config::default_remote_delete);
+    incremental_update(properties.segment_ms, overrides.segment_ms);
 
     // generate deltas for controller backend
     const auto& assignments = tp->second.get_assignments();

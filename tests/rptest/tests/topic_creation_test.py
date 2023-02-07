@@ -191,7 +191,7 @@ class CreateTopicsTest(RedpandaTest):
         'redpanda.remote.delete':
         lambda: "true" if random.randint(0, 1) else "false",
         'segment.ms':
-        lambda: random.randint(10000, 10000000),
+        lambda: random.choice([-1, random.randint(10000, 10000000)]),
     }
 
     def __init__(self, test_context):

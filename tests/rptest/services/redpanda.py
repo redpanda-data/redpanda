@@ -1497,14 +1497,17 @@ class RedpandaService(Service):
         Update cluster configuration and wait for all nodes to report that they
         have seen the new config.
 
-        :param values: dict of property name to value
+        :param values: dict of property name to value. if value is None, key will be removed from cluster config
         :param expect_restart: set to true if you wish to permit a node restart for needs_restart=yes properties.
                                If you set such a property without this flag, an assertion error will be raised.
         """
         if admin_client is None:
             admin_client = self._admin
 
-        patch_result = admin_client.patch_cluster_config(upsert=values)
+        patch_result = admin_client.patch_cluster_config(
+            upsert={k: v
+                    for k, v in values.items() if v is not None},
+            remove=[k for k, v in values.items() if v is None])
         new_version = patch_result['config_version']
 
         def is_ready():
