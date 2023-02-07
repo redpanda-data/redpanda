@@ -17,6 +17,7 @@
 #include "seastarx.h"
 #include "ssx/sformat.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/scheduling.hh>
 
@@ -81,6 +82,14 @@ struct service::execution_helper {
       method_info method,
       Func&& f) {
         return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
+          .handle_exception([&ctx](const std::exception_ptr& e) {
+              // It's possible to stop all waiters on a semaphore externally
+              // with the semaphore's `broken` method. In which case
+              // `permanent_memory_reservation` will return an exception.
+              // We intercept it here to avoid a broken promise.
+              ctx.body_parse_exception(e);
+              return ss::make_exception_future(e);
+          })
           .then([f = std::forward<Func>(f), method, &in, &ctx]() mutable {
               return parse_type<Input, Codec>(in, ctx.get_header())
                 .then_wrapped([f = std::forward<Func>(f),
