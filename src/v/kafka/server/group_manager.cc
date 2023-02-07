@@ -29,6 +29,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
 
@@ -820,6 +821,22 @@ ss::future<> group_manager::write_version_fence(
                   result.error().message(),
                   result.error());
             }
+        } catch (const ss::gate_closed_exception&) {
+            vlog(
+              klog.debug,
+              "Cannot write offset retention version fence for partition {}: "
+              "partition shutting down",
+              p->partition->ntp());
+            co_return;
+
+        } catch (const ss::abort_requested_exception&) {
+            vlog(
+              klog.debug,
+              "Cannot write offset retention version fence for partition {}: "
+              "partition abort requested",
+              p->partition->ntp());
+            co_return;
+
         } catch (...) {
             vlog(
               klog.error,
