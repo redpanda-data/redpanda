@@ -12,7 +12,6 @@ package common
 import (
 	"context"
 	"io"
-	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -42,7 +41,7 @@ type MockClient struct {
 		networkingConfig *network.NetworkingConfig,
 		platform *specs.Platform,
 		containerName string,
-	) (container.ContainerCreateCreatedBody, error)
+	) (container.CreateResponse, error)
 
 	MockContainerStart func(
 		ctx context.Context,
@@ -53,7 +52,7 @@ type MockClient struct {
 	MockContainerStop func(
 		ctx context.Context,
 		containerID string,
-		timeout *time.Duration,
+		options container.StopOptions,
 	) error
 
 	MockContainerList func(
@@ -113,7 +112,7 @@ func (c *MockClient) ContainerCreate(
 	networkingConfig *network.NetworkingConfig,
 	platform *specs.Platform,
 	containerName string,
-) (container.ContainerCreateCreatedBody, error) {
+) (container.CreateResponse, error) {
 	if c.MockContainerCreate != nil {
 		return c.MockContainerCreate(
 			ctx,
@@ -124,7 +123,7 @@ func (c *MockClient) ContainerCreate(
 			containerName,
 		)
 	}
-	return container.ContainerCreateCreatedBody{}, nil
+	return container.CreateResponse{}, nil
 }
 
 func (c *MockClient) ImagePull(
@@ -157,10 +156,10 @@ func (c *MockClient) ContainerStart(
 }
 
 func (c *MockClient) ContainerStop(
-	ctx context.Context, containerID string, timeout *time.Duration,
+	ctx context.Context, containerID string, options container.StopOptions,
 ) error {
 	if c.MockContainerStop != nil {
-		return c.MockContainerStop(ctx, containerID, timeout)
+		return c.MockContainerStop(ctx, containerID, options)
 	}
 	return nil
 }

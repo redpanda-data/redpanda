@@ -54,11 +54,3 @@ func BitsToHuman(bytes float64) string {
 	}
 	return fmt.Sprintf("%v", bytes)
 }
-
-func int8ToString(ints [65]int8) string {
-	var bs [65]byte
-	for i, in := range ints {
-		bs[i] = byte(in)
-	}
-	return string(bs[:])
-}
