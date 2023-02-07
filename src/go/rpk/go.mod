@@ -33,9 +33,9 @@ require (
 	github.com/stretchr/testify v1.8.1
 	github.com/tklauser/go-sysconf v0.3.11
 	github.com/trstringer/go-systemd-time v1.0.0
-	github.com/twmb/franz-go v1.11.6
+	github.com/twmb/franz-go v1.12.0
 	github.com/twmb/franz-go/pkg/kadm v1.7.0
-	github.com/twmb/franz-go/pkg/kmsg v1.3.0
+	github.com/twmb/franz-go/pkg/kmsg v1.4.0
 	github.com/twmb/tlscfg v1.2.1
 	github.com/twmb/types v1.1.6
 	golang.org/x/sync v0.1.0

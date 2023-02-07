@@ -105,6 +105,7 @@ func NewDockerClient() (Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.NegotiateAPIVersion(context.Background())
 	return &dockerClient{c}, nil
 }
 

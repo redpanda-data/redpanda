@@ -362,12 +362,12 @@ github.com/tklauser/numcpus v0.6.0 h1:kebhY2Qt+3U6RNK7UqpYNA+tJ23IBEGKkB7JQBfDYm
 github.com/tklauser/numcpus v0.6.0/go.mod h1:FEZLMke0lhOUG6w2JadTzp0a+Nl8PF/GFkQ5UVIcaL4=
 github.com/trstringer/go-systemd-time v1.0.0 h1:85YYNtMuiDJtbnQveqN5M2+GHVKqYpPvOxLZMOLD4BY=
 github.com/trstringer/go-systemd-time v1.0.0/go.mod h1:zmxXIRFeksWrNr4tdJeHBvxev3nmViuoEZNs+OllX20=
-github.com/twmb/franz-go v1.11.6 h1:QhAETUYHiN0CFa6wt5Uy5RY/BP3lXA1/Nz8CkfWii2o=
-github.com/twmb/franz-go v1.11.6/go.mod h1:FvaHNlpT6woVYIl6LAuIeL7yHol1Fp6Gv2Dn21AvH78=
+github.com/twmb/franz-go v1.12.0 h1:HWd7E9p/R15D0kofG5p6e3k3tWd/ewqs/IclKhpw+qc=
+github.com/twmb/franz-go v1.12.0/go.mod h1:Ofc5tSSUJKLmpRNUYSejUsAZKYAHDHywTS322KWdChQ=
 github.com/twmb/franz-go/pkg/kadm v1.7.0 h1:TAgcS+t5q+9jnm8INCD2OJ1MD9y4Ij6pD5CYfZ3tkbg=
 github.com/twmb/franz-go/pkg/kadm v1.7.0/go.mod h1:sI9BjVkpjyYssIlVa+WIwseaUjJqPsR/8gmJi6aDyEk=
-github.com/twmb/franz-go/pkg/kmsg v1.3.0 h1:ouBETB7nTqRxiO5E8/pySoFZtVEW2VWw55z3/bsUzTw=
-github.com/twmb/franz-go/pkg/kmsg v1.3.0/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
+github.com/twmb/franz-go/pkg/kmsg v1.4.0 h1:tbp9hxU6m8qZhQTlpGiaIJOm4BXix5lsuEZ7K00dF0s=
+github.com/twmb/franz-go/pkg/kmsg v1.4.0/go.mod h1:SxG/xJKhgPu25SamAq0rrucfp7lbzCpEXOC+vH/ELrY=
 github.com/twmb/tlscfg v1.2.1 h1:IU2efmP9utQEIV2fufpZjPq7xgcZK4qu25viD51BB44=
 github.com/twmb/tlscfg v1.2.1/go.mod h1:GameEQddljI+8Es373JfQEBvtI4dCTLKWGJbqT2kErs=
 github.com/twmb/types v1.1.6 h1:PnQYJ8fMHkjPR4mgJkzqX1lYhfamNl5I2zuVBSZwLuE=
