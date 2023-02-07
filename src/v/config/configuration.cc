@@ -1734,7 +1734,7 @@ configuration::configuration()
       "limit.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt,
-      {.min = ss::smp::count})
+      {.min = 1})
   , kafka_quota_balancer_window(
       *this,
       "kafka_quota_balancer_window_ms",

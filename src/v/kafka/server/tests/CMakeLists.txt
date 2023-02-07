@@ -7,6 +7,7 @@ rp_test(
     types_conversion_tests.cc
     topic_utils_test.cc
     handler_interface_test.cc
+    quota_managers_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka v::coproc
   LABELS kafka
