@@ -1006,13 +1006,14 @@ ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
 
 ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
-    auto maybe_lock = _segments_rolling_lock.try_get_units();
-    if (!maybe_lock) {
-        // if the lock is already taken, do_housekeeping is possibly rolling the
-        // segment. since size rolling can happen later, bail out as to not
-        // impact write latency too much
-        co_return;
-    }
+    // This lock will only rarely be contended.  If it is held, then
+    // we must wait for do_housekeeping to complete before proceeding, because
+    // the log might be in a state mid-roll where it has no appender.
+    // We need to take this irrespective of whether we're actually rolling
+    // or not, in order to ensure that writers wait for a background roll
+    // to complete if one is ongoing.
+    auto roll_lock_holder = co_await _segments_rolling_lock.get_units();
+
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
     if (_segs.empty()) {
         co_return co_await new_segment(next_offset, t, iopc);
