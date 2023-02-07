@@ -418,7 +418,7 @@ class S3Snapshot:
                                ns: str = 'kafka') -> dict:
         manifest = self.manifest_for_ntp(topic, partition, ns)
         return sum(seg_meta['size_bytes']
-                   for seg_meta in manifest['segments'].values())
+                   for seg_meta in manifest.get('segments', {}).values())
 
     def assert_at_least_n_uploaded_segments_compacted(self,
                                                       topic: str,
