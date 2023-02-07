@@ -67,7 +67,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             }
         } catch (const std::exception& ex) {
             vlog(
-              clusterlog.warn,
+              clusterlog.error,
               "Disk self test finished with error: {} - options: {}",
               ex.what(),
               dto);
@@ -100,7 +100,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             }
         } catch (const std::exception& ex) {
             vlog(
-              clusterlog.warn,
+              clusterlog.error,
               "Network self test finished with error: {} - options: {}",
               ex.what(),
               nto);

@@ -82,11 +82,10 @@ ss::future<> netcheck::stop() {
 void netcheck::cancel() { _cancelled = true; }
 
 ss::future<std::vector<self_test_result>> netcheck::run(netcheck_opts opts) {
-    vassert(_gate.get_count() == 0, "Benchmark already in progress");
-    gate_guard g{_gate};
     _cancelled = false;
     _opts = opts;
     try {
+        gate_guard g{_gate};
         co_await ss::futurize_invoke(validate_options, opts);
         vlog(
           clusterlog.info,
@@ -98,10 +97,12 @@ ss::future<std::vector<self_test_result>> netcheck::run(netcheck_opts opts) {
                   return run_individual_benchmark(peer);
               });
         });
-    } catch (const netcheck_exception& ex) {
-        vlog(clusterlog.error, "Network exception encountered: {}", ex);
-        throw;
+    } catch (const netcheck_aborted_exception& ex) {
+        vlog(clusterlog.debug, "netcheck stopped due to call of stop()");
+    } catch (const ss::gate_closed_exception&) {
+        vlog(clusterlog.debug, "netcheck - ss::gate_closed_exception caught");
     }
+    co_return std::vector<self_test_result>{};
 }
 
 ss::future<self_test_result>
