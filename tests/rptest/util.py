@@ -124,14 +124,18 @@ def produce_until_segments(redpanda,
                            partition_idx,
                            count,
                            acks=-1,
-                           record_size=1024):
+                           record_size=1024,
+                           batch_size=10000):
     """
     Produce into the topic until given number of segments will appear
     """
     kafka_tools = KafkaCliTools(redpanda)
 
     def done():
-        kafka_tools.produce(topic, 10000, record_size=record_size, acks=acks)
+        kafka_tools.produce(topic,
+                            batch_size,
+                            record_size=record_size,
+                            acks=acks)
         topic_partitions = segments_count(redpanda, topic, partition_idx)
         partitions = []
         for p in topic_partitions:

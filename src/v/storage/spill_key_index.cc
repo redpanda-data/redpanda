@@ -317,7 +317,7 @@ ss::future<> spill_key_index::close() {
         _footer.crc = _crc.value();
         auto footer_buf = reflection::to_iobuf(_footer);
         vassert(
-          footer_buf.size_bytes() == compacted_index::footer_size,
+          footer_buf.size_bytes() == compacted_index::footer::footer_size,
           "Footer is bigger than expected: {}",
           footer_buf);
 
