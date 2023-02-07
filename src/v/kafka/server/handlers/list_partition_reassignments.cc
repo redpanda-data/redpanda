@@ -26,16 +26,13 @@
 
 namespace kafka {
 
-namespace {
 bool in_broker_list(
   const model::broker_shard& bshard,
   const std::vector<model::broker_shard>& list) {
     return std::find(list.begin(), list.end(), bshard) != list.end();
 }
-} // namespace
 
-// Returns the partition reassignments for a given partition of a topic
-ongoing_partition_reassignment list_partition_reassignments(
+ongoing_partition_reassignment compare_replica_sets(
   cluster::partition_assignment& current_assignment,
   std::optional<std::vector<model::broker_shard>> previous_replica_set) {
     ongoing_partition_reassignment reassignments;
@@ -68,6 +65,20 @@ ongoing_partition_reassignment list_partition_reassignments(
     return reassignments;
 }
 
+// Returns the partition reassignments for a given ntp
+ongoing_partition_reassignment list_partition_reassignments(
+  const cluster::metadata_cache& md_cache, const model::ntp& ntp) {
+    // Current replica set is in the current partition assignment
+    auto current_assignment = md_cache.get_partition_assignment(ntp);
+    if (!current_assignment.has_value()) {
+        vlog(klog.debug, "No replica set: ntp {}", ntp);
+        return ongoing_partition_reassignment{};
+    }
+
+    return compare_replica_sets(
+      *current_assignment, md_cache.get_previous_replica_set(ntp));
+}
+
 // Returns all reassignments currently in progress
 std::vector<ongoing_topic_reassignment> all_in_progress_partition_reassignments(
   const cluster::metadata_cache& md_cache) {
@@ -85,7 +96,7 @@ std::vector<ongoing_topic_reassignment> all_in_progress_partition_reassignments(
             continue;
         }
 
-        auto partition_reassignment = list_partition_reassignments(
+        auto partition_reassignment = compare_replica_sets(
           *current_assignment, status.get_previous_replicas());
         partition_reassignment.partition_index = ntp.tp.partition;
         if (reassignments_by_topic.contains(ntp.tp.topic)) {
@@ -150,18 +161,14 @@ ss::future<response_ptr> list_partition_reassignments_handler::handle(
 
             vlog(klog.debug, "Request to list reassignments: ntp {}", ntp);
 
-            // Current replica set is in the current partition assignment
-            auto current_assignment
-              = ctx.metadata_cache().get_partition_assignment(ntp);
-            if (current_assignment.has_value()) {
+            if (ctx.metadata_cache().is_update_in_progress(ntp)) {
                 auto reassignments = list_partition_reassignments(
-                  *current_assignment,
-                  ctx.metadata_cache().get_previous_replica_set(ntp));
+                  ctx.metadata_cache(), ntp);
                 reassignments.partition_index = pid;
                 topic_reassignment.partitions.push_back(
                   std::move(reassignments));
             } else {
-                vlog(klog.debug, "No replica set: ntp {}", ntp);
+                vlog(klog.debug, "No updates in progress: ntp {}", ntp);
             }
         }
         resp.data.topics.push_back(topic_reassignment);

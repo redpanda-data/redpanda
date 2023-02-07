@@ -188,6 +188,7 @@ public:
     std::optional<std::vector<model::broker_shard>>
     get_previous_replica_set(const model::ntp& ntp) const;
     const topic_table::updates_t& updates_in_progress() const;
+    bool is_update_in_progress(const model::ntp& ntp) const;
 
 private:
     ss::sharded<topic_table>& _topics_state;
