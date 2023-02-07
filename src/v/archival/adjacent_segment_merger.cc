@@ -49,6 +49,10 @@ ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 
 void adjacent_segment_merger::set_enabled(bool enabled) { _enabled = enabled; }
 
+void adjacent_segment_merger::acquire() { _holder = ss::gate::holder(_gate); }
+
+void adjacent_segment_merger::release() { _holder.release(); }
+
 std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
   model::offset local_start_offset,
   const cloud_storage::partition_manifest& manifest) {

@@ -106,16 +106,15 @@ private:
     bool jobs_available() const;
 
     ss::gate _gate;
+    ss::gate _exec_gate;
     ss::abort_source _as;
     retry_chain_node& _parent;
     ss::scheduling_group _sg;
     probe_opt_t _probe;
     housekeeping_state _state{housekeeping_state::idle};
     intrusive_list<housekeeping_job, &housekeeping_job::_hook> _pending;
-    std::optional<std::reference_wrapper<housekeeping_job>> _current_job;
-    // Number of jobs that has to be processed during current
-    // housekeeping epoch.
-    size_t _current_backlog{0};
+    intrusive_list<housekeeping_job, &housekeeping_job::_hook> _running;
+    intrusive_list<housekeeping_job, &housekeeping_job::_hook> _executed;
     ss::condition_variable _cvar;
 };
 

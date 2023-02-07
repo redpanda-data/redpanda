@@ -114,6 +114,40 @@ public:
         uint32_t metadata_syncs{0};
     };
 
+    /// Stop the job. The job object can't be reused after that.
+    /// Subsequent calls to 'run' method should fail.
+    virtual void interrupt() = 0;
+
+    /// Wait until the job finishes. After the future is ready
+    /// the job is no longer usable. This is supposed to be called
+    /// by the owner of the job.
+    virtual ss::future<> stop() = 0;
+
+    /// Enable or disable the job. The job is responsible for implementing
+    /// this. The 'run' method of the disabled job is supposed to return
+    /// 'run_status::skipped'.
+    virtual void set_enabled(bool) = 0;
+
+    //
+    // Method which are used by the housekeeping service
+    //
+
+    /// The housekeeping service invokes this method when the job
+    /// is first added. The 'stop' method is supposed to be blocked
+    /// until the job is acquired and not released yet. It can only be called
+    /// once.
+    virtual void acquire() = 0;
+
+    /// Release the housekeeping job. After calling this method
+    /// the housekeeping is guaranteed to no longer touch the job.
+    /// The 'stop' method of the job will progress only after 'release' is
+    /// called. The method can only be called once.
+    virtual void release() = 0;
+
+    /// Return true if the jb was interrupted.
+    /// The job can't be executed if 'interrupted() == true'
+    virtual bool interrupted() const = 0;
+
     /// Start the job. The job can be paused (not immediately).
     ///
     /// \param rtc is a retry chain node of the housekeeping service
@@ -125,21 +159,6 @@ public:
     ///         number of uploaded segments/manifests, etc).
     virtual ss::future<run_result>
     run(retry_chain_node& rtc, run_quota_t quota) = 0;
-
-    /// Stop the job. The job object can't be reused after that.
-    /// Subsequent calls to 'run' method should fail.
-    virtual void interrupt() = 0;
-
-    /// Return true if the jb was interrupted.
-    /// The job can't be executed if 'interrupted() == true'
-    virtual bool interrupted() const = 0;
-
-    /// Enable or disable the job
-    virtual void set_enabled(bool) = 0;
-
-    /// Wait until the job finishes. After the future is ready
-    /// the job is no longer usable.
-    virtual ss::future<> stop() = 0;
 
 private:
     friend class housekeeping_workflow;

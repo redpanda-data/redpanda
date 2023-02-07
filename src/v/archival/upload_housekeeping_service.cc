@@ -175,26 +175,39 @@ housekeeping_workflow::housekeeping_workflow(
   , _probe(probe) {}
 
 void housekeeping_workflow::register_job(housekeeping_job& job) {
+    job.acquire();
     _pending.push_back(job);
-    _current_backlog++;
 }
 
 void housekeeping_workflow::deregister_job(housekeeping_job& job) {
-    if (_current_job.has_value() && &(_current_job->get()) == &job) {
-        // Current job is running
-        vlog(archival_log.debug, "interrupt currently running job");
-        _current_job->get().interrupt();
-    } else {
-        vlog(archival_log.debug, "interrupt backlog job");
+    auto it = std::find_if(
+      _running.begin(), _running.end(), [&job](const housekeeping_job& other) {
+          return &other == &job;
+      });
+    auto is_running = it != _running.end();
+    if (is_running) {
+        // The job is currently executed by the background fiber.
+        // We can't remove it from the list until it finishes. If the
+        // job was interrupted it wouldn't be moved to the next list.
+        vlog(
+          archival_log.debug,
+          "interrupting the running job, it will be"
+          "removed upon exit");
         job.interrupt();
+    } else {
+        vlog(archival_log.debug, "removing pending job");
+        job.interrupt();
+        job.release();
         job._hook.unlink();
     }
-    _current_backlog--;
+
     vlog(
       archival_log.debug,
-      "deregistered job, current backlog {}, num pending jobs {}",
-      _current_backlog,
-      _pending.size());
+      "deregistered job, current backlog {}, num completed jobs {}, num "
+      "running jobs {}",
+      _pending.size(),
+      _executed.size(),
+      _running.size());
 }
 
 void housekeeping_workflow::start() {
@@ -247,7 +260,7 @@ struct job_exec_timer {
 };
 
 bool housekeeping_workflow::jobs_available() const {
-    return (_current_backlog > 0 && _pending.size() > 0)
+    return !_pending.empty()
            && (_state == housekeeping_state::active || _state == housekeeping_state::draining);
 }
 
@@ -268,7 +281,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
           archival_log.debug,
           "housekeeping_workflow, BG job, state: {}, backlog: {}",
           _state,
-          _current_backlog);
+          _pending.size());
         // When the state is active or draining
         // the loop is processing jobs in round-robin fashion until the
         // backlog size reaches zero. After that the status changes to idle and
@@ -279,36 +292,59 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         }
         vassert(
           !_pending.empty(),
-          "housekeeping_workflow: pendings empty, state {} backlog {}",
+          "housekeeping_workflow: pendings empty, state {}, backlog {}, "
+          "in-flight {}, completed {}",
           _state,
-          _current_backlog);
-        auto& top = _pending.front();
-        top._hook.unlink();
-        _current_job = std::ref(top);
-        try {
-            auto r = exec_timer.time();
-            auto res = co_await top.run(_parent, quota);
-            jobs_executed++;
-            quota = res.remaining;
-            maybe_update_probe(res);
-        } catch (...) {
-            vlog(
-              archival_log.warn,
-              "upload housekeeping job error: {}",
-              std::current_exception());
-            jobs_failed++;
-            maybe_update_probe(
-              {.status = housekeeping_job::run_status::failed});
+          _pending.size(),
+          _running.size(),
+          _executed.size());
+        vassert(
+          _running.empty(),
+          "The list of running jobs is not empty, "
+          "state {}, backlog {}, in-flight {}, completed {}",
+          _state,
+          _pending.size(),
+          _running.size(),
+          _executed.size());
+        _running.splice(_running.begin(), _pending, _pending.begin());
+        {
+            ss::gate::holder hh(_exec_gate);
+            try {
+                auto r = exec_timer.time();
+                auto res = co_await _running.front().run(_parent, quota);
+                jobs_executed++;
+                quota = res.remaining;
+                maybe_update_probe(res);
+            } catch (...) {
+                vlog(
+                  archival_log.warn,
+                  "upload housekeeping job error: {}",
+                  std::current_exception());
+                jobs_failed++;
+                maybe_update_probe(
+                  {.status = housekeeping_job::run_status::failed});
+            }
+            if (!_running.front().interrupted()) {
+                // The job is pushed to the executed list to be
+                // reused in the next housekeeping cycle.
+                _executed.splice(_executed.begin(), _running);
+            } else {
+                // If the job was interrupted it's never returned
+                // to the list of executed jobs and never accessd by
+                // the workflow.
+                _running.front().release();
+                _running.clear();
+            }
         }
-        _current_job.reset();
-        if (!top.interrupted()) {
-            // If the job was interrupted it's never returned
-            // to the list of pending jobs and never accessd by
-            // the workflow.
-            _pending.push_back(top);
-        }
-        _current_backlog--;
-        if (_current_backlog == 0) {
+        vassert(
+          _running.empty(),
+          "The list of running jobs is expected to be empty, "
+          "state {}, backlog {}, in-flight {}, completed {}",
+          _state,
+          _pending.size(),
+          _running.size(),
+          _executed.size());
+        if (_pending.empty()) {
             auto full_time = ss::lowres_clock::now() - start_time;
             vlog(
               archival_log.info,
@@ -323,7 +359,7 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
               std::chrono::duration_cast<std::chrono::seconds>(exec_timer.total)
                 .count());
             _state = housekeeping_state::idle;
-            _current_backlog = _pending.size();
+            std::swap(_pending, _executed);
             jobs_failed = 0;
             jobs_executed = 0;
             start_time = ss::lowres_clock::now();
@@ -383,7 +419,7 @@ void housekeeping_workflow::resume(bool drain) {
       archival_log.debug,
       "housekeeping_workflow::resume, state: {}, backlog: {}",
       _state,
-      _current_backlog);
+      _pending.size());
     _cvar.signal();
 }
 
@@ -399,20 +435,27 @@ void housekeeping_workflow::pause() {
 }
 
 ss::future<> housekeeping_workflow::stop() {
-    vlog(archival_log.info, "stopping upload housekeeping job");
+    vlog(
+      archival_log.info,
+      "stopping upload housekeeping workflow, num pending jobs: {}, num "
+      "executed jobs: {}, num running jobs {}, waiting until running job stops",
+      _pending.size(),
+      _executed.size(),
+      _running.size());
+    // At this point if _running is not empty then it's expected that
+    // it'd be removed when the execution of the job will be copleted.
+    // This is because the owner of the job is required to deregister its
+    // jobs before the housekeeping service is stopped.
+    co_await _exec_gate.close();
+    auto all_jobs = _running.size() + _executed.size() + _pending.size();
+    vassert(all_jobs == 0, "Not all jobs are deregistered", all_jobs);
     _as.request_abort();
     _cvar.broken();
-    if (_current_job.has_value() && !_current_job->get().interrupted()) {
-        vlog(archival_log.info, "stop interrupts active job");
-        _current_job->get().interrupt();
-    }
-    return _gate.close();
+    co_await _gate.close();
 }
 
 housekeeping_state housekeeping_workflow::state() const { return _state; }
 
-bool housekeeping_workflow::has_active_job() const {
-    return _current_job.has_value();
-}
+bool housekeeping_workflow::has_active_job() const { return !_running.empty(); }
 
 } // namespace archival

@@ -38,6 +38,9 @@ public:
 
     void set_enabled(bool) override;
 
+    void acquire() override;
+    void release() override;
+
 private:
     std::optional<adjacent_segment_run> scan_manifest(
       model::offset local_start_offset,
@@ -52,6 +55,7 @@ private:
     config::binding<std::optional<size_t>> _min_segment_size;
     ss::abort_source _as;
     ss::gate _gate;
+    ss::gate::holder _holder;
 };
 
 } // namespace archival

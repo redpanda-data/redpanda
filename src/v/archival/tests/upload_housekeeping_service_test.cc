@@ -16,6 +16,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -70,6 +71,13 @@ public:
 
     ss::future<> stop() override { return _gate.close(); }
 
+    void acquire() override {
+        ss::gate::holder holder(_gate);
+        _holder = std::move(holder);
+    }
+
+    void release() override { _holder.release(); }
+
     size_t executed{0};
     size_t interrupt_cnt{0};
 
@@ -77,6 +85,7 @@ private:
     std::chrono::milliseconds _delay;
     ss::abort_source _as;
     ss::gate _gate;
+    ss::gate::holder _holder;
     bool _throw{false};
 };
 
@@ -121,11 +130,15 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_stop) {
     wf.start();
     wf.resume(false);
     wait_for_job_execution(wf);
+    wf.deregister_job(job1);
+    wf.deregister_job(job2);
     wf.stop().get();
     BOOST_REQUIRE_EQUAL(job1.executed, 1);
     BOOST_REQUIRE(job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 0);
-    BOOST_REQUIRE(!job2.interrupted());
+    BOOST_REQUIRE(job2.interrupted());
+    job1.stop().get();
+    job2.stop().get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_pause) {
@@ -150,6 +163,8 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_pause) {
     BOOST_REQUIRE(!job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 1);
     BOOST_REQUIRE(!job2.interrupted());
+    wf.deregister_job(job1);
+    wf.deregister_job(job2);
     wf.stop().get();
 }
 
@@ -177,6 +192,10 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_drain) {
     BOOST_REQUIRE(!job3.interrupted());
     BOOST_REQUIRE_EQUAL(job4.executed, 1);
     BOOST_REQUIRE(!job4.interrupted());
+    wf.deregister_job(job1);
+    wf.deregister_job(job2);
+    wf.deregister_job(job3);
+    wf.deregister_job(job4);
     wf.stop().get();
 }
 
@@ -195,6 +214,7 @@ SEASTAR_THREAD_TEST_CASE(test_housekeeping_workflow_interrupt) {
     BOOST_REQUIRE(job1.interrupted());
     BOOST_REQUIRE_EQUAL(job2.executed, 0);
     BOOST_REQUIRE(!job2.interrupted());
+    wf.deregister_job(job2);
     wf.stop().get();
 }
 
