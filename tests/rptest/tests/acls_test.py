@@ -9,7 +9,7 @@
 import socket
 import time
 from ducktape.errors import TimeoutError
-from ducktape.mark import parametrize, matrix, ok_to_fail
+from ducktape.mark import parametrize, matrix
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
@@ -257,7 +257,6 @@ class AccessControlListTest(RedpandaTest):
         client_auth - Controls the value of require_client_auth RP config
     '''
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8202
     @cluster(num_nodes=3, log_allow_list=["Validation errors in node config"])
     @matrix(use_tls=[True, False],
             use_sasl=[True, False],
@@ -321,7 +320,6 @@ class AccessControlListTest(RedpandaTest):
     # * redpanda.service.admin: the default admin client
     # * admin: used for acl bootstrap
     # * cluster_describe: the principal under test
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8202
     @cluster(num_nodes=3)
     # DEFAULT: The whole SAN
     @parametrize(rules="DEFAULT", fail=True)
