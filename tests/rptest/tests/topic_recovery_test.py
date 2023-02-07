@@ -10,44 +10,34 @@ import io
 import json
 import os
 import pprint
+import time
+from collections import defaultdict, deque, namedtuple
 from queue import Queue
 from threading import Thread
-import time
-from collections import namedtuple, defaultdict, deque
-from typing import NamedTuple, Optional, Callable, Sequence, Tuple
+from typing import Callable, NamedTuple, Optional, Sequence
 
+import requests
 from ducktape.cluster.cluster import ClusterNode
+from ducktape.mark import parametrize
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
-import requests
-
 from rptest.archival.s3_client import S3Client
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import FileToChecksumSize, RedpandaService, SISettings
+from rptest.services.redpanda import (CloudStorageType, FileToChecksumSize,
+                                      RedpandaService, SISettings)
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.utils.si_utils import (
-    SegmentReader,
-    parse_s3_manifest_path,
-    parse_s3_segment_path,
-    verify_file_layout,
-    gen_manifest_path,
-    get_on_disk_size_per_ntp,
-    get_expected_ntp_restored_size,
-    is_close_size,
-    EMPTY_SEGMENT_SIZE,
-    default_log_segment_size,
-    NTP,
-    MISSING_DATA_ERRORS,
-    TRANSIENT_ERRORS,
-    PathMatcher,
-    S3Snapshot,
-)
-from rptest.services.admin import Admin
 from rptest.util import wait_until_result
+from rptest.utils.si_utils import (
+    EMPTY_SEGMENT_SIZE, MISSING_DATA_ERRORS, NTP, TRANSIENT_ERRORS,
+    PathMatcher, S3Snapshot, SegmentReader, default_log_segment_size,
+    gen_manifest_path, get_expected_ntp_restored_size,
+    get_on_disk_size_per_ntp, is_close_size, parse_s3_manifest_path,
+    parse_s3_segment_path, verify_file_layout)
 
 CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC = 10
 
@@ -1475,7 +1465,9 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    def test_admin_api_recovery(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_admin_api_recovery(self, cloud_storage_type):
         topics = [
             TopicSpec(name='panda-topic',
                       partition_count=1,

@@ -173,13 +173,17 @@ public:
       const object_key& key,
       ss::lowres_clock::duration timeout) override;
 
+    /// Issue multiple Delete Blob requests. Note that the timeout is used for
+    /// each individual delete call, so there is a multiplication at work here.
+    /// For example a timeout of 1 second with 100 objects to delete means that
+    /// the timeout is expanded to 100 seconds.
+    /// \param bucket is a container name
+    /// \param keys is a list of blob ids
+    /// \param timeout is a timeout of the operation
     ss::future<result<delete_objects_result, error_outcome>> delete_objects(
       const bucket_name& bucket,
       std::vector<object_key> keys,
-      ss::lowres_clock::duration timeout) override {
-        vassert(false, "abs_client::delete_objects is not implemented");
-        co_return error_outcome::fail;
-    }
+      ss::lowres_clock::duration timeout) override;
 
 private:
     template<typename T>
