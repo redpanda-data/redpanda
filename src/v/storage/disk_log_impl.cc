@@ -29,6 +29,7 @@
 #include "storage/segment_utils.h"
 #include "storage/types.h"
 #include "storage/version.h"
+#include "units.h"
 #include "utils/gate_guard.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -455,10 +456,16 @@ disk_log_impl::find_compaction_range(const compaction_config& cfg) {
               return seg->offsets().term == term;
           });
 
+        // Clamp max compacted segment size to 1.5GiB to avoid compaction index
+        // size overflow. See
+        // https://github.com/redpanda-data/redpanda/issues/7647 for details.
+        // This is a workaround for older versions, proper fix is
+        // https://github.com/redpanda-data/redpanda/pull/7687
+        size_t max_compacted_segment_size = std::min(
+          _manager.config().max_compacted_segment_size(), 1536_MiB);
+
         // found a good range if all the tests pass
-        if (
-          same_term
-          && total_size < _manager.config().max_compacted_segment_size()) {
+        if (same_term && total_size < max_compacted_segment_size) {
             break;
         }
 
