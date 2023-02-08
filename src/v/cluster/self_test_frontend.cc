@@ -12,6 +12,7 @@
 #include "cluster/self_test_frontend.h"
 
 #include "cluster/logger.h"
+#include "cluster/self_test/netcheck.h"
 #include "cluster/self_test_backend.h"
 #include "ssx/future-util.h"
 #include "vlog.h"
@@ -125,37 +126,6 @@ ss::future<> self_test_frontend::start() { return ss::now(); }
 
 ss::future<> self_test_frontend::stop() { co_await _gate.close(); }
 
-/// Returns groupings of nodes that the network bench will run between. Simple
-/// for loop groups unique pairs of nodes with eachother.
-static absl::flat_hash_map<model::node_id, std::vector<model::node_id>>
-network_test_plan(
-  absl::flat_hash_set<model::node_id> ids_set,
-  std::vector<model::node_id> nodes) {
-    /*
-     * Example: 3 node cluster nodes: [0,1,2]
-     *
-     * Pairings: [(0,1), (0,2), (1,2)], will be participants in network tests
-     * where the first element in the tuple will be the client, second will be
-     * the server
-     *
-     * ids_set: Include nodes for which user intended as the test runner
-     */
-    absl::flat_hash_map<model::node_id, std::vector<model::node_id>> peers;
-    for (const auto& requested_id : ids_set) {
-        for (const auto& node_id : nodes) {
-            if (requested_id != node_id) {
-                vlog(
-                  clusterlog.debug,
-                  "Adding {{client: {} server: {}}} pair to netcheck plan",
-                  requested_id,
-                  node_id);
-                peers[requested_id].emplace_back(node_id);
-            }
-        }
-    }
-    return peers;
-}
-
 ss::future<uuid_t> self_test_frontend::start_test(
   start_test_request req, std::vector<model::node_id> ids) {
     auto gate_holder = _gate.hold();
@@ -190,8 +160,7 @@ ss::future<uuid_t> self_test_frontend::start_test(
 
     /// Invoke command to start test on all nodes, using the same test id
     const auto test_id = uuid_t::create();
-    const auto network_plan = network_test_plan(
-      ids_set, _members.local().node_ids());
+    const auto network_plan = self_test::netcheck::network_test_plan(ids);
     co_await invoke_on_all_nodes(
       [test_id, ids_set, req, &network_plan](model::node_id nid, auto& handle) {
           /// Clear last results of nodes who don't participate in this run

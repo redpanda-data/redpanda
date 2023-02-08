@@ -108,7 +108,7 @@ struct diskcheck_opts
         fmt::print(
           o,
           "{{name: {} dsync: {} skip_write: {} skip_read: {} data_size: {} "
-          "request_size: {} parallelism: {} duration: {}}}",
+          "request_size: {} duration: {} parallelism: {}}}",
           opts.name,
           opts.dsync,
           opts.skip_write,

@@ -90,6 +90,11 @@ the jobs launched. Possible results are:
 				tw.PrintColumn(header)
 				tw.PrintColumn(strings.Repeat("=", len(header)))
 				tableResults := makeReportTable(report)
+				if len(tableResults) == 0 {
+					tw.PrintColumn("INFO", "No cached results for node")
+					tw.Line()
+					continue
+				}
 				for _, row := range tableResults {
 					all := rowDataAsInterface(row[1:])
 					tw.PrintColumn(row[0], all...)

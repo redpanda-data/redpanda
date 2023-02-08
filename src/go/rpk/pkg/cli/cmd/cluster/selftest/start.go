@@ -81,15 +81,15 @@ command.`,
 			// Make HTTP POST request to leader that starts the actual test
 			tid, err := cl.StartSelfTest(cmd.Context(), onNodes, tests)
 			out.MaybeDie(err, "unable to start self test: %v", err)
-			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk redpanda admin self-test status", tid)
+			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk redpanda admin self-test status\n", tid)
 		},
 	}
 
 	// Collect arguments via command line
 	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Acknowledge warning prompt skipping read from stdin")
-	cmd.Flags().UintVar(&diskDurationMs, "disk-duration-ms", 5000,
+	cmd.Flags().UintVar(&diskDurationMs, "disk-duration-ms", 30000,
 		"The duration in milliseconds of individual disk test runs")
-	cmd.Flags().UintVar(&netDurationMs, "network-duration-ms", 5000,
+	cmd.Flags().UintVar(&netDurationMs, "network-duration-ms", 30000,
 		"The duration in milliseconds of individual disk test runs")
 	cmd.Flags().IntSliceVar(&onNodes, "participant-node-ids", nil,
 		"ids of nodes that the tests will run on. Omitting this implies all nodes.")
@@ -125,7 +125,7 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 			SkipRead:    false,
 			DataSize:    1 * units.GiB,
 			RequestSize: 512 * units.KiB,
-			DurationMs:  durationNet,
+			DurationMs:  durationDisk,
 			Parallelism: 2,
 			Type:        admin.DiskcheckTagIdentifier,
 		},

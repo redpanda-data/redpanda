@@ -43,9 +43,16 @@ public:
 
 class netcheck {
 public:
+    using plan_t
+      = absl::flat_hash_map<model::node_id, std::vector<model::node_id>>;
+
     /// Made public for unit testing, only used internally
     ///
     static void validate_options(const netcheck_opts& opts);
+
+    /// Made public for unit testing, only used internally
+    ///
+    static plan_t network_test_plan(std::vector<model::node_id> nodes);
 
     /// Class constructor
     ///

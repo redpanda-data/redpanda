@@ -40,10 +40,11 @@ ss::future<> self_test_backend::start() {
 }
 
 ss::future<> self_test_backend::stop() {
-    co_await _gate.close();
+    auto f = _gate.close();
     co_await _disk_test.stop();
     co_await _network_test.stop();
     co_await _lock.get_units(); /// Ensure outstanding work is completed
+    co_await std::move(f);
 }
 
 ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
@@ -66,7 +67,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             }
         } catch (const std::exception& ex) {
             vlog(
-              clusterlog.warn,
+              clusterlog.error,
               "Disk self test finished with error: {} - options: {}",
               ex.what(),
               dto);
@@ -99,7 +100,7 @@ ss::future<std::vector<self_test_result>> self_test_backend::do_start_test(
             }
         } catch (const std::exception& ex) {
             vlog(
-              clusterlog.warn,
+              clusterlog.error,
               "Network self test finished with error: {} - options: {}",
               ex.what(),
               nto);

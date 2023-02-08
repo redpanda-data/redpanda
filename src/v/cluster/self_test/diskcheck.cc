@@ -87,7 +87,10 @@ ss::future<> diskcheck::verify_remaining_space(size_t dataset_size) {
 }
 
 ss::future<std::vector<self_test_result>> diskcheck::run(diskcheck_opts opts) {
-    vassert(_gate.get_count() == 0, "Benchmark already in progress");
+    if (_gate.is_closed()) {
+        vlog(clusterlog.debug, "diskcheck - gate already closed");
+        co_return std::vector<self_test_result>();
+    }
     gate_guard g{_gate};
     co_await ss::futurize_invoke(validate_options, opts);
     co_await verify_remaining_space(opts.data_size);
@@ -141,13 +144,10 @@ diskcheck::initialize_benchmark(ss::sstring fname) {
         co_return co_await ss::with_scheduling_group(
           _opts.sg,
           [this, &file]() mutable { return run_configured_benchmarks(file); });
-    } catch (const diskcheck_exception& ex) {
-        /// As of now the only exception that could be possibly encountered here
-        /// is the `benchmark_aborted_exception`, triggered in the case user
-        /// calls `stop()` while jobs are running
-        vlog(clusterlog.error, "Benchmark exception encountered: ", ex);
-        throw;
+    } catch (const diskcheck_aborted_exception& ex) {
+        vlog(clusterlog.debug, "diskcheck stopped due to call to stop()");
     }
+    co_return std::vector<self_test_result>{};
 }
 
 ss::future<std::vector<self_test_result>>

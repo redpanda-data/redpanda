@@ -18,6 +18,7 @@
 
 #include <seastar/core/coroutine.hh>
 
+#include <absl/container/flat_hash_map.h>
 #include <boost/range/irange.hpp>
 
 namespace cluster::self_test {
@@ -49,6 +50,23 @@ void netcheck::validate_options(const netcheck_opts& opts) {
     }
 }
 
+/// Returns groupings of nodes that the network bench will run between. Simple
+/// for loop groups unique pairs of nodes with eachother.
+netcheck::plan_t
+netcheck::network_test_plan(std::vector<model::node_id> nodes) {
+    /// Choose unique pairs of nodes - order doesn't matter. This creates a list
+    /// of client/server pairs where there are no instances of a pair for which
+    /// the client/server roles are reversed. The intention is to only perform
+    /// the netcheck benchmark one time per unique pair.
+    plan_t plan;
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        for (size_t j = i + 1; j < nodes.size(); ++j) {
+            plan[nodes[i]].emplace_back(nodes[j]);
+        }
+    }
+    return plan;
+}
+
 netcheck::netcheck(
   model::node_id self, ss::sharded<rpc::connection_cache>& connections)
   : _self(self)
@@ -64,11 +82,10 @@ ss::future<> netcheck::stop() {
 void netcheck::cancel() { _cancelled = true; }
 
 ss::future<std::vector<self_test_result>> netcheck::run(netcheck_opts opts) {
-    vassert(_gate.get_count() == 0, "Benchmark already in progress");
-    gate_guard g{_gate};
     _cancelled = false;
     _opts = opts;
     try {
+        gate_guard g{_gate};
         co_await ss::futurize_invoke(validate_options, opts);
         vlog(
           clusterlog.info,
@@ -80,10 +97,12 @@ ss::future<std::vector<self_test_result>> netcheck::run(netcheck_opts opts) {
                   return run_individual_benchmark(peer);
               });
         });
-    } catch (const netcheck_exception& ex) {
-        vlog(clusterlog.error, "Network exception encountered: {}", ex);
-        throw;
+    } catch (const netcheck_aborted_exception& ex) {
+        vlog(clusterlog.debug, "netcheck stopped due to call of stop()");
+    } catch (const ss::gate_closed_exception&) {
+        vlog(clusterlog.debug, "netcheck - ss::gate_closed_exception caught");
     }
+    co_return std::vector<self_test_result>{};
 }
 
 ss::future<self_test_result>
