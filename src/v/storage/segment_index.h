@@ -76,6 +76,7 @@ public:
     bool batch_timestamps_are_monotonic() const {
         return _state.batch_timestamps_are_monotonic;
     }
+    bool non_data_timestamps() const { return _state.non_data_timestamps; }
 
     ss::future<bool> materialize_index();
     ss::future<> flush();
