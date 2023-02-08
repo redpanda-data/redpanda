@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -742,7 +743,7 @@ func prepareAdditionalArguments(
 			out = append(out, fmt.Sprintf("--%s=%s", k, v))
 		}
 	}
-
+	sort.Strings(out)
 	return out
 }
 
