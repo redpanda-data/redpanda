@@ -59,6 +59,7 @@ const (
 	datadirName                  = "datadir"
 	archivalCacheIndexAnchorName = "shadow-index-cache"
 	defaultDatadirCapacity       = "100Gi"
+	trueString                   = "true"
 )
 
 var (
@@ -697,7 +698,7 @@ func prepareAdditionalArguments(
 	args := make(map[string]string)
 	if developerMode {
 		args["overprovisioned"] = ""
-		args["kernel-page-cache"] = "true"
+		args["kernel-page-cache"] = trueString
 		args["default-log-level"] = "debug"
 	} else {
 		args["default-log-level"] = "info"
