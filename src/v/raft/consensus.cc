@@ -199,6 +199,7 @@ void consensus::do_step_down(std::string_view ctx) {
           _term,
           _log.offsets().dirty_offset);
     }
+    _fstats.reset();
     _vstate = vote_state::follower;
 }
 
