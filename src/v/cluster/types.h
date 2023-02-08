@@ -421,14 +421,14 @@ struct fetch_tx_reply
     model::producer_identity pid;
     model::producer_identity last_pid;
     model::tx_seq tx_seq;
-    std::chrono::milliseconds timeout_ms;
+    std::chrono::milliseconds timeout_ms{};
     tx_status status;
     std::vector<tx_partition> partitions;
     std::vector<tx_group> groups;
 
     fetch_tx_reply() noexcept = default;
 
-    fetch_tx_reply(tx_errc ec)
+    explicit fetch_tx_reply(tx_errc ec)
       : ec(ec) {}
 
     fetch_tx_reply(
