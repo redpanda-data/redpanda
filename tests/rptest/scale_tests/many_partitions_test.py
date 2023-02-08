@@ -282,6 +282,11 @@ class ManyPartitionsTest(PreallocNodesTest):
                 # size isn't productive.
                 'cloud_storage_segment_size_min': 1,
                 'log_segment_size_min': 1024,
+
+                # Disable segment merging: when we create many small segments
+                # to pad out tiered storage metadata, we don't want them to
+                # get merged together.
+                'cloud_storage_enable_segment_merging': False,
             },
             # Configure logging the same way a user would when they have
             # very many partitions: set logs with per-partition messages
