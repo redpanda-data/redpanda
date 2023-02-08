@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import sys
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import matrix, ok_to_fail, defaults
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -43,8 +43,10 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         initial_cleanup_policy=[
             TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE
         ],
-        workload=[Workload.IDEMPOTENCY, Workload.TX, Workload.TX_UNIQUE_KEYS])
-    def test_basic_compaction(self, initial_cleanup_policy, workload):
+        workload=[Workload.IDEMPOTENCY, Workload.TX, Workload.TX_UNIQUE_KEYS],
+        skip_first_error=[False, True])
+    def test_basic_compaction(self, initial_cleanup_policy, workload,
+                              skip_first_error: bool):
         '''
         Basic end to end compaction logic test. The test verifies if last value 
         consumed for each key matches the last produced value for the same key. 
@@ -107,10 +109,16 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         timeout_sec = 300
         self.logger.info(
             f"wait for multiple segments to appear in topic partitions")
-        # wait for multiple segments to appear in topic partitions
-        wait_until(lambda: segment_number_matches(lambda s: s >= 5),
-                   timeout_sec=timeout_sec,
-                   backoff_sec=2)
+        try:
+            # wait for multiple segments to appear in topic partitions
+            wait_until(lambda: segment_number_matches(lambda s: s >= 5),
+                       timeout_sec=timeout_sec,
+                       backoff_sec=2)
+        except:
+            if skip_first_error:
+                self.logger.error(f"{skip_first_error=}, skipping")
+            else:
+                raise
 
         # enable compaction, if topic isn't compacted
         if initial_cleanup_policy == TopicSpec.CLEANUP_DELETE:
