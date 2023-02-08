@@ -11,6 +11,7 @@ import random
 from rptest.clients.kafka_cat import KafkaCat
 from time import sleep
 from rptest.clients.default import DefaultClient
+import requests
 
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.rpk import RpkTool
@@ -111,12 +112,25 @@ class NodesDecommissioningTest(EndToEndTest):
 
         wait_until(requested_status, timeout_sec=timeout_sec, backoff_sec=1)
 
-    def _set_recovery_rate(self, rate):
+    def _set_recovery_rate(self, rate, timeout_sec=30):
         # use admin API to leverage the retry policy when controller returns 503
-        patch_result = Admin(self.redpanda).patch_cluster_config(
-            upsert={"raft_learner_recovery_rate": rate})
-        self.logger.debug(
-            f"setting recovery rate to {rate} result: {patch_result}")
+        def is_rate_set():
+            try:
+                patch_result = Admin(self.redpanda).patch_cluster_config(
+                    upsert={"raft_learner_recovery_rate": rate})
+                self.logger.debug(
+                    f"setting recovery rate to {rate} result: {patch_result}")
+                return True
+            except requests.exceptions.HTTPError as e:
+                # We should allow only timeout error
+                assert e.response.status_code == 504
+                return False
+
+        return wait_until(
+            is_rate_set,
+            timeout_sec=timeout_sec,
+            backoff_sec=1,
+            err_msg=f"Can't set recovery rate:{rate} for cluster config")
 
     # after node was removed the state should be consistent on all other not removed nodes
     def _check_state_consistent(self, decommissioned_id):
