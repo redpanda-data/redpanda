@@ -588,10 +588,15 @@ class KgoVerifierProducer(KgoVerifierService):
             return True
 
         self.logger.debug(f"{self.who_am_i()} wait: awaiting message count")
-        self._redpanda.wait_until(lambda: self._status_thread.errored or self.
-                                  _status.acked >= self._msg_count,
-                                  timeout_sec=timeout_sec,
-                                  backoff_sec=self._status_thread.INTERVAL)
+        try:
+            self._redpanda.wait_until(lambda: self._status_thread.errored or
+                                      self._status.acked >= self._msg_count,
+                                      timeout_sec=timeout_sec,
+                                      backoff_sec=self._status_thread.INTERVAL)
+        except:
+            self.stop_node(node)
+            raise
+
         self._status_thread.raise_on_error()
 
         return super().wait_node(node, timeout_sec=timeout_sec)
