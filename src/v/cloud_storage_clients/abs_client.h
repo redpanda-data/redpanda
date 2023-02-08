@@ -41,6 +41,9 @@ public:
       size_t payload_size_bytes,
       const object_tag_formatter& tags);
 
+    result<http::client::request_header> make_post_blob_request(
+      bucket_name const& name, size_t payload_size_bytes, ss::sstring batch_id);
+
     /// \brief Create a 'Get Blob' request header
     ///
     /// \param name is container name
@@ -64,6 +67,12 @@ public:
     /// \return initialized and signed http header or error
     result<http::client::request_header>
     make_delete_blob_request(bucket_name const& name, object_key const& key);
+
+    result<ss::sstring> make_delete_blob_sub_request(
+      bucket_name const& name,
+      object_key const& key,
+      size_t sequence_id,
+      ss::sstring batch_id);
 
     /// \brief Initialize http header for 'List Blobs' request
     ///
@@ -147,6 +156,13 @@ public:
       const object_tag_formatter& tags,
       ss::lowres_clock::duration timeout) override;
 
+    ss::future<result<no_response, error_outcome>> post_object(
+      bucket_name const& name,
+      size_t payload_size,
+      ss::input_stream<char> body,
+      ss::sstring batch_id,
+      ss::lowres_clock::duration timeout);
+
     /// Send List Blobs request
     /// \param name is a container name
     /// \param prefix is an optional blob prefix to match
@@ -205,6 +221,13 @@ private:
       size_t payload_size,
       ss::input_stream<char> body,
       const object_tag_formatter& tags,
+      ss::lowres_clock::duration timeout);
+
+    ss::future<> do_post_object(
+      bucket_name const& name,
+      size_t payload_size,
+      ss::input_stream<char> body,
+      ss::sstring batch_id,
       ss::lowres_clock::duration timeout);
 
     ss::future<head_object_result> do_head_object(

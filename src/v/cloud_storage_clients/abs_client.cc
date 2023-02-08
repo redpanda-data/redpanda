@@ -10,12 +10,16 @@
 
 #include "cloud_storage_clients/abs_client.h"
 
+#include "bytes/iostream.h"
 #include "cloud_storage_clients/abs_error.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cloud_storage_clients/logger.h"
 #include "cloud_storage_clients/util.h"
 #include "cloud_storage_clients/xml_sax_parser.h"
 #include "vlog.h"
+
+#include <boost/uuid/uuid_generators.hpp>
+#include <boost/uuid/uuid_io.hpp>
 
 #include <utility>
 
@@ -157,6 +161,34 @@ result<http::client::request_header> abs_request_creator::make_put_blob_request(
 }
 
 result<http::client::request_header>
+abs_request_creator::make_post_blob_request(
+  bucket_name const& name, size_t payload_size_bytes, ss::sstring batch_id) {
+    const auto target = fmt::format("/{}?restype=container&comp=batch", name());
+    const boost::beast::string_view host{_ap().data(), _ap().length()};
+
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::post);
+    header.target(target);
+    header.insert(boost::beast::http::field::host, host);
+    header.insert(
+      boost::beast::http::field::content_type,
+      fmt::format(
+        "multipart/mixed; "
+        "boundary=batch_{}",
+        batch_id));
+    header.insert(
+      boost::beast::http::field::content_length,
+      std::to_string(payload_size_bytes));
+
+    auto error_code = _apply_credentials->add_auth(header);
+    if (error_code) {
+        return error_code;
+    }
+
+    return header;
+}
+
+result<http::client::request_header>
 abs_request_creator::make_get_blob_metadata_request(
   bucket_name const& name, object_key const& key) {
     // HEAD /{container-id}/{blob-id}?comp=metadata HTTP/1.1
@@ -204,6 +236,39 @@ abs_request_creator::make_delete_blob_request(
     }
 
     return header;
+}
+
+result<ss::sstring> abs_request_creator::make_delete_blob_sub_request(
+  bucket_name const& name,
+  object_key const& key,
+  size_t sequence_id,
+  ss::sstring batch_id) {
+    const auto target = fmt::format("/{}/{}", name(), key().string());
+    const boost::beast::string_view host{_ap().data(), _ap().length()};
+
+    http::client::request_header header{};
+    header.method(boost::beast::http::verb::delete_);
+    header.target(target);
+    header.insert(boost::beast::http::field::content_length, "0");
+    auto error_code = _apply_credentials->add_auth(header);
+
+    if (error_code) {
+        return error_code;
+    }
+
+    header.erase("x-ms-version");
+    auto content_type = "Content-Type: application/http";
+    auto content_transfer_encoding = "Content-Transfer-Encoding: binary";
+    auto content_id = fmt::format("Content-ID: {}", sequence_id);
+    ss::sstring encoded = fmt::format(
+      "--batch_{}\r\n{}\r\n{}\r\n{}",
+      batch_id,
+      content_type,
+      content_transfer_encoding,
+      content_id);
+    std::stringstream sstr;
+    sstr << header;
+    return fmt::format("{}\r\n\r\n{}", encoded, sstr.str());
 }
 
 result<http::client::request_header>
@@ -415,6 +480,23 @@ abs_client::put_object(
       op_type_tag::upload);
 }
 
+ss::future<result<abs_client::no_response, error_outcome>>
+abs_client::post_object(
+  bucket_name const& name,
+  size_t payload_size,
+  ss::input_stream<char> body,
+  ss::sstring batch_id,
+  ss::lowres_clock::duration timeout) {
+    return send_request(
+      do_post_object(
+        name, payload_size, std::move(body), std::move(batch_id), timeout)
+        .then(
+          []() { return ss::make_ready_future<no_response>(no_response{}); }),
+      name,
+      object_key{""},
+      op_type_tag::upload);
+}
+
 ss::future<> abs_client::do_put_object(
   bucket_name const& name,
   object_key const& key,
@@ -446,6 +528,48 @@ ss::future<> abs_client::do_put_object(
         auto buf = co_await util::drain_response_stream(
           std::move(response_stream));
         throw parse_rest_error_response(status, std::move(buf));
+    }
+}
+
+ss::future<> abs_client::do_post_object(
+  bucket_name const& name,
+  size_t payload_size,
+  ss::input_stream<char> body,
+  ss::sstring batch_id,
+  ss::lowres_clock::duration timeout) {
+    auto header = _requestor.make_post_blob_request(
+      name, payload_size, batch_id);
+    if (!header) {
+        co_await body.close();
+
+        vlog(
+          abs_log.warn, "Failed to create request header: {}", header.error());
+        throw std::system_error(header.error());
+    }
+
+    vlog(abs_log.trace, "send https request:\n{}", header.value());
+
+    auto response_stream = co_await _client
+                             .request(std::move(header.value()), body, timeout)
+                             .finally([&body] { return body.close(); });
+
+    co_await response_stream->prefetch_headers();
+    vassert(response_stream->is_header_done(), "Header is not received");
+
+    const auto status = response_stream->get_headers().result();
+    if (status != boost::beast::http::status::accepted) {
+        auto buf = co_await util::drain_response_stream(
+          std::move(response_stream));
+        throw parse_rest_error_response(status, std::move(buf));
+    } else {
+        auto buf = co_await util::drain_response_stream(
+          std::move(response_stream));
+        iobuf_parser p{std::move(buf)};
+        vlog(
+          abs_log.trace,
+          "response from post: [{}] status: [{}]",
+          p.read_string(p.bytes_left()),
+          status);
     }
 }
 
@@ -556,13 +680,15 @@ abs_client::delete_objects(
     std::vector<ss::future<result<abs_client::no_response, error_outcome>>>
       batch_delete_results;
 
-    size_t batch_size = 100;
+    size_t batch_size = 256;
     batch_delete_results.reserve(batch_size);
     keys_to_delete.reserve(batch_size);
 
     abs_client::delete_objects_result delete_objects_result;
 
     while (!keys.empty()) {
+        auto uuid = boost::uuids::random_generator()();
+        auto batch_id = boost::uuids::to_string(uuid);
         auto end = keys.size() > batch_size ? keys.begin() + batch_size
                                             : keys.end();
         std::copy(
@@ -571,30 +697,41 @@ abs_client::delete_objects(
           std::back_inserter(keys_to_delete));
 
         keys.erase(keys.begin(), end);
-
-        for (const auto& key : keys_to_delete) {
-            batch_delete_results.push_back(delete_object(bucket, key, timeout));
-        }
-
-        auto wait_for_batch = co_await ss::when_all(
-          batch_delete_results.begin(), batch_delete_results.end());
-
-        for (size_t i = 0; i < wait_for_batch.size(); ++i) {
-            auto single_delete_result_fut = std::move(wait_for_batch[i]);
-            const auto& key = keys_to_delete[i];
-            if (single_delete_result_fut.failed()) {
-                delete_objects_result.undeleted_keys.push_back({key, "failed"});
+        ss::sstring batch_delete_request_body{};
+        for (size_t sequence_id = 0; sequence_id < keys_to_delete.size();
+             ++sequence_id) {
+            auto encoded = _requestor.make_delete_blob_sub_request(
+              bucket, keys_to_delete[sequence_id], sequence_id, batch_id);
+            if (encoded.has_error()) {
+                vlog(
+                  abs_log.warn,
+                  "failed to encode key {}: error {}",
+                  keys_to_delete[sequence_id],
+                  encoded.error());
             } else {
-                auto single_delete_result = single_delete_result_fut.get();
-                if (single_delete_result.has_error()) {
-                    delete_objects_result.undeleted_keys.push_back(
-                      {key, "failed"});
-                }
+                batch_delete_request_body = fmt::format(
+                  "{}{}", batch_delete_request_body, encoded.value());
             }
         }
 
-        keys_to_delete.clear();
-        batch_delete_results.clear();
+        if (!batch_delete_request_body.empty()) {
+            iobuf req;
+            req.append(
+              batch_delete_request_body.data(),
+              batch_delete_request_body.size());
+            auto res = co_await post_object(
+              bucket,
+              batch_delete_request_body.size(),
+              make_iobuf_input_stream(std::move(req)),
+              batch_id,
+              timeout);
+            if (res.has_error()) {
+                vlog(
+                  abs_log.warn,
+                  "failed to delete batch: error {}",
+                  res.error());
+            }
+        }
     }
 
     co_return delete_objects_result;
