@@ -1438,6 +1438,13 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
             current_cfg, replicas);
           const auto already_moved = are_configuration_replicas_up_to_date(
             current_cfg, previous_replicas);
+          vlog(
+            clusterlog.trace,
+            "[{}] not reconfiguring: {}, not yet moved: {}, already_moved: {}",
+            ntp,
+            raft_not_reconfiguring,
+            not_yet_moved,
+            already_moved);
           // raft already finished its part, we need to move replica back
           if (raft_not_reconfiguring) {
               // move hasn't yet requested
