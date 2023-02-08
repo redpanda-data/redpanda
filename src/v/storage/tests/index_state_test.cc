@@ -217,7 +217,6 @@ BOOST_AUTO_TEST_CASE(offset_time_index_test) {
     //                    |             |
     // After offsetting:  [2^31, ..., 2 ^ 32 - 1]
 
-    const uint32_t offset = storage::offset_time_index::offset;
     const uint32_t max_delta = storage::offset_time_index::delta_time_max;
 
     std::vector<uint32_t> deltas_before{
