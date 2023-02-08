@@ -1689,10 +1689,12 @@ class RedpandaService(Service):
 
         self._stop_duration_seconds = time.time() - self._stop_time
 
-    def stop_node(self, node, timeout=None):
+    def stop_node(self, node, timeout=None, forced=False):
         pids = self.pids(node)
         for pid in pids:
-            node.account.signal(pid, signal.SIGTERM, allow_fail=False)
+            node.account.signal(pid,
+                                signal.SIGKILL if forced else signal.SIGTERM,
+                                allow_fail=False)
 
         if timeout is None:
             timeout = 30
