@@ -556,38 +556,29 @@ abs_client::delete_objects(
     co_await ss::max_concurrent_for_each(
       keys, 32, [this, &bucket, &delete_objects_result, timeout](auto key) {
           return delete_object(bucket, key, timeout)
-            .then_wrapped([&key, &delete_objects_result](auto delete_f) {
-                vlog(
-                  abs_log.trace,
-                  "start of single delete path, failed?: {}",
-                  delete_f.failed());
-                if (delete_f.failed()) {
-                    try {
-                        vlog(
-                          abs_log.trace, "failed future, rethrowing exception");
-                        std::rethrow_exception(delete_f.get_exception());
-                    } catch (const std::exception& ex) {
-                        vlog(
-                          abs_log.trace,
-                          "failed future, caught exception: {}",
-                          ex.what());
-                        delete_objects_result.undeleted_keys.push_back(
-                          {key, ex.what()});
-                    }
-                } else {
-                    vlog(abs_log.trace, "successful future");
-                    auto delete_result = delete_f.get();
-                    if (delete_result.has_error()) {
-                        vlog(
-                          abs_log.trace,
-                          "successful future but error: {}",
-                          delete_result.error());
-                        delete_objects_result.undeleted_keys.push_back(
-                          {key, fmt::format("{}", delete_result.error())});
-                    }
-                }
-                vlog(abs_log.trace, "end of single delete path");
-            });
+            .then(
+              [&key, &delete_objects_result](const auto& single_delete_result) {
+                  vlog(abs_log.trace, "successful future");
+                  if (single_delete_result.has_error()) {
+                      vlog(
+                        abs_log.trace,
+                        "successful future but error: {}",
+                        single_delete_result.error());
+                      delete_objects_result.undeleted_keys.push_back(
+                        {key, fmt::format("{}", single_delete_result.error())});
+                  }
+
+                  vlog(abs_log.trace, "end of single delete path");
+              })
+            .handle_exception_type(
+              [&key, &delete_objects_result](const std::exception& ex) {
+                  vlog(
+                    abs_log.trace,
+                    "failed future, caught exception: {}",
+                    ex.what());
+                  delete_objects_result.undeleted_keys.push_back(
+                    {key, ex.what()});
+              });
       });
     co_return delete_objects_result;
 }
