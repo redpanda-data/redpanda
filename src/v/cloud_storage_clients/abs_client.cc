@@ -552,55 +552,52 @@ abs_client::delete_objects(
   const bucket_name& bucket,
   std::vector<object_key> keys,
   ss::lowres_clock::duration timeout) {
-    return ss::do_with(
-      bucket_name{bucket},
-      std::move(keys),
-      timeout,
-      abs_client::delete_objects_result{},
-      [this](
-        const bucket_name& bucket,
-        const std::vector<object_key>& keys,
-        const ss::lowres_clock::duration& timeout,
-        auto& delete_objects_result) {
-          return ss::max_concurrent_for_each(
-                   keys,
-                   32,
-                   [this, &bucket, &timeout, &delete_objects_result](
-                     const auto& key) {
-                       auto delete_one_key = [this, &bucket, &key, &timeout]() {
-                           return delete_object(bucket, key, timeout);
-                       };
+    std::vector<object_key> keys_to_delete;
+    std::vector<ss::future<result<abs_client::no_response, error_outcome>>>
+      batch_delete_results;
 
-                       return ss::futurize_invoke(delete_one_key)
-                         .then([&delete_objects_result,
-                                &key](const auto& delete_result_single) {
-                             if (delete_result_single.has_error()) {
-                                 delete_objects_result.undeleted_keys.push_back(
-                                   {key,
-                                    fmt::format(
-                                      "{}", delete_result_single.error())});
-                             }
-                         })
-                         .handle_exception_type([&delete_objects_result, &key](
-                                                  const std::exception& ex) {
-                             delete_objects_result.undeleted_keys.push_back(
-                               {key, ex.what()});
-                         });
-                   })
-            .then_wrapped(
-              [&delete_objects_result](auto f)
-                -> result<abs_client::delete_objects_result, error_outcome> {
-                  if (f.failed()) {
-                      try {
-                          const auto& ex_ptr = f.get_exception();
-                          std::rethrow_exception(ex_ptr);
-                      } catch (const std::exception& ex) {
-                          vlog(abs_log.trace, "failed future: {}", ex.what());
-                      }
-                  }
-                  return delete_objects_result;
-              });
-      });
+    size_t batch_size = 100;
+    batch_delete_results.reserve(batch_size);
+    keys_to_delete.reserve(batch_size);
+
+    abs_client::delete_objects_result delete_objects_result;
+
+    while (!keys.empty()) {
+        auto end = keys.size() > batch_size ? keys.begin() + batch_size
+                                            : keys.end();
+        std::copy(
+          std::make_move_iterator(keys.begin()),
+          std::make_move_iterator(end),
+          std::back_inserter(keys_to_delete));
+
+        keys.erase(keys.begin(), end);
+
+        for (const auto& key : keys_to_delete) {
+            batch_delete_results.push_back(delete_object(bucket, key, timeout));
+        }
+
+        auto wait_for_batch = co_await ss::when_all(
+          batch_delete_results.begin(), batch_delete_results.end());
+
+        for (size_t i = 0; i < wait_for_batch.size(); ++i) {
+            auto single_delete_result_fut = std::move(wait_for_batch[i]);
+            const auto& key = keys_to_delete[i];
+            if (single_delete_result_fut.failed()) {
+                delete_objects_result.undeleted_keys.push_back({key, "failed"});
+            } else {
+                auto single_delete_result = single_delete_result_fut.get();
+                if (single_delete_result.has_error()) {
+                    delete_objects_result.undeleted_keys.push_back(
+                      {key, "failed"});
+                }
+            }
+        }
+
+        keys_to_delete.clear();
+        batch_delete_results.clear();
+    }
+
+    co_return delete_objects_result;
 }
 
 ss::future<result<abs_client::list_bucket_result, error_outcome>>
