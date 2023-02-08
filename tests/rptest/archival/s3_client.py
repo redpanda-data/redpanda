@@ -1,11 +1,15 @@
+import threading
+
 from rptest.archival.shared_client_utils import key_to_topic
 
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from concurrent.futures import ThreadPoolExecutor
 import datetime
 from functools import wraps
+from itertools import islice
 from time import sleep
 from typing import Iterator, NamedTuple, Union, Optional
 
@@ -55,15 +59,28 @@ class S3Client:
         logger.debug(
             f"Constructed S3Client in region {region}, endpoint {endpoint}, key is set = {access_key is not None}"
         )
-        cfg = Config(region_name=region, signature_version='s3v4')
-        self._cli = boto3.client('s3',
-                                 config=cfg,
-                                 aws_access_key_id=access_key,
-                                 aws_secret_access_key=secret_key,
-                                 endpoint_url=endpoint,
-                                 use_ssl=not disable_ssl)
+
         self._region = region
+        self._access_key = access_key
+        self._secret_key = secret_key
+        self._endpoint = endpoint
+        self._disable_ssl = disable_ssl
+        self._cli = self.make_client()
         self.logger = logger
+
+    def make_client(self):
+        cfg = Config(region_name=self._region,
+                     signature_version='s3v4',
+                     retries={
+                         'max_attempts': 10,
+                         'mode': 'adaptive'
+                     })
+        return boto3.client('s3',
+                            config=cfg,
+                            aws_access_key_id=self._access_key,
+                            aws_secret_access_key=self._secret_key,
+                            endpoint_url=self._endpoint,
+                            use_ssl=not self._disable_ssl)
 
     def create_bucket(self, name):
         """Create bucket in S3"""
@@ -102,37 +119,77 @@ class S3Client:
                 self.logger.warn(f"  {o.key}")
             raise
 
-    def empty_bucket(self, name):
+    def empty_bucket(self, name, parallel=False):
         """Empty bucket, return list of keys that wasn't deleted due
         to error"""
-        keys = []
-        try:
-            self.logger.debug(f"running bucket cleanup on {name}")
-            for obj in self.list_objects(bucket=name):
-                keys.append(obj.key)
-                self.logger.debug(f"found key {obj.key}")
-        except Exception as e:
-            # Expected to fail if bucket doesn't exist
-            self.logger.debug(f"empty_bucket error on {name}: {e}")
 
-        failed_keys = []
-        while len(keys):
-            # S3 API supports up to 1000 keys per delete request
-            batch = keys[0:1000]
-            keys = keys[1000:]
-            self.logger.debug(f"deleting keys {batch[0]}..{batch[-1]}")
+        # If we are asked to run in parallel, create 256 tasks to share
+        # out the keyspace, then run using a fixed number of workers.  Worker
+        # count has to be modest to avoid hitting a lot of AWS SlowDown responses.
+        max_workers = 4 if parallel else 1
+        hash_prefixes = list(f"{i:2x}" for i in range(0, 256))
+        prefixes = hash_prefixes if parallel else [""]
+
+        def empty_bucket_prefix(prefix):
+            self.logger.debug(
+                f"empty_bucket: running on {name} prefix={prefix}")
+            failed_keys = []
+
+            # boto3 client objects are not thread safe: create one for each worker thread
+            local = threading.local()
+            if not hasattr(local, "client"):
+                local.client = self.make_client()
+
+            def deletion_batches():
+                it = self.list_objects(bucket=name, prefix=prefix)
+                while True:
+                    batch = list(islice(it, 1000))
+                    if not batch:
+                        return
+                    yield batch
+
+            deleted_count = 0
             try:
-                reply = self._cli.delete_objects(
-                    Bucket=name,
-                    Delete={'Objects': [{
-                        'Key': k
-                    } for k in batch]})
-                self.logger.debug(f"delete request reply: {reply}")
-            except:
-                self.logger.exception(
-                    f"Delete request failed for keys {batch[0]}..{batch[-1]}")
-                failed_keys.extend(batch)
-        return failed_keys
+                for obj_batch in deletion_batches():
+                    # Materialize a list so that we can re-use it in logging after using
+                    # it in the deletion op
+                    key_list = list(o.key for o in obj_batch)
+
+                    try:
+                        local.client.delete_objects(
+                            Bucket=name,
+                            Delete={'Objects': [{
+                                'Key': k
+                            } for k in key_list]})
+                    except:
+                        self.logger.exception(
+                            f"empty_bucket: delete request failed for keys {key_list[0]}..{key_list[-1]}"
+                        )
+                        failed_keys.extend(key_list)
+                    else:
+                        deleted_count += len(key_list)
+            except Exception as e:
+                # Expected to fail if bucket doesn't exist
+                self.logger.debug(f"empty_bucket error on {name}: {e}")
+
+            self.logger.debug(
+                f"empty_bucket: deleted {deleted_count} keys (prefix={prefix})"
+            )
+
+            return deleted_count, failed_keys
+
+        all_failed_keys = []
+        all_deleted_count = 0
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = executor.map(empty_bucket_prefix, prefixes)
+            for (dc, fk) in results:
+                all_deleted_count += dc
+                all_failed_keys.extend(fk)
+
+        self.logger.debug(
+            f"empty_bucket: deleted {all_deleted_count} keys (all prefixes)")
+
+        return all_failed_keys
 
     def delete_object(self, bucket, key, verify=False):
         """Remove object from S3"""
@@ -295,14 +352,22 @@ class S3Client:
                 f.write(chunk)
 
     @retry_on_slowdown()
-    def _list_objects(self, bucket, token=None, limit=1000):
+    def _list_objects(self,
+                      bucket,
+                      token=None,
+                      limit=1000,
+                      prefix: Optional[str] = None,
+                      client=None):
         try:
             if token is not None:
-                return self._cli.list_objects_v2(Bucket=bucket,
-                                                 MaxKeys=limit,
-                                                 ContinuationToken=token)
+                return client.list_objects_v2(Bucket=bucket,
+                                              MaxKeys=limit,
+                                              ContinuationToken=token,
+                                              Prefix=prefix if prefix else "")
             else:
-                return self._cli.list_objects_v2(Bucket=bucket, MaxKeys=limit)
+                return client.list_objects_v2(Bucket=bucket,
+                                              MaxKeys=limit,
+                                              Prefix=prefix if prefix else "")
         except ClientError as err:
             self.logger.debug(f"error response listing {bucket}: {err}")
             if err.response['Error']['Code'] == 'SlowDown':
@@ -312,23 +377,33 @@ class S3Client:
 
     def list_objects(self,
                      bucket,
-                     topic: Optional[str] = None) -> Iterator[ObjectMetadata]:
+                     topic: Optional[str] = None,
+                     prefix: Optional[str] = None,
+                     client=None) -> Iterator[ObjectMetadata]:
         """
         :param bucket: S3 bucket name
         :param topic: Optional, if set then only return objects belonging to this topic
         """
+
+        if client is None:
+            client = self._cli
+
         token = None
         truncated = True
         while truncated:
             try:
-                res = self._list_objects(bucket, token, limit=100)
+                res = self._list_objects(bucket,
+                                         token,
+                                         limit=100,
+                                         prefix=prefix,
+                                         client=client)
             except:
                 # For debugging NoSuchBucket errors in tests: if we can't list
                 # this bucket, then try to list what buckets exist.
                 # Related: https://github.com/redpanda-data/redpanda/issues/8490
                 self.logger.error(
                     f"Error in list_objects '{bucket}', listing all buckets")
-                for k, v in self.list_buckets().items():
+                for k, v in self.list_buckets(client=client).items():
                     self.logger.error(f"Listed bucket {k}: {v}")
                 raise
 
@@ -347,9 +422,11 @@ class S3Client:
                                          etag=item['ETag'][1:-1],
                                          content_length=item['Size'])
 
-    def list_buckets(self) -> dict[str, Union[list, dict]]:
+    def list_buckets(self, client=None) -> dict[str, Union[list, dict]]:
+        if client is None:
+            client = self._cli
         try:
-            return self._cli.list_buckets()
+            return client.list_buckets()
         except Exception as ex:
             self.logger.error(f'Error listing buckets: {ex}')
             raise
