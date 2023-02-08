@@ -220,7 +220,7 @@ static client_probe::verb convert_to_pverb(client::response_stream::verb v) {
 client::response_stream::response_stream(
   client* client, client::response_stream::verb v, ss::sstring target)
   : _client(client)
-  , _ctxlog(http_log, ssx::sformat("{{}}", std::move(target)))
+  , _ctxlog(http_log, ssx::sformat("{}", std::move(target)))
   , _parser()
   , _buffer()
   , _sprobe(client->_probe->create_request_subprobe(convert_to_pverb(v))) {
@@ -282,7 +282,11 @@ ss::future<> client::response_stream::prefetch_headers() {
 }
 
 ss::future<iobuf> client::response_stream::recv_some() {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::current_exception_as_future<iobuf>();
+    }
     if (!_prefetch.empty()) {
         // This code will only be executed if 'prefetch_headers' was called. It
         // can only be called once.
@@ -362,8 +366,23 @@ ss::future<iobuf> client::response_stream::recv_some() {
           return _client->stop().then(
             [err] { return ss::make_exception_future<iobuf>(err); });
       })
+      .handle_exception_type([this](const boost::system::system_error& ec) {
+          vlog(_ctxlog.warn, "receive error {}", ec);
+          try {
+              _client->check();
+          } catch (...) {
+              return ss::make_exception_future<iobuf>(std::current_exception());
+          }
+          _client->shutdown();
+          return ss::make_exception_future<iobuf>(ec);
+      })
       .handle_exception_type([this](const std::system_error& ec) {
           vlog(_ctxlog.warn, "receive error {}", ec);
+          try {
+              _client->check();
+          } catch (...) {
+              return ss::make_exception_future<iobuf>(std::current_exception());
+          }
           _client->shutdown();
           return ss::make_exception_future<iobuf>(ec);
       });
@@ -408,7 +427,11 @@ client::request_stream::send_some(ss::temporary_buffer<char>&& buf) {
 }
 
 ss::future<> client::request_stream::send_some(iobuf&& seq) {
-    _client->check();
+    try {
+        _client->check();
+    } catch (...) {
+        return ss::current_exception_as_future();
+    }
     vlog(_ctxlog.trace, "request_stream.send_some {}", seq.size_bytes());
     if (_serializer.is_header_done()) {
         // Fast path
