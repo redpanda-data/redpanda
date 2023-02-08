@@ -159,6 +159,14 @@ spec:
               configuration:
                 description: Configuration represent redpanda specific configuration
                 properties:
+                  additionalCommandlineArguments:
+                    additionalProperties:
+                      type: string
+                    description: Additional command line arguments that we pass to
+                      the redpanda binary These are applied last and will override
+                      any other command line arguments that may be defined, including
+                      the ones added when setting `DeveloperMode` to `true`.
+                    type: object
                   adminApi:
                     items:
                       description: AdminAPI configures listener for the Redpanda Admin

@@ -1,0 +1,14 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cluster
+status:
+  readyReplicas: 1
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1
