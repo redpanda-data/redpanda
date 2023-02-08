@@ -587,9 +587,17 @@ abs_client::delete_objects(
                                {key, ex.what()});
                          });
                    })
-            .then(
-              [&delete_objects_result]()
+            .then_wrapped(
+              [&delete_objects_result](auto f)
                 -> result<abs_client::delete_objects_result, error_outcome> {
+                  if (f.failed()) {
+                      try {
+                          const auto& ex_ptr = f.get_exception();
+                          std::rethrow_exception(ex_ptr);
+                      } catch (const std::exception& ex) {
+                          vlog(abs_log.trace, "failed future: {}", ex.what());
+                      }
+                  }
                   return delete_objects_result;
               });
       });
