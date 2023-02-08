@@ -1436,9 +1436,6 @@ ss::future<std::error_code> controller_backend::cancel_replica_set_update(
 
           const auto raft_not_reconfiguring
             = current_cfg.get_state() == raft::configuration_state::simple;
-          // TODO: emit revert command when we have learners in an old
-          // configuration of raft group as they are about to be removed.
-
           const auto not_yet_moved = are_configuration_replicas_up_to_date(
             current_cfg, replicas);
           const auto already_moved = are_configuration_replicas_up_to_date(
