@@ -149,7 +149,9 @@ func TestModeCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(t, err)
 
-			require.Exactly(t, tt.exp, conf.File())
+			expRaw, err := yaml.Marshal(tt.exp)
+			require.NoError(t, err)
+			require.YAMLEq(t, string(expRaw), string(conf.RawFile()))
 		})
 	}
 }

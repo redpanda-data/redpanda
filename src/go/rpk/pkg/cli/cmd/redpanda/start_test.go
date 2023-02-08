@@ -24,6 +24,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -253,10 +254,15 @@ func TestStartCommand(t *testing.T) {
 				"group_initial_rebalance_delay": 0,
 				"log_segment_size_min":          1,
 			}
+			expYAML, err := yaml.Marshal(c)
+			require.NoError(st, err)
 
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			require.Exactly(st, c, conf.File())
+			gotYAML, err := yaml.Marshal(conf.File())
+			require.NoError(st, err)
+
+			require.YAMLEq(st, string(expYAML), string(gotYAML))
 		},
 	}, {
 		name: "it should write the given config file path",
@@ -276,6 +282,45 @@ func TestStartCommand(t *testing.T) {
 			exists, err := afero.Exists(fs, testConfigPath)
 			require.NoError(st, err)
 			require.True(st, exists)
+		},
+	}, {
+		name: "it should avoid rewrite if there were no changes in the config file",
+		args: []string{
+			"--config", config.DefaultPath,
+			"--install-dir", "/var/lib/redpanda",
+			"--advertise-kafka-addr", "plaintext://192.168.34.32:9092",
+		},
+		before: func(fs afero.Fs) error {
+			// The following configuration file is shifted from what rpk
+			// would write. We want to verify that running the command
+			// 'redpanda start' does not change the contents of the config
+			// file , as 'rpk' does not overwrite existing files with
+			// identical content.
+			return afero.WriteFile(
+				fs,
+				config.DefaultPath,
+				[]byte(`redpanda:
+    seed_servers: []
+    data_directory: /var/lib/redpanda/data
+    advertised_kafka_api:
+        - address: 192.168.34.32
+          name: plaintext
+          port: 9092
+`),
+				0o755,
+			)
+		},
+		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
+			file, err := afero.ReadFile(fs, config.DefaultPath)
+			require.NoError(st, err)
+			require.Equal(st, `redpanda:
+    seed_servers: []
+    data_directory: /var/lib/redpanda/data
+    advertised_kafka_api:
+        - address: 192.168.34.32
+          name: plaintext
+          port: 9092
+`, string(file))
 		},
 	}, {
 		name: "it should allow passing arbitrary config values and write them to the config file",

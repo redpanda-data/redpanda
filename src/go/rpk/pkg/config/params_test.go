@@ -200,6 +200,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 		return
 	}
 	cfg = cfg.FileOrDefaults() // we want to check that we correctly load the raw file
+	cfg.rawFile = nil          // we don't want to compare the in-memory raw file
 	require.Equal(t, expCfg, cfg)
 
 	// Write to the file and check we don't mangle the config properties

@@ -20,6 +20,7 @@ import (
 type Config struct {
 	file         *Config
 	fileLocation string
+	rawFile      []byte
 
 	NodeUUID             string             `yaml:"node_uuid,omitempty" json:"node_uuid"`
 	Organization         string             `yaml:"organization,omitempty" json:"organization"`
@@ -40,6 +41,12 @@ type Config struct {
 // no file was read.
 func (c *Config) File() *Config {
 	return c.file
+}
+
+// RawFile returns the bytes of the actual file on disk, if there was one.
+// The raw bytes must be valid yaml.
+func (c *Config) RawFile() []byte {
+	return c.rawFile
 }
 
 // FileLocation returns the loaded file location; this is the path that
