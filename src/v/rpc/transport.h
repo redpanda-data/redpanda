@@ -139,7 +139,6 @@ private:
     using sequence_t = named_type<uint64_t, struct sequence_tag>;
     struct entry {
         std::unique_ptr<ss::scattered_message<char>> scattered_message;
-        client_opts::resource_units_t resource_units;
         uint32_t correlation_id;
     };
     using requests_queue_t
@@ -157,7 +156,7 @@ private:
     void dispatch_send();
 
     ss::future<result<std::unique_ptr<streaming_context>>>
-    make_response_handler(netbuf&, const rpc::client_opts&, sequence_t);
+    make_response_handler(netbuf&, rpc::client_opts&, sequence_t);
 
     ssx::semaphore _memory;
 
@@ -174,10 +173,11 @@ private:
     timing_info* get_timing(uint32_t correlation);
 
     /**
-     * @brief Holds the response handler and timing information for an
-     * outstanding request.
+     * @brief Holds resource units from client_opts, the response handler and
+     * timing information for an outstanding request.
      */
     struct response_entry {
+        client_opts::resource_units_t resource_units;
         internal::response_handler handler;
         timing_info timing;
     };

@@ -134,7 +134,7 @@ transport::send(netbuf b, rpc::client_opts opts) {
 
 ss::future<result<std::unique_ptr<streaming_context>>>
 transport::make_response_handler(
-  netbuf& b, const rpc::client_opts& opts, sequence_t seq) {
+  netbuf& b, rpc::client_opts& opts, sequence_t seq) {
     if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
         _probe.client_correlation_error();
         vlog(
@@ -148,6 +148,11 @@ transport::make_response_handler(
     b.set_correlation_id(idx);
 
     auto entry = std::make_unique<response_entry>();
+
+    // Normally resource_units will be released when we send the request to
+    // remote server. But if a timeout or disconnect happens before sending,
+    // they must be released when the caller is notified with the result.
+    entry->resource_units = std::move(opts.resource_units);
 
     // set initial timing info for this request
     entry->timing.timeout = opts.timeout;
@@ -180,12 +185,6 @@ transport::make_response_handler(
               }
               return format_ms(now - earlier);
           };
-          /*
-           * remove pending entry from requests queue. If a timeout occurred
-           * before an entry was sent we can not keep the entry alive as it may
-           * contain caller semaphore units, the units must be released when we
-           * notify caller with the result.
-           */
           _requests_queue.erase(seq);
           auto it = _correlations.find(idx);
           // The timeout may race with the completion of the request (and
@@ -244,23 +243,23 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                   });
             })
             .then_unpack(
-              [this,
-               f = std::move(f),
-               seq,
-               u = std::move(opts.resource_units),
-               corr](
+              [this, f = std::move(f), seq, corr](
                 ssx::semaphore_units units,
                 ss::scattered_message<char> scattered_message) mutable {
-                  auto e = entry{
-                    .scattered_message
-                    = std::make_unique<ss::scattered_message<char>>(
-                      std::move(scattered_message)),
-                    .resource_units = std::move(u),
-                    .correlation_id = corr};
+                  // Check that the request hasn't been finished yet.
+                  // If it has (due to timeout or disconnect), we don't need to
+                  // send it.
+                  if (_correlations.contains(corr)) {
+                      auto e = entry{
+                        .scattered_message
+                        = std::make_unique<ss::scattered_message<char>>(
+                          std::move(scattered_message)),
+                        .correlation_id = corr};
 
-                  _requests_queue.emplace(
-                    seq, std::make_unique<entry>(std::move(e)));
-                  dispatch_send();
+                      _requests_queue.emplace(
+                        seq, std::make_unique<entry>(std::move(e)));
+                      dispatch_send();
+                  }
                   return std::move(f).finally([u = std::move(units)] {});
               })
             .finally([this, seq] {
@@ -297,18 +296,27 @@ void transport::dispatch_send() {
                   _last_seq = it->first;
                   auto v = std::move(*it->second->scattered_message);
                   auto corr = it->second->correlation_id;
+                  _requests_queue.erase(it);
+
+                  auto resp_it = _correlations.find(corr);
+                  if (resp_it == _correlations.end()) {
+                      // request had already completed even before we sent it
+                      // (probably due to timeout or disconnect). We don't need
+                      // to do anything.
+                      return ss::now();
+                  }
+                  auto& resp_entry = resp_it->second;
+
                   // These units are released once we are out of scope here
                   // and that is intentional because the underlying write call
                   // to the batched output stream guarantees us the in-order
                   // delivery of the dispatched write calls, which is the intent
                   // of holding on to the units up until this point.
-                  auto units = std::move(it->second->resource_units);
+                  auto units = std::move(resp_entry->resource_units);
                   auto msg_size = v.size();
-                  _requests_queue.erase(it->first);
+
                   auto f = _out.write(std::move(v));
-                  if (auto maybe_timing = get_timing(corr)) {
-                      maybe_timing->dispatched_at = clock_type::now();
-                  }
+                  resp_entry->timing.dispatched_at = clock_type::now();
                   return std::move(f)
                     .then([this, corr](bool flushed) {
                         if (auto maybe_timing = get_timing(corr)) {
@@ -383,7 +391,7 @@ timing_info* transport::get_timing(uint32_t correlation) {
 }
 
 transport::~transport() {
-    vlog(rpclog.debug, "RPC Client probes: {}", _probe);
+    vlog(rpclog.debug, "RPC Client to {} probes: {}", server_address(), _probe);
     vassert(
       !is_valid(),
       "connection '{}' is still valid. must call stop() before destroying",
