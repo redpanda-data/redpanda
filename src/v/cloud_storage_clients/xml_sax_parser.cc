@@ -31,7 +31,7 @@ struct aws_tags {
 
 struct abs_tags {
     static constexpr std::string_view prefix{"Prefix"};
-    static constexpr std::string_view marker{"Marker"};
+    static constexpr std::string_view next_marker{"NextMarker"};
     static constexpr std::string_view blob{"Blob"};
     static constexpr std::string_view name{"Name"};
     static constexpr std::string_view size{"Content-Length"};
@@ -208,8 +208,8 @@ void abs_parse_impl::handle_start_element(std::string_view element_name) {
         _current_tag = xml_tag::last_modified;
     } else if (element_name == abs_tags::etag && is_in_blob_properties()) {
         _current_tag = xml_tag::etag;
-    } else if (element_name == abs_tags::marker && is_top_level()) {
-        _current_tag = xml_tag::is_truncated;
+    } else if (element_name == abs_tags::next_marker && is_top_level()) {
+        _current_tag = xml_tag::next_continuation_token;
     } else if (element_name == abs_tags::prefix && is_top_level()) {
         _current_tag = xml_tag::prefix;
     }
@@ -218,6 +218,14 @@ void abs_parse_impl::handle_start_element(std::string_view element_name) {
 
 void abs_parse_impl::handle_end_element(std::string_view element_name) {
     _tags.pop_back();
+
+    // ABS returns a non empty NextMarker when the result is truncated. There
+    // is no explicit field for is_truncated, so we infer this value from the
+    // size of NextMarker.
+    if (element_name == abs_tags::next_marker) {
+        _items.is_truncated = !_items.next_continuation_token.empty();
+    }
+
     if (element_name == abs_tags::blob && _current_item) {
         if (!_item_filter || _item_filter.value()(_current_item.value())) {
             _items.contents.push_back(std::move(_current_item.value()));
@@ -263,8 +271,9 @@ void abs_parse_impl::handle_characters(std::string_view characters) {
               "Invalid state: parsing ETag when not in Blob tag"};
         }
         break;
-    case xml_tag::is_truncated:
-        _items.is_truncated = characters == "true";
+    case xml_tag::next_continuation_token:
+        _items.next_continuation_token = {characters.data(), characters.size()};
+        _items.is_truncated = true;
         break;
     case xml_tag::prefix:
         // Parsing prefix at the top level: ListBucketResult -> Prefix
@@ -277,9 +286,7 @@ void abs_parse_impl::handle_characters(std::string_view characters) {
               characters.data(), characters.size());
         }
         break;
-    case xml_tag::next_continuation_token:
-        _items.next_continuation_token = {characters.data(), characters.size()};
-        break;
+    case xml_tag::is_truncated:
     case xml_tag::unset:
         return;
     }
