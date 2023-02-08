@@ -2417,6 +2417,28 @@ class RedpandaService(Service):
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
+    def metric_sum(self,
+                   metric_name,
+                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+                   ns=None,
+                   topic=None):
+        """
+        Pings the 'metrics_endpoint' of each node and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        """
+        count = 0
+        for n in self.nodes:
+            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
+            for family in metrics:
+                for sample in family.samples:
+                    if ns and sample.labels["namespace"] != ns:
+                        continue
+                    if topic and sample.labels["topic"] != topic:
+                        continue
+                    if sample.name == metric_name:
+                        count += int(sample.value)
+        return count
+
     def _extract_samples(self, metrics, sample_pattern: str,
                          node: ClusterNode) -> list[MetricSamples]:
         found_sample = None
