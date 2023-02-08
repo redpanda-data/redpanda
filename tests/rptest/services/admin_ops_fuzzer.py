@@ -15,6 +15,7 @@ import requests
 from threading import Event, Condition
 import threading
 import time
+from requests.exceptions import HTTPError
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
@@ -22,6 +23,7 @@ from time import sleep
 
 from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
+from rptest.services.redpanda_installer import VERSION_RE, int_tuple
 
 
 # Operation context (used to save state between invocation of operations)
@@ -222,14 +224,44 @@ class AddPartitionsOperation(Operation):
         self.total = None
         self.current = None
 
+    def _current_partition_count(self, ctx):
+
+        per_node_count = set()
+        for n in ctx.redpanda.started_nodes():
+            node_version = int_tuple(
+                VERSION_RE.findall(ctx.redpanda.get_version(n))[0])
+            # do not query nodes with redpanda version prior to v23.1.x
+            if node_version[0] < 23:
+                return None
+            try:
+                partitions = ctx.admin().get_partitions(node=n,
+                                                        topic=self.topic)
+                per_node_count.add(len(partitions))
+            except HTTPError as err:
+                if err.response.status_code == 404:
+                    return None
+                else:
+                    raise
+
+        if len(per_node_count) != 1:
+            ctx.redpanda.logger.info(
+                f"inconsistent partition count for {self.topic}: {per_node_count}"
+            )
+            return None
+
+        return next(iter(per_node_count))
+
     def execute(self, ctx):
         if self.topic is None:
             self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
+
+        if self.current is None:
+            self.current = self._current_partition_count(ctx)
+        if self.current is None:
+            return False
         if self.total is None:
-            self.current = len(
-                list(ctx.rpk().describe_topic(self.topic, tolerant=True)))
             self.total = random.randint(self.current + 1, self.current + 5)
         ctx.redpanda.logger.info(
             f"Updating topic: {self.topic} partitions count. Current partition count: {self.current} new partition count: {self.total}"
