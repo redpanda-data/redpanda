@@ -82,16 +82,6 @@ struct needle_in_range {
         // must use max_offset
         return o <= s.offsets().dirty_offset && o >= s.offsets().base_offset;
     }
-
-    bool operator()(Iterator ptr, model::timestamp t) {
-        auto& s = **ptr;
-        if (s.empty()) {
-            return false;
-        }
-        // must use max_offset
-        return t <= s.index().max_timestamp()
-               && t >= s.index().base_timestamp();
-    }
 };
 
 template<typename Iterator, typename Needle>
@@ -141,12 +131,6 @@ segment_set::lower_bound(model::offset offset) const {
 segment_set::iterator segment_set::lower_bound(model::timestamp needle) {
     return std::lower_bound(
       std::begin(_handles), std::end(_handles), needle, segment_ordering{});
-}
-
-segment_set::const_iterator
-segment_set::lower_bound(model::timestamp needle) const {
-    return segments_lower_bound(
-      std::cbegin(_handles), std::cend(_handles), needle);
 }
 
 segment_set::iterator segment_set::upper_bound(model::term_id term) {
