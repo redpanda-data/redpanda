@@ -133,13 +133,6 @@ class ScaleParameters:
             # parameters are different: we want to stress the number of
             # uploaded segments.
 
-            # Set our segment size low to encourage uploads to cloud storage.
-            # This segment size will form the foundation of a simulated
-            # workload of storing a week of data in cloud, uploading every
-            # hour. Keep it small to ensure we can get a high enough segment
-            # count per partition without uploading so much data.
-            self.segment_size = 32 * 1024
-
             # Locally retain as many segments as a full day.
 
             # Retain as much data in cloud as one big batch of data.
@@ -427,6 +420,14 @@ class ManyPartitionsTest(PreallocNodesTest):
             consumer.stop()
             consumer.free()
 
+    def _repeater_worker_count(self, scale):
+        workers = 32 * scale.node_cpus
+        if self.redpanda.dedicated_nodes:
+            # 768 workers on a 24 core node has been seen to work well.
+            return workers
+        else:
+            return min(workers, 4)
+
     def nodes_report_cloud_segments(self, target_segments):
         """
         Returns true if the nodes in the cluster collectively report having
@@ -556,6 +557,64 @@ class ManyPartitionsTest(PreallocNodesTest):
                     f"Open files after {i} restarts on {node_name}: {file_count}"
                 )
 
+    def _tiered_storage_warmup(self, scale, topic_name):
+        """
+        When testing tiered storage, we want a realistic amount of metadata in the
+        system: it takes too long to actually play in a day or week's worth of data,
+        so set a very small segment size, then play in enough data to create a realistic
+        number of segments.
+        """
+
+        warmup_segment_size = 4096
+        warmup_message_size = 1024
+        target_cloud_segments = 24 * 7 * scale.partition_limit
+
+        # Uploads of tiny segments usually progress at a few thousand
+        # per second.  This is dominated by the S3 PUT latency combined
+        # with limited parallelism of connections.
+        expect_upload_rate = 1000
+
+        expect_write_bytes = target_cloud_segments * warmup_segment_size
+        expect_runtime_bandwidth = (
+            2 * expect_write_bytes) / scale.expect_bandwidth
+        expect_runtime_upload = (2 *
+                                 target_cloud_segments) / expect_upload_rate
+        expect_runtime = max(expect_runtime_upload, expect_runtime_bandwidth)
+
+        try:
+            self.logger.info(
+                f"Tiered storage warmup: overriding segment size to {warmup_segment_size}"
+            )
+            self.rpk.alter_topic_config(topic_name, 'segment.bytes',
+                                        str(warmup_segment_size))
+
+            # FIXME: this only works if we have one topic globally.  When we add admin API for
+            # manifest stats, use that instead.
+            self.logger.info(
+                f"Tiered storage warmup: waiting {expect_runtime}s for {target_cloud_segments} to be created"
+            )
+            with repeater_traffic(context=self._ctx,
+                                  redpanda=self.redpanda,
+                                  nodes=self.preallocated_nodes,
+                                  topic=topic_name,
+                                  msg_size=warmup_message_size,
+                                  workers=self._repeater_worker_count(scale),
+                                  max_buffered_records=1,
+                                  group_name="tiered-storage-warmup",
+                                  cleanup=lambda: self.free_preallocated_nodes(
+                                  )) as repeater:
+
+                wait_until(lambda: self.nodes_report_cloud_segments(
+                    target_cloud_segments),
+                           timeout_sec=expect_runtime,
+                           backoff_sec=5)
+        finally:
+            self.logger.info(
+                f"Tiered storage warmup: restoring segment size to {scale.segment_size}"
+            )
+            self.rpk.alter_topic_config(topic_name, 'segment.bytes',
+                                        scale.segment_size)
+
     def _write_and_random_read(self, scale: ScaleParameters, topic_names):
         """
         This is a relatively low intensity test, that covers random
@@ -654,16 +713,6 @@ class ManyPartitionsTest(PreallocNodesTest):
         wait_until(lambda: fast_producer.produce_status.acked > 0,
                    timeout_sec=30,
                    backoff_sec=1.0)
-
-        # Read workloads will likely compete with cloud segment uploads, so
-        # also wait until there's a reasonable number of cloud segments per
-        # partition, to exercise a realistic workload.
-        if scale.tiered_storage_enabled:
-            target_cloud_segments = 24 * 7 * self.partition_limit
-            wait_until(lambda: self.nodes_report_cloud_segments(
-                target_cloud_segments),
-                       timeout_sec=60,
-                       backoff_sec=5)
 
         rand_ios = 100
         rand_parallel = 100
@@ -922,16 +971,16 @@ class ManyPartitionsTest(PreallocNodesTest):
                 f"Open files after initial elections on {node_name}: {file_count}"
             )
 
+        if scale.tiered_storage_enabled:
+            self.logger.info("Entering tiered storage warmup")
+            for tn in topic_names:
+                self._tiered_storage_warmup(scale, tn)
+
         self.logger.info(
             "Entering initial traffic test, writes + random reads")
         self._write_and_random_read(scale, topic_names)
 
         # Start kgo-repeater
-        # 768 workers on a 24 core node has been seen to work well.
-        workers = 32 * scale.node_cpus
-
-        if not self.redpanda.dedicated_nodes:
-            workers = min(workers, 4)
 
         repeater_kwargs = {}
         if compacted:
@@ -955,7 +1004,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                               nodes=self.preallocated_nodes,
                               topic=topic_names[0],
                               msg_size=repeater_msg_size,
-                              workers=workers,
+                              workers=self._repeater_worker_count(scale),
                               max_buffered_records=max_buffered_records,
                               cleanup=lambda: self.free_preallocated_nodes(),
                               **repeater_kwargs) as repeater:
