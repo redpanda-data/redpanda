@@ -82,7 +82,7 @@ partitions_request_iterator validate_partitions(
   partitions_request_iterator end,
   std::back_insert_iterator<Container> resp_it,
   reassignable_topic_response topic_response,
-  std::vector<model::node_id> all_node_ids,
+  std::vector<model::node_id> alive_nodes,
   std::optional<cluster::topic_metadata> tp_metadata) {
     // An undefined replicas vector is not an error, see "Replicas" in the
     // AlterPartitionReassignmentsRequest schemata. Therefore checks for
@@ -144,7 +144,7 @@ partitions_request_iterator validate_partitions(
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Replica assignment has brokers that are not alive",
-      [&all_node_ids](const reassignable_partition& partition) {
+      [&alive_nodes](const reassignable_partition& partition) {
           if (!partition.replicas.has_value()) {
               return true;
           }
@@ -152,10 +152,10 @@ partitions_request_iterator validate_partitions(
           auto unkown_broker_id_it = std::find_if(
             partition.replicas->begin(),
             partition.replicas->end(),
-            [all_node_ids](const model::node_id& node_id) {
+            [alive_nodes](const model::node_id& node_id) {
                 return std::find(
-                         all_node_ids.begin(), all_node_ids.end(), node_id)
-                       == all_node_ids.end();
+                         alive_nodes.begin(), alive_nodes.end(), node_id)
+                       == alive_nodes.end();
             });
           return unkown_broker_id_it == partition.replicas->end();
       });
@@ -213,7 +213,11 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
     }
 
     resp.data.responses.reserve(request.data.topics.size());
-    auto all_node_ids = ctx.metadata_cache().node_ids();
+    std::vector<model::node_id> alive_nodes;
+    auto alive_brokers_md = co_await ctx.metadata_cache().alive_nodes();
+    for (const auto& node_md : alive_brokers_md) {
+        alive_nodes.push_back(node_md.broker.id());
+    }
 
     for (auto& topic : request.data.topics) {
         reassignable_topic_response topic_response{.name = topic.name};
@@ -225,7 +229,7 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
           topic.partitions.end(),
           std::back_inserter(resp.data.responses),
           topic_response,
-          all_node_ids,
+          alive_nodes,
           tp_metadata);
 
         for (auto it = topic.partitions.begin(); it != valid_partitions_end;
