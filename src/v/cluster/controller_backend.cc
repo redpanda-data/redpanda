@@ -672,6 +672,21 @@ ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
         try {
             auto ec = co_await execute_partition_op(*it);
             if (ec) {
+                /**
+                 * Since the subsequent operations may depend on a fact that
+                 * the partition instance, that was supposed to be created
+                 * on current shard during update operation, exists we must
+                 * retry failed partition creation operation.
+                 */
+                if (ec == errc::failed_to_create_partition) {
+                    stop = true;
+                    continue;
+                }
+                /**
+                 * We interrupt operations after related partition was
+                 * created
+                 */
+
                 if (it->delta.is_reconfiguration_operation()) {
                     auto interrupt_it = find_interrupting_operation(it, deltas);
                     if (interrupt_it != deltas.end()) {
