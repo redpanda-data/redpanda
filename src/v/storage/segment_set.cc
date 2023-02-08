@@ -13,6 +13,7 @@
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
 #include "utils/directory_walker.h"
+#include "utils/filtered_lower_bound.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -129,8 +130,17 @@ segment_set::lower_bound(model::offset offset) const {
 // on that time index to find the closest index entry and scan the log from
 // there. Otherwise it will move on to the next log segment.
 segment_set::iterator segment_set::lower_bound(model::timestamp needle) {
-    return std::lower_bound(
-      std::begin(_handles), std::end(_handles), needle, segment_ordering{});
+    // Note that we exclude the segments that only contain configuration batches
+    // from our search, as their timestamps may be wildly different from the
+    // user provided timestamps.
+    return filtered_lower_bound(
+      _handles.begin(),
+      _handles.end(),
+      needle,
+      segment_ordering{},
+      [](const auto& segment) {
+          return segment->index().non_data_timestamps() == false;
+      });
 }
 
 segment_set::iterator segment_set::upper_bound(model::term_id term) {
