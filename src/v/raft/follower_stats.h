@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/follower_queue.h"
 #include "raft/types.h"
@@ -75,6 +76,17 @@ public:
     void return_append_entries_units(vnode);
 
     void update_with_configuration(const group_configuration&);
+
+    void reset() {
+        for (auto& [_, meta] : _followers) {
+            meta.last_dirty_log_index = model::offset{};
+            meta.last_flushed_log_index = model::offset{};
+            meta.last_sent_offset = model::offset{};
+            meta.match_index = model::offset{};
+            meta.next_index = model::offset{};
+            meta.heartbeats_failed = 0;
+        }
+    }
 
 private:
     friend std::ostream& operator<<(std::ostream&, const follower_stats&);
