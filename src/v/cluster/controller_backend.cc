@@ -1025,13 +1025,18 @@ controller_backend::process_partition_reconfiguration(
          * configuration change.
          *
          */
-        co_return co_await execute_reconfiguration(
+        auto ec = co_await execute_reconfiguration(
           type,
           ntp,
           target_assignment.replicas,
           replica_revisions,
           previous_replicas,
           rev);
+        if (ec) {
+            co_return ec;
+        }
+        // Wait fo the operation to be finished on one of the nodes
+        co_return errc::waiting_for_reconfiguration_finish;
     }
     const auto cross_core_move = contains_node(_self, previous_replicas)
                                  && !has_local_replicas(
