@@ -801,6 +801,62 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 			testutils.DeleteAllInNamespace(testEnv, k8sClient, namespace)
 		})
 	})
+
+	Context("When managing a RedpandaCluster with additional command line arguments", func() {
+		It("Can initialize a cluster with centralized configuration", func() {
+			args := map[string]string{
+				"overprovisioned":   "",
+				"default-log-level": "info",
+			}
+
+			By("Allowing creation of a new cluster")
+			key, baseKey, redpandaCluster, namespace := getInitialTestCluster("test-additional-cmdline")
+			redpandaCluster.Spec.Configuration.AdditionalCommandlineArguments = args
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Creating the Configmap and the statefulset")
+			Eventually(resourceGetter(baseKey, &corev1.ConfigMap{}), timeout, interval).Should(Succeed())
+
+			var sts appsv1.StatefulSet
+			Eventually(resourceGetter(key, &appsv1.StatefulSet{})).Should(Succeed())
+			Consistently(resourceDataGetter(key, &sts, func() interface{} {
+				return *sts.Spec.Replicas
+			}), timeoutShort, intervalShort).Should(Equal(int32(1)))
+
+			By("Looking for the correct arguments")
+			cnt := 0
+			finalArgs := make(map[string]int)
+			for k, v := range args {
+				key := fmt.Sprintf("--%s", k)
+				if v != "" {
+					key = fmt.Sprintf("%s=%s", key, v)
+				}
+				finalArgs[key] = 1
+			}
+			for _, arg := range sts.Spec.Template.Spec.Containers[0].Args {
+				if _, ok := finalArgs[arg]; ok {
+					cnt++
+				}
+			}
+			Expect(cnt).To(Equal(len(args)))
+
+			By("Setting the configmap-hash annotation on the statefulset")
+			Eventually(annotationGetter(key, &sts, configMapHashKey), timeout, interval).ShouldNot(BeEmpty())
+
+			By("Not patching the admin API for any reason")
+			Consistently(testAdminAPI.NumPatchesGetter(), timeoutShort, intervalShort).Should(Equal(0))
+
+			By("Synchronizing the condition")
+			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
+
+			By("Not using the centralized-config annotation at this stage on the statefulset")
+			Consistently(annotationGetter(key, &sts, centralizedConfigurationHashKey), timeoutShort, intervalShort).Should(BeEmpty())
+
+			By("Deleting the cluster")
+			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
+		})
+	})
 })
 
 func getInitialTestCluster(
