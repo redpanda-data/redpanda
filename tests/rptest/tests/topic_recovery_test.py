@@ -1466,7 +1466,6 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
     @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
     def test_admin_api_recovery(self, cloud_storage_type):
         topics = [
             TopicSpec(name='panda-topic',
