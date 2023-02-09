@@ -10,6 +10,7 @@
 #include "raft/consensus.h"
 
 #include "config/configuration.h"
+#include "config/property.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -45,6 +46,7 @@
 #include <fmt/ostream.h>
 
 #include <algorithm>
+#include <chrono>
 #include <iterator>
 #include <system_error>
 
@@ -91,7 +93,7 @@ consensus::consensus(
   timeout_jitter jit,
   storage::log l,
   scheduling_config scheduling_config,
-  model::timeout_clock::duration disk_timeout,
+  config::binding<std::chrono::milliseconds> disk_timeout,
   consensus_client_protocol client,
   consensus::leader_cb_t cb,
   storage::api& storage,
@@ -109,7 +111,7 @@ consensus::consensus(
       _log.config().ntp(),
       storage)
   , _scheduling(scheduling_config)
-  , _disk_timeout(disk_timeout)
+  , _disk_timeout(std::move(disk_timeout))
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
   , _fstats(
@@ -2313,7 +2315,7 @@ ss::future<storage::append_result> consensus::disk_append(
       // batch fsync
       storage::log_append_config::fsync::no,
       _scheduling.default_iopc,
-      model::timeout_clock::now() + _disk_timeout};
+      model::timeout_clock::now() + _disk_timeout()};
 
     class consumer {
     public:

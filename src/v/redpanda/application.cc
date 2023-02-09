@@ -995,7 +995,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
               .heartbeat_timeout
               = config::shard_local_cfg().raft_heartbeat_timeout_ms.bind(),
               .raft_io_timeout_ms
-              = config::shard_local_cfg().raft_io_timeout_ms()};
+              = config::shard_local_cfg().raft_io_timeout_ms.bind()};
         },
         [] {
             return raft::recovery_memory_quota::configuration{

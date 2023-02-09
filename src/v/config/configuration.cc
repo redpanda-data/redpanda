@@ -751,7 +751,7 @@ configuration::configuration()
       *this,
       "raft_io_timeout_ms",
       "Raft I/O timeout",
-      {.visibility = visibility::tunable},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10'000ms)
   , join_retry_timeout_ms(
       *this,
