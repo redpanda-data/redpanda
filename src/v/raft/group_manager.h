@@ -40,7 +40,7 @@ public:
     struct configuration {
         config::binding<std::chrono::milliseconds> heartbeat_interval;
         config::binding<std::chrono::milliseconds> heartbeat_timeout;
-        std::chrono::milliseconds raft_io_timeout_ms;
+        config::binding<std::chrono::milliseconds> raft_io_timeout_ms;
     };
     using config_provider_fn = ss::noncopyable_function<configuration()>;
 

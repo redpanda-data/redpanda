@@ -91,7 +91,7 @@ public:
       timeout_jitter,
       storage::log,
       scheduling_config,
-      model::timeout_clock::duration disk_timeout,
+      config::binding<std::chrono::milliseconds> disk_timeout,
       consensus_client_protocol,
       leader_cb_t,
       storage::api&,
@@ -593,7 +593,7 @@ private:
     storage::log _log;
     offset_translator _offset_translator;
     scheduling_config _scheduling;
-    model::timeout_clock::duration _disk_timeout;
+    config::binding<std::chrono::milliseconds> _disk_timeout;
     consensus_client_protocol _client_protocol;
     leader_cb_t _leader_notification;
 
