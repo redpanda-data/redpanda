@@ -34,17 +34,17 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 	var format string
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Queries status of current self test run or returns last results",
-		Long: `Returns self-test current or previous state.
+		Short: "Queries the status of the currently running or last completed self-test run",
+		Long: `Returns the status of the currently running or last completed self-test run.
 
 Use this command after invoking 'self-test start' to determine the status of
 the jobs launched. Possible results are:
 
 * One or more jobs still running
-  * Node ids of redpanda nodes that are still running self-tests.
+  * Returns the IDs of Redpanda nodes still running self-tests.
 
 * No jobs running:
-  * Last cached results on all nodes returned.
+  * Returns cached results for all nodes of the last completed test.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {

@@ -23,15 +23,11 @@ import (
 func NewStopCommand(fs afero.Fs) *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
-		Short: "Stops the currently executing self test",
-		Long: `Stops all self tests.
+		Short: "Stops the currently executing self-test",
+		Long: `Stops all self-test tests.
 
-For use with the redpanda self-test framework, this command will stop all currently
-executing self-tests cluster wide. The command is synchronous and will return
-when either:
-
-* all jobs have been stopped - success reported
-* broker timeouts have expired - errors reported
+This command stops all currently running self-tests. The command is synchronous and returns
+success when all jobs have been stopped or reports errors if broker timeouts have expired.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {

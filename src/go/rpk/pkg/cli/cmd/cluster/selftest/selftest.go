@@ -29,7 +29,7 @@ func NewSelfTestCommand(fs afero.Fs) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "self-test",
-		Short: "Start, stop and query redpanda self-test runs through the admin listener",
+		Short: "Start, stop and query runs of Redpanda self-test through the Admin API listener",
 		Args:  cobra.ExactArgs(0),
 	}
 
@@ -50,7 +50,7 @@ func NewSelfTestCommand(fs afero.Fs) *cobra.Command {
 		&adminURL,
 		config.FlagAdminHosts2,
 		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>)")
+		"Comma-separated list of Admin API addresses (<IP>:<port>)")
 
 	return cmd
 }
