@@ -274,6 +274,8 @@ ingress_egress_state<std::optional<quota_t>>
 snc_quota_manager::calc_node_quota_default() const {
     // here will be the code to merge node limit
     // and node share of cluster limit; so far it's node limit only
+    // Ignore _shard_quota_minimum because it only applies when quotas
+    // are adjusted during balancing
     const ingress_egress_state<std::optional<quota_t>> default_quota{
       .in = optional_min(
         _kafka_throughput_limit_node_bps.in(),
@@ -329,32 +331,27 @@ snc_quota_manager::get_quota_balancer_node_period() const {
 void snc_quota_manager::update_node_quota_default() {
     const ingress_egress_state<std::optional<quota_t>> new_node_quota_default
       = calc_node_quota_default();
-    if (_kafka_quota_balancer_node_period() == 0ms) {
-        // set effective shard quotas to default shard quotas only if
-        // the balancer is off. This resets all the uneven distribution of
-        // effective quotas done by the balancer to the uniform  default once
-        // the balancer is turned off. We don't need to do that in the update
-        // fiber (the one synchonized with the balancer) because
-        // - the balancer won't run (it's disabled)
-        // - the update fiber won't run
-        // Ignore _shard_quota_minimum because it only applies when quotas
-        // are adjusted during balancing
-        maybe_set_quota(
-          {.in = node_to_shard_quota(new_node_quota_default.in),
-           .eg = node_to_shard_quota(new_node_quota_default.eg)});
-    } else {
-        // the balancer is on, so the update will be calculated on shard0 and
-        // distributed between the shards synchronously to balancer runs
-        if (ss::this_shard_id() == quota_balancer_shard) {
-            // dependent update: effective shard quotas
-            ssx::spawn_with_gate(
-              _balancer_gate,
-              [this,
-               qold = _node_quota_default,
-               qnew = new_node_quota_default] {
-                  return quota_balancer_update(qold, qnew);
-              });
+    if (ss::this_shard_id() == quota_balancer_shard) {
+        ingress_egress_state<std::optional<quota_t>> qold;
+        if (_kafka_quota_balancer_node_period() == 0ms) {
+            // set effective shard quotas to default shard quotas only if
+            // the balancer is off. This resets all the uneven distribution of
+            // effective quotas done by the balancer to the uniform  default
+            // once the balancer is turned off, like if the node default quota
+            // were not enabled
+            qold = {std::nullopt, std::nullopt};
+        } else {
+            // the balancer is on, so the update will be calculated on shard0
+            // and distributed between the shards synchronously to balancer runs
+            // based on both old and new values for the default node quota
+            qold = _node_quota_default;
         }
+
+        // dependent update: effective shard quotas
+        ssx::spawn_with_gate(
+          _balancer_gate, [this, qold, qnew = new_node_quota_default] {
+              return quota_balancer_update(qold, qnew);
+          });
     }
     _node_quota_default = new_node_quota_default;
     // dependent update: shard minimum quota
