@@ -1712,7 +1712,7 @@ class RedpandaService(Service):
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
-            match_errors = "-e ERROR" if self._raise_on_errors else ""
+            match_errors = "-e ^ERROR" if self._raise_on_errors else ""
             for line in node.account.ssh_capture(
                     f"grep {match_errors} -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
