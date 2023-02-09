@@ -38,6 +38,9 @@ func newInstallCommand(fs afero.Fs) *cobra.Command {
 This command downloads the BYOC managed plugin if necessary. The plugin is
 installed by default if you try to run a non-install command, but this command
 exists if you want to download the plugin ahead of time.
+
+You can override the installation directory by setting the $RPK_PLUGIN_DIR 
+environment variable
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {

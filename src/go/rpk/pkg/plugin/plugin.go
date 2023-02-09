@@ -37,6 +37,9 @@ import (
 // prefix.
 const FlagAutoComplete = "--help-autocomplete"
 
+// EnvPluginDir is the directory in which rpk will download a plugin.
+const EnvPluginDir = "RPK_PLUGIN_DIR"
+
 type pluginName struct {
 	autocomplete bool
 	managed      bool
@@ -150,8 +153,13 @@ func NameToArgs(command string) []string {
 }
 
 // DefaultBinPath returns HOME-DIR/.local/bin where HOME-DIR is the directory
-// returned by os.UserHomeDir.
+// returned by os.UserHomeDir. The default bin path can be overridden by the
+// $RPK_PLUGIN_DIR environment variable.
 func DefaultBinPath() (string, error) {
+	if dir, ok := os.LookupEnv(EnvPluginDir); ok {
+		return dir, nil
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("unable to get your home directory: %v", err)
