@@ -282,6 +282,7 @@ ss::future<size_t> group_manager::delete_offsets(
     if (group->in_state(group_state::dead)) {
         auto it = _groups.find(group->id());
         if (it != _groups.end() && it->second == group) {
+            co_await it->second->shutdown();
             _groups.erase(it);
             if (group->generation() > 0) {
                 vlog(
