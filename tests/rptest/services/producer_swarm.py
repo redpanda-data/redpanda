@@ -29,6 +29,7 @@ class ProducerSwarm(BackgroundThreadService):
         self._producers = producers
         self._records_per_producer = records_per_producer
         self._stopping = threading.Event()
+        self._stopped = False
         self._log_level = log_level
         self._properties = properties
         self._timeout_ms = timeout_ms
@@ -46,9 +47,20 @@ class ProducerSwarm(BackgroundThreadService):
         except RemoteCommandError:
             if not self._stopping.is_set():
                 raise
+        finally:
+            self._stopped = True
+
+    def wait_node(self, node, timeout_sec=None):
+        if timeout_sec is None:
+            timeout_sec = 600
+        self._redpanda.wait_until(lambda: self._stopped == True,
+                                  timeout_sec=timeout_sec,
+                                  backoff_sec=5)
+        return super().wait_node(node, timeout_sec=timeout_sec)
 
     def stop_all(self):
         self._stopping.set()
+
         self.stop()
 
     def stop_node(self, node):
