@@ -35,14 +35,17 @@ class AvailabilityTests(EndToEndFinjectorTest):
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_availability_when_one_node_failed(self):
-        self.redpanda = RedpandaService(self.test_context,
-                                        3,
-                                        extra_rp_conf={
-                                            "partition_autobalancing_mode":
-                                            "node_add",
-                                            "group_topic_partitions": 1,
-                                            "default_topic_replications": 3,
-                                        })
+        self.redpanda = RedpandaService(
+            self.test_context,
+            3,
+            extra_rp_conf={
+                "partition_autobalancing_mode": "node_add",
+                "group_topic_partitions": 1,
+                "default_topic_replications": 3,
+                # set disk timeout to value greater than max suspend time
+                # not to emit spurious errors
+                "raft_io_timeout_ms": 20000,
+            })
 
         self.redpanda.start()
         spec = TopicSpec(name="test-topic",
@@ -63,14 +66,17 @@ class AvailabilityTests(EndToEndFinjectorTest):
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_recovery_after_catastrophic_failure(self):
 
-        self.redpanda = RedpandaService(self.test_context,
-                                        3,
-                                        extra_rp_conf={
-                                            "partition_autobalancing_mode":
-                                            "node_add",
-                                            "group_topic_partitions": 1,
-                                            "default_topic_replications": 3,
-                                        })
+        self.redpanda = RedpandaService(
+            self.test_context,
+            3,
+            extra_rp_conf={
+                "partition_autobalancing_mode": "node_add",
+                "group_topic_partitions": 1,
+                "default_topic_replications": 3,
+                # set disk timeout to value greater than max suspend time
+                # not to emit spurious errors
+                "raft_io_timeout_ms": 20000,
+            })
 
         self.redpanda.start()
         spec = TopicSpec(name="test-topic",

@@ -55,6 +55,9 @@ class PartitionBalancerService(EndToEndTest):
                 "partition_autobalancing_node_availability_timeout_sec": 10,
                 "partition_autobalancing_tick_interval_ms": 5000,
                 "raft_learner_recovery_rate": 100_000_000,
+                # set disk timeout to value greater than max suspend time
+                # not to emit spurious errors
+                "raft_io_timeout_ms": 30000,
             },
             **kwargs,
         )
