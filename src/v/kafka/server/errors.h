@@ -82,6 +82,7 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::unknown_update_interruption_error:
     case cluster::errc::cluster_already_exists:
     case cluster::errc::no_partition_assignments:
+    case cluster::errc::failed_to_create_partition:
         break;
     }
     return error_code::unknown_server_error;
