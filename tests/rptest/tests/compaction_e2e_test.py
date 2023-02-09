@@ -37,8 +37,7 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
 
         return [len(p.segments) for p in topic_partitions]
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8491
-    # https://github.com/redpanda-data/redpanda/issues/8486
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8486
     @cluster(num_nodes=4)
     @matrix(
         initial_cleanup_policy=[
