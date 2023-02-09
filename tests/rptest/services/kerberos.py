@@ -391,7 +391,7 @@ class KrbClient(Service):
 
     def metadata(self, principal: str):
         self.logger.info("Metadata request")
-        client_cache = f"/tmp/{principal}.krb5ccache"
+        client_cache = f"/tmp/{principal.replace('/', '_')[0]}.krb5ccache"
         kinit_args = f"-kt {self.keytab_file} -c {client_cache} {principal}"
         kinit_cmd = f"kinit -R {kinit_args} || kinit {kinit_args}"
         sasl_conf = f"-X security.protocol=sasl_plaintext -X sasl.mechanisms=GSSAPI '-Xsasl.kerberos.kinit.cmd={kinit_cmd}' -X sasl.kerberos.service.name=redpanda"
