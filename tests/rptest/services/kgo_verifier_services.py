@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
+import time
 import threading
 import requests
 
@@ -131,11 +132,26 @@ class KgoVerifierService(Service):
         node.account.remove("valid_offsets*json", True)
         node.account.remove(f"/tmp/{self.__class__.__name__}*")
 
-    def _remote(self, node, action):
+    def _remote(self, node, action, timeout=60):
+        """
+        Send a request to the node to perform the given action, retrying
+        periodically up to the given timeout.
+        """
         url = self._remote_url(node, action)
         self._redpanda.logger.info(f"{self.who_am_i()} remote call: {url}")
-        r = requests.get(url)
-        r.raise_for_status()
+        deadline = time.time() + timeout
+        last_error = None
+        while time.time() < deadline:
+            try:
+                r = requests.get(url, timeout=10)
+                r.raise_for_status()
+                return
+            except Exception as e:
+                last_error = e
+                self._redpanda.logger.warn(
+                    f"{self.who_am_i()} remote call failed, {e}")
+        if last_error:
+            raise last_error
 
     def wait_node(self, node, timeout_sec=None):
         """
