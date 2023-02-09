@@ -218,11 +218,10 @@ recovery_stm::read_range_for_recovery(
     }
 
     vlog(_ctxlog.trace, "Reading batches, starting from: {}", start_offset);
-
-    // TODO: add timeout of maybe 1minute?
     auto reader = co_await _ptr->_log.make_reader(cfg);
+    try {
     auto batches = co_await model::consume_reader_to_memory(
-      std::move(reader), model::no_timeout);
+       std::move(reader), _ptr->_disk_timeout() + model::timeout_clock::now());
 
     if (batches.empty()) {
         vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
@@ -261,7 +260,15 @@ recovery_stm::read_range_for_recovery(
     }
 
     co_return model::make_foreign_memory_record_batch_reader(
-      std::move(gap_filled_batches));
+        std::move(gap_filled_batches));
+    } catch (const ss::timed_out_error& e) {
+        vlog(
+          _ctxlog.error,
+          "Timeout reading batches starting from {}. Stopping recovery",
+          start_offset);
+        _stop_requested = true;
+        co_return std::nullopt;
+    }
 }
 
 ss::future<> recovery_stm::open_snapshot_reader() {
