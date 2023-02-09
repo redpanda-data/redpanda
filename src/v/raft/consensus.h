@@ -580,6 +580,9 @@ private:
         }
         return false;
     }
+
+    void update_confirmed_term();
+
     // args
     vnode _self;
     raft::group_id _group;
