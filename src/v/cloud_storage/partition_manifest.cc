@@ -1162,6 +1162,39 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
             // start_offset field. In this case we need to set it implicitly.
             _start_offset = _segments.begin()->second.base_offset;
         }
+        // Truncate manifest if there is a gap in offsets. The gap may appear
+        // if the manifest was truncated concurrently with manifest
+        // serialization. In this case it will contain some segments that were
+        // removed from original manifest alongside the existing segments. There
+        // will be a gap between them. The start_offset field will be outdated
+        // as well.
+        model::offset prev_bo;
+        for (auto it = _segments.rbegin(); it != _segments.rend(); it++) {
+            if (prev_bo == model::offset{}) {
+                prev_bo = it->second.base_offset;
+            } else if (
+              prev_bo > model::next_offset(it->second.committed_offset)) {
+                // Gap detected, truncate the manifest.
+                vlog(
+                  cst_log.debug,
+                  "Detected gap in the deserialized manifest. Previous "
+                  "committed offset is {}, next base offset is {}",
+                  it->second.committed_offset,
+                  prev_bo);
+                _start_offset = prev_bo;
+                break;
+            } else if (
+              prev_bo < model::next_offset(it->second.committed_offset)) {
+                vlog(
+                  cst_log.debug,
+                  "Detected overlap between segments in the deserialized "
+                  "manifest. Previous committed offset is {}, next base offset "
+                  "is {}.",
+                  it->second.committed_offset,
+                  prev_bo);
+                // Note: the overlap is possible and handled by the read path
+            }
+        }
     }
     if (handler._replaced) {
         _replaced = std::move(*handler._replaced);
@@ -1194,7 +1227,6 @@ struct partition_manifest::serialization_cursor {
 };
 
 ss::future<serialized_json_stream> partition_manifest::serialize() const {
-    auto iso = _insync_offset;
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
@@ -1203,14 +1235,6 @@ ss::future<serialized_json_stream> partition_manifest::serialize() const {
     while (!c->segments_done) {
         serialize_segments(c);
         co_await ss::maybe_yield();
-        if (iso != _insync_offset) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Manifest changed duing serialization, in sync offset moved from "
-              "{} to {}",
-              iso,
-              _insync_offset));
-        }
     }
     serialize_replaced(c);
     serialize_end(c);
@@ -1384,7 +1408,48 @@ void partition_manifest::serialize_segments(
         cursor->next_offset = _segments.begin()->second.base_offset;
     }
     if (!_segments.empty()) {
-        auto it = _segments.lower_bound(cursor->next_offset);
+        // Case1: manifest not modified, in this case the 'it' will
+        //        be pointing to the next segment.
+        // Case2: manifest was modified. The segment with base offset equal to
+        //        'cursor->next_offset' was merged with the previoius one.
+        //        Because the base offset of the segment is now smaller than the
+        //        'next_offset' the 'upper_bound' will return next segment after
+        //        it. The 'it' iterator will be pointing to the merged segment
+        //        in this case.
+        //
+        //       ┌──────────┐ ┌──────────┐ ┌──────────┐
+        //       │          │ │          │ │          │
+        //       └──────────┘ └──────▲───┘ └──────────┘
+        //       cursor->next_offset─┘
+        //
+        //       ┌───────────────────────┐ ┌──────────┐
+        //       │                       │ │          │
+        //       └────▲──────────────────┘ └──────────┘
+        //        it ─┘
+        //
+        // Case3: manifest was truncated. In this case the 'upper_bound' may
+        //        return an iterator which points to the first segment in the
+        //        manifest. The std::prev can't be executed. In this case we
+        //        can only continue serializing segment_meta elements.
+        // Note1: because of case 2 it is possible to have overlaps in the
+        //        serialized manifest. Because of case 3 it is possible to have
+        //        gaps in the serialized json manifest. The read path can handle
+        //        overlaps so this is not a problem. We need to truncate the
+        //        segment manually in case of a gap though.
+        // Note2: if replaced segments can be out of sync but it is not a
+        //        correctness problem. Read replica doesn't use list of replaced
+        //        segments. In case of recovery this way produce few orphaned
+        //        ojbects in the cloud.
+
+        auto it = _segments.upper_bound(cursor->next_offset);
+        if (it != _segments.begin()) {
+            // case 1 & 2
+            it = std::prev(it);
+        } else {
+            // case 3
+            vlog(cst_log.debug, "manifest was truncated during serialization");
+        }
+
         for (; it != _segments.end(); it++) {
             const auto& [key, meta] = *it;
             serialize_segment_meta(meta, cursor);
