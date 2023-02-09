@@ -615,6 +615,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
       ctxlog.debug,
       "Uploading manifest, path: {}",
       manifest().get_manifest_path());
+    auto units = co_await _parent.archival_meta_stm()->acquire_manifest_lock();
     co_return co_await _remote.upload_manifest(
       get_bucket_name(), manifest(), fib, _manifest_tags);
 }
