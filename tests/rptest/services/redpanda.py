@@ -230,7 +230,7 @@ class ResourceSettings:
             memory_mb = self._memory_mb
 
         if self._bypass_fsync is None and not dedicated_node:
-            bypass_fsync = False
+            bypass_fsync = True
         else:
             bypass_fsync = self._bypass_fsync
 

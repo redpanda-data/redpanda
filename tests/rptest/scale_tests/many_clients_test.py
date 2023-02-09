@@ -22,12 +22,7 @@ resource_settings = ResourceSettings(
 
     # Set a low memory size, such that there is only ~100k of memory available
     # for dealing with each client.
-    memory_mb=768,
-
-    # Test nodes and developer workstations may have slow fsync.  For this test
-    # we need things to be consistently fast, so disable fsync (this test
-    # has nothing to do with verifying the correctness of the storage layer)
-    bypass_fsync=True)
+    memory_mb=768)
 
 
 class ManyClientsTest(RedpandaTest):
