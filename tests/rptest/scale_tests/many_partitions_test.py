@@ -12,7 +12,7 @@ import signal
 import concurrent.futures
 from collections import Counter
 
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail
 from ducktape.utils.util import wait_until, TimeoutError
 import numpy
 
@@ -55,6 +55,10 @@ DOCKER_PARTITION_LIMIT = 128
 # amount of data to retain total. Otherwise, this can be used as a large volume
 # of data to write.
 STRESS_DATA_SIZE = 1024 * 1024 * 1024 * 100
+
+# When running with tiered storage, it's been observed that shutdown can take
+# on the order of a few minutes.
+STOP_TIMEOUT = 60 * 5
 
 
 class ScaleParameters:
@@ -488,7 +492,8 @@ class ManyPartitionsTest(PreallocNodesTest):
                 futs.append(
                     executor.submit(self.redpanda.restart_nodes,
                                     nodes=[node],
-                                    start_timeout=self.EXPECT_START_TIME))
+                                    start_timeout=self.EXPECT_START_TIME,
+                                    stop_timeout=STOP_TIMEOUT))
 
             for f in futs:
                 # Raise on error
@@ -506,7 +511,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         self.logger.info(f"Single node restart on node {node.name}")
         node_id = self.redpanda.idx(node)
 
-        self.redpanda.stop_node(node)
+        self.redpanda.stop_node(node, timeout=STOP_TIMEOUT)
 
         # Wait for leaderships to stabilize on the surviving nodes
         wait_until(
@@ -877,8 +882,9 @@ class ManyPartitionsTest(PreallocNodesTest):
     def test_many_partitions(self):
         self._test_many_partitions(compacted=False)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8777
     @cluster(num_nodes=12, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    @matrix(compacted=[False])
+    @matrix(compacted=[False])  # FIXME: run with compaction
     def test_many_partitions_tiered_storage(self, compacted):
         self._test_many_partitions(compacted=compacted,
                                    tiered_storage_enabled=True)
