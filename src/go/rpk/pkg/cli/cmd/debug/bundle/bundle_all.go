@@ -18,14 +18,14 @@ import (
 	"github.com/spf13/afero"
 )
 
-func executeBundle(ctx context.Context, b bundleParams) error {
+func executeBundle(context.Context, bundleParams) error {
 	return errors.New("rpk debug bundle is unsupported on your operating system")
 }
 
-func executeK8SBundle(ctx context.Context, bp bundleParams) error {
+func executeK8SBundle(context.Context, bundleParams) error {
 	return errors.New("rpk debug bundle is unsupported on your operating system")
 }
 
-func determineFilepath(fs afero.Fs, path string, isFlag bool) (finalPath string, err error) {
+func determineFilepath(afero.Fs, string, bool) (string, error) {
 	return "", errors.New("rpk debug bundle is not supported on your operating system")
 }

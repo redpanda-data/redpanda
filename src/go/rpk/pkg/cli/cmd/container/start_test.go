@@ -247,8 +247,8 @@ Please check your internet connection and try again.`,
 						_ *network.NetworkingConfig,
 						_ *specs.Platform,
 						_ string,
-					) (container.ContainerCreateCreatedBody, error) {
-						body := container.ContainerCreateCreatedBody{}
+					) (container.CreateResponse, error) {
+						body := container.CreateResponse{}
 						return body, errors.New(
 							"Can't create container",
 						)
@@ -292,8 +292,8 @@ Please check your internet connection and try again.`,
 						_ *network.NetworkingConfig,
 						_ *specs.Platform,
 						_ string,
-					) (container.ContainerCreateCreatedBody, error) {
-						body := container.ContainerCreateCreatedBody{
+					) (container.CreateResponse, error) {
+						body := container.CreateResponse{
 							ID: "container-1",
 						}
 						return body, nil
@@ -337,8 +337,8 @@ Please check your internet connection and try again.`,
 						_ *network.NetworkingConfig,
 						_ *specs.Platform,
 						_ string,
-					) (container.ContainerCreateCreatedBody, error) {
-						body := container.ContainerCreateCreatedBody{
+					) (container.CreateResponse, error) {
+						body := container.CreateResponse{
 							ID: "container-1",
 						}
 						return body, nil
@@ -416,8 +416,8 @@ Please check your internet connection and try again.`,
 						_ *network.NetworkingConfig,
 						_ *specs.Platform,
 						_ string,
-					) (container.ContainerCreateCreatedBody, error) {
-						body := container.ContainerCreateCreatedBody{
+					) (container.CreateResponse, error) {
+						body := container.CreateResponse{
 							ID: "container-1",
 						}
 						return body, nil
@@ -466,7 +466,7 @@ Please check your internet connection and try again.`,
 						_ *network.NetworkingConfig,
 						_ *specs.Platform,
 						_ string,
-					) (container.ContainerCreateCreatedBody, error) {
+					) (container.CreateResponse, error) {
 						// If the node is not the seed, check
 						// that --seed is passed and that
 						// the format is right
@@ -477,7 +477,7 @@ Please check your internet connection and try again.`,
 								"--seeds 172.24.1.2:33145",
 							)
 						}
-						body := container.ContainerCreateCreatedBody{
+						body := container.CreateResponse{
 							ID: "container-1",
 						}
 						return body, nil

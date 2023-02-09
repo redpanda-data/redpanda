@@ -10,6 +10,10 @@
 package disk
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"golang.org/x/sys/unix"
@@ -24,4 +28,14 @@ func NewDevice(dev uint64, fs afero.Fs) (BlockDevice, error) {
 		return nil, err
 	}
 	return deviceFromSystemPath(syspath, fs)
+}
+
+func readSyspath(major, minor uint32) (string, error) {
+	blockBasePath := "/sys/dev/block"
+	path := fmt.Sprintf("%s/%d:%d", blockBasePath, major, minor)
+	linkpath, err := os.Readlink(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Abs(filepath.Join(blockBasePath, linkpath))
 }
