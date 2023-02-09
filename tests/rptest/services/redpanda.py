@@ -739,6 +739,7 @@ class RedpandaService(Service):
             self.set_si_settings(si_settings)
         else:
             self._si_settings = None
+        self._disable_cloud_storage_diagnostics = False
 
         self.cloud_storage_client: Optional[S3Client] = None
 
@@ -1618,6 +1619,14 @@ class RedpandaService(Service):
         if crashes:
             raise NodeCrash(crashes)
 
+    def disable_cloud_storage_diagnostics(self):
+        """
+        Disable saving cloud storage diagnostics. This may be useful for tests
+        that generate millions of objecst, as collecting diagnostics may take a
+        significant amount of time.
+        """
+        self._disable_cloud_storage_diagnostica = True
+
     def cloud_storage_diagnostics(self):
         """
         When a cloud storage test fails, it is often useful to know what
@@ -1628,6 +1637,9 @@ class RedpandaService(Service):
         limit) into the ducktape log, and writes a zip file into the ducktape
         results directory containing a sample of the manifest.json files.
         """
+        if self._disable_cloud_storage_diagnostics:
+            self.logger.debug("Skipping cloud diagnostics, disabled")
+            return
         if not self._si_settings:
             self.logger.debug("Skipping cloud diagnostics, no SI settings")
             return

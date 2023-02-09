@@ -141,6 +141,7 @@ class ScaleParameters:
         self.local_retention_after_warmup = self.retention_bytes
 
         if tiered_storage_enabled:
+            redpanda.disable_cloud_storage_diagnostics()
             # When testing with tiered storage, the tuning goals of the test
             # parameters are different: we want to stress the number of
             # uploaded segments.
