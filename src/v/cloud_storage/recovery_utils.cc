@@ -52,10 +52,8 @@ ss::future<> place_download_result(
   retry_chain_node& parent) {
     retry_chain_node fib{&parent};
     auto result_path = generate_result_path(ntp_cfg, result_completed);
-    // The non-empty payload is required for ABS to accept the upload. An empty
-    // file results in an authorization exception.
     auto result = co_await remote.upload_object(
-      bucket, cloud_storage_clients::object_key{result_path}, "result", fib);
+      bucket, cloud_storage_clients::object_key{result_path}, "", fib);
     if (result != upload_result::success) {
         vlog(
           cst_log.error,
