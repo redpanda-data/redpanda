@@ -45,10 +45,16 @@ class RedpandaKerberosTestBase(Test):
             sasl_mechanisms=["SCRAM", "GSSAPI"],
             keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
             krb5_conf_path=KRB5_CONF_PATH,
+            kdc=None,
+            realm=REALM,
             **kwargs):
         super(RedpandaKerberosTestBase, self).__init__(test_context, **kwargs)
 
-        self.kdc = KrbKdc(test_context, realm=REALM)
+        num_brokers = num_nodes - 1
+        if not kdc:
+            kdc = KrbKdc(test_context, realm=realm)
+            num_brokers = num_nodes - 2
+        self.kdc = kdc
 
         security = SecurityConfig()
         security.enable_sasl = True
@@ -56,10 +62,10 @@ class RedpandaKerberosTestBase(Test):
 
         self.redpanda = RedpandaKerberosNode(test_context,
                                              kdc=self.kdc,
-                                             realm=REALM,
+                                             realm=realm,
                                              keytab_file=keytab_file,
                                              krb5_conf_path=krb5_conf_path,
-                                             num_brokers=num_nodes - 2,
+                                             num_brokers=num_brokers,
                                              log_config=LOG_CONFIG,
                                              security=security,
                                              **kwargs)
