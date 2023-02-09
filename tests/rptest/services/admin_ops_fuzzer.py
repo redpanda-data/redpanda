@@ -409,7 +409,12 @@ class AdminOperationsFuzzer():
         self.min_replication = min_replication
         self.max_replication = max_replication
         if allowed_operations is None:
-            self.allowed_operations = [o for o in RedpandaAdminOperation]
+            # Enable back the ADD_PARTITIONS operation
+            # https://github.com/redpanda-data/redpanda/issues/8747
+            self.allowed_operations = [
+                o for o in RedpandaAdminOperation
+                if o != RedpandaAdminOperation.ADD_PARTITIONS
+            ]
         else:
             self.allowed_operations = allowed_operations
 
