@@ -105,7 +105,7 @@ class ManyClientsTest(RedpandaTest):
             )
             return consumer_a.message_count + consumer_b.message_count >= expect
 
-        wait_until(complete,
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Consumers didn't see all messages")
+        self.redpanda.wait_until(complete,
+                                 timeout_sec=30,
+                                 backoff_sec=1,
+                                 err_msg="Consumers didn't see all messages")
