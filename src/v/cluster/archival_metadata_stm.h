@@ -137,6 +137,9 @@ public:
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
+    /// Acquire the lock that prevents modification of the manifest.
+    auto acquire_manifest_lock() { return _manifest_lock.get_units(); }
+
 private:
     bool cleanup_needed() const;
 
@@ -191,6 +194,7 @@ private:
     prefix_logger _logger;
 
     mutex _lock;
+    mutex _manifest_lock;
 
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
 
