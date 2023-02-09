@@ -44,9 +44,12 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
             TopicSpec.CLEANUP_COMPACT, TopicSpec.CLEANUP_DELETE
         ],
         workload=[Workload.IDEMPOTENCY, Workload.TX, Workload.TX_UNIQUE_KEYS],
-        skip_first_error=[False, True])
-    def test_basic_compaction(self, initial_cleanup_policy, workload,
-                              skip_first_error: bool):
+        reset_compaction_time=[True, False])
+    def test_basic_compaction(self,
+                              initial_cleanup_policy,
+                              workload,
+                              reset_compaction_time: bool,
+                              skip_first_error=None):
         '''
         Basic end to end compaction logic test. The test verifies if last value 
         consumed for each key matches the last produced value for the same key. 
@@ -149,6 +152,11 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         wait_until(lambda: segment_number_matches(lambda s: s < 5),
                    timeout_sec=timeout_sec,
                    backoff_sec=2)
+
+        if reset_compaction_time:
+            self.logger.info(
+                f"resetting log_compaction_interval_ms to {3600*1000}")
+            rpk.cluster_config_set("log_compaction_interval_ms", str(3600))
 
         self.logger.info(f"enable consumer and validate consumed records")
         rw_verifier.remote_start_consumer()
