@@ -127,7 +127,7 @@ class S3Client:
         # out the keyspace, then run using a fixed number of workers.  Worker
         # count has to be modest to avoid hitting a lot of AWS SlowDown responses.
         max_workers = 4 if parallel else 1
-        hash_prefixes = list(f"{i:2x}" for i in range(0, 256))
+        hash_prefixes = list(f"{i:02x}" for i in range(0, 256))
         prefixes = hash_prefixes if parallel else [""]
 
         def empty_bucket_prefix(prefix):
