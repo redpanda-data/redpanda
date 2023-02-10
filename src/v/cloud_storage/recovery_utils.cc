@@ -27,9 +27,25 @@ constexpr std::string_view recovery_result_prefix{"recovery_state"};
 constexpr std::string_view recovery_result_format{"{}/{}/{}/{}_{}.{}"};
 
 constexpr size_t max_delete_items_per_call{1000};
+
+// Matches the recovery_result_format. Example:
+// "recovery_state/test_ns/test_topic/0_<UUID>.true" OR
+// "recovery_state/test_ns/test_topic/0_<UUID>.false"
+const std::regex result_expr{fmt::format(
+  "{}/(.*?)/(.*?)/(\\d+)_(.*?).(true|false)", recovery_result_prefix)};
 } // namespace
 
 namespace cloud_storage {
+
+recovery_result::recovery_result(
+  model::topic_namespace topic_namespace,
+  model::partition_id partition_id,
+  ss::sstring uuid,
+  bool result)
+  : tp_ns(std::move(topic_namespace))
+  , partition(partition_id)
+  , uuid(std::move(uuid))
+  , result(result) {}
 
 ss::sstring
 generate_result_path(const storage::ntp_config& ntp_cfg, bool result) {
@@ -78,23 +94,17 @@ ss::future<std::vector<recovery_result>> gather_recovery_results(
         co_return results;
     }
 
-    // Matches the recovery_result_format. Example:
-    // "recovery_state/test_ns/test_topic/0_<UUID>.true" OR
-    // "recovery_state/test_ns/test_topic/0_<UUID>.false"
-    std::regex result_expr{fmt::format(
-      "{}/(.*?)/(.*?)/(\\d+)_(.*?).(true|false)", recovery_result_prefix)};
-
     results.reserve(result.value().contents.size());
     for (const auto& item : result.value().contents) {
         std::cmatch matches;
         if (std::regex_match(
               item.key.begin(), item.key.end(), matches, result_expr)) {
-            results.push_back(
-              {model::topic_namespace{
-                 model::ns{matches[1].str()}, model::topic{matches[2].str()}},
-               model::partition_id{std::stoi(matches[3].str())},
-               matches[4].str(),
-               matches[5].str() == "true"});
+            results.emplace_back(
+              model::topic_namespace{
+                model::ns{matches[1].str()}, model::topic{matches[2].str()}},
+              model::partition_id{std::stoi(matches[3].str())},
+              matches[4].str(),
+              matches[5].str() == "true");
         }
     }
     co_return results;
@@ -108,7 +118,7 @@ ss::future<> clear_recovery_results(
     retry_chain_node fib{&parent};
     if (!items_to_delete.has_value()) {
         auto r = co_await gather_recovery_results(remote, bucket, fib);
-        items_to_delete.emplace(r);
+        items_to_delete.emplace(std::move(r));
     }
 
     if (items_to_delete->empty()) {

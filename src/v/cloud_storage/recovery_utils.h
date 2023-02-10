@@ -29,6 +29,9 @@ struct recovery_result {
     model::partition_id partition;
     ss::sstring uuid;
     bool result;
+
+    recovery_result(
+      model::topic_namespace, model::partition_id, ss::sstring, bool);
 };
 
 ss::sstring
