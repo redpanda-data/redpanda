@@ -57,9 +57,12 @@ ss::lowres_clock::duration load_downloads_check_interval() {
     }
 }
 
-retry_chain_node
-make_rtc(ss::abort_source& as, const cloud_storage::recovery_task_config& cfg) {
-    return retry_chain_node{as, cfg.operation_timeout_ms, cfg.backoff_ms};
+retry_chain_node make_rtc(
+  ss::abort_source& as,
+  const cloud_storage::recovery_task_config& cfg,
+  size_t timeout_multiplier = 1) {
+    return retry_chain_node{
+      as, cfg.operation_timeout_ms * timeout_multiplier, cfg.backoff_ms};
 }
 
 } // namespace
@@ -280,8 +283,6 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
           "A recovery is already active",
           recovery_error_code::recovery_already_running);
     }
-
-    auto fib = make_rtc(_as, _config);
 
     co_await propagate_state(state::scanning_bucket);
     vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
@@ -602,7 +603,13 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
           status);
     }
 
-    auto clear_fib = make_rtc(_as, _config);
+    // As deleting keys in azure is a linear operation, timeout should be
+    // adjusted to take this into account.
+    size_t timeout_multiplier = 1;
+    if (config::shard_local_cfg().cloud_storage_azure_storage_account()) {
+        timeout_multiplier = results.size();
+    }
+    auto clear_fib = make_rtc(_as, _config, timeout_multiplier);
     co_await clear_recovery_results(
       _remote.local(), _config.bucket, clear_fib, std::move(results));
 
