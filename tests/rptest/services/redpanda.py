@@ -290,7 +290,8 @@ class SISettings:
                      int] = None,
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
-                 bypass_bucket_creation: bool = False):
+                 bypass_bucket_creation: bool = False,
+                 cloud_storage_housekeeping_interval_ms=None):
         self.cloud_storage_type = CloudStorageType.S3
         if hasattr(test_context, 'injected_args') \
         and test_context.injected_args is not None \
@@ -328,6 +329,7 @@ class SISettings:
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
+        self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
 
     def load_context(self, logger, test_context):
         if self.cloud_storage_type == CloudStorageType.S3:
@@ -446,6 +448,10 @@ class SISettings:
         if self.cloud_storage_segment_max_upload_interval_sec:
             conf[
                 'cloud_storage_segment_max_upload_interval_sec'] = self.cloud_storage_segment_max_upload_interval_sec
+        if self.cloud_storage_housekeeping_interval_ms:
+            conf[
+                'cloud_storage_housekeeping_interval_ms'] = self.cloud_storage_housekeeping_interval_ms
+
         return conf
 
 
@@ -733,6 +739,7 @@ class RedpandaService(Service):
             self.set_si_settings(si_settings)
         else:
             self._si_settings = None
+        self._disable_cloud_storage_diagnostics = False
 
         self.cloud_storage_client: Optional[S3Client] = None
 
@@ -1478,7 +1485,9 @@ class RedpandaService(Service):
         assert self.cloud_storage_client is not None
 
         failed_deletions = self.cloud_storage_client.empty_bucket(
-            self._si_settings.cloud_storage_bucket)
+            self._si_settings.cloud_storage_bucket,
+            # If on dedicate nodes, assume tests may be high scale and do parallel deletion
+            parallel=self.dedicated_nodes)
         assert len(failed_deletions) == 0
         self.cloud_storage_client.delete_bucket(
             self._si_settings.cloud_storage_bucket)
@@ -1610,6 +1619,14 @@ class RedpandaService(Service):
         if crashes:
             raise NodeCrash(crashes)
 
+    def disable_cloud_storage_diagnostics(self):
+        """
+        Disable saving cloud storage diagnostics. This may be useful for tests
+        that generate millions of objecst, as collecting diagnostics may take a
+        significant amount of time.
+        """
+        self._disable_cloud_storage_diagnostica = True
+
     def cloud_storage_diagnostics(self):
         """
         When a cloud storage test fails, it is often useful to know what
@@ -1620,6 +1637,9 @@ class RedpandaService(Service):
         limit) into the ducktape log, and writes a zip file into the ducktape
         results directory containing a sample of the manifest.json files.
         """
+        if self._disable_cloud_storage_diagnostics:
+            self.logger.debug("Skipping cloud diagnostics, disabled")
+            return
         if not self._si_settings:
             self.logger.debug("Skipping cloud diagnostics, no SI settings")
             return
@@ -1704,7 +1724,7 @@ class RedpandaService(Service):
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
-            match_errors = "-e ERROR" if self._raise_on_errors else ""
+            match_errors = "-e ^ERROR" if self._raise_on_errors else ""
             for line in node.account.ssh_capture(
                     f"grep {match_errors} -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
@@ -2412,6 +2432,28 @@ class RedpandaService(Service):
         resp = requests.get(url)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
+
+    def metric_sum(self,
+                   metric_name,
+                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+                   ns=None,
+                   topic=None):
+        """
+        Pings the 'metrics_endpoint' of each node and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        """
+        count = 0
+        for n in self.nodes:
+            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
+            for family in metrics:
+                for sample in family.samples:
+                    if ns and sample.labels["namespace"] != ns:
+                        continue
+                    if topic and sample.labels["topic"] != topic:
+                        continue
+                    if sample.name == metric_name:
+                        count += int(sample.value)
+        return count
 
     def _extract_samples(self, metrics, sample_pattern: str,
                          node: ClusterNode) -> list[MetricSamples]:
