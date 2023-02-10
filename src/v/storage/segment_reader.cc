@@ -56,7 +56,8 @@ segment_reader::segment_reader(segment_reader&& rhs) noexcept
   , _file_size(rhs._file_size)
   , _buffer_size(rhs._buffer_size)
   , _read_ahead(rhs._read_ahead)
-  , _sanitize(rhs._sanitize) {
+  , _sanitize(rhs._sanitize)
+  , _gate(std::move(rhs._gate)) {
     for (auto& i : _streams) {
         i._parent = this;
     }
@@ -70,6 +71,7 @@ segment_reader& segment_reader::operator=(segment_reader&& rhs) noexcept {
     _buffer_size = rhs._buffer_size;
     _read_ahead = rhs._read_ahead;
     _sanitize = rhs._sanitize;
+    _gate = std::move(rhs._gate);
     _streams = std::move(rhs._streams);
     for (auto& i : _streams) {
         i._parent = this;
@@ -78,6 +80,8 @@ segment_reader& segment_reader::operator=(segment_reader&& rhs) noexcept {
 }
 
 ss::future<> segment_reader::load_size() {
+    ss::gate::holder guard{_gate};
+
     auto s = co_await stat();
     set_file_size(s.st_size);
 };
@@ -105,6 +109,8 @@ segment_reader::data_stream(size_t pos, const ss::io_priority_class pc) {
     options.buffer_size = _buffer_size;
     options.io_priority_class = pc;
     options.read_ahead = _read_ahead;
+
+    ss::gate::holder guard{_gate};
 
     auto handle = co_await get();
     handle.set_stream(make_file_input_stream(
@@ -158,6 +164,8 @@ ss::future<> segment_reader::put() {
 }
 
 ss::future<struct stat> segment_reader::stat() {
+    ss::gate::holder guard{_gate};
+
     auto handle = co_await get();
     auto r = co_await _data_file.stat();
     co_await handle.close();
@@ -183,6 +191,7 @@ ss::future<segment_reader_handle> segment_reader::data_stream(
     options.io_priority_class = pc;
     options.read_ahead = _read_ahead;
 
+    ss::gate::holder guard{_gate};
     auto handle = co_await get();
     handle.set_stream(make_file_input_stream(
       _data_file, pos_begin, pos_end - pos_begin, std::move(options)));
@@ -190,6 +199,8 @@ ss::future<segment_reader_handle> segment_reader::data_stream(
 }
 
 ss::future<> segment_reader::truncate(size_t n) {
+    ss::gate::holder guard{_gate};
+
     _file_size = n;
     return ss::open_file_dma(ss::sstring(_path), ss::open_flags::rw)
       .then([n](ss::file f) {
@@ -200,10 +211,11 @@ ss::future<> segment_reader::truncate(size_t n) {
 }
 
 ss::future<> segment_reader::close() {
+    if (!_gate.is_closed()) {
+        co_await _gate.close();
+    }
     if (_data_file) {
-        return _data_file.close();
-    } else {
-        return ss::now();
+        co_return co_await _data_file.close();
     }
 }
 
