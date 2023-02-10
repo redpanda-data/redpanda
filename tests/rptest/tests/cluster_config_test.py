@@ -1118,6 +1118,7 @@ class ClusterConfigTest(RedpandaTest):
             "log.message.timestamp.type": ["CreateTime", "LogAppendTime"],
             "log.cleanup.policy": ["compact", "delete"],
             "log.compression.type": ["gzip", "snappy", "lz4", "zstd"],
+            "log.roll.ms": ["90000", "2400000"],
         }
         for property, value_list in kafka_props.items():
             for value in value_list:
