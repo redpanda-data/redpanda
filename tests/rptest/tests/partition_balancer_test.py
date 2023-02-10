@@ -14,6 +14,7 @@ from math import ceil
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
 from rptest.util import wait_until, wait_until_result
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.failure_injector import FailureInjector, FailureSpec
@@ -285,7 +286,8 @@ class PartitionBalancerTest(EndToEndTest):
 
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
 
-    @cluster(num_nodes=8, log_allow_list=LOG_ALLOW_LIST)
+    @skip_debug_mode
+    @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_awareness(self):
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
         self.redpanda = RedpandaService(self.test_context,
