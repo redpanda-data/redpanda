@@ -65,7 +65,8 @@ public:
       ss::sharded<cluster::node_status_table>&,
       ss::sharded<cluster::self_test_frontend>&,
       pandaproxy::schema_registry::api*,
-      ss::sharded<cloud_storage::topic_recovery_service>&);
+      ss::sharded<cloud_storage::topic_recovery_service>&,
+      ss::sharded<cluster::topic_recovery_status_frontend>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -321,9 +322,10 @@ private:
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
-
     ss::future<ss::json::json_return_type>
     initiate_topic_scan_and_recovery(std::unique_ptr<ss::httpd::request> req);
+    ss::future<ss::json::json_return_type>
+    query_automated_recovery(std::unique_ptr<ss::httpd::request> req);
 
     /// Self test routes
     ss::future<ss::json::json_return_type>
@@ -380,4 +382,6 @@ private:
     ss::sharded<cluster::self_test_frontend>& _self_test_frontend;
     pandaproxy::schema_registry::api* _schema_registry;
     ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;
+    ss::sharded<cluster::topic_recovery_status_frontend>&
+      _topic_recovery_status_frontend;
 };

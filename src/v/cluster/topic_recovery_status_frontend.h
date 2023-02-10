@@ -12,6 +12,7 @@
 
 #pragma once
 
+#include "cluster/topic_recovery_status_types.h"
 #include "model/metadata.h"
 
 #include <seastar/core/sharded.hh>
@@ -40,6 +41,8 @@ public:
       ss::sharded<cloud_storage::topic_recovery_service>&
         topic_recovery_service,
       skip_this_node skip_source_shard) const;
+
+    ss::future<std::optional<status_response>> status() const;
 
     ss::future<> stop() { return ss::make_ready_future<>(); }
 

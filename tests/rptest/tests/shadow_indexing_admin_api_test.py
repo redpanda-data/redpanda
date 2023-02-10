@@ -183,3 +183,10 @@ class SIAdminApiTest(RedpandaTest):
             except requests.exceptions.HTTPError as e:
                 assert e.response.status_code == requests.status_codes.codes[
                     'bad_request'], f'unexpected status code: {response} for {payload}'
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_status_to_non_controller(self):
+        self.admin.initiate_topic_scan_and_recovery()
+        response = self.admin.get_topic_recovery_status(
+            node=self._get_non_controller_node(), allow_redirects=False)
+        assert response.status_code == requests.status_codes.codes['ok']

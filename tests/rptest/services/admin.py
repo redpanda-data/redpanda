@@ -793,14 +793,17 @@ class Admin:
                                          force_acquire_lock: bool = False,
                                          node=None,
                                          **kwargs):
-        path = f"cloud_storage/initiate_topic_scan_and_recovery"
         request_args = {'node': node, **kwargs}
 
-        if force_acquire_lock:
-            request_args['params'] = {'force_acquire_lock': force_acquire_lock}
         if payload:
             request_args['json'] = payload
-        return self._request('post', path, **request_args)
+        return self._request('post', "cloud_storage/automated_recovery",
+                             **request_args)
+
+    def get_topic_recovery_status(self, node=None, **kwargs):
+        request_args = {'node': node, **kwargs}
+        return self._request('get', "cloud_storage/automated_recovery",
+                             **request_args)
 
     def self_test_start(self, options):
         return self._request("POST", "debug/self_test/start", json=options)

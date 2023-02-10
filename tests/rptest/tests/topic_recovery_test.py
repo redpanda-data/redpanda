@@ -959,12 +959,27 @@ class AdminApiBasedRestore(FastCheck):
     def _assert_temporary_retention_is_reverted(self):
         self._assert_retention('-1')
 
+    def _assert_status(self):
+        def wait_for_status():
+            r = self.admin.get_topic_recovery_status()
+            assert r.status_code == requests.status_codes.codes['ok']
+            if r.json()['state'] == 'inactive':
+                return False
+            return r.json()
+
+        status = wait_until_result(wait_for_status, timeout_sec=60)
+        self.logger.info(f'got status: {status}')
+        assert status['request']['topic_names_pattern'] == 'none'
+        assert status['request']['retention_bytes'] == -1
+        assert status['request']['retention_ms'] == 500000
+
     def restore_redpanda(self, *_):
         payload = {'retention_ms': 500000}
         response = self.admin.initiate_topic_scan_and_recovery(payload=payload)
         assert response.status_code == requests.status_codes.codes[
             'ok'], f'request status code: {response.status_code}'
         self._assert_duplicate_request_is_rejected()
+        self._assert_status()
 
     def after_restart_validation(self):
         super().after_restart_validation()
