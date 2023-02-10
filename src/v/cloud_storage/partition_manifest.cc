@@ -1120,7 +1120,7 @@ ss::future<> partition_manifest::update(ss::input_stream<char> is) {
           cst_log.debug, "Failed to parse manifest: {}", result.hexdump(2048));
         throw std::runtime_error(fmt_with_ctx(
           fmt::format,
-          "Failed to parse topic manifest {}: {} at offset {}",
+          "Failed to parse partition manifest {}: {} at offset {}",
           get_manifest_path(),
           rapidjson::GetParseError_En(e),
           o));
