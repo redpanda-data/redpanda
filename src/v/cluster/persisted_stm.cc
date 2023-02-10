@@ -337,6 +337,7 @@ ss::future<> persisted_stm::start() {
         auto next_offset = model::next_offset(snapshot.header.offset);
         if (next_offset >= _c->start_offset()) {
             co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
+            set_next(next_offset);
         } else {
             // This can happen on an out-of-date replica that re-joins the group
             // after other replicas have already evicted logs to some offset
@@ -347,13 +348,15 @@ ss::future<> persisted_stm::start() {
               clusterlog.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_mgr.snapshot_path());
+            _insync_offset = model::prev_offset(next_offset);
+            set_next(next_offset);
         }
-        set_next(next_offset);
 
         _resolved_when_snapshot_hydrated.set_value();
     } else {
         auto offset = _c->start_offset();
         if (offset >= model::offset(0)) {
+            _insync_offset = model::prev_offset(offset);
             set_next(offset);
         }
         _resolved_when_snapshot_hydrated.set_value();
