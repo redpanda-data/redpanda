@@ -77,7 +77,7 @@ command.`,
 			// Make HTTP POST request to leader that starts the actual test
 			tid, err := cl.StartSelfTest(cmd.Context(), onNodes, tests)
 			out.MaybeDie(err, "unable to start self test: %v", err)
-			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk redpanda cluster self-test status\n", tid)
+			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk cluster self-test status\n", tid)
 		},
 	}
 
