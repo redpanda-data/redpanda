@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import time
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -14,7 +15,9 @@ from rptest.clients.rpk import RpkTool
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
+from rptest.utils.functional import flat_map
 from rptest.util import wait_until_result
+from math import comb
 
 
 class SelfTestTest(RedpandaTest):
@@ -38,7 +41,7 @@ class SelfTestTest(RedpandaTest):
     @cluster(num_nodes=3)
     def test_self_test(self):
         """Assert the self test starts/completes with success."""
-        self._rpk.self_test_start(1000, 1000)
+        self._rpk.self_test_start(2000, 2000)
 
         # Wait for completion
         node_reports = self.wait_for_self_test_completion()
@@ -51,6 +54,56 @@ class SelfTestTest(RedpandaTest):
                 assert 'error' not in report
                 assert 'warning' not in report
                 assert report['duration'] > 0, report['duration']
+
+        num_nodes = 3
+
+        # Ensure the results appear as expected. Assertions aren't performed
+        # on specific results, but rather what tests are oberved to have run
+        reports = flat_map(lambda node: node['results'], node_reports)
+
+        # Ensure 4 disk tests per node, read/write & latency/throughput
+        disk_results = [r for r in reports if r['test_type'] == 'disk']
+        expected_disk_results = num_nodes * 4
+        assert len(
+            disk_results
+        ) == expected_disk_results, f"Expected {expected_disk_results} disk reports observed {len(disk_results)}"
+
+        # Assert properties of the network results hold true
+        network_results = [r for r in reports if r['test_type'] == 'network']
+
+        # Ensure no other result sets exist
+        assert len(disk_results) + len(network_results) == len(reports)
+
+        # Ensure nCr network test reports, clusterwide
+        assert len(network_results) == comb(
+            num_nodes, 2
+        ), f"Expected {comb(num_nodes,2)} reports observed {len(network_results)}"
+
+        # Assert correct combinations of nodes were chosen. The network self
+        # test should only be run on unique pairs of nodes
+        def seperate_pairings(result):
+            # Returns a 2-tuple of type (int, int[]) where the first parameter
+            # is the node that issued the netcheck benchmark (client) and the
+            # second parameter is the list of servers the test was run against
+            network_results = [
+                r['info'] for r in result['results']
+                if r['test_type'] == 'network'
+            ]
+            matcher = re.compile(r".*:\s(\d+)")
+            mmxs = [matcher.match(r) for r in network_results]
+            assert all([r is not None for r in mmxs]), "Failed to match regex"
+            return (int(result['node_id']), [int(r[1]) for r in mmxs])
+
+        # Should be something like: {0: [1,2], 1: [2,3,4], ... etc}
+        netcheck_pairings = [seperate_pairings(r) for r in node_reports]
+        netcheck_pairings = {k: v for k, v in netcheck_pairings}
+        self.logger.debug(f"netcheck_pairings: {netcheck_pairings}")
+        for client, servers in netcheck_pairings.items():
+            for server in servers:
+                # Assert that for any (client, server) pair, there is not
+                # a corresponding (server, client) pair.
+                sxs = netcheck_pairings.get(server, [])
+                assert client not in sxs
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_self_test_node_crash(self):
