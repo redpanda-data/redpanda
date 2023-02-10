@@ -845,6 +845,7 @@ ss::future<> admin_server::throw_on_error(
               fmt::format("Not ready: {}", ec.message()),
               ss::httpd::reply::status_type::service_unavailable);
         case rpc::errc::client_request_timeout:
+        case rpc::errc::connection_timeout:
             throw ss::httpd::base_exception(
               fmt::format("Timeout: {}", ec.message()),
               ss::httpd::reply::status_type::gateway_timeout);
