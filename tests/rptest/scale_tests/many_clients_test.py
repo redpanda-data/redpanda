@@ -22,12 +22,7 @@ resource_settings = ResourceSettings(
 
     # Set a low memory size, such that there is only ~100k of memory available
     # for dealing with each client.
-    memory_mb=768,
-
-    # Test nodes and developer workstations may have slow fsync.  For this test
-    # we need things to be consistently fast, so disable fsync (this test
-    # has nothing to do with verifying the correctness of the storage layer)
-    bypass_fsync=True)
+    memory_mb=768)
 
 
 class ManyClientsTest(RedpandaTest):
@@ -110,7 +105,7 @@ class ManyClientsTest(RedpandaTest):
             )
             return consumer_a.message_count + consumer_b.message_count >= expect
 
-        wait_until(complete,
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Consumers didn't see all messages")
+        self.redpanda.wait_until(complete,
+                                 timeout_sec=30,
+                                 backoff_sec=1,
+                                 err_msg="Consumers didn't see all messages")
