@@ -305,3 +305,9 @@ iobuf::placeholder iobuf::reserve(size_t sz) {
     it->reserve(sz);
     return p;
 }
+
+void iobuf::check_no_overlap(fragment* f) {
+    for (const auto& it : _frags) {
+        vassert(!it.overlaps(f), "");
+    }
+}

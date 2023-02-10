@@ -179,6 +179,8 @@ private:
     size_t _size{0};
     expression_in_debug_mode(oncore _verify_shard);
     friend std::ostream& operator<<(std::ostream&, const iobuf&);
+
+    void check_no_overlap(fragment* f);
 };
 
 inline void iobuf::clear() {
@@ -221,10 +223,12 @@ inline void iobuf::append_take_ownership(fragment* f) {
     }
     // NOTE: this _must_ be size and _not_ capacity
     _size += f->size();
+    check_no_overlap(f);
     _frags.push_back(*f);
 }
 inline void iobuf::prepend_take_ownership(fragment* f) {
     _size += f->size();
+    check_no_overlap(f);
     _frags.push_front(*f);
 }
 

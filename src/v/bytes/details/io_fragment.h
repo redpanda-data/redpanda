@@ -102,6 +102,11 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
     safe_intrusive_list_hook hook;
 
+    bool overlaps(io_fragment* f) const {
+        return _buf.get() <= (f->_buf.get() + f->_buf.size() - 1)
+               && f->_buf.get() <= (_buf.get() + _buf.size() - 1);
+    }
+
 private:
     ss::temporary_buffer<char> _buf;
     size_t _used_bytes;
