@@ -181,7 +181,7 @@ struct try_abort_request
     model::partition_id tm;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     try_abort_request() noexcept = default;
 
@@ -245,9 +245,9 @@ struct init_tm_tx_request
       init_tm_tx_request,
       serde::version<0>,
       serde::compat_version<0>> {
-    kafka::transactional_id tx_id;
-    std::chrono::milliseconds transaction_timeout_ms;
-    model::timeout_clock::duration timeout;
+    kafka::transactional_id tx_id{};
+    std::chrono::milliseconds transaction_timeout_ms{};
+    model::timeout_clock::duration timeout{};
 
     init_tm_tx_request() noexcept = default;
 
@@ -339,7 +339,7 @@ struct fetch_tx_request
     using rpc_adl_exempt = std::true_type;
 
     kafka::transactional_id tx_id{};
-    model::term_id term;
+    model::term_id term{};
 
     fetch_tx_request() noexcept = default;
 
@@ -418,17 +418,17 @@ struct fetch_tx_reply
     };
 
     tx_errc ec{};
-    model::producer_identity pid;
-    model::producer_identity last_pid;
-    model::tx_seq tx_seq;
+    model::producer_identity pid{};
+    model::producer_identity last_pid{};
+    model::tx_seq tx_seq{};
     std::chrono::milliseconds timeout_ms{};
-    tx_status status;
-    std::vector<tx_partition> partitions;
-    std::vector<tx_group> groups;
+    tx_status status{};
+    std::vector<tx_partition> partitions{};
+    std::vector<tx_group> groups{};
 
     fetch_tx_reply() noexcept = default;
 
-    explicit fetch_tx_reply(tx_errc ec)
+    fetch_tx_reply(tx_errc ec)
       : ec(ec) {}
 
     fetch_tx_reply(
@@ -466,7 +466,7 @@ struct begin_tx_request
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    std::chrono::milliseconds transaction_timeout_ms;
+    std::chrono::milliseconds transaction_timeout_ms{};
 
     begin_tx_request() noexcept = default;
 
@@ -537,7 +537,7 @@ struct prepare_tx_request
     model::partition_id tm;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     prepare_tx_request() noexcept = default;
 
@@ -569,7 +569,7 @@ struct prepare_tx_request
 struct prepare_tx_reply
   : serde::
       envelope<prepare_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     prepare_tx_reply() noexcept = default;
 
@@ -590,7 +590,7 @@ struct commit_tx_request
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     commit_tx_request() noexcept = default;
 
@@ -616,7 +616,7 @@ struct commit_tx_request
 struct commit_tx_reply
   : serde::
       envelope<commit_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     commit_tx_reply() noexcept = default;
 
@@ -637,7 +637,7 @@ struct abort_tx_request
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     abort_tx_request() noexcept = default;
 
@@ -662,7 +662,7 @@ struct abort_tx_request
 struct abort_tx_reply
   : serde::
       envelope<abort_tx_reply, serde::version<0>, serde::compat_version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     abort_tx_reply() noexcept = default;
 
@@ -686,7 +686,7 @@ struct begin_group_tx_request
     kafka::group_id group_id;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     begin_group_tx_request() noexcept = default;
 
@@ -732,7 +732,7 @@ struct begin_group_tx_reply
       serde::version<0>,
       serde::compat_version<0>> {
     model::term_id etag;
-    tx_errc ec;
+    tx_errc ec{};
 
     begin_group_tx_reply() noexcept = default;
 
@@ -763,7 +763,7 @@ struct prepare_group_tx_request
     model::term_id etag;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     prepare_group_tx_request() noexcept = default;
 
@@ -811,7 +811,7 @@ struct prepare_group_tx_reply
       prepare_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     prepare_group_tx_reply() noexcept = default;
 
@@ -837,7 +837,7 @@ struct commit_group_tx_request
     model::producer_identity pid;
     model::tx_seq tx_seq;
     kafka::group_id group_id;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     commit_group_tx_request() noexcept = default;
 
@@ -882,7 +882,7 @@ struct commit_group_tx_reply
       commit_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     commit_group_tx_reply() noexcept = default;
 
@@ -908,7 +908,7 @@ struct abort_group_tx_request
     kafka::group_id group_id;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     abort_group_tx_request() noexcept = default;
 
@@ -953,7 +953,7 @@ struct abort_group_tx_reply
       abort_group_tx_reply,
       serde::version<0>,
       serde::compat_version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     abort_group_tx_reply() noexcept = default;
 
