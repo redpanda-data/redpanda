@@ -273,8 +273,37 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	return c, nil
 }
 
+// isSameLoaded checks if the config object content is the same as the one
+// loaded. The function returns a boolean indicating if the two config objects
+// are equal.
+func (c *Config) isSameLoaded() bool {
+	var init, final *Config
+	if err := yaml.Unmarshal(c.RawFile(), &init); err != nil {
+		return false
+	}
+
+	// We marshal to later unmarshal the passed cfg to avoid comparing a
+	// configuration with loaded unexported values such as
+	// (file, fileLocation or rawFile)
+	finalRaw, err := yaml.Marshal(c)
+	if err != nil {
+		return false
+	}
+
+	if err := yaml.Unmarshal(finalRaw, &final); err != nil {
+		return false
+	}
+
+	return reflect.DeepEqual(init, final)
+}
+
 // Write writes loaded configuration parameters to redpanda.yaml.
 func (c *Config) Write(fs afero.Fs) (rerr error) {
+	// We return early if the config is the same as the one loaded in the first
+	// place and avoid writing the file.
+	if c.isSameLoaded() {
+		return nil
+	}
 	location := c.fileLocation
 	if location == "" {
 		location = DefaultPath
@@ -336,6 +365,8 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 	}
 	c.fileLocation = abs
 	c.file.fileLocation = abs
+	c.rawFile = file
+	c.file.rawFile = file
 	return nil
 }
 
