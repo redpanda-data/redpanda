@@ -171,7 +171,10 @@ ss::future<response_ptr> list_partition_reassignments_handler::handle(
                 vlog(klog.debug, "No updates in progress: ntp {}", ntp);
             }
         }
-        resp.data.topics.push_back(topic_reassignment);
+
+        if (!topic_reassignment.partitions.empty()) {
+            resp.data.topics.push_back(topic_reassignment);
+        }
     }
 
     co_return co_await ctx.respond(std::move(resp));
