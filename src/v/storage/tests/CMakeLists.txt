@@ -34,6 +34,7 @@ rp_test(
     readers_cache_test.cc
     concat_segment_reader_test.cc
     offset_to_filepos_test.cc
+    offset_translator_state_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"

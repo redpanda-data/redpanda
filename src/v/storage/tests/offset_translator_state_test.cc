@@ -75,12 +75,11 @@ SEASTAR_THREAD_TEST_CASE(offset_translator_state_overlap_non_data_batch) {
     BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 20_rp);
 
     // segment 2
-    BOOST_REQUIRE(!state.add_absolute_delta(
-      18_rp, 10)); // delta_offset is set to 10 because archival metadata
-                   // doesn't take overlap into account and doesn't know about
-                   // offset 20 in the first segment.
-    BOOST_REQUIRE_EQUAL(state.last_delta(), 13_do);
-    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 20_rp);
+    // This one wouldn't be added to the map because the gap length is 0
+    // but the overlapping batch will be removed from it.
+    BOOST_REQUIRE(!state.add_absolute_delta(18_rp, 10));
+    BOOST_REQUIRE_EQUAL(state.last_delta(), 10_do);
+    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 14_rp);
     state.add_gap(18_rp, 20_rp);
     BOOST_REQUIRE_EQUAL(state.last_delta(), 13_do);
     BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 20_rp);
@@ -106,20 +105,6 @@ SEASTAR_THREAD_TEST_CASE(offset_translator_state_duplicate) {
 
     // segment 2
     BOOST_REQUIRE(!state.add_absolute_delta(10_rp, 5));
-    BOOST_REQUIRE_EQUAL(state.last_delta(), 13_do);
-    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 20_rp);
-    state.add_gap(10_rp, 14_rp);
-    BOOST_REQUIRE_EQUAL(state.last_delta(), 13_do);
-    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 20_rp);
-    state.add_gap(18_rp, 20_rp);
-    BOOST_REQUIRE_EQUAL(state.last_delta(), 13_do);
-    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 20_rp);
-}
-
-SEASTAR_THREAD_TEST_CASE(offset_translator_state_inconsistency_1) {
-    storage::offset_translator_state state(ntp);
-
-    BOOST_REQUIRE(state.add_absolute_delta(10_rp, 5));
     BOOST_REQUIRE_EQUAL(state.last_delta(), 5_do);
     BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 9_rp);
     state.add_gap(10_rp, 14_rp);
@@ -128,8 +113,15 @@ SEASTAR_THREAD_TEST_CASE(offset_translator_state_inconsistency_1) {
     state.add_gap(18_rp, 20_rp);
     BOOST_REQUIRE_EQUAL(state.last_delta(), 13_do);
     BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 20_rp);
-    BOOST_REQUIRE_THROW(
-      state.add_absolute_delta(10_rp, 50), std::runtime_error);
+}
+
+SEASTAR_THREAD_TEST_CASE(offset_translator_state_inconsistency_1) {
+    storage::offset_translator_state state(ntp);
+
+    BOOST_REQUIRE(state.add_absolute_delta(10_rp, 9));
+    BOOST_REQUIRE_EQUAL(state.last_delta(), 9_do);
+    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 9_rp);
+    BOOST_REQUIRE_THROW(state.add_absolute_delta(11_rp, 5), std::runtime_error);
 }
 
 SEASTAR_THREAD_TEST_CASE(offset_translator_state_inconsistency_2) {
@@ -140,4 +132,22 @@ SEASTAR_THREAD_TEST_CASE(offset_translator_state_inconsistency_2) {
     BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 9_rp);
     state.add_gap(20_rp, 30_rp);
     BOOST_REQUIRE_THROW(state.add_gap(15_rp, 20_rp), std::runtime_error);
+}
+
+SEASTAR_THREAD_TEST_CASE(offset_translator_state_case_1) {
+    storage::offset_translator_state state(ntp);
+
+    BOOST_REQUIRE(state.add_absolute_delta(100_rp, 10));
+    BOOST_REQUIRE(!state.add_absolute_delta(110_rp, 10));
+}
+
+SEASTAR_THREAD_TEST_CASE(offset_translator_state_case_2) {
+    storage::offset_translator_state state(ntp);
+    BOOST_REQUIRE(state.add_absolute_delta(90_rp, 4));
+    state.add_gap(95_rp, 100_rp);
+    BOOST_REQUIRE_EQUAL(state.last_delta(), 10_do);
+    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 100_rp);
+    BOOST_REQUIRE(!state.add_absolute_delta(101_rp, 10));
+    BOOST_REQUIRE_EQUAL(state.last_delta(), 10_do);
+    BOOST_REQUIRE_EQUAL(state.last_gap_offset(), 100_rp);
 }

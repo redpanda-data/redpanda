@@ -278,6 +278,11 @@ copy_subsegment(const in_memory_segment& src, size_t shift, size_t length) {
     return dst;
 }
 
+static constexpr bool is_internal_record_batch(model::record_batch_type type) {
+    return type == model::record_batch_type::raft_configuration
+           || type == model::record_batch_type::archival_metadata;
+}
+
 static std::vector<in_memory_segment> make_segments(
   const std::vector<std::vector<batch_t>>& segments,
   bool produce_overlapping = false,
@@ -306,9 +311,8 @@ static std::vector<in_memory_segment> make_segments(
                 // calculate partial overlap with first merged
                 // segment (prev)
                 truncated.delta_offset_overlap
-                  = prev.headers.back().type
-                        != model::record_batch_type::raft_data
-                      ? prev.headers.back().record_count
+                  = is_internal_record_batch(truncated.headers.front().type)
+                      ? truncated.headers.front().record_count
                       : 0;
                 s.push_back(std::move(truncated));
             } else {
@@ -351,12 +355,31 @@ static std::vector<in_memory_segment> make_segments(
 static std::ostream& operator<<(std::ostream& o, const in_memory_segment& ims) {
     fmt::print(
       o,
-      "name {}, base-offset {}, max-offset {}\n",
+      "name {}, base-offset {}, max-offset {}, do-not-reupload {}, "
+      "num-config-batches {}, num-config-records {}, delta-offset-overlap {}\n",
       ims.sname,
       ims.base_offset,
-      ims.max_offset);
+      ims.max_offset,
+      ims.do_not_reupload,
+      ims.num_config_batches,
+      ims.num_config_records,
+      ims.delta_offset_overlap);
     for (size_t i = 0; i < ims.headers.size(); i++) {
-        fmt::print(o, "\trecord-batch {}\n", ims.headers[i]);
+        if (is_internal_record_batch(ims.headers[i].type)) {
+            const auto& h = ims.headers[i];
+            fmt::print(
+              o,
+              "\tconfiguration-batch {{ base_offset:{}, record_count:{} }}\n",
+              h.base_offset,
+              h.record_count);
+        } else {
+            const auto& h = ims.headers[i];
+            fmt::print(
+              o,
+              "\tdata-batch {{ base_offset:{}, record_count:{} }}\n",
+              h.base_offset,
+              h.record_count);
+        }
     }
     return o;
 }
@@ -391,6 +414,12 @@ make_imposter_expectations(
         auto segment_delta = delta
                              - model::offset_delta(s.delta_offset_overlap);
 
+        vlog(
+          test_log.info,
+          "computed segment delta {}, segment {}",
+          segment_delta,
+          s);
+        BOOST_REQUIRE(segment_delta <= s.base_offset);
         cloud_storage::partition_manifest::segment_meta meta{
           .is_compacted = false,
           .size_bytes = s.bytes.size(),
