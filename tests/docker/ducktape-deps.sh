@@ -46,7 +46,9 @@ function install_omb() {
 
 function install_kafka_tools() {
   for ver in "2.3.1" "2.4.1" "2.5.0" "2.7.0" "3.0.0"; do
-    mkdir -p "/opt/kafka-${ver}" && chmod a+rw "/opt/kafka-${ver}" && curl -s "$KAFKA_MIRROR/kafka_2.12-${ver}.tgz" | tar xz --strip-components=1 -C "/opt/kafka-${ver}"
+    mkdir -p "/opt/kafka-${ver}"
+    chmod a+rw "/opt/kafka-${ver}"
+    curl -s "$KAFKA_MIRROR/kafka_2.12-${ver}.tgz" | tar xz --strip-components=1 -C "/opt/kafka-${ver}"
   done
   ln -s /opt/kafka-3.0.0/ /opt/kafka-dev
 }
@@ -94,10 +96,10 @@ function install_client_swarm() {
   pushd /tmp
   git clone https://github.com/redpanda-data/client-swarm.git
   pushd client-swarm
-  git reset --hard a03a8ae &&
-    cargo build --release &&
-    cp target/release/client-swarm /usr/local/bin &&
-    popd
+  git reset --hard a03a8ae
+  cargo build --release
+  cp target/release/client-swarm /usr/local/bin
+  popd
   rm -rf client-swarm
   popd
   rm -rf $dir/.cargo
@@ -105,16 +107,26 @@ function install_client_swarm() {
 
 function install_sarama_examples() {
   git -C /opt clone -b v1.32.0 --single-branch https://github.com/Shopify/sarama.git
-  cd /opt/sarama/examples/interceptors && go mod tidy && go build
-  cd /opt/sarama/examples/http_server && go mod tidy && go build
-  cd /opt/sarama/examples/consumergroup && go mod tidy && go build
-  cd /opt/sarama/examples/sasl_scram_client && go mod tidy && go build
+  cd /opt/sarama/examples/interceptors
+  go mod tidy
+  go build
+  cd /opt/sarama/examples/http_server
+  go mod tidy
+  go build
+  cd /opt/sarama/examples/consumergroup
+  go mod tidy
+  go build
+  cd /opt/sarama/examples/sasl_scram_client
+  go mod tidy
+  go build
 }
 
 function install_franz_bench() {
   git -C /opt clone -b v1.5.0 --single-branch https://github.com/twmb/franz-go.git
   cd /opt/franz-go
-  cd /opt/franz-go/examples/bench && go mod tidy && go build
+  cd /opt/franz-go/examples/bench
+  go mod tidy
+  go build
 }
 
 function install_kcl() {
@@ -123,16 +135,18 @@ function install_kcl() {
 }
 
 function install_kgo_verifier() {
-  git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git &&
-    cd /opt/kgo-verifier && git reset --hard 3c01706276bb08bed90839d38c5f1e95437d8e78 &&
-    go mod tidy && make
+  git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git
+  cd /opt/kgo-verifier
+  git reset --hard 3c01706276bb08bed90839d38c5f1e95437d8e78
+  go mod tidy
+  make
 }
 
 function install_addr2line() {
-  mkdir -p /opt/scripts &&
-    curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py &&
-    curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line &&
-    chmod +x /opt/scripts/seastar-addr2line
+  mkdir -p /opt/scripts
+  curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py
+  curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line
+  chmod +x /opt/scripts/seastar-addr2line
 }
 
 $@
