@@ -3555,6 +3555,11 @@ group::get_expired_offsets(std::chrono::seconds retention_period) {
     }
 }
 
+bool group::has_offsets() const {
+    return !_offsets.empty() || !_pending_offset_commits.empty()
+           || !_volatile_txs.empty() || !_tx_seqs.empty();
+}
+
 std::vector<model::topic_partition>
 group::delete_expired_offsets(std::chrono::seconds retention_period) {
     /*
@@ -3569,16 +3574,37 @@ group::delete_expired_offsets(std::chrono::seconds retention_period) {
     /*
      * maybe mark the group as dead
      */
-    const auto has_offsets = [this] {
-        return !_offsets.empty() || !_pending_offset_commits.empty()
-               || !_volatile_txs.empty() || !_tx_seqs.empty();
-    };
-
     if (in_state(group_state::empty) && !has_offsets()) {
         set_state(group_state::dead);
     }
 
     return offsets;
+}
+
+std::vector<model::topic_partition>
+group::delete_offsets(std::vector<model::topic_partition> offsets) {
+    std::vector<model::topic_partition> deleted_offsets;
+    /*
+     * Delete the requested offsets, unless there is at least one active
+     * subscription for an offset.
+     */
+    for (auto& offset : offsets) {
+        if (!subscribed(offset.topic)) {
+            vlog(_ctxlog.debug, "Deleting group offset {}", offset);
+            _offsets.erase(offset);
+            _pending_offset_commits.erase(offset);
+            deleted_offsets.push_back(std::move(offset));
+        }
+    }
+
+    /*
+     * maybe mark the group as dead
+     */
+    if (in_state(group_state::empty) && !has_offsets()) {
+        set_state(group_state::dead);
+    }
+
+    return deleted_offsets;
 }
 
 } // namespace kafka

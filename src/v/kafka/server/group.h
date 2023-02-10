@@ -286,6 +286,11 @@ public:
         return _leader && _leader.value() == member_id;
     }
 
+    /// Check if this is a consumer_group or not
+    bool is_consumer_group() const {
+        return _protocol_type == consumer_group_protocol_type;
+    }
+
     /// Get the group's configured protocol type (if any).
     const std::optional<kafka::protocol_type>& protocol_type() const {
         return _protocol_type;
@@ -664,6 +669,14 @@ public:
     std::vector<model::topic_partition>
     delete_expired_offsets(std::chrono::seconds retention_period);
 
+    /*
+     *  Delete group offsets that do not have subscriptions.
+     *
+     *  Returns the set of offsets that were deleted.
+     */
+    std::vector<model::topic_partition>
+    delete_offsets(std::vector<model::topic_partition> offsets);
+
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
@@ -791,6 +804,8 @@ private:
 
     cluster::abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
+
+    bool has_offsets() const;
 
     bool has_pending_transaction(const model::topic_partition& tp) {
         if (std::any_of(

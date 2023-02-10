@@ -221,6 +221,8 @@ enum class error_code : int16_t {
     // The broker rejected this static consumer since another consumer with the
     // same group.instance.id has registered with a different member.id.
     fenced_instance_id = 82,
+    // The consumer group is actively subscribed to the topic
+    group_subscribed_to_topic = 86,
     // This record has failed the validation on broker and hence be rejected.
     invalid_record = 87,
     // There are unstable offsets that need to be cleared.

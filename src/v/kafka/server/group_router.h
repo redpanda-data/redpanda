@@ -70,6 +70,9 @@ public:
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);
 
+    ss::future<offset_delete_response>
+    offset_delete(offset_delete_request&& request);
+
     group::offset_commit_stages offset_commit(offset_commit_request&& request);
 
     ss::future<txn_offset_commit_response>

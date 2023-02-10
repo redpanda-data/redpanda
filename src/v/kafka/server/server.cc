@@ -32,6 +32,7 @@
 #include "kafka/server/handlers/leave_group.h"
 #include "kafka/server/handlers/list_groups.h"
 #include "kafka/server/handlers/offset_commit.h"
+#include "kafka/server/handlers/offset_delete.h"
 #include "kafka/server/handlers/offset_fetch.h"
 #include "kafka/server/handlers/sasl_authenticate.h"
 #include "kafka/server/handlers/sasl_handshake.h"
@@ -774,6 +775,88 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
             auto& partition = topic.partitions.emplace_back();
             partition.partition_index = partition_index;
             partition.error_code = error_code::group_authorization_failed;
+        }
+    }
+
+    co_return co_await ctx.respond(std::move(resp));
+}
+
+template<>
+ss::future<response_ptr>
+offset_delete_handler::handle(request_context ctx, ss::smp_service_group) {
+    offset_delete_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+    if (!ctx.authorized(
+          security::acl_operation::remove, request.data.group_id)) {
+        co_return co_await ctx.respond(
+          offset_fetch_response(error_code::group_authorization_failed));
+    }
+
+    /// Remove unauthorized topics from request
+    auto unauthorized_it = std::partition(
+      request.data.topics.begin(),
+      request.data.topics.end(),
+      [&ctx](const offset_delete_request_topic& topic) {
+          return ctx.authorized(security::acl_operation::read, topic.name);
+      });
+
+    std::vector<offset_delete_request_topic> unauthorized(
+      std::make_move_iterator(unauthorized_it),
+      std::make_move_iterator(request.data.topics.end()));
+    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+
+    /// Remove unknown topic_partitions from request
+    std::vector<offset_delete_request_topic> unknowns;
+    for (auto& topic : request.data.topics) {
+        auto unknowns_it = std::partition(
+          topic.partitions.begin(),
+          topic.partitions.end(),
+          [&topic, &ctx](const offset_delete_request_partition& partition) {
+              return ctx.metadata_cache().contains(
+                model::topic_namespace_view(model::kafka_namespace, topic.name),
+                partition.partition_index);
+          });
+        if (std::distance(unknowns_it, topic.partitions.end()) > 0) {
+            unknowns.push_back(offset_delete_request_topic{
+              .name = topic.name,
+              .partitions = std::vector<offset_delete_request_partition>(
+                std::make_move_iterator(unknowns_it),
+                std::make_move_iterator(topic.partitions.end()))});
+            topic.partitions.erase(unknowns_it, topic.partitions.end());
+        }
+    }
+
+    auto resp = co_await ctx.groups().offset_delete(std::move(request));
+
+    /// Re-add unauthorized requests back into the response as errors
+    for (auto& req_topic : unauthorized) {
+        auto& topic = resp.data.topics.emplace_back();
+        topic.name = std::move(req_topic.name);
+        topic.partitions.reserve(req_topic.partitions.size());
+        for (auto& req_part : req_topic.partitions) {
+            auto& partition = topic.partitions.emplace_back();
+            partition.partition_index = req_part.partition_index;
+            partition.error_code = error_code::topic_authorization_failed;
+        }
+    }
+
+    /// Re-add unknown requests back into the response as errors
+    for (auto& req_topic : unknowns) {
+        auto found = std::find_if(
+          resp.data.topics.begin(),
+          resp.data.topics.end(),
+          [&req_topic](const offset_delete_response_topic& resp_topic) {
+              return resp_topic.name == req_topic.name;
+          });
+        auto& topic = (found == resp.data.topics.end())
+                        ? resp.data.topics.emplace_back()
+                        : *found;
+        topic.name = std::move(req_topic.name);
+        for (auto& req_part : req_topic.partitions) {
+            auto& partition = topic.partitions.emplace_back();
+            partition.partition_index = req_part.partition_index;
+            partition.error_code = error_code::unknown_topic_or_partition;
         }
     }
 
