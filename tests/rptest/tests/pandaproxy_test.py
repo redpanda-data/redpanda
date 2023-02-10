@@ -1439,6 +1439,7 @@ class User:
 class GetTopics(threading.Thread):
     def __init__(self, user: User, handle):
         threading.Thread.__init__(self)
+        self.daemon = True
         self.user = user
         self._get_topics = handle
         self.result_raw = None
