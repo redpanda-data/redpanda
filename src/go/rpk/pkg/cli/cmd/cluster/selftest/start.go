@@ -33,27 +33,23 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "start",
-		Short: "Starts a new self test run",
-		Long: `Starts one or more pre-canned tests on a selection or all nodes
-of the cluster. Current tests that will run are:
+		Short: "Starts a new self-test run",
+		Long: `Starts one or more benchmark tests on one or more nodes
+of the cluster. Available tests to run:
 
 * Disk tests:
-  * Throughput test: 512k r/w sequential
-    * Higher request sizes and deeper io queue depth will sacrifice IOPS /
-      latency numbers in order to write / read more bytes in a shorter amount
-      of time.
-  * Latency test: 4k r/w sequential
-    * Smaller request sizes and lower levels of parallelism to achieve higher
-      IOPS and lower latency results.
+  * Throughput test: 512 KB messages, sequential read/write
+    * Uses a larger request message sizes and deeper I/O queue depth to write/read more bytes in a shorter amount of time, at the cost of IOPS/latency.
+  * Latency test: 4 KB messages, sequential read/write
+    * Uses smaller request message sizes and lower levels of parallelism to achieve higher IOPS and lower latency.
 
 * Network tests:
-  * 8192b throughput test
-    * Unique pairs of redpanda nodes will act as either a client or server.
-    * Benchmark attempts to push as much data over the wire within the test
-      parameters.
+  * Throughput test: 8192-bit messages
+    * Unique pairs of Redpanda nodes each act as a client and a server.
+    * The test pushes as much data over the wire, within the test parameters.
 
-This command will immediately return once invoked with success. It is up to the
-user to periodically check back for the result set using the 'self-test status'
+This command immediately returns on success, and the tests run asynchronously. The
+user polls for results with the 'self-test status'
 command.`,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
@@ -64,7 +60,7 @@ command.`,
 
 			// Warn user before continuing, proceed only via explicit signal
 			if !noConfirm {
-				confirmed, err := out.Confirm("Invoking the redpanda self tests may put excessive pressure on your system. It attempts to benchmark disk and network hardware to find their max throughputs. Its advised to not start the test if there are already large workloads running on the system.")
+				confirmed, err := out.Confirm("Redpanda self-test will run benchmarks of disk and network hardware that will consume significant system resources. Do not start self-test if large workloads are already running on the system.")
 				out.MaybeDie(err, "unable to confirm user confirmation: %v", err)
 				if !confirmed {
 					out.Exit("self-test start was cancelled")
@@ -81,7 +77,7 @@ command.`,
 			// Make HTTP POST request to leader that starts the actual test
 			tid, err := cl.StartSelfTest(cmd.Context(), onNodes, tests)
 			out.MaybeDie(err, "unable to start self test: %v", err)
-			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk redpanda admin self-test status\n", tid)
+			fmt.Printf("Redpanda self-test has started, test identifier: %v, To check the status run:\n    rpk redpanda cluster self-test status\n", tid)
 		},
 	}
 
@@ -90,9 +86,9 @@ command.`,
 	cmd.Flags().UintVar(&diskDurationMs, "disk-duration-ms", 30000,
 		"The duration in milliseconds of individual disk test runs")
 	cmd.Flags().UintVar(&netDurationMs, "network-duration-ms", 30000,
-		"The duration in milliseconds of individual disk test runs")
+		"The duration in milliseconds of individual network test runs")
 	cmd.Flags().IntSliceVar(&onNodes, "participant-node-ids", nil,
-		"ids of nodes that the tests will run on. Omitting this implies all nodes.")
+		"IDs of nodes that the tests will run on. If not set, tests will run for all node IDs.")
 	cmd.Flags().BoolVar(&onlyDisk, "only-disk-test", false, "Runs only the disk benchmarks")
 	cmd.Flags().BoolVar(&onlyNetwork, "only-network-test", false, "Runs only network benchmarks")
 	cmd.MarkFlagsMutuallyExclusive("only-disk-test", "only-network-test")
@@ -107,7 +103,7 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 	diskcheck := []any{
 		// One test weighted for better throughput results
 		admin.DiskcheckParameters{
-			Name:        "512K sequential r/w throughput disk test",
+			Name:        "512KB sequential r/w throughput disk test",
 			DSync:       true,
 			SkipWrite:   false,
 			SkipRead:    false,
@@ -119,7 +115,7 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 		},
 		// .. and another for better latency/iops results
 		admin.DiskcheckParameters{
-			Name:        "4k sequential r/w latency/iops disk test",
+			Name:        "4KB sequential r/w latency/iops disk test",
 			DSync:       true,
 			SkipWrite:   false,
 			SkipRead:    false,
@@ -132,7 +128,7 @@ func assembleTests(onlyDisk bool, onlyNetwork bool, durationDisk uint, durationN
 	}
 	netcheck := []any{
 		admin.NetcheckParameters{
-			Name:        "8K Network Throughput Test",
+			Name:        "8Kb Network Throughput Test",
 			RequestSize: 8192,
 			DurationMs:  durationNet,
 			Parallelism: 10,
