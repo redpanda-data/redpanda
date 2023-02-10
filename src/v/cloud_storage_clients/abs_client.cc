@@ -553,26 +553,17 @@ abs_client::delete_objects(
   std::vector<object_key> keys,
   ss::lowres_clock::duration timeout) {
     abs_client::delete_objects_result delete_objects_result;
-    co_await ss::max_concurrent_for_each(
-      keys, 32, [this, &bucket, &delete_objects_result, timeout](auto key) {
-          return delete_object(bucket, key, timeout)
-            .then_wrapped([&key, &delete_objects_result](auto delete_f) {
-                if (delete_f.failed()) {
-                    try {
-                        std::rethrow_exception(delete_f.get_exception());
-                    } catch (const std::exception& ex) {
-                        delete_objects_result.undeleted_keys.push_back(
-                          {key, ex.what()});
-                    }
-                } else {
-                    auto delete_result = delete_f.get();
-                    if (delete_result.has_error()) {
-                        delete_objects_result.undeleted_keys.push_back(
-                          {key, fmt::format("{}", delete_result.error())});
-                    }
-                }
-            });
-      });
+    for (const auto& key : keys) {
+        try {
+            auto res = co_await delete_object(bucket, key, timeout);
+            if (res.has_error()) {
+                delete_objects_result.undeleted_keys.push_back(
+                  {key, fmt::format("{}", res.error())});
+            }
+        } catch (const std::exception& ex) {
+            delete_objects_result.undeleted_keys.push_back({key, ex.what()});
+        }
+    }
     co_return delete_objects_result;
 }
 

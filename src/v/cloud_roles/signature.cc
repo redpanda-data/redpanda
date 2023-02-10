@@ -489,6 +489,15 @@ signature_abs::get_string_to_sign(http::client::request_header& header) const {
           header_value_view.data(), header_value_view.size()};
 
         boost::trim(header_value);
+
+        // Represent 0 content-size as empty string as per
+        // https://learn.microsoft.com/en-us/rest/api/storageservices/authorize-with-shared-key#content-length-header-in-version-2014-02-14-and-earlier
+        if (
+          std::string_view{header_name} == "Content-Length"
+          && header_value == "0") {
+            header_value = "";
+        }
+
         non_ms_headers += ssx::sformat("{}\n", header_value);
     }
 

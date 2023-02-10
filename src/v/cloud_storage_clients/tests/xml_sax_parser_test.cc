@@ -117,6 +117,47 @@ static constexpr std::string_view abs_payload = R"XML(
 </EnumerationResults>
 )XML";
 
+static constexpr std::string_view abs_payload_with_continuation = R"XML(
+<EnumerationResults ServiceEndpoint="http://myaccount.blob.core.windows.net/"  ContainerName="mycontainer">  
+  <Prefix>prefix</Prefix>  
+  <Marker>string-value</Marker>  
+  <MaxResults>int-value</MaxResults>  
+  <Delimiter>string-value</Delimiter>  
+  <Blobs>  
+    <Blob>  
+      <Name>blob-name</Name>  
+      <Snapshot>date-time-value</Snapshot>  
+      <VersionId>date-time-vlue</VersionId>
+      <IsCurrentVersion>true</IsCurrentVersion>
+      <Deleted>true</Deleted>
+      <Properties> 
+        <Creation-Time>date-time-value</Creation-Time>
+        <Last-Modified>2021-01-10T02:00:00.000Z</Last-Modified>  
+        <Etag>etag</Etag>
+        <Acl>access control list</Acl>
+        <ResourceType>file | directory</ResourceType>
+        <Placeholder>true</Placeholder>
+        <Content-Length>1112</Content-Length>  
+        <Content-Type>blob-content-type</Content-Type>  
+        <Content-Encoding />  
+        <Content-Language />  
+        <Content-MD5 />  
+        <Cache-Control />  
+        <x-ms-blob-sequence-number>sequence-number</x-ms-blob-sequence-number>  
+        <BlobType>BlockBlob|PageBlob|AppendBlob</BlobType>  
+        <RemainingRetentionDays>no-of-days</RemainingRetentionDays>
+        <TagCount>number of tags between 1 to 10</TagCount>
+        <Expiry-Time>date-time-value</Expiry-Time>
+      </Properties>  
+    </Blob>  
+    <BlobPrefix>  
+      <Name>blob-prefix</Name>  
+    </BlobPrefix>  
+  </Blobs>  
+  <NextMarker>nnn</NextMarker>  
+</EnumerationResults>
+)XML";
+
 inline ss::logger test_log("test");
 
 BOOST_AUTO_TEST_CASE(test_parse_payload) {
@@ -190,4 +231,19 @@ BOOST_AUTO_TEST_CASE(test_parse_abs) {
       result.contents[0].last_modified
       == cloud_storage_clients::util::parse_timestamp(
         "2021-01-10T02:00:00.000Z"));
+}
+
+BOOST_AUTO_TEST_CASE(test_parse_abs_with_continuation) {
+    cloud_storage_clients::xml_sax_parser p{};
+    ss::temporary_buffer<char> buffer(
+      abs_payload_with_continuation.data(),
+      abs_payload_with_continuation.size());
+
+    p.start_parse(std::make_unique<cloud_storage_clients::abs_parse_impl>());
+    p.parse_chunk(std::move(buffer));
+    p.end_parse();
+
+    auto result = p.result();
+    BOOST_REQUIRE_EQUAL(result.is_truncated, true);
+    BOOST_REQUIRE_EQUAL(result.next_continuation_token, "nnn");
 }
