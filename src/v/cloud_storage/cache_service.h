@@ -132,7 +132,10 @@ private:
 
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// them until cache size <= _cache_size_low_watermark * max_cache_size
-    ss::future<> clean_up_cache();
+    ss::future<> trim();
+
+    /// Invoke trim, waiting if not enough time passed since the last trim
+    ss::future<> trim_throttled();
 
     /// Triggers directory walker, creates a list of files to delete and deletes
     /// only tmp files that are left from previous Red Panda run
@@ -142,7 +145,7 @@ private:
     /// until it meet a non-empty directory.
     ///
     /// \param key if a path to a file what should be deleted
-    ss::future<> recursive_delete_empty_directory(const std::string_view& key);
+    ss::future<> delete_file_and_empty_parents(const std::string_view& key);
 
     /// This method is called on shard 0 by other shards to report disk
     /// space changes.

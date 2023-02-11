@@ -83,8 +83,7 @@ public:
     void trim_cache() {
         sharded_cache
           .invoke_on(
-            ss::shard_id{0},
-            [](cloud_storage::cache& c) { return c.clean_up_cache(); })
+            ss::shard_id{0}, [](cloud_storage::cache& c) { return c.trim(); })
           .get();
     }
 };
