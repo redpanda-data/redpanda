@@ -31,8 +31,8 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
               self).__init__(test_context=test_context,
                              extra_rp_conf=extra_rp_conf)
 
-    def topic_segments(self):
-        storage = self.redpanda.node_storage(self.redpanda.nodes[0])
+    def topic_segments(self, node):
+        storage = self.redpanda.node_storage(node)
         topic_partitions = storage.partitions("kafka", self.topic)
 
         return [len(p.segments) for p in topic_partitions]
@@ -96,12 +96,15 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         rpk.cluster_config_set("log_compaction_interval_ms", str(3600 * 1000))
 
         def segment_number_matches(predicate):
-            segments_per_partition = self.topic_segments()
-            self.logger.debug(
-                f"Topic {self.topic} segments per partition: {segments_per_partition}"
-            )
-
-            return all([predicate(n) for n in segments_per_partition])
+            for node in self.redpanda.nodes:
+                segments = self.topic_segments(node)
+                self.logger.debug(
+                    f"Topic {self.topic} segments per partition: {segments} on node {node.account.hostname}"
+                )
+                for segment in segments:
+                    if not predicate(segment):
+                        return False
+            return True
 
         timeout_sec = 300
         self.logger.info(
@@ -125,10 +128,12 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         rw_verifier.remote_wait_producer()
         self.logger.info(f"Producer is stopped")
 
-        current_segments_per_partition = self.topic_segments()
-        self.logger.info(
-            f"Stopped producer, segments per partition: {current_segments_per_partition}"
-        )
+        self.logger.info(f"Stopped producer")
+        for node in self.redpanda.nodes:
+            segments = self.topic_segments(node)
+            self.logger.debug(
+                f"Topic {self.topic} segments per partition: {segments} on node {node.account.hostname}"
+            )
         # make compaction frequent
         self.logger.info(f"setting log_compaction_interval_ms to {3600}")
         rpk.cluster_config_set("log_compaction_interval_ms", str(3000))
