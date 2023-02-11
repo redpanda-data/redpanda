@@ -79,6 +79,14 @@ public:
     ss::future<> clean_up_at_start() {
         return sharded_cache.local().clean_up_at_start();
     }
+
+    void trim_cache() {
+        sharded_cache
+          .invoke_on(
+            ss::shard_id{0},
+            [](cloud_storage::cache& c) { return c.clean_up_cache(); })
+          .get();
+    }
 };
 
 } // namespace cloud_storage

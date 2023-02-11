@@ -133,24 +133,36 @@ FIXTURE_TEST(file_bigger_than_max_cache_size_deleted, cache_test_fixture) {
     auto data_string1 = create_data_string('a', 2_MiB + 1_KiB);
     put_into_cache(data_string1, KEY);
 
-    ss::sleep(ss::lowres_clock::duration(2s)).get();
+    trim_cache();
 
     BOOST_CHECK_EQUAL(2_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
 }
 
 FIXTURE_TEST(
   files_bigger_than_max_cache_size_oldest_deleted, cache_test_fixture) {
+    // put() calls are _not_ strictly capacity checked: we are circumventing
+    // the capacity checks that would usually happen in reserve_space()
     auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
     put_into_cache(data_string1, KEY);
     auto data_string2 = create_data_string('b', 1_MiB + 1_KiB);
-    ss::sleep(1s).get();
+    ss::sleep(1s).get(); // Sleep long enough to ensure low res atimes differ
     put_into_cache(data_string1, KEY2);
 
+    // Give backgrounded futures a chance to execute
     ss::sleep(ss::lowres_clock::duration(2s)).get();
 
-    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
+    // Our direct put() calls succeed and violate the cache capacity
+    BOOST_REQUIRE(ss::file_exists((CACHE_DIR / KEY).native()).get());
+    BOOST_REQUIRE(ss::file_exists((CACHE_DIR / KEY2).native()).get());
+
+    // A trim will delete the oldest.  We call this explicitly: ordinarily
+    // it would get called either periodically, or in the reserve_space path.
+    trim_cache();
+
     BOOST_REQUIRE(!ss::file_exists((CACHE_DIR / KEY).native()).get());
     BOOST_REQUIRE(ss::file_exists((CACHE_DIR / KEY2).native()).get());
+
+    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
 }
 
 FIXTURE_TEST(cannot_put_tmp_file, cache_test_fixture) {
@@ -188,7 +200,7 @@ FIXTURE_TEST(eviction_cleans_directory, cache_test_fixture) {
     // this file will not be evicted
     put_into_cache(data_string2, key2);
 
-    ss::sleep(ss::lowres_clock::duration(2s)).get();
+    trim_cache();
 
     BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
     BOOST_CHECK(!ss::file_exists((CACHE_DIR / key1).native()).get());
