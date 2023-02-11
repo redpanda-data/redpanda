@@ -43,6 +43,29 @@ struct cache_item {
 enum class cache_element_status { available, not_available, in_progress };
 std::ostream& operator<<(std::ostream& o, cache_element_status);
 
+class cache;
+
+class space_reservation_guard {
+public:
+    space_reservation_guard(cache& cache, size_t bytes) noexcept
+      : _cache(cache)
+      , _bytes(bytes) {}
+
+    space_reservation_guard(const space_reservation_guard&) = delete;
+    space_reservation_guard() = delete;
+    space_reservation_guard(space_reservation_guard&& rhs) noexcept
+      : _cache(rhs._cache)
+      , _bytes(rhs._bytes) {
+        rhs._bytes = 0;
+    }
+
+    ~space_reservation_guard();
+
+private:
+    cache& _cache;
+    size_t _bytes;
+};
+
 class cache : public ss::peering_sharded_service<cache> {
 public:
     /// C-tor.
@@ -89,6 +112,14 @@ public:
     // Total cleaned is exposed for better testability of eviction
     uint64_t get_total_cleaned();
 
+    // Call this before starting a download, to trim the cache if necessary
+    // and wait until enough free space is available.
+    ss::future<space_reservation_guard> reserve_space(size_t);
+
+    // Release capacity acquired via `reserve_space`.  This spawns
+    // a background fiber in order to be callable from the guard destructor.
+    void reserve_space_release(size_t);
+
 private:
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
@@ -115,18 +146,46 @@ private:
 
     /// This method is called on shard 0 by other shards to report disk
     /// space changes.
-    ss::future<> consume_cache_space(size_t);
+    void consume_cache_space(size_t);
+
+    /// Block until enough space is available to commit to a reservation
+    /// (only runs on shard 0)
+    ss::future<> do_reserve_space(size_t bytes);
+
+    /// Return true if the sum of used space and reserved space is far enough
+    /// below max size to accommodate a new reservation of `bytes`
+    /// (only runs on shard 0)
+    bool may_reserve_space(size_t bytes);
+
+    /// Release units from _reserved_cache_size: the inner part of
+    /// `reserve_space_release`
+    /// (only runs on shard 0)
+    void do_reserve_space_release(size_t bytes);
 
     std::filesystem::path _cache_dir;
     size_t _max_cache_size;
 
+    ss::abort_source _as;
     ss::gate _gate;
     uint64_t _cnt;
+
+    // When trimming, trim to this fraction of the target size to leave some
+    // slack free space and thereby avoid continuously trimming.
     static constexpr double _cache_size_low_watermark{0.8};
+
     cloud_storage::recursive_directory_walker _walker;
     uint64_t _total_cleaned;
     /// Current size of the cache directory (only used on shard 0)
     uint64_t _current_cache_size{0};
+
+    /// Bytes reserved by downloads in progress, owned by instances of
+    /// space_reservation_guard.
+    uint64_t _reserved_cache_size{0};
+
+    /// Bytes waiting to be reserved when the next cache trim completes: a
+    /// hint to clean_up_cache on how much extra space to try and free
+    uint64_t _reservations_pending{0};
+
     ssx::semaphore _cleanup_sm{1, "cloud/cache"};
     std::set<std::filesystem::path> _files_in_progress;
     cache_probe probe;
