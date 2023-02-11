@@ -173,6 +173,9 @@ private:
     model::offset_delta _base_offset_delta;
     model::offset _max_rp_offset;
 
+    // The expected size according to the manifest entry for the segment
+    size_t _size{0};
+
     retry_chain_node _rtc;
     retry_chain_logger _ctxlog;
     /// Notifies the background hydration fiber
