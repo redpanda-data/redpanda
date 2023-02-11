@@ -678,6 +678,8 @@ void application::check_environment() {
     storage::directories::initialize(
       config::node().data_directory().as_sstring())
       .get();
+    cloud_storage::cache::initialize(config::node().cloud_storage_cache_path())
+      .get();
 
     if (config::shard_local_cfg().storage_strict_data_init()) {
         // Look for the special file that indicates a user intends

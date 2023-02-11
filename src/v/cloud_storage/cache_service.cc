@@ -11,6 +11,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
+#include "seastar/util/file.hh"
 #include "ssx/future-util.h"
 #include "storage/segment.h"
 #include "utils/gate_guard.h"
@@ -38,6 +39,9 @@ using namespace std::chrono_literals;
 namespace cloud_storage {
 
 static constexpr auto access_timer_period = 60s;
+static constexpr const char* access_time_tracker_file_name = "accesstime";
+static constexpr const char* access_time_tracker_file_name_tmp
+  = "accesstime.tmp";
 
 std::ostream& operator<<(std::ostream& o, cache_element_status s) {
     switch (s) {
@@ -147,12 +151,7 @@ ss::future<> cache::clean_up_at_start() {
     // The state of the _access_time_tracker and the actual content of the
     // cache directory might diverge over time (if the user removes segment
     // files manually). We need to take this into account.
-    access_time_tracker tmp;
-    for (const auto& it : candidates_for_deletion) {
-        tmp.add_timestamp(
-          it.path, std::chrono::system_clock::time_point::min());
-    }
-    _access_time_tracker.remove_others(tmp);
+    co_await _access_time_tracker.trim(candidates_for_deletion);
 
     uint64_t deleted_bytes{0};
     size_t deleted_count{0};
@@ -227,23 +226,22 @@ ss::future<> cache::trim() {
 
     // Updating the access time tracker in case if some files were removed
     // from cache directory by the user manually.
-    access_time_tracker tmp_atimes;
-
-    uint64_t tmp_files_size{0};
-    for (const auto& it : candidates_for_deletion) {
-        if (std::string_view(it.path).ends_with(tmp_extension)) {
-            tmp_files_size += it.size;
-        }
-        tmp_atimes.add_timestamp(
-          it.path, std::chrono::system_clock::time_point::min());
-    }
-    _access_time_tracker.remove_others(tmp_atimes);
+    co_await _access_time_tracker.trim(candidates_for_deletion);
 
     // We aim to trim to within the upper size limit, and additionally
     // free enough space for anyone waiting in `reserve_space` to proceed
     auto target_size = uint64_t(
       (_max_bytes() - std::min(_reservations_pending, _max_bytes()))
       * _cache_size_low_watermark);
+
+    // Calculate total space used by tmp files: we will use this later
+    // when updating current_cache_size.
+    uint64_t tmp_files_size{0};
+    for (const auto& i : candidates_for_deletion) {
+        if (std::string_view(i.path).ends_with(tmp_extension)) {
+            tmp_files_size += i.size;
+        }
+    }
 
     vlog(
       cst_log.debug,
@@ -278,6 +276,14 @@ ss::future<> cache::trim() {
         while (candidate_i < candidates_for_deletion.size()
                && deleted_size < size_to_delete) {
             auto& file_stat = candidates_for_deletion[candidate_i++];
+
+            // Skip the accesstime file, we should never delete this.
+            if (
+              file_stat.path
+              == (_cache_dir / access_time_tracker_file_name).string()) {
+                candidate_i++;
+                continue;
+            }
 
             // skip tmp files since someone may be writing to it
             if (std::string_view(file_stat.path).ends_with(tmp_extension)) {
@@ -398,23 +404,26 @@ ss::future<> cache::load_access_time_tracker() {
     }
     vlog(
       cst_log.info, "Trying to hydrate access time tracker from '{}'", source);
-    if (auto cache_item = co_await get(source); cache_item.has_value()) {
+
+    ss::file_open_options open_opts;
+
+    ss::file_input_stream_options input_opts{};
+    input_opts.buffer_size = config::shard_local_cfg().storage_read_buffer_size;
+    input_opts.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count;
+    input_opts.io_priority_class
+      = priority_manager::local().shadow_indexing_priority();
+
+    auto exists = co_await ss::file_exists(source.string());
+    if (exists) {
         try {
-            ss::file_input_stream_options options{};
-            options.buffer_size
-              = config::shard_local_cfg().storage_read_buffer_size;
-            options.read_ahead
-              = config::shard_local_cfg().storage_read_readahead_count;
-            options.io_priority_class
-              = priority_manager::local().shadow_indexing_priority();
-            auto inp_stream = ss::make_file_input_stream(
-              cache_item->body, options);
-            iobuf state;
-            auto out_stream = make_iobuf_ref_output_stream(state);
-            co_await ss::copy(inp_stream, out_stream).finally([&inp_stream] {
-                return inp_stream.close();
-            });
-            _access_time_tracker.from_iobuf(std::move(state));
+            co_await ss::util::with_file_input_stream(
+              source,
+              [this](ss::input_stream<char>& in) {
+                  return _access_time_tracker.read(in);
+              },
+              open_opts,
+              input_opts);
         } catch (...) {
             vlog(
               cst_log.warn,
@@ -422,24 +431,39 @@ ss::future<> cache::load_access_time_tracker() {
               source,
               std::current_exception());
         }
-        co_await cache_item->body.close();
     } else {
         vlog(
           cst_log.info, "Access time tracker is not available at '{}'", source);
     }
 }
 
+/**
+ * Inner part of save_access_time_tracker, to be called with a file
+ * that the caller will close for us after we return.
+ */
+ss::future<> cache::_save_access_time_tracker(ss::file f) {
+    auto out = co_await ss::make_file_output_stream(std::move(f));
+    co_await _access_time_tracker.write(out);
+    co_await out.flush();
+}
+
 ss::future<> cache::save_access_time_tracker() {
     ss::gate::holder guard{_gate};
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
-    auto source = _cache_dir / access_time_tracker_file_name;
-    auto index_stream = make_iobuf_input_stream(
-      _access_time_tracker.to_iobuf());
-    vlog(
-      cst_log.debug,
-      "current access_time_tracker size: {}",
-      _access_time_tracker.size());
-    co_await put(source.native(), index_stream);
+    auto tmp_path = _cache_dir / access_time_tracker_file_name_tmp;
+
+    ss::file_open_options open_opts;
+    co_await ss::with_file(
+      ss::open_file_dma(
+        tmp_path.string(),
+        ss::open_flags::create | ss::open_flags::wo,
+        open_opts),
+      [this](ss::file f) -> ss::future<> {
+          return _save_access_time_tracker(std::move(f));
+      });
+
+    auto final_path = _cache_dir / access_time_tracker_file_name;
+    co_await ss::rename_file(tmp_path.string(), final_path.string());
 }
 
 ss::future<> cache::maybe_save_access_time_tracker() {
@@ -621,9 +645,9 @@ ss::future<> cache::put(
     } else {
         ssx::spawn_with_gate(_gate, [this, dest, put_size] {
             return container().invoke_on(0, [dest, put_size](cache& c) {
-                c._access_time_tracker.add_timestamp(
-                  dest, std::chrono::system_clock::now());
                 c.consume_cache_space(put_size);
+                return c._access_time_tracker.add_timestamp(
+                  dest, std::chrono::system_clock::now());
             });
         });
     }
@@ -775,6 +799,15 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
 space_reservation_guard::~space_reservation_guard() {
     if (_bytes) {
         _cache.reserve_space_release(_bytes);
+    }
+}
+
+ss::future<> cache::initialize(std::filesystem::path cache_dir) {
+    // Create this up-front, we will need it even if cache is
+    // never used, e.g. when saving access time tracker.
+    if (!co_await ss::file_exists(cache_dir.string())) {
+        vlog(cst_log.info, "Creating cache directory {}", cache_dir);
+        co_await ss::recursive_touch_directory(cache_dir.string());
     }
 }
 

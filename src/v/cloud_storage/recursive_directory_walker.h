@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "cloud_storage/access_time_tracker.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -19,6 +18,8 @@
 #include <chrono>
 
 namespace cloud_storage {
+
+class access_time_tracker;
 
 struct file_list_item {
     std::chrono::system_clock::time_point access_time;

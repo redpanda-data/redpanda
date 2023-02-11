@@ -298,7 +298,7 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
     BOOST_CHECK(!ss::file_exists((CACHE_DIR / key).native()).get());
 }
 
-static std::chrono::system_clock::time_point make_ts(int64_t val) {
+static std::chrono::system_clock::time_point make_ts(uint64_t val) {
     auto seconds = std::chrono::seconds(val);
     return std::chrono::system_clock::time_point(seconds);
 }
@@ -342,20 +342,42 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker) {
     }
 }
 
+static access_time_tracker serde_roundtrip(access_time_tracker& t) {
+    // Round trip
+    iobuf serialized;
+    auto out_stream = make_iobuf_ref_output_stream(serialized);
+    t.write(out_stream).get();
+    out_stream.flush().get();
+
+    access_time_tracker out;
+    try {
+        auto serialized_copy = serialized.copy();
+        auto in_stream = make_iobuf_input_stream(std::move(serialized_copy));
+        out.read(in_stream).get();
+
+    } catch (...) {
+        // Dump serialized buffer on failure.
+        std::cerr << serialized.hexdump(4096) << std::endl;
+        throw;
+    }
+
+    return out;
+}
+
 SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
     access_time_tracker in;
 
     std::vector<std::chrono::system_clock::time_point> timestamps = {
-      make_ts(1653000000),
-      make_ts(1653000001),
-      make_ts(1653000002),
-      make_ts(1653000003),
-      make_ts(1653000004),
-      make_ts(1653000005),
-      make_ts(1653000006),
-      make_ts(1653000007),
-      make_ts(1653000008),
-      make_ts(1653000009),
+      make_ts(0xbeefed00),
+      make_ts(0xbeefed01),
+      make_ts(0xbeefed02),
+      make_ts(0xbeefed03),
+      make_ts(0xbeefed04),
+      make_ts(0xbeefed05),
+      make_ts(0xbeefed06),
+      make_ts(0xbeefed07),
+      make_ts(0xbeefed08),
+      make_ts(0xbeefed09),
     };
 
     std::vector<std::string_view> names = {
@@ -375,13 +397,27 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
         in.add_timestamp(names[i], timestamps[i]);
     }
 
-    access_time_tracker out;
-    out.from_iobuf(in.to_iobuf());
+    auto out = serde_roundtrip(in);
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < timestamps.size(); i++) {
         auto ts = out.estimate_timestamp(names[i]);
+        BOOST_REQUIRE(ts.has_value());
         BOOST_REQUIRE(ts.value() >= timestamps[i]);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer_large) {
+    access_time_tracker in;
+
+    // Serialization uses chunking of 2048 items: use more items than this
+    // to verify the chunking code works properly;
+    uint32_t item_count = 7777;
+    for (uint32_t i = 0; i < item_count; i++) {
+        in.add_timestamp(fmt::format("key{:08x}", i), make_ts(i));
+    }
+
+    auto out = serde_roundtrip(in);
+    BOOST_REQUIRE_EQUAL(out.size(), item_count);
 }
 
 /**
@@ -422,8 +458,6 @@ FIXTURE_TEST(test_clean_up_on_start, cache_test_fixture) {
  * to be deleted.
  */
 FIXTURE_TEST(test_clean_up_on_start_empty, cache_test_fixture) {
-    ss::make_directory(CACHE_DIR.native()).get();
-
     clean_up_at_start().get();
 
     BOOST_CHECK(ss::file_exists(CACHE_DIR.native()).get());
