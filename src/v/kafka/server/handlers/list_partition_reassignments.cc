@@ -26,16 +26,13 @@
 
 namespace kafka {
 
-namespace {
 bool in_broker_list(
   const model::broker_shard& bshard,
   const std::vector<model::broker_shard>& list) {
     return std::find(list.begin(), list.end(), bshard) != list.end();
 }
-} // namespace
 
-// Returns the partition reassignments for a given partition of a topic
-ongoing_partition_reassignment list_partition_reassignments(
+ongoing_partition_reassignment compare_replica_sets(
   cluster::partition_assignment& current_assignment,
   std::optional<std::vector<model::broker_shard>> previous_replica_set) {
     ongoing_partition_reassignment reassignments;
@@ -68,9 +65,24 @@ ongoing_partition_reassignment list_partition_reassignments(
     return reassignments;
 }
 
+// Returns the partition reassignments for a given ntp
+ongoing_partition_reassignment list_partition_reassignments(
+  const cluster::metadata_cache& md_cache, const model::ntp& ntp) {
+    // Current replica set is in the current partition assignment
+    auto current_assignment = md_cache.get_partition_assignment(ntp);
+    if (!current_assignment.has_value()) {
+        vlog(klog.debug, "No replica set: ntp {}", ntp);
+        return ongoing_partition_reassignment{};
+    }
+
+    return compare_replica_sets(
+      *current_assignment, md_cache.get_previous_replica_set(ntp));
+}
+
 // Returns all reassignments currently in progress
-std::vector<ongoing_topic_reassignment> all_active_partition_reassignments(
-  const cluster::topic_table::updates_t& in_progress) {
+std::vector<ongoing_topic_reassignment> all_in_progress_partition_reassignments(
+  const cluster::metadata_cache& md_cache) {
+    const auto& in_progress = md_cache.updates_in_progress();
     // The in progress reassignments are in a map: ntp -> list of brokers which
     // is not suitable to use with the ListPartitionReassignments response. So
     // we restructure them here.
@@ -78,17 +90,15 @@ std::vector<ongoing_topic_reassignment> all_active_partition_reassignments(
       reassignments_by_topic;
 
     for (const auto& [ntp, status] : in_progress) {
-        // Convert list of broker shards to node ids
-        std::vector<model::node_id> replicas;
-        std::for_each(
-          status.get_previous_replicas().begin(),
-          status.get_previous_replicas().end(),
-          [&replicas](const model::broker_shard& bshard) {
-              replicas.push_back(bshard.node_id);
-          });
+        auto current_assignment = md_cache.get_partition_assignment(ntp);
+        if (!current_assignment.has_value()) {
+            vlog(klog.debug, "No replica set: ntp {}", ntp);
+            continue;
+        }
 
-        ongoing_partition_reassignment partition_reassignment{
-          .partition_index = ntp.tp.partition, .replicas = replicas};
+        auto partition_reassignment = compare_replica_sets(
+          *current_assignment, status.get_previous_replicas());
+        partition_reassignment.partition_index = ntp.tp.partition;
         if (reassignments_by_topic.contains(ntp.tp.topic)) {
             reassignments_by_topic[ntp.tp.topic].partitions.push_back(
               std::move(partition_reassignment));
@@ -98,13 +108,13 @@ std::vector<ongoing_topic_reassignment> all_active_partition_reassignments(
         }
     }
 
-    std::vector<ongoing_topic_reassignment> all_active_reassignments;
-    all_active_reassignments.reserve(reassignments_by_topic.size());
+    std::vector<ongoing_topic_reassignment> all_in_progress_reassignments;
+    all_in_progress_reassignments.reserve(reassignments_by_topic.size());
     for (auto& [_, reassignments] : reassignments_by_topic) {
-        all_active_reassignments.push_back(std::move(reassignments));
+        all_in_progress_reassignments.push_back(std::move(reassignments));
     }
 
-    return all_active_reassignments;
+    return all_in_progress_reassignments;
 }
 
 template<>
@@ -127,14 +137,15 @@ ss::future<response_ptr> list_partition_reassignments_handler::handle(
         co_return co_await ctx.respond(std::move(resp));
     }
 
-    // If topics is undefined, get all active reassignments
+    // If topics is undefined, get all in progress reassignments
     if (!request.data.topics.has_value()) {
-        auto all_active_reassignments = all_active_partition_reassignments(
-          ctx.metadata_cache().updates_in_progress());
-        resp.data.topics.reserve(all_active_reassignments.size());
+        vlog(klog.debug, "Request to list all in progress reassignments");
+        auto all_in_progress_reassignments
+          = all_in_progress_partition_reassignments(ctx.metadata_cache());
+        resp.data.topics.reserve(all_in_progress_reassignments.size());
         std::for_each(
-          all_active_reassignments.begin(),
-          all_active_reassignments.end(),
+          all_in_progress_reassignments.begin(),
+          all_in_progress_reassignments.end(),
           [&resp](const ongoing_topic_reassignment& topic_reassignment) {
               resp.data.topics.push_back(topic_reassignment);
           });
@@ -150,21 +161,20 @@ ss::future<response_ptr> list_partition_reassignments_handler::handle(
 
             vlog(klog.debug, "Request to list reassignments: ntp {}", ntp);
 
-            // Current replica set is in the current partition assignment
-            auto current_assignment
-              = ctx.metadata_cache().get_partition_assignment(ntp);
-            if (current_assignment.has_value()) {
+            if (ctx.metadata_cache().is_update_in_progress(ntp)) {
                 auto reassignments = list_partition_reassignments(
-                  *current_assignment,
-                  ctx.metadata_cache().get_previous_replica_set(ntp));
+                  ctx.metadata_cache(), ntp);
                 reassignments.partition_index = pid;
                 topic_reassignment.partitions.push_back(
                   std::move(reassignments));
             } else {
-                vlog(klog.debug, "No replica set: ntp {}", ntp);
+                vlog(klog.debug, "No updates in progress: ntp {}", ntp);
             }
         }
-        resp.data.topics.push_back(topic_reassignment);
+
+        if (!topic_reassignment.partitions.empty()) {
+            resp.data.topics.push_back(topic_reassignment);
+        }
     }
 
     co_return co_await ctx.respond(std::move(resp));

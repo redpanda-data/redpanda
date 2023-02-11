@@ -47,6 +47,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::invalid_request;
     case cluster::errc::throttling_quota_exceeded:
         return error_code::throttling_quota_exceeded;
+    case cluster::errc::no_update_in_progress:
+        return error_code::no_reassignment_in_progress;
     case cluster::errc::replication_error:
     case cluster::errc::shutting_down:
     case cluster::errc::join_request_dispatch_error:
@@ -78,7 +80,6 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     case cluster::errc::error_collecting_health_report:
     case cluster::errc::leadership_changed:
     case cluster::errc::feature_disabled:
-    case cluster::errc::no_update_in_progress:
     case cluster::errc::unknown_update_interruption_error:
     case cluster::errc::cluster_already_exists:
     case cluster::errc::no_partition_assignments:

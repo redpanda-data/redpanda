@@ -327,4 +327,8 @@ const topic_table::updates_t& metadata_cache::updates_in_progress() const {
     return _topics_state.local().updates_in_progress();
 }
 
+bool metadata_cache::is_update_in_progress(const model::ntp& ntp) const {
+    return _topics_state.local().is_update_in_progress(ntp);
+}
+
 } // namespace cluster

@@ -31,7 +31,8 @@ set(srcs
   fetch_session_test.cc
   alter_config_test.cc
   produce_consume_test.cc
-  group_metadata_serialization_test.cc)
+  group_metadata_serialization_test.cc
+  partition_reassignments_test.cc)
 
 rp_test(
   FIXTURE_TEST

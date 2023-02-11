@@ -64,59 +64,73 @@ partitions_request_iterator validate_replicas(
     return valid_range_end;
 }
 
-template<typename ResultIter>
+/**
+ * @brief Validates partitions and places invalid partitions into @p resp_it
+ * @param begin starting position for a vector<reassignable_partition>
+ * @param end stopping position for a vector<reassignable_partition>
+ * @param resp_it  a wrapper to std::back_inserter
+ * @param topic_response a reassignable_topic_response to put errors into
+ * @param alive_nodes list of RP nodes that are live
+ * @param tp_metadata topic metadata used to check replication factor
+ *
+ * @return an iterator that represents the stop position of all valid
+ * partitions
+ */
+template<typename Container>
 partitions_request_iterator validate_partitions(
   partitions_request_iterator begin,
   partitions_request_iterator end,
-  ResultIter resp_it,
+  std::back_insert_iterator<Container> resp_it,
   reassignable_topic_response topic_response,
-  std::vector<model::node_id> all_node_ids) {
+  std::vector<model::node_id> alive_nodes,
+  std::optional<cluster::topic_metadata> tp_metadata) {
     // An undefined replicas vector is not an error, see "Replicas" in the
-    // AlterPartitionReassignmentsRequest schemata. Instead of checking for
-    // a null replicas vector in every call to validate_replicas, simply put
-    // those elements first and use iterator magic to run validation on
-    // defined replicas only.
-    auto valid_partitions_end = std::partition(
-      begin, end, [](const reassignable_partition& partition) {
-          return !partition.replicas.has_value();
-      });
+    // AlterPartitionReassignmentsRequest schemata. Therefore checks for
+    // replicas.has_value are necessary.
 
     std::vector<reassignable_partition_response> invalid_partitions;
 
-    valid_partitions_end = validate_replicas(
-      valid_partitions_end,
+    auto valid_partitions_end = validate_replicas(
+      begin,
       end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Empty replica list specified in partition reassignment.",
       [](const reassignable_partition& partition) {
-          return !partition.replicas->empty();
+          return !partition.replicas.has_value() ? true
+                                                 : !partition.replicas->empty();
       });
 
     valid_partitions_end = validate_replicas(
+      begin,
       valid_partitions_end,
-      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Duplicate replica ids in partition reassignment replica list",
       [](const reassignable_partition& partition) {
-          absl::flat_hash_set<model::node_id> replicas_set;
-          for (auto& node_id : *partition.replicas) {
-              auto res = replicas_set.insert(node_id);
-              if (!res.second) {
-                  return false;
+          if (partition.replicas.has_value()) {
+              absl::flat_hash_set<model::node_id> replicas_set;
+              for (const auto& node_id : *partition.replicas) {
+                  auto res = replicas_set.insert(node_id);
+                  if (!res.second) {
+                      return false;
+                  }
               }
           }
           return true;
       });
 
     valid_partitions_end = validate_replicas(
+      begin,
       valid_partitions_end,
-      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Invalid broker id in replica list",
       [](const reassignable_partition& partition) {
+          if (!partition.replicas.has_value()) {
+              return true;
+          }
+
           auto negative_node_id_it = std::find_if(
             partition.replicas->begin(),
             partition.replicas->end(),
@@ -125,26 +139,55 @@ partitions_request_iterator validate_partitions(
       });
 
     valid_partitions_end = validate_replicas(
+      begin,
       valid_partitions_end,
-      end,
       std::back_inserter(invalid_partitions),
       error_code::invalid_replica_assignment,
       "Replica assignment has brokers that are not alive",
-      [&all_node_ids](const reassignable_partition& partition) {
+      [&alive_nodes](const reassignable_partition& partition) {
+          if (!partition.replicas.has_value()) {
+              return true;
+          }
+
           auto unkown_broker_id_it = std::find_if(
             partition.replicas->begin(),
             partition.replicas->end(),
-            [all_node_ids](const model::node_id& node_id) {
+            [alive_nodes](const model::node_id& node_id) {
                 return std::find(
-                         all_node_ids.begin(), all_node_ids.end(), node_id)
-                       == all_node_ids.end();
+                         alive_nodes.begin(), alive_nodes.end(), node_id)
+                       == alive_nodes.end();
             });
           return unkown_broker_id_it == partition.replicas->end();
       });
 
+    valid_partitions_end = validate_replicas(
+      begin,
+      valid_partitions_end,
+      std::back_inserter(invalid_partitions),
+      error_code::invalid_replication_factor,
+      "Number of replicas does not match the topic replication factor",
+      [&tp_metadata](const reassignable_partition& partition) {
+          if (!partition.replicas.has_value()) {
+              return true;
+          }
+
+          if (
+            !tp_metadata.has_value()
+            || !tp_metadata.value().is_topic_replicable()) {
+              return false;
+          }
+
+          auto tp_replication_factor
+            = tp_metadata.value().get_replication_factor();
+          return size_t(tp_replication_factor) == partition.replicas->size();
+      });
+
     // Store any invalid partitions in the response
-    topic_response.partitions = std::move(invalid_partitions);
-    *resp_it = std::move(topic_response);
+    if (!invalid_partitions.empty()) {
+        topic_response.partitions = std::move(invalid_partitions);
+        // resp_it is a wrapper to std::back_inserter
+        *resp_it = std::move(topic_response);
+    }
 
     return valid_partitions_end;
 }
@@ -170,17 +213,24 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
     }
 
     resp.data.responses.reserve(request.data.topics.size());
-    auto all_node_ids = ctx.metadata_cache().node_ids();
+    std::vector<model::node_id> alive_nodes;
+    auto alive_brokers_md = co_await ctx.metadata_cache().alive_nodes();
+    for (const auto& node_md : alive_brokers_md) {
+        alive_nodes.push_back(node_md.broker.id());
+    }
 
     for (auto& topic : request.data.topics) {
         reassignable_topic_response topic_response{.name = topic.name};
+        auto tp_metadata = ctx.metadata_cache().get_topic_metadata(
+          model::topic_namespace{model::kafka_namespace, topic.name});
 
         auto valid_partitions_end = validate_partitions(
           topic.partitions.begin(),
           topic.partitions.end(),
           std::back_inserter(resp.data.responses),
           topic_response,
-          all_node_ids);
+          alive_nodes,
+          tp_metadata);
 
         for (auto it = topic.partitions.begin(); it != valid_partitions_end;
              ++it) {
@@ -229,20 +279,18 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
                                 ntp,
                                 model::timeout_clock::now()
                                   + request.data.timeout_ms);
-                if (errc) {
+                if (!errc) {
+                    topic_response.partitions.push_back(
+                      reassignable_partition_response{
+                        .partition_index = partition.partition_index});
+                } else {
                     auto clerr = static_cast<cluster::errc>(errc.value());
                     vlog(
                       klog.debug,
                       "Failed to cancel pending request: ntp {}, ec {}",
                       ntp,
                       clerr);
-                    // Explicitly check for no_update_in_progress here. We could
-                    // change the mapping in map_topic_error_code but that may
-                    // cause a regression since several places call this
-                    // function
-                    auto kerr = clerr == cluster::errc::no_update_in_progress
-                                  ? error_code::no_reassignment_in_progress
-                                  : map_topic_error_code(clerr);
+                    auto kerr = map_topic_error_code(clerr);
                     topic_response.partitions.push_back(
                       reassignable_partition_response{
                         .partition_index = partition.partition_index,
@@ -252,7 +300,10 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
             }
         }
 
-        resp.data.responses.push_back(topic_response);
+        // Insert into the response if there were valid partitions
+        if (std::distance(topic.partitions.begin(), valid_partitions_end) > 0) {
+            resp.data.responses.emplace_back(std::move(topic_response));
+        }
     }
 
     co_return co_await ctx.respond(std::move(resp));
