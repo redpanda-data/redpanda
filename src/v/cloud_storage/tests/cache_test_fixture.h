@@ -11,6 +11,7 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "cloud_storage/cache_service.h"
+#include "config/property.h"
 #include "seastarx.h"
 #include "test_utils/tmp_dir.h"
 #include "units.h"
@@ -50,7 +51,9 @@ public:
     cache_test_fixture()
       : test_dir("test_cache_dir")
       , CACHE_DIR(get_cache_dir(test_dir.get_path())) {
-        sharded_cache.start(CACHE_DIR, 1_MiB + 500_KiB).get();
+        sharded_cache
+          .start(CACHE_DIR, config::mock_binding<uint64_t>(1_MiB + 500_KiB))
+          .get();
         sharded_cache
           .invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
           .get();

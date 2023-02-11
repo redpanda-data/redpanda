@@ -58,11 +58,28 @@ static constexpr std::string_view tmp_extension{".part"};
 
 static constexpr ss::lowres_clock::duration min_clean_up_interval = 5000ms;
 
-cache::cache(std::filesystem::path cache_dir, size_t max_cache_size) noexcept
+cache::cache(
+  std::filesystem::path cache_dir, config::binding<uint64_t> max_bytes) noexcept
   : _cache_dir(std::move(cache_dir))
-  , _max_cache_size(max_cache_size)
+  , _max_bytes(max_bytes)
   , _cnt(0)
-  , _total_cleaned(0) {}
+  , _total_cleaned(0) {
+    if (ss::this_shard_id() == ss::shard_id{0}) {
+        _max_bytes.watch([this]() {
+            vlog(
+              cst_log.info,
+              "Cache max_bytes adjusted to {} (current size {})",
+              _max_bytes(),
+              _current_cache_size);
+            if (_current_cache_size > _max_bytes()) {
+                ssx::spawn_with_gate(_gate, [this]() {
+                    return ss::with_semaphore(
+                      _cleanup_sm, 1, [this]() { return trim_throttled(); });
+                });
+            }
+        });
+    }
+}
 
 ss::future<> cache::delete_file_and_empty_parents(const std::string_view& key) {
     gate_guard guard{_gate};
@@ -108,7 +125,7 @@ void cache::consume_cache_space(size_t sz) {
       cst_log.trace, "consume_cache_space: {} += {}", _current_cache_size, sz);
     _current_cache_size += sz;
     probe.set_size(_current_cache_size);
-    if (_current_cache_size > _max_cache_size) {
+    if (_current_cache_size > _max_bytes()) {
         // This should not happen, because callers to put() should have used
         // reserve_space() to ensure they stay within the cache size limit. This
         // is not a fatal error in itself, so we do not assert, but emitting as
@@ -118,7 +135,7 @@ void cache::consume_cache_space(size_t sz) {
           cst_log.error,
           "Exceeded cache size limit!  {}/{}",
           _current_cache_size,
-          _max_cache_size);
+          _max_bytes());
     }
 }
 
@@ -236,7 +253,7 @@ ss::future<> cache::trim() {
       target_size,
       _current_cache_size,
       walked_cache_size,
-      _max_cache_size,
+      _max_bytes(),
       _reservations_pending);
 
     uint64_t deleted_size = 0;
@@ -688,8 +705,7 @@ void cache::do_reserve_space_release(size_t bytes) {
 }
 
 bool cache::may_reserve_space(size_t bytes) {
-    return _current_cache_size + _reserved_cache_size + bytes
-           <= _max_cache_size;
+    return _current_cache_size + _reserved_cache_size + bytes <= _max_bytes();
 }
 
 ss::future<> cache::do_reserve_space(size_t bytes) {

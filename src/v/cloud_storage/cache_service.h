@@ -13,6 +13,7 @@
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_probe.h"
 #include "cloud_storage/recursive_directory_walker.h"
+#include "config/property.h"
 #include "resource_mgmt/io_priority.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
@@ -71,7 +72,7 @@ public:
     /// C-tor.
     ///
     /// \param cache_dir is a directory where cached data is stored
-    cache(std::filesystem::path cache_dir, size_t _max_cache_size) noexcept;
+    cache(std::filesystem::path cache_dir, config::binding<uint64_t>) noexcept;
 
     ss::future<> start();
     ss::future<> stop();
@@ -131,7 +132,7 @@ private:
     ss::future<> maybe_save_access_time_tracker();
 
     /// Triggers directory walker, creates a list of files to delete and deletes
-    /// them until cache size <= _cache_size_low_watermark * max_cache_size
+    /// them until cache size <= _cache_size_low_watermark * max_bytes
     ss::future<> trim();
 
     /// Invoke trim, waiting if not enough time passed since the last trim
@@ -166,7 +167,7 @@ private:
     void do_reserve_space_release(size_t bytes);
 
     std::filesystem::path _cache_dir;
-    size_t _max_cache_size;
+    config::binding<uint64_t> _max_bytes;
 
     ss::abort_source _as;
     ss::gate _gate;

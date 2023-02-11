@@ -1415,7 +1415,7 @@ configuration::configuration()
       *this,
       "cloud_storage_cache_size",
       "Max size of archival cache",
-      {.visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
       20_GiB)
   , cloud_storage_cache_check_interval_ms(
       *this,

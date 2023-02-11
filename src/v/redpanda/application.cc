@@ -1201,9 +1201,11 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         if (cache_path_cfg) {
             cache_dir = std::filesystem::path(cache_path_cfg.value());
         }
-        auto cache_size
-          = config::shard_local_cfg().cloud_storage_cache_size.value();
-        construct_service(shadow_index_cache, cache_dir, cache_size).get();
+        construct_service(
+          shadow_index_cache, cache_dir, ss::sharded_parameter([] {
+              return config::shard_local_cfg().cloud_storage_cache_size.bind();
+          }))
+          .get();
 
         shadow_index_cache
           .invoke_on_all(
