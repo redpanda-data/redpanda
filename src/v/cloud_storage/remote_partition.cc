@@ -249,7 +249,8 @@ private:
         remote_partition::iterator iter;
     };
 
-    /// Find the starting segment for a reader
+    /// Find the starting segment for a reader or _partition->end() if
+    /// no suitable segement exists.
     remote_partition::iterator
     seek_segment(const storage::log_reader_config& config) {
         if (config.first_timestamp) {
@@ -272,6 +273,13 @@ private:
         }
 
         auto it = seek_segment(config);
+
+        if (it == _partition->end()) {
+            // this can happen, for example, when a timequery is made with a
+            // time point after our latest message
+            return std::nullopt;
+        }
+
         auto reader = _partition->borrow_reader(config, it->first, it->second);
         // Here we know the exact type of the reader_state because of
         // the invariant of the borrow_reader
