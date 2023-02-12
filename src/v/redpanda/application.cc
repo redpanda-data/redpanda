@@ -1545,7 +1545,10 @@ void application::wire_up_bootstrap_services() {
     // Hook up local_monitor to update storage_resources when disk state changes
     auto storage_disk_notification
       = storage_node.local().register_disk_notification(
-        [this](uint64_t total_space, uint64_t free_space) {
+        [this](
+          uint64_t total_space,
+          uint64_t free_space,
+          storage::disk_space_alert) {
             return storage.invoke_on_all(
               [total_space, free_space](storage::api& api) {
                   api.resources().update_allowance(total_space, free_space);

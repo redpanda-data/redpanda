@@ -38,11 +38,12 @@ public:
     ss::future<> stop() { return ss::now(); }
 
     using notification_id = named_type<int32_t, struct notification_id_t>;
-    using disk_cb_t = ss::noncopyable_function<void(uint64_t, uint64_t)>;
+    using disk_cb_t
+      = ss::noncopyable_function<void(uint64_t, uint64_t, disk_space_alert)>;
 
     void set_disk_metrics(
       uint64_t total_bytes, uint64_t free_bytes, disk_space_alert alert) {
-        _watchers.notify(uint64_t(total_bytes), uint64_t(free_bytes));
+        _watchers.notify(uint64_t(total_bytes), uint64_t(free_bytes), alert);
         _probe.set_disk_metrics(total_bytes, free_bytes, alert);
     }
 
