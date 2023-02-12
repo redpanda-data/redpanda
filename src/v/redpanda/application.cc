@@ -1204,6 +1204,22 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           }))
           .get();
 
+        // Hook up local_monitor to update storage_resources when disk state
+        // changes
+        auto cloud_storage_cache_disk_notification
+          = storage_node.local().register_disk_notification(
+            [this](
+              uint64_t total_space,
+              uint64_t free_space,
+              storage::disk_space_alert alert) {
+                return shadow_index_cache.local().notify_disk_status(
+                  total_space, free_space, alert);
+            });
+        _deferred.emplace_back([this, cloud_storage_cache_disk_notification] {
+            storage_node.local().unregister_disk_notification(
+              cloud_storage_cache_disk_notification);
+        });
+
         shadow_index_cache
           .invoke_on_all(
             [](cloud_storage::cache& cache) { return cache.start(); })

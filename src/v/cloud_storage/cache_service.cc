@@ -497,6 +497,7 @@ ss::future<> cache::stop() {
     vlog(cst_log.debug, "Stopping archival cache service");
     _tracker_timer.cancel();
     _as.request_abort();
+    _block_puts_cond.broken();
     if (ss::this_shard_id() == 0) {
         co_await save_access_time_tracker();
     }
@@ -697,6 +698,13 @@ ss::future<> cache::invalidate(const std::filesystem::path& key) {
 };
 
 ss::future<space_reservation_guard> cache::reserve_space(size_t bytes) {
+    while (_block_puts) {
+        vlog(
+          cst_log.warn,
+          "Blocking tiered storage cache write, disk space critically low.");
+        co_await _block_puts_cond.wait();
+    }
+
     co_await container().invoke_on(
       0, [bytes](cache& c) { return c.do_reserve_space(bytes); });
 
@@ -794,6 +802,40 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
 
     _reservations_pending -= bytes;
     _reserved_cache_size += bytes;
+}
+
+void cache::set_block_puts(bool block_puts) {
+    if (_block_puts && !block_puts) {
+        _block_puts_cond.signal();
+    }
+    _block_puts = block_puts;
+}
+
+void cache::notify_disk_status(
+  [[maybe_unused]] uint64_t total_space,
+  [[maybe_unused]] uint64_t free_space,
+  storage::disk_space_alert alert) {
+    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+
+    bool block_puts = (alert == storage::disk_space_alert::degraded);
+
+    if (block_puts && !_block_puts) {
+        // Start blocking: log, and propagate to other shards
+        vlog(
+          cst_log.warn,
+          "Tiered storage cache blocking segment promotions, disk space is "
+          "critically low.");
+        ssx::spawn_with_gate(_gate, [this, block_puts]() {
+            return container().invoke_on_all(
+              [block_puts](cache& c) { c.set_block_puts(block_puts); });
+        });
+    } else if (!block_puts && _block_puts) {
+        // Log on un-blocking
+        vlog(
+          cst_log.info,
+          "Tiered storage cache un-blocking promotions, disk space is no "
+          "longer critical.");
+    }
 }
 
 space_reservation_guard::~space_reservation_guard() {

@@ -15,6 +15,7 @@
 #include "cloud_storage/recursive_directory_walker.h"
 #include "config/property.h"
 #include "resource_mgmt/io_priority.h"
+#include "resource_mgmt/storage.h"
 #include "seastarx.h"
 #include "ssx/semaphore.h"
 #include "units.h"
@@ -125,6 +126,13 @@ public:
 
     static ss::future<> initialize(std::filesystem::path);
 
+    /// Shard 0 only.  Update the utilization status of local disk.  Will
+    /// call onwards to other shards as needed.
+    void notify_disk_status(
+      uint64_t total_space,
+      uint64_t free_space,
+      storage::disk_space_alert alert);
+
 private:
     /// Load access time tracker from file
     ss::future<> load_access_time_tracker();
@@ -171,6 +179,11 @@ private:
     /// (only runs on shard 0)
     void do_reserve_space_release(size_t bytes);
 
+    /// Update _block_puts and kick _block_puts_cond if necessary.  This is
+    /// called on all shards by shard 0 when handling a disk space status
+    /// update.
+    void set_block_puts(bool);
+
     std::filesystem::path _cache_dir;
     config::binding<uint64_t> _max_bytes;
 
@@ -204,6 +217,14 @@ private:
     /// Remember when we last finished clean_up_cache, in order to
     /// avoid wastefully running it again soon after.
     ss::lowres_clock::time_point _last_clean_up;
+
+    // If true, no space reservation requests will be granted: this is used to
+    // block cache promotions when critically low on disk space.
+    bool _block_puts{false};
+
+    // Kick this cond var when block_puts goes true->false to wake up blocked
+    // fibers.
+    ss::condition_variable _block_puts_cond;
 
     friend class cache_test_fixture;
 };
