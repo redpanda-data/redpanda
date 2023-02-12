@@ -16,6 +16,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "resource_mgmt/storage.h"
 #include "storage/fwd.h"
 #include "tristate.h"
 
@@ -32,12 +33,6 @@ using log_clock = ss::lowres_clock;
 using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
 
-enum class disk_space_alert { ok = 0, low_space = 1, degraded = 2 };
-
-inline disk_space_alert max_severity(disk_space_alert a, disk_space_alert b) {
-    return std::max(a, b);
-}
-
 struct disk
   : serde::envelope<disk, serde::version<0>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
@@ -51,8 +46,6 @@ struct disk
     friend std::ostream& operator<<(std::ostream&, const disk&);
     friend bool operator==(const disk&, const disk&) = default;
 };
-
-std::ostream& operator<<(std::ostream& o, const storage::disk_space_alert d);
 
 // Helps to identify transactional stms in the registered list of stms.
 // Avoids an ugly dynamic cast to the base class.
