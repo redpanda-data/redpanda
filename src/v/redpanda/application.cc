@@ -1195,16 +1195,11 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting shadow indexing cache").get();
-        auto cache_path_cfg
-          = config::node().cloud_storage_cache_directory.value();
         auto redpanda_dir = config::node().data_directory.value();
-        std::filesystem::path cache_dir = redpanda_dir.path
-                                          / "cloud_storage_cache";
-        if (cache_path_cfg) {
-            cache_dir = std::filesystem::path(cache_path_cfg.value());
-        }
         construct_service(
-          shadow_index_cache, cache_dir, ss::sharded_parameter([] {
+          shadow_index_cache,
+          config::node().cloud_storage_cache_path(),
+          ss::sharded_parameter([] {
               return config::shard_local_cfg().cloud_storage_cache_size.bind();
           }))
           .get();
@@ -1530,6 +1525,7 @@ void application::wire_up_bootstrap_services() {
         .storage_space_alert_free_threshold_percent.bind(),
       config::shard_local_cfg().storage_min_free_bytes.bind(),
       config::node().data_directory().as_sstring(),
+      config::node().cloud_storage_cache_path().string(),
       std::ref(storage_node),
       std::ref(storage))
       .get();

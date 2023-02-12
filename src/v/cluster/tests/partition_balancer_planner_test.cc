@@ -476,8 +476,8 @@ FIXTURE_TEST(test_move_part_of_replicas, partition_balancer_planner_fixture) {
     auto fm = create_follower_metrics();
 
     // Set order of full nodes
-    hr.node_reports[1].local_state.disks[0].free -= 1_MiB;
-    hr.node_reports[2].local_state.disks[0].free -= 2_MiB;
+    hr.node_reports[1].local_state.data_disk.free -= 1_MiB;
+    hr.node_reports[2].local_state.data_disk.free -= 2_MiB;
 
     auto plan_data = planner.plan_reassignments(hr, fm);
 
@@ -521,7 +521,7 @@ FIXTURE_TEST(
     auto fm = create_follower_metrics();
 
     // Set order of full nodes
-    hr.node_reports[0].local_state.disks[0].free -= 1_MiB;
+    hr.node_reports[0].local_state.data_disk.free -= 1_MiB;
 
     // Set partition sizes
     for (auto& topic : hr.node_reports[0].topics) {
@@ -709,8 +709,8 @@ FIXTURE_TEST(test_rack_awareness, partition_balancer_planner_fixture) {
     auto hr = create_health_report();
     // Make node_4 disk free size less to make partition allocator disk usage
     // constraint prefer node_3 rather than node_4
-    hr.node_reports[4].local_state.disks[0].free
-      = hr.node_reports[3].local_state.disks[0].free - 10_MiB;
+    hr.node_reports[4].local_state.data_disk.free
+      = hr.node_reports[3].local_state.data_disk.free - 10_MiB;
 
     std::set<size_t> unavailable_nodes = {0};
     auto fm = create_follower_metrics(unavailable_nodes);

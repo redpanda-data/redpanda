@@ -34,14 +34,15 @@ using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
 
 struct disk
-  : serde::envelope<disk, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<disk, serde::version<1>, serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
     ss::sstring path;
-    uint64_t free;
-    uint64_t total;
+    uint64_t free{0};
+    uint64_t total{0};
+    disk_space_alert alert{disk_space_alert::ok};
 
-    auto serde_fields() { return std::tie(path, free, total); }
+    auto serde_fields() { return std::tie(path, free, total, alert); }
 
     friend std::ostream& operator<<(std::ostream&, const disk&);
     friend bool operator==(const disk&, const disk&) = default;

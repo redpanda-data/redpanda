@@ -314,7 +314,7 @@ struct partition_balancer_planner_fixture {
                 node_disk.free = nearly_full_node_free_size;
             }
             node_report.id = model::node_id(i);
-            node_report.local_state.disks.push_back(node_disk);
+            node_report.local_state.set_disk(node_disk);
             health_report.node_reports.push_back(node_report);
         }
         health_report.node_reports[0].topics = topics;

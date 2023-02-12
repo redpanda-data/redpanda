@@ -20,15 +20,13 @@
 namespace cluster::node {
 
 inline local_state random_local_state() {
-    return local_state{
+    auto r = local_state{
       {},
       tests::random_named_string<application_version>(),
       tests::random_named_int<cluster::cluster_version>(),
-      tests::random_duration<std::chrono::milliseconds>(),
-      tests::random_vector(storage::random_disk),
-      storage::disk_space_alert{
-        0} // TODO: replace with storage::random_disk_space_alert()
-    };
+      tests::random_duration<std::chrono::milliseconds>()};
+    r.set_disks({storage::random_disk()});
+    return r;
 }
 
 } // namespace cluster::node

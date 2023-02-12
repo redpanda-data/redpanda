@@ -720,12 +720,17 @@ get_brokers(cluster::controller* const controller) {
                   it->second.maintenance_status = fill_maintenance_status(
                     r_it->drain_status);
 
-                  for (auto& ds : r_it->local_state.disks) {
+                  auto add_disk = [&ds_list = it->second.disk_space](
+                                    const storage::disk& ds) {
                       ss::httpd::broker_json::disk_space_info dsi;
                       dsi.path = ds.path;
                       dsi.free = ds.free;
                       dsi.total = ds.total;
-                      it->second.disk_space.push(dsi);
+                      ds_list.push(dsi);
+                  };
+                  add_disk(r_it->local_state.data_disk);
+                  if (!r_it->local_state.shared_disk()) {
+                      add_disk(r_it->local_state.get_cache_disk());
                   }
               }
           }

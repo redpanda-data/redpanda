@@ -35,6 +35,7 @@ public:
       config::binding<unsigned> min_percent_alert,
       config::binding<size_t> min_bytes,
       ss::sstring data_directory,
+      ss::sstring cache_directory,
       ss::sharded<storage::node_api>&,
       ss::sharded<storage::api>&);
     local_monitor(const local_monitor&) = delete;
@@ -48,8 +49,7 @@ public:
 
     ss::future<> update_state();
     const local_state& get_state_cached() const;
-    static storage::disk_space_alert
-    eval_disks(const std::vector<storage::disk>&);
+    static void update_alert(storage::disk&);
 
     static constexpr std::string_view stable_alert_string
       = "storage space alert"; // for those who grep the logs..
@@ -66,18 +66,14 @@ private:
     /// Periodically check node status until stopped by abort source
     ss::future<> _update_loop();
 
-    ss::future<std::vector<storage::disk>> get_disks();
     ss::future<struct statvfs> get_statvfs(const ss::sstring);
-    void update_alert_state();
+    ss::future<> update_disks(local_state& state);
+    void update_alert_state(local_state&);
+    storage::disk statvfs_to_disk(const struct statvfs& svfs);
+
     ss::future<> update_disk_metrics();
     float percent_free(const storage::disk& disk);
-    void maybe_log_space_error(
-      const storage::disk&, const storage::disk_space_alert);
-
-    // configuration
-    void refresh_configuration();
-    std::size_t get_config_alert_threshold_bytes();
-    unsigned get_config_alert_threshold_percent();
+    void maybe_log_space_error(const storage::disk&);
 
     // state
     local_state _state;
@@ -90,6 +86,7 @@ private:
     // We must carry a copy of data dir, because fixture tests mutate the
     // global node_config::data_directory
     ss ::sstring _data_directory;
+    ss ::sstring _cache_directory;
 
     ss::sharded<storage::node_api>& _storage_node_api; // single instance
     ss::sharded<storage::api>& _storage_api;

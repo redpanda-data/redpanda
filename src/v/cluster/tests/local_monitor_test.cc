@@ -38,6 +38,7 @@ local_monitor_fixture::local_monitor_fixture()
     config::shard_local_cfg().storage_space_alert_free_threshold_percent.bind(),
     config::shard_local_cfg().storage_min_free_bytes.bind(),
     config::node_config().data_directory().as_sstring(),
+    config::node_config().cloud_storage_cache_path().string(),
     _storage_node_api,
     _storage_api) {
     _storage_node_api.start_single().get0();
@@ -129,7 +130,7 @@ void local_monitor_fixture::set_config_free_thresholds(
 
 FIXTURE_TEST(local_state_has_single_disk, local_monitor_fixture) {
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.disks.size() == 1);
+    BOOST_TEST_REQUIRE(ls.disks().size() == 1);
 }
 
 FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
@@ -139,9 +140,8 @@ FIXTURE_TEST(local_monitor_inject_statvfs, local_monitor_fixture) {
     _local_monitor.testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.disks.size() == 1);
-    BOOST_TEST_REQUIRE(ls.disks[0].total == total * block_size);
-    BOOST_TEST_REQUIRE(ls.disks[0].free == free * block_size);
+    BOOST_TEST_REQUIRE(ls.data_disk.total == total * block_size);
+    BOOST_TEST_REQUIRE(ls.data_disk.free == free * block_size);
 }
 
 void local_monitor_fixture::assert_space_alert(
@@ -161,7 +161,7 @@ void local_monitor_fixture::assert_space_alert(
     _local_monitor.testing_only_set_statvfs(lamb);
 
     auto ls = update_state();
-    BOOST_TEST_REQUIRE(ls.storage_space_alert == expected);
+    BOOST_TEST_REQUIRE(ls.data_disk.alert == expected);
 }
 
 FIXTURE_TEST(local_monitor_alert_none, local_monitor_fixture) {
