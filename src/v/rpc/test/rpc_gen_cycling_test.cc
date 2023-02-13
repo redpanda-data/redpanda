@@ -178,7 +178,14 @@ FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
     configure_server();
     register_services();
     start_server();
-    rpc::connection_cache cache;
+    ss::sharded<ss::abort_source> as;
+    as.start().get();
+    rpc::connection_cache cache(as);
+
+    auto deferred = ss::defer([&] {
+        cache.stop().get();
+        as.stop().get();
+    });
 
     // Check that we can create connections from a cache, and moreover that we
     // can run several clients targeted at the same server, if we provide
@@ -202,7 +209,6 @@ FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
         BOOST_REQUIRE(transport_res.has_value());
         auto transport = transport_res.value();
         echo::echo_client_protocol client(*transport);
-        auto cleanup = ss::defer([&transport] { transport->stop().get(); });
         auto f = client.echo(
           echo::echo_req{.str = payload},
           rpc::client_opts(rpc::clock_type::now() + 100ms));

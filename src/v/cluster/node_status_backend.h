@@ -51,7 +51,8 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<node_status_table>&,
-      config::binding<std::chrono::milliseconds>);
+      config::binding<std::chrono::milliseconds>,
+      ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -100,6 +101,8 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{
       ssx::metrics::public_metrics_handle};
+
+    ss::sharded<ss::abort_source>& _as;
 
     friend class node_status_rpc_handler;
 };

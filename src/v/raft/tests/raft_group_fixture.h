@@ -111,7 +111,9 @@ struct raft_node {
             [](features::feature_table& f) { f.testing_activate_all(); })
           .get();
 
-        cache.start().get();
+        as_service.start().get();
+
+        cache.start(std::ref(as_service)).get();
 
         storage
           .start(
@@ -238,7 +240,10 @@ struct raft_node {
 
         tstlog.info("Stopping node stack {}", broker.id());
         _as.request_abort();
-        return recovery_throttle.stop()
+        auto abort_f = as_service.invoke_on_all(
+          [](auto& local) { local.request_abort(); });
+        return std::move(abort_f)
+          .then([this] { return recovery_throttle.stop(); })
           .then([this] { return server.stop(); })
           .then([this] {
               if (hbeats) {
@@ -288,6 +293,7 @@ struct raft_node {
               return storage.stop();
           })
           .then([this] { return feature_table.stop(); })
+          .then([this] { return as_service.stop(); })
           .then([this] {
               tstlog.info("Node {} stopped", broker.id());
               started = false;
@@ -348,6 +354,7 @@ struct raft_node {
     ss::sharded<storage::api> storage;
     ss::sharded<raft::recovery_throttle> recovery_throttle;
     std::unique_ptr<storage::log> log;
+    ss::sharded<ss::abort_source> as_service;
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<rpc::rpc_server> server;
     ss::sharded<test_raft_manager> raft_manager;

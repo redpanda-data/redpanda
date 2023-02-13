@@ -41,6 +41,7 @@ public:
       ss::shard_id max_shards = ss::smp::count);
 
     explicit connection_cache(
+      ss::sharded<ss::abort_source>&,
       std::optional<connection_cache_label> label = std::nullopt);
 
     bool contains(model::node_id n) const {
@@ -148,6 +149,7 @@ private:
     underlying _cache;
     transport_version _default_transport_version{transport_version::v1};
     ss::gate _gate;
+    ss::optimized_optional<ss::abort_source::subscription> _as_subscription;
 };
 inline ss::shard_id connection_cache::shard_for(
   model::node_id self,

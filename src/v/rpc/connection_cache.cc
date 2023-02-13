@@ -17,8 +17,13 @@
 
 namespace rpc {
 
-connection_cache::connection_cache(std::optional<connection_cache_label> label)
-  : _label(std::move(label)) {}
+connection_cache::connection_cache(
+  ss::sharded<ss::abort_source>& as,
+  std::optional<connection_cache_label> label)
+  : _label(std::move(label)) {
+    _as_subscription = as.local().subscribe(
+      [this]() mutable noexcept { shutdown(); });
+}
 
 /// \brief needs to be a future, because mutations may come from different
 /// fibers and they need to be synchronized

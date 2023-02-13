@@ -75,6 +75,7 @@ void stop_node(raft_node& node) {
     node.log.reset();
     node.storage.stop().get0();
     node.feature_table.stop().get0();
+    node.as_service.stop().get();
 
     node.started = false;
 }

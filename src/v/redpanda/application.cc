@@ -974,7 +974,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
     // cluster
     syschecks::systemd_message("Initializing connection cache").get();
-    construct_service(_connection_cache).get();
+    construct_service(_connection_cache, std::ref(_as)).get();
     syschecks::systemd_message("Building shard-lookup tables").get();
     construct_service(shard_table).get();
 
@@ -1133,7 +1133,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(feature_table),
       std::ref(node_status_table),
       ss::sharded_parameter(
-        [] { return config::shard_local_cfg().node_status_interval.bind(); }))
+        [] { return config::shard_local_cfg().node_status_interval.bind(); }),
+      std::ref(_as))
       .get();
 
     syschecks::systemd_message("Creating kafka metadata cache").get();
