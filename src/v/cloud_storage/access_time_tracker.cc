@@ -194,7 +194,7 @@ void access_time_tracker::remove_timestamp(std::string_view key) noexcept {
 }
 
 ss::future<>
-access_time_tracker::trim(const std::vector<file_list_item>& existent) {
+access_time_tracker::trim(const fragmented_vector<file_list_item>& existent) {
     absl::btree_set<uint32_t> existent_hashes;
     for (const auto& i : existent) {
         existent_hashes.insert(xxhash_32(i.path.data(), i.path.size()));

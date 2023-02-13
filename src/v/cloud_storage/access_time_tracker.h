@@ -65,7 +65,7 @@ public:
     bool is_dirty() const;
 
     /// Remove every key which isn't present in list of existing files
-    ss::future<> trim(const std::vector<file_list_item>&);
+    ss::future<> trim(const fragmented_vector<file_list_item>&);
 
     size_t size() const { return _table.size(); }
 

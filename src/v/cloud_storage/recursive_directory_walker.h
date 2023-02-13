@@ -11,6 +11,7 @@
 #pragma once
 
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -29,7 +30,7 @@ struct file_list_item {
 
 struct walk_result {
     uint64_t cache_size{0};
-    std::vector<file_list_item> regular_files;
+    fragmented_vector<file_list_item> regular_files;
     std::vector<ss::sstring> empty_dirs;
 };
 

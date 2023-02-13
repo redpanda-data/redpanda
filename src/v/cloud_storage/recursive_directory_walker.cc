@@ -72,7 +72,7 @@ struct walk_accumulator {
     const access_time_tracker& tracker;
     bool seen_dentries{false};
     std::deque<ss::sstring> dirlist;
-    std::vector<file_list_item> files;
+    fragmented_vector<file_list_item> files;
     uint64_t current_cache_size{0};
 };
 
