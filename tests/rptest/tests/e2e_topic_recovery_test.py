@@ -128,14 +128,20 @@ class EndToEndTopicRecovery(RedpandaTest):
                     self._bucket, o.Key)
                 manifest = json.loads(data)
                 last_upl_offset = manifest['last_offset']
-                self.logger.info(
-                    f"Found manifest at {o.Key}, last_offset is {last_upl_offset}"
-                )
-                # We have one partition so this invariant holds
-                # it has to be changed when the number of partitions
-                # will get larger. This will also require different
-                # S3 check.
-                return last_upl_offset >= num_messages
+                if 'segments' in manifest:
+                    segments = manifest['segments']
+                    last_segment = segments[list(segments)[-1]]
+                    last_delta_offset = last_segment['delta_offset_end']
+                    # We have one partition so this invariant holds it has to
+                    # be changed when the number of partitions will get larger.
+                    # This will also require different S3 check.
+                    self.logger.info(
+                        f"Found manifest at {o.Key}, last_offset is {last_upl_offset}, last delta_offset is {last_delta_offset}"
+                    )
+                    return (last_upl_offset - last_delta_offset +
+                            1) >= num_messages
+                else:
+                    return False
         return False
 
     @cluster(num_nodes=4)
@@ -179,6 +185,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         # we just care for the consumer to receive some data
         self._consumer.wait(timeout_sec=100)
 
+    @skip_debug_mode
     @cluster(num_nodes=4)
     @matrix(message_size=[5000],
             num_messages=[100000],
@@ -188,11 +195,6 @@ class EndToEndTopicRecovery(RedpandaTest):
     def test_restore(self, message_size, num_messages, recovery_overrides):
         """Write some data. Remove local data then restore
         the cluster."""
-
-        if self.debug_mode:
-            self.logger.info(
-                "Skipping test in debug mode (requires release build)")
-            return
 
         self.init_producer(message_size, num_messages)
         self._producer.start(clean=False)
