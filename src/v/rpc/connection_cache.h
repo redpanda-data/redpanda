@@ -57,6 +57,9 @@ public:
     ss::future<> remove(model::node_id n);
 
     /// \brief closes all connections
+    ss::future<> do_shutdown();
+    void shutdown();
+
     ss::future<> stop();
 
     /**
@@ -144,6 +147,7 @@ private:
     mutex _mutex; // to add/remove nodes
     underlying _cache;
     transport_version _default_transport_version{transport_version::v1};
+    ss::gate _gate;
 };
 inline ss::shard_id connection_cache::shard_for(
   model::node_id self,

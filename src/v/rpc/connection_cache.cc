@@ -59,7 +59,7 @@ ss::future<> connection_cache::remove(model::node_id n) {
 }
 
 /// \brief closes all client connections
-ss::future<> connection_cache::stop() {
+ss::future<> connection_cache::do_shutdown() {
     auto units = co_await _mutex.get_units();
     // Exchange makes sure cache is invalidated and concurrent
     // accesses wait on the mutex to populate new entries.
@@ -72,6 +72,15 @@ ss::future<> connection_cache::stop() {
     // mark mutex as broken to prevent new connections from being created
     // after stop
     _mutex.broken();
+}
+
+void connection_cache::shutdown() {
+    ssx::spawn_with_gate(_gate, [this] { return do_shutdown(); });
+}
+
+ss::future<> connection_cache::stop() {
+    shutdown();
+    return _gate.close();
 }
 
 } // namespace rpc
