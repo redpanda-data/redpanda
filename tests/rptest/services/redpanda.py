@@ -673,7 +673,6 @@ class RedpandaService(Service):
                  skip_if_no_redpanda_log: bool = False,
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
-                 enable_kerberos_listener=False,
                  disable_cloud_storage_diagnostics=False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
@@ -682,7 +681,6 @@ class RedpandaService(Service):
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
         self._schema_registry_config = schema_registry_config
-        self._enable_kerberos_listener = enable_kerberos_listener
 
         if superuser is None:
             superuser = self.SUPERUSER_CREDENTIALS
@@ -2029,26 +2027,24 @@ class RedpandaService(Service):
         # resolution
         fqdn = self.get_node_fqdn(node)
 
-        conf = self.render(
-            "redpanda.yaml",
-            node=node,
-            data_dir=RedpandaService.DATA_DIR,
-            nodes=node_info,
-            node_id=node_id,
-            include_seed_servers=include_seed_servers,
-            seed_servers=self._seed_servers,
-            node_ip=node_ip,
-            enable_kerberos_listener=self._enable_kerberos_listener,
-            kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
-            kafka_kerberos_port=self.KAFKA_KERBEROS_PORT,
-            fqdn=fqdn,
-            admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
-            pandaproxy_config=self._pandaproxy_config,
-            schema_registry_config=self._schema_registry_config,
-            superuser=self._superuser,
-            sasl_enabled=self.sasl_enabled(),
-            endpoint_authn_method=self.endpoint_authn_method(),
-            auto_auth=self._security.auto_auth)
+        conf = self.render("redpanda.yaml",
+                           node=node,
+                           data_dir=RedpandaService.DATA_DIR,
+                           nodes=node_info,
+                           node_id=node_id,
+                           include_seed_servers=include_seed_servers,
+                           seed_servers=self._seed_servers,
+                           node_ip=node_ip,
+                           kafka_alternate_port=self.KAFKA_ALTERNATE_PORT,
+                           kafka_kerberos_port=self.KAFKA_KERBEROS_PORT,
+                           fqdn=fqdn,
+                           admin_alternate_port=self.ADMIN_ALTERNATE_PORT,
+                           pandaproxy_config=self._pandaproxy_config,
+                           schema_registry_config=self._schema_registry_config,
+                           superuser=self._superuser,
+                           sasl_enabled=self.sasl_enabled(),
+                           endpoint_authn_method=self.endpoint_authn_method(),
+                           auto_auth=self._security.auto_auth)
 
         if override_cfg_params or self._extra_node_conf[node]:
             doc = yaml.full_load(conf)

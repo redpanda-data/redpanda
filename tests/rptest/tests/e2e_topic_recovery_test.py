@@ -139,6 +139,7 @@ class EndToEndTopicRecovery(RedpandaTest):
                 return last_upl_offset >= num_messages
         return False
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/7758
     @cluster(num_nodes=4)
     @matrix(num_messages=[2],
             cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
