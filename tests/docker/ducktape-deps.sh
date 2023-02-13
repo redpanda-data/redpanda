@@ -135,4 +135,11 @@ function install_addr2line() {
     chmod +x /opt/scripts/seastar-addr2line
 }
 
+function install_kafka_streams_examples() {
+  git -C /opt clone https://github.com/redpanda-data/kafka-streams-examples.git
+  cd /opt/kafka-streams-examples
+  git reset --hard 913d08c8351c74ee454b79f8e0c1f48ca9b562a5
+  mvn -DskipTests=true clean package
+}
+
 $@
