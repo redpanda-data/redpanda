@@ -3026,82 +3026,7 @@ void admin_server::register_partition_routes() {
     register_route<user>(
       ss::httpd::partition_json::get_partition,
       [this](std::unique_ptr<ss::httpd::request> req) {
-          const model::ntp ntp = parse_ntp_from_request(req->param);
-          const bool is_controller = ntp == model::controller_ntp;
-
-          if (!is_controller && !_metadata_cache.local().contains(ntp)) {
-              throw ss::httpd::not_found_exception(
-                fmt::format("Could not find ntp: {}", ntp));
-          }
-
-          ss::httpd::partition_json::partition p;
-          p.ns = ntp.ns;
-          p.topic = ntp.tp.topic;
-          p.partition_id = ntp.tp.partition;
-          p.leader_id = -1;
-
-          // Logic for fetching replicas+status is different for normal
-          // topics vs. the special controller topic.
-          if (is_controller) {
-              // Controller topic is on all nodes.  Report all nodes,
-              // with the leader first.
-              auto leader_opt
-                = _metadata_cache.local().get_controller_leader_id();
-              if (leader_opt.has_value()) {
-                  ss::httpd::partition_json::assignment a;
-                  a.node_id = leader_opt.value();
-                  a.core = cluster::controller_stm_shard;
-                  p.replicas.push(a);
-                  p.leader_id = *leader_opt;
-              }
-              // special case, controller is raft group 0
-              p.raft_group_id = 0;
-              for (const auto& i : _metadata_cache.local().node_ids()) {
-                  if (!leader_opt.has_value() || leader_opt.value() != i) {
-                      ss::httpd::partition_json::assignment a;
-                      a.node_id = i;
-                      a.core = cluster::controller_stm_shard;
-                      p.replicas.push(a);
-                  }
-              }
-
-              // Controller topic does not have a reconciliation state,
-              // but include the field anyway to keep the API output
-              // consistent.
-              p.status = ssx::sformat(
-                "{}", cluster::reconciliation_status::done);
-              return ss::make_ready_future<ss::json::json_return_type>(
-                std::move(p));
-
-          } else {
-              // Normal topic
-              auto assignment = _controller->get_topics_state()
-                                  .local()
-                                  .get_partition_assignment(ntp);
-
-              if (assignment) {
-                  for (auto& r : assignment->replicas) {
-                      ss::httpd::partition_json::assignment a;
-                      a.node_id = r.node_id;
-                      a.core = r.shard;
-                      p.replicas.push(a);
-                  }
-                  p.raft_group_id = assignment->group;
-              }
-              auto leader = _metadata_cache.local().get_leader_id(ntp);
-              if (leader) {
-                  p.leader_id = *leader;
-              }
-
-              return _controller->get_api()
-                .local()
-                .get_reconciliation_state(ntp)
-                .then(
-                  [p](const cluster::ntp_reconciliation_state& state) mutable {
-                      p.status = ssx::sformat("{}", state.status());
-                      return ss::json::json_return_type(std::move(p));
-                  });
-          }
+          return get_partition_handler(std::move(req));
       });
 
     /*
@@ -3151,6 +3076,81 @@ void admin_server::register_partition_routes() {
       });
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_partition_handler(std::unique_ptr<ss::httpd::request> req) {
+    const model::ntp ntp = parse_ntp_from_request(req->param);
+    const bool is_controller = ntp == model::controller_ntp;
+
+    if (!is_controller && !_metadata_cache.local().contains(ntp)) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("Could not find ntp: {}", ntp));
+    }
+
+    ss::httpd::partition_json::partition p;
+    p.ns = ntp.ns;
+    p.topic = ntp.tp.topic;
+    p.partition_id = ntp.tp.partition;
+    p.leader_id = -1;
+
+    // Logic for fetching replicas+status is different for normal
+    // topics vs. the special controller topic.
+    if (is_controller) {
+        // Controller topic is on all nodes.  Report all nodes,
+        // with the leader first.
+        auto leader_opt = _metadata_cache.local().get_controller_leader_id();
+        if (leader_opt.has_value()) {
+            ss::httpd::partition_json::assignment a;
+            a.node_id = leader_opt.value();
+            a.core = cluster::controller_stm_shard;
+            p.replicas.push(a);
+            p.leader_id = *leader_opt;
+        }
+        // special case, controller is raft group 0
+        p.raft_group_id = 0;
+        for (const auto& i : _metadata_cache.local().node_ids()) {
+            if (!leader_opt.has_value() || leader_opt.value() != i) {
+                ss::httpd::partition_json::assignment a;
+                a.node_id = i;
+                a.core = cluster::controller_stm_shard;
+                p.replicas.push(a);
+            }
+        }
+
+        // Controller topic does not have a reconciliation state,
+        // but include the field anyway to keep the API output
+        // consistent.
+        p.status = ssx::sformat("{}", cluster::reconciliation_status::done);
+        return ss::make_ready_future<ss::json::json_return_type>(std::move(p));
+
+    } else {
+        // Normal topic
+        auto assignment
+          = _controller->get_topics_state().local().get_partition_assignment(
+            ntp);
+
+        if (assignment) {
+            for (auto& r : assignment->replicas) {
+                ss::httpd::partition_json::assignment a;
+                a.node_id = r.node_id;
+                a.core = r.shard;
+                p.replicas.push(a);
+            }
+            p.raft_group_id = assignment->group;
+        }
+        auto leader = _metadata_cache.local().get_leader_id(ntp);
+        if (leader) {
+            p.leader_id = *leader;
+        }
+
+        return _controller->get_api()
+          .local()
+          .get_reconciliation_state(ntp)
+          .then([p](const cluster::ntp_reconciliation_state& state) mutable {
+              p.status = ssx::sformat("{}", state.status());
+              return ss::json::json_return_type(std::move(p));
+          });
+    }
+}
 ss::future<ss::json::json_return_type>
 admin_server::trigger_on_demand_rebalance_handler(
   std::unique_ptr<ss::httpd::request> req) {
