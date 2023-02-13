@@ -389,9 +389,12 @@ ss::future<> partition::stop() {
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
     std::optional<storage::timequery_result> result;
+    bool may_read_from_cloud = _cloud_storage_partition
+                               && _cloud_storage_partition->is_data_available();
     bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
+    const auto kafka_max_offset = cfg.max_offset;
     if (
-      _cloud_storage_partition && _cloud_storage_partition->is_data_available()
+      may_read_from_cloud
       && (is_read_replica || _raft->log().start_timestamp() >= cfg.time)) {
         // We have data in the remote partition, and all the data in the raft
         // log is ahead of the query timestamp or the topic is a read replica,
@@ -402,12 +405,12 @@ partition::timequery(storage::timequery_config cfg) {
           "timequery (cloud) {} t={} max_offset(k)={}",
           _raft->ntp(),
           cfg.time,
-          cfg.max_offset);
+          kafka_max_offset);
 
         // remote_partition pre-translates offsets for us, so no call into
         // the offset translator here
         auto cloud_result = co_await _cloud_storage_partition->timequery(cfg);
-        if (cloud_result) {
+        if (cloud_result || is_read_replica) {
             co_return cloud_result;
         }
 
@@ -426,6 +429,21 @@ partition::timequery(storage::timequery_config cfg) {
     cfg.max_offset = _raft->get_offset_translator_state()->to_log_offset(
       cfg.max_offset);
     result = co_await _raft->timequery(cfg);
+
+    // It's possible that during the query, our local log was GCed, and the
+    // result may not actually reflect the correct offset for this partition.
+    // If the local log doesn't look like it can serve the query anymore, query
+    // the remote log.
+    if (may_read_from_cloud && _raft->log().start_timestamp() >= cfg.time) {
+        cfg.max_offset = kafka_max_offset;
+        vlog(
+          clusterlog.debug,
+          "timequery (cloud) {} t={} max_offset(k)={}",
+          _raft->ntp(),
+          cfg.time,
+          cfg.max_offset);
+        co_return co_await _cloud_storage_partition->timequery(cfg);
+    }
     if (result) {
         vlog(
           clusterlog.debug,
