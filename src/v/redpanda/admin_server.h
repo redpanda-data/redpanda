@@ -325,6 +325,8 @@ private:
     /// Register partition routes
     ss::future<ss::json::json_return_type>
       get_partition_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      get_topic_partitions_handler(std::unique_ptr<ss::httpd::request>);
 
     ss::future<ss::json::json_return_type>
       get_transactions_handler(std::unique_ptr<ss::httpd::request>);
