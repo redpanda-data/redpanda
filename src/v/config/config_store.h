@@ -136,6 +136,36 @@ public:
         w.EndObject();
     }
 
+    void to_json_for_metrics(json::Writer<json::StringBuffer>& w) {
+        w.StartObject();
+
+        for (const auto& [name, property] : _properties) {
+            if (property->get_visibility() == visibility::deprecated) {
+                continue;
+            }
+
+            if (property->type_name() == "boolean") {
+                w.Key(name.data(), name.size());
+                property->to_json(w, redact_secrets::yes);
+                continue;
+            }
+
+            if (property->is_nullable()) {
+                w.Key(name.data(), name.size());
+                w.String(property->is_default() ? "default" : "[value]");
+                continue;
+            }
+
+            if (!property->enum_values().empty()) {
+                w.Key(name.data(), name.size());
+                property->to_json(w, redact_secrets::yes);
+                continue;
+            }
+        }
+
+        w.EndObject();
+    }
+
     std::set<std::string_view> property_names() const {
         std::set<std::string_view> result;
         for (const auto& i : _properties) {
