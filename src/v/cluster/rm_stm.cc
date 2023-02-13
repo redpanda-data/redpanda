@@ -1128,15 +1128,8 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
     _log_stats_timer.cancel();
-    return raft::state_machine::stop().then([this] {
-        for (const auto& entry : _log_state.seq_table) {
-            _log_state.unlink_lru_pid(entry.second);
-        }
-        vassert(
-          _log_state.lru_idempotent_pids.size() == 0,
-          "Unexpected entries in the lru pid list {}",
-          _log_state.lru_idempotent_pids.size());
-    });
+    return raft::state_machine::stop().then(
+      [this] { _log_state.clear_seq_table(); });
 }
 
 ss::future<> rm_stm::start() {

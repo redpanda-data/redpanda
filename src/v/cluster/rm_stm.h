@@ -522,6 +522,22 @@ private:
             seq_table.erase(it);
         }
 
+        /// It is important that we unlink entries from seq_table before
+        /// destroying the entries themselves so that the safe link does not
+        /// assert.
+        void clear_seq_table() {
+            for (const auto& entry : seq_table) {
+                unlink_lru_pid(entry.second);
+            }
+            // Checks the 1:1 invariant between seq_table entries and
+            // lru_idempotent_pids If every element from seq_table is unlinked,
+            // the resulting intrusive list should be empty.
+            vassert(
+              lru_idempotent_pids.size() == 0,
+              "Unexpected entries in the lru pid list {}",
+              lru_idempotent_pids.size());
+        }
+
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
             ongoing_map.erase(pid);
