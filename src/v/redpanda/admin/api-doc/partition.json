@@ -60,6 +60,37 @@
             ]
         },
         {
+            "path": "/v1/partitions/{namespace}/{topic}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get topic partition information",
+                    "type": "array",
+                    "items": {
+                        "type": "partition"
+                    },
+                    "nickname": "get_topic_partitions",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
             "path": "/v1/partitions/{namespace}/{topic}/{partition}/replicas",
             "operations": [
                 {
