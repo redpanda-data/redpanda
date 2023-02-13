@@ -569,12 +569,16 @@ class Admin:
         information like replica set assignments with core affinities.
         """
         assert (topic is None and partition is None) or \
-                (topic is not None and partition is not None)
-        assert topic or namespace is None
+                (topic is not None)
+
         namespace = namespace or "kafka"
         path = "partitions"
         if topic:
-            path = f"{path}/{namespace}/{topic}/{partition}"
+            path = f"{path}/{namespace}/{topic}"
+
+        if partition is not None:
+            path = f"{path}/{partition}"
+
         return self._request('get', path, node=node).json()
 
     def get_transactions(self, topic, partition, namespace, node=None):
