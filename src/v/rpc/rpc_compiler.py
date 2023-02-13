@@ -154,7 +154,7 @@ using {{service_name}}_service = {{service_name}}_service_base<rpc::default_mess
 
 class {{service_name}}_client_protocol {
 public:
-    explicit {{service_name}}_client_protocol(rpc::transport& t)
+    explicit {{service_name}}_client_protocol(ss::lw_shared_ptr<rpc::transport> t)
       : _transport(t) {
     }
 
@@ -163,13 +163,13 @@ public:
     {%- for method in methods %}
     virtual inline ss::future<result<rpc::client_context<{{method.output_type}}>>>
     {{method.name}}({{method.input_type}}&& r, rpc::client_opts opts) {
-       return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r),
+       return _transport->send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r),
               {{service_name}}_service::{{method.name}}_method, std::move(opts));
     }
     {%- endfor %}
 
 private:
-    rpc::transport& _transport;
+    ss::lw_shared_ptr<rpc::transport> _transport;
 };
 
 template<typename Codec>
