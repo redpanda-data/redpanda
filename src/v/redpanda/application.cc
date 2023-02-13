@@ -1208,6 +1208,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         // changes
         auto cloud_storage_cache_disk_notification
           = storage_node.local().register_disk_notification(
+            storage::node_api::disk_type::cache,
             [this](
               uint64_t total_space,
               uint64_t free_space,
@@ -1217,6 +1218,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
             });
         _deferred.emplace_back([this, cloud_storage_cache_disk_notification] {
             storage_node.local().unregister_disk_notification(
+              storage::node_api::disk_type::cache,
               cloud_storage_cache_disk_notification);
         });
 
@@ -1561,6 +1563,7 @@ void application::wire_up_bootstrap_services() {
     // Hook up local_monitor to update storage_resources when disk state changes
     auto storage_disk_notification
       = storage_node.local().register_disk_notification(
+        storage::node_api::disk_type::data,
         [this](
           uint64_t total_space,
           uint64_t free_space,
@@ -1572,7 +1575,7 @@ void application::wire_up_bootstrap_services() {
         });
     _deferred.emplace_back([this, storage_disk_notification] {
         storage_node.local().unregister_disk_notification(
-          storage_disk_notification);
+          storage::node_api::disk_type::data, storage_disk_notification);
     });
 
     // Start empty, populated from snapshot in start_bootstrap_services
