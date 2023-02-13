@@ -24,13 +24,15 @@ node_status_backend::node_status_backend(
   ss::sharded<members_table>& members_table,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<node_status_table>& node_status_table,
-  config::binding<std::chrono::milliseconds> period)
+  config::binding<std::chrono::milliseconds> period,
+  ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _members_table(members_table)
   , _feature_table(feature_table)
   , _node_status_table(node_status_table)
   , _period(std::move(period))
-  , _rpc_tls_config(config::node().rpc_server_tls()) {
+  , _rpc_tls_config(config::node().rpc_server_tls())
+  , _as(as) {
     if (!config::shard_local_cfg().disable_public_metrics()) {
         setup_metrics(_public_metrics);
     }
@@ -67,7 +69,7 @@ ss::future<> node_status_backend::start() {
     vassert(ss::this_shard_id() == shard, "invoked on a wrong shard");
 
     co_await _node_connection_cache.start(
-      rpc::connection_cache_label{"node_status_backend"});
+      std::ref(_as), rpc::connection_cache_label{"node_status_backend"});
 
     _timer.rearm(ss::lowres_clock::now());
 }
