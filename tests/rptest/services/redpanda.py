@@ -1671,6 +1671,9 @@ class RedpandaService(Service):
                 manifests_to_dump.append(key)
                 manifest_dump_limit -= 1
 
+            if manifest_dump_limit == 0 and key_dump_limit == 0:
+                break
+
         archive_basename = "cloud_diagnostics.zip"
         archive_path = os.path.join(
             TestContext.results_dir(self._context, self._context.test_index),
