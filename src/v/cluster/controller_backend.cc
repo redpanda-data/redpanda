@@ -56,19 +56,11 @@
 namespace cluster {
 namespace {
 
-inline bool contains_node(
-  model::node_id id, const std::vector<model::broker_shard>& replicas) {
-    return std::any_of(
-      replicas.cbegin(), replicas.cend(), [id](const model::broker_shard& bs) {
-          return bs.node_id == id;
-      });
-}
-
 bool is_cross_core_update(model::node_id self, const topic_table_delta& delta) {
     if (!delta.previous_replica_set) {
         return false;
     }
-    return contains_node(self, *delta.previous_replica_set)
+    return contains_node(*delta.previous_replica_set, self)
            && !has_local_replicas(self, *delta.previous_replica_set);
 }
 
@@ -194,7 +186,7 @@ std::error_code check_configuration_update(
           change_revision);
         return errc::partition_configuration_revision_not_updated;
     }
-    const bool includes_self = contains_node(self, bs);
+    const bool includes_self = contains_node(bs, self);
 
     /*
      * if configuration includes current node, we expect configuration to be
@@ -300,6 +292,19 @@ void controller_backend::setup_metrics() {
 ss::future<> controller_backend::start() {
     setup_metrics();
     return bootstrap_controller_backend().then([this] {
+        if (ss::this_shard_id() == cluster::controller_stm_shard) {
+            auto bootstrap_revision = _topics.local().last_applied_revision();
+            ssx::spawn_with_gate(_gate, [this, bootstrap_revision] {
+                return clear_orphan_topic_files(bootstrap_revision)
+                  .handle_exception_type(
+                    [](std::filesystem::filesystem_error const& err) {
+                        vlog(
+                          clusterlog.error,
+                          "Exception while cleaning oprhan files {}",
+                          err);
+                    });
+            });
+        }
         start_topics_reconciliation_loop();
         _housekeeping_timer.set_callback([this] { housekeeping(); });
         _housekeeping_timer.arm(_housekeeping_timer_interval);
@@ -536,7 +541,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
                   }
                   return md.delta.type == op_t::update_finished
                          && !contains_node(
-                           _self, md.delta.new_assignment.replicas);
+                           md.delta.new_assignment.replicas, _self);
               });
 
             vassert(
@@ -566,7 +571,7 @@ controller_backend::bootstrap_ntp(const model::ntp& ntp, deltas_t& deltas) {
              * first operation that created replica on current node
              *
              */
-            if (!contains_node(_self, it->delta.new_assignment.replicas)) {
+            if (!contains_node(it->delta.new_assignment.replicas, _self)) {
                 vassert(
                   it != deltas.rbegin(),
                   "operation {} must have following operation that created a "
@@ -607,6 +612,70 @@ ss::future<> controller_backend::fetch_deltas() {
                     _topic_deltas[ntp].emplace_back(std::move(d));
                 }
             });
+      });
+}
+
+bool topic_files_are_orphan(
+  const model::ntp& ntp,
+  storage::partition_path::metadata ntp_directory_data,
+  ss::sharded<cluster::topic_table>& _topics,
+  model::revision_id last_applied_revision,
+  model::node_id current_node) {
+    if (ntp_directory_data.revision_id > last_applied_revision) {
+        return false;
+    }
+    auto ntp_view = model::topic_namespace_view(ntp);
+    if (!_topics.local().contains(ntp_view)) {
+        return true;
+    }
+    auto ntp_meta = _topics.local().get_topic_metadata(ntp_view);
+    if (ntp_meta && !ntp_meta->is_topic_replicable()) {
+        return false;
+    }
+    if (ntp_meta && ntp_meta->get_revision() > ntp_directory_data.revision_id) {
+        return true;
+    }
+
+    auto current_replica_set = _topics.local().get_partition_assignment(ntp);
+    if (cluster::contains_node(current_replica_set->replicas, current_node)) {
+        return false;
+    }
+
+    auto target_replica_set = _topics.local().get_target_replica_set(ntp);
+    if (
+      target_replica_set
+      && cluster::contains_node(*target_replica_set, current_node)) {
+        return false;
+    }
+
+    auto previous_replica_set = _topics.local().get_previous_replica_set(ntp);
+    if (
+      previous_replica_set
+      && cluster::contains_node(*previous_replica_set, current_node)) {
+        return false;
+    }
+    return true;
+}
+
+ss::future<> controller_backend::clear_orphan_topic_files(
+  model::revision_id bootstrap_revision) {
+    vlog(
+      clusterlog.info,
+      "Cleaning up orphan topic files. bootstrap_revision: {}",
+      bootstrap_revision);
+    // Init with default namespace to clean if there is no topics
+    absl::flat_hash_set<model::ns> namespaces = {{model::kafka_namespace}};
+    for (const auto& t : _topics.local().all_topics()) {
+        namespaces.emplace(t.ns);
+    }
+
+    return _storage.local().log_mgr().remove_orphan_files(
+      _data_directory,
+      std::move(namespaces),
+      [&, bootstrap_revision](
+        model::ntp ntp, storage::partition_path::metadata p) {
+          return topic_files_are_orphan(
+            ntp, p, _topics, bootstrap_revision, _self);
       });
 }
 
@@ -1014,7 +1083,7 @@ controller_backend::process_partition_reconfiguration(
          * 1) shutdown partition instance
          * 2) create instance on target remote core
          */
-        if (contains_node(_self, target_assignment.replicas)) {
+        if (contains_node(target_assignment.replicas, _self)) {
             co_return co_await shutdown_on_current_shard(std::move(ntp), rev);
         }
 
@@ -1038,7 +1107,7 @@ controller_backend::process_partition_reconfiguration(
         // Wait fo the operation to be finished on one of the nodes
         co_return errc::waiting_for_reconfiguration_finish;
     }
-    const auto cross_core_move = contains_node(_self, previous_replicas)
+    const auto cross_core_move = contains_node(previous_replicas, _self)
                                  && !has_local_replicas(
                                    _self, previous_replicas);
     /**
