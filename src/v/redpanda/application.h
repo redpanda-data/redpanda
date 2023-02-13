@@ -163,6 +163,8 @@ private:
 
     void load_feature_table_snapshot();
 
+    void trigger_abort_source();
+
     // Starts the services meant for Redpanda runtime. Must be called after
     // having constructed the subsystems via the corresponding `wire_up` calls.
     void start_runtime_services(cluster::cluster_discovery&, ::stop_signal&);
@@ -253,6 +255,8 @@ private:
 
     // run these first on destruction
     deferred_actions _deferred;
+
+    ss::sharded<ss::abort_source> _as;
 };
 
 namespace debug {

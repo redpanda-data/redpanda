@@ -356,6 +356,7 @@ int application::run(int ac, char** av) {
                 // thus avoiding crashloops.
                 schedule_crash_tracker_file_cleanup();
                 app_signal.wait().get();
+                trigger_abort_source();
                 vlog(_log.info, "Stopping...");
             } catch (const ss::abort_requested_exception&) {
                 vlog(_log.info, "Redpanda startup aborted");
@@ -1489,6 +1490,10 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
     return _proxy->set_client_config(std::move(name), std::move(val));
 }
 
+void application::trigger_abort_source() {
+    _as.invoke_on_all([](auto& local_as) { local_as.request_abort(); }).get();
+}
+
 void application::wire_up_bootstrap_services() {
     // Wire up local storage.
     ss::smp::invoke_on_all([] {
@@ -1688,6 +1693,10 @@ void application::start_bootstrap_services() {
 }
 
 void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
+    // Setup the app level abort service
+    construct_service(_as).get();
+
+    // Bootstrap services.
     wire_up_bootstrap_services();
     start_bootstrap_services();
 
