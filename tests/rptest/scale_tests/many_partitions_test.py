@@ -141,7 +141,6 @@ class ScaleParameters:
         self.local_retention_after_warmup = self.retention_bytes
 
         if tiered_storage_enabled:
-            redpanda.disable_cloud_storage_diagnostics()
             # When testing with tiered storage, the tuning goals of the test
             # parameters are different: we want to stress the number of
             # uploaded segments.
@@ -319,9 +318,6 @@ class ManyPartitionsTest(PreallocNodesTest):
                                          'raft': 'warn',
                                          'offset_translator': 'warn'
                                      }),
-            # With tiered storage enabled, this test generates millions of
-            # objects, and can be slow to gather diagnostics for.
-            disable_cloud_storage_diagnostics=True,
             **kwargs)
         self.rpk = RpkTool(self.redpanda)
 
