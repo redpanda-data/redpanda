@@ -205,4 +205,20 @@ inline bool is_compactible(const model::record_batch& b) {
 offset_delta_time should_apply_delta_time_offset(
   ss::sharded<features::feature_table>& feature_table);
 
+template<typename Func>
+auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
+    static_assert(
+      std::is_nothrow_move_constructible_v<Func>,
+      "Func's move constructor must not throw");
+
+    return ss::do_with(
+      std::move(handle),
+      [func = std::move(func)](segment_reader_handle& handle) {
+          return ss::futurize_invoke(func, handle).finally([&handle] {
+              return handle.close().then(
+                [] { return ss::make_ready_future<>(); });
+          });
+      });
+}
+
 } // namespace storage::internal
