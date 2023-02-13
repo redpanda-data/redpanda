@@ -1103,8 +1103,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
-    return raft::state_machine::stop().then(
-      [this] { _log_state.clear_seq_table(); });
+    return raft::state_machine::stop();
 }
 
 ss::future<> rm_stm::start() {
@@ -2851,7 +2850,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 ss::future<> rm_stm::handle_eviction() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
-          _log_state = {};
+          _log_state.reset();
           _mem_state = {};
           set_next(_c->start_offset());
           _insync_offset = model::prev_offset(_raft->start_offset());
