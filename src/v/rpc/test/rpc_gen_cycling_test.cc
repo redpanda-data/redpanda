@@ -218,6 +218,41 @@ FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
     }
 }
 
+FIXTURE_TEST(rpc_abort_from_cache, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    ss::sharded<ss::abort_source> as;
+    as.start().get();
+    rpc::connection_cache cache(as);
+    auto deferred = ss::defer([&] {
+        cache.stop().get();
+        as.stop().get();
+    });
+
+    constexpr auto node_id = model::node_id(0);
+    cache
+      .emplace(
+        node_id,
+        client_config(),
+        rpc::make_exponential_backoff_policy<rpc::clock_type>(
+          std::chrono::milliseconds(1), std::chrono::milliseconds(1)))
+      .get();
+    auto reconnect_transport = cache.get(node_id);
+    auto transport_res
+      = reconnect_transport->get_connected(rpc::clock_type::now() + 5s).get();
+    BOOST_REQUIRE(transport_res.has_value());
+    auto transport = transport_res.value();
+    echo::echo_client_protocol client(transport);
+    // Long sleep + no timeout
+    auto f = client.sleep_for(
+      {.secs = 100}, rpc::client_opts(rpc::timeout_spec::none));
+    // Trigger an abort to fail outstanding RPC requests.
+    as.invoke_on_all([](auto& local) { local.request_abort(); }).get();
+    BOOST_REQUIRE_EQUAL(f.get().error(), rpc::errc::disconnected_endpoint);
+    BOOST_REQUIRE_EQUAL(cache.contains(node_id), false);
+}
+
 FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
     auto creds_builder = config::tls_config(
                            true,
