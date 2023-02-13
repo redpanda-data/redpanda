@@ -12,6 +12,7 @@ package recovery
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -21,14 +22,20 @@ import (
 )
 
 func newStartCommand(fs afero.Fs) *cobra.Command {
-	var topicNamePattern string
+	var (
+		topicNamePattern string
+		wait             bool
+		pollingInterval  time.Duration
+	)
 
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the topic recovery process",
 		Long: `Start the topic recovery process.
 		
-This command starts the process of restoring topics from the archival bucket.`,
+This command starts the process of restoring topics from the archival bucket.
+If the wait flag (--wait/-w) is set, the command will poll the status of the
+recovery process until it's finished.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -37,7 +44,9 @@ This command starts the process of restoring topics from the archival bucket.`,
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			_, err = client.StartAutomatedRecovery(cmd.Context(), topicNamePattern)
+			ctx := cmd.Context()
+
+			_, err = client.StartAutomatedRecovery(ctx, topicNamePattern)
 			var he *admin.HTTPResponseError
 			if errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
@@ -55,10 +64,50 @@ This command starts the process of restoring topics from the archival bucket.`,
 
 			out.MaybeDie(err, "error starting topic recovery: %v", err)
 			fmt.Println("Successfully started topic recovery")
+
+			if !wait {
+				fmt.Println("To check the recovery status, run 'rpk cluster storage recovery status'")
+				return
+			}
+
+			fmt.Println("Waiting for topic recovery to complete...")
+
+			for {
+				status, err := client.PollAutomatedRecoveryStatus(ctx)
+				out.MaybeDie(err, "failed to poll automated recovery status: %v", err)
+
+				pending := false
+				for _, topicDownload := range status.TopicDownloads {
+					if topicDownload.PendingDownloads > 0 {
+						pending = true
+						break
+					}
+				}
+
+				if !pending {
+					failedPartitionReplicas := []string{}
+					for _, topicDownload := range status.TopicDownloads {
+						if topicDownload.FailedDownloads > 0 {
+							failedPartitionReplicas = append(failedPartitionReplicas, topicDownload.TopicNamespace)
+						}
+					}
+
+					if len(failedPartitionReplicas) > 0 {
+						out.Die("automated recovery failed to download partition replicas: %v", failedPartitionReplicas)
+					}
+
+					break
+				}
+				time.Sleep(pollingInterval)
+			}
+
+			fmt.Println("Topic recovery completed successfully.")
 		},
 	}
 
 	cmd.Flags().StringVar(&topicNamePattern, "topic-name-pattern", ".*", "A regex pattern to match topic names against. Only topics whose names match this pattern will be restored. If not passed, all topics will be restored.")
+	cmd.Flags().BoolVarP(&wait, "wait", "w", false, "Wait until auto-restore is complete.")
+	cmd.Flags().DurationVar(&pollingInterval, "polling-interval", 5*time.Second, "The interval in-between each status check (format: \"300ms\", \"1.5s\", \"1m45s\", etc). Ignored if --wait is not passed.")
 
 	return cmd
 }

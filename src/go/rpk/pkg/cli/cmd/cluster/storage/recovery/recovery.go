@@ -22,7 +22,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		
 This command is used to restore topics from the archival bucket, which can be useful for disaster recovery or if a topic was accidentally deleted.
 
-To begin the recovery process, use the "recovery start" command. Note that this process can take a while to complete, so the command will exit after starting it.
+To begin the recovery process, use the "recovery start" command. Note that this process can take a while to complete, so the command will exit after starting it. If you want the command to wait for the process to finish, use the "--wait" or "-w" flag.
 
 You can check the status of the recovery process with the "recovery status" command after it has been started.
 `,
