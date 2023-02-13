@@ -452,6 +452,9 @@ void rjson_serialize(
         rjson_serialize(w, m);
     }
     w.EndArray();
+
+    w.Key("config");
+    config::shard_local_cfg().to_json_for_metrics(w);
     w.EndObject();
 }
 
