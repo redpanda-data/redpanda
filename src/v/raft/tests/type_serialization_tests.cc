@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "compression/stream_zstd.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -19,6 +20,7 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "serde/serde.h"
 #include "storage/record_batch_builder.h"
 #include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
@@ -297,6 +299,188 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_negatives) {
       result.meta[0].node_id.revision(), model::revision_id{});
     BOOST_REQUIRE_EQUAL(
       result.meta[0].target_node_id.revision(), model::revision_id{});
+}
+
+SEASTAR_THREAD_TEST_CASE(heartbeat_response_with_failures) {
+    raft::heartbeat_reply reply;
+    // first reply is a failure
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id{}, model::revision_id{}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(1),
+      .term = model::term_id(random_generators::get_int(0, 1000)),
+      .last_flushed_log_index = model::offset{},
+      .last_dirty_log_index = model::offset{},
+      .last_term_base_offset = model::offset{},
+      .result = raft::append_entries_reply::status::timeout});
+
+    /**
+     * Two other replies are successful
+     */
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id(0), model::revision_id{1}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(2),
+      .term = model::term_id(1),
+      .last_flushed_log_index = model::offset(100),
+      .last_dirty_log_index = model::offset(101),
+      .last_term_base_offset = model::offset(102),
+      .result = raft::append_entries_reply::status::success});
+
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id(0), model::revision_id{1}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(3),
+      .term = model::term_id(5),
+      .last_flushed_log_index = model::offset(200),
+      .last_dirty_log_index = model::offset(201),
+      .last_term_base_offset = model::offset(202),
+      .result = raft::append_entries_reply::status::success});
+
+    auto buf = serde::to_iobuf(reply);
+
+    auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
+    for (auto i = 0; i < reply.meta.size(); ++i) {
+        BOOST_REQUIRE_EQUAL(reply.meta[i].group, result.meta[i].group);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_flushed_log_index,
+          result.meta[i].last_flushed_log_index);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_dirty_log_index,
+          result.meta[i].last_dirty_log_index);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].term, result.meta[i].term);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].result, result.meta[i].result);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_term_base_offset,
+          result.meta[i].last_term_base_offset);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].node_id, result.meta[i].node_id);
+        if (i != 0) {
+            // we do not require failure node_id to match as it will be replaced
+            // with node id coming from successful response
+            BOOST_REQUIRE_EQUAL(
+              reply.meta[i].target_node_id, result.meta[i].target_node_id);
+        }
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  heartbeat_response_with_failures_and_not_initialized_groups) {
+    raft::heartbeat_reply reply;
+    // first reply is a success but group is empty
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id{0}, model::revision_id{0}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(1),
+      .term = model::term_id(1),
+      .last_flushed_log_index = model::offset{},
+      .last_dirty_log_index = model::offset{},
+      .last_term_base_offset = model::offset{},
+      .result = raft::append_entries_reply::status::success});
+
+    /**
+     * Two other replies are failures
+     */
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id{}, model::revision_id{}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(2),
+      .term = model::term_id(1),
+      .last_flushed_log_index = model::offset{},
+      .last_dirty_log_index = model::offset{},
+      .last_term_base_offset = model::offset{},
+      .result = raft::append_entries_reply::status::group_unavailable});
+
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id{}, model::revision_id{}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(3),
+      .term = model::term_id(5),
+      .last_flushed_log_index = model::offset{},
+      .last_dirty_log_index = model::offset{},
+      .last_term_base_offset = model::offset{},
+      .result = raft::append_entries_reply::status::group_unavailable});
+
+    auto buf = serde::to_iobuf(reply);
+
+    auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
+    for (auto i = 0; i < reply.meta.size(); ++i) {
+        BOOST_REQUIRE_EQUAL(reply.meta[i].group, result.meta[i].group);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_flushed_log_index,
+          result.meta[i].last_flushed_log_index);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_dirty_log_index,
+          result.meta[i].last_dirty_log_index);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].term, result.meta[i].term);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].result, result.meta[i].result);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_term_base_offset,
+          result.meta[i].last_term_base_offset);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].node_id, result.meta[i].node_id);
+        // all replies should have node id set
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[0].target_node_id.id(),
+          result.meta[i].target_node_id.id());
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(heartbeat_response_with_only_failures) {
+    raft::heartbeat_reply reply;
+    // first reply is a success but group is empty
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id{}, model::revision_id{}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(1),
+      .term = model::term_id(1),
+      .last_flushed_log_index = model::offset{},
+      .last_dirty_log_index = model::offset{},
+      .last_term_base_offset = model::offset{},
+      .result = raft::append_entries_reply::status::group_unavailable});
+
+    /**
+     * Two other replies are failures
+     */
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id{}, model::revision_id{}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(2),
+      .term = model::term_id(1),
+      .last_flushed_log_index = model::offset{},
+      .last_dirty_log_index = model::offset{},
+      .last_term_base_offset = model::offset{},
+      .result = raft::append_entries_reply::status::group_unavailable});
+
+    reply.meta.push_back(raft::append_entries_reply{
+      .target_node_id = raft::vnode(model::node_id{}, model::revision_id{}),
+      .node_id = raft::vnode(model::node_id(1), model::revision_id(1)),
+      .group = raft::group_id(3),
+      .term = model::term_id(5),
+      .last_flushed_log_index = model::offset{},
+      .last_dirty_log_index = model::offset{},
+      .last_term_base_offset = model::offset{},
+      .result = raft::append_entries_reply::status::group_unavailable});
+
+    auto buf = serde::to_iobuf(reply);
+
+    auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
+    for (auto i = 0; i < reply.meta.size(); ++i) {
+        BOOST_REQUIRE_EQUAL(reply.meta[i].group, result.meta[i].group);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_flushed_log_index,
+          result.meta[i].last_flushed_log_index);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_dirty_log_index,
+          result.meta[i].last_dirty_log_index);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].term, result.meta[i].term);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].result, result.meta[i].result);
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].last_term_base_offset,
+          result.meta[i].last_term_base_offset);
+        BOOST_REQUIRE_EQUAL(reply.meta[i].node_id, result.meta[i].node_id);
+        // all replies should have node id set
+        BOOST_REQUIRE_EQUAL(
+          reply.meta[i].target_node_id, result.meta[i].target_node_id);
+    }
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {

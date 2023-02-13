@@ -428,11 +428,33 @@ void heartbeat_reply::serde_write(iobuf& dst) {
         return;
     }
 
-    // replies are comming from the same physical node
-    write(out, reply.meta.front().node_id.id());
-    // replies are addressed to the same physical node
-    write(out, reply.meta.front().target_node_id.id());
     std::sort(reply.meta.begin(), reply.meta.end(), sorter_fn{});
+    /**
+     * We use a target/source node_id from the last available append_entries
+     * response as all of the failed responses (timeouts and responses for which
+     * group couldn't be find) are present at the beginning after the array is
+     * sorted since last_flushed_log_index for those replies is an uninitialized
+     * i.e. model::offset::min().
+     */
+    auto it = reply.meta.rbegin();
+    for (; it != reply.meta.rend(); ++it) {
+        if (likely(it->target_node_id.id() != model::node_id{})) {
+            // replies are coming from the same physical node
+            write(out, it->node_id.id());
+            // replies are addressed to the same physical node
+            write(out, it->target_node_id.id());
+            break;
+        }
+    }
+    /**
+     * There are no successful heartbeat replies, fill in with information from
+     * first reply
+     */
+    if (unlikely(it == reply.meta.rend())) {
+        write(out, reply.meta.front().node_id.id());
+        write(out, reply.meta.front().target_node_id.id());
+    }
+
     internal::hbeat_response_array encodee(reply.meta.size());
 
     for (size_t i = 0; i < reply.meta.size(); ++i) {
