@@ -1420,9 +1420,12 @@ configuration::configuration()
   , cloud_storage_cache_check_interval_ms(
       *this,
       "cloud_storage_cache_check_interval",
-      "Timeout to check if cache eviction should be triggered",
+      "Minimum time between trims of tiered storage cache.  If a fetch "
+      "operation requires trimming the cache, and the most recent trim was "
+      "within this period, then trimming will be delayed until this period has "
+      "elapsed",
       {.visibility = visibility::tunable},
-      30s)
+      5s)
   , cloud_storage_max_readers_per_shard(
       *this,
       "cloud_storage_max_readers_per_shard",

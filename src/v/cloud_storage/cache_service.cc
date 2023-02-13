@@ -60,8 +60,6 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 
 static constexpr std::string_view tmp_extension{".part"};
 
-static constexpr ss::lowres_clock::duration min_clean_up_interval = 5000ms;
-
 cache::cache(
   std::filesystem::path cache_dir, config::binding<uint64_t> max_bytes) noexcept
   : _cache_dir(std::move(cache_dir))
@@ -206,8 +204,10 @@ ss::future<> cache::trim_throttled() {
     // segments finishing their read work before we demote their
     // data from cache.
     auto now = ss::lowres_clock::now();
-    if (now - _last_clean_up < min_clean_up_interval) {
-        auto delay = min_clean_up_interval - (now - _last_clean_up);
+    auto interval
+      = config::shard_local_cfg().cloud_storage_cache_check_interval_ms();
+    if (now - _last_clean_up < interval) {
+        auto delay = interval - (now - _last_clean_up);
         vlog(
           cst_log.info,
           "Cache trimming throttled, waiting {}ms",
