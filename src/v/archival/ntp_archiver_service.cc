@@ -1031,7 +1031,9 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           error != cluster::errc::success
           && error != cluster::errc::not_leader) {
             vlog(
-              _rtclog.warn, "archival metadata STM update failed: {}", error);
+              _rtclog.warn,
+              "archival metadata STM update failed: {}",
+              error.message());
         }
 
         vlog(
@@ -1187,7 +1189,10 @@ ntp_archiver::maybe_truncate_manifest() {
           ss::lowres_clock::now() + _conf->manifest_upload_timeout,
           _as);
         if (error != cluster::errc::success) {
-            vlog(ctxlog.warn, "archival metadata STM update failed: {}", error);
+            vlog(
+              ctxlog.warn,
+              "archival metadata STM update failed: {}",
+              error.message());
             throw std::system_error(error);
         } else {
             vlog(
@@ -1540,7 +1545,10 @@ ss::future<bool> ntp_archiver::do_upload_local(
     auto error = co_await _parent.archival_meta_stm()->add_segments(
       {meta}, deadline);
     if (error != cluster::errc::success && error != cluster::errc::not_leader) {
-        vlog(_rtclog.warn, "archival metadata STM update failed: {}", error);
+        vlog(
+          _rtclog.warn,
+          "archival metadata STM update failed: {}",
+          error.message());
         co_return false;
     }
     if (
