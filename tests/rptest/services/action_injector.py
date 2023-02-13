@@ -177,6 +177,7 @@ class ActionInjectorThread(Thread):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self.daemon = True
         self.disruptive_action = disruptive_action
         self.redpanda = redpanda
         self.config = config
