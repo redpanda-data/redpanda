@@ -9,13 +9,15 @@
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, LoggingConfig
 from rptest.services.cluster import cluster
 from rptest.services.rpk_consumer import RpkConsumer
 
 from ducktape.utils.util import wait_until
 
 from rptest.services.producer_swarm import ProducerSwarm
+
+LOG_CONFIG = LoggingConfig("info", {"kafka": "trace"})
 
 resource_settings = ResourceSettings(
     num_cpus=2,
@@ -30,6 +32,7 @@ class ManyClientsTest(RedpandaTest):
         # We will send huge numbers of messages, so tune down the log verbosity
         # as this is just a "did we stay up?" test
         kwargs['log_level'] = "info"
+        kwargs['log_config'] = LOG_CONFIG
         kwargs['resource_settings'] = resource_settings
         kwargs['extra_rp_conf'] = {
             # Enable segment size jitter as this is a stress test and does not
