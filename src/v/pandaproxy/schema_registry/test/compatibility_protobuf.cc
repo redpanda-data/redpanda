@@ -142,6 +142,32 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_referenced) {
       = pps::make_protobuf_schema_definition(store.store, schema3).get();
 }
 
+SEASTAR_THREAD_TEST_CASE(test_protobuf_recursive_reference) {
+    simple_sharded_store store;
+
+    auto schema1 = pps::canonical_schema{pps::subject{"simple.proto"}, simple};
+    auto schema2 = pps::canonical_schema{
+      pps::subject{"imported.proto"},
+      imported,
+      {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}}}};
+    auto schema3 = pps::canonical_schema{
+      pps::subject{"imported-twice.proto"},
+      imported_twice,
+      {{"simple", pps::subject{"simple.proto"}, pps::schema_version{1}},
+       {"imported", pps::subject{"imported.proto"}, pps::schema_version{1}}}};
+
+    store.insert(schema1, pps::schema_version{1});
+    store.insert(schema2, pps::schema_version{1});
+    store.insert(schema3, pps::schema_version{1});
+
+    auto valid_simple
+      = pps::make_protobuf_schema_definition(store.store, schema1).get();
+    auto valid_imported
+      = pps::make_protobuf_schema_definition(store.store, schema2).get();
+    auto valid_imported_again
+      = pps::make_protobuf_schema_definition(store.store, schema3).get();
+}
+
 SEASTAR_THREAD_TEST_CASE(test_protobuf_well_known) {
     simple_sharded_store store;
 
