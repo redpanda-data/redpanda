@@ -68,7 +68,8 @@ class EndToEndTopicRecovery(RedpandaTest):
                                                 self.redpanda,
                                                 self.topic,
                                                 msg_size,
-                                                nodes=[self._verifier_node])
+                                                nodes=[self._verifier_node],
+                                                loop=False)
 
     def free_nodes(self):
         super().free_nodes()
