@@ -68,7 +68,7 @@ class ManyClientsTest(RedpandaTest):
 
         # Realistic conditions: 128MB is the segment size in the cloud
         segment_size = 128 * 1024 * 1024
-        retention_size = 2 * segment_size
+        retention_size = 4 * segment_size
 
         self.client().create_topic(
             TopicSpec(name=TOPIC_NAME,
