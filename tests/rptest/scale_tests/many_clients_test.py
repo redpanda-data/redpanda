@@ -50,7 +50,7 @@ class ManyClientsTest(RedpandaTest):
         }
         super().__init__(*args, **kwargs)
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=7)
     def test_many_clients(self):
         """
         Check that redpanda remains stable under higher numbers of clients
@@ -76,14 +76,21 @@ class ManyClientsTest(RedpandaTest):
                       retention_bytes=retention_size,
                       segment_bytes=segment_size))
 
-        # Two consumers, just so that we are at least touching consumer
+        # Three consumers, just so that we are at least touching consumer
         # group functionality, if not stressing the overall number of consumers.
+        # Need enough consumers to grab data before it gets cleaned up by the
+        # retention policy
         consumer_a = RpkConsumer(self.test_context,
                                  self.redpanda,
                                  TOPIC_NAME,
                                  group="testgroup",
                                  save_msgs=False)
         consumer_b = RpkConsumer(self.test_context,
+                                 self.redpanda,
+                                 TOPIC_NAME,
+                                 group="testgroup",
+                                 save_msgs=False)
+        consumer_c = RpkConsumer(self.test_context,
                                  self.redpanda,
                                  TOPIC_NAME,
                                  group="testgroup",
@@ -98,15 +105,16 @@ class ManyClientsTest(RedpandaTest):
         producer.start()
         consumer_a.start()
         consumer_b.start()
+        consumer_c.start()
 
         producer.wait()
 
         def complete():
             expect = PRODUCER_COUNT * RECORDS_PER_PRODUCER
             self.logger.info(
-                f"Message counts: {consumer_a.message_count} {consumer_b.message_count} (vs {expect})"
+                f"Message counts: {consumer_a.message_count} {consumer_b.message_count} {consumer_c.message_count} (vs {expect})"
             )
-            return consumer_a.message_count + consumer_b.message_count >= expect
+            return consumer_a.message_count + consumer_b.message_count + consumer_c.message_count >= expect
 
         self.redpanda.wait_until(complete,
                                  timeout_sec=30,
