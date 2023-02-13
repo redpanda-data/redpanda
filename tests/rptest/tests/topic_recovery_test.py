@@ -310,7 +310,7 @@ class NoDataCase(BaseCase):
 
 
 class EmptySegmentsCase(BaseCase):
-    """Restore topic that has segments in S3, but segments have only non-data 
+    """Restore topic that has segments in S3, but segments have only non-data
     batches (raft configuration, raft configuration).
     """
 
@@ -1055,7 +1055,7 @@ class TopicRecoveryTest(RedpandaTest):
             checksummer = lambda: queue.put(
                 NodeChecksums(node, self._get_data_log_segment_checksums(node))
             )
-            Thread(target=checksummer).start()
+            Thread(target=checksummer, daemon=True).start()
             self.logger.debug(
                 f"Started checksum thread for {node.account.hostname}..")
         for i in range(num_nodes):
