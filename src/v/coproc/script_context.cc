@@ -108,7 +108,7 @@ ss::future<> script_context::do_execute() {
         }
         notify_waiters();
         return _resources.transport.get_connected(model::no_timeout)
-          .then([this](result<rpc::transport*> transport) {
+          .then([this](result<ss::lw_shared_ptr<rpc::transport>> transport) {
               if (!transport) {
                   /// Failed to connected to the wasm engine for whatever
                   /// reason, exit to yield
@@ -141,7 +141,7 @@ ss::future<errc> script_context::remove_output(
 }
 
 ss::future<ss::stop_iteration>
-script_context::process_send_write(rpc::transport* t) {
+script_context::process_send_write(ss::lw_shared_ptr<rpc::transport> t) {
     /// Read batch of data
     input_read_args args{
       .id = _id,
@@ -161,7 +161,7 @@ script_context::process_send_write(rpc::transport* t) {
     }
     /// Send request to wasm engine
     process_batch_request req{.reqs = std::move(requests)};
-    supervisor_client_protocol client(*t);
+    supervisor_client_protocol client(t);
     auto response = co_await client.process_batch(
       std::move(req), rpc::client_opts(rpc::clock_type::now() + 5s));
     if (!response) {

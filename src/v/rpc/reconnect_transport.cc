@@ -34,29 +34,30 @@ static inline bool has_backoff_expired(
 }
 
 ss::future<> reconnect_transport::stop() {
-    return _dispatch_gate.close().then([this] { return _transport.stop(); });
+    return _dispatch_gate.close().then([this] { return _transport->stop(); });
 }
-ss::future<result<transport*>>
+ss::future<result<reconnect_transport::underlying_transport_ptr>>
 reconnect_transport::get_connected(clock_type::duration connection_timeout) {
     return get_connected(clock_type::now() + connection_timeout);
 }
 
-ss::future<result<transport*>>
+ss::future<result<reconnect_transport::underlying_transport_ptr>>
 reconnect_transport::get_connected(clock_type::time_point connection_timeout) {
     if (is_valid()) {
-        return ss::make_ready_future<result<transport*>>(&_transport);
+        return ss::make_ready_future<result<underlying_transport_ptr>>(
+          _transport);
     }
     return reconnect(connection_timeout);
 }
 
-ss::future<result<rpc::transport*>>
+ss::future<result<reconnect_transport::underlying_transport_ptr>>
 reconnect_transport::reconnect(clock_type::duration connection_timeout) {
     return reconnect(clock_type::now() + connection_timeout);
 }
 
-ss::future<result<transport*>>
+ss::future<result<reconnect_transport::underlying_transport_ptr>>
 reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
-    using ret_t = result<transport*>;
+    using ret_t = result<underlying_transport_ptr>;
     if (!has_backoff_expired(
           _stamp, _backoff_policy.current_backoff_duration())) {
         return ss::make_ready_future<ret_t>(errc::exponential_backoff);
@@ -77,20 +78,20 @@ reconnect_transport::reconnect(clock_type::time_point connection_timeout) {
             connection_timeout_duration,
             [this, connection_timeout] {
                 if (is_valid()) {
-                    return ss::make_ready_future<ret_t>(&_transport);
+                    return ss::make_ready_future<ret_t>(_transport);
                 }
                 vlog(
                   rpclog.trace,
                   "connecting to {}",
-                  _transport.server_address());
-                return _transport.connect(connection_timeout)
+                  _transport->server_address());
+                return _transport->connect(connection_timeout)
                   .then_wrapped([this](ss::future<> f) {
                       try {
                           f.get();
                           rpclog.debug(
-                            "connected to {}", _transport.server_address());
+                            "connected to {}", _transport->server_address());
                           _backoff_policy.reset();
-                          return ss::make_ready_future<ret_t>(&_transport);
+                          return ss::make_ready_future<ret_t>(_transport);
                       } catch (...) {
                           _backoff_policy.next_backoff();
                           rpclog.trace(

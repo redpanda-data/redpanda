@@ -188,7 +188,7 @@ auto do_with_client_one_shot(
             return transport->connect(connection_timeout)
               .then([transport, f = std::forward<Func>(f)]() mutable {
                   return ss::futurize_invoke(
-                    std::forward<Func>(f), Proto(*transport));
+                    std::forward<Func>(f), Proto(transport));
               })
               .finally([transport] {
                   transport->shutdown();

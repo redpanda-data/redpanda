@@ -97,13 +97,14 @@ public:
               return cache.get(node_id)
                 ->get_connected(connection_timeout.timeout_at())
                 .then([f = std::forward<Func>(f)](
-                        result<rpc::transport*> transport) mutable {
+                        result<ss::lw_shared_ptr<rpc::transport>>
+                          transport) mutable {
                     if (!transport) {
                         // Connection error
                         return ss::futurize<ret_t>::convert(transport.error());
                     }
                     return ss::futurize<ret_t>::convert(
-                      f(Protocol(*transport.value())));
+                      f(Protocol(transport.value())));
                 });
           });
     }

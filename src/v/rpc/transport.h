@@ -390,33 +390,40 @@ transport::send_typed_versioned(
 }
 
 template<typename Protocol>
-concept RpcClientProtocol = std::constructible_from<Protocol, rpc::transport&>;
+concept RpcClientProtocol
+  = std::constructible_from<Protocol, ss::lw_shared_ptr<rpc::transport>>;
 
 template<typename... Protocol>
 requires(RpcClientProtocol<Protocol>&&...) class client : public Protocol... {
 public:
-    explicit client(
-      transport_configuration cfg,
-      const std::optional<model::node_id>& node_id = std::nullopt)
-      : Protocol(_transport)...
-      , _transport(std::move(cfg), std::nullopt, node_id) {}
+    explicit client(ss::lw_shared_ptr<rpc::transport> transport)
+      : Protocol(transport)...
+      , _transport(transport) {}
 
     ss::future<> connect(rpc::clock_type::time_point connection_timeout) {
-        return _transport.connect(connection_timeout);
+        return _transport->connect(connection_timeout);
     }
-    ss::future<> stop() { return _transport.stop(); };
-    void shutdown() { _transport.shutdown(); }
+    ss::future<> stop() { return _transport->stop(); };
+    void shutdown() { _transport->shutdown(); }
 
     [[gnu::always_inline]] bool is_valid() const {
-        return _transport.is_valid();
+        return _transport->is_valid();
     }
 
     const net::unresolved_address& server_address() const {
-        return _transport.server_address();
+        return _transport->server_address();
     }
 
 private:
-    rpc::transport _transport;
+    ss::lw_shared_ptr<rpc::transport> _transport{nullptr};
 };
 
+template<typename... Protocol>
+rpc::client<Protocol...> make_client(
+  transport_configuration cfg,
+  std::optional<connection_cache_label> label = std::nullopt,
+  const std::optional<model::node_id> node_id = std::nullopt) {
+    return client<Protocol...>(ss::make_lw_shared<rpc::transport>(
+      std::move(cfg), std::move(label), node_id));
+}
 } // namespace rpc

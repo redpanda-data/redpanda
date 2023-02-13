@@ -162,7 +162,7 @@ FIXTURE_TEST(echo_round_trip, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    auto client = rpc::client<echo::echo_client_protocol>(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     auto cleanup = ss::defer([&client] { client.stop().get(); });
 
@@ -208,7 +208,7 @@ FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
                                .get();
         BOOST_REQUIRE(transport_res.has_value());
         auto transport = transport_res.value();
-        echo::echo_client_protocol client(*transport);
+        echo::echo_client_protocol client(transport);
         auto f = client.echo(
           echo::echo_req{.str = payload},
           rpc::client_opts(rpc::clock_type::now() + 100ms));
@@ -231,7 +231,7 @@ FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    auto client = rpc::client<echo::echo_client_protocol>(
+    auto client = rpc::make_client<echo::echo_client_protocol>(
       client_config(creds_builder));
     client.connect(model::no_timeout).get();
     auto cleanup = ss::defer([&client] { client.stop().get(); });
@@ -355,7 +355,7 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
       .get();
 
     info("client connection attempt");
-    auto cli = rpc::client<cycling::team_movistar_client_protocol>(
+    auto cli = rpc::make_client<cycling::team_movistar_client_protocol>(
       client_config(client_creds_builder));
     cli.connect(model::no_timeout).get();
     auto okret = cli
@@ -373,9 +373,9 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::
-      client<cycling::team_movistar_client_protocol, echo::echo_client_protocol>
-        client(client_config());
+    auto client = rpc::make_client<
+      cycling::team_movistar_client_protocol,
+      echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     info("Calling movistar method");
     auto ret = client
@@ -401,7 +401,7 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::client<echo::echo_client_protocol> client(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     info("Calling sleep for.. 1s");
     auto echo_resp = client.sleep_for(
@@ -417,7 +417,7 @@ FIXTURE_TEST(timeout_test_cleanup_resources, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::client<echo::echo_client_protocol> client(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     using units_t = std::vector<ssx::semaphore_units>;
     ::mutex lock;
@@ -444,7 +444,7 @@ FIXTURE_TEST(test_cleanup_on_timeout_before_sending, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::client<echo::echo_client_protocol> client(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     auto stop_client = ss::defer([&] { client.stop().get(); });
 
@@ -485,8 +485,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    using client_t = rpc::client<echo::echo_client_protocol>;
-    client_t client(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     BOOST_TEST_MESSAGE("Calling echo method no compression");
     auto echo_resp
@@ -513,7 +512,7 @@ FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
     configure_server();
     register_services();
     start_server();
-    rpc::client<echo::echo_client_protocol> client(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     std::vector<ss::future<>> futures;
     futures.reserve(10);
@@ -534,7 +533,7 @@ FIXTURE_TEST(server_exception_test, rpc_integration_fixture) {
     configure_server();
     register_services();
     start_server();
-    rpc::client<echo::echo_client_protocol> client(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     auto ret = client
                  .throw_exception(
@@ -552,13 +551,13 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
     const auto check_missing = [&](rpc::errc expected_errc) {
-        auto f = t.send_typed<echo::echo_req, echo::echo_resp>(
+        auto f = t->send_typed<echo::echo_req, echo::echo_resp>(
           echo::echo_req{.str = "testing..."},
           {"missing_method_test::missing", 1234},
           rpc::client_opts(rpc::no_timeout));
@@ -617,10 +616,10 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
     configure_server();
     register_services();
     start_server();
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
     auto client = echo::echo_client_protocol(t);
-    auto stop_action = ss::defer([&t] { t.stop().get(); });
+    auto stop_action = ss::defer([&t] { t->stop().get(); });
     BOOST_TEST_MESSAGE("Request with valid payload");
     auto echo_resp = client
                        .echo(
@@ -638,14 +637,14 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
     reflection::adl<echo::echo_req>{}.to(
       nb.buffer(), echo::echo_req{.str = "testing..."});
     // will fail all the futures as server close the connection
-    auto ret = t.send(
+    auto ret = t->send(
                   std::move(nb), rpc::client_opts(rpc::clock_type::now() + 1s))
                  .get0();
     ret.value()->signal_body_parse();
 
     // reconnect
     BOOST_TEST_MESSAGE("Another request with valid payload");
-    t.connect(model::no_timeout).get0();
+    t->connect(model::no_timeout).get0();
     for (int i = 0; i < 10; ++i) {
         auto echo_resp_new = client
                                .echo(
@@ -661,10 +660,10 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     configure_server();
     register_services();
     start_server();
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
     auto client = echo::echo_client_protocol(t);
-    auto stop_action = ss::defer([&t] { t.stop().get(); });
+    auto stop_action = ss::defer([&t] { t->stop().get(); });
     BOOST_TEST_MESSAGE("Request with valid payload");
     auto echo_resp = client
                        .echo(
@@ -682,12 +681,12 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
 
     BOOST_TEST_MESSAGE("Request with invalid payload");
     // will fail all the futures as server close the connection
-    auto ret = t.send(
+    auto ret = t->send(
                   std::move(nb), rpc::client_opts(rpc::clock_type::now() + 2s))
                  .get0();
     // reconnect
     BOOST_TEST_MESSAGE("Another request with valid payload");
-    t.connect(model::no_timeout).get0();
+    t->connect(model::no_timeout).get0();
     for (int i = 0; i < 10; ++i) {
         auto echo_resp_new = client
                                .echo(
@@ -712,13 +711,13 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
     const auto check_unsupported = [&] {
-        auto f = t.send_typed_versioned<
+        auto f = t->send_typed_versioned<
           echo::echo_req_adl_serde,
           echo::echo_resp_adl_serde>(
           echo::echo_req_adl_serde{.str = "testing..."},
@@ -823,8 +822,8 @@ FIXTURE_TEST(unhandled_throw_in_proto_apply, erroneous_service_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
     auto client = echo::echo_client_protocol(t);
 
     /// Server should not crash at this line
@@ -832,7 +831,7 @@ FIXTURE_TEST(unhandled_throw_in_proto_apply, erroneous_service_fixture) {
       .echo(
         echo::echo_req{.str = "testing..."}, rpc::client_opts(rpc::no_timeout))
       .get();
-    t.stop().get();
+    t->stop().get();
 }
 
 /*
@@ -847,12 +846,12 @@ FIXTURE_TEST(nc_ns_adl_serde_client_upgraded, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+    BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
 
     // first messages are sent with adl
     {
@@ -878,7 +877,7 @@ FIXTURE_TEST(nc_ns_adl_serde_client_upgraded, rpc_integration_fixture) {
           ret.value().data.str, payload + "_to_sas_from_sas_to_sas_from_sas");
 
         // upgraded and remains at v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v2);
+        BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v2);
     }
 }
 
@@ -894,12 +893,12 @@ FIXTURE_TEST(nc_ns_serde_only_client_upgraded, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+    BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
 
     for (int i = 0; i < 10; i++) {
         const auto payload = random_generators::gen_alphanum_string(100);
@@ -912,7 +911,7 @@ FIXTURE_TEST(nc_ns_serde_only_client_upgraded, rpc_integration_fixture) {
           ret.value().data.str, payload + "_to_sso_from_sso_to_sso_from_sso");
 
         // upgraded and remains at v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v2);
+        BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v2);
     }
 }
 
@@ -933,12 +932,12 @@ FIXTURE_TEST(nc_ns_adl_only_no_client_upgrade, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+    BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
 
     for (int i = 0; i < 10; i++) {
         const auto payload = random_generators::gen_alphanum_string(100);
@@ -951,7 +950,7 @@ FIXTURE_TEST(nc_ns_adl_only_no_client_upgrade, rpc_integration_fixture) {
           ret.value().data.str, payload + "_to_aao_from_aao_to_aao_from_aao");
 
         // no upgrade
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+        BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
     }
 }
 
@@ -966,13 +965,13 @@ FIXTURE_TEST(nc_os_adl_serde_no_client_upgrade, rpc_integration_fixture) {
     register_services_v0();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
     // client initially at v1
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+    BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
 
     for (int i = 0; i < 10; i++) {
         const auto payload = random_generators::gen_alphanum_string(100);
@@ -985,7 +984,7 @@ FIXTURE_TEST(nc_os_adl_serde_no_client_upgrade, rpc_integration_fixture) {
           ret.value().data.str, payload + "_to_aas_from_aas_to_aas_from_aas");
 
         // client stays at v1 without upgrade to v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+        BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
     }
 }
 
@@ -1000,13 +999,13 @@ FIXTURE_TEST(nc_os_adl_only_no_client_upgrade, rpc_integration_fixture) {
     register_services_v0();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
     // client initially at v1
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+    BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
 
     for (int i = 0; i < 10; i++) {
         const auto payload = random_generators::gen_alphanum_string(100);
@@ -1019,7 +1018,7 @@ FIXTURE_TEST(nc_os_adl_only_no_client_upgrade, rpc_integration_fixture) {
           ret.value().data.str, payload + "_to_aao_from_aao_to_aao_from_aao");
 
         // client stays at v1 without upgrade to v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
+        BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v1);
     }
 }
 
@@ -1033,13 +1032,13 @@ FIXTURE_TEST(oc_ns_adl_serde_no_upgrade, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    t.set_version(rpc::transport_version::v0); // connect resets version=v1
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    t->set_version(rpc::transport_version::v0); // connect resets version=v1
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
+    BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v0);
 
     for (int i = 0; i < 10; i++) {
         const auto payload = random_generators::gen_alphanum_string(100);
@@ -1050,7 +1049,7 @@ FIXTURE_TEST(oc_ns_adl_serde_no_upgrade, rpc_integration_fixture) {
         BOOST_REQUIRE(ret.has_value());
         BOOST_REQUIRE_EQUAL(
           ret.value().data.str, payload + "_to_aas_from_aas_to_aas_from_aas");
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
+        BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v0);
     }
 }
 
@@ -1064,13 +1063,13 @@ FIXTURE_TEST(oc_ns_adl_only_no_upgrade, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    t.set_version(rpc::transport_version::v0); // connect resets version=v1
-    auto stop = ss::defer([&t] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    t->set_version(rpc::transport_version::v0); // connect resets version=v1
+    auto stop = ss::defer([&t] { t->stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
+    BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v0);
 
     for (int i = 0; i < 10; i++) {
         const auto payload = random_generators::gen_alphanum_string(100);
@@ -1081,7 +1080,7 @@ FIXTURE_TEST(oc_ns_adl_only_no_upgrade, rpc_integration_fixture) {
         BOOST_REQUIRE(ret.has_value());
         BOOST_REQUIRE_EQUAL(
           ret.value().data.str, payload + "_to_aao_from_aao_to_aao_from_aao");
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
+        BOOST_REQUIRE_EQUAL(t->version(), rpc::transport_version::v0);
     }
 }
 
@@ -1090,9 +1089,9 @@ FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&] { t->stop().get(); });
     auto old_client = echo::echo_client_protocol(t);
 
     /// Make a request serde::version<1> of echo_req_serde_only
@@ -1110,7 +1109,7 @@ FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
     /// echo::echo_resp_serde_only
     echo_v2::echo_req_serde_only r{.str = "Hello", .str_two = "World"};
     auto response_f
-      = t.send_typed<echo_v2::echo_req_serde_only, echo::echo_resp_serde_only>(
+      = t->send_typed<echo_v2::echo_req_serde_only, echo::echo_resp_serde_only>(
         std::move(r),
         echo_serde_only_method,
         rpc::client_opts(rpc::no_timeout));
@@ -1125,9 +1124,9 @@ FIXTURE_TEST(echo_evolve_from_older_client, rpc_integration_fixture) {
     register_services();
     start_server();
 
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&] { t.stop().get(); });
+    auto t = ss::make_lw_shared<rpc::transport>(client_config());
+    t->connect(model::no_timeout).get();
+    auto stop = ss::defer([&] { t->stop().get(); });
     auto old_client = echo::echo_client_protocol(t);
 
     /// Make a request with an version of the rpc, with the newer service
@@ -1135,7 +1134,7 @@ FIXTURE_TEST(echo_evolve_from_older_client, rpc_integration_fixture) {
       rpc::default_message_codec>::echo_serde_only_method;
 
     auto f
-      = t.send_typed<echo::echo_req_serde_only, echo_v2::echo_resp_serde_only>(
+      = t->send_typed<echo::echo_req_serde_only, echo_v2::echo_resp_serde_only>(
         echo::echo_req_serde_only{.str = "Hi_there"},
         echo_serde_only_method,
         rpc::client_opts(rpc::no_timeout));
@@ -1167,7 +1166,7 @@ public:
 FIXTURE_TEST(rpc_add_service, rpc_sharded_fixture) {
     configure_server();
     start_server();
-    auto client = rpc::client<echo::echo_client_protocol>(client_config());
+    auto client = rpc::make_client<echo::echo_client_protocol>(client_config());
     client.connect(model::no_timeout).get();
     auto cleanup = ss::defer([&client] { client.stop().get(); });
 
@@ -1237,9 +1236,9 @@ FIXTURE_TEST(rpc_mt_add_service, rpc_sharded_fixture) {
     // register the same metrics.
     auto ccfg = client_config();
     ccfg.disable_metrics = net::metrics_disabled::yes;
-    auto echo_client = rpc::client<echo::echo_client_protocol>(ccfg);
-    auto movistar_client = rpc::client<cycling::team_movistar_client_protocol>(
-      ccfg);
+    auto echo_client = rpc::make_client<echo::echo_client_protocol>(ccfg);
+    auto movistar_client
+      = rpc::make_client<cycling::team_movistar_client_protocol>(ccfg);
     echo_client.connect(model::no_timeout).get();
     movistar_client.connect(model::no_timeout).get();
     ss::gate rpc_g;
