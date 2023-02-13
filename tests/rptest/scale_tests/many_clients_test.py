@@ -32,7 +32,7 @@ class ManyClientsTest(RedpandaTest):
         # We will send huge numbers of messages, so tune down the log verbosity
         # as this is just a "did we stay up?" test
         kwargs['log_level'] = "info"
-        kwargs['log_config'] = LOG_CONFIG
+        # kwargs['log_config'] = LOG_CONFIG
         kwargs['resource_settings'] = resource_settings
         kwargs['extra_rp_conf'] = {
             # Enable segment size jitter as this is a stress test and does not
