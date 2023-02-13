@@ -445,6 +445,12 @@ private:
                        model::producer_identity,
                        expiration_info>(_tracker)) {}
 
+        log_state(log_state&) noexcept = delete;
+        log_state(log_state&&) noexcept = delete;
+        log_state& operator=(log_state&) noexcept = delete;
+        log_state& operator=(log_state&&) noexcept = delete;
+        ~log_state() noexcept { reset(); }
+
         ss::shared_ptr<util::mem_tracker> _tracker;
         // we enforce monotonicity of epochs related to the same producer_id
         // and fence off out of order requests
@@ -545,6 +551,19 @@ private:
             erase_pid_from_seq_table(pid);
             tx_seqs.erase(pid);
             expiration.erase(pid);
+        }
+
+        void reset() {
+            clear_seq_table();
+            fence_pid_epoch.clear();
+            ongoing_map.clear();
+            ongoing_set.clear();
+            prepared.clear();
+            tx_seqs.clear();
+            expiration.clear();
+            aborted.clear();
+            abort_indexes.clear();
+            last_abort_snapshot = {model::offset(-1)};
         }
     };
 
