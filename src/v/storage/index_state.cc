@@ -135,6 +135,7 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, position_index.copy());
     write(tmp, batch_timestamps_are_monotonic);
     write(tmp, with_offset);
+    write(tmp, non_data_timestamps);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -213,6 +214,7 @@ void read_nested(
     } else {
         read_nested(p, st.batch_timestamps_are_monotonic, 0U);
         read_nested(p, st.with_offset, 0U);
+        read_nested(p, st.non_data_timestamps, 0U);
     }
 }
 

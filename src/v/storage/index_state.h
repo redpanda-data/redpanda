@@ -88,6 +88,7 @@ private:
    [] position_index
    1 byte  - batch_timestamps_are_monotonic
    1 byte  - with_offset
+   1 byte  - non_data_timestamps
  */
 struct index_state
   : serde::envelope<index_state, serde::version<5>, serde::compat_version<4>> {
@@ -126,6 +127,9 @@ struct index_state
 
     // flag indicating whether the relative time index has been offset
     offset_delta_time with_offset{false};
+
+    // flag indicating whether this segment contains non user-data timestamps
+    bool non_data_timestamps{false};
 
     size_t size() const { return relative_offset_index.size(); }
 
@@ -200,8 +204,6 @@ struct index_state
     friend void read_nested(iobuf_parser&, index_state&, const size_t);
 
 private:
-    bool non_data_timestamps{false};
-
     index_state(const index_state& o) noexcept
       : bitflags(o.bitflags)
       , base_offset(o.base_offset)
