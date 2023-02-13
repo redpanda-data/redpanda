@@ -60,16 +60,15 @@ ss::future<> connection_cache::remove(model::node_id n) {
 
 /// \brief closes all client connections
 ss::future<> connection_cache::stop() {
-    return _mutex.with([this]() {
-        return parallel_for_each(_cache, [](auto& it) {
-            auto& [_, cli] = it;
-            return cli->stop();
-        });
-        _cache.clear();
-        // mark mutex as broken to prevent new connections from being created
-        // after stop
-        _mutex.broken();
+    auto units = co_await _mutex.get_units();
+    co_await parallel_for_each(_cache, [](auto& it) {
+        auto& [_, cli] = it;
+        return cli->stop();
     });
+    _cache.clear();
+    // mark mutex as broken to prevent new connections from being created
+    // after stop
+    _mutex.broken();
 }
 
 } // namespace rpc
