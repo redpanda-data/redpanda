@@ -17,6 +17,7 @@
 #include "storage/parser.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"
+#include "storage/segment_utils.h"
 #include "storage/version.h"
 #include "vlog.h"
 
@@ -253,31 +254,38 @@ static ss::future<> get_file_range(
         size_t scan_from = ix_begin ? ix_begin->filepos : 0;
         model::offset sto = ix_begin ? ix_begin->offset
                                      : segment->offsets().base_offset;
-        auto reader_handle = co_await segment->reader().data_stream(
-          scan_from, io_priority);
-        auto ostr = make_null_output_stream();
 
         size_t bytes_to_skip = 0;
         model::timestamp ts = upl.base_timestamp;
-        auto res = co_await storage::transform_stream(
-          reader_handle.take_stream(),
-          std::move(ostr),
-          [begin_inclusive, &sto, &ts](model::record_batch_header& hdr) {
-              if (hdr.last_offset() < begin_inclusive) {
-                  // The current record batch is accepted and will contribute to
-                  // skipped length. This means that if we will read segment
-                  // file starting from the 'scan_from' + 'res' we will be
-                  // looking at the next record batch. We might not see the
-                  // offset that we're looking for in this segment. This is why
-                  // we need to update 'sto' per batch.
-                  sto = hdr.last_offset() + model::offset(1);
-                  // TODO: update base_timestamp
-                  return storage::batch_consumer::consume_result::accept_batch;
-              }
-              ts = hdr.first_timestamp;
-              return storage::batch_consumer::consume_result::stop_parser;
+        auto reader_handle = co_await segment->reader().data_stream(
+          scan_from, io_priority);
+        auto res = co_await storage::internal::with_segment_reader_handle(
+          std::move(reader_handle),
+          [&begin_inclusive, &sto, &ts](
+            storage::segment_reader_handle& reader_handle) {
+              auto ostr = make_null_output_stream();
+              return storage::transform_stream(
+                reader_handle.take_stream(),
+                std::move(ostr),
+                [begin_inclusive, &sto, &ts](model::record_batch_header& hdr) {
+                    if (hdr.last_offset() < begin_inclusive) {
+                        // The current record batch is accepted and will
+                        // contribute to skipped length. This means that if we
+                        // will read segment file starting from the 'scan_from'
+                        // + 'res' we will be looking at the next record batch.
+                        // We might not see the offset that we're looking for in
+                        // this segment. This is why we need to update 'sto' per
+                        // batch.
+                        sto = hdr.last_offset() + model::offset(1);
+                        // TODO: update base_timestamp
+                        return storage::batch_consumer::consume_result::
+                          accept_batch;
+                    }
+                    ts = hdr.first_timestamp;
+                    return storage::batch_consumer::consume_result::stop_parser;
+                });
           });
-        co_await reader_handle.close();
+
         if (res.has_error()) {
             vlog(
               archival_log.error,
@@ -329,28 +337,32 @@ static ss::future<> get_file_range(
           scan_from,
           fo);
 
-        auto reader_handle = co_await segment->reader().data_stream(
-          scan_from, io_priority);
-        auto ostr = make_null_output_stream();
         model::timestamp ts = upl.max_timestamp;
         size_t stop_at = 0;
-        auto res = co_await storage::transform_stream(
-          reader_handle.take_stream(),
-          std::move(ostr),
-          [off_end = end_inclusive.value(), &fo, &ts](
-            model::record_batch_header& hdr) {
-              if (hdr.last_offset() <= off_end) {
-                  // If last offset of the record batch is within the range
-                  // we need to add it to the output stream (to calculate the
-                  // total size).
-                  fo = hdr.last_offset();
-                  // TODO: update max_timestamp
-                  return storage::batch_consumer::consume_result::accept_batch;
-              }
-              ts = hdr.max_timestamp;
-              return storage::batch_consumer::consume_result::stop_parser;
+        auto reader_handle = co_await segment->reader().data_stream(
+          scan_from, io_priority);
+        auto res = co_await storage::internal::with_segment_reader_handle(
+          std::move(reader_handle),
+          [&end_inclusive, &fo, &ts](storage::segment_reader_handle& handle) {
+              auto ostr = make_null_output_stream();
+              return storage::transform_stream(
+                handle.take_stream(),
+                std::move(ostr),
+                [off_end = end_inclusive.value(), &fo, &ts](
+                  model::record_batch_header& hdr) {
+                    if (hdr.last_offset() <= off_end) {
+                        // If last offset of the record batch is within the
+                        // range we need to add it to the output stream (to
+                        // calculate the total size).
+                        fo = hdr.last_offset();
+                        // TODO: update max_timestamp
+                        return storage::batch_consumer::consume_result::
+                          accept_batch;
+                    }
+                    ts = hdr.max_timestamp;
+                    return storage::batch_consumer::consume_result::stop_parser;
+                });
           });
-        co_await reader_handle.close();
 
         if (res.has_error()) {
             vlog(
