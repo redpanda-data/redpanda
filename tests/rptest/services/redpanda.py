@@ -673,7 +673,8 @@ class RedpandaService(Service):
                  skip_if_no_redpanda_log: bool = False,
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
-                 enable_kerberos_listener=False):
+                 enable_kerberos_listener=False,
+                 disable_cloud_storage_diagnostics=False):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._extra_rp_conf = extra_rp_conf or dict()
@@ -739,7 +740,11 @@ class RedpandaService(Service):
             self.set_si_settings(si_settings)
         else:
             self._si_settings = None
-        self._disable_cloud_storage_diagnostics = False
+
+        # Disable saving cloud storage diagnostics. This may be useful for
+        # tests that generate millions of objecst, as collecting diagnostics
+        # may take a significant amount of time.
+        self._disable_cloud_storage_diagnostics = disable_cloud_storage_diagnostics
 
         self.cloud_storage_client: Optional[S3Client] = None
 
@@ -1618,14 +1623,6 @@ class RedpandaService(Service):
 
         if crashes:
             raise NodeCrash(crashes)
-
-    def disable_cloud_storage_diagnostics(self):
-        """
-        Disable saving cloud storage diagnostics. This may be useful for tests
-        that generate millions of objecst, as collecting diagnostics may take a
-        significant amount of time.
-        """
-        self._disable_cloud_storage_diagnostica = True
 
     def cloud_storage_diagnostics(self):
         """
