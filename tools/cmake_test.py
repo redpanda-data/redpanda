@@ -199,11 +199,15 @@ class TestRunner():
 
         if "rpunit" in binary or "rpfixture" in binary:
             unit_args = [
-                "--overprovisioned", "--unsafe-bypass-fsync 1",
+                "--unsafe-bypass-fsync 1",
                 f"--default-log-level={log_level}",
                 "--logger-log-level='io=debug'",
                 "--logger-log-level='exception=debug'"
             ] + COMMON_TEST_ARGS
+
+            if self.ci:
+                unit_args.append("--overprovisioned")
+
             if "--" in args:
                 args = args + unit_args
             else:
