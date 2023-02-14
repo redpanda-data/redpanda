@@ -76,8 +76,10 @@ public class IdempotentWorkload extends GatedWorkload {
     public long countRead = 0;
     public CountDownLatch drained = new CountDownLatch(1);
 
+    public long writtenOffset = -1;
     public long endOffset = -1;
     public long readOffset = -1;
+    public long readPosition = -1;
     public boolean consumed = false;
 
     public Partition(int id) {
@@ -263,13 +265,15 @@ public class IdempotentWorkload extends GatedWorkload {
         metrics.min_writes
             = Math.min(metrics.min_writes, partition.countWritten);
 
-        var consumer = new App.ConsumerMetrics();
-        consumer.partition = partition.id;
-        consumer.end_offset = partition.endOffset;
-        consumer.read_offset = partition.readOffset;
-        consumer.consumed = partition.consumed;
+        var info = new App.PartitionMetrics();
+        info.partition = partition.id;
+        info.end_offset = partition.endOffset;
+        info.read_offset = partition.readOffset;
+        info.read_position = partition.readPosition;
+        info.consumed = partition.consumed;
+        info.written_offset = partition.writtenOffset;
 
-        metrics.consumers.add(consumer);
+        metrics.partitions.add(info);
       }
     }
     return metrics;
@@ -299,13 +303,18 @@ public class IdempotentWorkload extends GatedWorkload {
     consumer.assign(tps);
     consumer.seekToEnd(tps);
     long end = consumer.position(tp);
-    synchronized (this) { partition.endOffset = end; }
+    long written = -1;
+    synchronized (this) {
+      partition.endOffset = end;
+      written = partition.writtenOffset;
+    }
     consumer.seekToBeginning(tps);
 
     long lastOffset = -1;
     long lastOpId = -1;
 
-    while (consumer.position(tp) < end) {
+    while (consumer.position(tp) < end && consumer.position(tp) <= written) {
+      synchronized (this) { partition.readPosition = consumer.position(tp); }
       ConsumerRecords<String, String> records
           = consumer.poll(Duration.ofMillis(10000));
       var it = records.iterator();
@@ -331,6 +340,7 @@ public class IdempotentWorkload extends GatedWorkload {
       }
       synchronized (this) { partition.countRead += read; }
     }
+    synchronized (this) { partition.readPosition = consumer.position(tp); }
     consumer.close();
 
     var writtenKV = partition.latestKV;
@@ -484,6 +494,9 @@ public class IdempotentWorkload extends GatedWorkload {
               break;
             }
           }
+
+          partition.writtenOffset
+              = Math.max(partition.writtenOffset, meta.offset());
         } else {
           log(op.partition, "err\t" + op.id);
           System.out.println("=== Error on write");

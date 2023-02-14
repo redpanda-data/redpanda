@@ -206,15 +206,12 @@ class CompactedVerifier(Service):
     def remote_wait_consumer(self, timeout_sec=30):
         def check_consumed():
             info = self.remote_info()
-            if len(info["consumers"]) != self._partitions:
-                self._redpanda.logger.debug(
-                    f"Not all consumers have started {len(info['consumers'])} of {self._partitions}"
-                )
+            if len(info["partitions"]) != self._partitions:
                 return False
-            for consumer in info["consumers"]:
-                if not consumer["consumed"]:
+            for partition in info["partitions"]:
+                if not partition["consumed"]:
                     self._redpanda.logger.debug(
-                        f"Consumption of partition {consumer['partition']} isn't finished"
+                        f"Consumption of partition {partition['partition']} isn't finished"
                     )
                     return False
             return True
@@ -253,6 +250,8 @@ class CompactedVerifier(Service):
             try:
                 return (True, self._remote_info())
             except CrushedException:
+                raise
+            except ConsistencyViolationException:
                 raise
             except:
                 self._redpanda.logger.debug(
