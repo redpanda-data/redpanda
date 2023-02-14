@@ -42,7 +42,8 @@ public:
         topic_recovery_service,
       skip_this_node skip_source_shard) const;
 
-    ss::future<std::optional<status_response>> status() const;
+    ss::future<std::optional<status_response>>
+    status(model::node_id node) const;
 
     ss::future<> stop() { return ss::make_ready_future<>(); }
 

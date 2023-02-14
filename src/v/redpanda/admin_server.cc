@@ -3625,7 +3625,16 @@ ss::future<ss::json::json_return_type> admin_server::query_automated_recovery(
         co_return ret;
     }
 
-    auto status = co_await _topic_recovery_status_frontend.local().status();
+    auto controller_leader = _metadata_cache.local().get_leader_id(
+      model::controller_ntp);
+
+    if (!controller_leader) {
+        throw ss::httpd::server_error_exception{
+          "Unable to get controller leader, cannot get recovery status"};
+    }
+
+    auto status = co_await _topic_recovery_status_frontend.local().status(
+      controller_leader.value());
     if (!status) {
         co_return ret;
     }

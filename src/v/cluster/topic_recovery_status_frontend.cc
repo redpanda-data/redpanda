@@ -33,34 +33,24 @@ topic_recovery_status_frontend::topic_recovery_status_frontend(
   , _members{members} {}
 
 ss::future<std::optional<status_response>>
-topic_recovery_status_frontend::status() const {
-    auto nodes = _members.local().node_ids();
-    auto result = co_await ssx::parallel_transform(
-      nodes.begin(), nodes.end(), [this](auto node_id) {
-          return _connections.local()
-            .with_node_client<topic_recovery_status_rpc_client_protocol>(
-              _self,
-              ss::this_shard_id(),
-              node_id,
-              rpc_timeout_ms,
-              [](topic_recovery_status_rpc_client_protocol p) {
-                  return p.get_status(
-                    status_request{}, rpc::client_opts{rpc_timeout_ms});
-              });
-      });
+topic_recovery_status_frontend::status(model::node_id node) const {
+    auto node_result
+      = co_await _connections.local()
+          .with_node_client<topic_recovery_status_rpc_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            node,
+            rpc_timeout_ms,
+            [](topic_recovery_status_rpc_client_protocol p) {
+                return p.get_status(
+                  status_request{}, rpc::client_opts{rpc_timeout_ms});
+            });
 
-    if (auto it = std::find_if(
-          result.begin(),
-          result.end(),
-          [](const auto& node_result) {
-              return node_result.has_value()
-                     && node_result.value().data.is_active();
-          });
-        it != result.end()) {
-        co_return it->value().data;
+    if (!node_result.has_value()) {
+        co_return std::nullopt;
     }
 
-    co_return std::nullopt;
+    co_return node_result.value().data;
 }
 
 ss::future<bool> topic_recovery_status_frontend::is_recovery_running(
