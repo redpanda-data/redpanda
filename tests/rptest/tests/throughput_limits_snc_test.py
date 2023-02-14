@@ -7,32 +7,32 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import random, time, math
+import math
+import random
+import time
 from enum import Enum
 from typing import Tuple
+
+from ducktape.tests.test import TestContext
+from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricsEndpoint
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.clients.rpk import RpkTool
-from ducktape.tests.test import TestContext
 
 # This file is about throughput limiting that works at shard/node/cluster (SNC)
 # levels, like cluster-wide and node-wide throughput limits
 
 
-class ThroughputLimitsSnc(RedpandaTest):
+class ThroughputLimitsSncBase(RedpandaTest):
     """
-    Throughput limiting that works at shard/node/cluster (SNC)
+    Tests for throughput limiting that works at shard/node/cluster (SNC)
     levels, like cluster-wide and node-wide throughput limits
     """
-
-    # see later if need to split into more classes
-
     def __init__(self, test_ctx: TestContext, *args, **kwargs):
-        super(ThroughputLimitsSnc, self).__init__(test_ctx,
-                                                  num_brokers=3,
-                                                  *args,
-                                                  **kwargs)
+        super(ThroughputLimitsSncBase, self).__init__(test_ctx,
+                                                      num_brokers=3,
+                                                      *args,
+                                                      **kwargs)
         rnd_seed_override = test_ctx.globals.get("random_seed")
         if rnd_seed_override is None:
             # default seed value is composed from
@@ -46,16 +46,8 @@ class ThroughputLimitsSnc(RedpandaTest):
             self.rnd_seed = rnd_seed_override
         self.logger.info(f"Random seed: {self.rnd_seed}")
         self.rnd = random.Random(self.rnd_seed)
-        self.rpk = RpkTool(self.redpanda)
 
-        self.config = {}
-        for prop in list(self.ConfigProp):
-            val = self.get_config_parameter_random_value(prop)
-            self.config[prop] = val
-            if not val is None:
-                self.redpanda.add_extra_rp_conf({prop.value: val})
-        self.logger.info(
-            f"Initial cluster props: {self.redpanda._extra_rp_conf}")
+        self.rpk = RpkTool(self.redpanda)
 
     class ConfigProp(Enum):
         QUOTA_NODE_MAX_IN = "kafka_throughput_limit_node_in_bps"
@@ -66,7 +58,48 @@ class ThroughputLimitsSnc(RedpandaTest):
         QUOTA_SHARD_MIN_RATIO = "kafka_quota_balancer_min_shard_throughput_ratio"
         QUOTA_SHARD_MIN_BPS = "kafka_quota_balancer_min_shard_throughput_bps"
 
-    def get_config_parameter_random_value(self, prop: ConfigProp):
+    def current_effective_node_quota(self) -> Tuple[int, int]:
+        metrics = self.redpanda.metrics_sample(
+            "quotas_quota_effective", metrics_endpoint=MetricsEndpoint.METRICS)
+
+        assert metrics, "Effecive quota metric is missing"
+        self.logger.debug(f"Samples: {metrics.samples}")
+
+        node_quota_in = sum(
+            int(s.value) for s in metrics.label_filter({
+                "direction": "ingress"
+            }).samples)
+        node_quota_eg = sum(
+            int(s.value) for s in metrics.label_filter({
+                "direction": "egress"
+            }).samples)
+        return node_quota_in, node_quota_eg
+
+
+class ThroughputLimitsSncConfiguration(ThroughputLimitsSncBase):
+    """
+    Tests for throughput limiting that works at shard/node/cluster (SNC)
+    levels with randomized initial cluster configuration
+    """
+    def __init__(self, test_ctx: TestContext, *args, **kwargs):
+        super(ThroughputLimitsSncConfiguration,
+              self).__init__(test_ctx, *args, **kwargs)
+
+        self.config = {}
+        for prop in list(self.ConfigProp):
+            val = self.get_config_parameter_random_value(prop)
+            self.config[prop] = val
+            if not val is None:
+                self.redpanda.add_extra_rp_conf({prop.value: val})
+
+        # Moving partition leadership around will make throughput assessment
+        # too complicated by the test
+        self.redpanda.add_extra_rp_conf({"enable_leader_balancer": False})
+        self.logger.info(
+            f"Initial cluster props: {self.redpanda._extra_rp_conf}")
+
+    def get_config_parameter_random_value(
+            self, prop: ThroughputLimitsSncBase.ConfigProp):
         if prop in [
                 self.ConfigProp.QUOTA_NODE_MAX_IN,
                 self.ConfigProp.QUOTA_NODE_MAX_EG
@@ -113,23 +146,6 @@ class ThroughputLimitsSnc(RedpandaTest):
             return math.floor(2**(self.rnd.random() * 22))  # up to ~1.5 months
 
         raise Exception(f"Unsupported ConfigProp: {prop}")
-
-    def current_effective_node_quota(self) -> Tuple[int, int]:
-        metrics = self.redpanda.metrics_sample(
-            "quotas_quota_effective", metrics_endpoint=MetricsEndpoint.METRICS)
-
-        assert metrics, "Effecive quota metric is missing"
-        self.logger.debug(f"Samples: {metrics.samples}")
-
-        node_quota_in = sum(
-            int(s.value) for s in metrics.label_filter({
-                "direction": "ingress"
-            }).samples)
-        node_quota_eg = sum(
-            int(s.value) for s in metrics.label_filter({
-                "direction": "egress"
-            }).samples)
-        return node_quota_in, node_quota_eg
 
     @cluster(num_nodes=3)
     def test_configuration(self):
