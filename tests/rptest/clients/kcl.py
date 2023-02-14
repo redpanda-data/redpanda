@@ -30,9 +30,6 @@ KclCreateTopicsRequestTopic = namedtuple(
 KclCreatePartitionsRequestTopic = namedtuple('KclCreatePartitionsRequestTopic',
                                              ['topic', 'count', 'assignment'])
 
-KclOffsetDeleteResponse = namedtuple(
-    'KclOffsetDeleteResponse', ['topic', 'partition', 'status', 'error_msg'])
-
 KclListPartitionReassignmentsResponse = namedtuple(
     'KclListPartitionReassignmentsResponse',
     ['topic', 'partition', 'replicas', 'adding_replicas', 'removing_replicas'])
@@ -213,20 +210,8 @@ class KCL:
                 *zip(["-t"
                       for _ in range(0, len(request_args))], request_args)))
 
-        # Send request and parse output
-        cmd = ['group', 'offset-delete', group] + request_args_w_flags
-        output = self._cmd(cmd).splitlines()
-        regex = re.compile(
-            r"\s*(?P<topic>\S*)\s*(?P<partition>\d*)\s*(?P<status>\w+):?(?P<error>.*)"
-        )
-        matched = [regex.match(x) for x in output]
-        failed_matches = [x for x in matched if x is None]
-        if len(failed_matches) > 0:
-            raise RuntimeError("Failed to parse KCL offset-delete output")
-        return [
-            KclOffsetDeleteResponse(x['topic'], int(x['partition']),
-                                    x['status'], x['error']) for x in matched
-        ]
+        cmd = ['group', 'offset-delete', "-j", group] + request_args_w_flags
+        return json.loads(self._cmd(cmd, attempts=5))
 
     def get_user_credentials_cmd(self,
                                  user_cred: Optional[dict[str, str]] = None):
@@ -367,7 +352,6 @@ class KCL:
         brokers = self._redpanda.brokers()
         cmd = ["kcl", "-X", f"seed_brokers={brokers}", "--no-config-file"
                ] + cmd
-        self._redpanda.logger.debug(cmd)
         assert attempts > 0
         for retry in reversed(range(attempts)):
             try:

@@ -12,6 +12,7 @@ import subprocess
 import re
 import typing
 import time
+import itertools
 from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.util import wait_until_result
@@ -33,16 +34,21 @@ class ClusterAuthorizationError(Exception):
 
 
 class RpkException(Exception):
-    def __init__(self, msg, stderr=""):
+    def __init__(self, msg, stderr="", returncode=None):
         self.msg = msg
         self.stderr = stderr
+        self.returncode = returncode
 
     def __str__(self):
         if self.stderr:
             err = f" error: {self.stderr}"
         else:
             err = ""
-        return f"RpkException<{self.msg}{err}>"
+        if self.returncode:
+            retcode = f" returncode: {self.returncode}"
+        else:
+            retcode = ""
+        return f"RpkException<{self.msg}{err}{retcode}>"
 
 
 class RpkPartition:
@@ -107,6 +113,13 @@ class RpkMaintenanceStatus(typing.NamedTuple):
     eligible: int
     transferring: int
     failed: int
+
+
+class RpkOffsetDeleteResponsePartition(typing.NamedTuple):
+    topic: str
+    partition: int
+    status: str
+    error_msg: str
 
 
 @dataclass
@@ -827,7 +840,7 @@ class RpkTool:
             self._redpanda.logger.error(error)
             raise RpkException(
                 'command %s returned %d, output: %s' %
-                (' '.join(cmd), p.returncode, output), error)
+                (' '.join(cmd), p.returncode, output), error, p.returncode)
 
         return output
 
@@ -1034,3 +1047,77 @@ class RpkTool:
         ]
 
         return self._execute(cmd)
+
+    def offset_delete(self, group, topic_partitions):
+        # rpk group offset-delete expects the topic-partition input data as a file
+
+        def parse_offset_delete_output(output):
+            regex = re.compile(
+                r"\s*(?P<topic>\S*)\s*(?P<partition>\d*)\s*(?P<status>\w+):?(?P<error>.*)"
+            )
+            matched = [regex.match(x) for x in output]
+            failed_matches = [x for x in matched if x is None]
+            if len(failed_matches) > 0:
+                raise RuntimeError("Failed to parse offset-delete output")
+            return [
+                RpkOffsetDeleteResponsePartition(x['topic'],
+                                                 int(x['partition']),
+                                                 x['status'], x['error'])
+                for x in matched
+            ]
+
+        def parse_offset_delete_output_err(output):
+            if len(output) == 0:
+                raise RuntimeError("Unexpected rpk output")
+            regex = re.compile(r"(\w*):(.*)")
+            matched = regex.match(output[0])
+            if matched is None:
+                raise RuntimeError("Failed to parse offset-delete output")
+            return RpkOffsetDeleteResponsePartition(None, None,
+                                                    matched.group(1),
+                                                    matched.group(2))
+
+        def try_offset_delete(retries=5):
+            retriable_codes = set(['NOT_COORDINATOR'])
+            while retries > 0:
+                try:
+                    output = self._execute(cmd)
+                    return parse_offset_delete_output(output.splitlines())
+                except RpkException as e:
+                    if e.returncode != 1:
+                        raise e
+                    err = parse_offset_delete_output_err(e.stderr.splitlines())
+                    if err.status not in retriable_codes:
+                        return err
+                    retries -= 1
+            raise RpkException("Max number of retries exceeded")
+
+        # First convert partitions from integers to strings
+        as_strings = {
+            k: ",".join([str(x) for x in v])
+            for k, v in topic_partitions.items()
+        }
+
+        # Group each kv pair to string item like '<topic>:p1,p2,p3'
+        request_args = [f"{x}:{y}" for x, y in as_strings.items()]
+
+        # Append each arg with the -t (topic) flag
+        # interleaves a list of -t strings with each argument producing
+        # [-t, arg1, -t arg2, ... , -t argn]
+        request_args_w_flags = list(
+            itertools.chain(
+                *zip(["-t"
+                      for _ in range(0, len(request_args))], request_args)))
+
+        # Execute the rpk group offset-delete command
+        cmd = [
+            self._rpk_binary(),
+            "--brokers",
+            self._redpanda.brokers(),
+            "group",
+            "offset-delete",
+            group,
+        ] + request_args_w_flags
+
+        # Retry if the command exits 1 (in case top level ec was returned)
+        return try_offset_delete(retries=5)

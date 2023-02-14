@@ -99,6 +99,7 @@ members and their lag), and manage offsets.
 		NewDescribeCommand(fs),
 		newListCommand(fs),
 		newSeekCommand(fs),
+		NewOffsetDeleteCommand(fs),
 	)
 
 	return cmd

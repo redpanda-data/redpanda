@@ -10,7 +10,6 @@ import time
 from functools import partial
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
-from rptest.clients.kcl import KCL
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from ducktape.mark import parametrize
 from rptest.services.admin import Admin
@@ -272,7 +271,6 @@ class OffsetDeletionTest(RedpandaTest):
         super(OffsetDeletionTest, self).__init__(test_context=test_context)
 
         self.rpk = RpkTool(self.redpanda)
-        self.kcl = KCL(self.redpanda)
 
     def make_consumer(self, topic, session_timeout_ms=60000):
         return KafkaCliConsumer(
@@ -308,19 +306,14 @@ class OffsetDeletionTest(RedpandaTest):
         # Assert offset-delete errors when request contains missing topic-partitions
         missing_topic = f"{self.topic}-foo"
         missing_topic_partitions = {missing_topic: [0, 1, 2]}
-        output = self.kcl.offset_delete(self.group, missing_topic_partitions)
+        output = self.rpk.offset_delete(self.group, missing_topic_partitions)
         assert len(output) == 3
         assert_status(output, 'UNKNOWN_TOPIC_OR_PARTITION', missing_topic)
 
-        topic_partitions = {self.topic: [0, 1, 2]}
-
         # Assert offset-delete errors when non-existent group is passed in
-        # TODO: Re-add this once rpk support for offset-delete exists
-        # try:
-        #     self.kcl.offset_delete("missing", topic_partitions)
-        #     assert False, "Expected KCL exception"
-        # except KCLException as e:
-        #     assert e.error == 'GROUP_ID_NOT_FOUND', e.error
+        topic_partitions = {self.topic: [0, 1, 2]}
+        output = self.rpk.offset_delete("missing", topic_partitions)
+        assert output.status == 'GROUP_ID_NOT_FOUND', output.status
 
         # Assert offset-delete errors when attempting to delete offsets of topic
         # partitions still assigned to an active group
@@ -331,7 +324,7 @@ class OffsetDeletionTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
-        output = self.kcl.offset_delete(self.group, topic_partitions)
+        output = self.rpk.offset_delete(self.group, topic_partitions)
         assert len(output) == 3
         assert_status(output, 'GROUP_SUBSCRIBED_TO_TOPIC', self.topic)
 
@@ -340,7 +333,7 @@ class OffsetDeletionTest(RedpandaTest):
         consumer.free()
 
         # Assert offset-delete removes offsets of dead groups
-        output = self.kcl.offset_delete(self.group, topic_partitions)
+        output = self.rpk.offset_delete(self.group, topic_partitions)
         assert len(output) == 3
         assert_status(output, 'OK', self.topic)
 
@@ -382,7 +375,7 @@ class OffsetDeletionTest(RedpandaTest):
                    backoff_sec=1)
 
         # Remove the offsets that it had been keeping in redpanda
-        output = self.kcl.offset_delete(self.group, {new_topic: [0, 1, 2, 3]})
+        output = self.rpk.offset_delete(self.group, {new_topic: [0, 1, 2, 3]})
         assert len(output) == 4
         good_responses = [x for x in output if x.partition != 3]
         bad_responses = [x for x in output if x.partition == 3]
