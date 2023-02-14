@@ -7,12 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import time
+import confluent_kafka as ck
 from functools import partial
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from ducktape.mark import parametrize
 from rptest.services.admin import Admin
+from rptest.util import wait_until_result
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -286,6 +288,7 @@ class OffsetDeletionTest(RedpandaTest):
         def do_wait_for_partitions_in_group():
             desc = self.rpk.group_describe(self.group)
             return len(desc.partitions) == n
+
         wait_until(do_wait_for_partitions_in_group,
                    timeout_sec=timeout_sec,
                    backoff_sec=backoff_sec)
@@ -383,3 +386,70 @@ class OffsetDeletionTest(RedpandaTest):
         # Shutdown other consumer
         consumer_a.stop()
         consumer_a.wait()
+
+    @cluster(num_nodes=3)
+    def test_delete_offset_txn_offsets(self):
+        new_topic = "foo"
+        self.rpk.create_topic(new_topic, partitions=3)
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+        })
+        txn_producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+            'transaction.timeout.ms': 10000,
+        })
+        txn_producer.init_transactions()
+
+        def produce_data(topics, num_records):
+            for i in range(0, num_records):
+                for topic in topics:
+                    producer.produce(topic, str(i), str(i))
+            producer.flush()
+
+        def delete_offsets_verify(topic_partitions):
+            response = self.rpk.offset_delete(self.group, topic_partitions)
+            return all([x.status == 'OK' for x in response])
+
+        def publish_commit_offsets():
+            consumer = ck.Consumer({
+                'bootstrap.servers': self.redpanda.brokers(),
+                'group.id': self.group,
+                'auto.offset.reset': 'earliest',
+                'enable.auto.commit': False
+            })
+
+            # Produce some data, using transactional producer
+            produce_data([self.topic, new_topic], 50)
+            txn_producer.begin_transaction()
+            txn_producer.send_offsets_to_transaction(
+                consumer.position(consumer.assignment()),
+                consumer.consumer_group_metadata())
+            txn_producer.commit_transaction()
+
+            # Start new consumer consuming, which starts new group 'self.group'
+            consumer.subscribe([self.topic, new_topic])
+            self.wait_for_partitions_in_group(6)
+            assert len(consumer.consume(100, 3)) == 100
+
+            # Grab consumers assignments, shut it down, group state should be dead
+            assignments = consumer.assignment()
+            group_meta = consumer.consumer_group_metadata()
+            consumer.close()
+            self.wait_for_partitions_in_group(0)
+            return (assignments, group_meta)
+
+        # Test deleting an offset then committing them to a transaction
+        (assignments, group_meta) = publish_commit_offsets()
+        assert delete_offsets_verify({new_topic: [0]})
+        txn_producer.begin_transaction()
+        txn_producer.send_offsets_to_transaction(assignments, group_meta)
+        txn_producer.commit_transaction()
+
+        # Test deleting an offset within begin/commit of a transaction
+        (assignments, group_meta) = publish_commit_offsets()
+        txn_producer.begin_transaction()
+        txn_producer.send_offsets_to_transaction(assignments, group_meta)
+        assert delete_offsets_verify({new_topic: [0]})
+        txn_producer.commit_transaction()
+
