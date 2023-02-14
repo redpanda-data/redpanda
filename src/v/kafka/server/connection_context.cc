@@ -326,6 +326,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
               // protect against shutdown behavior
               return ss::make_ready_future<>();
           }
+          _server.snc_quota_mgr().record_request_intake(size);
 
           auto sres = ss::make_lw_shared(std::move(sres_in));
 
