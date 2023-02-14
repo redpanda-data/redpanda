@@ -282,12 +282,16 @@ class OffsetDeletionTest(RedpandaTest):
             consumer_properties={'session.timeout.ms': session_timeout_ms},
             instance_name=f'cli-consumer-offset-delete-test-{topic}')
 
-    @cluster(num_nodes=5)
-    def test_offset_deletion(self):
-        def wait_for_partitions_in_group(n):
+    def wait_for_partitions_in_group(self, n, timeout_sec=30, backoff_sec=1):
+        def do_wait_for_partitions_in_group():
             desc = self.rpk.group_describe(self.group)
             return len(desc.partitions) == n
+        wait_until(do_wait_for_partitions_in_group,
+                   timeout_sec=timeout_sec,
+                   backoff_sec=backoff_sec)
 
+    @cluster(num_nodes=5)
+    def test_offset_deletion(self):
         def assert_status(output, expected_status, expected_topic):
             for response in output:
                 assert response.topic == expected_topic, f"Expected: {expected_topic} Observed: {response.topic}"
@@ -299,9 +303,7 @@ class OffsetDeletionTest(RedpandaTest):
             self.rpk.produce(self.topic, "k", "v", partition=1)
             self.rpk.produce(self.topic, "k", "v", partition=2)
         self.rpk.consume(self.topic, n=3, group=self.group)
-        wait_until(partial(wait_for_partitions_in_group, 3),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        self.wait_for_partitions_in_group(3)
 
         # Assert offset-delete errors when request contains missing topic-partitions
         missing_topic = f"{self.topic}-foo"
@@ -320,9 +322,7 @@ class OffsetDeletionTest(RedpandaTest):
         consumer = self.make_consumer(self.topic)
         consumer.start()
         consumer.wait_for_messages(1)
-        wait_until(partial(wait_for_partitions_in_group, 3),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        self.wait_for_partitions_in_group(3)
 
         output = self.rpk.offset_delete(self.group, topic_partitions)
         assert len(output) == 3
@@ -356,9 +356,7 @@ class OffsetDeletionTest(RedpandaTest):
         consumer_b.start()
 
         # Wait until both have joined the group
-        wait_until(partial(wait_for_partitions_in_group, 6),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        self.wait_for_partitions_in_group(6)
 
         # Have them both consume some data
         consumer_a.wait_for_messages(1)
@@ -370,9 +368,7 @@ class OffsetDeletionTest(RedpandaTest):
 
         # After consumer_b shuts down wait for the group rebalance to occur
         # and unsubscription of topic/partitions it was assigned to
-        wait_until(partial(wait_for_partitions_in_group, 3),
-                   timeout_sec=30,
-                   backoff_sec=1)
+        self.wait_for_partitions_in_group(3)
 
         # Remove the offsets that it had been keeping in redpanda
         output = self.rpk.offset_delete(self.group, {new_topic: [0, 1, 2, 3]})
