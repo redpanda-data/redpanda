@@ -152,6 +152,7 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
                     .join_node(
                       join_node_request(
                         features::feature_table::get_latest_logical_version(),
+                        features::feature_table::get_earliest_logical_version(),
                         _node_uuid().to_vector(),
                         self),
                       rpc::client_opts(rpc::clock_type::now() + _join_timeout))

@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import time
+import json
 
 from rptest.utils.rpenv import sample_license
 from rptest.services.admin import Admin
@@ -26,11 +27,27 @@ class FeaturesTestBase(RedpandaTest):
         super().__init__(*args, **kwargs)
         self.admin = Admin(self.redpanda)
         self.installer = self.redpanda._installer
+        self.head_latest_logical_version = None
+        self.head_earliest = None
 
     def setUp(self):
         super().setUp()
-        self.head_logical_version = self.admin.get_features(
-        )["cluster_version"]
+        features = self.admin.get_features()
+        self.head_latest_logical_version = features['node_latest_version']
+        self.head_earliest_logical_version = features['node_earliest_version']
+
+        # Sanity check that the cluster is at a clean initial state where
+        # the original == latest == active
+        self.logger.info(
+            f"Initial feature state: {json.dumps(features, indent=2)}")
+        assert (features['node_latest_version'] >= 1)
+        assert (features['node_earliest_version'] >= 1)
+        assert (features['node_latest_version'] ==
+                features['original_cluster_version'])
+        assert (features['node_latest_version'] == features['cluster_version'])
+        assert (features['node_earliest_version'] <=
+                features['node_latest_version'])
+
         self.previous_version = self.installer.highest_from_prior_feature_version(
             RedpandaInstaller.HEAD)
 
@@ -57,8 +74,8 @@ class FeaturesTestBase(RedpandaTest):
         # of `latest_version` in the redpanda source.  Update it when
         # that happens.
         initial_version = features_response["cluster_version"]
-        assert initial_version == self.head_logical_version, \
-            f"Version mismatch: {initial_version} vs {self.head_logical_version}"
+        assert initial_version == self.head_latest_logical_version, \
+            f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
 
         assert self._get_features_map(
             features_response)['central_config']['state'] == 'active'
@@ -139,6 +156,8 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         self.redpanda.set_environment({
             '__REDPANDA_TEST_FEATURES':
             "ON",
+            '__REDPANDA_EARLIEST_LOGICAL_VERSION':
+            f'{feature_alpha_version}',
             '__REDPANDA_LATEST_LOGICAL_VERSION':
             f'{feature_alpha_version}'
         })
@@ -233,7 +252,7 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         version does not increment until all nodes are up to date.
         """
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < self.head_logical_version, \
+        assert initial_version < self.head_latest_logical_version, \
             f"downgraded logical version {initial_version}"
 
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -253,14 +272,14 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         # Node logical versions are transmitted as part of health messages, so we may
         # have to wait for the next health tick (health_monitor_tick_interval=10s) before
         # the controller leader fetches health from the last restarted peer.
-        self._wait_for_version_everywhere(self.head_logical_version)
+        self._wait_for_version_everywhere(self.head_latest_logical_version)
 
         # Check that initial version and current version are properly reflected
         # across all nodes.
         def complete():
             for n in self.redpanda.nodes:
                 features = self.admin.get_features(node=n)
-                if features['cluster_version'] != self.head_logical_version \
+                if features['cluster_version'] != self.head_latest_logical_version \
                         or features['original_cluster_version'] != initial_version:
                     return False
             return True
@@ -278,7 +297,7 @@ class FeaturesMultiNodeUpgradeTest(FeaturesTestBase):
         version does not increment.
         """
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < self.head_logical_version, \
+        assert initial_version < self.head_latest_logical_version, \
             f"downgraded logical version {initial_version}"
 
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
@@ -333,14 +352,14 @@ class FeaturesSingleNodeUpgradeTest(FeaturesTestBase):
         version does not increment until all nodes are up to date.
         """
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version < self.head_logical_version, \
+        assert initial_version < self.head_latest_logical_version, \
             f"downgraded logical version {initial_version}"
 
         # Restart nodes one by one.  Version shouldn't increment until all three are done.
         self.installer.install([self.redpanda.nodes[0]],
                                RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
-        wait_until(lambda: self.head_logical_version == self.admin.
+        wait_until(lambda: self.head_latest_logical_version == self.admin.
                    get_features()['cluster_version'],
                    timeout_sec=5,
                    backoff_sec=1)
@@ -366,12 +385,15 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
     def test_old_node_join(self):
         """
         Verify that when an old-versioned node tries to join a newer-versioned cluster,
-        it is rejected.
+        it is rejected, using real redpanda packages of different versions.
         """
 
         # Pick a node to roleplay an old version of redpanda
         old_node = self.redpanda.nodes[-1]
-        self.installer.install([old_node], (22, 1))
+        old_version = self.installer.highest_from_prior_feature_version(
+            self.installer.HEAD)
+        self.logger.info(f"Selected old version {old_version}")
+        self.installer.install([old_node], old_version)
 
         # Start first three nodes
         self.redpanda.start(self.redpanda.nodes[0:-1])
@@ -381,8 +403,8 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
         self.redpanda.clean_node(old_node, preserve_current_install=True)
 
         initial_version = self.admin.get_features()['cluster_version']
-        assert initial_version == self.head_logical_version, \
-            f"Version mismatch: {initial_version} vs {self.head_logical_version}"
+        assert initial_version == self.head_latest_logical_version, \
+            f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
 
         try:
             self.redpanda.start_node(old_node)
@@ -402,3 +424,77 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
         wait_until(lambda: self.redpanda.registered(old_node),
                    timeout_sec=30,
                    backoff_sec=1)
+
+    def _test_synthetic_versions(self, joiner_earliest_version,
+                                 joiner_latest_version):
+        """
+        Verify that when an bad-versioned node tries to join a cluster,
+        it is rejected.  Do this using the same physical version, but with a synthetic
+        logical version, to check that the rejection is really the result of a logical
+        version check, and not some other incompatibility.
+        """
+
+        # Pick a node to run with a synthetic old version
+        old_node = self.redpanda.nodes[-1]
+        self.logger.info(f"Selected node {old_node.name} to be joiner")
+
+        # Start first three nodes
+        self.redpanda.start(self.redpanda.nodes[0:-1])
+
+        # Explicit clean because it's not included in the default
+        # one during start()
+        self.redpanda.clean_node(old_node, preserve_current_install=True)
+
+        initial_version = self.admin.get_features()['cluster_version']
+        assert initial_version == self.head_latest_logical_version, \
+            f"Version mismatch: {initial_version} vs {self.head_latest_logical_version}"
+
+        try:
+            self.logger.info(
+                f"Starting node {old_node.name} with version {joiner_earliest_version}-{joiner_latest_version}"
+            )
+            # Set the joining node's version to something bad, it should be forbidden
+            # to join the cluster.
+            self.redpanda.set_environment(
+                {"__REDPANDA_LATEST_LOGICAL_VERSION": joiner_latest_version})
+            self.redpanda.set_environment({
+                "__REDPANDA_EARLIEST_LOGICAL_VERSION":
+                joiner_earliest_version
+            })
+            self.redpanda.start_node(old_node)
+        except DucktapeTimeoutError:
+            pass
+        else:
+            raise RuntimeError(
+                f"Node {old_node} joined cluster, but should have been rejected"
+            )
+
+        # Restart it with a sufficiently recent version and join should succeed
+        self.logger.info(
+            f"Starting node {old_node.name} with version {initial_version}")
+        self.redpanda.set_environment(
+            {"__REDPANDA_LATEST_LOGICAL_VERSION": initial_version})
+        self.redpanda.set_environment(
+            {"__REDPANDA_EARLIEST_LOGICAL_VERSION": initial_version})
+        self.redpanda.restart_nodes([old_node])
+
+        # Timeout long enough for join retries & health monitor tick (registered
+        # requires `is_alive`)
+        wait_until(lambda: self.redpanda.registered(old_node),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+    @cluster(num_nodes=4, log_allow_list=OLD_NODE_JOIN_LOG_ALLOW_LIST)
+    def test_synthetic_old_node_join(self):
+        # A node that reports a version range below the current version's earliest logical version
+        # This fails the check that joining node's latest version must be >= the cluster active version
+        self._test_synthetic_versions(self.head_earliest_logical_version - 2,
+                                      self.head_latest_logical_version - 1)
+
+    @cluster(num_nodes=4, log_allow_list=OLD_NODE_JOIN_LOG_ALLOW_LIST)
+    def test_synthetic_too_new_node_join(self):
+        # A node that reports a version range starting above the current active version.
+        # This fails the test that joining nodes must have an earliest version <= the
+        # active version.
+        self._test_synthetic_versions(self.head_latest_logical_version + 1,
+                                      self.head_latest_logical_version + 2)

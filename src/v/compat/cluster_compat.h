@@ -142,20 +142,22 @@ GEN_COMPAT_CHECK(
 GEN_COMPAT_CHECK(
   cluster::join_reply, { json_write(success); }, { json_read(success); });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::join_node_request,
   {
-      json_write(logical_version);
+      json_write(latest_logical_version);
+      json_write(earliest_logical_version);
       json_write(node_uuid);
       json_write(node);
   },
   {
-      json_read(logical_version);
+      json_read(latest_logical_version);
+      json_read(earliest_logical_version);
       json_read(node_uuid);
       json_read(node);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::join_node_reply,
   {
       json_write(success);
