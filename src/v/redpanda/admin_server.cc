@@ -3575,29 +3575,47 @@ admin_server::initiate_topic_scan_and_recovery(
     co_return ss::json::json_return_type{payload};
 }
 
-static void serialize_topic_recovery_status(
-  const cluster::status_response& cluster_status,
-  ss::httpd::shadow_indexing_json::topic_recovery_status& json_resp) {
-    json_resp.state = fmt::format("{}", cluster_status.state);
-    for (const auto& count : cluster_status.download_counts) {
+static ss::httpd::shadow_indexing_json::topic_recovery_status
+map_status_to_json(cluster::single_status status) {
+    ss::httpd::shadow_indexing_json::topic_recovery_status status_json;
+    status_json.state = fmt::format("{}", status.state);
+
+    for (const auto& count : status.download_counts) {
         ss::httpd::shadow_indexing_json::topic_download_counts c;
         c.topic_namespace = fmt::format("{}", count.tp_ns);
         c.pending_downloads = count.pending_downloads;
         c.successful_downloads = count.successful_downloads;
         c.failed_downloads = count.failed_downloads;
-        json_resp.topic_download_counts.push(c);
+        status_json.topic_download_counts.push(c);
     }
 
     ss::httpd::shadow_indexing_json::recovery_request_params r;
-    r.topic_names_pattern = cluster_status.request.topic_names_pattern.value_or(
-      "none");
-    r.retention_bytes = cluster_status.request.retention_bytes.value_or(-1);
-    r.retention_ms = cluster_status.request.retention_ms.value_or(-1ms).count();
-    json_resp.request = r;
+    r.topic_names_pattern = status.request.topic_names_pattern.value_or("none");
+    r.retention_bytes = status.request.retention_bytes.value_or(-1);
+    r.retention_ms = status.request.retention_ms.value_or(-1ms).count();
+    status_json.request = r;
+
+    return status_json;
 }
 
-ss::future<ss::json::json_return_type>
-admin_server::query_automated_recovery(std::unique_ptr<ss::httpd::request>) {
+static ss::json::json_return_type serialize_topic_recovery_status(
+  const cluster::status_response& cluster_status, bool extended) {
+    if (!extended) {
+        return map_status_to_json(cluster_status.status_log.back());
+    }
+
+    std::vector<ss::httpd::shadow_indexing_json::topic_recovery_status>
+      status_log;
+    status_log.reserve(cluster_status.status_log.size());
+    for (const auto& entry : cluster_status.status_log) {
+        status_log.push_back(map_status_to_json(entry));
+    }
+
+    return status_log;
+}
+
+ss::future<ss::json::json_return_type> admin_server::query_automated_recovery(
+  std::unique_ptr<ss::httpd::request> req) {
     ss::httpd::shadow_indexing_json::topic_recovery_status ret;
     ret.state = "inactive";
 
@@ -3612,8 +3630,8 @@ admin_server::query_automated_recovery(std::unique_ptr<ss::httpd::request>) {
         co_return ret;
     }
 
-    serialize_topic_recovery_status(status.value(), ret);
-    co_return ret;
+    co_return serialize_topic_recovery_status(
+      status.value(), get_boolean_query_param(*req, "extended"));
 }
 
 void admin_server::register_shadow_indexing_routes() {

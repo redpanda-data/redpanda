@@ -36,7 +36,12 @@ std::ostream& operator<<(std::ostream& os, const recovery_request_params& req) {
 }
 
 bool status_response::is_active() const {
-    return state != cloud_storage::topic_recovery_service::state::inactive;
+    if (status_log.empty()) {
+        return false;
+    }
+
+    return status_log.back().state
+           != cloud_storage::topic_recovery_service::state::inactive;
 }
 
 } // namespace cluster
