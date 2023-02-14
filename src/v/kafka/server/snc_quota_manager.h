@@ -43,7 +43,7 @@ public:
     snc_quotas_probe& operator=(snc_quotas_probe&&) = delete;
     ~snc_quotas_probe() noexcept = default;
 
-    void balancer_step() { ++_balancer_runs; }
+    void rec_balancer_step() noexcept { ++_balancer_runs; }
 
     void setup_metrics();
 
@@ -89,12 +89,17 @@ public:
       clock::time_point& connection_throttle_until,
       clock::time_point now) const;
 
-    void record_request_tp(
+    /// Record the request size when it has arrived from the transport.
+    /// This should be done before calling \ref get_shard_delays because the
+    /// recorded request size is used to calculate throttling parameters.
+    void record_request_receive(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
-    void record_response_tp(
+    /// Record the response size for all purposes
+    void record_response(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
+    /// Metrics probe object
     const snc_quotas_probe& get_snc_quotas_probe() const noexcept {
         return _probe;
     };

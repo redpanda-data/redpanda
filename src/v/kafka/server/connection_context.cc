@@ -212,7 +212,7 @@ connection_context::record_tp_and_calculate_throttle(
     }
 
     // Throttle on shard wide quotas
-    _server.snc_quota_mgr().record_request_tp(request_size, now);
+    _server.snc_quota_mgr().record_request_receive(request_size, now);
     const snc_quota_manager::delays_t shard_delays
       = _server.snc_quota_mgr().get_shard_delays(_throttled_until, now);
 
@@ -228,14 +228,16 @@ connection_context::record_tp_and_calculate_throttle(
       || delay_request != clock::duration::zero()) {
         vlog(
           klog.trace,
-          "[{}:{}] throttle request:{{shard:{}, client:{}}}, "
-          "enforce:{{shard:{}, client:{}}}",
+          "[{}:{}] throttle request:{{snc:{}, client:{}}}, "
+          "enforce:{{snc:{}, client:{}}}, key:{}, request_size:{}",
           _client_addr,
           client_port(),
           shard_delays.request,
           client_quota_delay.duration,
           shard_delays.enforce,
-          client_quota_delay.enforce_duration());
+          client_quota_delay.enforce_duration(),
+          hdr.key,
+          request_size);
     }
     return delay_t{.request = delay_request, .enforce = delay_enforce};
 }
@@ -511,7 +513,7 @@ ss::future<> connection_context::maybe_process_responses() {
         // throttle_ms has been serialized long ago already. With the current
         // approach, egress token bucket level will always be an extra burst
         // into the negative while under pressure.
-        _server.snc_quota_mgr().record_response_tp(msg.size());
+        _server.snc_quota_mgr().record_response(msg.size());
         try {
             return conn->write(std::move(msg))
               .then([] {

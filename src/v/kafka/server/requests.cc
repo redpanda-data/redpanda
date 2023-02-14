@@ -82,14 +82,16 @@ process_result_stages process_generic(
   const session_resources& sres) {
     vlog(
       klog.trace,
-      "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}",
+      "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}, "
+      "ctx_size: {}",
       ctx.connection()->client_host(),
       ctx.connection()->client_port(),
       handler->name(),
       ctx.header().key,
       ctx.header().version,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")),
-      sres.memlocks.count());
+      sres.memlocks.count(),
+      ctx.reader().bytes_left());
 
     // We do a version check for most API requests, but for api_version
     // requests we skip them. We do not apply them for api_versions,
