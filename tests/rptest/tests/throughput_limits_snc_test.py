@@ -10,13 +10,17 @@
 import math
 import random
 import time
+from collections import Counter
 from enum import Enum
 from typing import Tuple
 
+from ducktape.mark import parametrize
 from ducktape.tests.test import TestContext
 from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import MetricsEndpoint
+from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 
 # This file is about throughput limiting that works at shard/node/cluster (SNC)
@@ -204,3 +208,122 @@ class ThroughputLimitsSncConfiguration(ThroughputLimitsSncBase):
         assert len(errors) == 0, (
             f"Test has failed with {len(errors)} distinct errors. "
             f"{errors}, rnd_seed: {self.rnd_seed}")
+
+
+class ThroughputLimitsSnc(ThroughputLimitsSncBase):
+    """
+    A generic class for tests for throughput limiting that works at
+    shard/node/cluster (SNC) levels
+    """
+    def __init__(self, test_ctx: TestContext, *args, **kwargs):
+        super(ThroughputLimitsSnc, self).__init__(test_ctx, *args, **kwargs)
+        # at least 3 partitions needed overall to have 3 partition leaders
+        # at the same node,
+        self.topics = (TopicSpec(partition_count=3), )
+        self.failed_checks = []
+        self.total_checks = 0
+
+    def check_equal_epsilon(self, measured: int, expected: int, epsilon: float,
+                            what: str):
+        error = (measured - expected) / expected
+        measured = int(measured)
+        if abs(error) > epsilon:
+            self.failed_checks.append(
+                f"{what} ({measured}) is not within ±{epsilon*100}% error "
+                f"of the expected value ({expected}), "
+                f"actual error: {float(f'{error*100:.4g}'):+g}%")
+            self.logger.error(
+                f"(FAIL) {what}: {measured} == {expected} {float(f'{error:.4g}'):+g} < ±{epsilon*100}%"
+            )
+        else:
+            self.logger.info(
+                f"(PASS) {what}: {measured} == {expected} {float(f'{error:.3g}'):+g} < ±{epsilon*100}%"
+            )
+        self.total_checks += 1
+
+    @cluster(num_nodes=4)
+    @parametrize(config_quota_node_max=8 * 1024 * 1024)
+    @parametrize(config_quota_node_max=2 * 1024 * 1024)
+    @parametrize(config_quota_node_max=512 * 1024)
+    def test_node_limits(self, config_quota_node_max):
+        """
+        Apply various backpressure to one node of the cluster.
+        Verify that node throughput limits are applied.
+        """
+
+        # add partitions to the topic until there are 3 partition
+        # leaders on any of the nodes
+        partitions_cnt = len(self.redpanda.partitions(self.topic))
+        while True:
+            while True:
+                parts = self.redpanda.partitions(self.topic)
+                if len(parts) < partitions_cnt:
+                    self.logger.debug(
+                        f"New partition not arrived yet, waiting. "
+                        f"{parts} < {partitions_cnt}")
+                    continue
+                parts_c = Counter([p.leader for p in parts])
+                if parts_c[None] == 0:
+                    break
+                self.logger.debug(f"Waiting for leader of the new partition")
+                time.sleep(0.1)
+
+            parts_c_m = parts_c.most_common(1)
+            most_active_node, most_active_count = parts_c_m[0]
+            self.logger.debug(
+                f"Most active node is {most_active_node.name} "
+                f"with {most_active_count} leaders. All stat: {parts_c}")
+            if most_active_count == 3:
+                break
+            assert most_active_count < 3
+
+            self.rpk.add_topic_partitions(self.topic, 1)
+            partitions_cnt += 1
+
+        self.logger.info(f"Working node: {most_active_node.name}")
+        working_partitions = [p for p in parts if p.leader == most_active_node]
+        self.logger.debug(f"Working partitions: {working_partitions}")
+
+        self.redpanda.set_cluster_config({
+            self.ConfigProp.QUOTA_NODE_MAX_IN.value:
+            config_quota_node_max,
+            self.ConfigProp.BAL_PERIOD_MS.value:
+            100,
+        })
+
+        msg_size = 128 * 1024
+        # do as many messages as needed to run for 10s at the set limit
+        # however at smaller limits, more messages are needed to balance
+        # the quota, therefore a constant component is added too
+        msg_count = 100 + int(10 * config_quota_node_max / msg_size)
+        time_to_run = msg_size * msg_count / config_quota_node_max
+        # only test on one of the partitions yet, multi partition tests TBD
+        partition = working_partitions[0].index
+
+        p = RpkProducer(self.test_context,
+                        self.redpanda,
+                        topic=self.topic,
+                        partition=partition,
+                        msg_size=msg_size,
+                        msg_count=msg_count,
+                        produce_timeout=20)
+
+        self.logger.info(
+            f"Starting: msg_size: {msg_size}, msg_count: {msg_count}, time_to_run: {float(f'{time_to_run:.3g}'):g} s, partition: {partition}"
+        )
+        p.start()
+        self.logger.info(f"Started")
+        start = time.time()
+        p.wait(10 + time_to_run)
+        end = time.time()
+        p.stop()
+        measured_tp = (msg_size * msg_count) / (end - start)
+        self.logger.info(
+            f"Spent: {float(f'{end-start:.3g}'):g} s, test measured TP: {int(measured_tp)}, node limit: {config_quota_node_max}"
+        )
+        self.check_equal_epsilon(measured_tp, config_quota_node_max, 0.1,
+                                 "Throughput measured by the test")
+
+        assert len(
+            self.failed_checks
+        ) == 0, f"{len(self.failed_checks)}/{self.total_checks} checks have failed. {self.failed_checks}"
