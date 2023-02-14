@@ -310,11 +310,19 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
      * receive data.
      */
 
-    // calculate log end in kafka offset domain
-    const auto log_end = model::next_offset(
-      _translator->from_log_offset(_partition->dirty_offset()));
+    // Calculate log end in kafka offset domain
+    std::optional<model::offset> log_end;
+    if (_partition->dirty_offset() >= _partition->start_offset()) {
+        // Translate the raft dirty offset to find the kafka dirty offset.  This
+        // is conditional on dirty offset being ahead of start offset, because
+        // if it isn't, then the log is empty and we do not need to check for
+        // the case of a fetch between hwm and dirty offset.  (Issue #7758)
+        log_end = model::next_offset(
+          _translator->from_log_offset(_partition->dirty_offset()));
+    }
 
-    while (fetch_offset > high_watermark() && fetch_offset <= log_end) {
+    while (log_end.has_value() && fetch_offset > high_watermark()
+           && fetch_offset <= log_end) {
         if (model::timeout_clock::now() > deadline) {
             break;
         }
