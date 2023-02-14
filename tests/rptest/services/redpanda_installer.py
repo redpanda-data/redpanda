@@ -298,6 +298,7 @@ class RedpandaInstaller:
         # releases when requested.
         releases_resp = requests.get(
             "https://api.github.com/repos/redpanda-data/redpanda/releases")
+        releases_resp.raise_for_status()
         try:
             self._released_versions = [
                 int_tuple(VERSION_RE.findall(f["tag_name"])[0])
