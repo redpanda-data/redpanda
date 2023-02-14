@@ -65,6 +65,8 @@ retry_chain_node make_rtc(
       as, cfg.operation_timeout_ms * timeout_multiplier, cfg.backoff_ms};
 }
 
+constexpr int status_log_size{5};
+
 } // namespace
 
 namespace cloud_storage {
@@ -125,7 +127,10 @@ topic_recovery_service::topic_recovery_service(
   , _remote{remote}
   , _topic_state{topic_state}
   , _topics_frontend{topics_frontend}
-  , _topic_recovery_status_frontend{topic_recovery_status_frontend} {}
+  , _topic_recovery_status_frontend{topic_recovery_status_frontend}
+  , _status_log(status_log_size) {
+    push_status();
+}
 
 ss::future<> topic_recovery_service::stop() {
     co_await _gate.close();
@@ -195,6 +200,18 @@ topic_recovery_service::current_recovery_status() const {
       .state = _state,
       .download_counts = _download_counts,
       .request = _recovery_request};
+}
+
+void topic_recovery_service::push_status() {
+    _status_log.push_back(
+      {.state = _state,
+       .download_counts = _download_counts,
+       .request = _recovery_request});
+}
+
+std::vector<topic_recovery_service::recovery_status>
+topic_recovery_service::recovery_status_log() const {
+    return {_status_log.begin(), _status_log.end()};
 }
 
 static ss::future<result<std::vector<remote_segment_path>, recovery_error_ctx>>

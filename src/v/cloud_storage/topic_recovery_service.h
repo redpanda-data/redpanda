@@ -22,6 +22,8 @@
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
 
+#include <boost/circular_buffer.hpp>
+
 namespace cluster {
 class topics_frontend;
 class topic_recovery_status_frontend;
@@ -102,7 +104,13 @@ struct topic_recovery_service
 
     state current_state() const { return _state; }
 
+    /// \brief Returns the current status of recovery, including state, download
+    /// counts and the request used to start recovery, if a recovery is active.
     recovery_status current_recovery_status() const;
+
+    /// \brief Returns the last few statuses of the service. Useful for
+    /// reviewing a history of actions this service has taken in the past.
+    std::vector<recovery_status> recovery_status_log() const;
 
 private:
     /// \brief The recovery process runs on a single shard. The status of the
@@ -157,6 +165,9 @@ private:
 
     ss::future<> reset_topic_configurations();
 
+    /// \brief Stores the current state in recovery status log.
+    void push_status();
+
 private:
     ss::gate _gate;
     ss::abort_source _as;
@@ -187,6 +198,8 @@ private:
     // could be set to some small value during recovery and restored back to
     // original value from manifest once recovery has ended.
     std::optional<std::vector<topic_manifest>> _downloaded_manifests;
+
+    boost::circular_buffer<recovery_status> _status_log;
 };
 
 std::ostream&
