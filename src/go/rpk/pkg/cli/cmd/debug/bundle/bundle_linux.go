@@ -25,6 +25,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -654,7 +655,6 @@ func saveDiskUsage(ctx context.Context, ps *stepParams, conf *config.Config) ste
 	}
 }
 
-// TODO: What if running inside a container/ k8s?
 // Writes the journald redpanda logs, if available, to the bundle.
 func saveLogs(ctx context.Context, ps *stepParams, since, until string, logsLimitBytes int) step {
 	return func() error {
@@ -743,23 +743,159 @@ func saveDmidecode(ctx context.Context, ps *stepParams) step {
 	}
 }
 
+// fileSize is an auxiliary type that contains the path and size of a file.
+type fileSize struct {
+	path string
+	size int64
+}
+
+// walkSizeDir walks the directory tree rooted at the given path and calculates
+// the size of each file in bytes. It also excludes files whose names match
+// the given regular expression 'exclude'.
+//
+// The function returns a slice of fileSize struct, each of which contains the
+// path and size of a file, as well as the total size of the directory in bytes.
+func walkSizeDir(dir string, exclude *regexp.Regexp) (files []fileSize, size int64, err error) {
+	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			if !exclude.MatchString(info.Name()) {
+				size += info.Size()
+				files = append(files, fileSize{
+					path: path,
+					size: info.Size(),
+				})
+			}
+		}
+		return nil
+	})
+	return files, size, err
+}
+
+// sortControllerLogDir takes a slice of fileSize structs that represents the
+// controller logs directory and sorts it by the base_offset and term integers
+// in the filenames. Filenames should follow this format:
+// {base_offset}-{term}-{version}. If multiple files have the same base_offset,
+// then the function will sort them based on their term.
+func sortControllerLogDir(dir []fileSize) {
+	// Will match the controller log filename with the form
+	// {base_offset}-{term}-{version}
+	//   - index 0: the full match.
+	//   - index 1: base_offset.
+	//   - index 2: term.
+	offsetRE := regexp.MustCompile(`^([0-9]{1,16})-([0-9]{1,16})-v[0-9].log$`)
+
+	sort.Slice(dir, func(i, j int) bool {
+		filename1 := filepath.Base(dir[i].path)
+		filename2 := filepath.Base(dir[j].path)
+
+		f1 := offsetRE.FindStringSubmatch(filename1)
+		f2 := offsetRE.FindStringSubmatch(filename2)
+
+		// One of the filenames is corrupted and don't follow the pattern
+		// {base_offset}-{term}-{version}. We want those files to be at the
+		// head.
+		if len(f1) == 0 {
+			if len(f2) == 0 {
+				// If both are corrupted, sort alphabetically.
+				return filename1 < filename2
+			}
+			return true
+		}
+		if len(f2) == 0 {
+			return false
+		}
+
+		// Here, we parse the base_offset. Any errors can be safely ignored
+		// because if it is a controller log, the string will be parsed
+		// correctly, otherwise, the value will be 0 and the slice won't be
+		// sorted.
+		offset1, _ := strconv.Atoi(f1[1])
+		offset2, _ := strconv.Atoi(f2[1])
+
+		// If the base offsets are different, sort by base_offset.
+		if offset1 != offset2 {
+			return offset1 < offset2
+		}
+
+		// If they are the same, we sort based on the term
+		term1, _ := strconv.Atoi(f1[2])
+		term2, _ := strconv.Atoi(f2[2])
+
+		return term1 < term2
+	})
+}
+
+// sliceControllerDir takes a slice of fileSize structs and a byte size limit
+// (logLimitBytes). It returns a slice with the files that fit within the limit,
+// copied from both the head and tail of the input slice.
+func sliceControllerDir(cFiles []fileSize, logLimitBytes int64) (slice []fileSize) {
+	// We start copying the files from the head until we reach the first half of
+	// the limit:
+	var headSize int64
+	half := logLimitBytes / 2
+	for _, cLog := range cFiles {
+		if headSize+cLog.size > half {
+			break
+		}
+		slice = append(slice, cLog)
+		headSize += cLog.size
+	}
+
+	// Now from the tail until we fill the remaining bytes:
+	var tailSize int64
+	// We don't use half since headSize could be < than half.
+	remainingBytes := logLimitBytes - headSize
+	for i, alreadyTaken := len(cFiles)-1, len(slice); i > alreadyTaken; i-- {
+		cLog := cFiles[i]
+
+		if tailSize+cLog.size > remainingBytes {
+			break
+		}
+		slice = append(slice, cLog)
+		tailSize += cLog.size
+	}
+	return slice
+}
+
 func saveControllerLogDir(ps *stepParams, cfg *config.Config, logLimitBytes int) step {
 	return func() error {
 		controllerDir := filepath.Join(cfg.Redpanda.Directory, "redpanda", "controller", "0_0")
 
 		// We don't need the .base_index files to parse out the messages.
 		exclude := regexp.MustCompile(`^*.base_index$`)
-		size, err := osutil.DirSize(controllerDir, exclude)
+		cFiles, size, err := walkSizeDir(controllerDir, exclude)
 		if err != nil {
 			return err
 		}
 
-		if int(size) > logLimitBytes {
-			// TODO: This will be changed to a custom truncation of the logs.
-			return fmt.Errorf("controller logs not stored, size is too big (%v). You can adjust the limit by changing --controller-logs-size-limit flag", units.HumanSize(float64(size)))
+		if int(size) < logLimitBytes {
+			return writeDirToZip(ps, controllerDir, "controller", exclude)
 		}
 
-		return writeDirToZip(ps, controllerDir, "controller", exclude)
+		fmt.Printf("WARNING: controller logs directory size is too big (%v). Saving a slice of the logs; you can adjust the limit by changing --controller-logs-size-limit flag\n", units.HumanSize(float64(size)))
+
+		// If the total size of the logs exceeds the specified limit, we will
+		// reduce the size of the controller log directory. Specifically, we
+		// will keep the first and last 'limit/2' bytes of the log files,
+		// discarding the middle section to bring the total size of the logs
+		// under the limit.
+		sortControllerLogDir(cFiles)
+		slice := sliceControllerDir(cFiles, int64(logLimitBytes))
+
+		for _, cLog := range slice {
+			file, err := os.ReadFile(cLog.path)
+			if err != nil {
+				return err
+			}
+			err = writeFileToZip(ps, filepath.Join("controller", filepath.Base(cLog.path)), file)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
 
