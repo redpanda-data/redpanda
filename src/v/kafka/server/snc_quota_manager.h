@@ -44,6 +44,7 @@ public:
     ~snc_quotas_probe() noexcept = default;
 
     void rec_balancer_step() noexcept { ++_balancer_runs; }
+    void rec_traffic_in(const size_t bytes) noexcept { _traffic_in += bytes; }
 
     void setup_metrics();
 
@@ -53,6 +54,7 @@ private:
     class snc_quota_manager& _qm;
     ss::metrics::metric_groups _metrics;
     uint64_t _balancer_runs = 0;
+    size_t _traffic_in = 0;
 };
 
 /// Isolates \ref quota_manager functionality related to
@@ -95,6 +97,10 @@ public:
     void record_request_receive(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
+    /// Record the request size when the request data is about to be consumed.
+    /// This data is used to represent throttled throughput.
+    void record_request_intake(size_t request_size) noexcept;
+
     /// Record the response size for all purposes
     void record_response(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
@@ -106,9 +112,6 @@ public:
 
     /// Return current effective quota values
     ingress_egress_state<quota_t> get_quota() const noexcept;
-
-    /// Return current measured throughput values
-    ingress_egress_state<quota_t> get_throughput() const noexcept;
 
 private:
     // Returns value based on upstream values, not the _node_quota_default
