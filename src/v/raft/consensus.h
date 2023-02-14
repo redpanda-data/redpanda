@@ -586,6 +586,8 @@ private:
     }
 
     void maybe_upgrade_configuration(group_configuration&);
+
+    void update_confirmed_term();
     // args
     vnode _self;
     raft::group_id _group;

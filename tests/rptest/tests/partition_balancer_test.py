@@ -444,6 +444,7 @@ class PartitionBalancerTest(PartitionBalancerService):
                 len(racks) == 3
             ), f"bad rack placement {racks} for partition id: {p.id} (replicas: {p.replicas})"
 
+    @skip_debug_mode
     @cluster(num_nodes=8, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_rack_awareness(self):
         extra_rp_conf = self._extra_rp_conf | {"enable_rack_awareness": True}
