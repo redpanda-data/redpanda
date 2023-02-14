@@ -13,6 +13,7 @@
 #include "cluster/topic_recovery_status_frontend.h"
 
 #include "cloud_storage/topic_recovery_service.h"
+#include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/topic_recovery_status_rpc_service.h"
 #include "rpc/connection_cache.h"
@@ -47,6 +48,8 @@ topic_recovery_status_frontend::status(model::node_id node) const {
             });
 
     if (!node_result.has_value()) {
+        vlog(
+          clusterlog.warn, "missing response from controller leader: {}", node);
         co_return std::nullopt;
     }
 
