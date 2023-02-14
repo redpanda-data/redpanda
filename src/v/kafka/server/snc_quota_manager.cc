@@ -103,7 +103,7 @@ void snc_quotas_probe::setup_metrics() {
     if (ss::this_shard_id() == quota_balancer_shard) {
         metric_defs.emplace_back(sm::make_counter(
           "balancer_runs",
-          [this] { return _balancer_runs; },
+          _balancer_runs,
           sm::description(
             "Number of times throughput quota balancer has been run")));
     }
@@ -305,12 +305,12 @@ snc_quota_manager::delays_t snc_quota_manager::get_shard_delays(
     return res;
 }
 
-void snc_quota_manager::record_request_tp(
+void snc_quota_manager::record_request_receive(
   const size_t request_size, const clock::time_point now) noexcept {
     _shard_quota.in.use(request_size, now);
 }
 
-void snc_quota_manager::record_response_tp(
+void snc_quota_manager::record_response(
   const size_t request_size, const clock::time_point now) noexcept {
     _shard_quota.eg.use(request_size, now);
 }
@@ -411,7 +411,7 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
     _balancer_gate.check();
     _balancer_timer_last_ran = ss::lowres_clock::now();
     vlog(klog.trace, "qb - Step");
-    _probe.balancer_step();
+    _probe.rec_balancer_step();
 
     // determine the borrowers and whether any balancing is needed now
     const auto borrowers = co_await container().map(

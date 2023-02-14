@@ -1785,7 +1785,7 @@ configuration::configuration()
       "kafka_quota_balancer_node_period_ms",
       "Intra-node throughput quota balancer invocation period, in "
       "milliseconds. Value of 0 disables the balancer and makes all the "
-      "thoughput quotas immutable.",
+      "throughput quotas immutable.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       750ms,
       {.min = 0ms})
