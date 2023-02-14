@@ -60,7 +60,14 @@ members_backend::members_backend(
   , _retry_timeout(config::shard_local_cfg().members_backend_retry_ms())
   , _max_concurrent_reallocations(
       config::shard_local_cfg()
-        .partition_autobalancing_concurrent_moves.bind()) {}
+        .partition_autobalancing_concurrent_moves.bind()) {
+    setup_metrics();
+    ssx::spawn_with_gate(_bg, [this] {
+        return ss::do_until(
+          [this] { return _as.local().abort_requested(); },
+          [this] { return handle_updates(); });
+    });
+}
 
 ss::future<> members_backend::stop() {
     vlog(clusterlog.info, "Stopping Members Backend...");
@@ -82,16 +89,8 @@ void members_backend::setup_metrics() {
           sm::description("Number of queued node operations")),
       });
 }
-void members_backend::start() {
-    setup_metrics();
-    ssx::spawn_with_gate(_bg, [this] {
-        return ss::do_until(
-          [this] { return _as.local().abort_requested(); },
-          [this] { return handle_updates(); });
-    });
 
-    start_reconciliation_loop();
-}
+void members_backend::start() { start_reconciliation_loop(); }
 
 ss::future<> members_backend::handle_updates() {
     /**
