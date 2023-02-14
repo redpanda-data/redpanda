@@ -67,8 +67,13 @@ ss::future<bool> topic_recovery_status_frontend::is_recovery_running(
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_service,
   skip_this_node skip_this_node) const {
     // Check local state first
-    if (!skip_this_node && topic_recovery_service.local().is_active()) {
-        co_return true;
+    if (!skip_this_node) {
+        auto is_service_active = co_await topic_recovery_service.invoke_on(
+          cloud_storage::topic_recovery_service::shard_id,
+          [](auto& svc) { return svc.is_active(); });
+        if (is_service_active) {
+            co_return true;
+        }
     }
 
     // If local recovery is not running, check on the other nodes

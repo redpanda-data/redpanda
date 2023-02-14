@@ -187,11 +187,18 @@ topic_recovery_service::start_recovery(ss::httpd::request req) {
     }
 }
 
-ss::future<> topic_recovery_service::propagate_state(state s) {
-    return container().invoke_on_all([s](auto& svc) {
-        svc._state = s;
-        return ss::make_ready_future<>();
-    });
+void topic_recovery_service::set_state(state s) {
+    _state = s;
+    push_status();
+    if (ss::this_shard_id() != shard_id) {
+        throw std::runtime_error{fmt_with_ctx(
+          fmt::format,
+          "state change to {} on shard {} detected, recovery should only "
+          "run on shard {}",
+          s,
+          ss::this_shard_id(),
+          shard_id)};
+    }
 }
 
 topic_recovery_service::recovery_status
@@ -311,7 +318,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     _recovery_request.emplace(request);
 
-    co_await propagate_state(state::scanning_bucket);
+    set_state(state::scanning_bucket);
     vlog(cst_log.debug, "scanning bucket {}", _config.bucket);
     auto bucket_contents_result = co_await collect_manifest_paths(
       _remote.local(), _as, _config);
@@ -322,7 +329,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
           recovery_error_code::error_listing_items);
         vlog(cst_log.error, "{}", error.context);
         _recovery_request = std::nullopt;
-        co_await propagate_state(state::inactive);
+        set_state(state::inactive);
         co_return error;
     }
 
@@ -334,7 +341,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
     if (manifests.empty()) {
         vlog(cst_log.info, "exiting recovery, no topics to create");
         _recovery_request = std::nullopt;
-        co_await propagate_state(state::inactive);
+        set_state(state::inactive);
         co_return outcome::success();
     }
 
@@ -351,7 +358,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     populate_recovery_status();
 
-    co_await propagate_state(state::creating_topics);
+    set_state(state::creating_topics);
     vlog(cst_log.debug, "creating topics");
 
     result<void, recovery_error_ctx> result = outcome::success();
@@ -370,7 +377,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
             }
         }
 
-        co_await propagate_state(state::recovering_data);
+        set_state(state::recovering_data);
         start_download_bg_tracker();
     } catch (const ss::timed_out_error& err) {
         result = recovery_error_ctx::make(
@@ -380,7 +387,7 @@ topic_recovery_service::start_bg_recovery_task(recovery_request request) {
 
     if (result.has_error()) {
         _recovery_request = std::nullopt;
-        co_await propagate_state(state::inactive);
+        set_state(state::inactive);
     }
     co_return result;
 }
@@ -659,7 +666,7 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
     _recovery_request = std::nullopt;
 
     co_await reset_topic_configurations();
-    co_await propagate_state(state::inactive);
+    set_state(state::inactive);
 }
 
 ss::future<> topic_recovery_service::check_for_downloads() {

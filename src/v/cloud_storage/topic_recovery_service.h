@@ -75,6 +75,8 @@ struct topic_recovery_service
         std::optional<recovery_request> request;
     };
 
+    static constexpr int shard_id = 0;
+
     topic_recovery_service(
       ss::sharded<remote>& remote,
       ss::sharded<cluster::topic_table>& topic_state,
@@ -113,14 +115,7 @@ struct topic_recovery_service
     std::vector<recovery_status> recovery_status_log() const;
 
 private:
-    /// \brief The recovery process runs on a single shard. The status of the
-    /// process is always propagated to all other shards on the node, so that
-    /// admin API requests coming in on any other shard are able to respond with
-    /// the status of the process. This also enables us to reject any incoming
-    /// requests quickly if a recovery is already in process, without making
-    /// calls to the cloud storage API.
-    /// \param state The state to propagate to all shards.
-    ss::future<> propagate_state(state);
+    void set_state(state);
 
     /// \brief Returns a list of manifests for topics to create, filtering
     /// against existing topics in cluster. The manifests are downloaded from

@@ -29,8 +29,9 @@ ss::future<status_response> topic_recovery_status_rpc_handler::get_status(
           .state = cloud_storage::topic_recovery_service::state::inactive};
     }
 
-    auto current_status
-      = _topic_recovery_service.local().current_recovery_status();
+    auto current_status = co_await _topic_recovery_service.invoke_on(
+      cloud_storage::topic_recovery_service::shard_id,
+      [](auto& svc) { return svc.current_recovery_status(); });
 
     std::vector<topic_downloads> downloads;
     downloads.reserve(current_status.download_counts.size());
