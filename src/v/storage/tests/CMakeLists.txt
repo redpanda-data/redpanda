@@ -83,6 +83,7 @@ rp_test(
     snapshot_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
+  ARGS "-- -c 8"
 )
 
 # this test is only run on release builds because non-release builds use the
