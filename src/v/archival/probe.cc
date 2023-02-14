@@ -125,12 +125,10 @@ void ntp_level_probe::setup_public_metrics(const model::ntp& ntp) {
 upload_housekeeping_probe::upload_housekeeping_probe() {
     namespace sm = ss::metrics;
 
-    auto aggregate_labels = config::shard_local_cfg().aggregate_metrics()
-                              ? std::vector<sm::label>{sm::shard_label}
-                              : std::vector<sm::label>{};
+    auto aggregate_labels = std::vector<sm::label>{sm::shard_label};
 
     _service_metrics.add_group(
-      prometheus_sanitize::metrics_name("upload_housekeeping"),
+      prometheus_sanitize::metrics_name("cloud_storage_housekeeping"),
       {
         sm::make_counter(
           "rounds",
@@ -171,7 +169,7 @@ upload_housekeeping_probe::upload_housekeeping_probe() {
       });
 
     _jobs_metrics.add_group(
-      prometheus_sanitize::metrics_name("upload_housekeeping_jobs"),
+      prometheus_sanitize::metrics_name("cloud_storage_jobs"),
       {
         sm::make_gauge(
           "local_segment_reuploads",

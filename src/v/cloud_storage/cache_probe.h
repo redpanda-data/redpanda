@@ -11,6 +11,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "ssx/metrics.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -23,6 +24,7 @@ public:
     void put() { ++_num_puts; }
     void get() { ++_num_gets; }
     void cached_get() { ++_num_cached_gets; }
+    void miss_get() { ++_num_miss_gets; }
 
     void set_size(uint64_t size) { _cur_size_bytes = size; }
     void set_num_files(uint64_t num_files) { _cur_num_files = num_files; }
@@ -33,12 +35,15 @@ private:
     uint64_t _num_puts = 0;
     uint64_t _num_gets = 0;
     uint64_t _num_cached_gets = 0;
+    uint64_t _num_miss_gets = 0;
 
     int64_t _cur_size_bytes = 0;
     int64_t _cur_num_files = 0;
     int64_t _cur_in_progress_files = 0;
 
     ss::metrics::metric_groups _metrics;
+    ss::metrics::metric_groups _public_metrics{
+      ssx::metrics::public_metrics_handle};
 };
 
 } // namespace cloud_storage
