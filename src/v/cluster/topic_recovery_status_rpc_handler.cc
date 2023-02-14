@@ -22,7 +22,7 @@ topic_recovery_status_rpc_handler::topic_recovery_status_rpc_handler(
   : topic_recovery_status_rpc_service{sg, ssg}
   , _topic_recovery_service{service} {}
 
-static status_response map_log_to_response(
+status_response map_log_to_response(
   std::vector<cloud_storage::topic_recovery_service::recovery_status>
     status_log) {
     status_response response;

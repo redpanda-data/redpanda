@@ -36,6 +36,7 @@
 #include "cluster/self_test_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_recovery_status_frontend.h"
+#include "cluster/topic_recovery_status_rpc_handler.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "cluster/types.h"
@@ -3565,7 +3566,10 @@ admin_server::initiate_topic_scan_and_recovery(
           "Topic recovery is not available. is cloud storage enabled?");
     }
 
-    auto result = _topic_recovery_service.local().start_recovery(*req);
+    auto result = co_await _topic_recovery_service.invoke_on(
+      cloud_storage::topic_recovery_service::shard_id,
+      [&req](auto& svc) { return svc.start_recovery(*req); });
+
     if (result.status_code != ss::reply::status_type::accepted) {
         throw ss::httpd::base_exception{result.message, result.status_code};
     }
@@ -3633,14 +3637,22 @@ ss::future<ss::json::json_return_type> admin_server::query_automated_recovery(
           "Unable to get controller leader, cannot get recovery status"};
     }
 
-    auto status = co_await _topic_recovery_status_frontend.local().status(
-      controller_leader.value());
-    if (!status) {
-        co_return ret;
+    auto extended = get_boolean_query_param(*req, "extended");
+    if (controller_leader.value() == config::node().node_id.value()) {
+        auto status_log = co_await _topic_recovery_service.invoke_on(
+          cloud_storage::topic_recovery_service::shard_id,
+          [](auto& svc) { return svc.recovery_status_log(); });
+        co_return serialize_topic_recovery_status(
+          cluster::map_log_to_response(std::move(status_log)), extended);
     }
 
-    co_return serialize_topic_recovery_status(
-      status.value(), get_boolean_query_param(*req, "extended"));
+    if (auto status = co_await _topic_recovery_status_frontend.local().status(
+          controller_leader.value());
+        status.has_value()) {
+        co_return serialize_topic_recovery_status(status.value(), extended);
+    }
+
+    co_return ret;
 }
 
 void admin_server::register_shadow_indexing_routes() {
