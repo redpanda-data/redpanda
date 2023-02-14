@@ -440,11 +440,7 @@ class RedpandaKerberosNode(RedpandaService):
             krb5_conf_path=KRB5_CONF_PATH,
             *args,
             **kwargs):
-        super(RedpandaKerberosNode,
-              self).__init__(context,
-                             enable_kerberos_listener=True,
-                             *args,
-                             **kwargs)
+        super(RedpandaKerberosNode, self).__init__(context, *args, **kwargs)
         self.kdc = kdc
         self.realm = realm
         self.keytab_file = keytab_file
