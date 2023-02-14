@@ -75,7 +75,7 @@ class ThroughputLimitsSnc(RedpandaTest):
             if r == 0:
                 return None
             if r == 1:
-                return 64  # practical minimum
+                return 128  # practical minimum
             return math.floor(2**(self.rnd.random() * 35 + 5))  # up to 1 TB/s
 
         if prop == self.ConfigProp.QUOTA_SHARD_MIN_BPS:
