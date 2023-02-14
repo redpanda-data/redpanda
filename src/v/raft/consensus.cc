@@ -1328,9 +1328,11 @@ ss::future<> consensus::do_start() {
                 _hbeat = clock_type::time_point::min();
                 auto conf = _configuration_manager.get_latest().brokers();
                 if (!conf.empty() && _self.id() == conf.begin()->id()) {
-                    // for single node scenarios arm immediate election,
-                    // use standard election timeout otherwise.
-                    if (conf.size() > 1) {
+                    // Arm immediate election for single node scenarios
+                    // or for the very first start of the preferred leader
+                    // in a multi-node group.  Otherwise use standard election
+                    // timeout.
+                    if (conf.size() > 1 && _term > model::term_id{0}) {
                         next_election += _jit.next_duration();
                     }
                 } else {
