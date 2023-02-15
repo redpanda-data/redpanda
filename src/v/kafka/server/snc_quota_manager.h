@@ -43,7 +43,9 @@ public:
     snc_quotas_probe& operator=(snc_quotas_probe&&) = delete;
     ~snc_quotas_probe() noexcept = default;
 
-    void balancer_step() { ++_balancer_runs; }
+    void rec_balancer_step() noexcept { ++_balancer_runs; }
+    void rec_traffic_in(const size_t bytes) noexcept { _traffic.in += bytes; }
+    void rec_traffic_eg(const size_t bytes) noexcept { _traffic.eg += bytes; }
 
     void setup_metrics();
 
@@ -53,6 +55,7 @@ private:
     class snc_quota_manager& _qm;
     ss::metrics::metric_groups _metrics;
     uint64_t _balancer_runs = 0;
+    ingress_egress_state<size_t> _traffic = {0, 0};
 };
 
 /// Isolates \ref quota_manager functionality related to
@@ -89,21 +92,27 @@ public:
       clock::time_point& connection_throttle_until,
       clock::time_point now) const;
 
-    void record_request_tp(
+    /// Record the request size when it has arrived from the transport.
+    /// This should be done before calling \ref get_shard_delays because the
+    /// recorded request size is used to calculate throttling parameters.
+    void record_request_receive(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
-    void record_response_tp(
+    /// Record the request size when the request data is about to be consumed.
+    /// This data is used to represent throttled throughput.
+    void record_request_intake(size_t request_size) noexcept;
+
+    /// Record the response size for all purposes
+    void record_response(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
 
+    /// Metrics probe object
     const snc_quotas_probe& get_snc_quotas_probe() const noexcept {
         return _probe;
     };
 
     /// Return current effective quota values
     ingress_egress_state<quota_t> get_quota() const noexcept;
-
-    /// Return current measured throughput values
-    ingress_egress_state<quota_t> get_throughput() const noexcept;
 
 private:
     // Returns value based on upstream values, not the _node_quota_default
