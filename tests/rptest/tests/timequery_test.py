@@ -7,7 +7,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import concurrent.futures
 import re
+import time
+import threading
 
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
@@ -34,15 +37,12 @@ from rptest.utils.mode_checks import skip_debug_mode
 
 
 class BaseTimeQuery:
-    def _test_timequery(self, cluster, cloud_storage: bool, batch_cache: bool):
-        local_retain_segments = 4
-        total_segments = 12
-        record_size = 1024
-
+    def _create_and_produce(self, cluster, cloud_storage,
+                            local_retain_segments, base_ts, record_size,
+                            msg_count):
         topic = TopicSpec(name="tqtopic",
                           partition_count=1,
                           replication_factor=3)
-
         self.client().create_topic(topic)
 
         if cloud_storage:
@@ -71,8 +71,6 @@ class BaseTimeQuery:
 
         # Produce a run of messages with CreateTime-style timestamps, each
         # record having a timestamp 1ms greater than the last.
-        msg_count = (self.log_segment_size * total_segments) // record_size
-        base_ts = 1664453149000
         producer = KgoVerifierProducer(
             context=self.test_context,
             redpanda=cluster,
@@ -89,6 +87,24 @@ class BaseTimeQuery:
             fake_timestamp_ms=base_ts)
         producer.start()
         producer.wait()
+
+        # We know timestamps, they are generated linearly from the
+        # base we provided to kgo-verifier
+        timestamps = dict((i, base_ts + i) for i in range(0, msg_count))
+        return topic, timestamps
+
+    def _test_timequery(self, cluster, cloud_storage: bool, batch_cache: bool):
+        local_retain_segments = 4
+        total_segments = 12
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+        topic, timestamps = self._create_and_produce(cluster, cloud_storage,
+                                                     local_retain_segments,
+                                                     base_ts, record_size,
+                                                     msg_count)
+        for k, v in timestamps.items():
+            self.logger.debug(f"  Offset {k} -> Timestamp {v}")
 
         # Confirm messages written
         rpk = RpkTool(cluster)
@@ -107,12 +123,6 @@ class BaseTimeQuery:
         # Identify partition leader for use in our metrics checks
         leader_node = cluster.get_node(
             next(rpk.describe_topic(topic.name)).leader)
-
-        # We know timestamps, they are generated linearly from the
-        # base we provided to kgo-verifier
-        timestamps = dict((i, base_ts + i) for i in range(0, msg_count))
-        for k, v in timestamps.items():
-            self.logger.debug(f"  Offset {k} -> Timestamp {v}")
 
         # Class defining expectations of timequery results to be checked
         class ex:
@@ -209,7 +219,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         # test parameter to set cluster configs before starting.
         pass
 
-    def _do_test_timequery(self, cloud_storage: bool, batch_cache: bool):
+    def set_up_cluster(self, cloud_storage: bool, batch_cache: bool):
         self.redpanda.set_extra_rp_conf({
             # Testing with batch cache disabled is important, because otherwise
             # we won't touch the path in skipping_consumer that applies
@@ -219,6 +229,7 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             # Our time bounds on segment removal depend on the leadership
             # staying in one place.
             'enable_leader_balancer': False,
+            'log_segment_size_min': 32 * 1024,
         })
 
         if cloud_storage:
@@ -236,16 +247,72 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
 
         self.redpanda.start()
 
-        return self._test_timequery(cluster=self.redpanda,
-                                    cloud_storage=cloud_storage,
-                                    batch_cache=batch_cache)
+    def _do_test_timequery(self, cloud_storage: bool, batch_cache: bool):
+        self.set_up_cluster(cloud_storage, batch_cache)
+        self._test_timequery(cluster=self.redpanda,
+                             cloud_storage=cloud_storage,
+                             batch_cache=batch_cache)
 
     @cluster(num_nodes=4)
     @parametrize(cloud_storage=True, batch_cache=False)
     @parametrize(cloud_storage=False, batch_cache=True)
     @parametrize(cloud_storage=False, batch_cache=False)
     def test_timequery(self, cloud_storage: bool, batch_cache: bool):
-        return self._do_test_timequery(cloud_storage, batch_cache)
+        self._do_test_timequery(cloud_storage, batch_cache)
+
+    @cluster(num_nodes=4)
+    def test_timequery_with_local_gc(self):
+        # Reduce the segment size so we generate more segments and are more
+        # likely to race timequeries with GC.
+        self.log_segment_size = int(self.log_segment_size / 32)
+        total_segments = 32 * 12
+        self.set_up_cluster(cloud_storage=True, batch_cache=False)
+        local_retain_segments = 4
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+
+        topic, timestamps = self._create_and_produce(self.redpanda, True,
+                                                     local_retain_segments,
+                                                     base_ts, record_size,
+                                                     msg_count)
+
+        # While waiting for local GC to occur, run several concurrent
+        # timequeries all across the keyspace at once.
+        num_threads = 4
+        num_offsets_per_thread = int(msg_count / num_threads)
+        errors = [0 for _ in range(num_threads)]
+        should_stop = threading.Event()
+
+        def query_slices(tid):
+            kcat = KafkaCat(self.redpanda)
+            while not should_stop.is_set():
+                start_idx = tid * num_offsets_per_thread
+                end_idx = start_idx + num_offsets_per_thread
+                # Step 100 offsets at a time so we only end up with a few dozen
+                # queries per thread at a time.
+                for idx in range(start_idx, end_idx, 100):
+                    expected_offset = idx
+                    ts = timestamps[idx]
+                    offset = kcat.query_offset(topic.name, 0, ts)
+                    if expected_offset != offset:
+                        self.logger.exception(
+                            f"Timestamp {ts} returned {offset} instead of {expected_offset}"
+                        )
+                        errors[tid] += 1
+
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=num_threads) as executor:
+            try:
+                # Evaluate the futures with list().
+                executor.map(query_slices, range(num_threads))
+                wait_for_segments_removal(redpanda=self.redpanda,
+                                          topic=topic.name,
+                                          partition_idx=0,
+                                          count=local_retain_segments)
+            finally:
+                should_stop.set()
+        assert not any([e > 0 for e in errors])
 
 
 class TimeQueryKafkaTest(Test, BaseTimeQuery):
