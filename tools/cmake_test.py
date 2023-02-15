@@ -199,14 +199,17 @@ class TestRunner():
 
         if "rpunit" in binary or "rpfixture" in binary:
             unit_args = [
-                "--unsafe-bypass-fsync 1",
-                f"--default-log-level={log_level}",
+                "--unsafe-bypass-fsync 1", f"--default-log-level={log_level}",
                 "--logger-log-level='io=debug'",
                 "--logger-log-level='exception=debug'"
             ] + COMMON_TEST_ARGS
 
             if self.ci:
                 unit_args.append("--overprovisioned")
+
+            # Unit tests should never need all the node's memory
+            if "rpunit" in binary:
+                args.append("-m1G")
 
             if "--" in args:
                 args = args + unit_args
