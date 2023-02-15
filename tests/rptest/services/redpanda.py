@@ -303,7 +303,7 @@ class SISettings:
             self.cloud_storage_access_key = cloud_storage_access_key
             self.cloud_storage_secret_key = cloud_storage_secret_key
             self.cloud_storage_region = cloud_storage_region
-            self._cloud_storage_bucket = f'panda-bucket-{uuid.uuid1()}'
+            self._cloud_storage_bucket = f'panda-bucket-{uuid.uuid4()}'
 
             self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
@@ -313,7 +313,7 @@ class SISettings:
             self.cloud_storage_azure_shared_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='
             self.cloud_storage_azure_storage_account = 'devstoreaccount1'
 
-            self._cloud_storage_azure_container = f'panda-container-{uuid.uuid1()}'
+            self._cloud_storage_azure_container = f'panda-container-{uuid.uuid4()}'
             self.cloud_storage_api_endpoint = f'{self.cloud_storage_azure_storage_account}.blob.localhost'
             self.cloud_storage_api_endpoint_port = 10000
         else:
