@@ -3,6 +3,7 @@ on:
     types: 
       - ci-repeat-command
       - test-codecov-command
+      - cdt-command
 
 jobs:
   run-build:
