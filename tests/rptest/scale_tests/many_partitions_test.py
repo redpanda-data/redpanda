@@ -1052,7 +1052,7 @@ class ManyPartitionsTest(PreallocNodesTest):
                               cleanup=lambda: self.free_preallocated_nodes(),
                               **repeater_kwargs) as repeater:
             repeater_await_bytes = 1E9
-            if scale.tiered_storage_enabled or not self.dedicated_nodes:
+            if scale.tiered_storage_enabled or not self.redpanda.dedicated_nodes:
                 # Be much more lenient when tiered storage is enabled, since
                 # the repeater incurs reads.
                 repeater_await_bytes = 1E8
