@@ -34,7 +34,25 @@ class AuthPreservingSession(requests.Session):
         return False
 
 
+class Replica:
+    node_id: int
+    core: int
+
+    def __init__(self, replica_dict):
+        self.node_id = replica_dict["node_id"]
+        self.core = replica_dict["core"]
+
+    def __getitem__(self, item_type):
+        if item_type == "node_id":
+            return self.node_id
+        elif item_type == "core":
+            return self.core
+        return None
+
+
 class PartitionDetails:
+    replicas: list[Replica]
+
     def __init__(self):
         self.replicas = []
         self.leader = None
@@ -99,6 +117,15 @@ class Admin:
     def _url(node, path):
         return f"http://{node.account.hostname}:9644/v1/{path}"
 
+    @staticmethod
+    def _equal_assignments(r0, r1):
+        def to_tuple(a):
+            return a["node_id"], a["core"]
+
+        r0 = [to_tuple(a) for a in r0]
+        r1 = [to_tuple(a) for a in r1]
+        return set(r0) == set(r1)
+
     def _get_configuration(self, host, namespace, topic, partition):
         url = f"http://{host}:9644/v1/partitions/{namespace}/{topic}/{partition}"
         self.redpanda.logger.debug(f"Dispatching GET {url}")
@@ -157,12 +184,12 @@ class Admin:
                     f"get status:{meta['status']} while already observed:{status} before"
                 )
                 return None
-            read_replicas = set([r['node_id'] for r in meta["replicas"]])
+            read_replicas = meta["replicas"]
             if replicas is None:
                 replicas = read_replicas
                 self.redpanda.logger.debug(
                     f"get replicas:{read_replicas} from {host}")
-            elif replicas != read_replicas:
+            elif not self._equal_assignments(replicas, read_replicas):
                 self.redpanda.logger.debug(
                     f"get conflicting replicas:{read_replicas} from {host}")
                 return None
@@ -178,7 +205,7 @@ class Admin:
             if last_leader < 0:
                 last_leader = int(meta["leader_id"])
                 self.redpanda.logger.debug(f"get leader:{last_leader}")
-            if last_leader not in replicas:
+            if last_leader not in [n["node_id"] for n in replicas]:
                 self.redpanda.logger.debug(
                     f"leader:{last_leader} isn't in the replica set")
                 return None
@@ -190,7 +217,7 @@ class Admin:
         info = PartitionDetails()
         info.status = status
         info.leader = int(last_leader)
-        info.replicas = replicas
+        info.replicas = [Replica(r) for r in replicas]
         return info
 
     def wait_stable_configuration(

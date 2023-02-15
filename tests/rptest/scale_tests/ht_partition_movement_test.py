@@ -102,13 +102,14 @@ class HighThroughputPartitionMovementTest(PreallocNodesTest,
         self.verify(topic.name)
 
     def _random_move_and_cancel(self, topic, partition):
-        previous_assignment, _ = self._dispatch_random_partition_move(
+        previous_assignment, new_assignment = self._dispatch_random_partition_move(
             topic, partition, allow_no_op=False)
 
         self._request_move_cancel(unclean_abort=False,
                                   topic=topic,
                                   partition=partition,
-                                  previous_assignment=previous_assignment)
+                                  previous_assignment=previous_assignment,
+                                  new_assignment=new_assignment)
 
     @cluster(num_nodes=6)
     @parametrize(replication_factor=1)
