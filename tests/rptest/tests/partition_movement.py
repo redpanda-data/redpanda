@@ -109,7 +109,24 @@ class PartitionMovementMixin():
         def status_done():
             results = []
             for n in self.redpanda._started:
-                info = admin.get_partitions(topic, partition, node=n)
+
+                def get_partition():
+                    try:
+                        partitions = admin.get_partitions(topic,
+                                                          partition,
+                                                          node=n)
+                        return True, partitions
+                    except requests.exceptions.HTTPError as e:
+                        assert e.response.status_code == 404 or e.response.status_code == 504
+                        return False
+
+                info = wait_until_result(
+                    get_partition,
+                    timeout_sec=timeout_sec,
+                    backoff_sec=0.1,
+                    err_msg=
+                    f"Can not get partition for {topic}/{partition} from node:{n}"
+                )
                 self.logger.info(
                     f"current assignments for {topic}-{partition}: {info}")
                 converged = self._equal_assignments(info["replicas"],
