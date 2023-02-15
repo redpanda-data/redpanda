@@ -218,6 +218,11 @@ class TestRunner():
             if "rpunit" in binary and not has_flag("-m", "--memory"):
                 args.append("-m1G")
 
+            if "rpunit" in binary and not has_flag("-c", "--smp"):
+                raise RuntimeError(
+                    f"Test {self.binary} run without -c flag: set it in CMakeLists for the test"
+                )
+
             if "--" in args:
                 args = args + unit_args
             else:
