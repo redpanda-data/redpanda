@@ -197,6 +197,12 @@ class TestRunner():
         # selectively re-run failing tests with more logging if needed.
         log_level = 'trace' if self.ci else 'info'
 
+        def has_flag(flag, *synonyms):
+            """Check if the args list already contains a particularly CLI flag,
+            optionally pass a list of synonyms"""
+            all_flags = [flag] + list(synonyms)
+            return any(any(a.startswith(f) for f in all_flags) for a in args)
+
         if "rpunit" in binary or "rpfixture" in binary:
             unit_args = [
                 "--unsafe-bypass-fsync 1", f"--default-log-level={log_level}",
@@ -207,8 +213,9 @@ class TestRunner():
             if self.ci:
                 unit_args.append("--overprovisioned")
 
-            # Unit tests should never need all the node's memory
-            if "rpunit" in binary:
+            # Unit tests should never need all the node's memory.  Set a fixed
+            # memory size if one was not already provided
+            if "rpunit" in binary and not has_flag("-m", "--memory"):
                 args.append("-m1G")
 
             if "--" in args:
