@@ -196,12 +196,13 @@ node_status_backend::process_reply(result<node_status_reply> reply) {
                == rpc::errc::client_request_timeout) {
             _stats.rpcs_timed_out += 1;
         }
-
-        vlog(
-          clusterlog.debug,
+        static constexpr auto rate_limit = std::chrono::seconds(1);
+        static ss::logger::rate_limit rate(rate_limit);
+        clusterlog.log(
+          ss::log_level::debug,
+          rate,
           "Error occurred while sending node status request: {}",
           err.message());
-
         return err;
     }
 }
