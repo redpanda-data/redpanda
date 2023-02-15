@@ -317,6 +317,12 @@ public:
     }
 
 private:
+    ss::future<std::optional<storage::timequery_result>>
+      cloud_storage_timequery(storage::timequery_config);
+
+    ss::future<std::optional<storage::timequery_result>>
+      local_timequery(storage::timequery_config);
+
     consensus_ptr _raft;
     ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
