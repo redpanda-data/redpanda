@@ -357,11 +357,40 @@ ss::future<> partition::stop() {
 
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
+    const bool is_read_replica
+      = _raft->log_config().is_read_replica_mode_enabled();
+    const bool query_before_raft_log_start = _raft->log().start_timestamp()
+                                             > cfg.time;
+
     std::optional<storage::timequery_result> result;
-    bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
-    if (
-      _cloud_storage_partition && _cloud_storage_partition->is_data_available()
-      && (is_read_replica || _raft->log().start_timestamp() >= cfg.time)) {
+
+    if (is_read_replica || query_before_raft_log_start) {
+        // We have data in the remote partition, and all the data in the raft
+        // log is ahead of the query timestamp or the topic is a read replica,
+        // so proceed to query the remote partition to try and find the earliest
+        // data that has timestamp >= the query time.
+        co_return co_await cloud_storage_timequery(cfg);
+    }
+
+    result = co_await local_timequery(cfg);
+
+    // It's possible that during the query, our local log was GCed, and the
+    // result may not actually reflect the correct offset for this
+    // partition. If the local log doesn't look like it can serve the query
+    // anymore, query the remote log.
+    if (_raft->log().start_timestamp() > cfg.time) {
+        co_return co_await cloud_storage_timequery(cfg);
+    } else {
+        co_return result;
+    }
+}
+
+ss::future<std::optional<storage::timequery_result>>
+partition::cloud_storage_timequery(storage::timequery_config cfg) {
+    const bool may_read_from_cloud
+      = _cloud_storage_partition
+        && _cloud_storage_partition->is_data_available();
+    if (may_read_from_cloud) {
         // We have data in the remote partition, and all the data in the raft
         // log is ahead of the query timestamp or the topic is a read replica,
         // so proceed to query the remote partition to try and find the earliest
@@ -375,15 +404,25 @@ partition::timequery(storage::timequery_config cfg) {
 
         // remote_partition pre-translates offsets for us, so no call into
         // the offset translator here
-        auto cloud_result = co_await _cloud_storage_partition->timequery(cfg);
-        if (cloud_result) {
-            co_return cloud_result;
+        auto result = co_await _cloud_storage_partition->timequery(cfg);
+        if (result) {
+            vlog(
+              clusterlog.debug,
+              "timequery (cloud) {} t={} max_offset(r)={} result(r)={}",
+              _raft->ntp(),
+              cfg.time,
+              cfg.max_offset,
+              result->offset);
         }
 
-        // Fall-through: if cfg.time is ahead of the end of the remote_partition
-        // data, search for it in the local data.
+        co_return result;
     }
 
+    co_return std::nullopt;
+}
+
+ss::future<std::optional<storage::timequery_result>>
+partition::local_timequery(storage::timequery_config cfg) {
     vlog(
       clusterlog.debug,
       "timequery (raft) {} t={} max_offset(k)={}",
@@ -391,10 +430,10 @@ partition::timequery(storage::timequery_config cfg) {
       cfg.time,
       cfg.max_offset);
 
-    // Translate input (kafka) offset into raft offset
     cfg.max_offset = _raft->get_offset_translator_state()->to_log_offset(
       cfg.max_offset);
-    result = co_await _raft->timequery(cfg);
+
+    auto result = co_await _raft->timequery(cfg);
     if (result) {
         vlog(
           clusterlog.debug,
@@ -421,8 +460,8 @@ partition::get_term_last_offset(model::term_id term) const {
     if (!o) {
         return std::nullopt;
     }
-    // Kafka defines leader epoch last offset as a first offset of next leader
-    // epoch
+    // Kafka defines leader epoch last offset as a first offset of next
+    // leader epoch
     return model::next_offset(*o);
 }
 
@@ -432,8 +471,8 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
     if (!o) {
         return std::nullopt;
     }
-    // Kafka defines leader epoch last offset as a first offset of next leader
-    // epoch
+    // Kafka defines leader epoch last offset as a first offset of next
+    // leader epoch
     return model::next_offset(kafka::offset_cast(*o));
 }
 
