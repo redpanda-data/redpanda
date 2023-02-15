@@ -81,12 +81,13 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
     _health_notify_handle = _hm_backend.local().register_node_callback(
       [this](
         node_health_report const& report,
-        std::optional<std::reference_wrapper<const node_health_report>>
-          old_report) {
+        std::optional<std::reference_wrapper<const node_health_report>>) {
+          // If we did not know the node's version or if the report is
+          // higher, submit an update.
+          auto i = _node_versions.find(report.id);
           if (
-            !old_report
-            || report.local_state.logical_version
-                 != old_report.value().get().local_state.logical_version) {
+            i == _node_versions.end()
+            || i->second < report.local_state.logical_version) {
               update_node_version(
                 report.id, report.local_state.logical_version);
           }
@@ -107,6 +108,11 @@ feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
             if (group != _raft0_group) {
                 return;
             }
+
+            // On leadership change, clear our map of node versions: this
+            // ensures that we will populate it with fresh data when we next
+            // see a health report from each node.
+            _node_versions.clear();
 
             vlog(
               clusterlog.debug, "Controller leader notification term {}", term);
@@ -257,7 +263,7 @@ void feature_manager::update_node_version(
       update_node,
       v);
 
-    _updates.push_back({update_node, v});
+    _updates.emplace(update_node, v);
     _update_wait.signal();
 }
 
