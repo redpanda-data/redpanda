@@ -22,6 +22,10 @@
 #include "random/generators.h"
 #include "vassert.h"
 
+#include <seastar/core/shared_ptr.hh>
+
+#include <vector>
+
 namespace cluster {
 
 inline bool contains_node_already(
@@ -38,9 +42,15 @@ inline bool contains_node_already(
 }
 
 std::vector<model::node_id> solve_hard_constraints(
-  const std::vector<allocation_constraints::hard_constraint_ev_ptr>&
-    constraints,
+  const std::vector<model::broker_shard>& current_replicas,
+  const std::vector<allocation_constraints::hard_constraint_ptr>& constraints,
   const allocation_state::underlying_t& nodes) {
+    std::vector<hard_constraint_evaluator> evaluators;
+    evaluators.reserve(constraints.size());
+    for (auto& c : constraints) {
+        evaluators.push_back(c->make_evaluator(current_replicas));
+    }
+
     // empty hard constraints, all nodes are eligible
     std::vector<model::node_id> possible_nodes;
     if (unlikely(constraints.empty())) {
@@ -54,14 +64,13 @@ std::vector<model::node_id> solve_hard_constraints(
           });
         return possible_nodes;
     }
+
     for (auto& p : nodes) {
         auto& node = p.second;
         auto result = std::all_of(
-          constraints.begin(),
-          constraints.end(),
-          [&node](const allocation_constraints::hard_constraint_ev_ptr& ev) {
-              return ev->evaluate(*node);
-          });
+          evaluators.begin(),
+          evaluators.end(),
+          [&node](const hard_constraint_evaluator& ev) { return ev(*node); });
 
         if (result) {
             possible_nodes.push_back(p.first);
@@ -71,12 +80,17 @@ std::vector<model::node_id> solve_hard_constraints(
 }
 
 model::node_id find_best_fit(
-  const std::vector<allocation_constraints::soft_constraint_ev_ptr>&
-    constraints,
+  const std::vector<model::broker_shard>& current_replicas,
+  const std::vector<allocation_constraints::soft_constraint_ptr>& constraints,
   const std::vector<model::node_id>& possible_nodes,
   const allocation_state::underlying_t& nodes) {
     if (possible_nodes.size() == 1) {
         return possible_nodes.front();
+    }
+    std::vector<soft_constraint_evaluator> evaluators;
+    evaluators.reserve(constraints.size());
+    for (auto& c : constraints) {
+        evaluators.push_back(c->make_evaluator(current_replicas));
     }
 
     uint32_t best_score = 0;
@@ -90,24 +104,17 @@ model::node_id find_best_fit(
         /**
          * Score is normalized so that it is always in range [0, max_score_size]
          */
-        uint32_t score
-          = std::accumulate(
-              constraints.begin(),
-              constraints.end(),
-              uint32_t{0},
-              [&node = it->second](
-                uint32_t score,
-                const allocation_constraints::soft_constraint_ev_ptr& ev) {
-                  const auto current_score = ev->score(*node);
-                  vlog(
-                    clusterlog.trace,
-                    "constraint: {}, node: {}, score: {}",
-                    *ev,
-                    node->id(),
-                    current_score);
-                  return score + current_score;
-              })
-            / constraints.size();
+        uint32_t score = std::accumulate(
+                           evaluators.begin(),
+                           evaluators.end(),
+                           uint32_t{0},
+                           [&node = it->second](
+                             uint32_t score,
+                             const soft_constraint_evaluator& ev) {
+                               const auto current_score = ev(*node);
+                               return score + current_score;
+                           })
+                         / constraints.size();
 
         vlog(
           clusterlog.trace, "node: {}, total normalized score: {}", id, score);
@@ -132,6 +139,7 @@ allocation_strategy simple_allocation_strategy() {
     class impl : public allocation_strategy::impl {
     public:
         result<model::broker_shard> allocate_replica(
+          const std::vector<model::broker_shard>& current_replicas,
           const allocation_constraints& request,
           allocation_state& state,
           const partition_allocation_domain domain) final {
@@ -140,7 +148,9 @@ allocation_strategy simple_allocation_strategy() {
              * evaluate hard constraints
              */
             std::vector<model::node_id> possible_nodes = solve_hard_constraints(
-              request.hard_constraints, state.allocation_nodes());
+              current_replicas,
+              request.hard_constraints,
+              state.allocation_nodes());
 
             if (possible_nodes.empty()) {
                 return errc::no_eligible_allocation_nodes;
@@ -150,7 +160,10 @@ allocation_strategy simple_allocation_strategy() {
              * soft constraints
              */
             auto best_fit = find_best_fit(
-              request.soft_constraints, possible_nodes, nodes);
+              current_replicas,
+              request.soft_constraints,
+              possible_nodes,
+              nodes);
 
             auto it = nodes.find(best_fit);
             vassert(

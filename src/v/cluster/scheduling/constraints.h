@@ -24,17 +24,18 @@ class allocation_state;
  * max score for nodes that matches the soft constraint and 0 for
  * the ones that not
  */
-soft_constraint_evaluator make_soft_constraint(hard_constraint_evaluator);
+soft_constraint make_soft_constraint(hard_constraint);
 
-hard_constraint_evaluator not_fully_allocated();
-hard_constraint_evaluator is_active();
+hard_constraint not_fully_allocated();
+hard_constraint is_active();
 
-hard_constraint_evaluator on_node(model::node_id);
+hard_constraint on_node(model::node_id);
 
-hard_constraint_evaluator on_nodes(const std::vector<model::node_id>&);
+hard_constraint on_nodes(const std::vector<model::node_id>&);
 
-hard_constraint_evaluator
-distinct_from(const std::vector<model::broker_shard>&);
+hard_constraint distinct_from(const std::vector<model::broker_shard>&);
+
+hard_constraint distinct_nodes();
 
 /*
  * constraint checks that new partition won't violate max_disk_usage_ratio
@@ -42,7 +43,7 @@ distinct_from(const std::vector<model::broker_shard>&);
  * assigned_reallocation_sizes is sizes of partitions that are going to be
  * allocated on node
  */
-hard_constraint_evaluator disk_not_overflowed_by_partition(
+hard_constraint disk_not_overflowed_by_partition(
   const double max_disk_usage_ratio,
   const size_t partition_size,
   const absl::flat_hash_map<model::node_id, node_disk_space>&
@@ -52,7 +53,7 @@ hard_constraint_evaluator disk_not_overflowed_by_partition(
  * scores nodes based on free overall allocation capacity left
  * returning `0` for fully allocated nodes and `max_capacity` for empty nodes
  */
-soft_constraint_evaluator least_allocated();
+soft_constraint least_allocated();
 
 /*
  * scores nodes based on allocation capacity used by priority partitions
@@ -60,26 +61,22 @@ soft_constraint_evaluator least_allocated();
  * and `max_capacity` for nodes without any priority partitions
  * non-priority partition allocations are ignored
  */
-soft_constraint_evaluator
-  least_allocated_in_domain(partition_allocation_domain);
+soft_constraint least_allocated_in_domain(partition_allocation_domain);
 
 /*
  * constraint scores nodes on free disk space
  * assigned_reallocation_sizes is sizes of partitions that are going to be
  * allocated on node
  */
-soft_constraint_evaluator least_disk_filled(
+soft_constraint least_disk_filled(
   const double max_disk_usage_ratio,
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
-hard_constraint_evaluator
-distinct_rack(const std::vector<model::broker_shard>&, const allocation_state&);
+hard_constraint distinct_rack(const allocation_state&);
 
-inline soft_constraint_evaluator distinct_rack_preferred(
-  const std::vector<model::broker_shard>& replicas,
-  const allocation_state& state) {
-    return make_soft_constraint(distinct_rack(replicas, state));
+inline soft_constraint distinct_rack_preferred(const allocation_state& state) {
+    return make_soft_constraint(distinct_rack(state));
 }
 
 } // namespace cluster
