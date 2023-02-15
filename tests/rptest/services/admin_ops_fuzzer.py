@@ -557,6 +557,9 @@ class AdminOperationsFuzzer():
         return (op, actions[op]())
 
     def stop(self):
+        if self._stopping.is_set():
+            return
+
         self.redpanda.logger.info(
             f"operations history: {json.dumps(self.history)}")
         self._stopping.set()

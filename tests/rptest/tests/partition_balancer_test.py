@@ -47,6 +47,7 @@ STARTUP_SEQUENCE_ABORTED = [
 
 class PartitionBalancerService(EndToEndTest):
     def __init__(self, ctx, *args, **kwargs):
+        self.admin_fuzz = None
         super(PartitionBalancerService, self).__init__(
             ctx,
             *args,
@@ -61,6 +62,12 @@ class PartitionBalancerService(EndToEndTest):
             },
             **kwargs,
         )
+
+    def tearDown(self):
+        if self.admin_fuzz is not None:
+            self.admin_fuzz.stop()
+
+        return super().tearDown()
 
     def topic_partitions_replicas(self, topic):
         rpk = RpkTool(self.redpanda)
@@ -561,10 +568,10 @@ class PartitionBalancerTest(PartitionBalancerService):
         self.start_consumer(1)
         self.await_startup()
 
-        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
-                                           min_replication=3,
-                                           retries=0)
-        admin_fuzz.start()
+        self.admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                                min_replication=3,
+                                                retries=0)
+        self.admin_fuzz.start()
 
         def describe_topics(retries=5, retries_interval=5):
             if retries == 0:
@@ -595,16 +602,16 @@ class PartitionBalancerTest(PartitionBalancerService):
             for n in range(7):
                 node = self.redpanda.nodes[n % len(self.redpanda.nodes)]
                 try:
-                    admin_fuzz.pause()
+                    self.admin_fuzz.pause()
                     ns.make_unavailable(node, wait_for_previous_node=True)
                     self.wait_until_ready(expected_unavailable_node=node)
                     node2partition_count = get_node2partition_count()
                     assert self.redpanda.idx(node) not in node2partition_count
                 finally:
-                    admin_fuzz.unpause()
-                admin_fuzz.ensure_progress()
+                    self.admin_fuzz.unpause()
+                self.admin_fuzz.ensure_progress()
 
-            admin_fuzz.stop()
+            self.admin_fuzz.stop()
 
             ns.make_available()
             self.run_validation(consumer_timeout_sec=CONSUMER_TIMEOUT)
