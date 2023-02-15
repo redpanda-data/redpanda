@@ -1306,6 +1306,14 @@ configuration::configuration()
       "cloud_storage_segment_size_target/2",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       std::nullopt)
+  , cloud_storage_graceful_transfer_timeout_ms(
+      *this,
+      "cloud_storage_graceful_transfer_timeout",
+      "Time limit on waiting for uploads to complete before a leadership "
+      "transfer.  If this is null, leadership transfers will proceed without "
+      "waiting.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      5s)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
