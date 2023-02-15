@@ -11,4 +11,5 @@ rp_test(
   SOURCES zstd_tests.cc
   LIBRARIES v::seastar_testing_main v::compression v::rprandom
   LABELS compression
+  ARGS "-- -c 1"
   )
