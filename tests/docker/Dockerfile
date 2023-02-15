@@ -32,10 +32,7 @@ RUN /opt/ducktape-deps.sh install_kafka_streams_examples
 # Install our in-tree Java test clientst
 RUN mkdir -p /opt/redpanda-tests
 COPY --chown=0:0 tests/java /opt/redpanda-tests/java
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+RUN /opt/ducktape-deps.sh install_java_test_clients
 
 # - install distro-packaged depedencies
 # - allow user env variables in ssh sessions
@@ -75,7 +72,7 @@ RUN /opt/ducktape-deps.sh install_sarama_examples
 
 # Install our in-tree go tests
 COPY --chown=0:0 tests/go /opt/redpanda-tests/go
-RUN cd /opt/redpanda-tests/go/sarama/produce_test && go mod tidy && go build
+RUN /opt/ducktape-deps.sh install_go_test_clients
 
 # Install franz-go
 RUN /opt/ducktape-deps.sh install_franz_bench
