@@ -26,6 +26,7 @@ public:
          * constraints in the specified domain
          */
         virtual result<model::broker_shard> allocate_replica(
+          const replicas_t&,
           const allocation_constraints&,
           allocation_state&,
           partition_allocation_domain)
@@ -38,10 +39,11 @@ public:
       : _impl(std::move(impl)) {}
 
     result<model::broker_shard> allocate_replica(
+      const replicas_t& current_replicas,
       const allocation_constraints& ac,
       allocation_state& state,
       const partition_allocation_domain domain) {
-        return _impl->allocate_replica(ac, state, domain);
+        return _impl->allocate_replica(current_replicas, ac, state, domain);
     }
 
 private:

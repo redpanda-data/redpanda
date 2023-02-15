@@ -51,20 +51,29 @@ partition_allocator::partition_allocator(
   , _partitions_reserve_shard0(partitions_reserve_shard0)
   , _enable_rack_awareness(enable_rack_awareness) {}
 
-allocation_constraints
-default_constraints(const partition_allocation_domain domain) {
+allocation_constraints partition_allocator::default_constraints(
+  const partition_allocation_domain domain) {
     allocation_constraints req;
+
     req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(not_fully_allocated()));
+      ss::make_lw_shared<hard_constraint>(distinct_nodes()));
+
     req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(is_active()));
+      ss::make_lw_shared<hard_constraint>(not_fully_allocated()));
+
+    req.hard_constraints.push_back(
+      ss::make_lw_shared<hard_constraint>(is_active()));
+
     if (domain == partition_allocation_domains::common) {
         req.soft_constraints.push_back(
-          ss::make_lw_shared<soft_constraint_evaluator>(least_allocated()));
+          ss::make_lw_shared<soft_constraint>(least_allocated()));
     } else {
-        req.soft_constraints.push_back(
-          ss::make_lw_shared<soft_constraint_evaluator>(
-            least_allocated_in_domain(domain)));
+        req.soft_constraints.push_back(ss::make_lw_shared<soft_constraint>(
+          least_allocated_in_domain(domain)));
+    }
+    if (_enable_rack_awareness()) {
+        req.soft_constraints.push_back(ss::make_lw_shared<soft_constraint>(
+          distinct_rack_preferred(*_state)));
     }
     return req;
 }
@@ -78,42 +87,32 @@ partition_allocator::allocate_partition(
       clusterlog.trace,
       "allocating partition with constraints: {}",
       p_constraints);
+    uint16_t replicas_to_allocate = p_constraints.replication_factor
+                                    - not_changed_replicas.size();
     if (
-      p_constraints.replication_factor <= 0
-      || _state->available_nodes() < p_constraints.replication_factor) {
+      replicas_to_allocate <= 0
+      || _state->available_nodes() < replicas_to_allocate) {
         return errc::topic_invalid_replication_factor;
     }
 
     intermediate_allocation<model::broker_shard> replicas(
-      *_state, p_constraints.replication_factor, domain);
+      *_state, replicas_to_allocate, domain);
 
-    for (auto r = 0; r < p_constraints.replication_factor; ++r) {
+    std::vector<model::broker_shard> all_replicas = not_changed_replicas;
+
+    for (auto r = 0; r < replicas_to_allocate; ++r) {
         auto effective_constraints = default_constraints(domain);
-        effective_constraints.hard_constraints.push_back(
-          ss::make_lw_shared<hard_constraint_evaluator>(
-            distinct_from(replicas.get())));
-
-        std::vector<model::broker_shard> current_replicas;
-        // rack-placement contraint
-        if (_enable_rack_awareness()) {
-            current_replicas = replicas.get();
-            current_replicas.insert(
-              current_replicas.end(),
-              not_changed_replicas.begin(),
-              not_changed_replicas.end());
-            effective_constraints.soft_constraints.push_back(
-              ss::make_lw_shared<soft_constraint_evaluator>(
-                distinct_rack_preferred(current_replicas, *_state)));
-        }
-
         effective_constraints.add(p_constraints.constraints);
+
         auto replica = _allocation_strategy.allocate_replica(
-          effective_constraints, *_state, domain);
+          all_replicas, effective_constraints, *_state, domain);
 
         if (!replica) {
             return replica.error();
         }
+        // update intermediate allocation and all_replicas vector
         replicas.push_back(replica.value());
+        all_replicas.push_back(replica.value());
     }
 
     return std::move(replicas).finish();
@@ -316,10 +315,7 @@ partition_allocator::do_reallocate_partition(
     if (p_constraints.replication_factor == not_changed_replicas.size()) {
         return not_changed_replicas;
     }
-    p_constraints.constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(
-        distinct_from(not_changed_replicas)));
-    p_constraints.replication_factor -= not_changed_replicas.size();
+
     auto result = allocate_partition(
       std::move(p_constraints), domain, not_changed_replicas);
     if (!result) {
@@ -371,8 +367,7 @@ result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
 
     auto req = default_constraints(domain);
     req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(
-        distinct_from(current_replicas)));
+      ss::make_lw_shared<hard_constraint>(distinct_from(current_replicas)));
 
     auto replicas = do_reallocate_partition(
       partition_constraints(current_assignment.id, replication_factor),

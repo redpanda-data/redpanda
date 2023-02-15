@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/cluster_utils.h"
+#include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/tests/partition_allocator_fixture.h"
 #include "model/metadata.h"
@@ -431,48 +432,53 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
       cluster::allocation_node::allocation_capacity(0));
 }
 
-cluster::hard_constraint_evaluator make_throwning_hard_evaluator() {
-    struct impl : cluster::hard_constraint_evaluator::impl {
-        bool evaluate(const cluster::allocation_node&) const final {
-            throw std::runtime_error("evaluation exception");
+cluster::hard_constraint make_throwing_hard_evaluator() {
+    struct impl : cluster::hard_constraint::impl {
+        cluster::hard_constraint_evaluator
+        make_evaluator(const cluster::replicas_t&) const final {
+            return [](const cluster::allocation_node&) -> bool {
+                throw std::runtime_error("evaluation exception");
+            };
         }
         ss::sstring name() const final {
             return "exception throwing hard constraint evaluator";
         }
     };
 
-    return cluster::hard_constraint_evaluator(std::make_unique<impl>());
+    return cluster::hard_constraint(std::make_unique<impl>());
 }
 
-cluster::hard_constraint_evaluator make_false_evaluator() {
-    struct impl : cluster::hard_constraint_evaluator::impl {
-        bool evaluate(const cluster::allocation_node&) const final {
-            return false;
+cluster::hard_constraint make_false_evaluator() {
+    struct impl : cluster::hard_constraint::impl {
+        cluster::hard_constraint_evaluator
+        make_evaluator(const cluster::replicas_t&) const final {
+            return [](const cluster::allocation_node&) { return true; };
         }
         ss::sstring name() const final {
             return "false returning constraint evaluator";
         }
     };
 
-    return cluster::hard_constraint_evaluator(std::make_unique<impl>());
+    return cluster::hard_constraint(std::make_unique<impl>());
 }
 
-cluster::hard_constraint_evaluator make_nop_evaluator() {
-    struct impl : cluster::hard_constraint_evaluator::impl {
-        bool evaluate(const cluster::allocation_node&) const final {
-            return true;
+cluster::hard_constraint make_nop_evaluator() {
+    struct impl : cluster::hard_constraint::impl {
+        cluster::hard_constraint_evaluator
+        make_evaluator(const cluster::replicas_t&) const final {
+            return [](const cluster::allocation_node&) { return true; };
         }
         ss::sstring name() const final { return "NOP evaluator"; }
     };
 
-    return cluster::hard_constraint_evaluator(std::make_unique<impl>());
+    return cluster::hard_constraint(std::make_unique<impl>());
 }
 
-cluster::hard_constraint_evaluator random_evaluator() {
+cluster::hard_constraint random_evaluator() {
     auto gen_id = random_generators::get_int(0, 2);
     switch (gen_id) {
     case 0:
-        return make_throwning_hard_evaluator();
+        return make_throwing_hard_evaluator();
     case 1:
         return make_false_evaluator();
     default:
@@ -489,8 +495,7 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
     for (int i = 0; i < 500; ++i) {
         auto req = make_allocation_request(1, 1);
         req.partitions[0].constraints.hard_constraints.push_back(
-          ss::make_lw_shared<cluster::hard_constraint_evaluator>(
-            random_evaluator()));
+          ss::make_lw_shared<cluster::hard_constraint>(random_evaluator()));
         try {
             auto res = allocator.allocate(std::move(req));
             if (res) {
