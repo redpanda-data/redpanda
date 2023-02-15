@@ -20,8 +20,8 @@ import (
 func getValidConfig() *Config {
 	conf := DevDefault()
 	conf.Redpanda.SeedServers = []SeedServer{
-		{SocketAddress{"127.0.0.1", 33145}},
-		{SocketAddress{"127.0.0.1", 33146}},
+		{Host: SocketAddress{"127.0.0.1", 33145}},
+		{Host: SocketAddress{"127.0.0.1", 33146}},
 	}
 	conf.Redpanda.DeveloperMode = false
 	conf.Rpk = RpkConfig{

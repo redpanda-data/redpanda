@@ -294,6 +294,19 @@ func (c *Config) isSameLoaded() bool {
 		return false
 	}
 
+	// If we have a file with an older version of the SeedServer, we should
+	// write the file to disk even if the contents are the same. This is
+	// necessary because Redpanda no longer parses older SeedServer versions.
+	//
+	// For more information, see github.com/redpanda-data/redpanda/issues/8915.
+	if init != nil {
+		for _, s := range init.Redpanda.SeedServers {
+			if s.untabbed {
+				return false
+			}
+		}
+	}
+
 	return reflect.DeepEqual(init, final)
 }
 

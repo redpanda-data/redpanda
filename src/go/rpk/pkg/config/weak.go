@@ -573,6 +573,8 @@ func (ss *SeedServer) UnmarshalYAML(n *yaml.Node) error {
 			return errors.New("redpanda.yaml redpanda.seed_server: nested host differs from address and port fields; only one must be set")
 		}
 
+		ss.untabbed = true // This means that we are unmarshalling an older version.
+
 		ss.Host = embedded
 		if embeddedZero {
 			ss.Host = nested

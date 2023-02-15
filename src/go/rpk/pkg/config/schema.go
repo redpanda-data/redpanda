@@ -107,6 +107,14 @@ type KafkaClient struct {
 
 type SeedServer struct {
 	Host SocketAddress `yaml:"host,omitempty" json:"host"`
+
+	// The SeedServer in older versions of redpanda was untabbed, but we support
+	// these older versions using a custom unmarshaller. We track whether the
+	// SeedServer field has been modified from the older version using this
+	// unexported field.
+	//
+	// See see github.com/redpanda-data/redpanda/issues/8915.
+	untabbed bool
 }
 
 type SocketAddress struct {
