@@ -130,6 +130,8 @@ class RandomNodeOperationsTest(EndToEndTest):
         # Validate that the controller log written during the test is readable by offline log viewer
         log_viewer = OfflineLogViewer(self.redpanda)
         for node in self.redpanda.started_nodes():
+            # stop node before reading controller log to make sure it is stable
+            self.redpanda.stop_node(node)
             controller_records = log_viewer.read_controller(node=node)
             self.logger.info(
                 f"Read {len(controller_records)} controller records from node {node.name} successfully"
