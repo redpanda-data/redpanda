@@ -168,4 +168,15 @@ function install_arroyo() {
   python3 -m pip install --force --no-cache-dir -e /opt/arroyo
 }
 
+function install_java_test_clients() {
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/verifiers --define buildDir=/opt/verifiers
+}
+
+function install_go_test_clients() {
+  cd /opt/redpanda-tests/go/sarama/produce_test
+  go mod tidy
+  go build
+}
+
 $@

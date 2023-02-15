@@ -36,7 +36,8 @@ RUN /opt/ducktape-deps.sh install_omb
 # Install Kafka Java test clients / workloads
 RUN mkdir -p /opt/redpanda-tests/java
 COPY --chown=0:0 tests/java/e2e-verifiers /opt/redpanda-tests/java/e2e-verifiers
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+COPY --chown=0:0 tests/java/verifiers /opt/redpanda-tests/java/verifiers
+RUN /opt/ducktape-deps.sh install_java_test_clients
 
 # - install distro-packaged depedencies
 # - allow user env variables in ssh sessions
@@ -72,7 +73,7 @@ RUN /opt/ducktape-deps.sh install_sarama_examples
 
 # Install our in-tree go tests
 COPY --chown=0:0 tests/go /opt/redpanda-tests/go
-RUN cd /opt/redpanda-tests/go/sarama/produce_test && go mod tidy && go build
+RUN /opt/ducktape-deps.sh install_go_test_clients
 
 # Install franz-go
 RUN /opt/ducktape-deps.sh install_franz_bench
@@ -111,10 +112,6 @@ COPY --chown=0:0 tools/offline_log_viewer /opt/scripts/offline_log_viewer
 RUN mkdir -p /opt/scripts/consumer_offsets_recovery
 COPY --chown=0:0 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
 RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
-
-# Install our in-tree Java test clients / workloads
-COPY --chown=0:0 tests/java/verifiers /opt/redpanda-tests/java/verifiers
-RUN mvn clean package --batch-mode --file /opt/redpanda-tests/java/verifiers --define buildDir=/opt/verifiers
 
 # Install remote_scripts
 RUN mkdir -p /opt/remote
