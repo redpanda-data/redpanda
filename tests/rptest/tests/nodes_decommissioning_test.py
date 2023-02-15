@@ -113,8 +113,10 @@ class NodesDecommissioningTest(EndToEndTest):
 
     def _set_recovery_rate(self, rate):
         # use admin API to leverage the retry policy when controller returns 503
-        patch_result = Admin(self.redpanda).patch_cluster_config(
-            upsert={"raft_learner_recovery_rate": rate})
+        patch_result = Admin(self.redpanda,
+                             retry_codes=[503, 504],
+                             retries_amount=10).patch_cluster_config(
+                                 upsert={"raft_learner_recovery_rate": rate})
         self.logger.debug(
             f"setting recovery rate to {rate} result: {patch_result}")
 
