@@ -19,7 +19,7 @@ class ArroyoTest(PreallocNodesTest):
 
     The test suite lives here under tests/ in https://github.com/getsentry/arroyo.
     """
-    TEST_SUITE_PATH = "/root/external_test_suites/arroyo"
+    TEST_SUITE_PATH = "/opt/arroyo"
 
     def __init__(self, ctx, *args, **kwargs):
         super().__init__(
@@ -34,7 +34,6 @@ class ArroyoTest(PreallocNodesTest):
             },
             **kwargs)
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6826
     @cluster(num_nodes=4)
     def test_arroyo_test_suite(self):
         test_node = self.preallocated_nodes[0]

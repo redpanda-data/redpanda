@@ -161,4 +161,11 @@ function install_kafka_streams_examples() {
   mvn -DskipTests=true clean package
 }
 
+function install_arroyo() {
+  git -C /opt clone -b 2.5.0 --depth=1 https://github.com/getsentry/arroyo.git
+  cd /opt/arroyo
+  make install
+  python3 -m pip install --force --no-cache-dir -e /opt/arroyo
+}
+
 $@

@@ -101,11 +101,7 @@ RUN apt update && \
       file && \
     rm -rf /var/lib/apt/lists/*
 
-# Clone and install the arroyo client library in order to run its test suite.
-RUN mkdir /root/external_test_suites && \
-    git -C /root/external_test_suites clone -b 1.0.0 --depth=1 https://github.com/getsentry/arroyo.git && \
-    cd /root/external_test_suites/arroyo && \
-    python3 -m pip install --force --no-cache-dir -e /root/external_test_suites/arroyo
+RUN /opt/ducktape-deps.sh install_arroyo
 
 RUN /opt/ducktape-deps.sh install_addr2line
 
