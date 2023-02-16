@@ -268,8 +268,6 @@ private:
 
     // Topics
     ss::future<> bootstrap_controller_backend();
-    ss::future<>
-    clear_orphan_topic_files(model::revision_id bootstrap_revision);
     void start_topics_reconciliation_loop();
 
     ss::future<> fetch_deltas();
