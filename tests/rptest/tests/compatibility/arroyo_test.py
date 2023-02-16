@@ -22,7 +22,7 @@ class ArroyoTest(PreallocNodesTest):
 
     The test suite lives here under tests/ in https://github.com/getsentry/arroyo.
     """
-    TEST_SUITE_PATH = "/root/external_test_suites/arroyo"
+    TEST_SUITE_PATH = "/opt/arroyo"
 
     def __init__(self, ctx, *args, **kwargs):
         super().__init__(test_context=ctx,
