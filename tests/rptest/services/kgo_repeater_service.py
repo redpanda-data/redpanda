@@ -44,7 +44,11 @@ class KgoRepeaterService(Service):
                  mb_per_worker: Optional[int] = None,
                  use_transactions: bool = False,
                  transaction_abort_rate: Optional[float] = None,
+                 rate_limit_bps: Optional[int] = None,
                  msgs_per_transaction: Optional[int] = None):
+        """
+        :param rate_limit_bps: Total rate for all nodes: each node will get an equal share.
+        """
         if num_nodes is None and nodes is None:
             # Default: run a single node
             num_nodes = 1
@@ -60,6 +64,9 @@ class KgoRepeaterService(Service):
         self.msg_size = msg_size
         self.workers = workers
         self.group_name = group_name
+
+        self.rate_limit_bps_per_node = rate_limit_bps // len(
+            self.nodes) if rate_limit_bps else None
 
         # Note: using a port that happens to already be in test environment
         # firewall rules from other use cases.  If changing this, update
@@ -104,6 +111,9 @@ class KgoRepeaterService(Service):
 
         if self.max_buffered_records is not None:
             cmd += f" -max-buffered-records={self.max_buffered_records}"
+
+        if self.rate_limit_bps_per_node is not None:
+            cmd += f" -rate-limit-bps={self.rate_limit_bps_per_node}"
 
         if self.use_transactions:
             cmd += f" -use-transactions"
