@@ -90,6 +90,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/memory.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/seastar.hh>
@@ -100,6 +101,7 @@
 #include <seastar/net/tls.hh>
 #include <seastar/util/conversions.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/log.hh>
 
 #include <sys/resource.h>
 #include <sys/utsname.h>
@@ -378,6 +380,25 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_cfg,
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
+    // Set up the abort_on_oom value based on the associated cluster config
+    // property, and watch for changes.
+    _abort_on_oom
+      = config::shard_local_cfg().memory_abort_on_alloc_failure.bind();
+
+    auto oom_config_watch = [this]() {
+        const bool value = (*_abort_on_oom)();
+        vlog(
+          _log.info,
+          "Setting abort_on_allocation_failure (abort on OOM): {}",
+          value);
+        ss::memory::set_abort_on_allocation_failure(value);
+    };
+
+    // execute the callback to apply the initial value
+    oom_config_watch();
+
+    _abort_on_oom->watch(oom_config_watch);
+
     /*
      * allocate per-core zstd decompression workspace and per-core
      * async_stream_zstd workspaces. it can be several megabytes in size, so do

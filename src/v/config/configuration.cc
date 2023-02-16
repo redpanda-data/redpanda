@@ -1619,6 +1619,14 @@ configuration::configuration()
       "the data directory. Redpanda will refuse to start if it is not found.",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       false)
+  , memory_abort_on_alloc_failure(
+      *this,
+      "memory_abort_on_alloc_failure",
+      "If true, the redpanda process will terminate immediately when an "
+      "allocation cannot be satisfied due to memory exhasution. If false, an "
+      "exception is thrown instead.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      true)
   , enable_metrics_reporter(
       *this,
       "enable_metrics_reporter",
