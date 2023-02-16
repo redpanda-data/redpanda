@@ -96,6 +96,7 @@ public:
         storage = 2,
         controller = 3,
         offset_translator = 4,
+        usage = 5,
         /* your sub-system here */
     };
 
