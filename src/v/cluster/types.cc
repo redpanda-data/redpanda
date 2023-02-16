@@ -1003,6 +1003,8 @@ std::ostream& operator<<(std::ostream& o, const node_update_type& tp) {
         return o << "reallocation_finished";
     case node_update_type::removed:
         return o << "removed";
+    case node_update_type::interrupted:
+        return o << "interrupted";
     }
     return o << "unknown";
 }

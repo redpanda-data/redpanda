@@ -3153,6 +3153,9 @@ enum class node_update_type : int8_t {
 
     // node has been removed from the cluster
     removed,
+
+    // previous updates must be interrupted
+    interrupted,
 };
 
 std::ostream& operator<<(std::ostream&, const node_update_type&);
