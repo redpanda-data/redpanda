@@ -102,6 +102,19 @@ void server::start() {
     }
 }
 
+bool is_gate_closed_exception(std::exception_ptr e) {
+    try {
+        if (e) {
+            rethrow_exception(e);
+        }
+    } catch (ss::gate_closed_exception&) {
+        return true;
+    } catch (...) {
+        return false;
+    }
+    __builtin_unreachable();
+}
+
 void server::print_exceptional_future(
   ss::future<> f, const char* ctx, ss::socket_address address) {
     if (likely(!f.failed())) {
@@ -110,6 +123,12 @@ void server::print_exceptional_future(
     }
 
     auto ex = f.get_exception();
+
+    if (unlikely(_conn_gate.is_closed() && is_gate_closed_exception(ex))) {
+        vlog(_log.info, "Shutting down while [{}], gate closed.", ctx);
+        return;
+    }
+
     auto disconnected = is_disconnect_exception(ex);
 
     if (!disconnected) {
