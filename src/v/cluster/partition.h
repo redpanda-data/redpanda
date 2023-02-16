@@ -153,15 +153,7 @@ public:
     }
 
     ss::future<std::error_code>
-    transfer_leadership(std::optional<model::node_id> target) {
-        if (_rm_stm) {
-            return _rm_stm->transfer_leadership(target);
-        } else if (_tm_stm) {
-            return _tm_stm->transfer_leadership(target);
-        } else {
-            return _raft->do_transfer_leadership(target);
-        }
-    }
+    transfer_leadership(std::optional<model::node_id> target);
 
     ss::future<std::error_code>
     request_leadership(model::timeout_clock::time_point timeout) {

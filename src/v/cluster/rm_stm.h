@@ -216,8 +216,7 @@ public:
       model::record_batch_reader,
       raft::replicate_options);
 
-    ss::future<std::error_code>
-      transfer_leadership(std::optional<model::node_id>);
+    ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
 
     ss::future<> stop() override;
 

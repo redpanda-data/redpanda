@@ -1091,13 +1091,8 @@ ss::future<result<kafka_result>> rm_stm::replicate(
     return do_replicate(bid, std::move(r), opts, enqueued);
 }
 
-ss::future<std::error_code>
-rm_stm::transfer_leadership(std::optional<model::node_id> target) {
-    return _state_lock.hold_write_lock().then(
-      [this, target](ss::basic_rwlock<>::holder unit) {
-          return _c->do_transfer_leadership(target).finally(
-            [u = std::move(unit)] {});
-      });
+ss::future<ss::basic_rwlock<>::holder> rm_stm::prepare_transfer_leadership() {
+    co_return co_await _state_lock.hold_write_lock();
 }
 
 ss::future<result<kafka_result>> rm_stm::do_replicate(

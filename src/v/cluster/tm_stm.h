@@ -113,8 +113,7 @@ public:
 
     ss::future<> checkpoint_ongoing_txs();
 
-    ss::future<std::error_code>
-      transfer_leadership(std::optional<model::node_id>);
+    ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ready(model::term_id, kafka::transactional_id);
