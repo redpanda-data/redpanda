@@ -176,6 +176,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
           .handle_exception_type([](const ss::abort_requested_exception&) {})
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
+          .handle_exception_type([](const ss::broken_semaphore&) {})
           .handle_exception_type([this](const ss::semaphore_timed_out& e) {
               vlog(
                 _rtclog.warn,
@@ -566,8 +567,6 @@ bool ntp_archiver::can_update_archival_metadata() const {
 }
 
 ss::future<> ntp_archiver::stop() {
-    _uploads_active.broken();
-    _leader_cond.broken();
     if (_local_segment_merger) {
         if (!_local_segment_merger->interrupted()) {
             _local_segment_merger->interrupt();
@@ -575,6 +574,8 @@ ss::future<> ntp_archiver::stop() {
         co_await _local_segment_merger.get()->stop();
     }
     _as.request_abort();
+    _uploads_active.broken();
+    _leader_cond.broken();
     co_await _gate.close();
 }
 
