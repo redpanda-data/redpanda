@@ -154,6 +154,11 @@ public:
         return *this;
     }
 
+    /**
+     * Returns a binding<T> object which offers live access to the
+     * value of the property as well as the ability to watch for
+     * changes to the property.
+     */
     binding<T> bind() {
         assert_live_settable();
         return {*this};
@@ -320,9 +325,11 @@ public:
      * the configuration value will be marked 'invalid' in the node's
      * configuration status, but the new value will still be set.
      *
-     * Ensure that the callback remains valid for as long as this binding:
-     * the simplest way to  accomplish this is to make both the callback
-     * and the binding attributes of the same object
+     * The callback is moved into this binding, and so will live as long as
+     * the binding. This means that callers must ensure
+     * that any objects referenced by the callback remain valid for as long as
+     * this binding: the simplest way to  accomplish this is to make both
+     * the callback and the binding attributes of the same object.
      */
     void watch(std::function<void()>&& f) {
         oncore_debug_verify(_verify_shard);
