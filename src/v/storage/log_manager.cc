@@ -9,12 +9,9 @@
 
 #include "storage/log_manager.h"
 
-#include "cluster/cluster_utils.h"
-#include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/fundamental.h"
-#include "model/metadata.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/async-clear.h"
@@ -49,7 +46,6 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
-#include <seastar/util/file.hh>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <fmt/format.h>
@@ -438,85 +434,6 @@ ss::future<> log_manager::remove(model::ntp ntp) {
     // We always dispatch topic directory deletion to core 0 as requests may
     // come from different cores
     co_await dispatch_topic_dir_deletion(topic_dir);
-}
-
-ss::future<> remove_orphan_partition_files(
-  ss::sstring topic_directory_path,
-  model::topic_namespace nt,
-  ss::noncopyable_function<bool(model::ntp, partition_path::metadata)>&
-    orphan_filter) {
-    return directory_walker::walk(
-      topic_directory_path,
-      [topic_directory_path, nt, &orphan_filter](
-        ss::directory_entry entry) -> ss::future<> {
-          auto ntp_directory_data = partition_path::parse_partition_directory(
-            entry.name);
-          if (!ntp_directory_data) {
-              return ss::now();
-          }
-
-          auto ntp = model::ntp(nt.ns, nt.tp, ntp_directory_data->partition_id);
-          if (orphan_filter(ntp, *ntp_directory_data)) {
-              auto ntp_directory = std::filesystem::path(topic_directory_path)
-                                   / std::filesystem::path(entry.name);
-              vlog(stlog.info, "Cleaning up ntp directory {} ", ntp_directory);
-              return ss::recursive_remove_directory(ntp_directory)
-                .handle_exception_type([ntp_directory](
-                                         std::filesystem::
-                                           filesystem_error const& err) {
-                    vlog(
-                      stlog.error,
-                      "Exception while cleaning oprhan files for {} Error: {}",
-                      ntp_directory,
-                      err);
-                });
-          }
-          return ss::now();
-      });
-}
-
-ss::future<> log_manager::remove_orphan_files(
-  ss::sstring data_directory_path,
-  absl::flat_hash_set<model::ns> namespaces,
-  ss::noncopyable_function<bool(model::ntp, partition_path::metadata)>
-    orphan_filter) {
-    auto data_directory_exist = co_await ss::file_exists(data_directory_path);
-    if (!data_directory_exist) {
-        co_return;
-    }
-
-    for (const auto& ns : namespaces) {
-        auto namespace_directory = std::filesystem::path(data_directory_path)
-                                   / std::filesystem::path(ss::sstring(ns));
-        auto namespace_directory_exist = co_await ss::file_exists(
-          namespace_directory.string());
-        if (!namespace_directory_exist) {
-            continue;
-        }
-        co_await directory_walker::walk(
-          namespace_directory.string(),
-          [this, &namespace_directory, &ns, &orphan_filter](
-            ss::directory_entry entry) -> ss::future<> {
-              if (entry.type != ss::directory_entry_type::directory) {
-                  return ss::now();
-              }
-              auto topic_directory = namespace_directory
-                                     / std::filesystem::path(entry.name);
-              return remove_orphan_partition_files(
-                       topic_directory.string(),
-                       model::topic_namespace(ns, model::topic(entry.name)),
-                       orphan_filter)
-                .then([this, topic_directory]() {
-                    vlog(
-                      stlog.info,
-                      "Trying to clean up topic directory {} ",
-                      topic_directory);
-                    return dispatch_topic_dir_deletion(
-                      topic_directory.string());
-                });
-          });
-    }
-    co_return;
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
