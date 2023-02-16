@@ -13,14 +13,18 @@
 
 namespace cluster {
 
-ss::future<> controller_snapshot::serde_async_write(iobuf&) { co_return; }
+ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
+    co_await serde::write_async(out, std::move(bootstrap));
+}
 
 ss::future<>
 controller_snapshot::serde_async_read(iobuf_parser& in, serde::header const h) {
+    bootstrap = co_await serde::read_async_nested<decltype(bootstrap)>(
+      in, h._bytes_left_limit);
+
     if (in.bytes_left() > h._bytes_left_limit) {
         in.skip(in.bytes_left() - h._bytes_left_limit);
     }
-    co_return;
 }
 
 } // namespace cluster
