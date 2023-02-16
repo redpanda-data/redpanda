@@ -39,7 +39,7 @@ class RollingRestarter:
         def has_drained_leaders(node):
             try:
                 node_id = self.redpanda.idx(node)
-                broker_resp = admin.get_broker(node_id)
+                broker_resp = admin.get_broker(node_id, node=node)
                 maintenance_status = broker_resp["maintenance_status"]
                 return maintenance_status["draining"] and maintenance_status[
                     "finished"]
@@ -62,7 +62,10 @@ class RollingRestarter:
 
         # TODO: incorporate rack awareness into this to support updating
         # multiple nodes at a time.
+        self.redpanda.logger.info(
+            f"Rolling restart of nodes {[n.name for n in nodes]}")
         for node in nodes:
+            self.redpanda.logger.info(f"Waiting for cluster healthy")
             controller_leader = wait_until_cluster_healthy(stop_timeout)
 
             # NOTE: callers may not want to use maintenance mode if the
@@ -77,10 +80,15 @@ class RollingRestarter:
                     err_msg=
                     "Timeout waiting for cluster to support 'maintenance_mode' feature"
                 )
+                self.redpanda.logger.info(
+                    f"Put node {node.name} into maintenance mode")
                 admin.maintenance_start(node, dst_node=controller_leader)
+                self.redpanda.logger.info(
+                    f"Waiting for node {node.name} leadership drain")
                 wait_until(lambda: has_drained_leaders(node),
                            timeout_sec=stop_timeout,
-                           backoff_sec=1)
+                           backoff_sec=1,
+                           err_msg=f"Node {node.name} draining leaderships")
 
             wait_until(lambda: self.redpanda.healthy(),
                        timeout_sec=stop_timeout,
