@@ -55,6 +55,9 @@ public:
 
     void set_initial_brokers(std::vector<model::broker>);
 
+    void fill_snapshot(controller_snapshot&);
+    void apply_snapshot(model::offset, const controller_snapshot&);
+
     model::revision_id version() const { return _version; }
 
     ss::future<> await_membership(model::node_id id, ss::abort_source& as) {

@@ -16,6 +16,7 @@ namespace cluster {
 ss::future<> controller_snapshot::serde_async_write(iobuf& out) {
     co_await serde::write_async(out, std::move(bootstrap));
     co_await serde::write_async(out, std::move(features));
+    co_await serde::write_async(out, std::move(members));
 }
 
 ss::future<>
@@ -23,6 +24,8 @@ controller_snapshot::serde_async_read(iobuf_parser& in, serde::header const h) {
     bootstrap = co_await serde::read_async_nested<decltype(bootstrap)>(
       in, h._bytes_left_limit);
     features = co_await serde::read_async_nested<decltype(features)>(
+      in, h._bytes_left_limit);
+    members = co_await serde::read_async_nested<decltype(members)>(
       in, h._bytes_left_limit);
 
     if (in.bytes_left() > h._bytes_left_limit) {

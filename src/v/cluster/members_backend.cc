@@ -354,6 +354,18 @@ void members_backend::handle_single_update(
         _raft0_updates.push_back(update);
         _new_updates.broadcast();
         return;
+    case node_update_type::interrupted:
+        model::node_id id = update.id;
+        // remove all pending updates for this node
+        std::erase_if(
+          _updates, [id](update_meta& meta) { return meta.update->id == id; });
+        _raft0_updates.erase(
+          std::remove_if(
+            _raft0_updates.begin(),
+            _raft0_updates.end(),
+            [id](auto& update) { return update.id == id; }),
+          _raft0_updates.end());
+        return;
     }
 
     __builtin_unreachable();
@@ -430,6 +442,7 @@ ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
         co_return;
     case node_update_type::reallocation_finished:
     case node_update_type::removed:
+    case node_update_type::interrupted:
         co_return;
     }
 }

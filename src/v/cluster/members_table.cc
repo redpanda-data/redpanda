@@ -9,6 +9,7 @@
 
 #include "cluster/members_table.h"
 
+#include "cluster/controller_snapshot.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
@@ -248,6 +249,70 @@ members_table::apply(model::offset version, maintenance_mode_cmd cmd) {
     notify_maintenance_state_change(id, model::maintenance_state::active);
 
     return errc::success;
+}
+
+void members_table::fill_snapshot(controller_snapshot& controller_snap) {
+    auto& snap = controller_snap.members;
+    for (const auto& [id, md] : _nodes) {
+        snap.nodes.emplace(
+          id,
+          controller_snapshot_parts::members_t::node_t{
+            .broker = md.broker, .state = md.state});
+    }
+    for (const auto& [id, md] : _removed_nodes) {
+        snap.removed_nodes.emplace(
+          id,
+          controller_snapshot_parts::members_t::node_t{
+            .broker = md.broker, .state = md.state});
+    }
+}
+
+void members_table::apply_snapshot(
+  model::offset snap_offset, const controller_snapshot& controller_snap) {
+    _version = model::revision_id(snap_offset);
+
+    const auto& snap = controller_snap.members;
+
+    // update the list of brokers
+
+    cache_t old_nodes;
+    std::swap(old_nodes, _nodes);
+
+    for (const auto& [id, node] : snap.nodes) {
+        _nodes.emplace(id, node_metadata{node.broker, node.state});
+        _waiters.notify(id);
+    }
+
+    _removed_nodes.clear();
+
+    for (const auto& [id, node] : snap.removed_nodes) {
+        _removed_nodes.emplace(id, node_metadata{node.broker, node.state});
+    }
+
+    // notify for changes in broker state
+
+    auto maybe_notify = [&](const node_metadata& new_node) {
+        model::node_id id = new_node.broker.id();
+        auto it = old_nodes.find(id);
+        if (it == old_nodes.end()) {
+            return;
+        }
+
+        auto old_maintenance_state = it->second.state.get_maintenance_state();
+        if (old_maintenance_state != new_node.state.get_maintenance_state()) {
+            notify_maintenance_state_change(
+              id, new_node.state.get_maintenance_state());
+        }
+    };
+
+    for (const auto& [id, node] : _nodes) {
+        maybe_notify(node);
+    }
+    for (const auto& [id, node] : _removed_nodes) {
+        maybe_notify(node);
+    }
+
+    notify_members_updated();
 }
 
 bool members_table::contains(model::node_id id) const {
