@@ -102,11 +102,8 @@ void server::start() {
     }
 }
 
-static inline void print_exceptional_future(
-  ss::logger& log,
-  ss::future<> f,
-  const char* ctx,
-  ss::socket_address address) {
+void server::print_exceptional_future(
+  ss::future<> f, const char* ctx, ss::socket_address address) {
     if (likely(!f.failed())) {
         f.ignore_ready_future();
         return;
@@ -118,7 +115,7 @@ static inline void print_exceptional_future(
     if (!disconnected) {
         if (is_auth_error(ex)) {
             vlog(
-              log.warn,
+              _log.warn,
               "Authentication Failure[{}] remote address: {} - {}",
               ctx,
               address,
@@ -128,11 +125,15 @@ static inline void print_exceptional_future(
             // they generally point to a misbehaving client rather than a fault
             // in the server.
             vlog(
-              log.error, "Error[{}] remote address: {} - {}", ctx, address, ex);
+              _log.error,
+              "Error[{}] remote address: {} - {}",
+              ctx,
+              address,
+              ex);
         }
     } else {
         vlog(
-          log.info,
+          _log.info,
           "Disconnected {} ({}, {})",
           address,
           ctx,
@@ -146,11 +147,10 @@ ss::future<> server::apply_proto(
       .then_wrapped(
         [this, conn, cq_units = std::move(cq_units)](ss::future<> f) {
             print_exceptional_future(
-              _log, std::move(f), "applying protocol", conn->addr);
+              std::move(f), "applying protocol", conn->addr);
             return conn->shutdown().then_wrapped(
               [this, addr = conn->addr](ss::future<> f) {
-                  print_exceptional_future(
-                    _log, std::move(f), "shutting down", addr);
+                  print_exceptional_future(std::move(f), "shutting down", addr);
               });
         })
       .finally([conn] {});
