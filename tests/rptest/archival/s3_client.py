@@ -12,6 +12,7 @@ from functools import wraps
 from itertools import islice
 from time import sleep
 from typing import Iterator, NamedTuple, Union, Optional
+from ducktape.utils.util import wait_until
 
 
 class SlowDown(Exception):
@@ -95,18 +96,30 @@ class S3Client:
             if err.response['Error']['Code'] != 'BucketAlreadyOwnedByYou':
                 raise err
 
-        # For debugging mysterious NoSuchBucket errors during tests: try listing the bucket right after
-        # creating it.
+        def bucket_is_listable():
+            try:
+                self._cli.list_objects_v2(Bucket=name)
+            except:
+                self.logger.warning(f"Listing {name} failed after creation")
+
+                return False
+            else:
+                self.logger.info(
+                    "Listing bucket {name} succeeded after creation")
+                return True
+
+        # Wait until ListObjectsv2 requests start working on the newly created
+        # bucket.  It appears that AWS S3 has an undocumented behavior where
+        # certain verbs (including ListObjectsv2) may return NoSuchBucket
+        # for some time after creating the bucket, even though the creation
+        # returned 200 and other methods work on the bucket.
         # Related: https://github.com/redpanda-data/redpanda/issues/8490
-        try:
-            self._cli.list_objects_v2(Bucket=name)
-        except:
-            self.logger.error(
-                f"Listing {name} failed immediately after creation succeeded")
-            raise
-        else:
-            self.logger.info(
-                "Listing {name} succeeded immediately after creation")
+        wait_until(
+            bucket_is_listable,
+            timeout_sec=300,
+            backoff_sec=5,
+            err_msg=
+            f"Bucket {name} didn't become visible to ListObjectsvv2 requests")
 
     def delete_bucket(self, name):
         self.logger.info(f"Deleting bucket {name}...")
