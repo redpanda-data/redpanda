@@ -68,7 +68,7 @@ def get_kvstore_topic_key_counts(redpanda):
             keys = [i['key'] for i in items]
 
             for k in keys:
-                if k['keyspace'] == "cluster":
+                if k['keyspace'] == "cluster" or k['keyspace'] == "usage":
                     # Not a per-partition key
                     continue
 
