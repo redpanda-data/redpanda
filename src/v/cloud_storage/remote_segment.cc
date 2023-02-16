@@ -584,7 +584,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
               _wait_list.size(),
               _data_file ? "available" : "not available");
             std::exception_ptr err;
-            if (!_data_file) {
+            if (!_data_file || !_tx_range) {
                 // We don't have a _data_file set so we have to check cache
                 // and retrieve the file out of it or hydrate.
                 // If _data_file is initialized we can use it safely since the
