@@ -28,7 +28,8 @@ namespace archival {
 /// how much data we're missing (e.g. because it was compacted before upload)
 /// and how much work remains.
 ///
-/// The unit of measure is offset delta.
+/// Note that this should only be updated by the NTP leader, to avoid
+/// double-counting of segments, offsets, etc. across replicas.
 class ntp_level_probe {
 public:
     ntp_level_probe(per_ntp_metrics_disabled disabled, const model::ntp& ntp);
