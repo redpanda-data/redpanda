@@ -336,6 +336,56 @@ struct end_tx_request {
 struct end_tx_reply {
     tx_errc error_code{};
 };
+
+struct is_leader_request
+  : serde::
+      envelope<is_leader_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::ntp ntp;
+
+    is_leader_request() noexcept = default;
+
+    is_leader_request(model::ntp ntp)
+      : ntp(ntp) {}
+
+    friend bool operator==(const is_leader_request&, const is_leader_request&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream& o, const is_leader_request& r);
+
+    auto serde_fields() { return std::tie(ntp); }
+};
+
+struct is_leader_reply
+  : serde::
+      envelope<is_leader_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    tx_errc ec;
+    model::term_id term{};
+    model::revision_id revision{};
+
+    is_leader_reply() noexcept = default;
+
+    is_leader_reply(tx_errc ec)
+      : ec(ec) {}
+
+    is_leader_reply(
+      tx_errc ec, model::term_id term, model::revision_id revision)
+      : ec(ec)
+      , term(term)
+      , revision(revision) {}
+
+    friend bool operator==(const is_leader_reply&, const is_leader_reply&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream& o, const is_leader_reply& r);
+
+    auto serde_fields() { return std::tie(ec); }
+};
+
 struct fetch_tx_request
   : serde::
       envelope<fetch_tx_request, serde::version<0>, serde::compat_version<0>> {
