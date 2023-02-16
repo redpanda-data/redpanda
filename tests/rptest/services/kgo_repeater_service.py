@@ -34,6 +34,7 @@ class KgoRepeaterService(Service):
                  redpanda: RedpandaService,
                  *,
                  nodes: Optional[list[ClusterNode]] = None,
+                 num_nodes: Optional[int] = None,
                  topic: str,
                  msg_size: Optional[int],
                  workers: int,
@@ -44,8 +45,11 @@ class KgoRepeaterService(Service):
                  use_transactions: bool = False,
                  transaction_abort_rate: Optional[float] = None,
                  msgs_per_transaction: Optional[int] = None):
-        # num_nodes=0 because we're asking it to not allocate any for us
-        super().__init__(context, num_nodes=0 if nodes else 1)
+        if num_nodes is None and nodes is None:
+            # Default: run a single node
+            num_nodes = 1
+
+        super().__init__(context, num_nodes=0 if nodes else num_nodes)
 
         if nodes is not None:
             assert len(nodes) > 0
