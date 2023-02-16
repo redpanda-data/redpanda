@@ -550,6 +550,10 @@ remote_partition::aborted_transactions(offset_range offsets) {
     std::vector<model::tx_range> result;
     auto first_it = _manifest.segment_containing(offsets.begin);
     for (auto it = first_it; it != _manifest.end(); it++) {
+        if (it->second.base_offset > offsets.end_rp) {
+            break;
+        }
+
         // Segment might be materialized, we need a
         // second map lookup to learn if this is the case.
         auto m = _segments.find(it->first);
@@ -559,10 +563,6 @@ remote_partition::aborted_transactions(offset_range offsets) {
         auto tx = co_await m->second->segment->aborted_transactions(
           offsets.begin_rp, offsets.end_rp);
         std::copy(tx.begin(), tx.end(), std::back_inserter(result));
-
-        if (it->second.base_offset > offsets.end_rp) {
-            break;
-        }
     }
 
     // Adjacent segments might return the same transaction record.
