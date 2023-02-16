@@ -192,12 +192,37 @@ class TestRunner():
         else:
             args = list(map(str, args))
 
+        # If in CI, run with trace because we need the evidence if something
+        # fails.  Locally, use INFO to improve runtime: the developer can
+        # selectively re-run failing tests with more logging if needed.
+        log_level = 'trace' if self.ci else 'info'
+
+        def has_flag(flag, *synonyms):
+            """Check if the args list already contains a particularly CLI flag,
+            optionally pass a list of synonyms"""
+            all_flags = [flag] + list(synonyms)
+            return any(any(a.startswith(f) for f in all_flags) for a in args)
+
         if "rpunit" in binary or "rpfixture" in binary:
             unit_args = [
-                "--overprovisioned", "--unsafe-bypass-fsync 1",
-                "--default-log-level=trace", "--logger-log-level='io=debug'",
+                "--unsafe-bypass-fsync 1", f"--default-log-level={log_level}",
+                "--logger-log-level='io=debug'",
                 "--logger-log-level='exception=debug'"
             ] + COMMON_TEST_ARGS
+
+            if self.ci:
+                unit_args.append("--overprovisioned")
+
+            # Unit tests should never need all the node's memory.  Set a fixed
+            # memory size if one was not already provided
+            if "rpunit" in binary and not has_flag("-m", "--memory"):
+                args.append("-m1G")
+
+            if "rpunit" in binary and not has_flag("-c", "--smp"):
+                raise RuntimeError(
+                    f"Test {self.binary} run without -c flag: set it in CMakeLists for the test"
+                )
+
             if "--" in args:
                 args = args + unit_args
             else:
@@ -213,6 +238,10 @@ class TestRunner():
     def _gen_testdir(self):
         return tempfile.mkdtemp(suffix=self._gen_alphanum(),
                                 prefix="%s/test." % self.root)
+
+    @property
+    def ci(self):
+        return 'CI' in os.environ
 
     def run(self):
         # Execute the requested number of times, terminate on the first failure.
@@ -234,7 +263,7 @@ class TestRunner():
         env = os.environ.copy()
         env["TEST_DIR"] = test_dir
         env["BOOST_TEST_LOG_LEVEL"] = "test_suite"
-        if "CI" in env:
+        if self.ci:
             env["BOOST_TEST_COLOR_OUTPUT"] = "0"
         env["BOOST_TEST_CATCH_SYSTEM_ERRORS"] = "no"
         env["BOOST_TEST_REPORT_LEVEL"] = "no"

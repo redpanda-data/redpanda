@@ -48,6 +48,7 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::cloud_storage v::storage_test_utils
   LABELS cloud_storage
+  ARGS "-- -c 8"
 )
 
 rp_test(

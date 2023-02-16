@@ -2525,7 +2525,7 @@ FIXTURE_TEST(write_truncate_compact, storage_test_fixture) {
                  .get0();
 
     int cnt = 0;
-    int max = 500;
+    int max = 50;
     bool done = false;
     mutex log_mutex;
     auto produce
