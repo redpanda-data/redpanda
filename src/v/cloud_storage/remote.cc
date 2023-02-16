@@ -686,7 +686,7 @@ ss::future<upload_result> remote::delete_object(
             break;
         case error_outcome::notfound:
             vlog(
-              ctxlog.info,
+              ctxlog.debug,
               "Unexpected NoSuchKey error response from DeleteObject {} will "
               "be ignored",
               path);
