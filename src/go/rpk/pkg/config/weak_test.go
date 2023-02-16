@@ -649,7 +649,18 @@ func TestSeedServers(t *testing.T) {
     port: 80
 `,
 			exp: []SeedServer{
-				{SocketAddress{"0.0.0.1", 80}},
+				{Host: SocketAddress{"0.0.0.1", 80}},
+			},
+		},
+		{
+			name: "list of single seed server with old tabbing",
+			data: `test_server:
+  - host:
+    address: "0.0.0.1"
+    port: 80
+`,
+			exp: []SeedServer{
+				{Host: SocketAddress{"0.0.0.1", 80}, untabbed: true},
 			},
 		},
 		{
@@ -663,8 +674,8 @@ func TestSeedServers(t *testing.T) {
       port: 90
 `,
 			exp: []SeedServer{
-				{SocketAddress{"0.0.0.1", 80}},
-				{SocketAddress{"0.0.0.2", 90}},
+				{Host: SocketAddress{"0.0.0.1", 80}},
+				{Host: SocketAddress{"0.0.0.2", 90}},
 			},
 		},
 		{
@@ -713,7 +724,7 @@ func TestSeedServer(t *testing.T) {
     port: 33145
 `,
 			exp: SeedServer{
-				SocketAddress{"192.168.10.1", 33145},
+				Host: SocketAddress{"192.168.10.1", 33145},
 			},
 		},
 		{
@@ -724,7 +735,7 @@ func TestSeedServer(t *testing.T) {
         port: 80
 `,
 			exp: SeedServer{
-				SocketAddress{"0.0.0.1", 80},
+				Host: SocketAddress{"0.0.0.1", 80},
 			},
 		},
 		{
@@ -734,7 +745,8 @@ func TestSeedServer(t *testing.T) {
     port: 80
 `,
 			exp: SeedServer{
-				SocketAddress{"1.0.0.1", 80},
+				Host:     SocketAddress{"1.0.0.1", 80},
+				untabbed: true,
 			},
 		},
 		{
@@ -747,7 +759,8 @@ func TestSeedServer(t *testing.T) {
   port: 80
 `,
 			exp: SeedServer{
-				SocketAddress{"0.0.0.1", 80},
+				Host:     SocketAddress{"0.0.0.1", 80},
+				untabbed: true,
 			},
 		},
 		{
@@ -798,7 +811,8 @@ func TestSeedServer(t *testing.T) {
   address: "0.0.0.1"
 `,
 			exp: SeedServer{
-				SocketAddress{Address: "0.0.0.1"},
+				Host:     SocketAddress{Address: "0.0.0.1"},
+				untabbed: true,
 			},
 		},
 		{
@@ -809,7 +823,8 @@ func TestSeedServer(t *testing.T) {
   port: 82
 `,
 			exp: SeedServer{
-				SocketAddress{Port: 82},
+				Host:     SocketAddress{Port: 82},
+				untabbed: true,
 			},
 		},
 	} {
@@ -999,7 +1014,7 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
@@ -1149,7 +1164,7 @@ redpanda:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
@@ -1321,9 +1336,9 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{SocketAddress{"192.168.0.1", 33145}},
-						{SocketAddress{"192.168.0.1", 33145}},
-						{SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,

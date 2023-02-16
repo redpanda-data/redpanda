@@ -103,6 +103,74 @@ rpk:
             - 122.65.33.12:4444
 `,
 		},
+		{
+			name: "don't rewrite if the content didn't changed",
+			inCfg: `redpanda:
+    seed_servers: []
+    data_directory: /var/lib/redpanda/data
+    rpc_server:
+        port: 33145
+        address: 0.0.0.0
+rpk:
+    admin_api:
+         addresses:
+             - 127.0.0.1:9644
+    kafka_api:
+         brokers:
+             - 127.0.0.1:9092
+`,
+			exp: `redpanda:
+    seed_servers: []
+    data_directory: /var/lib/redpanda/data
+    rpc_server:
+        port: 33145
+        address: 0.0.0.0
+rpk:
+    admin_api:
+         addresses:
+             - 127.0.0.1:9644
+    kafka_api:
+         brokers:
+             - 127.0.0.1:9092
+`,
+		},
+		{
+			name: "rewrite if the content didn't changed but seed_server was using the old version",
+			inCfg: `redpanda:
+    seed_servers:
+      - host:
+        address: 0.0.0.0
+        port: 33145
+    data_directory: /var/lib/redpanda/data
+    rpc_server:
+        port: 33145
+        address: 0.0.0.0
+rpk:
+    admin_api:
+         addresses:
+             - 127.0.0.1:9644
+    kafka_api:
+         brokers:
+             - 127.0.0.1:9092
+`,
+			exp: `redpanda:
+    data_directory: /var/lib/redpanda/data
+    seed_servers:
+        - host:
+            address: 0.0.0.0
+            port: 33145
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+rpk:
+    kafka_api:
+        brokers:
+            - 127.0.0.1:9092
+    admin_api:
+        addresses:
+            - 127.0.0.1:9644
+`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -145,6 +213,7 @@ rpk:
 				t.Errorf("unexpected error while reading the file in %s", path)
 				return
 			}
+
 			if !strings.Contains(string(b), test.exp) {
 				t.Errorf("string:\n%v, does not contain expected:\n%v", string(b), test.exp)
 				return
