@@ -878,12 +878,12 @@ offset_stats disk_log_impl::offsets() const {
 }
 
 model::timestamp disk_log_impl::start_timestamp() const {
-    if (_segs.empty()) {
+    auto seg = _segs.lower_bound(_start_offset);
+    if (seg == _segs.end()) {
         return model::timestamp{};
     }
 
-    auto& s = _segs.front();
-    return s->index().base_timestamp();
+    return (*seg)->index().base_timestamp();
 }
 
 ss::future<> disk_log_impl::new_segment(
@@ -1150,6 +1150,14 @@ disk_log_impl::make_reader(timequery_config config) {
               // timestamps on the batches are monotonically increasing.
               if (segment->index().batch_timestamps_are_monotonic()) {
                   index_entry = segment->index().find_nearest(cfg.time);
+                  vlog(
+                    stlog.debug,
+                    "Batch timestamps have monotonically increasing "
+                    "timestamps; used segment index to find first batch before "
+                    "timestamp {}: offset={} with ts={}",
+                    cfg.time,
+                    index_entry->offset,
+                    index_entry->timestamp);
               }
 
               auto offset_within_segment = index_entry
@@ -1162,7 +1170,7 @@ disk_log_impl::make_reader(timequery_config config) {
 
           vlog(
             stlog.debug,
-            "Starting timequery lookup from offset={} for ts={} in segment "
+            "Starting timequery lookup from offset={} for ts={} in log "
             "with start_offset={}",
             start_offset,
             cfg.time,

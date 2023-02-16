@@ -3349,14 +3349,7 @@ size_t consensus::get_follower_count() const {
 
 ss::future<std::optional<storage::timequery_result>>
 consensus::timequery(storage::timequery_config cfg) {
-    return _log.timequery(cfg).then(
-      [this](std::optional<storage::timequery_result> res) {
-          if (res) {
-              // do not return offset that is earlier raft start offset
-              res->offset = std::max(res->offset, start_offset());
-          }
-          return res;
-      });
+    return _log.timequery(cfg);
 }
 
 } // namespace raft
