@@ -732,6 +732,13 @@ std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_backend::get_node_drain_status(
   model::node_id node_id, model::timeout_clock::time_point deadline) {
+    if (node_id == _raft0->self().id()) {
+        // Fast path: if we are asked for our own drain status, give fresh
+        // data instead of spending time reloading health status which might
+        // be outdated.
+        co_return co_await _drain_manager.local().status();
+    }
+
     auto ec = co_await maybe_refresh_cluster_health(
       force_refresh::no, deadline);
     if (ec) {
