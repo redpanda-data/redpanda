@@ -963,9 +963,14 @@ class AdminApiBasedRestore(FastCheck):
         def wait_for_status():
             r = self.admin.get_topic_recovery_status()
             assert r.status_code == requests.status_codes.codes['ok']
-            if r.json()['state'] == 'inactive':
+            response = r.json()
+            self.logger.debug(f'response {response}')
+            if isinstance(response, dict):
                 return False
-            return r.json()
+            for entry in r.json():
+                if entry['state'] != 'inactive':
+                    return entry
+            return False
 
         status = wait_until_result(wait_for_status, timeout_sec=60)
         self.logger.info(f'got status: {status}')

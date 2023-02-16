@@ -13,6 +13,7 @@
 #include "cluster/topic_recovery_status_frontend.h"
 
 #include "cloud_storage/topic_recovery_service.h"
+#include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/topic_recovery_status_rpc_service.h"
 #include "rpc/connection_cache.h"
@@ -33,42 +34,39 @@ topic_recovery_status_frontend::topic_recovery_status_frontend(
   , _members{members} {}
 
 ss::future<std::optional<status_response>>
-topic_recovery_status_frontend::status() const {
-    auto nodes = _members.local().node_ids();
-    auto result = co_await ssx::parallel_transform(
-      nodes.begin(), nodes.end(), [this](auto node_id) {
-          return _connections.local()
-            .with_node_client<topic_recovery_status_rpc_client_protocol>(
-              _self,
-              ss::this_shard_id(),
-              node_id,
-              rpc_timeout_ms,
-              [](topic_recovery_status_rpc_client_protocol p) {
-                  return p.get_status(
-                    status_request{}, rpc::client_opts{rpc_timeout_ms});
-              });
-      });
+topic_recovery_status_frontend::status(model::node_id node) const {
+    auto node_result
+      = co_await _connections.local()
+          .with_node_client<topic_recovery_status_rpc_client_protocol>(
+            _self,
+            ss::this_shard_id(),
+            node,
+            rpc_timeout_ms,
+            [](topic_recovery_status_rpc_client_protocol p) {
+                return p.get_status(
+                  status_request{}, rpc::client_opts{rpc_timeout_ms});
+            });
 
-    if (auto it = std::find_if(
-          result.begin(),
-          result.end(),
-          [](const auto& node_result) {
-              return node_result.has_value()
-                     && node_result.value().data.is_active();
-          });
-        it != result.end()) {
-        co_return it->value().data;
+    if (!node_result.has_value()) {
+        vlog(
+          clusterlog.warn, "missing response from controller leader: {}", node);
+        co_return std::nullopt;
     }
 
-    co_return std::nullopt;
+    co_return node_result.value().data;
 }
 
 ss::future<bool> topic_recovery_status_frontend::is_recovery_running(
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_service,
   skip_this_node skip_this_node) const {
     // Check local state first
-    if (!skip_this_node && topic_recovery_service.local().is_active()) {
-        co_return true;
+    if (!skip_this_node) {
+        auto is_service_active = co_await topic_recovery_service.invoke_on(
+          cloud_storage::topic_recovery_service::shard_id,
+          [](auto& svc) { return svc.is_active(); });
+        if (is_service_active) {
+            co_return true;
+        }
     }
 
     // If local recovery is not running, check on the other nodes

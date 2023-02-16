@@ -829,7 +829,8 @@ class Admin:
 
     def get_topic_recovery_status(self, node=None, **kwargs):
         request_args = {'node': node, **kwargs}
-        return self._request('get', "cloud_storage/automated_recovery",
+        return self._request('get',
+                             "cloud_storage/automated_recovery?extended=true",
                              **request_args)
 
     def self_test_start(self, options):

@@ -19,6 +19,9 @@ struct topic_recovery_service;
 
 namespace cluster {
 
+status_response map_log_to_response(
+  std::vector<cloud_storage::topic_recovery_service::recovery_status>
+    status_log);
 class topic_recovery_status_rpc_handler final
   : public topic_recovery_status_rpc_service {
 public:

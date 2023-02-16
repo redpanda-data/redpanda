@@ -64,14 +64,27 @@ struct recovery_request_params
 
 std::ostream& operator<<(std::ostream&, const recovery_request_params&);
 
-struct status_response
+struct single_status
   : serde::
-      envelope<status_response, serde::version<0>, serde::compat_version<0>> {
+      envelope<single_status, serde::version<0>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
     cloud_storage::topic_recovery_service::state state;
     std::vector<topic_downloads> download_counts;
     recovery_request_params request;
     auto serde_fields() { return std::tie(state, download_counts, request); }
+
+    bool is_active() const;
+
+    friend bool operator==(const single_status&, const single_status&)
+      = default;
+};
+
+struct status_response
+  : serde::
+      envelope<status_response, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+    std::vector<single_status> status_log;
+    auto serde_fields() { return std::tie(status_log); }
 
     bool is_active() const;
 

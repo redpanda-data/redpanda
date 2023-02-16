@@ -22,6 +22,8 @@
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
 
+#include <boost/circular_buffer.hpp>
+
 namespace cluster {
 class topics_frontend;
 class topic_recovery_status_frontend;
@@ -73,6 +75,8 @@ struct topic_recovery_service
         std::optional<recovery_request> request;
     };
 
+    static constexpr int shard_id = 0;
+
     topic_recovery_service(
       ss::sharded<remote>& remote,
       ss::sharded<cluster::topic_table>& topic_state,
@@ -102,17 +106,16 @@ struct topic_recovery_service
 
     state current_state() const { return _state; }
 
+    /// \brief Returns the current status of recovery, including state, download
+    /// counts and the request used to start recovery, if a recovery is active.
     recovery_status current_recovery_status() const;
 
+    /// \brief Returns the last few statuses of the service. Useful for
+    /// reviewing a history of actions this service has taken in the past.
+    std::vector<recovery_status> recovery_status_log() const;
+
 private:
-    /// \brief The recovery process runs on a single shard. The status of the
-    /// process is always propagated to all other shards on the node, so that
-    /// admin API requests coming in on any other shard are able to respond with
-    /// the status of the process. This also enables us to reject any incoming
-    /// requests quickly if a recovery is already in process, without making
-    /// calls to the cloud storage API.
-    /// \param state The state to propagate to all shards.
-    ss::future<> propagate_state(state);
+    void set_state(state);
 
     /// \brief Returns a list of manifests for topics to create, filtering
     /// against existing topics in cluster. The manifests are downloaded from
@@ -157,6 +160,9 @@ private:
 
     ss::future<> reset_topic_configurations();
 
+    /// \brief Stores the current state in recovery status log.
+    void push_status();
+
 private:
     ss::gate _gate;
     ss::abort_source _as;
@@ -187,6 +193,8 @@ private:
     // could be set to some small value during recovery and restored back to
     // original value from manifest once recovery has ended.
     std::optional<std::vector<topic_manifest>> _downloaded_manifests;
+
+    boost::circular_buffer<recovery_status> _status_log;
 };
 
 std::ostream&
