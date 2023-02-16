@@ -329,6 +329,11 @@ ss::future<> ntp_archiver::upload_until_term_change() {
         // e.g. set _paused.
         vassert(!_paused, "can_update_archival_metadata must ensure !_paused");
         auto units = co_await ss::get_units(_uploads_active, 1);
+        vlog(
+          _rtclog.trace,
+          "upload_until_term_change: got units (current {}), paused={}",
+          _uploads_active.current(),
+          _paused);
 
         // Bump up archival STM's state to make sure that it's not lagging
         // behind too far. If the STM is lagging behind we will have to read a
@@ -397,6 +402,10 @@ ss::future<> ntp_archiver::upload_until_term_change() {
         // Drop _uploads_active lock: we are not considered active while
         // sleeping for backoff at the end of the loop.
         units.return_all();
+        vlog(
+          _rtclog.trace,
+          "upload_until_term_change: released units (current {})",
+          _uploads_active.current());
 
         if (non_compacted_upload_result.num_succeeded == 0) {
             // The backoff algorithm here is used to prevent high CPU
@@ -1607,6 +1616,10 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
 
     try {
         co_await ss::get_units(_uploads_active, 1, timeout);
+        vlog(
+          _rtclog.trace,
+          "prepare_transfer_leadership: got units (current {})",
+          _uploads_active.current());
         co_return true;
     } catch (const ss::semaphore_timed_out&) {
         // In this situation, it is possible that the old leader (this node)
@@ -1622,6 +1635,10 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
 }
 
 void ntp_archiver::complete_transfer_leadership() {
+    vlog(
+      _rtclog.trace,
+      "complete_transfer_leadership: current units (current {})",
+      _uploads_active.current());
     _paused = false;
     _leader_cond.signal();
 }

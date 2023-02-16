@@ -683,6 +683,10 @@ partition::transfer_leadership(std::optional<model::node_id> target) {
     if (_archiver && archival_timeout.has_value()) {
         complete_archiver.emplace(
           [a = _archiver.get()]() { a->complete_transfer_leadership(); });
+        vlog(
+          clusterlog.debug,
+          "transfer_leadership[{}]: entering archiver prepare",
+          ntp());
         bool archiver_clean = co_await _archiver->prepare_transfer_leadership(
           archival_timeout.value());
         if (!archiver_clean) {
@@ -696,7 +700,14 @@ partition::transfer_leadership(std::optional<model::node_id> target) {
               "Timed out waiting for {} uploads to complete before "
               "transferring leadership: proceeding anyway",
               ntp());
+        } else {
+            vlog(
+              clusterlog.debug,
+              "transfer_leadership[{}]: archiver prepare complete",
+              ntp());
         }
+    } else {
+        vlog(clusterlog.trace, "transfer_leadership[{}]: no archiver", ntp());
     }
 
     co_return co_await _raft->do_transfer_leadership(target);
