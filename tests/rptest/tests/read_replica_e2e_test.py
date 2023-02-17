@@ -131,10 +131,6 @@ class TestReadReplicaService(EndToEndTest):
                             str(self.producer.last_acked_offsets))
             self.producer.stop()
 
-        # Make original topic upload data to S3
-        rpk = RpkTool(self.redpanda)
-        rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
-
         self.start_second_cluster()
         # wait until the read replica topic creation succeeds
         wait_until(
