@@ -265,6 +265,7 @@ class SISettings:
 
     These settings are altered in RedpandaTest if running on AWS.
     """
+    GLOBAL_CLOUD_STORAGE_CRED_SOURCE_KEY = "cloud_store_cred_source"
     GLOBAL_S3_ACCESS_KEY = "s3_access_key"
     GLOBAL_S3_SECRET_KEY = "s3_secret_key"
     GLOBAL_S3_REGION_KEY = "s3_region"
@@ -276,6 +277,7 @@ class SISettings:
                  test_context,
                  *,
                  log_segment_size: int = 16 * 1000000,
+                 cloud_storage_credentials_source: str = 'config_file',
                  cloud_storage_access_key: str = 'panda-user',
                  cloud_storage_secret_key: str = 'panda-secret',
                  cloud_storage_region: str = 'panda-region',
@@ -300,6 +302,7 @@ class SISettings:
                 'cloud_storage_type']
 
         if self.cloud_storage_type == CloudStorageType.S3:
+            self.cloud_storage_credentials_source = cloud_storage_credentials_source
             self.cloud_storage_access_key = cloud_storage_access_key
             self.cloud_storage_secret_key = cloud_storage_secret_key
             self.cloud_storage_region = cloud_storage_region
@@ -367,6 +370,8 @@ class SISettings:
         Update based on the test context, to e.g. consume AWS access keys in
         the globals dictionary.
         """
+        cloud_storage_credentials_source = test_context.globals.get(
+            self.GLOBAL_CLOUD_STORAGE_CRED_SOURCE_KEY, 'config_file')
         cloud_storage_access_key = test_context.globals.get(
             self.GLOBAL_S3_ACCESS_KEY, None)
         cloud_storage_secret_key = test_context.globals.get(
@@ -375,7 +380,15 @@ class SISettings:
             self.GLOBAL_S3_REGION_KEY, None)
 
         # Enable S3 if AWS creds were given at globals
-        if cloud_storage_access_key and cloud_storage_secret_key:
+        if cloud_storage_credentials_source == 'aws_instance_metadata':
+            logger.info("Running on AWS S3, setting IAM roles")
+            self.cloud_storage_credentials_source = cloud_storage_credentials_source
+            self.cloud_storage_access_key = None
+            self.cloud_storage_secret_key = None
+            self.endpoint_url = None  # None so boto auto-gens the endpoint url
+            self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
+            self.cloud_storage_region = cloud_storage_region
+        elif cloud_storage_credentials_source == 'config_file' and cloud_storage_access_key and cloud_storage_secret_key:
             logger.info("Running on AWS S3, setting credentials")
             self.cloud_storage_access_key = cloud_storage_access_key
             self.cloud_storage_secret_key = cloud_storage_secret_key
@@ -410,6 +423,8 @@ class SISettings:
     # Call this to update the extra_rp_conf
     def update_rp_conf(self, conf) -> dict[str, Any]:
         if self.cloud_storage_type == CloudStorageType.S3:
+            conf[
+                "cloud_storage_credentials_source"] = self.cloud_storage_credentials_source
             conf["cloud_storage_access_key"] = self.cloud_storage_access_key
             conf["cloud_storage_secret_key"] = self.cloud_storage_secret_key
             conf["cloud_storage_region"] = self.cloud_storage_region
