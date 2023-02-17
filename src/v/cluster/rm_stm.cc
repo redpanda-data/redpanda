@@ -1123,15 +1123,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
     _log_stats_timer.cancel();
-    return raft::state_machine::stop().then([this] {
-        for (const auto& entry : _log_state.seq_table) {
-            _log_state.unlink_lru_pid(entry.second);
-        }
-        vassert(
-          _log_state.lru_idempotent_pids.size() == 0,
-          "Unexpected entries in the lru pid list {}",
-          _log_state.lru_idempotent_pids.size());
-    });
+    return raft::state_machine::stop();
 }
 
 ss::future<> rm_stm::start() {
@@ -2567,8 +2559,8 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         const auto pid = entry.pid;
         auto it = _log_state.seq_table.find(pid);
         if (it == _log_state.seq_table.end()) {
-            seq_entry_wrapper seq{std::move(entry)};
-            _log_state.seq_table.try_emplace(it, pid, std::move(seq));
+            _log_state.seq_table.try_emplace(
+              it, pid, seq_entry_wrapper{.entry = std::move(entry)});
         } else if (it->second.entry.seq < entry.seq) {
             it->second.entry = std::move(entry);
             it->second.term = model::term_id(-1);
@@ -2915,7 +2907,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 ss::future<> rm_stm::handle_eviction() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
-          _log_state = log_state{_tx_root_tracker};
+          _log_state.reset();
           _mem_state = mem_state{_tx_root_tracker};
           set_next(_c->start_offset());
           return ss::now();

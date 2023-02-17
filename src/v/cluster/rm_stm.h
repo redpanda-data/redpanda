@@ -395,24 +395,6 @@ private:
         seq_entry entry;
         model::term_id term;
         safe_intrusive_list_hook _hook;
-
-        seq_entry_wrapper() = default;
-        explicit seq_entry_wrapper(seq_entry&& entry)
-          : entry(std::move(entry)) {}
-        seq_entry_wrapper(const seq_entry_wrapper&) = delete;
-        seq_entry_wrapper& operator=(seq_entry_wrapper&) = delete;
-        ~seq_entry_wrapper() = default;
-
-        seq_entry_wrapper(seq_entry_wrapper&& other) noexcept
-          : entry(std::move(other.entry)) {
-            _hook.swap_nodes(other._hook);
-        }
-
-        seq_entry_wrapper& operator=(seq_entry_wrapper&& other) noexcept {
-            entry = std::move(other.entry);
-            _hook.swap_nodes(other._hook);
-            return *this;
-        }
     };
 
     util::mem_tracker _tx_root_tracker{"tx-mem-root"};
@@ -462,6 +444,12 @@ private:
                        absl::flat_hash_map,
                        model::producer_identity,
                        expiration_info>(_tracker)) {}
+
+        log_state(log_state&) noexcept = delete;
+        log_state(log_state&&) noexcept = delete;
+        log_state& operator=(log_state&) noexcept = delete;
+        log_state& operator=(log_state&&) noexcept = delete;
+        ~log_state() noexcept { reset(); }
 
         ss::shared_ptr<util::mem_tracker> _tracker;
         // we enforce monotonicity of epochs related to the same producer_id
@@ -540,6 +528,22 @@ private:
             seq_table.erase(it);
         }
 
+        /// It is important that we unlink entries from seq_table before
+        /// destroying the entries themselves so that the safe link does not
+        /// assert.
+        void clear_seq_table() {
+            for (const auto& entry : seq_table) {
+                unlink_lru_pid(entry.second);
+            }
+            // Checks the 1:1 invariant between seq_table entries and
+            // lru_idempotent_pids If every element from seq_table is unlinked,
+            // the resulting intrusive list should be empty.
+            vassert(
+              lru_idempotent_pids.size() == 0,
+              "Unexpected entries in the lru pid list {}",
+              lru_idempotent_pids.size());
+        }
+
         void forget(const model::producer_identity& pid) {
             fence_pid_epoch.erase(pid.get_id());
             ongoing_map.erase(pid);
@@ -547,6 +551,19 @@ private:
             erase_pid_from_seq_table(pid);
             tx_seqs.erase(pid);
             expiration.erase(pid);
+        }
+
+        void reset() {
+            clear_seq_table();
+            fence_pid_epoch.clear();
+            ongoing_map.clear();
+            ongoing_set.clear();
+            prepared.clear();
+            tx_seqs.clear();
+            expiration.clear();
+            aborted.clear();
+            abort_indexes.clear();
+            last_abort_snapshot = {model::offset(-1)};
         }
     };
 
