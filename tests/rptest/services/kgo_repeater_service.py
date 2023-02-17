@@ -178,7 +178,14 @@ class KgoRepeaterService(Service):
 
         def group_ready():
             rpk = RpkTool(self.redpanda)
-            group = rpk.group_describe(self.group_name, summary=True)
+            try:
+                group = rpk.group_describe(self.group_name, summary=True)
+            except Exception as e:
+                self.logger.debug(
+                    f"group_ready: {self.group_name} got exception from describe: {e}"
+                )
+                return False
+
             if group is None:
                 self.logger.debug(
                     f"group_ready: {self.group_name} got None from describe")
