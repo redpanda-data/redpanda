@@ -272,6 +272,7 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
         case rpc::errc::success:
             return errc::success;
         case rpc::errc::client_request_timeout:
+        case rpc::errc::connection_timeout:
             return errc::timeout;
         case rpc::errc::disconnected_endpoint:
         case rpc::errc::exponential_backoff:
