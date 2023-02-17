@@ -420,7 +420,8 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
             self.logger.debug(f"Deleted {deleted} segments from the cloud")
             return deleted
 
-        wait_until(lambda: deleted_segments_count() == 10,
+        # https://github.com/redpanda-data/redpanda/issues/8658#issuecomment-1420905967
+        wait_until(lambda: 9 <= deleted_segments_count() <= 10,
                    timeout_sec=10,
                    backoff_sec=1,
                    err_msg=f"Segments were not removed from the cloud")
