@@ -687,6 +687,7 @@ partition::transfer_leadership(std::optional<model::node_id> target) {
           clusterlog.debug,
           "transfer_leadership[{}]: entering archiver prepare",
           ntp());
+
         bool archiver_clean = co_await _archiver->prepare_transfer_leadership(
           archival_timeout.value());
         if (!archiver_clean) {

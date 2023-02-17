@@ -112,6 +112,9 @@ public:
     cancel_node_partition_movements(
       cancel_node_partition_movements_request&&, rpc::streaming_context&) final;
 
+    ss::future<transfer_leadership_reply> transfer_leadership(
+      transfer_leadership_request&& r, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::
