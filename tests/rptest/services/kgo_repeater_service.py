@@ -201,6 +201,16 @@ class KgoRepeaterService(Service):
         try:
             wait_until(group_ready, timeout_sec=120, backoff_sec=10)
         except:
+            # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
+            for node in self.nodes:
+                try:
+                    r = requests.get(self._remote_url(node, "print_stack"))
+                    r.raise_for_status()
+                except Exception as e:
+                    # Just log exceptions: we want to proceed with rest of teardown
+                    self.logger.warn(
+                        f"Failed to print stack on {node.name}: {e}")
+
             # On failure, inspect the group to identify which workers
             # specifically were absent.  This information helps to
             # go inspect the remote kgo-repeater logs to see if the
