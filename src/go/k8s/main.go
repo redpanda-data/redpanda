@@ -14,12 +14,6 @@ import (
 	"time"
 
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -29,6 +23,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
 const (
@@ -166,6 +167,13 @@ func main() {
 		KafkaAdminClientFactory: consolepkg.NewKafkaAdmin,
 	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Console")
+		os.Exit(1)
+	}
+	if err = (&redpandacontrollers.RedpandaReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
