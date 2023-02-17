@@ -51,6 +51,12 @@ rm_partition_frontend::rm_partition_frontend(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value()) {
 }
 
+ss::future<> rm_partition_frontend::stop() {
+    _as.request_abort();
+    return _gate.close().then(
+      [] { vlog(txlog.debug, "rm_partition_frontend is stopped"); });
+}
+
 bool rm_partition_frontend::is_leader_of(const model::ntp& ntp) const {
     auto leader = _leaders.local().get_leader(ntp);
     if (!leader) {
@@ -106,6 +112,47 @@ ss::future<is_leader_reply> rm_partition_frontend::is_leader(
             result.ec);
           return result;
       });
+}
+
+ss::future<std::optional<cluster::ntp_leader_revision>>
+rm_partition_frontend::find_leader(
+  model::ntp ntp, model::timeout_clock::duration timeout) {
+    auto outcome = ss::make_lw_shared<
+      available_promise<std::optional<cluster::ntp_leader_revision>>>();
+    ssx::spawn_with_gate(_gate, [this, ntp, outcome, timeout] {
+        return find_leader(ntp, timeout, outcome).finally([outcome]() {
+            if (!outcome->available()) {
+                outcome->set_value(std::nullopt);
+            }
+        });
+    });
+    return outcome->get_future();
+}
+
+ss::future<> rm_partition_frontend::find_leader(
+  model::ntp ntp,
+  model::timeout_clock::duration timeout,
+  ss::lw_shared_ptr<
+    available_promise<std::optional<cluster::ntp_leader_revision>>> outcome) {
+    auto& members_table = _controller->get_members_table();
+    auto node_ids = members_table.local().node_ids();
+
+    std::vector<ss::future<is_leader_reply>> inflight;
+    inflight.reserve(node_ids.size());
+    for (auto node_id : node_ids) {
+        inflight.push_back(
+          is_leader(node_id, ntp, timeout)
+            .then([outcome, node_id, ntp](is_leader_reply reply) {
+                if (reply.ec == tx_errc::none) {
+                    if (!outcome->available()) {
+                        outcome->set_value(cluster::ntp_leader_revision{
+                          ntp, reply.term, node_id, reply.revision});
+                    }
+                }
+                return reply;
+            }));
+    }
+    co_await when_all_succeed(inflight.begin(), inflight.end());
 }
 
 ss::future<is_leader_reply>

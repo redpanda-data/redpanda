@@ -287,13 +287,54 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
         co_return leader;
     }
 
-    vlog(
-      txlog.warn,
-      "detected stale metadata of tx coordinator topic {} stale leader: {}",
-      model::tx_manager_ntp,
-      leader.value());
+    auto actual_leader = co_await _rm_partition_frontend.local().find_leader(
+      model::tx_manager_ntp, timeout);
 
-    co_return std::nullopt;
+    if (!actual_leader || !actual_leader->leader_id) {
+        vlog(
+          txlog.trace,
+          "can't find up to date leader of tx coordinator topic {} stale "
+          "leader:{}",
+          model::tx_manager_ntp,
+          leader.value());
+        co_return leader;
+    }
+
+    if (leader == actual_leader->leader_id) {
+        // leadership jumped from leader and then back again
+        co_return leader;
+    }
+
+    vlog(
+      txlog.info,
+      "tx coordinator topic {} metadata are stale; leader:{} up-to-date "
+      "leader:{}",
+      model::tx_manager_ntp,
+      leader.value(),
+      actual_leader->leader_id.value());
+
+    co_await _leaders.invoke_on_all(
+      [actual_leader](partition_leaders_table& pl) mutable {
+          pl.update_partition_leader(
+            actual_leader->ntp,
+            actual_leader->revision,
+            actual_leader->term,
+            actual_leader->leader_id);
+      });
+
+    leader = _leaders.local().get_leader(model::tx_manager_ntp);
+    if (!leader || leader != actual_leader->leader_id) {
+        vlog(
+          txlog.warn,
+          "can't update tx coordinator topic {} metadata term:{} leader:{} "
+          "revision:{}",
+          model::tx_manager_ntp,
+          actual_leader->term,
+          actual_leader->leader_id,
+          actual_leader->revision);
+    }
+
+    co_return leader;
 }
 
 ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
