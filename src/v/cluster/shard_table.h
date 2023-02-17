@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/logger.h"
 #include "model/fundamental.h"
 #include "raft/types.h"
 #include "seastarx.h"
@@ -66,6 +67,12 @@ public:
               "Attempting to update replicable entry from non_replicable "
               "interface");
         }
+        vlog(
+          clusterlog.trace,
+          "[{}] (non_replicable) updating shard table, shard_id: {}, rev: {}",
+          ntp,
+          i,
+          rev);
         _ntp_idx.insert_or_assign(ntp, shard_revision{i, rev, true});
         return true;
     }
@@ -94,6 +101,12 @@ public:
               "interface");
         }
 
+        vlog(
+          clusterlog.trace,
+          "[{}] updating shard table, shard_id: {}, rev: {}",
+          ntp,
+          shard,
+          rev);
         _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev, false});
         _group_idx.insert_or_assign(g, shard_revision{shard, rev, false});
     }
@@ -117,6 +130,8 @@ public:
               "erasing non_replicable entry from replicable erase interface");
         }
 
+        vlog(
+          clusterlog.trace, "[{}] erasing from shard table, rev: {}", ntp, rev);
         _ntp_idx.erase(ntp);
         _group_idx.erase(g);
     }
@@ -128,7 +143,12 @@ public:
             }
             vassert(
               it->second.non_replicable,
-              "erassing replicable entry from non_replicable erase interface");
+              "erasing replicable entry from non_replicable erase interface");
+            vlog(
+              clusterlog.trace,
+              "[{}] erasing from shard table, rev: {} ",
+              ntp,
+              rev);
             _ntp_idx.erase(it);
         }
     }
