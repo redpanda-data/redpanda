@@ -74,7 +74,7 @@ public:
       topic_table&,
       partition_leaders_table&,
       members_table&,
-      raft::consensus_client_protocol,
+      ss::sharded<rpc::connection_cache>&,
       ss::sharded<shard_table>&,
       ss::sharded<partition_manager>&,
       ss::sharded<ss::abort_source>&,
@@ -179,7 +179,7 @@ private:
     topic_table& _topics;
     partition_leaders_table& _leaders;
     members_table& _members;
-    raft::consensus_client_protocol _client;
+    ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<ss::abort_source>& _as;

@@ -17,7 +17,9 @@
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "model/namespace.h"
+#include "raft/rpc_client_protocol.h"
 #include "random/generators.h"
+#include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 #include "vlog.h"
@@ -40,7 +42,7 @@ leader_balancer::leader_balancer(
   topic_table& topics,
   partition_leaders_table& leaders,
   members_table& members,
-  raft::consensus_client_protocol client,
+  ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<ss::abort_source>& as,
@@ -58,7 +60,7 @@ leader_balancer::leader_balancer(
   , _topics(topics)
   , _leaders(leaders)
   , _members(members)
-  , _client(std::move(client))
+  , _connections(connections)
   , _shard_table(shard_table)
   , _partition_manager(partition_manager)
   , _as(as)
@@ -733,7 +735,9 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
     raft::transfer_leadership_request req{
       .group = transfer.group, .target = transfer.to.node_id};
 
-    auto res = co_await _client.transfer_leadership(
+    auto raft_client = raft::make_rpc_client_protocol(
+      _raft0->self().id(), _connections);
+    auto res = co_await raft_client.transfer_leadership(
       transfer.from.node_id,
       std::move(req), // NOLINT(hicpp-move-const-arg,performance-move-const-arg)
       rpc::client_opts(leader_transfer_rpc_timeout));
