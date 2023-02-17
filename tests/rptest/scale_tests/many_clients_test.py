@@ -9,11 +9,9 @@
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import ResourceSettings
 from rptest.services.cluster import cluster
 from rptest.services.rpk_consumer import RpkConsumer
-
-from ducktape.utils.util import wait_until
 
 from rptest.services.producer_swarm import ProducerSwarm
 
@@ -47,7 +45,7 @@ class ManyClientsTest(RedpandaTest):
         }
         super().__init__(*args, **kwargs)
 
-    @cluster(num_nodes=6)
+    @cluster(num_nodes=7)
     def test_many_clients(self):
         """
         Check that redpanda remains stable under higher numbers of clients
@@ -65,7 +63,7 @@ class ManyClientsTest(RedpandaTest):
 
         # Realistic conditions: 128MB is the segment size in the cloud
         segment_size = 128 * 1024 * 1024
-        retention_size = 2 * segment_size
+        retention_size = 8 * segment_size
 
         self.client().create_topic(
             TopicSpec(name=TOPIC_NAME,
@@ -73,14 +71,21 @@ class ManyClientsTest(RedpandaTest):
                       retention_bytes=retention_size,
                       segment_bytes=segment_size))
 
-        # Two consumers, just so that we are at least touching consumer
+        # Three consumers, just so that we are at least touching consumer
         # group functionality, if not stressing the overall number of consumers.
+        # Need enough consumers to grab data before it gets cleaned up by the
+        # retention policy
         consumer_a = RpkConsumer(self.test_context,
                                  self.redpanda,
                                  TOPIC_NAME,
                                  group="testgroup",
                                  save_msgs=False)
         consumer_b = RpkConsumer(self.test_context,
+                                 self.redpanda,
+                                 TOPIC_NAME,
+                                 group="testgroup",
+                                 save_msgs=False)
+        consumer_c = RpkConsumer(self.test_context,
                                  self.redpanda,
                                  TOPIC_NAME,
                                  group="testgroup",
@@ -95,15 +100,16 @@ class ManyClientsTest(RedpandaTest):
         producer.start()
         consumer_a.start()
         consumer_b.start()
+        consumer_c.start()
 
         producer.wait()
 
         def complete():
             expect = PRODUCER_COUNT * RECORDS_PER_PRODUCER
             self.logger.info(
-                f"Message counts: {consumer_a.message_count} {consumer_b.message_count} (vs {expect})"
+                f"Message counts: {consumer_a.message_count} {consumer_b.message_count} {consumer_c.message_count} (vs {expect})"
             )
-            return consumer_a.message_count + consumer_b.message_count >= expect
+            return consumer_a.message_count + consumer_b.message_count + consumer_c.message_count >= expect
 
         self.redpanda.wait_until(complete,
                                  timeout_sec=30,
