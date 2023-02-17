@@ -22,7 +22,7 @@ func VersionFromString(s string) (Version, error) {
 	//   - index 1: the Year
 	//   - index 2: the Feature
 	//   - index 3: the Patch
-	vMatch := regexp.MustCompile(`^v?(\d{2})\.(\d{1,2})\.(\d{1,2})(?:\s|$)`).FindStringSubmatch(s)
+	vMatch := regexp.MustCompile(`^v?(\d{2})\.(\d{1,2})\.(\d{1,2})(?:\s|-rc\d{1,2}|$)`).FindStringSubmatch(s)
 
 	if len(vMatch) == 0 {
 		return Version{}, fmt.Errorf("unable to get the redpanda version from %q", s)
