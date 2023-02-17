@@ -403,10 +403,6 @@ class SISettings:
         elif self.cloud_storage_type == CloudStorageType.ABS:
             return self._cloud_storage_azure_container
 
-    @cloud_storage_bucket.setter
-    def cloud_storage_bucket(self, bucket: str):
-        self._cloud_storage_bucket = bucket
-
     # Call this to update the extra_rp_conf
     def update_rp_conf(self, conf) -> dict[str, Any]:
         if self.cloud_storage_type == CloudStorageType.S3:

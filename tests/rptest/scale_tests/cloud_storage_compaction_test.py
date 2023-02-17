@@ -13,7 +13,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RedpandaService, MetricsEndpoint, SISettings
+from rptest.services.redpanda import CloudStorageType, RedpandaService, MetricsEndpoint, SISettings
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until
 
@@ -170,7 +170,9 @@ class CloudStorageCompactionTest(EndToEndTest):
                  "Cannot validate Kafka record batch. Missmatching CRC",
                  "batch has invalid CRC"
              ])
-    def test_read_from_replica(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_read_from_replica(self, cloud_storage_type):
         self.start_workload()
         self.start_consumer(num_nodes=2,
                             redpanda_cluster=self.rr_cluster,
