@@ -853,6 +853,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           metadata.delta.ntp,
           metadata.delta.new_assignment.group,
           rev,
+          rev,
           create_brokers_set(
             metadata.delta.new_assignment.replicas, _members_table.local()));
     case op_t::add_non_replicable:
@@ -935,7 +936,7 @@ controller_backend::process_partition_reconfiguration(
   const partition_assignment& target_assignment,
   const std::vector<model::broker_shard>& previous_replicas,
   const topic_table_delta::revision_map_t& replica_revisions,
-  model::revision_id rev) {
+  model::revision_id command_rev) {
     vlog(
       clusterlog.trace,
       "[{}] (retry {}) processing reconfiguration {} command with target "
@@ -945,7 +946,7 @@ controller_backend::process_partition_reconfiguration(
       type,
       target_assignment.replicas,
       previous_replicas,
-      rev);
+      command_rev);
 
     auto partition = _partition_manager.local().get(ntp);
     /*
@@ -954,7 +955,9 @@ controller_backend::process_partition_reconfiguration(
      * revision to catch up we will keep the partition alive until one of the
      * other nodes will send update_finished command
      */
-    if (partition && partition->group_configuration().revision_id() > rev) {
+    if (
+      partition
+      && partition->group_configuration().revision_id() > command_rev) {
         vlog(
           clusterlog.trace,
           "[{}] found newer revision, finishing reconfiguration to: {}",
@@ -983,7 +986,8 @@ controller_backend::process_partition_reconfiguration(
          * 2) create instance on target remote core
          */
         if (contains_node(_self, target_assignment.replicas)) {
-            co_return co_await shutdown_on_current_shard(std::move(ntp), rev);
+            co_return co_await shutdown_on_current_shard(
+              std::move(ntp), command_rev);
         }
 
         /**
@@ -999,7 +1003,7 @@ controller_backend::process_partition_reconfiguration(
           target_assignment.replicas,
           replica_revisions,
           previous_replicas,
-          rev);
+          command_rev);
         if (ec) {
             co_return ec;
         }
@@ -1033,7 +1037,7 @@ controller_backend::process_partition_reconfiguration(
           target_assignment.replicas,
           replica_revisions,
           previous_replicas,
-          rev);
+          command_rev);
         if (!ec) {
             /**
              *  After one of the replicas find the configuration to be
@@ -1068,7 +1072,7 @@ controller_backend::process_partition_reconfiguration(
         auto previous_shard = get_target_shard(_self, previous_replicas);
 
         co_return co_await create_partition_from_remote_shard(
-          ntp, *previous_shard, target_assignment);
+          ntp, command_rev, *previous_shard, target_assignment);
     }
     /**
      * Cancelling partition movement may only be executed before the update
@@ -1089,7 +1093,8 @@ controller_backend::process_partition_reconfiguration(
      * partition. we relay on raft recovery to populate partition
      * configuration.
      */
-    auto ec = co_await create_partition(ntp, target_assignment.group, rev, {});
+    auto ec = co_await create_partition(
+      ntp, target_assignment.group, command_rev, command_rev, {});
     // wait for recovery, we will mark partition as updated in next
     // controller backend reconciliation loop pass
     if (!ec) {
@@ -1130,6 +1135,7 @@ bool controller_backend::can_finish_update(
 ss::future<std::error_code>
 controller_backend::create_partition_from_remote_shard(
   model::ntp ntp,
+  model::revision_id command_revision,
   ss::shard_id previous_shard,
   partition_assignment requested_assignment) {
     std::optional<model::revision_id> initial_revision;
@@ -1207,6 +1213,7 @@ controller_backend::create_partition_from_remote_shard(
           ntp,
           requested_assignment.group,
           *initial_revision,
+          command_revision,
           std::move(initial_brokers));
 
         if (ec) {
@@ -1622,7 +1629,8 @@ ss::future<> controller_backend::remove_from_shard_table(
 ss::future<std::error_code> controller_backend::create_partition(
   model::ntp ntp,
   raft::group_id group_id,
-  model::revision_id rev,
+  model::revision_id log_revision,
+  model::revision_id command_revision,
   std::vector<model::broker> members) {
     auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
 
@@ -1655,27 +1663,30 @@ ss::future<std::error_code> controller_backend::create_partition(
         try {
             co_await _partition_manager.local().manage(
               cfg->make_ntp_config(
-                _data_directory, ntp.tp.partition, rev, initial_rev.value()),
+                _data_directory,
+                ntp.tp.partition,
+                log_revision,
+                initial_rev.value()),
               group_id,
               std::move(members),
               cfg->properties.remote_topic_properties,
               read_replica_bucket);
 
             co_await add_to_shard_table(
-              ntp, group_id, ss::this_shard_id(), rev);
+              ntp, group_id, ss::this_shard_id(), command_revision);
 
         } catch (...) {
             vlog(
               clusterlog.warn,
               "[{}] failed to create partition with revision {} - {}",
               ntp,
-              rev,
+              log_revision,
               std::current_exception());
             co_return errc::failed_to_create_partition;
         }
     } else {
         // old partition still exists, wait for it to be removed
-        if (partition->get_revision_id() < rev) {
+        if (partition->get_revision_id() < log_revision) {
             co_return errc::partition_already_exists;
         }
     }
