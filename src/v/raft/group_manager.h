@@ -82,8 +82,6 @@ public:
         _notifications.unregister_cb(id);
     }
 
-    consensus_client_protocol raft_client() const { return _client; }
-
 private:
     void trigger_leadership_notification(raft::leadership_status);
     void setup_metrics();

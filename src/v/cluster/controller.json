@@ -125,6 +125,11 @@
             "name": "cancel_node_partition_movements",
             "input_type": "cancel_node_partition_movements_request",
             "output_type": "cancel_partition_movements_reply"
+        },
+        {
+            "name": "transfer_leadership",
+            "input_type": "transfer_leadership_request",
+            "output_type": "transfer_leadership_reply"
         }
     ]
 }

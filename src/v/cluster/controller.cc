@@ -402,7 +402,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             _tp_state.local(),
             _partition_leaders.local(),
             _members_table.local(),
-            _raft_manager.local().raft_client(),
+            std::ref(_connections),
             std::ref(_shard_table),
             std::ref(_partition_manager),
             std::ref(_as),

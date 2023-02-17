@@ -1883,7 +1883,8 @@ void application::start_runtime_services(
             std::ref(controller->get_feature_manager()),
             std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()),
-            std::ref(_connection_cache)));
+            std::ref(_connection_cache),
+            std::ref(controller->get_partition_manager())));
 
           runtime_services.push_back(
             std::make_unique<cluster::metadata_dissemination_handler>(

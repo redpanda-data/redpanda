@@ -38,7 +38,8 @@ public:
       ss::sharded<feature_manager>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<health_monitor_frontend>&,
-      ss::sharded<rpc::connection_cache>&);
+      ss::sharded<rpc::connection_cache>&,
+      ss::sharded<partition_manager>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -111,6 +112,9 @@ public:
     cancel_node_partition_movements(
       cancel_node_partition_movements_request&&, rpc::streaming_context&) final;
 
+    ss::future<transfer_leadership_reply> transfer_leadership(
+      transfer_leadership_request&& r, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::
@@ -157,5 +161,6 @@ private:
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<rpc::connection_cache>& _conn_cache;
+    ss::sharded<partition_manager>& _partition_manager;
 };
 } // namespace cluster

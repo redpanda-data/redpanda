@@ -382,6 +382,11 @@ private:
     /// change and the archiver is not stopping.
     bool can_update_archival_metadata() const;
 
+    /// Return true if it is permitted to start new uploads: this
+    /// requires can_update_archival_metadata, plus that we are
+    /// not paused.
+    bool may_begin_uploads() const;
+
     /// Helper to generate a segment path from candidate
     remote_segment_path
     segment_path_for_candidate(const upload_candidate& candidate);

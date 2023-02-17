@@ -2802,32 +2802,6 @@ consensus::transfer_leadership(transfer_leadership_request req) {
     }
 }
 
-ss::future<std::error_code>
-consensus::request_leadership(model::timeout_clock::time_point timeout) {
-    if (is_elected_leader()) {
-        co_return errc::success;
-    }
-
-    if (!_leader_id) {
-        co_return errc::not_leader;
-    }
-
-    if (!config().is_voter(_self)) {
-        co_return errc::not_voter;
-    }
-
-    auto result = co_await _client_protocol.transfer_leadership(
-      _leader_id->id(),
-      transfer_leadership_request{.group = _group, .target = _self.id()},
-      rpc::client_opts(timeout));
-
-    if (result) {
-        co_return result.value().result;
-    }
-
-    co_return result.error();
-}
-
 /**
  * After we have accepted the request to transfer leadership, carry out
  * preparatory phase before we actually send a timeout_now to the new

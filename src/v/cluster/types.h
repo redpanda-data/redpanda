@@ -43,6 +43,9 @@
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 
+using transfer_leadership_request = raft::transfer_leadership_request;
+using transfer_leadership_reply = raft::transfer_leadership_reply;
+
 // A cluster version is a logical protocol version describing the content
 // of the raft0 on disk structures, and available features.  These are
 // passed over the network via the health_manager, and persisted in
