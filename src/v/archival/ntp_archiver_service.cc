@@ -878,10 +878,16 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
     // The manifest's last offset contains dirty_offset of the
     // latest uploaded segment but '_policy' requires offset that
     // belongs to the next offset or the gap. No need to do this
-    // if there is no segments.
-    auto start_upload_offset = manifest().size() ? manifest().get_last_offset()
-                                                     + model::offset(1)
-                                                 : model::offset(0);
+    // if we haven't uploaded anything.
+    //
+    // When there are no segments but there is a non-zero 'last_offset', all
+    // cloud segments have been removed for retention. In that case, we still
+    // need to take into accout 'last_offset'.
+    auto last_offset = manifest().get_last_offset();
+    auto start_upload_offset = manifest().size() == 0
+                                   && last_offset == model::offset(0)
+                                 ? model::offset(0)
+                                 : last_offset + model::offset(1);
 
     auto compacted_segments_upload_start = model::next_offset(
       manifest().get_last_uploaded_compacted_offset());
