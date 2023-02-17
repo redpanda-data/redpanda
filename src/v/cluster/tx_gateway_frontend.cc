@@ -238,41 +238,13 @@ ss::future<> tx_gateway_frontend::stop() {
 
 ss::future<std::optional<model::node_id>>
 tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
-    auto has_topic = ss::make_ready_future<bool>(true);
-
-    if (!_metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
-        has_topic = try_create_tx_topic();
+    if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
+        if (!co_await try_create_tx_topic()) {
+            co_return std::nullopt;
+        }
     }
 
-    auto timeout = ss::lowres_clock::now()
-                   + config::shard_local_cfg().wait_for_leader_timeout_ms();
-
-    return has_topic.then([this, timeout](bool does_topic_exist) {
-        if (!does_topic_exist) {
-            return ss::make_ready_future<std::optional<model::node_id>>(
-              std::nullopt);
-        }
-
-        auto md = _metadata_cache.local().contains(model::tx_manager_nt);
-        if (!md) {
-            return ss::make_ready_future<std::optional<model::node_id>>(
-              std::nullopt);
-        }
-        return _metadata_cache.local()
-          .get_leader(model::tx_manager_ntp, timeout)
-          .then([](model::node_id leader) {
-              return std::optional<model::node_id>(leader);
-          })
-          .handle_exception([](std::exception_ptr e) {
-              vlog(
-                txlog.warn,
-                "can't find find a leader of tx manager's topic {}",
-                e);
-              return ss::make_ready_future<std::optional<model::node_id>>(
-                std::nullopt);
-          });
-    });
+    co_return _metadata_cache.local().get_leader_id(model::tx_manager_ntp);
 }
 
 ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
