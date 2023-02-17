@@ -250,15 +250,17 @@ private:
     struct cross_shard_move_request {
         cross_shard_move_request(model::revision_id, raft::group_configuration);
 
-        model::revision_id revision;
+        // Revision of the ntp directory on this node. This revision can change
+        // over the lifetime of the partition as it moves between nodes.
+        model::revision_id log_revision;
         raft::group_configuration initial_configuration;
         friend std::ostream& operator<<(
           std::ostream& o,
           const controller_backend::cross_shard_move_request& r) {
             fmt::print(
               o,
-              "{{revision: {}, configuration: {}}}",
-              r.revision,
+              "{{log revision: {}, configuration: {}}}",
+              r.log_revision,
               r.initial_configuration);
             return o;
         }

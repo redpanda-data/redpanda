@@ -1171,7 +1171,7 @@ controller_backend::create_partition_from_remote_shard(
         if (!x_shard_req) {
             co_return errc::waiting_for_partition_shutdown;
         }
-        initial_revision = x_shard_req->revision;
+        initial_revision = x_shard_req->log_revision;
         std::copy(
           x_shard_req->initial_configuration.brokers().begin(),
           x_shard_req->initial_configuration.brokers().end(),
@@ -1692,7 +1692,7 @@ ss::future<std::error_code> controller_backend::create_partition(
 }
 controller_backend::cross_shard_move_request::cross_shard_move_request(
   model::revision_id rev, raft::group_configuration cfg)
-  : revision(rev)
+  : log_revision(rev)
   , initial_configuration(std::move(cfg)) {}
 
 ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
