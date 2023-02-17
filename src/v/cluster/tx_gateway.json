@@ -16,6 +16,11 @@
             "output_type": "try_abort_reply"
         },
         {
+            "name": "is_leader",
+            "input_type": "is_leader_request",
+            "output_type": "is_leader_reply"
+        },
+        {
             "name": "begin_tx",
             "input_type": "begin_tx_request",
             "output_type": "begin_tx_reply"

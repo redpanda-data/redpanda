@@ -54,6 +54,11 @@ tx_gateway::init_tm_tx(init_tm_tx_request&& request, rpc::streaming_context&) {
       model::unknown_pid);
 }
 
+ss::future<is_leader_reply>
+tx_gateway::is_leader(is_leader_request&& request, rpc::streaming_context&) {
+    return _rm_partition_frontend.local().is_leader_locally(request.ntp);
+}
+
 ss::future<begin_tx_reply>
 tx_gateway::begin_tx(begin_tx_request&& request, rpc::streaming_context&) {
     return _rm_partition_frontend.local().begin_tx_locally(

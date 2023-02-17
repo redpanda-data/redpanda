@@ -60,6 +60,102 @@ bool rm_partition_frontend::is_leader_of(const model::ntp& ntp) const {
     return leader == _self;
 }
 
+ss::future<is_leader_reply> rm_partition_frontend::is_leader(
+  model::node_id node, model::ntp ntp, model::timeout_clock::duration timeout) {
+    auto self = _controller->self();
+    if (self == node) {
+        return is_leader_locally(ntp);
+    }
+
+    vlog(
+      txlog.trace,
+      "dispatching name:is_leader, ntp:{} from:{}, to:{}",
+      ntp,
+      self,
+      node);
+
+    return _connection_cache.local()
+      .with_node_client<cluster::tx_gateway_client_protocol>(
+        _controller->self(),
+        ss::this_shard_id(),
+        node,
+        timeout,
+        [ntp, timeout](tx_gateway_client_protocol cp) {
+            return cp.is_leader(
+              is_leader_request{ntp},
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<is_leader_reply>)
+      .then([ntp, node](result<is_leader_reply> r) {
+          if (r.has_error()) {
+              vlog(
+                txlog.warn,
+                "got error {} on sending name:is_leader ntp:{} to {}",
+                r.error(),
+                ntp,
+                node);
+              return is_leader_reply{tx_errc::timeout};
+          }
+
+          auto result = r.value();
+          vlog(
+            txlog.trace,
+            "received name:is_leader from {}, ntp:{}, ec:{}",
+            node,
+            ntp,
+            result.ec);
+          return result;
+      });
+}
+
+ss::future<is_leader_reply>
+rm_partition_frontend::is_leader_locally(model::ntp ntp) {
+    vlog(txlog.trace, "processing name:is_leader, ntp:{}", ntp);
+
+    auto shard = _shard_table.local().shard_for(ntp);
+
+    if (!shard) {
+        vlog(
+          txlog.trace,
+          "sending name:is_leader, ntp:{}, ec:shard_not_found",
+          ntp);
+        return ss::make_ready_future<is_leader_reply>(
+          is_leader_reply{tx_errc::shard_not_found});
+    }
+
+    return _partition_manager
+      .invoke_on(
+        *shard,
+        _ssg,
+        [ntp](cluster::partition_manager& mgr) mutable {
+            auto partition = mgr.get(ntp);
+            if (!partition) {
+                return ss::make_ready_future<is_leader_reply>(
+                  is_leader_reply{tx_errc::partition_not_found});
+            }
+
+            auto c = partition->raft();
+
+            if (!c->is_leader()) {
+                return ss::make_ready_future<is_leader_reply>(
+                  is_leader_reply{tx_errc::leader_not_found});
+            }
+
+            return ss::make_ready_future<is_leader_reply>(is_leader_reply{
+              tx_errc::none, c->term(), c->config().revision_id()});
+        })
+      .then([ntp](is_leader_reply reply) {
+          vlog(
+            txlog.trace,
+            "sending name:is_leader, ntp:{}, ec:{}, term:{}, revision_id:{}",
+            ntp,
+            reply.ec,
+            reply.term,
+            reply.revision);
+          return reply;
+      });
+}
+
 ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
   model::ntp ntp,
   model::producer_identity pid,

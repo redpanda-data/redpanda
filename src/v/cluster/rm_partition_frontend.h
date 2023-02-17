@@ -32,6 +32,8 @@ public:
       ss::sharded<partition_leaders_table>&,
       cluster::controller*);
 
+    ss::future<is_leader_reply>
+      is_leader(model::node_id, model::ntp, model::timeout_clock::duration);
     ss::future<begin_tx_reply> begin_tx(
       model::ntp,
       model::producer_identity,
@@ -74,6 +76,7 @@ private:
 
     bool is_leader_of(const model::ntp&) const;
 
+    ss::future<is_leader_reply> is_leader_locally(model::ntp);
     ss::future<begin_tx_reply> dispatch_begin_tx(
       model::node_id,
       model::ntp,
