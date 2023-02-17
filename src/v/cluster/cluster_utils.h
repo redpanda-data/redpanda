@@ -262,6 +262,7 @@ inline bool has_non_replicable_op_type(const topic_table_delta& d) {
         return true;
     case op_t::add:
     case op_t::del:
+    case op_t::reset:
     case op_t::update:
     case op_t::update_finished:
     case op_t::update_properties:

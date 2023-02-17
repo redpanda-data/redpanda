@@ -195,25 +195,48 @@ ss::future<std::error_code>
 reconciliation_backend::process_update(model::ntp ntp, update_t delta) {
     using op_t = update_t::op_type;
     model::revision_id rev(delta.offset());
-    const auto& replicas = delta.type == op_t::update
-                             ? delta.previous_replica_set.value()
-                             : delta.new_assignment.replicas;
-    if (!cluster::has_local_replicas(_self, replicas)) {
-        return ss::make_ready_future<std::error_code>(errc::success);
-    }
-
     switch (delta.type) {
     case op_t::add_non_replicable:
-        return create_non_replicable_partition(
+        if (!cluster::has_local_replicas(
+              _self, delta.new_assignment.replicas)) {
+            co_return errc::success;
+        }
+        co_return co_await create_non_replicable_partition(
           delta.ntp, rev, delta.new_assignment.replicas);
     case op_t::del_non_replicable:
-        return delete_non_replicable_partition(delta.ntp, rev);
+        if (!cluster::has_local_replicas(
+              _self, delta.new_assignment.replicas)) {
+            co_return errc::success;
+        }
+        co_return co_await delete_non_replicable_partition(delta.ntp, rev);
     case op_t::update:
-        return process_shutdown(
+        if (!cluster::has_local_replicas(
+              _self, delta.previous_replica_set.value())) {
+            co_return errc::success;
+        }
+        co_return co_await process_shutdown(
           delta.ntp, ntp, rev, std::move(delta.new_assignment.replicas));
     case op_t::update_finished:
-        return process_restart(
+        if (!cluster::has_local_replicas(
+              _self, delta.new_assignment.replicas)) {
+            co_return errc::success;
+        }
+        co_return co_await process_restart(
           delta.ntp, ntp, rev, delta.new_assignment.replicas);
+    case op_t::reset: {
+        const auto& prev_replicas = delta.previous_replica_set.value();
+        const auto& new_replicas = delta.new_assignment.replicas;
+        if (
+          !cluster::has_local_replicas(_self, prev_replicas)
+          && !cluster::has_local_replicas(_self, new_replicas)) {
+            co_return errc::success;
+        }
+        auto ec = co_await process_shutdown(delta.ntp, ntp, rev, prev_replicas);
+        if (ec) {
+            co_return ec;
+        }
+        co_return co_await process_restart(delta.ntp, ntp, rev, new_replicas);
+    }
     case op_t::add:
     case op_t::del:
     case op_t::cancel_update:
@@ -223,7 +246,7 @@ reconciliation_backend::process_update(model::ntp ntp, update_t delta) {
         /// expected to be handled in cluster::controller_backend. Convsersely
         /// the controller_backend will not handle the types of events that
         /// reconciliation_backend is responsible for
-        return ss::make_ready_future<std::error_code>(errc::success);
+        co_return errc::success;
     }
     __builtin_unreachable();
 }
