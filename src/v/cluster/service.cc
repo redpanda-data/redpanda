@@ -48,7 +48,8 @@ service::service(
   ss::sharded<feature_manager>& feature_manager,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend,
-  ss::sharded<rpc::connection_cache>& conn_cache)
+  ss::sharded<rpc::connection_cache>& conn_cache,
+  ss::sharded<partition_manager>& partition_manager)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
   , _members_manager(mm)
@@ -61,7 +62,8 @@ service::service(
   , _feature_manager(feature_manager)
   , _feature_table(feature_table)
   , _hm_frontend(hm_frontend)
-  , _conn_cache(conn_cache) {}
+  , _conn_cache(conn_cache)
+  , _partition_manager(partition_manager) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context& context) {
