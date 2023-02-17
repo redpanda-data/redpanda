@@ -10,6 +10,7 @@
  */
 #include "cluster/scheduling/leader_balancer.h"
 
+#include "cluster/controller_service.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
@@ -731,9 +732,19 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
     co_return co_await _partition_manager.invoke_on(shard, std::move(func));
 }
 
-ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
+/**
+ * Deprecated: this method may be removed when we no longer require
+ * compatibility with Redpanda <= 22.3
+ */
+ss::future<bool>
+leader_balancer::do_transfer_remote_legacy(reassignment transfer) {
     raft::transfer_leadership_request req{
       .group = transfer.group, .target = transfer.to.node_id};
+
+    vlog(
+      clusterlog.debug,
+      "Leadership transfer of group {} using legacy RPC",
+      transfer.group);
 
     auto raft_client = raft::make_rpc_client_protocol(
       _raft0->self().id(), _connections);
@@ -762,6 +773,49 @@ ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
       raft::make_error_code(res.value().result).message());
 
     co_return false;
+}
+
+ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
+    transfer_leadership_request req{
+      .group = transfer.group, .target = transfer.to.node_id};
+
+    auto res = co_await _connections.local()
+                 .with_node_client<controller_client_protocol>(
+                   _raft0->self().id(),
+                   ss::this_shard_id(),
+                   transfer.from.node_id,
+                   leader_transfer_rpc_timeout,
+                   [req](controller_client_protocol ccp) mutable {
+                       return ccp.transfer_leadership(
+                         std::move(req),
+                         rpc::client_opts(leader_transfer_rpc_timeout));
+                   });
+
+    if (res.has_error() && res.error() == rpc::errc::method_not_found) {
+        // Cluster leadership transfer unavailable: use legacy raw raft leader
+        // transfer API
+        co_return co_await do_transfer_remote_legacy(std::move(transfer));
+    } else if (res.has_error()) {
+        vlog(
+          clusterlog.info,
+          "Leadership transfer of group {} failed with error: {}",
+          transfer.group,
+          res.error().message());
+        co_return false;
+    } else if (res.value().data.success) {
+        vlog(
+          clusterlog.trace,
+          "Leadership transfer of group {} succeeded",
+          transfer.group);
+        co_return true;
+    } else {
+        vlog(
+          clusterlog.info,
+          "Leadership transfer of group {} failed with error: {}",
+          transfer.group,
+          raft::make_error_code(res.value().data.result).message());
+        co_return false;
+    }
 }
 
 } // namespace cluster

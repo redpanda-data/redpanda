@@ -99,6 +99,7 @@ private:
     ss::future<bool> do_transfer(reassignment);
     ss::future<bool> do_transfer_local(reassignment) const;
     ss::future<bool> do_transfer_remote(reassignment);
+    ss::future<bool> do_transfer_remote_legacy(reassignment);
 
     void on_enable_changed();
 
