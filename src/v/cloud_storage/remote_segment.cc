@@ -219,6 +219,12 @@ remote_segment::offset_data_stream(
                   .file_pos = 0,
                 });
     }
+    vlog(
+      _ctxlog.debug,
+      "Offset data stream start reading at {}, log offset {}, delta {}",
+      pos.file_pos,
+      pos.rp_offset,
+      pos.rp_offset - pos.kaf_offset);
     ss::file_input_stream_options options{};
     options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
     options.read_ahead
@@ -909,30 +915,16 @@ public:
               "remote_segment_batch_consumer not initialized",
               _parent._seg->get_ntp());
 
-            if (
-              _parent._cur_ot_state->get().last_gap_offset()
-              < header.base_offset) {
-                _parent._cur_ot_state->get().add_gap(
-                  header.base_offset, header.last_offset());
-                vlog(
-                  _ctxlog.debug,
-                  "added offset translation gap [{}-{}], current state: {}",
-                  header.base_offset,
-                  header.last_offset(),
-                  _parent._cur_ot_state);
+            vlog(
+              _ctxlog.debug,
+              "added offset translation gap [{}-{}], current state: {}",
+              header.base_offset,
+              header.last_offset(),
+              _parent._cur_ot_state);
 
-                _parent._cur_delta += header.last_offset_delta
-                                      + model::offset{1};
-            } else {
-                // This can happen if we're dealing with overlapping segments
-                vlog(
-                  _ctxlog.debug,
-                  "offset translation gap [{}-{}] is already added, current "
-                  "state: {}",
-                  header.base_offset,
-                  header.last_offset(),
-                  _parent._cur_ot_state);
-            }
+            _parent._cur_ot_state->get().add_gap(
+              header.base_offset, header.last_offset());
+            _parent._cur_delta += header.last_offset_delta + model::offset(1);
         }
     }
 
@@ -1006,9 +998,7 @@ remote_segment_batch_reader::read_some(
             _parser = co_await init_parser();
         }
 
-        if (
-          ot_state.empty()
-          && ot_state.add_absolute_delta(_cur_rp_offset, _cur_delta)) {
+        if (ot_state.add_absolute_delta(_cur_rp_offset, _cur_delta)) {
             vlog(
               _ctxlog.debug,
               "offset translation: add_absolute_delta at offset {}, "

@@ -800,7 +800,7 @@ SEASTAR_THREAD_TEST_CASE(test_no_closing_bracket_meta) {
       std::runtime_error,
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
-                   "Failed to parse topic manifest "
+                   "Failed to parse partition manifest "
                    "{\"b0000000/meta///-2147483648_-9223372036854775808/"
                    "manifest.json\"}: Missing a comma or '}' after an object "
                    "member. at offset 325")
