@@ -234,7 +234,8 @@ ss::future<> tx_gateway_frontend::stop() {
       [] { vlog(txlog.debug, "Tx coordinator is stopped"); });
 }
 
-ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
+ss::future<std::optional<model::node_id>>
+tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
     auto has_topic = ss::make_ready_future<bool>(true);
 
     if (!_metadata_cache.local().contains(
