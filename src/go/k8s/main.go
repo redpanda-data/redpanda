@@ -13,12 +13,14 @@ import (
 	"os"
 	"time"
 
+	helmControllerV2 "github.com/fluxcd/helm-controller/controllers"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -169,10 +171,18 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Console")
 		os.Exit(1)
 	}
+
+	// TODO fill this in with options
+	helmOpts := helmControllerV2.HelmReleaseReconcilerOptions{
+		MaxConcurrentReconciles:   1,                // "The number of concurrent HelmRelease reconciles."
+		DependencyRequeueInterval: 30 * time.Second, // The interval at which failing dependencies are reevaluated.
+		HTTPRetry:                 9,                // The maximum number of retries when failing to fetch artifacts over HTTP.
+		RateLimiter:               workqueue.NewItemExponentialFailureRateLimiter(30*time.Second, 60*time.Second),
+	}
 	if err = (&redpandacontrollers.RedpandaReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, helmOpts); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
 		os.Exit(1)
 	}
