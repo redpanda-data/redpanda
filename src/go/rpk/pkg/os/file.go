@@ -11,6 +11,7 @@ package os
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"time"
@@ -25,9 +26,10 @@ func ReplaceFile(fs afero.Fs, filename string, contents []byte, newPerms os.File
 	if err != nil {
 		return fmt.Errorf("unable to determine if file %q exists: %v", filename, err)
 	}
+
 	// Create a temp file first.
-	layout := "20060102150405" // year-month-day-hour-min-sec
-	bFilename := "redpanda-" + time.Now().Format(layout)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	bFilename := fmt.Sprintf("redpanda-%v", r.Int())
 	temp := filepath.Join(filepath.Dir(filename), bFilename)
 
 	err = afero.WriteFile(fs, temp, contents, newPerms)
