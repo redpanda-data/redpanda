@@ -75,7 +75,7 @@ type ConsoleSpec struct {
 	Cloud *CloudConfig `json:"cloud,omitempty"`
 
 	// Redpanda contains configurations that are Redpanda specific
-	Redpanda *Redpanda `json:"redpanda,omitempty"`
+	Redpanda *ConsoleRedpandaConfig `json:"redpanda,omitempty"`
 
 	// SecretStore contains the configuration for the cloud provider secret manager
 	SecretStore *SecretStore `json:"secretStore,omitempty"`
@@ -201,8 +201,8 @@ type ConnectClusterTLS struct {
 	InsecureSkipTLSVerify bool `json:"insecureSkipTlsVerify,omitempty"`
 }
 
-// Redpanda defines configurable fields that are Redpanda specific
-type Redpanda struct {
+// ConsoleRedpandaConfig defines configurable fields that are Redpanda specific
+type ConsoleRedpandaConfig struct {
 	AdminAPI *RedpandaAdmin `json:"adminApi,omitempty"`
 }
 
