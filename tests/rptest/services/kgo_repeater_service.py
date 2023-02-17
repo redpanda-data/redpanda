@@ -15,7 +15,6 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 from ducktape.services.service import Service
-from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.tests.test import TestContext
 
@@ -206,7 +205,9 @@ class KgoRepeaterService(Service):
         self.logger.debug(f"Waiting for group {self.group_name} to be ready")
         t1 = time.time()
         try:
-            wait_until(group_ready, timeout_sec=120, backoff_sec=10)
+            self.redpanda.wait_until(group_ready,
+                                     timeout_sec=120,
+                                     backoff_sec=10)
         except:
             # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
             for node in self.nodes:
@@ -286,7 +287,7 @@ class KgoRepeaterService(Service):
         # the system isn't at peak throughput (e.g. when it's just warming up)
         timeout_sec = max(timeout_sec, 60)
 
-        wait_until(check, timeout_sec=timeout_sec, backoff_sec=1)
+        self.redpanda.wait_until(check, timeout_sec=timeout_sec, backoff_sec=1)
 
 
 @contextmanager
