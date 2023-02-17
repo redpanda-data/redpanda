@@ -433,6 +433,7 @@ bool is_interrupting_operation(
      */
     switch (candidate.type) {
     case topic_table::delta::op_type::del:
+    case topic_table::delta::op_type::reset:
         return true;
     case topic_table::delta::op_type::cancel_update:
         return current.type == topic_table::delta::op_type::update
@@ -565,6 +566,7 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
         case op_t::add:
         case op_t::add_non_replicable:
         case op_t::update_finished:
+        case op_t::reset:
             return has_local_replicas(self, delta.new_assignment.replicas);
         case op_t::update:
         case op_t::cancel_update:
@@ -974,6 +976,23 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
         return delete_partition(
                  delta.ntp, cmd_rev, partition_removal_mode::global)
           .then([] { return std::error_code(errc::success); });
+    case op_t::reset:
+        vassert(
+          delta.previous_replica_set,
+          "reset delta must have previous replica set, current "
+          "delta: {}",
+          delta);
+        vassert(
+          delta.replica_revisions,
+          "replica revisions map must be present in reset type "
+          "delta: {}",
+          delta);
+        return reset_partition(
+          delta.ntp,
+          delta.new_assignment,
+          *delta.previous_replica_set,
+          *delta.replica_revisions,
+          cmd_rev);
     case op_t::update:
     case op_t::force_abort_update:
     case op_t::cancel_update:
@@ -1207,6 +1226,75 @@ controller_backend::process_partition_reconfiguration(
         co_return errc::waiting_for_recovery;
     }
     co_return ec;
+}
+
+ss::future<std::error_code> controller_backend::reset_partition(
+  model::ntp ntp,
+  const partition_assignment& target_assignment,
+  const std::vector<model::broker_shard>& prev_replicas,
+  const replicas_revision_map& replica_revisions,
+  model::revision_id cmd_revision) {
+    vlog(
+      clusterlog.trace,
+      "[{}] processing partition reset command with target replicas: {}, "
+      "previous replica set: {}, replica_revisions map: {}",
+      ntp,
+      target_assignment.replicas,
+      prev_replicas,
+      replica_revisions);
+
+    auto partition = _partition_manager.local().get(ntp);
+
+    if (has_local_replicas(_self, target_assignment.replicas)) {
+        model::revision_id target_rev = replica_revisions.at(_self);
+
+        if (partition) {
+            if (partition->get_revision_id() >= target_rev) {
+                co_return errc::success;
+            }
+
+            // The partition is of older revision, we need to re-create it
+            partition = nullptr;
+            co_await delete_partition(
+              ntp, target_rev, partition_removal_mode::local_only);
+            co_return co_await create_partition(
+              ntp, target_assignment.group, target_rev, cmd_revision, {});
+        }
+
+        bool is_cross_core_target = contains_node(prev_replicas, _self)
+                                    && !has_local_replicas(
+                                      _self, prev_replicas);
+        if (is_cross_core_target) {
+            auto previous_shard = get_target_shard(_self, prev_replicas);
+            co_return co_await create_partition_from_remote_shard(
+              ntp, cmd_revision, *previous_shard, target_assignment);
+        }
+
+        co_return co_await create_partition(
+          ntp, target_assignment.group, target_rev, cmd_revision, {});
+    } else {
+        // we need to remove the partition
+
+        if (!partition) {
+            co_return errc::success;
+        }
+
+        if (partition->get_revision_id() > cmd_revision) {
+            co_return errc::success;
+        }
+
+        if (contains_node(target_assignment.replicas, _self)) {
+            model::revision_id target_rev = replica_revisions.at(_self);
+            if (partition->get_revision_id() >= target_rev) {
+                // partition is the source of the cross-core movement
+                co_return co_await shutdown_on_current_shard(ntp, cmd_revision);
+            }
+        }
+
+        co_await delete_partition(
+          ntp, cmd_revision, partition_removal_mode::local_only);
+        co_return errc::success;
+    }
 }
 
 bool controller_backend::can_finish_update(

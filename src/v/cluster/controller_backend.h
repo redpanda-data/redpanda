@@ -333,6 +333,12 @@ private:
       remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
     ss::future<> delete_partition(
       model::ntp, model::revision_id, partition_removal_mode mode);
+    ss::future<std::error_code> reset_partition(
+      model::ntp,
+      const partition_assignment& target_assignment,
+      const std::vector<model::broker_shard>& prev_replicas,
+      const replicas_revision_map&,
+      model::revision_id cmd_revision);
     template<typename Func>
     ss::future<std::error_code> apply_configuration_change_on_leader(
       const model::ntp&,

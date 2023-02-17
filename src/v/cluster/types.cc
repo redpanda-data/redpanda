@@ -375,6 +375,8 @@ operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
         return o << "addition";
     case topic_table_delta::op_type::del:
         return o << "deletion";
+    case topic_table_delta::op_type::reset:
+        return o << "reset";
     case topic_table_delta::op_type::update:
         return o << "update";
     case topic_table_delta::op_type::update_finished:

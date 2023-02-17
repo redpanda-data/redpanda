@@ -1896,6 +1896,7 @@ struct topic_table_delta {
         del_non_replicable,
         cancel_update,
         force_abort_update,
+        reset,
     };
 
     topic_table_delta(
