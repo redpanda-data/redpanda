@@ -1173,11 +1173,15 @@ class RedpandaService(Service):
         a test failure until the end of the timeout, even if redpanda
         already crashed.
         """
+
+        t_initial = time.time()
+        # How long to delay doing redpanda liveness checks, to make short waits more efficient
+        grace_period = 15
+
         def wrapped():
             r = fn()
-            if not r:
-                # If we're going to wait + retry, check the cluster is
-                # up before doing so.
+            if not r and time.time() > t_initial + grace_period:
+                # Check the cluster is up before waiting + retrying
                 assert self.all_up()
             return r
 
