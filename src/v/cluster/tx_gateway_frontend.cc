@@ -270,6 +270,10 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
         co_return std::nullopt;
     }
 
+    if (!_rm_partition_frontend.local().is_find_leader_supported()) {
+        co_return leader;
+    }
+
     try {
         auto reply = co_await _rm_partition_frontend.local().is_leader(
           leader.value(), model::tx_manager_ntp, timeout);

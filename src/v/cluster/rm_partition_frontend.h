@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -32,7 +33,12 @@ public:
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<features::feature_table>&,
       cluster::controller*);
+
+    bool is_find_leader_supported() {
+        return _feature_table.local().is_active(features::feature::find_leader);
+    }
 
     ss::future<std::optional<cluster::ntp_leader_revision>>
       find_leader(model::ntp, model::timeout_clock::duration);
@@ -72,6 +78,7 @@ private:
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<features::feature_table>& _feature_table;
     cluster::controller* _controller;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;

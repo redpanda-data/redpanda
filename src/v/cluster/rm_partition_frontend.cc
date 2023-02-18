@@ -37,6 +37,7 @@ rm_partition_frontend::rm_partition_frontend(
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<features::feature_table>& feature_table,
   cluster::controller* controller)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
@@ -44,6 +45,7 @@ rm_partition_frontend::rm_partition_frontend(
   , _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
   , _leaders(leaders)
+  , _feature_table(feature_table)
   , _controller(controller)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
