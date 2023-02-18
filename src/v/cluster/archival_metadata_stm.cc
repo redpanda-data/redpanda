@@ -683,6 +683,7 @@ model::offset archival_metadata_stm::max_collectible_offset() {
     // From Redpanda 22.3 up, the ntp_config's impression of whether archival
     // is enabled is authoritative.
     bool collect_all = !_raft->log_config().is_archival_enabled();
+    bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
 
     // In earlier versions, we should assume every topic is archival enabled
     // if the global cloud_storage_enable_remote_write is true.
@@ -692,9 +693,12 @@ model::offset archival_metadata_stm::max_collectible_offset() {
         collect_all = false;
     }
 
-    if (collect_all) {
+    if (collect_all || is_read_replica) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
+        // In read-replicas the state machine exists and stores segments from
+        // the remote manifest. Since nothing is uploaded there is no need to
+        // interact with local retention.
         return model::offset::max();
     }
     auto lo = get_last_offset();
@@ -755,7 +759,7 @@ void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
       so.start_offset);
     if (!_manifest->advance_start_offset(so.start_offset)) {
         vlog(
-          _logger.warn,
+          _logger.error,
           "Can't truncate manifest up to offset {}, offset out of range",
           so.start_offset);
     } else {

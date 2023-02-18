@@ -291,7 +291,7 @@ class SISettings:
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False,
-                 cloud_storage_housekeeping_interval_ms=None):
+                 cloud_storage_housekeeping_interval_ms: Optional[int] = None):
         self.cloud_storage_type = CloudStorageType.S3
         if hasattr(test_context, 'injected_args') \
         and test_context.injected_args is not None \
@@ -447,7 +447,6 @@ class SISettings:
         if self.cloud_storage_housekeeping_interval_ms:
             conf[
                 'cloud_storage_housekeeping_interval_ms'] = self.cloud_storage_housekeeping_interval_ms
-
         return conf
 
 
