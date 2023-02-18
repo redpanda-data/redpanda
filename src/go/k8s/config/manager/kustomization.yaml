@@ -12,5 +12,5 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 images:
 - name: vectorized/redpanda-operator
-  newName: vectorized/redpanda-operator
-  newTag: latest
+  newName: localhost/redpanda-operator
+  newTag: dev
