@@ -149,8 +149,12 @@ class MetricsEndpoint(Enum):
 
 
 class CloudStorageType(IntEnum):
+    # Use AWS S3 on dedicated nodes, or minio in docker
     S3 = 1
+    # Use Azure ABS on dedicated nodes, or azurite in docker
     ABS = 2
+    # Auto-select the cloud's storage service on dedicated nodes, or use minio+S3 on docker
+    AUTO = 3
 
 
 def one_or_many(value):
@@ -272,6 +276,8 @@ class SISettings:
     GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
 
+    DEDICATED_NODE_KEY = "dedicated_nodes"
+
     def __init__(self,
                  test_context,
                  *,
@@ -292,12 +298,30 @@ class SISettings:
                      int] = None,
                  bypass_bucket_creation: bool = False,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None):
-        self.cloud_storage_type = CloudStorageType.S3
+
+        self.cloud_storage_type = CloudStorageType.AUTO
         if hasattr(test_context, 'injected_args') \
         and test_context.injected_args is not None \
         and 'cloud_storage_type' in test_context.injected_args:
             self.cloud_storage_type = test_context.injected_args[
                 'cloud_storage_type']
+
+        if self.cloud_storage_type == CloudStorageType.AUTO:
+            dedicated_nodes = test_context.globals.get(self.DEDICATED_NODE_KEY,
+                                                       False)
+            if dedicated_nodes:
+                abs_shared_key = test_context.globals.get(
+                    self.GLOBAL_ABS_SHARED_KEY, None)
+                s3_region = test_context.globals.get(self.GLOBAL_S3_REGION_KEY,
+                                                     None)
+                if abs_shared_key is not None:
+                    self.cloud_storage_type = CloudStorageType.ABS
+                elif s3_region is not None:
+                    self.cloud_storage_type = CloudStorageType.S3
+                else:
+                    raise RuntimeError("Cannot autodetect cloud storage")
+            else:
+                self.cloud_storage_type = CloudStorageType.S3
 
         if self.cloud_storage_type == CloudStorageType.S3:
             self.cloud_storage_access_key = cloud_storage_access_key
