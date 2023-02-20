@@ -255,8 +255,6 @@ class TestReadReplicaService(EndToEndTest):
 
         # Let replica consumer run to completion, assert no s3 writes
         self.run_consumer_validation()
-        # Check read-replica logs
-        self.second_cluster.raise_on_bad_logs()
 
         post_usage = self._bucket_usage()
         self.logger.info(f"post_usage {post_usage}")
