@@ -2653,6 +2653,49 @@ void admin_server::register_partition_routes() {
             });
       });
 
+    register_route<user>(
+      ss::httpd::partition_json::get_partitions_local_summary,
+      [this](std::unique_ptr<ss::httpd::request>) {
+          // This type mirrors partitions_local_summary, but satisfies
+          // the seastar map_reduce requirement of being nothrow move
+          // constructible.
+          struct summary_t {
+              uint64_t count{0};
+              uint64_t leaderless{0};
+              uint64_t under_replicated{0};
+          };
+
+          return _partition_manager
+            .map_reduce0(
+              [](auto& pm) {
+                  summary_t s;
+                  for (const auto& it : pm.partitions()) {
+                      s.count += 1;
+                      if (it.second->get_leader_id() == std::nullopt) {
+                          s.leaderless += 1;
+                      }
+                      if (it.second->get_under_replicated() == std::nullopt) {
+                          s.under_replicated += 1;
+                      }
+                  }
+                  return s;
+              },
+              summary_t{},
+              [](summary_t acc, summary_t update) {
+                  acc.count += update.count;
+                  acc.leaderless += update.leaderless;
+                  acc.under_replicated += update.under_replicated;
+                  return acc;
+              })
+            .then([](summary_t summary) {
+                ss::httpd::partition_json::partitions_local_summary result;
+                result.count = summary.count;
+                result.leaderless = summary.leaderless;
+                result.under_replicated = summary.under_replicated;
+                return ss::json::json_return_type(std::move(result));
+            });
+      });
+
     /*
      * Get detailed information about a partition.
      */
