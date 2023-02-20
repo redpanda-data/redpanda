@@ -1,8 +1,8 @@
 import json
 import os
-import socket
 
-from ducktape.cluster.remoteaccount import RemoteCommandError
+from collections import namedtuple
+from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccount
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from rptest.services.redpanda import RedpandaService
@@ -272,6 +272,39 @@ EOF
         # Drop the first line, which is login details
         return list(princs)[1:]
 
+    def _configure_principal(self, krb5_conf_path: str, principal: str,
+                             dest: str, dest_node):
+        if not "@" in principal:
+            principal = f"{principal}@{self.realm}"
+        self.logger.info(f"Adding principal {principal} to KDC")
+        cmd = render_remote_kadmin_command(
+            command=render_add_principal_command(principal=principal),
+            realm=self.realm,
+            principal=self.kadmin_principal,
+            password=self.kadmin_password,
+            krb5_conf_path=krb5_conf_path)
+        self.logger.debug(f"principal add command: {cmd}")
+        dest_node.account.ssh(cmd=cmd, allow_fail=False)
+        self.logger.debug(
+            f"Generating keytab file {dest} for {dest_node.name}")
+        cmd = render_remote_kadmin_command(command=render_ktadd_command(
+            principal=principal, keytab_file=dest),
+                                           realm=self.realm,
+                                           principal=self.kadmin_principal,
+                                           password=self.kadmin_password,
+                                           krb5_conf_path=krb5_conf_path)
+        self.logger.debug(f"ktadd command: {cmd}")
+        dest_node.account.ssh(f"mkdir -p {os.path.dirname(dest)}")
+        dest_node.account.ssh(cmd=cmd, allow_fail=False)
+
+    def configure_service_principal(self, krb5_conf_path: str, principal: str,
+                                    dest: str, dest_node):
+        self._configure_principal(krb5_conf_path, principal, dest, dest_node)
+
+    def configure_user_principal(self, krb5_conf_path: str, principal: str,
+                                 dest: str, dest_node):
+        self._configure_principal(krb5_conf_path, principal, dest, dest_node)
+
 
 class KrbClient(Service):
     """
@@ -348,30 +381,17 @@ class KrbClient(Service):
             allow_fail=True)
         node.account.ssh(f"rm -fr /tmp/*.krb5ccache", allow_fail=True)
 
-    def add_primary(self, primary: str, realm: str = None):
+    def add_primary(self, primary: str):
         self.logger.info(
             f"Adding primary {primary} to KrbClient {self.nodes[0].name}")
-        if realm is None:
-            realm = self.kdc.realm
-        principal = f"{primary}@{realm}"
-        cmd = render_remote_kadmin_command(
-            command=render_add_principal_command(principal=principal),
-            realm=self.kdc.realm,
-            principal=self.kdc.kadmin_principal,
-            password=self.kdc.kadmin_password)
-        self.logger.debug(f"Client add primary command: {cmd}")
-        self.nodes[0].account.ssh(cmd=cmd, allow_fail=False)
-        cmd = render_remote_kadmin_command(command=render_ktadd_command(
-            principal=principal, keytab_file=self.keytab_file),
-                                           realm=self.kdc.realm,
-                                           principal=self.kdc.kadmin_principal,
-                                           password=self.kdc.kadmin_password)
-        self.logger.debug(f"Client ktadd command: {cmd}")
-        self.nodes[0].account.ssh(cmd=cmd, allow_fail=False)
+        self.kdc.configure_user_principal(krb5_conf_path=self.krb5_conf_path,
+                                          principal=primary,
+                                          dest=self.keytab_file,
+                                          dest_node=self.nodes[0])
 
     def metadata(self, principal: str):
         self.logger.info("Metadata request")
-        client_cache = f"/tmp/{principal}.krb5ccache"
+        client_cache = f"/tmp/{principal.replace('/', '_')[0]}.krb5ccache"
         kinit_args = f"-kt {self.keytab_file} -c {client_cache} {principal}"
         kinit_cmd = f"kinit -R {kinit_args} || kinit {kinit_args}"
         sasl_conf = f"-X security.protocol=sasl_plaintext -X sasl.mechanisms=GSSAPI '-Xsasl.kerberos.kinit.cmd={kinit_cmd}' -X sasl.kerberos.service.name=redpanda"
@@ -464,28 +484,105 @@ class RedpandaKerberosNode(RedpandaService):
         node.account.create_file(self.krb5_conf_path, krb5_config)
         principal = self._service_principal(node)
         self.logger.debug(f"Principal for {node.name}: {principal}")
-        self.logger.debug(f"Adding principal {principal} to KDC")
-        cmd = render_remote_kadmin_command(
-            command=render_add_principal_command(principal=principal),
-            realm=self.kdc.realm,
-            principal=self.kdc.kadmin_principal,
-            password=self.kdc.kadmin_password,
-            krb5_conf_path=self.krb5_conf_path)
-        self.logger.debug(f"principal add command: {cmd}")
-        node.account.ssh(cmd=cmd, allow_fail=False)
-        self.logger.debug(
-            f"Generating keytab file {self.keytab_file} for {node.name}")
-        cmd = render_remote_kadmin_command(command=render_ktadd_command(
-            principal=principal, keytab_file=self.keytab_file),
-                                           realm=self.kdc.realm,
-                                           principal=self.kdc.kadmin_principal,
-                                           password=self.kdc.kadmin_password,
-                                           krb5_conf_path=self.krb5_conf_path)
-        self.logger.debug(f"ktadd command: {cmd}")
-        node.account.ssh(f"mkdir -p {os.path.dirname(self.keytab_file)}")
-        node.account.ssh(cmd=cmd, allow_fail=False)
+        self.kdc.configure_service_principal(self.krb5_conf_path, principal,
+                                             self.keytab_file, node)
         super().start_node(node, **kwargs)
 
     def _service_principal(self, node, primary: str = "redpanda"):
         fqdn = RedpandaService.get_node_fqdn(node)
         return f"{primary}/{fqdn}@{self.realm}"
+
+
+class ActiveDirectoryKdc:
+    def __init__(self, logger, remote_account: RemoteAccount, realm: str,
+                 keytab_password: str, upn_user: str, spn_user: str):
+        self.logger = logger
+        self.remote_account = remote_account
+        self.realm = realm
+        self.keytab_password = keytab_password
+        self.upn_user = upn_user
+        self.spn_user = spn_user
+        self.nodes = [
+            namedtuple("node", "name account")(remote_account.hostname,
+                                               remote_account)
+        ]
+
+    def ssh_input_output(self,
+                         cmd,
+                         allow_fail=False,
+                         combine_stderr=True,
+                         timeout_sec=None,
+                         in_lines=None):
+        """Runs the command via SSH and captures the output, returning it as a string.
+
+        :param cmd: The remote ssh command.
+        :param allow_fail: If True, ignore nonzero exit status of the remote command,
+               else raise an ``RemoteCommandError``
+        :param combine_stderr: If True, return output from both stderr and stdout of the remote process.
+        :param timeout_sec: Set timeout on blocking reads/writes. Default None. For more details see
+            http://docs.paramiko.org/en/2.0/api/channel.html#paramiko.channel.Channel.settimeout
+        :param in_lines: an iterable sequence of strings to pass to stdin
+
+        :return: The stdout output from the ssh command.
+        :raise RemoteCommandError: If ``allow_fail`` is False and the command returns a non-zero exit status
+        """
+        self.logger.debug(f"Running ssh command: {cmd}")
+
+        stdin, stdout, stderr = self.remote_account.ssh_client.exec_command(
+            command=cmd, timeout=timeout_sec, get_pty=True)
+
+        try:
+            stdin.writelines(in_lines)
+            stdin.flush()
+
+            stdout.channel.set_combine_stderr(combine_stderr)
+            stdoutdata = stdout.readlines()
+
+            exit_status = stdin.channel.recv_exit_status()
+            if exit_status != 0:
+                if not allow_fail:
+                    raise RemoteCommandError(self, cmd, exit_status,
+                                             stderr.readlines())
+                self.logger.debug(
+                    f"Running ssh command '{cmd}' exited with status {exit_status} and message: {stderr.readlines()}"
+                )
+        finally:
+            stdin.close()
+            stdout.close()
+            stderr.close()
+
+        return stdoutdata
+
+    def _configure_principal(self, krb5_conf_path: str, user: str,
+                             principal: str, password: str, dest: str,
+                             dest_node):
+        if not "@" in principal:
+            principal = f"{principal}@{self.realm}"
+        src = fr"{user}.keytab.temp"
+        cmd = f"ktpass -out {src} -mapuser {user} -princ {principal} -crypto ALL -pass * -ptype KRB5_NT_PRINCIPAL +DumpSalt"
+        self.logger.debug(f"Configuring principal cmd: {cmd}")
+        out = self.ssh_input_output(
+            cmd=cmd,
+            allow_fail=False,
+            combine_stderr=False,
+            timeout_sec=5,
+            in_lines=[f"{password}\r\n", f"{password}\r\n"])
+        self.logger.info(f"Output of ktpass: {out}")
+        self.logger.debug(
+            f"copying keytab: from {src} to {dest_node.name} at {dest}")
+        dest_node.account.ssh(f"mkdir -p {os.path.dirname(dest)}")
+        self.remote_account.copy_between(src, dest, dest_node)
+        self.remote_account.ssh(cmd=f"del {src}", allow_fail=False)
+
+    def configure_service_principal(self, krb5_conf_path: str, principal: str,
+                                    dest: str, dest_node):
+        self._configure_principal(krb5_conf_path, self.spn_user, principal,
+                                  self.keytab_password, dest, dest_node)
+
+    def configure_user_principal(self, krb5_conf_path: str, principal: str,
+                                 dest: str, dest_node):
+        self._configure_principal(krb5_conf_path, self.upn_user, principal,
+                                  self.keytab_password, dest, dest_node)
+
+    def start(self):
+        pass
