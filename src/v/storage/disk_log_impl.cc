@@ -875,12 +875,12 @@ offset_stats disk_log_impl::offsets() const {
 }
 
 model::timestamp disk_log_impl::start_timestamp() const {
-    if (_segs.empty()) {
+    auto seg = _segs.lower_bound(_start_offset);
+    if (seg == _segs.end()) {
         return model::timestamp{};
     }
 
-    auto& s = _segs.front();
-    return s->index().base_timestamp();
+    return (*seg)->index().base_timestamp();
 }
 
 ss::future<> disk_log_impl::new_segment(

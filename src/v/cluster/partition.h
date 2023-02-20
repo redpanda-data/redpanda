@@ -272,6 +272,12 @@ public:
     consensus_ptr raft() const { return _raft; }
 
 private:
+    ss::future<std::optional<storage::timequery_result>>
+      cloud_storage_timequery(storage::timequery_config);
+
+    ss::future<std::optional<storage::timequery_result>>
+      local_timequery(storage::timequery_config);
+
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
