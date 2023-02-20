@@ -18,6 +18,7 @@
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <optional>
 
@@ -229,6 +230,30 @@ void partition_leaders_table::update_partition_leader(
       !it->second.previous_leader
       || leader_id.value() != it->second.previous_leader.value()) {
         _watchers.notify(ntp, ntp, term, leader_id);
+    }
+}
+
+ss::future<> partition_leaders_table::update_with_estimates() {
+    for (const auto& [ns_tp, topic] :
+         _topic_table.local().all_topics_metadata()) {
+        if (!topic.is_topic_replicable()) {
+            // skip non-replicable topics
+            continue;
+        }
+
+        for (const auto& part : topic.metadata.get_assignments()) {
+            if (!_leaders.contains(leader_key_view{ns_tp, part.id})) {
+                model::ntp ntp{ns_tp.ns, ns_tp.tp, part.id};
+                vassert(
+                  !part.replicas.empty(),
+                  "set of replicas for ntp {} can't be empty",
+                  ntp);
+                update_partition_leader(
+                  ntp, model::term_id{1}, part.replicas.begin()->node_id);
+            }
+
+            co_await ss::coroutine::maybe_yield();
+        }
     }
 }
 
