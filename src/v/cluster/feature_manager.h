@@ -123,7 +123,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     raft::group_id _raft0_group;
 
-    std::vector<std::pair<model::node_id, cluster_version>> _updates;
+    version_map _updates;
     ss::condition_variable _update_wait;
 
     cluster::notification_id_type _leader_notify_handle{
