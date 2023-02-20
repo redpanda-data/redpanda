@@ -16,10 +16,13 @@
 {
   "apiKey": 29,
   "type": "request",
+  "listeners": ["zkBroker", "broker", "controller"],
   "name": "DescribeAclsRequest",
   // Version 1 adds resource pattern type.
-  "validVersions": "0-1",
-  "flexibleVersions": "none",
+  // Version 2 enables flexible versions.
+  // Version 3 adds user resource type.
+  "validVersions": "0-3",
+  "flexibleVersions": "2+",
   "fields": [
     { "name": "ResourceType", "type": "int8", "versions": "0+",
       "about": "The resource type." },

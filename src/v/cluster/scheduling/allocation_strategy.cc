@@ -87,17 +87,30 @@ model::node_id find_best_fit(
         if (it == nodes.end()) {
             continue;
         }
+        /**
+         * Score is normalized so that it is always in range [0, max_score_size]
+         */
+        uint32_t score
+          = std::accumulate(
+              constraints.begin(),
+              constraints.end(),
+              uint32_t{0},
+              [&node = it->second](
+                uint32_t score,
+                const allocation_constraints::soft_constraint_ev_ptr& ev) {
+                  const auto current_score = ev->score(*node);
+                  vlog(
+                    clusterlog.trace,
+                    "constraint: {}, node: {}, score: {}",
+                    *ev,
+                    node->id(),
+                    current_score);
+                  return score + current_score;
+              })
+            / constraints.size();
 
-        uint32_t score = std::accumulate(
-          constraints.begin(),
-          constraints.end(),
-          0,
-          [&node = it->second](
-            uint32_t score,
-            const allocation_constraints::soft_constraint_ev_ptr& ev) {
-              return score + ev->score(*node);
-          });
-
+        vlog(
+          clusterlog.trace, "node: {}, total normalized score: {}", id, score);
         if (score >= best_score) {
             if (score > best_score) {
                 // untied, winner clear out existing winners
@@ -120,7 +133,8 @@ allocation_strategy simple_allocation_strategy() {
     public:
         result<model::broker_shard> allocate_replica(
           const allocation_constraints& request,
-          allocation_state& state) final {
+          allocation_state& state,
+          const partition_allocation_domain domain) final {
             const auto& nodes = state.allocation_nodes();
             /**
              * evaluate hard constraints
@@ -143,7 +157,7 @@ allocation_strategy simple_allocation_strategy() {
               it != nodes.end(),
               "allocated node with id {} have to be present",
               best_fit);
-            auto core = (it->second)->allocate();
+            auto core = (it->second)->allocate(domain);
             return model::broker_shard{
               .node_id = it->first,
               .shard = core,

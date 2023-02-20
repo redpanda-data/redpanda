@@ -294,16 +294,16 @@ func (ss *seedServers) UnmarshalYAML(n *yaml.Node) error {
 
 func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		NodeUUID             weakString      `yaml:"node_uuid"`
-		Organization         weakString      `yaml:"organization"`
-		LicenseKey           weakString      `yaml:"license_key"`
-		ClusterID            weakString      `yaml:"cluster_id"`
-		Redpanda             RedpandaConfig  `yaml:"redpanda"`
-		Rpk                  RpkConfig       `yaml:"rpk"`
-		Pandaproxy           *Pandaproxy     `yaml:"pandaproxy"`
-		PandaproxyClient     *KafkaClient    `yaml:"pandaproxy_client"`
-		SchemaRegistry       *SchemaRegistry `yaml:"schema_registry"`
-		SchemaRegistryClient *KafkaClient    `yaml:"schema_registry_client"`
+		NodeUUID             weakString         `yaml:"node_uuid"`
+		Organization         weakString         `yaml:"organization"`
+		LicenseKey           weakString         `yaml:"license_key"`
+		ClusterID            weakString         `yaml:"cluster_id"`
+		Redpanda             RedpandaNodeConfig `yaml:"redpanda"`
+		Rpk                  RpkConfig          `yaml:"rpk"`
+		Pandaproxy           *Pandaproxy        `yaml:"pandaproxy"`
+		PandaproxyClient     *KafkaClient       `yaml:"pandaproxy_client"`
+		SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry"`
+		SchemaRegistryClient *KafkaClient       `yaml:"schema_registry_client"`
 
 		Other map[string]interface{} `yaml:",inline"`
 	}
@@ -325,11 +325,12 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
+func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Directory                  weakString                `yaml:"data_directory"`
-		ID                         weakInt                   `yaml:"node_id" `
+		ID                         *weakInt                  `yaml:"node_id"`
 		Rack                       weakString                `yaml:"rack"`
+		EmptySeedStartsCluster     *weakBool                 `yaml:"empty_seed_starts_cluster"`
 		SeedServers                seedServers               `yaml:"seed_servers"`
 		RPCServer                  SocketAddress             `yaml:"rpc_server"`
 		RPCServerTLS               serverTLSArray            `yaml:"rpc_server_tls"`
@@ -344,8 +345,7 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 		AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api"`
 		AdvertisedKafkaAPI         namedSocketAddresses      `yaml:"advertised_kafka_api"`
 		DeveloperMode              weakBool                  `yaml:"developer_mode"`
-		AggregateMetrics           weakBool                  `yaml:"aggregate_metrics"`
-		DisablePublicMetrics       weakBool                  `yaml:"disable_public_metrics"`
+		CrashLoopLimit             *weakInt                  `yaml:"crash_loop_limit"`
 		Other                      map[string]interface{}    `yaml:",inline"`
 	}
 
@@ -353,8 +353,9 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 		return err
 	}
 	rpc.Directory = string(internal.Directory)
-	rpc.ID = int(internal.ID)
+	rpc.ID = (*int)(internal.ID)
 	rpc.Rack = string(internal.Rack)
+	rpc.EmptySeedStartsCluster = (*bool)(internal.EmptySeedStartsCluster)
 	rpc.SeedServers = internal.SeedServers
 	rpc.RPCServer = internal.RPCServer
 	rpc.RPCServerTLS = internal.RPCServerTLS
@@ -369,8 +370,7 @@ func (rpc *RedpandaConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpc.AdvertisedRPCAPI = internal.AdvertisedRPCAPI
 	rpc.AdvertisedKafkaAPI = internal.AdvertisedKafkaAPI
 	rpc.DeveloperMode = bool(internal.DeveloperMode)
-	rpc.AggregateMetrics = bool(internal.AggregateMetrics)
-	rpc.DisablePublicMetrics = bool(internal.DisablePublicMetrics)
+	rpc.CrashLoopLimit = (*int)(internal.CrashLoopLimit)
 	rpc.Other = internal.Other
 	return nil
 }
@@ -470,10 +470,10 @@ func (r *RpkAdminAPI) UnmarshalYAML(n *yaml.Node) error {
 
 func (p *Pandaproxy) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		PandaproxyAPI           namedSocketAddresses   `yaml:"pandaproxy_api"`
-		PandaproxyAPITLS        serverTLSArray         `yaml:"pandaproxy_api_tls"`
-		AdvertisedPandaproxyAPI namedSocketAddresses   `yaml:"advertised_pandaproxy_api"`
-		Other                   map[string]interface{} `yaml:",inline"`
+		PandaproxyAPI           namedAuthNSocketAddresses `yaml:"pandaproxy_api"`
+		PandaproxyAPITLS        serverTLSArray            `yaml:"pandaproxy_api_tls"`
+		AdvertisedPandaproxyAPI namedSocketAddresses      `yaml:"advertised_pandaproxy_api"`
+		Other                   map[string]interface{}    `yaml:",inline"`
 	}
 	if err := n.Decode(&internal); err != nil {
 		return err
@@ -508,9 +508,9 @@ func (k *KafkaClient) UnmarshalYAML(n *yaml.Node) error {
 
 func (s *SchemaRegistry) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		SchemaRegistryAPI               namedSocketAddresses `yaml:"schema_registry_api"`
-		SchemaRegistryAPITLS            serverTLSArray       `yaml:"schema_registry_api_tls"`
-		SchemaRegistryReplicationFactor *weakInt             `yaml:"schema_registry_replication_factor"`
+		SchemaRegistryAPI               namedAuthNSocketAddresses `yaml:"schema_registry_api"`
+		SchemaRegistryAPITLS            serverTLSArray            `yaml:"schema_registry_api_tls"`
+		SchemaRegistryReplicationFactor *weakInt                  `yaml:"schema_registry_replication_factor"`
 	}
 
 	if err := n.Decode(&internal); err != nil {
@@ -572,6 +572,8 @@ func (ss *SeedServer) UnmarshalYAML(n *yaml.Node) error {
 		if !embeddedZero && !nestedZero && !reflect.DeepEqual(embedded, nested) {
 			return errors.New("redpanda.yaml redpanda.seed_server: nested host differs from address and port fields; only one must be set")
 		}
+
+		ss.untabbed = true // This means that we are unmarshalling an older version.
 
 		ss.Host = embedded
 		if embeddedZero {

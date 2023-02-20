@@ -18,10 +18,10 @@ import (
 )
 
 func getValidConfig() *Config {
-	conf := Default()
+	conf := DevDefault()
 	conf.Redpanda.SeedServers = []SeedServer{
-		{SocketAddress{"127.0.0.1", 33145}},
-		{SocketAddress{"127.0.0.1", 33146}},
+		{Host: SocketAddress{"127.0.0.1", 33145}},
+		{Host: SocketAddress{"127.0.0.1", 33146}},
 	}
 	conf.Redpanda.DeveloperMode = false
 	conf.Rpk = RpkConfig{
@@ -62,7 +62,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.node_id",
 			value: "1",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 1, c.Redpanda.ID)
+				require.Exactly(st, 1, *c.Redpanda.ID)
 			},
 		},
 		{
@@ -70,7 +70,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.node_id",
 			value: "54312",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 54312, c.Redpanda.ID)
+				require.Exactly(st, 54312, *c.Redpanda.ID)
 			},
 		},
 		{
@@ -78,7 +78,7 @@ func TestSet(t *testing.T) {
 			key:   "redpanda.node_id",
 			value: "54312",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, 54312, c.Redpanda.ID)
+				require.Exactly(st, 54312, *c.Redpanda.ID)
 			},
 		},
 		{
@@ -441,13 +441,13 @@ tune_cpu: true`,
 	}
 }
 
-func TestDefault(t *testing.T) {
-	defaultConfig := Default()
+func TestDevDefault(t *testing.T) {
+	defaultConfig := DevDefault()
 	expected := &Config{
 		fileLocation:   DefaultPath,
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
-		Redpanda: RedpandaConfig{
+		Redpanda: RedpandaNodeConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
 			KafkaAPI: []NamedAuthNSocketAddress{{
@@ -458,13 +458,53 @@ func TestDefault(t *testing.T) {
 				Address: "0.0.0.0",
 				Port:    9644,
 			}},
-			ID:            0,
+			ID:            nil,
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{
 			CoredumpDir:     "/var/lib/redpanda/coredump",
 			Overprovisioned: true,
+		},
+	}
+	require.Exactly(t, expected, defaultConfig)
+}
+
+func TestProdDefault(t *testing.T) {
+	defaultConfig := ProdDefault()
+	expected := &Config{
+		fileLocation:   DefaultPath,
+		Pandaproxy:     &Pandaproxy{},
+		SchemaRegistry: &SchemaRegistry{},
+		Redpanda: RedpandaNodeConfig{
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{"0.0.0.0", 33145},
+			KafkaAPI: []NamedAuthNSocketAddress{{
+				Address: "0.0.0.0",
+				Port:    9092,
+			}},
+			AdminAPI: []NamedSocketAddress{{
+				Address: "0.0.0.0",
+				Port:    9644,
+			}},
+			ID:            nil,
+			SeedServers:   []SeedServer{},
+			DeveloperMode: false,
+		},
+		Rpk: RpkConfig{
+			CoredumpDir:        "/var/lib/redpanda/coredump",
+			Overprovisioned:    false,
+			TuneAioEvents:      true,
+			TuneBallastFile:    true,
+			TuneCPU:            true,
+			TuneClocksource:    true,
+			TuneDiskIrq:        true,
+			TuneDiskScheduler:  true,
+			TuneDiskWriteCache: true,
+			TuneFstrim:         false,
+			TuneNetwork:        true,
+			TuneNomerges:       true,
+			TuneSwappiness:     true,
 		},
 	}
 	require.Exactly(t, expected, defaultConfig)
@@ -483,7 +523,6 @@ func TestWrite(t *testing.T) {
 			conf: getValidConfig,
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -534,7 +573,6 @@ schema_registry: {}
 			},
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -586,7 +624,6 @@ schema_registry: {}
 			wantErr: false,
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -621,7 +658,6 @@ schema_registry: {}
 			wantErr: false,
 			expected: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     seed_servers:
         - host:
             address: 127.0.0.1
@@ -689,7 +725,7 @@ schema_registry: {}
 func TestSetMode(t *testing.T) {
 	fillRpkConfig := func(mode string) func() *Config {
 		return func() *Config {
-			conf := Default()
+			conf := DevDefault()
 			val := mode == ModeProd
 			conf.Redpanda.DeveloperMode = !val
 			conf.Rpk = RpkConfig{
@@ -751,7 +787,7 @@ func TestSetMode(t *testing.T) {
 		{
 			name: "it should preserve all the values that shouldn't be reset",
 			startingConf: func() *Config {
-				conf := Default()
+				conf := DevDefault()
 				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
 				}
@@ -786,7 +822,7 @@ func TestSetMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
-			defaultConf := Default()
+			defaultConf := DevDefault()
 			if tt.startingConf != nil {
 				defaultConf = tt.startingConf()
 			}
@@ -825,7 +861,8 @@ func TestCheckConfig(t *testing.T) {
 			name: "shall return an error when id of server is negative",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.ID = -100
+				c.Redpanda.ID = new(int)
+				*c.Redpanda.ID = -100
 				return c
 			},
 			expected: []string{"redpanda.node_id can't be a negative integer"},

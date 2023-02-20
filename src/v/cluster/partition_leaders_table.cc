@@ -14,6 +14,7 @@
 #include "cluster/topic_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/future-util.hh>
@@ -107,6 +108,23 @@ void partition_leaders_table::update_partition_leader(
   std::optional<model::node_id> leader_id) {
     auto key = leader_key_view{
       model::topic_namespace_view(ntp), ntp.tp.partition};
+
+    const auto is_controller = ntp == model::controller_ntp;
+    /**
+     * Use revision to differentiate updates for the topic that was
+     * deleted from topics table from the one which are processed before the
+     * topic is known to node local topic table.
+     * Controller is a special case as it is not present in topic table.
+     *
+     */
+    const auto topic_removed
+      = revision_id <= _topic_table.local().last_applied_revision()
+        && !_topic_table.local().contains(model::topic_namespace_view(ntp));
+
+    if (topic_removed && !is_controller) {
+        return;
+    }
+
     auto it = _leaders.find(key);
     if (it == _leaders.end()) {
         auto [new_it, _] = _leaders.emplace(

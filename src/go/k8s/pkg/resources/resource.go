@@ -172,6 +172,17 @@ func Update(
 	return false, nil
 }
 
+// DeleteIfExists can delete a resource if present on the cluster
+func DeleteIfExists(
+	ctx context.Context, obj client.Object, c client.Client,
+) error {
+	err := c.Delete(ctx, obj)
+	if err != nil && !errors.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
 // normalization to be done on resource before the patch is computed
 func prepareResourceForPatch(current runtime.Object, modified client.Object) {
 	// when object is get from client via client.Get, GVK is wiped. To prevent

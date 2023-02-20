@@ -18,6 +18,7 @@ from time import sleep
 from confluent_kafka import (Producer, KafkaException)
 
 TOPIC_AUTHORIZATION_FAILED = 29
+CLUSTER_AUTHORIZATION_FAILED = 31
 TRANSACTIONAL_ID_AUTHORIZATION_FAILED = 53
 
 
@@ -31,11 +32,6 @@ class ScramfulEosTest(RedpandaTest):
 
     def __init__(self, test_context):
         extra_rp_conf = {
-            "enable_idempotence": True,
-            "enable_transactions": True,
-            "id_allocator_replication": 3,
-            "transaction_coordinator_replication": 3,
-            "id_allocator_replication": 3,
             "default_topic_replications": 3,
             "default_topic_partitions": 1,
             "enable_leader_balancer": False,
@@ -49,7 +45,7 @@ class ScramfulEosTest(RedpandaTest):
                                               security=security,
                                               extra_rp_conf=extra_rp_conf)
 
-    def retry(self, func, retries, accepted_error_code):
+    def retry(self, func, retries, accepted_ec):
         while True:
             retries -= 1
             try:
@@ -59,7 +55,7 @@ class ScramfulEosTest(RedpandaTest):
                 if retries == 0:
                     raise e
                 assert e.args[0].code(
-                ) == accepted_error_code, f"only {accepted_error_code} error code is expected"
+                ) in accepted_ec, f"only {accepted_ec} error codes are expected"
                 sleep(1)
 
     def write_by_bob(self, algorithm):
@@ -104,7 +100,7 @@ class ScramfulEosTest(RedpandaTest):
                                  "topic", "topic1", username, password,
                                  algorithm)
         self.retry(lambda: self.write_by_bob(algorithm), 5,
-                   TOPIC_AUTHORIZATION_FAILED)
+                   [TOPIC_AUTHORIZATION_FAILED, CLUSTER_AUTHORIZATION_FAILED])
 
     @cluster(num_nodes=3)
     def test_idempotent_write_passes_2(self):
@@ -115,7 +111,7 @@ class ScramfulEosTest(RedpandaTest):
         rpk.sasl_allow_principal("User:bob", ["write", "read", "describe"],
                                  "topic", "*", username, password, algorithm)
         self.retry(lambda: self.write_by_bob(algorithm), 5,
-                   TOPIC_AUTHORIZATION_FAILED)
+                   [TOPIC_AUTHORIZATION_FAILED, CLUSTER_AUTHORIZATION_FAILED])
 
     def init_by_bob(self, tx_id, algorithm):
         producer = Producer({
@@ -163,7 +159,7 @@ class ScramfulEosTest(RedpandaTest):
                                  password, algorithm)
 
         self.retry(lambda: self.init_by_bob("tx-id-1", algorithm), 5,
-                   TRANSACTIONAL_ID_AUTHORIZATION_FAILED)
+                   [TRANSACTIONAL_ID_AUTHORIZATION_FAILED])
 
     @cluster(num_nodes=3)
     def test_tx_init_passes_2(self):
@@ -179,4 +175,4 @@ class ScramfulEosTest(RedpandaTest):
                                  algorithm)
 
         self.retry(lambda: self.init_by_bob("tx-id-2", algorithm), 5,
-                   TRANSACTIONAL_ID_AUTHORIZATION_FAILED)
+                   [TRANSACTIONAL_ID_AUTHORIZATION_FAILED])

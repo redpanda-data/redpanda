@@ -22,5 +22,6 @@ class topic_manifest;
 
 struct log_recovery_result;
 struct offset_range;
+struct topic_recovery_service;
 
 } // namespace cloud_storage

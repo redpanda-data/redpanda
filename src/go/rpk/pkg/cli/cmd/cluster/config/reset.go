@@ -56,8 +56,8 @@ the setting as if it was set to the default.
 			out.MaybeDie(err, "Couldn't read %q", configCacheFile)
 
 			// Decode YAML
-			content := make(map[string]interface{})
-			err = yaml.Unmarshal(f, content)
+			var content clusterConfig
+			err = yaml.Unmarshal(f, &content)
 			out.MaybeDie(err, "Couldn't parse %q: %v", configCacheFile, err)
 
 			// Snip out the value we are resetting

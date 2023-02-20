@@ -23,25 +23,61 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/node_hash_map.h>
 
-namespace cluster {
+#include <span>
+#include <type_traits>
 
-/// Topic table represent all topics configuration and partition assignments.
-/// The topic table is copied on each core to minimize cross core communication
-/// when requesting topic information. The topics table provides an API for
-/// Kafka requests and delta API for controller backend. The delta API allows
-/// backend to wait for changes in topics table. Topics table is update directly
-/// from controller_stm. The table is always updated before any actions related
-/// with topic creation or deletion are executed. Topic table is also
-/// responsible for commiting or removing pending allocations
-///
+namespace cluster {
+/**
+ * ## Overview
+ *
+ * Topic table represent all topics configuration and partition assignments.
+ * The topic table is copied on each core to minimize cross core communication
+ * when requesting topic information. The topics table provides an API for
+ * Kafka requests and delta API for controller backend. The delta API allows
+ * backend to wait for changes in topics table. Topics table is update directly
+ * from controller_stm. The table is always updated before any actions related
+ * with topic creation or deletion are executed.
+ *
+ * Topic table is updated through topic_updates_dispatcher.
+ *
+ *
+ * ## Partition movement state machine
+ *
+ * When partition is being moved from replica set A to replica set B it may
+ * either be finished or cancelled. The cancellation on the other hand may be
+ * reverted. The partition movement state transitions are explained in the
+ * following diagram:
+ *
+ * A - replica set A
+ * B - replica set B
+ *
+ * ┌──────────┐   move           ┌──────────┐       finish         ┌──────────┐
+ * │  static  │                  │  moving  │                      │  static  │
+ * │          ├─────────────────►│          ├─────────────────────►│          │
+ * │    A     │                  │  A -> B  │                      │    B     │
+ * └──────────┘                  └────┬─────┘                      └──────────┘
+ *      ▲                             │                                  ▲
+ *      │                             │                                  │
+ *      │                             │ cancel/force_cancel              │
+ *      │                             │                                  │
+ *      │                             │                                  │
+ *      │                             ▼                                  │
+ *      │                        ┌──────────┐                            │
+ *      │        finish          │  moving  │     revert_cancel          │
+ *      └────────────────────────┤          ├────────────────────────────┘
+ *                               │  B -> A  │
+ *                               └──────────┴─────┐
+ *                                    ▲           │
+ *                                    │           │
+ *                                    │           │
+ *                                    │           │
+ *                                    └───────────┘
+ *                                        force_cancel
+ */
 
 class topic_table {
 public:
-    enum class in_progress_state {
-        update_requested,
-        cancel_requested,
-        force_cancel_requested
-    };
+    enum class topic_state { exists, not_exists, indeterminate };
     /**
      * Replicas revision map is used to track revision of brokers in a replica
      * set. When a node is added into replica set its gets the revision assigned
@@ -53,27 +89,27 @@ public:
     public:
         explicit in_progress_update(
           std::vector<model::broker_shard> previous_replicas,
-          std::vector<model::broker_shard> result_replicas,
-          in_progress_state state,
+          std::vector<model::broker_shard> target_replicas,
+          reconfiguration_state state,
           model::revision_id update_revision,
           replicas_revision_map replicas_revisions,
           topic_table_probe& probe)
           : _previous_replicas(std::move(previous_replicas))
-          , _result_replicas(std::move(result_replicas))
+          , _target_replicas(std::move(target_replicas))
           , _state(state)
           , _update_revision(update_revision)
           , _replicas_revisions(std::move(replicas_revisions))
           , _probe(probe) {
-            _probe.handle_update(_previous_replicas, _result_replicas);
+            _probe.handle_update(_previous_replicas, _target_replicas);
         }
 
         ~in_progress_update() {
-            _probe.handle_update_finish(_previous_replicas, _result_replicas);
+            _probe.handle_update_finish(_previous_replicas, _target_replicas);
             if (
-              _state == in_progress_state::cancel_requested
-              || _state == in_progress_state::force_cancel_requested) {
+              _state == reconfiguration_state::cancelled
+              || _state == reconfiguration_state::force_cancelled) {
                 _probe.handle_update_cancel_finish(
-                  _previous_replicas, _result_replicas);
+                  _previous_replicas, _target_replicas);
                 ;
             }
         }
@@ -83,20 +119,23 @@ public:
         in_progress_update& operator=(const in_progress_update&) = delete;
         in_progress_update& operator=(in_progress_update&&) = delete;
 
-        const in_progress_state& get_state() const { return _state; }
+        const reconfiguration_state& get_state() const { return _state; }
 
-        void set_state(in_progress_state state) {
+        void set_state(reconfiguration_state state) {
             if (
-              _state == in_progress_state::update_requested
-              && (state == in_progress_state::cancel_requested || state == in_progress_state::force_cancel_requested)) {
+              _state == reconfiguration_state::in_progress
+              && (state == reconfiguration_state::cancelled || state == reconfiguration_state::force_cancelled)) {
                 _probe.handle_update_cancel(
-                  _previous_replicas, _result_replicas);
+                  _previous_replicas, _target_replicas);
             }
             _state = state;
         }
 
         const std::vector<model::broker_shard>& get_previous_replicas() const {
             return _previous_replicas;
+        }
+        const std::vector<model::broker_shard>& get_target_replicas() const {
+            return _target_replicas;
         }
 
         const replicas_revision_map& get_replicas_revisions() const {
@@ -107,10 +146,14 @@ public:
             return _update_revision;
         }
 
+        void swap_replica_revisions(replicas_revision_map& revisions) {
+            std::swap(_replicas_revisions, revisions);
+        }
+
     private:
         std::vector<model::broker_shard> _previous_replicas;
-        std::vector<model::broker_shard> _result_replicas;
-        in_progress_state _state;
+        std::vector<model::broker_shard> _target_replicas;
+        reconfiguration_state _state;
         model::revision_id _update_revision;
         replicas_revision_map _replicas_revisions;
         topic_table_probe& _probe;
@@ -149,6 +192,10 @@ public:
         topic_configuration& get_configuration() {
             return metadata.get_configuration();
         }
+
+        replication_factor get_replication_factor() const {
+            return metadata.get_replication_factor();
+        }
     };
 
     using delta = topic_table_delta;
@@ -164,8 +211,7 @@ public:
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
 
-    using delta_cb_t
-      = ss::noncopyable_function<void(const std::vector<delta>&)>;
+    using delta_cb_t = ss::noncopyable_function<void(std::span<const delta>)>;
 
     explicit topic_table()
       : _probe(*this){};
@@ -216,6 +262,9 @@ public:
       apply(create_non_replicable_topic_cmd, model::offset);
     ss::future<std::error_code>
       apply(cancel_moving_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(revert_cancel_partition_move_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API
@@ -260,6 +309,12 @@ public:
     std::optional<topic_configuration>
       get_topic_cfg(model::topic_namespace_view) const;
 
+    ///\brief Returns configuration of single topic.
+    ///
+    /// If topic does not exists it returns an empty optional
+    std::optional<replication_factor>
+      get_topic_replication_factor(model::topic_namespace_view) const;
+
     ///\brief Returns partition assignments of single topic.
     ///
     /// If topic does not exists it returns an empty optional
@@ -281,6 +336,23 @@ public:
     bool contains(model::topic_namespace_view tp) const {
         return _topics.contains(tp);
     }
+    /// contains() check with stronger validation on the topic revision/offset.
+    /// Just looking up in the cache can yield false negatives if the cache is
+    /// not warmed up because controller replay can be in progress. This variant
+    /// of contains factors in such false negatives by incorporating a check on
+    /// the topic revision. Topic revision is the topic creation command offset
+    /// in
+    //  the controller log.
+    ///
+    /// There are 3 possibilities.
+    /// 1. id > last applied offset, not enough information
+    /// 2. id <= last_applied offset && not in cache
+    /// 3. id <= last_applied offset && in cache.
+    ///
+    /// Callers must note that false positives are still possible because of any
+    /// inflight pending deltas (yet to be applied) that delete the topic.
+    topic_state
+    get_topic_state(model::topic_namespace_view, model::revision_id id) const;
 
     std::optional<partition_assignment>
     get_partition_assignment(const model::ntp&) const;
@@ -314,6 +386,13 @@ public:
      */
     std::optional<std::vector<model::broker_shard>>
     get_previous_replica_set(const model::ntp&) const;
+    /**
+     * returns target replica set of partition if partition is currently being
+     * reconfigured. For reconfiguration from [1,2,3] to [2,3,4] this method
+     * will return [2,3,4].
+     */
+    std::optional<std::vector<model::broker_shard>>
+    get_target_replica_set(const model::ntp&) const;
 
     const absl::node_hash_map<model::ntp, in_progress_update>&
     in_progress_updates() const {
@@ -337,6 +416,17 @@ public:
 
     std::vector<model::ntp> all_updates_in_progress() const;
 
+    model::revision_id last_applied_revision() const {
+        return _last_applied_revision_id;
+    }
+
+    size_t partition_count() const { return _partition_count; }
+
+    /**
+     * Returns number of partitions allocated on given node
+     */
+    size_t get_node_partition_count(model::node_id) const;
+
 private:
     friend topic_table_probe;
 
@@ -355,10 +445,19 @@ private:
     std::vector<std::invoke_result_t<Func, const topic_metadata_item&>>
     transform_topics(Func&&) const;
 
+    void change_partition_replicas(
+      model::ntp ntp,
+      const std::vector<model::broker_shard>& new_assignment,
+      topic_metadata_item& metadata,
+      partition_assignment& current_assignment,
+      model::offset o);
+
     underlying_t _topics;
     hierarchy_t _topics_hierarchy;
+    size_t _partition_count{0};
 
     updates_t _updates_in_progress;
+    model::revision_id _last_applied_revision_id;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
@@ -368,8 +467,8 @@ private:
     uint64_t _waiter_id{0};
     model::offset _last_consumed_by_notifier{
       model::model_limits<model::offset>::min()};
+    std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;
 };
 
-std::ostream& operator<<(std::ostream&, topic_table::in_progress_state);
 } // namespace cluster

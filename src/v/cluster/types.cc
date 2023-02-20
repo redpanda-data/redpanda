@@ -10,6 +10,7 @@
 #include "cluster/types.h"
 
 #include "cluster/fwd.h"
+#include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -32,6 +33,85 @@
 
 namespace cluster {
 
+std::ostream& operator<<(std::ostream& o, const tx_errc& err) {
+    switch (err) {
+    case tx_errc::none:
+        o << "tx_errc::none";
+        break;
+    case tx_errc::leader_not_found:
+        o << "tx_errc::leader_not_found";
+        break;
+    case tx_errc::shard_not_found:
+        o << "tx_errc::shard_not_found";
+        break;
+    case tx_errc::partition_not_found:
+        o << "tx_errc::partition_not_found";
+        break;
+    case tx_errc::stm_not_found:
+        o << "tx_errc::stm_not_found";
+        break;
+    case tx_errc::partition_not_exists:
+        o << "tx_errc::partition_not_exists";
+        break;
+    case tx_errc::pid_not_found:
+        o << "tx_errc::pid_not_found";
+        break;
+    case tx_errc::timeout:
+        o << "tx_errc::timeout";
+        break;
+    case tx_errc::conflict:
+        o << "tx_errc::conflict";
+        break;
+    case tx_errc::fenced:
+        o << "tx_errc::fenced";
+        break;
+    case tx_errc::stale:
+        o << "tx_errc::stale";
+        break;
+    case tx_errc::not_coordinator:
+        o << "tx_errc::not_coordinator";
+        break;
+    case tx_errc::coordinator_not_available:
+        o << "tx_errc::coordinator_not_available";
+        break;
+    case tx_errc::preparing_rebalance:
+        o << "tx_errc::preparing_rebalance";
+        break;
+    case tx_errc::rebalance_in_progress:
+        o << "tx_errc::rebalance_in_progress";
+        break;
+    case tx_errc::coordinator_load_in_progress:
+        o << "tx_errc::coordinator_load_in_progress";
+        break;
+    case tx_errc::unknown_server_error:
+        o << "tx_errc::unknown_server_error";
+        break;
+    case tx_errc::request_rejected:
+        o << "tx_errc::request_rejected";
+        break;
+    case tx_errc::invalid_producer_epoch:
+        o << "tx_errc::invalid_producer_epoch";
+        break;
+    case tx_errc::invalid_txn_state:
+        o << "tx_errc::invalid_txn_state";
+        break;
+    case tx_errc::invalid_producer_id_mapping:
+        o << "tx_errc::invalid_producer_id_mapping";
+        break;
+    case tx_errc::tx_not_found:
+        o << "tx_errc::tx_not_found";
+        break;
+    case tx_errc::tx_id_not_found:
+        o << "tx_errc::tx_id_not_found";
+        break;
+    }
+    return o;
+}
+
+std::string tx_errc_category::message(int c) const {
+    return fmt::format("{{{}}}", static_cast<tx_errc>(c));
+}
+
 kafka_stages::kafka_stages(
   ss::future<> enq, ss::future<result<kafka_result>> offset_future)
   : request_enqueued(std::move(enq))
@@ -53,10 +133,13 @@ bool topic_properties::is_compacted() const {
 
 bool topic_properties::has_overrides() const {
     return cleanup_policy_bitflags || compaction_strategy || segment_size
-           || retention_bytes.has_value() || retention_bytes.is_disabled()
-           || retention_duration.has_value() || retention_duration.is_disabled()
+           || retention_bytes.is_engaged() || retention_duration.is_engaged()
            || recovery.has_value() || shadow_indexing.has_value()
-           || read_replica.has_value();
+           || read_replica.has_value() || batch_max_bytes.has_value()
+           || retention_local_target_bytes.is_engaged()
+           || retention_local_target_ms.is_engaged()
+           || remote_delete != storage::ntp_config::default_remote_delete
+           || segment_ms.is_engaged();
 }
 
 storage::ntp_config::default_overrides
@@ -67,10 +150,12 @@ topic_properties::get_ntp_cfg_overrides() const {
     ret.retention_bytes = retention_bytes;
     ret.retention_time = retention_duration;
     ret.segment_size = segment_size;
-    ret.shadow_indexing_mode = shadow_indexing
-                                 ? *shadow_indexing
-                                 : model::shadow_indexing_mode::disabled;
+    ret.shadow_indexing_mode = shadow_indexing;
     ret.read_replica = read_replica;
+    ret.retention_local_target_bytes = retention_local_target_bytes;
+    ret.retention_local_target_ms = retention_local_target_ms;
+    ret.remote_delete = remote_delete;
+    ret.segment_ms = segment_ms;
     return ret;
 }
 
@@ -95,10 +180,14 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .cache_enabled = storage::with_cache(!is_internal()),
             .recovery_enabled = storage::topic_recovery_enabled(
               properties.recovery ? *properties.recovery : false),
-            .shadow_indexing_mode = properties.shadow_indexing
-                                      ? *properties.shadow_indexing
-                                      : model::shadow_indexing_mode::disabled,
-            .read_replica = properties.read_replica});
+            .shadow_indexing_mode = properties.shadow_indexing,
+            .read_replica = properties.read_replica,
+            .retention_local_target_bytes
+            = properties.retention_local_target_bytes,
+            .retention_local_target_ms = properties.retention_local_target_ms,
+            .remote_delete = properties.remote_delete,
+            .segment_ms = properties.segment_ms,
+          });
     }
     return {
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
@@ -202,12 +291,12 @@ std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
 std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
     fmt::print(
       o,
-      "{{ compression: {}, cleanup_policy_bitflags: {}, "
-      "compaction_strategy: "
-      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: "
-      "{}, "
+      "{{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
+      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
-      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}}}",
+      "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
+      "batch_max_bytes: {}, retention_local_target_bytes: {}, "
+      "retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -219,7 +308,12 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.shadow_indexing,
       properties.read_replica,
       properties.read_replica_bucket,
-      properties.remote_topic_properties);
+      properties.remote_topic_properties,
+      properties.batch_max_bytes,
+      properties.retention_local_target_bytes,
+      properties.retention_local_target_ms,
+      properties.remote_delete,
+      properties.segment_ms);
 
     return o;
 }
@@ -463,7 +557,8 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "{{incremental_topic_custom_updates: compression: {} "
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
-      "shadow_indexing: {}}}",
+      "shadow_indexing: {}, batch_max_bytes: {}, retention_local_target_bytes: "
+      "{}, retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}}}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -471,16 +566,42 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.segment_size,
       i.retention_bytes,
       i.retention_duration,
-      i.shadow_indexing);
+      i.shadow_indexing,
+      i.batch_max_bytes,
+      i.retention_local_target_bytes,
+      i.retention_local_target_ms,
+      i.remote_delete,
+      i.segment_ms);
     return o;
+}
+
+std::istream& operator>>(std::istream& i, replication_factor& cs) {
+    ss::sstring s;
+    i >> s;
+    cs = replication_factor(boost::lexical_cast<replication_factor::type>(s));
+    return i;
+};
+
+replication_factor parsing_replication_factor(const ss::sstring& value) {
+    auto raw_value = boost::lexical_cast<int32_t>(value);
+    if (
+      raw_value <= 0
+      || raw_value
+           > std::numeric_limits<cluster::replication_factor::type>::max()) {
+        throw boost::bad_lexical_cast();
+    }
+
+    return cluster::replication_factor(raw_value);
 }
 
 std::ostream&
 operator<<(std::ostream& o, const incremental_topic_custom_updates& i) {
     fmt::print(
       o,
-      "{{incremental_topic_custom_updates: data_policy: {}}}",
-      i.data_policy);
+      "{{incremental_topic_custom_updates: data_policy: {}, "
+      "replication_factor: {}}}",
+      i.data_policy,
+      i.replication_factor);
     return o;
 }
 
@@ -553,6 +674,16 @@ topic_configuration& topic_metadata::get_configuration() {
 }
 
 assignments_set& topic_metadata::get_assignments() { return _assignments; }
+
+replication_factor topic_metadata::get_replication_factor() const {
+    // The main idea is do not use anymore replication_factor from topic_config.
+    // replication factor is dynamic property. And it is size of assigments set.
+    // So we will return rf for 0 partition, becasue it should exist for each
+    // topic
+    auto it = _assignments.find(model::partition_id(0));
+    return replication_factor(
+      static_cast<replication_factor::type>(it->replicas.size()));
+}
 
 std::ostream& operator<<(std::ostream& o, const non_replicable_topic& d) {
     fmt::print(
@@ -656,26 +787,8 @@ operator<<(std::ostream& o, const cancel_partition_movements_reply& r) {
     return o;
 }
 
-std::ostream& operator<<(std::ostream& o, const feature_update_action& fua) {
-    std::string_view action_name;
-    switch (fua.action) {
-    case feature_update_action::action_t::complete_preparing:
-        action_name = "complete_preparing";
-        break;
-    case feature_update_action::action_t::activate:
-        action_name = "activate";
-        break;
-    case feature_update_action::action_t::deactivate:
-        action_name = "deactivate";
-        break;
-    }
-
-    fmt::print(o, "{{action {} {} }}", fua.feature_name, action_name);
-    return o;
-}
-
 std::ostream& operator<<(std::ostream& o, const feature_action_request& far) {
-    fmt::print(o, "{{feature_update_action: {}}}", far.action);
+    fmt::print(o, "{{feature_update_request: {}}}", far.action);
     return o;
 }
 
@@ -704,6 +817,11 @@ operator<<(std::ostream& o, const create_non_replicable_topics_request& r) {
 std::ostream&
 operator<<(std::ostream& o, const create_non_replicable_topics_reply& r) {
     fmt::print(o, "{{results: {}}}", r.results);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const move_topic_replicas_data& r) {
+    fmt::print(o, "{{partition: {}, replicas: {}}}", r.partition, r.replicas);
     return o;
 }
 
@@ -845,6 +963,31 @@ std::ostream& operator<<(std::ostream& o, const remote_topic_properties& rtps) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const broker_state& state) {
+    fmt::print(
+      o,
+      "{{membership_state: {}, maintenance_state: {}}}",
+      state._membership_state,
+      state._maintenance_state);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const node_metadata& nm) {
+    fmt::print(o, "{{broker: {}, state: {} }}", nm.broker, nm.state);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
+    switch (update) {
+    case reconfiguration_state::in_progress:
+        return o << "in_progress";
+    case reconfiguration_state::cancelled:
+        return o << "cancelled";
+    case reconfiguration_state::force_cancelled:
+        return o << "force_cancelled";
+    }
+    __builtin_unreachable();
+}
 } // namespace cluster
 
 namespace reflection {
@@ -918,6 +1061,10 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
         cfg.properties.shadow_indexing
           = adl<std::optional<model::shadow_indexing_mode>>{}.from(in);
     }
+
+    // Legacy topics from pre-22.3 get remote delete disabled.
+    cfg.properties.remote_delete = storage::ntp_config::legacy_remote_delete;
+
     return cfg;
 }
 
@@ -1516,7 +1663,12 @@ void adl<cluster::incremental_topic_updates>::to(
       t.segment_size,
       t.retention_bytes,
       t.retention_duration,
-      t.shadow_indexing);
+      t.shadow_indexing,
+      t.batch_max_bytes,
+      t.retention_local_target_bytes,
+      t.retention_local_target_ms,
+      t.remote_delete,
+      t.segment_ms);
 }
 
 cluster::incremental_topic_updates
@@ -1578,6 +1730,26 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
         updates.shadow_indexing = adl<cluster::property_update<
           std::optional<model::shadow_indexing_mode>>>{}
                                     .from(in);
+    }
+
+    if (
+      version <= cluster::incremental_topic_updates::
+        version_with_batch_max_bytes_and_local_retention) {
+        updates.batch_max_bytes
+          = adl<cluster::property_update<std::optional<uint32_t>>>{}.from(in);
+        updates.retention_local_target_bytes
+          = adl<cluster::property_update<tristate<size_t>>>{}.from(in);
+        updates.retention_local_target_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
+        updates.remote_delete = adl<cluster::property_update<bool>>{}.from(in);
+    }
+
+    if (
+      version <= cluster::incremental_topic_updates::version_with_segment_ms) {
+        updates.segment_ms
+          = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
+              .from(in);
     }
     return updates;
 }
@@ -1699,22 +1871,6 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     auto logical_version = adl<cluster::cluster_version>{}.from(in);
     auto actions = adl<std::vector<cluster::feature_update_action>>{}.from(in);
     return {.logical_version = logical_version, .actions = std::move(actions)};
-}
-
-void adl<cluster::feature_update_license_update_cmd_data>::to(
-  iobuf&, cluster::feature_update_license_update_cmd_data&&) {
-    vassert(
-      false,
-      "cluster::feature_update_license_update_cmd_data should always use "
-      "serde, never adl");
-}
-
-cluster::feature_update_license_update_cmd_data
-adl<cluster::feature_update_license_update_cmd_data>::from(iobuf_parser&) {
-    vassert(
-      false,
-      "cluster::feature_update_license_update_cmd_data should always use "
-      "serde, never adl");
 }
 
 void adl<cluster::feature_barrier_request>::to(
@@ -1885,7 +2041,15 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       shadow_indexing,
       read_replica,
       read_replica_bucket,
-      remote_topic_properties};
+      remote_topic_properties,
+      std::nullopt,
+      tristate<size_t>{std::nullopt},
+      tristate<std::chrono::milliseconds>{std::nullopt},
+      // Backward compat: ADL-generation (pre-22.3) topics use legacy tiered
+      // storage mode in which topic deletion does not delete objects in S3
+      false,
+      tristate<std::chrono::milliseconds>{std::nullopt},
+    };
 }
 
 void adl<cluster::cluster_property_kv>::to(

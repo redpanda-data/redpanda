@@ -6,9 +6,10 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+from ducktape.mark import parametrize
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
@@ -38,7 +39,7 @@ class ShadowIndexingFirewallTest(RedpandaTest):
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
+        si_settings = SISettings(test_context,
                                  cloud_storage_max_connections=5,
                                  log_segment_size=self.log_segment_size)
 
@@ -50,16 +51,19 @@ class ShadowIndexingFirewallTest(RedpandaTest):
         self.rpk = RpkTool(self.redpanda)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_consume_from_blocked_s3(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_consume_from_blocked_s3(self, cloud_storage_type):
         produce_until_segments(redpanda=self.redpanda,
                                topic=self.s3_topic_name,
                                partition_idx=0,
                                count=5,
                                acks=-1)
 
-        self.rpk.alter_topic_config(self.s3_topic_name,
-                                    TopicSpec.PROPERTY_RETENTION_BYTES,
-                                    self.retention_bytes)
+        self.rpk.alter_topic_config(
+            self.s3_topic_name,
+            TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
+            self.retention_bytes)
 
         wait_for_segments_removal(redpanda=self.redpanda,
                                   topic=self.s3_topic_name,

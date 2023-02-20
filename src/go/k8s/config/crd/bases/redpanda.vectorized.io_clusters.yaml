@@ -87,6 +87,13 @@ spec:
                         description: Storage class name - https://kubernetes.io/docs/concepts/storage/storage-classes/
                         type: string
                     type: object
+                  credentialsSource:
+                    description: Determines how to load credentials for archival storage.
+                      Supported values are config_file (default), aws_instance_metadata,
+                      sts, gcp_instance_metadata (see the cloud_storage_credentials_source
+                      property at https://docs.redpanda.com/docs/reference/cluster-properties/).
+                      When using config_file then accessKey and secretKeyRef are mandatory.
+                    type: string
                   disableTLS:
                     description: Disable TLS (can be used in tests)
                     type: boolean
@@ -152,6 +159,14 @@ spec:
               configuration:
                 description: Configuration represent redpanda specific configuration
                 properties:
+                  additionalCommandlineArguments:
+                    additionalProperties:
+                      type: string
+                    description: Additional command line arguments that we pass to
+                      the redpanda binary These are applied last and will override
+                      any other command line arguments that may be defined, including
+                      the ones added when setting `DeveloperMode` to `true`.
+                    type: object
                   adminApi:
                     items:
                       description: AdminAPI configures listener for the Redpanda Admin
@@ -241,6 +256,11 @@ spec:
                     items:
                       description: KafkaAPI configures listener for the Kafka API
                       properties:
+                        authenticationMethod:
+                          description: 'AuthenticationMethod can enable authentication
+                            method per Kafka listener. Available options are: none,
+                            sasl, mtls_identity. https://docs.redpanda.com/docs/security/authentication/'
+                          type: string
                         external:
                           description: External enables user to expose Redpanda nodes
                             outside of a Kubernetes cluster. For more information
@@ -389,6 +409,11 @@ spec:
                       description: PandaproxyAPI configures listener for the Pandaproxy
                         API
                       properties:
+                        authenticationMethod:
+                          description: 'AuthenticationMethod can enable authentication
+                            method per pandaproxy listener. Available options are:
+                            none, http_basic.'
+                          type: string
                         external:
                           description: External enables user to expose Redpanda nodes
                             outside of a Kubernetes cluster. For more information
@@ -429,6 +454,24 @@ spec:
                                 is limited to hermetic functions because template
                                 application needs to be deterministic."
                               type: string
+                            ingress:
+                              description: Configures a ingress resource
+                              properties:
+                                annotations:
+                                  additionalProperties:
+                                    type: string
+                                  description: Optional annotations for the generated
+                                    ingress.
+                                  type: object
+                                enabled:
+                                  description: Indicates if ingress is enabled (true
+                                    when unspecified).
+                                  type: boolean
+                                endpoint:
+                                  description: If present, it's appended to the subdomain
+                                    to form the ingress hostname.
+                                  type: string
+                              type: object
                             preferredAddressType:
                               description: The preferred address type to be assigned
                                 to the external advertised addresses. The valid types
@@ -455,7 +498,79 @@ spec:
                           properties:
                             enabled:
                               type: boolean
+                            issuerRef:
+                              description: References cert-manager Issuer or ClusterIssuer.
+                                When provided, this issuer will be used to issue node
+                                certificates. Typically you want to provide the issuer
+                                when a generated self-signed one is not enough and
+                                you need to have a verifiable chain with a proper
+                                CA certificate.
+                              properties:
+                                group:
+                                  description: Group of the resource being referred
+                                    to.
+                                  type: string
+                                kind:
+                                  description: Kind of the resource being referred
+                                    to.
+                                  type: string
+                                name:
+                                  description: Name of the resource being referred
+                                    to.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            nodeSecretRef:
+                              description: 'If provided, operator uses certificate
+                                in this secret instead of issuing its own node certificate.
+                                The secret is expected to provide the following keys:
+                                ''ca.crt'', ''tls.key'' and ''tls.crt'' If NodeSecretRef
+                                points to secret in different namespace, operator
+                                will duplicate the secret to the same namespace as
+                                redpanda CRD to be able to mount it to the nodes'
+                              properties:
+                                apiVersion:
+                                  description: API version of the referent.
+                                  type: string
+                                fieldPath:
+                                  description: 'If referring to a piece of an object
+                                    instead of an entire object, this string should
+                                    contain a valid JSON/Go field access statement,
+                                    such as desiredState.manifest.containers[2]. For
+                                    example, if the object reference is to a container
+                                    within a pod, this would take on a value like:
+                                    "spec.containers{name}" (where "name" refers to
+                                    the name of the container that triggered the event)
+                                    or if no container name is specified "spec.containers[2]"
+                                    (container with index 2 in this pod). This syntax
+                                    is chosen only to have some well-defined way of
+                                    referencing a part of an object. TODO: this design
+                                    is not final and this field is subject to change
+                                    in the future.'
+                                  type: string
+                                kind:
+                                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                                  type: string
+                                name:
+                                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                  type: string
+                                namespace:
+                                  description: 'Namespace of the referent. More info:
+                                    https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                                  type: string
+                                resourceVersion:
+                                  description: 'Specific resourceVersion to which
+                                    this reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                                  type: string
+                                uid:
+                                  description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                                  type: string
+                              type: object
                             requireClientAuth:
+                              description: Enables two-way verification on the server
+                                side. If enabled, all Pandaproxy API clients are required
+                                to have a valid client certificate.
                               type: boolean
                           type: object
                       type: object
@@ -470,6 +585,11 @@ spec:
                     description: SchemaRegistryAPI configures the schema registry
                       API
                     properties:
+                      authenticationMethod:
+                        description: 'AuthenticationMethod can enable authentication
+                          method per schema registry listener. Available options are:
+                          none, http_basic.'
+                        type: string
                       external:
                         description: External enables user to expose Redpanda nodes
                           outside of a Kubernetes cluster. For more information please
@@ -495,6 +615,10 @@ spec:
                             description: Enabled enables the external connectivity
                               feature
                             type: boolean
+                          endpoint:
+                            description: Indicates the global endpoint that (together
+                              with subdomain), should be advertised for schema registry.
+                            type: string
                           endpointTemplate:
                             description: "EndpointTemplate is a Golang template string
                               that allows customizing each broker advertised address.
@@ -519,6 +643,10 @@ spec:
                               The default preferred address type is ExternalIP. This
                               option only applies when Subdomain is empty.
                             type: string
+                          staticNodePort:
+                            description: Indicates that the node port for the service
+                              needs not to be generated.
+                            type: boolean
                           subdomain:
                             description: Subdomain can be used to change the behavior
                               of an advertised KafkaAPI. Each broker advertises Kafka
@@ -619,11 +747,34 @@ spec:
                   fully-qualified DNS name. http://www.dns-sd.org/trailingdotsindomainnames.html
                 type: boolean
               enableSasl:
-                description: SASL enablement flag
+                description: 'SASL enablement flag Deprecated: replaced by "kafkaEnableAuthorization"'
                 type: boolean
               image:
                 description: Image is the fully qualified name of the Redpanda container
                 type: string
+              kafkaEnableAuthorization:
+                description: "Enable authorization for Kafka connections. Values are:
+                  \n - `nil`: Ignored. Authorization is enabled with `enable_sasl:
+                  true` \n - `true`: authorization is required \n - `false`: authorization
+                  is disabled; \n See also `enableSasl` and `configuration.kafkaApi[].authenticationMethod`"
+                type: boolean
+              licenseRef:
+                description: If key is not provided in the SecretRef, Secret data
+                  should have key "license"
+                properties:
+                  key:
+                    description: Key in Secret data to get value from
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -717,6 +868,26 @@ spec:
                       and postStart hooks that force nodes to enter maintenance mode
                       when stopping and exit maintenance mode when up again
                     type: boolean
+                  underReplicatedPartitionThreshold:
+                    description: "UnderReplicatedPartitionThreshold controls when
+                      rolling update will continue with restarts. The procedure can
+                      be described as follows: \n 1. Rolling update checks if Pod
+                      specification needs to be replaced and deletes it 2. Deleted
+                      Redpanda Pod is put into maintenance mode (postStart hook will
+                      disable    maintenance mode when new Pod starts) 3. Rolling
+                      update waits for Pod to be in Ready state 4. Rolling update
+                      checks if cluster is in healthy state 5. Rolling update checks
+                      if restarted Redpanda Pod admin API Ready endpoint returns HTTP
+                      200 response 6. Using UnderReplicatedPartitionThreshold each
+                      under replicated partition metric is compared with the threshold
+                      7. Rolling update moves to the next Redpanda pod \n The metric
+                      `vectorized_cluster_partition_under_replicated_replicas` is
+                      used in the comparison \n Mentioned metrics has the following
+                      help description: `vectorized_cluster_partition_under_replicated_replicas`
+                      Number of under replicated replicas \n By default, the UnderReplicatedPartitionThreshold
+                      will be 0, which means all partitions needs to catch up without
+                      any lag."
+                    type: integer
                 type: object
               sidecars:
                 description: Sidecars is list of sidecars run alongside redpanda container

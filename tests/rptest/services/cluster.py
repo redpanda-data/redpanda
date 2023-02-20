@@ -34,12 +34,28 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
             try:
                 r = f(self, *args, **kwargs)
             except:
+                if not hasattr(self, 'redpanda') or self.redpanda is None:
+                    # We failed so early there isn't even a RedpandaService instantiated
+                    raise
+
                 self.redpanda.logger.exception(
                     "Test failed, doing failure checks...")
-                self.redpanda.decode_backtraces()
+
+                # Disabled to avoid addr2line hangs
+                # (https://github.com/redpanda-data/redpanda/issues/5004)
+                # self.redpanda.decode_backtraces()
+
+                self.redpanda.cloud_storage_diagnostics()
+
                 self.redpanda.raise_on_crash()
+
                 raise
             else:
+                if not hasattr(self, 'redpanda') or self.redpanda is None:
+                    # We passed without instantiating a RedpandaService, for example
+                    # in a skipped test
+                    return r
+
                 self.redpanda.logger.info("Test passed, doing log checks...")
                 if check_allowed_error_logs:
                     # Only do log inspections on tests that are otherwise
@@ -49,7 +65,8 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                     # TODO: extend this to cover shutdown logging too, and
                     # clean up redpanda to not log so many errors on shutdown.
                     self.redpanda.raise_on_bad_logs(allow_list=log_allow_list)
-                    return r
+                self.redpanda.trim_logs()
+                return r
 
         # Propagate ducktape markers (e.g. parameterize) to our function
         # wrapper

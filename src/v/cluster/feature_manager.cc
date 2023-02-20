@@ -17,9 +17,11 @@
 #include "cluster/health_monitor_frontend.h"
 #include "cluster/members_table.h"
 #include "config/configuration.h"
-#include "feature_table.h"
+#include "features/feature_table.h"
 #include "model/timeout_clock.h"
 #include "raft/group_manager.h"
+
+#include <absl/algorithm/container.h>
 
 namespace cluster {
 
@@ -32,7 +34,7 @@ feature_manager::feature_manager(
   ss::sharded<raft::group_manager>& group_manager,
   ss::sharded<health_monitor_frontend>& hm_frontend,
   ss::sharded<health_monitor_backend>& hm_backend,
-  ss::sharded<feature_table>& table,
+  ss::sharded<features::feature_table>& table,
   ss::sharded<rpc::connection_cache>& connection_cache,
   raft::group_id raft0_group)
   : _stm(stm)
@@ -45,7 +47,7 @@ feature_manager::feature_manager(
   , _connection_cache(connection_cache)
   , _raft0_group(raft0_group)
   , _barrier_state(
-      config::node().node_id(),
+      *config::node().node_id(),
       members.local(),
       as.local(),
       _gate,
@@ -73,19 +75,21 @@ feature_manager::feature_manager(
 
     ) {}
 
-ss::future<> feature_manager::start() {
+ss::future<>
+feature_manager::start(std::vector<model::node_id>&& cluster_founder_nodes) {
     vlog(clusterlog.info, "Starting...");
 
     // Register for node health change notifications
     _health_notify_handle = _hm_backend.local().register_node_callback(
       [this](
         node_health_report const& report,
-        std::optional<std::reference_wrapper<const node_health_report>>
-          old_report) {
+        std::optional<std::reference_wrapper<const node_health_report>>) {
+          // If we did not know the node's version or if the report is
+          // higher, submit an update.
+          auto i = _node_versions.find(report.id);
           if (
-            !old_report
-            || report.local_state.logical_version
-                 != old_report.value().get().local_state.logical_version) {
+            i == _node_versions.end()
+            || i->second < report.local_state.logical_version) {
               update_node_version(
                 report.id, report.local_state.logical_version);
           }
@@ -107,9 +111,14 @@ ss::future<> feature_manager::start() {
                 return;
             }
 
+            // On leadership change, clear our map of node versions: this
+            // ensures that we will populate it with fresh data when we next
+            // see a health report from each node.
+            _node_versions.clear();
+
             vlog(
               clusterlog.debug, "Controller leader notification term {}", term);
-            _am_controller_leader = leader_id == config::node().node_id();
+            _am_controller_leader = leader_id == *config::node().node_id();
 
             // This hook avoids the need for the controller leader to receive
             // its own health report to generate a call to update_node_version.
@@ -118,7 +127,7 @@ ss::future<> feature_manager::start() {
             // version based on its own version alone.
             if (
               _feature_table.local().get_active_version()
-                != feature_table::get_latest_logical_version()
+                != features::feature_table::get_latest_logical_version()
               && _am_controller_leader) {
                 // When I become leader for first time (i.e. when active
                 // version is not known yet, proactively persist it)
@@ -126,10 +135,10 @@ ss::future<> feature_manager::start() {
                   clusterlog.debug,
                   "generating version update for controller leader {} ({})",
                   leader_id.value(),
-                  feature_table::get_latest_logical_version());
+                  features::feature_table::get_latest_logical_version());
                 update_node_version(
-                  config::node().node_id,
-                  feature_table::get_latest_logical_version());
+                  *config::node().node_id(),
+                  features::feature_table::get_latest_logical_version());
             }
         });
 
@@ -152,6 +161,10 @@ ss::future<> feature_manager::start() {
           [this] { return _as.local().abort_requested(); },
           [this] { return maybe_log_license_check_info(); });
     });
+
+    for (const model::node_id n : cluster_founder_nodes) {
+        set_node_to_latest_version(n);
+    }
 
     co_return;
 }
@@ -184,12 +197,18 @@ ss::future<> feature_manager::maybe_log_license_check_info() {
               interval_override);
         }
     }
-    if (_feature_table.local().is_active(feature::license)) {
+    if (_feature_table.local().is_active(features::feature::license)) {
         const auto& cfg = config::shard_local_cfg();
+        auto has_gssapi = [&cfg]() {
+            return absl::c_any_of(cfg.sasl_mechanisms(), [](const auto& m) {
+                return m == "GSSAPI";
+            });
+        };
         if (
           cfg.cloud_storage_enabled
           || cfg.partition_autobalancing_mode
-               == model::partition_autobalancing_mode::continuous) {
+               == model::partition_autobalancing_mode::continuous
+          || has_gssapi()) {
             const auto& license = _feature_table.local().get_license();
             if (!license || license->is_expired()) {
                 vlog(
@@ -252,7 +271,7 @@ void feature_manager::update_node_version(
       update_node,
       v);
 
-    _updates.push_back({update_node, v});
+    _updates.emplace(update_node, v);
     _update_wait.signal();
 }
 
@@ -324,7 +343,7 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
     // Ensure that our _node_versions contains versions for all
     // nodes in members_table & that they are all sufficiently recent
     const auto& member_table = _members.local();
-    for (const auto& node_id : member_table.all_broker_ids()) {
+    for (const auto& node_id : member_table.node_ids()) {
         auto v_iter = _node_versions.find(node_id);
         if (v_iter == _node_versions.end()) {
             vlog(
@@ -384,9 +403,9 @@ ss::future<> feature_manager::do_maybe_update_active_version() {
          */
         for (const auto& fs : _feature_table.local().get_feature_state()) {
             if (
-              fs.get_state() == feature_state::state::unavailable
+              fs.get_state() == features::feature_state::state::unavailable
               && fs.spec.available_rule
-                   == feature_spec::available_policy::always
+                   == features::feature_spec::available_policy::always
               && max_version >= fs.spec.require_version) {
                 vlog(
                   clusterlog.info,
@@ -457,7 +476,7 @@ feature_manager::write_action(cluster::feature_update_action action) {
     switch (action.action) {
     case cluster::feature_update_action::action_t::complete_preparing:
         // Look up feature by name
-        if (state.get_state() != feature_state::state::preparing) {
+        if (state.get_state() != features::feature_state::state::preparing) {
             // Drop this silently, we presume that this is some kind of
             // race and the thing we thought was preparing is either
             // now active or administratively deactivated.
@@ -467,18 +486,22 @@ feature_manager::write_action(cluster::feature_update_action action) {
         break;
     case cluster::feature_update_action::action_t::activate:
         if (
-          state.get_state() != feature_state::state::available
-          && state.get_state() != feature_state::state::disabled_clean
-          && state.get_state() != feature_state::state::disabled_active
-          && state.get_state() != feature_state::state::disabled_preparing) {
+          state.get_state() != features::feature_state::state::available
+          && state.get_state() != features::feature_state::state::disabled_clean
+          && state.get_state()
+               != features::feature_state::state::disabled_active
+          && state.get_state()
+               != features::feature_state::state::disabled_preparing) {
             valid = false;
         }
         break;
     case cluster::feature_update_action::action_t::deactivate:
         if (
-          state.get_state() == feature_state::state::disabled_clean
-          || state.get_state() == feature_state::state::disabled_preparing
-          || state.get_state() == feature_state::state::disabled_active) {
+          state.get_state() == features::feature_state::state::disabled_clean
+          || state.get_state()
+               == features::feature_state::state::disabled_preparing
+          || state.get_state()
+               == features::feature_state::state::disabled_active) {
             valid = false;
         }
     }
@@ -504,6 +527,24 @@ feature_manager::write_action(cluster::feature_update_action action) {
         return replicate_and_wait(
           _stm, _feature_table, _as, std::move(cmd), timeout);
     }
+}
+
+void feature_manager::set_node_to_latest_version(const model::node_id node_id) {
+    const cluster_version latest
+      = features::feature_table::get_latest_logical_version();
+    if (const version_map::iterator i = _node_versions.find(node_id);
+        i != _node_versions.end()) {
+        if (i->second == latest) {
+            return; // already there
+        }
+        vlog(
+          clusterlog.info,
+          "Overriding a previously set version for {} from {} to {}",
+          node_id,
+          i->second,
+          latest);
+    }
+    update_node_version(node_id, latest);
 }
 
 } // namespace cluster

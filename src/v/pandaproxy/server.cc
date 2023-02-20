@@ -17,7 +17,6 @@
 #include "pandaproxy/reply.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/std-coroutine.hh>
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/reply.hh>
 
@@ -165,7 +164,7 @@ void server::routes(server::routes_t&& rts) {
 }
 
 ss::future<> server::start(
-  const std::vector<model::broker_endpoint>& endpoints,
+  const std::vector<config::rest_authn_endpoint>& endpoints,
   const std::vector<config::endpoint_tls_config>& endpoints_tls,
   const std::vector<model::broker_endpoint>& advertised) {
     _server._routes.register_exeption_handler(

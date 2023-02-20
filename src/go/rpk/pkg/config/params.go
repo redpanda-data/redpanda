@@ -20,7 +20,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
+
+	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -248,7 +249,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 			}
 		}
 	}
-	c := Default()
+	c := DevDefault()
 
 	if err := p.readConfig(fs, c); err != nil {
 		// Sometimes a config file will not exist (e.g. rpk running on MacOS),
@@ -272,8 +273,50 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	return c, nil
 }
 
+// isSameLoaded checks if the config object content is the same as the one
+// loaded. The function returns a boolean indicating if the two config objects
+// are equal.
+func (c *Config) isSameLoaded() bool {
+	var init, final *Config
+	if err := yaml.Unmarshal(c.RawFile(), &init); err != nil {
+		return false
+	}
+
+	// We marshal to later unmarshal the passed cfg to avoid comparing a
+	// configuration with loaded unexported values such as
+	// (file, fileLocation or rawFile)
+	finalRaw, err := yaml.Marshal(c)
+	if err != nil {
+		return false
+	}
+
+	if err := yaml.Unmarshal(finalRaw, &final); err != nil {
+		return false
+	}
+
+	// If we have a file with an older version of the SeedServer, we should
+	// write the file to disk even if the contents are the same. This is
+	// necessary because Redpanda no longer parses older SeedServer versions.
+	//
+	// For more information, see github.com/redpanda-data/redpanda/issues/8915.
+	if init != nil {
+		for _, s := range init.Redpanda.SeedServers {
+			if s.untabbed {
+				return false
+			}
+		}
+	}
+
+	return reflect.DeepEqual(init, final)
+}
+
 // Write writes loaded configuration parameters to redpanda.yaml.
 func (c *Config) Write(fs afero.Fs) (rerr error) {
+	// We return early if the config is the same as the one loaded in the first
+	// place and avoid writing the file.
+	if c.isSameLoaded() {
+		return nil
+	}
 	location := c.fileLocation
 	if location == "" {
 		location = DefaultPath
@@ -283,50 +326,7 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 		return fmt.Errorf("marshal error in loaded config, err: %s", err)
 	}
 
-	// Create a temp file.
-	layout := "20060102150405" // year-month-day-hour-min-sec
-	bFilename := "redpanda-" + time.Now().Format(layout) + ".yaml"
-	temp := filepath.Join(filepath.Dir(location), bFilename)
-
-	err = afero.WriteFile(fs, temp, b, 0o644) // default permissions 644
-	if err != nil {
-		return fmt.Errorf("error writing to temporary file: %v", err)
-	}
-	defer func() {
-		if rerr != nil {
-			if removeErr := fs.Remove(temp); removeErr != nil {
-				rerr = fmt.Errorf("%s, unable to remove temp file: %v", rerr, removeErr)
-			} else {
-				rerr = fmt.Errorf("%s, temp file removed from disk", rerr)
-			}
-		}
-	}()
-
-	// If we have a loaded file we keep permission and ownership of the
-	// original config file.
-	if exists, _ := afero.Exists(fs, location); location != "" && exists {
-		stat, err := fs.Stat(location)
-		if err != nil {
-			return fmt.Errorf("unable to stat existing file: %v", err)
-		}
-
-		err = fs.Chmod(temp, stat.Mode())
-		if err != nil {
-			return fmt.Errorf("unable to chmod temp config file: %v", err)
-		}
-
-		err = PreserveUnixOwnership(fs, stat, temp)
-		if err != nil {
-			return err
-		}
-	}
-
-	err = fs.Rename(temp, location)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return rpkos.ReplaceFile(fs, location, b, 0o644)
 }
 
 func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
@@ -378,6 +378,8 @@ func (p *Params) readConfig(fs afero.Fs, c *Config) error {
 	}
 	c.fileLocation = abs
 	c.file.fileLocation = abs
+	c.rawFile = file
+	c.file.rawFile = file
 	return nil
 }
 
@@ -534,21 +536,117 @@ func (p *Params) processOverrides(c *Config) error {
 // As a final step in initializing a config, we add a few defaults to some
 // specific unset values.
 func (c *Config) addUnsetDefaults() {
-	r := &c.Rpk
+	defaultFromRedpanda(
+		namedAuthnToNamed(c.Redpanda.KafkaAPI),
+		c.Redpanda.KafkaAPITLS,
+		&c.Rpk.KafkaAPI.Brokers,
+		"127.0.0.1:9092",
+	)
+	defaultFromRedpanda(
+		c.Redpanda.AdminAPI,
+		c.Redpanda.AdminAPITLS,
+		&c.Rpk.AdminAPI.Addresses,
+		"127.0.0.1:9644",
+	)
+}
 
-	brokers := r.KafkaAPI.Brokers
-	defer func() { r.KafkaAPI.Brokers = brokers }()
-	if len(brokers) == 0 && len(c.Redpanda.KafkaAPI) > 0 {
-		b0 := c.Redpanda.KafkaAPI[0]
-		brokers = []string{net.JoinHostPort(b0.Address, strconv.Itoa(b0.Port))}
+// defaultFromRedpanda sets fields in our `rpk` config section if those fields
+// are left unspecified. Primarily, this benefits the workflow where we ssh
+// into hosts and then run rpk against a localhost broker. To that end, we have
+// the following preference:
+//
+//	localhost -> loopback -> private -> public -> (same order, but TLS)
+//
+// We favor no TLS. The broker likely does not have client certs, so we cannot
+// set client TLS settings. If we have any non-TLS host, we do not use TLS
+// hosts.
+func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]string, fallback string) {
+	if len(*dst) != 0 {
+		return
 	}
-	if len(brokers) == 0 {
-		brokers = []string{"127.0.0.1:9092"}
+	defer func() {
+		if len(*dst) == 0 {
+			*dst = append(*dst, fallback)
+		}
+	}()
+
+	tlsNames := make(map[string]bool)
+	mtlsNames := make(map[string]bool)
+	for _, t := range srcTLS {
+		if t.Enabled {
+			// redpanda uses RequireClientAuth to opt into mtls: if
+			// RequireClientAuth is true, redpanda requires a CA
+			// cert. Conversely, if RequireClientAuth is false, the
+			// broker's CA is meaningless. This is a little bit
+			// backwards, a CA should always vet against client
+			// certs, but we use the bool field to determine mTLS.
+			if t.RequireClientAuth {
+				mtlsNames[t.Name] = true
+			} else {
+				tlsNames[t.Name] = true
+			}
+		}
+	}
+	add := func(noTLS, yesTLS, yesMTLS *[]string, hostport string, a NamedSocketAddress) {
+		if mtlsNames[a.Name] {
+			*yesMTLS = append(*yesTLS, hostport)
+		} else if tlsNames[a.Name] {
+			*yesTLS = append(*yesTLS, hostport)
+		} else {
+			*noTLS = append(*noTLS, hostport)
+		}
 	}
 
-	if len(r.AdminAPI.Addresses) == 0 {
-		r.AdminAPI.Addresses = []string{"127.0.0.1:9644"}
+	var localhost, loopback, private, public,
+		tlsLocalhost, tlsLoopback, tlsPrivate, tlsPublic,
+		mtlsLocalhost, mtlsLoopback, mtlsPrivate, mtlsPublic []string
+	for _, a := range src {
+		s := net.JoinHostPort(a.Address, strconv.Itoa(a.Port))
+		ip := net.ParseIP(a.Address)
+		switch {
+		case a.Address == "localhost":
+			add(&localhost, &tlsLocalhost, &mtlsLocalhost, s, a)
+		case ip.IsLoopback():
+			add(&loopback, &tlsLoopback, &mtlsLoopback, s, a)
+		case ip.IsUnspecified():
+			// An unspecified address ("0.0.0.0") tells the server
+			// to listen on all available interfaces. We cannot
+			// dial 0.0.0.0, but we can dial 127.0.0.1 which is an
+			// available interface. Also see:
+			//
+			// 	https://stackoverflow.com/a/20778887
+			//
+			// So, we add a loopback hostport.
+			s = net.JoinHostPort("127.0.0.1", strconv.Itoa(a.Port))
+			add(&loopback, &tlsLoopback, &mtlsLoopback, s, a)
+		case ip.IsPrivate():
+			add(&private, &tlsPrivate, &mtlsPrivate, s, a)
+		default:
+			add(&public, &tlsPublic, &mtlsPublic, s, a)
+		}
 	}
+	*dst = append(*dst, localhost...)
+	*dst = append(*dst, loopback...)
+	*dst = append(*dst, private...)
+	*dst = append(*dst, public...)
+
+	if len(*dst) > 0 {
+		return
+	}
+
+	*dst = append(*dst, tlsLocalhost...)
+	*dst = append(*dst, tlsLoopback...)
+	*dst = append(*dst, tlsPrivate...)
+	*dst = append(*dst, tlsPublic...)
+
+	if len(*dst) > 0 {
+		return
+	}
+
+	*dst = append(*dst, mtlsLocalhost...)
+	*dst = append(*dst, mtlsLoopback...)
+	*dst = append(*dst, mtlsPrivate...)
+	*dst = append(*dst, mtlsPublic...)
 }
 
 // Set allow to set a single configuration field by passing a key value pair

@@ -1,3 +1,12 @@
+// Copyright 2022 Redpanda Data, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
 package plugin
 
 import (
@@ -16,6 +25,7 @@ func TestListPlugins(t *testing.T) {
 		"/bin/.rpk-barely_executable":            {Mode: 0o100, Contents: "shadowed!"},
 		"/bin/.rpk.ac-barely_executable":         {Mode: 0o100, Contents: "also shadowed!"},
 		"/bin/.rpk.ac-auto_completed":            {Mode: 0o777, Contents: ""},
+		"/bin/.rpk.managed-man2_nested":          {Mode: 0o777, Contents: ""},
 		"/bin/has/dir/":                          {Mode: 0o777, Contents: ""},
 		"/bin/.rpk.ac-":                          {Mode: 0o777, Contents: "empty name ignored"},
 		"/bin/.rpk-":                             {Mode: 0o777, Contents: "empty name ignored"},
@@ -33,6 +43,12 @@ func TestListPlugins(t *testing.T) {
 
 	exp := Plugins{
 		{
+			Name:      "auto",
+			Path:      "/bin/.rpk.ac-auto_completed",
+			Arguments: []string{"auto", "completed"},
+		},
+		{
+			Name:      "barely",
 			Path:      "/usr/local/sbin/.rpk-barely_executable",
 			Arguments: []string{"barely", "executable"},
 			ShadowedPaths: []string{
@@ -41,8 +57,10 @@ func TestListPlugins(t *testing.T) {
 			},
 		},
 		{
-			Path:      "/bin/.rpk.ac-auto_completed",
-			Arguments: []string{"auto", "completed"},
+			Name:      "man2",
+			Path:      "/bin/.rpk.managed-man2_nested",
+			Arguments: []string{"man2", "nested"},
+			Managed:   true,
 		},
 	}
 
@@ -91,18 +109,24 @@ func TestWriteBinary(t *testing.T) {
 	})
 
 	{
-		dst, err := WriteBinary(fs, "autocomplete", "/bin/", []byte("ac"), true)
+		dst, err := WriteBinary(fs, "autocomplete", "/bin/", []byte("ac"), true, false)
 		require.NoError(t, err, "creating an autocomplete binary failed")
 		require.Equal(t, "/bin/.rpk.ac-autocomplete", dst, "binary path not as expected")
 	}
 	{
-		dst, err := WriteBinary(fs, "non-auto", "/usr/bin", []byte("nonac"), false)
+		dst, err := WriteBinary(fs, "non-auto", "/usr/bin", []byte("nonac"), false, false)
 		require.NoError(t, err, "creating a non-autocomplete binary failed")
 		require.Equal(t, "/usr/bin/.rpk-non-auto", dst, "binary path not as expected")
 	}
+	{
+		dst, err := WriteBinary(fs, "managed", "/usr/bin", []byte("m"), false, true)
+		require.NoError(t, err, "creating a managed binary failed")
+		require.Equal(t, "/usr/bin/.rpk.managed-managed", dst, "binary path not as expected")
+	}
 
 	testfs.Expect(t, fs, map[string]testfs.Fmode{
-		"/bin/.rpk.ac-autocomplete": {Mode: 0o755, Contents: "ac"},
-		"/usr/bin/.rpk-non-auto":    {Mode: 0o755, Contents: "nonac"},
+		"/bin/.rpk.ac-autocomplete":     {Mode: 0o755, Contents: "ac"},
+		"/usr/bin/.rpk-non-auto":        {Mode: 0o755, Contents: "nonac"},
+		"/usr/bin/.rpk.managed-managed": {Mode: 0o755, Contents: "m"},
 	})
 }

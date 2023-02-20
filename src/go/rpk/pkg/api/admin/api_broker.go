@@ -51,6 +51,27 @@ type Broker struct {
 	Maintenance      *MaintenanceStatus `json:"maintenance_status"`
 }
 
+type DecommissionPartitions struct {
+	Ns              string               `json:"ns"`
+	Topic           string               `json:"topic"`
+	Partition       int                  `json:"partition"`
+	MovingTo        DecommissionMovingTo `json:"moving_to"`
+	BytesLeftToMove int                  `json:"bytes_left_to_move"`
+	BytesMoved      int                  `json:"bytes_moved"`
+	PartitionSize   int                  `json:"partition_size"`
+}
+
+type DecommissionMovingTo struct {
+	NodeID int `json:"node_id"`
+	Core   int `json:"core"`
+}
+
+type DecommissionStatusResponse struct {
+	Finished     bool                     `json:"finished"`
+	ReplicasLeft int                      `json:"replicas_left"`
+	Partitions   []DecommissionPartitions `json:"partitions"`
+}
+
 // Brokers queries one of the client's hosts and returns the list of brokers.
 func (a *AdminAPI) Brokers(ctx context.Context) ([]Broker, error) {
 	var bs []Broker
@@ -79,6 +100,19 @@ func (a *AdminAPI) DecommissionBroker(ctx context.Context, node int) error {
 		nil,
 		nil,
 	)
+}
+
+// DecommissionBrokerStatus gathers a decommissioning progress for the given broker.
+func (a *AdminAPI) DecommissionBrokerStatus(ctx context.Context, node int) (DecommissionStatusResponse, error) {
+	var dsr DecommissionStatusResponse
+	err := a.sendToLeader(
+		ctx,
+		http.MethodGet,
+		fmt.Sprintf("%s/%d/decommission", brokersEndpoint, node),
+		nil,
+		&dsr,
+	)
+	return dsr, err
 }
 
 // RecommissionBroker issues a recommission request for the given broker.

@@ -649,7 +649,18 @@ func TestSeedServers(t *testing.T) {
     port: 80
 `,
 			exp: []SeedServer{
-				{SocketAddress{"0.0.0.1", 80}},
+				{Host: SocketAddress{"0.0.0.1", 80}},
+			},
+		},
+		{
+			name: "list of single seed server with old tabbing",
+			data: `test_server:
+  - host:
+    address: "0.0.0.1"
+    port: 80
+`,
+			exp: []SeedServer{
+				{Host: SocketAddress{"0.0.0.1", 80}, untabbed: true},
 			},
 		},
 		{
@@ -663,8 +674,8 @@ func TestSeedServers(t *testing.T) {
       port: 90
 `,
 			exp: []SeedServer{
-				{SocketAddress{"0.0.0.1", 80}},
-				{SocketAddress{"0.0.0.2", 90}},
+				{Host: SocketAddress{"0.0.0.1", 80}},
+				{Host: SocketAddress{"0.0.0.2", 90}},
 			},
 		},
 		{
@@ -713,7 +724,7 @@ func TestSeedServer(t *testing.T) {
     port: 33145
 `,
 			exp: SeedServer{
-				SocketAddress{"192.168.10.1", 33145},
+				Host: SocketAddress{"192.168.10.1", 33145},
 			},
 		},
 		{
@@ -724,7 +735,7 @@ func TestSeedServer(t *testing.T) {
         port: 80
 `,
 			exp: SeedServer{
-				SocketAddress{"0.0.0.1", 80},
+				Host: SocketAddress{"0.0.0.1", 80},
 			},
 		},
 		{
@@ -734,7 +745,8 @@ func TestSeedServer(t *testing.T) {
     port: 80
 `,
 			exp: SeedServer{
-				SocketAddress{"1.0.0.1", 80},
+				Host:     SocketAddress{"1.0.0.1", 80},
+				untabbed: true,
 			},
 		},
 		{
@@ -747,7 +759,8 @@ func TestSeedServer(t *testing.T) {
   port: 80
 `,
 			exp: SeedServer{
-				SocketAddress{"0.0.0.1", 80},
+				Host:     SocketAddress{"0.0.0.1", 80},
+				untabbed: true,
 			},
 		},
 		{
@@ -798,7 +811,8 @@ func TestSeedServer(t *testing.T) {
   address: "0.0.0.1"
 `,
 			exp: SeedServer{
-				SocketAddress{Address: "0.0.0.1"},
+				Host:     SocketAddress{Address: "0.0.0.1"},
+				untabbed: true,
 			},
 		},
 		{
@@ -809,7 +823,8 @@ func TestSeedServer(t *testing.T) {
   port: 82
 `,
 			exp: SeedServer{
-				SocketAddress{Port: 82},
+				Host:     SocketAddress{Port: 82},
+				untabbed: true,
 			},
 		},
 	} {
@@ -834,6 +849,7 @@ func TestSeedServer(t *testing.T) {
 }
 
 func TestConfig_UnmarshalYAML(t *testing.T) {
+	intPtr := func(i int) *int { return &i }
 	for _, test := range []struct {
 		name   string
 		data   string
@@ -889,8 +905,6 @@ redpanda:
   - address: 192.168.0.1
     port: 33145
   rack: "rack-id"
-  aggregate_metrics: true
-  disable_public_metrics: true
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -971,9 +985,9 @@ rpk:
 				Organization: "my_organization",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "node_uuid",
-				Redpanda: RedpandaConfig{
+				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
-					ID:             1,
+					ID:             intPtr(1),
 					AdminAPIDocDir: "/usr/share/redpanda/admin-api-doc",
 					Rack:           "rack-id",
 					AdminAPI: []NamedSocketAddress{
@@ -1000,18 +1014,16 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
-					AggregateMetrics:     true,
-					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
 				},
 				Pandaproxy: &Pandaproxy{
-					PandaproxyAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8082, "internal"},
-						{"0.0.0.0", 8083, "external"},
+					PandaproxyAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8082, "internal", nil},
+						{"0.0.0.0", 8083, "external", nil},
 					},
 					PandaproxyAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false, TruststoreFile: "truststore_file"},
@@ -1039,9 +1051,9 @@ rpk:
 					},
 				},
 				SchemaRegistry: &SchemaRegistry{
-					SchemaRegistryAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8081, "internal"},
-						{"0.0.0.0", 18081, "external"},
+					SchemaRegistryAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8081, "internal", nil},
+						{"0.0.0.0", 18081, "external", nil},
 					},
 					SchemaRegistryAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false},
@@ -1067,6 +1079,96 @@ rpk:
 					TuneCPU:           true,
 					TuneAioEvents:     false,
 					TuneClocksource:   true,
+				},
+			},
+		},
+		{
+			name: "Config file with omitted node ID",
+			data: `organization: "my_organization"
+cluster_id: "cluster_id"
+node_uuid: "node_uuid"
+redpanda:
+  data_directory: "var/lib/redpanda/data"
+  enable_admin_api: true
+  admin_api_doc_dir: "/usr/share/redpanda/admin-api-doc"
+  admin:
+  - address: "0.0.0.0"
+    port: 9644
+    name: admin
+  admin_api_tls:
+  - enabled: false
+    cert_file: "certs/tls-cert.pem"
+  rpc_server:
+    address: "0.0.0.0"
+    port: 33145
+  rpc_server_tls:
+  - require_client_auth: false
+    truststore_file: "certs/tls-ca.pem"
+  advertised_rpc_api:
+    address: "0.0.0.0"
+    port: 33145
+  kafka_api:
+  - address: "0.0.0.0"
+    name: internal
+    port: 9092
+  - address: "0.0.0.0"
+    name: external
+    port: 9093
+  kafka_api_tls:
+  - name: "external"
+    key_file: "certs/tls-key.pem"
+  - name: "internal"
+    enabled: false
+  advertised_kafka_api:
+  - address: 0.0.0.0
+    name: internal
+    port: 9092
+  - address: redpanda-0.my.domain.com.
+    name: external
+    port: 9093
+  seed_servers:
+  - address: 192.168.0.1
+    port: 33145
+  rack: "rack-id"
+`,
+			exp: &Config{
+				Organization: "my_organization",
+				ClusterID:    "cluster_id",
+				NodeUUID:     "node_uuid",
+				Redpanda: RedpandaNodeConfig{
+					Directory:      "var/lib/redpanda/data",
+					ID:             nil,
+					AdminAPIDocDir: "/usr/share/redpanda/admin-api-doc",
+					Rack:           "rack-id",
+					AdminAPI: []NamedSocketAddress{
+						{"0.0.0.0", 9644, "admin"},
+					},
+					AdminAPITLS: []ServerTLS{
+						{Enabled: false, CertFile: "certs/tls-cert.pem"},
+					},
+					RPCServer: SocketAddress{"0.0.0.0", 33145},
+					RPCServerTLS: []ServerTLS{
+						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
+					},
+					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 9092, "internal", nil},
+						{"0.0.0.0", 9093, "external", nil},
+					},
+					KafkaAPITLS: []ServerTLS{
+						{Name: "external", KeyFile: "certs/tls-key.pem"},
+						{Name: "internal", Enabled: false},
+					},
+					AdvertisedKafkaAPI: []NamedSocketAddress{
+						{"0.0.0.0", 9092, "internal"},
+						{"redpanda-0.my.domain.com.", 9093, "external"},
+					},
+					SeedServers: []SeedServer{
+						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
+					},
+					Other: map[string]interface{}{
+						"enable_admin_api": true,
+					},
 				},
 			},
 		},
@@ -1126,8 +1228,6 @@ redpanda:
   - address: 192.168.0.1
     port: 33145
   rack: "rack-id"
-  aggregate_metrics: "true"
-  disable_public_metrics: "true"
 pandaproxy:
   pandaproxy_api:
   - address: "0.0.0.0"
@@ -1207,9 +1307,9 @@ rpk:
 				Organization: "1",
 				ClusterID:    "cluster_id",
 				NodeUUID:     "124.42",
-				Redpanda: RedpandaConfig{
+				Redpanda: RedpandaNodeConfig{
 					Directory:      "var/lib/redpanda/data",
-					ID:             1,
+					ID:             intPtr(1),
 					AdminAPIDocDir: "/usr/share/redpanda/admin-api-doc",
 					Rack:           "rack-id",
 					AdminAPI: []NamedSocketAddress{
@@ -1236,20 +1336,18 @@ rpk:
 						{"redpanda-0.my.domain.com.", 9093, "external"},
 					},
 					SeedServers: []SeedServer{
-						{SocketAddress{"192.168.0.1", 33145}},
-						{SocketAddress{"192.168.0.1", 33145}},
-						{SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}},
+						{Host: SocketAddress{"192.168.0.1", 33145}, untabbed: true},
 					},
-					AggregateMetrics:     true,
-					DisablePublicMetrics: true,
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
 					},
 				},
 				Pandaproxy: &Pandaproxy{
-					PandaproxyAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8082, "internal"},
-						{"0.0.0.0", 8083, "external"},
+					PandaproxyAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8082, "internal", nil},
+						{"0.0.0.0", 8083, "external", nil},
 					},
 					PandaproxyAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false, TruststoreFile: "truststore_file"},
@@ -1277,9 +1375,9 @@ rpk:
 					},
 				},
 				SchemaRegistry: &SchemaRegistry{
-					SchemaRegistryAPI: []NamedSocketAddress{
-						{"0.0.0.0", 8081, "internal"},
-						{"0.0.0.0", 18081, "external"},
+					SchemaRegistryAPI: []NamedAuthNSocketAddress{
+						{"0.0.0.0", 8081, "internal", nil},
+						{"0.0.0.0", 18081, "external", nil},
 					},
 					SchemaRegistryAPITLS: []ServerTLS{
 						{Name: "external", Enabled: false},

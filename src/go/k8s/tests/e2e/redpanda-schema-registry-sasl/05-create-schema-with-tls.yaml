@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-schema-with-tls
+spec:
+  template:
+    spec:
+      volumes:
+      - name: tlscert
+        secret:
+          defaultMode: 420
+          secretName: schema-registry-schema-registry-node
+      containers:
+      - name: rpk
+        image: localhost/redpanda:dev
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: SCRAM_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: schema-registry-schema-registry-sasl
+              key: username
+        - name: SCRAM_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: schema-registry-schema-registry-sasl
+              key: password
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - >
+          curl -vv --silent --cacert /etc/tls/certs/schema-registry/ca.crt
+          -u "$SCRAM_USERNAME:$SCRAM_PASSWORD"
+          -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
+          --data '{"schema": "{\"type\": \"string\"}" }'
+          https://schema-registry-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
+        volumeMounts:
+        - mountPath: /etc/tls/certs/schema-registry
+          name: tlscert
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

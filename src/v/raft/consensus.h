@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "features/feature_table.h"
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -26,7 +27,6 @@
 #include "raft/offset_translator.h"
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
-#include "raft/raft_feature_table.h"
 #include "raft/recovery_memory_quota.h"
 #include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
@@ -44,6 +44,7 @@
 #include <seastar/util/bool_class.hh>
 
 #include <optional>
+#include <string_view>
 
 namespace raft {
 class replicate_entries_stm;
@@ -90,13 +91,14 @@ public:
       timeout_jitter,
       storage::log,
       scheduling_config,
-      model::timeout_clock::duration disk_timeout,
+      config::binding<std::chrono::milliseconds> disk_timeout,
       consensus_client_protocol,
       leader_cb_t,
       storage::api&,
       std::optional<std::reference_wrapper<recovery_throttle>>,
       recovery_memory_quota&,
-      raft_feature_table&);
+      features::feature_table&,
+      std::optional<voter_priority> = std::nullopt);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -164,7 +166,7 @@ public:
         return _became_leader_at;
     };
 
-    clock_type::time_point last_sent_append_entries_req_timesptamp(vnode);
+    clock_type::time_point last_sent_append_entries_req_timestamp(vnode);
     /**
      * \brief Persist snapshot with given data and start offset
      *
@@ -188,6 +190,7 @@ public:
     replicate(model::record_batch_reader&&, replicate_options);
     replicate_stages
     replicate_in_stages(model::record_batch_reader&&, replicate_options);
+    uint64_t get_snapshot_size() const { return _snapshot_size; }
 
     /**
      * Replication happens only when expected_term matches the current _term
@@ -252,21 +255,22 @@ public:
         return _configuration_manager.wait_for_change(last_seen, as);
     }
 
-    ss::future<> step_down(model::term_id term) {
-        return _op_lock.with([this, term] {
+    ss::future<> step_down(model::term_id term, std::string_view ctx) {
+        return _op_lock.with([this, term, ctx] {
             // check again under op_lock semaphore, make sure we do not move
             // term backward
             if (term > _term) {
                 _term = term;
                 _voted_for = {};
-                do_step_down("external_stepdown");
+                do_step_down(fmt::format(
+                  "external_stepdown with term {} - {}", term, ctx));
             }
         });
     }
 
-    ss::future<> step_down() {
-        return _op_lock.with([this] {
-            do_step_down("external_stepdown");
+    ss::future<> step_down(std::string_view ctx) {
+        return _op_lock.with([this, ctx] {
+            do_step_down(fmt::format("external_stepdown - {}", ctx));
             if (_leader_id) {
                 _leader_id = std::nullopt;
                 trigger_leadership_notification();
@@ -304,12 +308,6 @@ public:
     ss::future<std::error_code> prepare_transfer_leadership(vnode);
     ss::future<std::error_code>
       do_transfer_leadership(std::optional<model::node_id>);
-    /**
-     * requests leadership to be transferred to the current node. It sends
-     * transer leadership request to the current leader.
-     */
-    ss::future<std::error_code>
-      request_leadership(model::timeout_clock::time_point);
 
     ss::future<> remove_persistent_state();
 
@@ -366,6 +364,14 @@ public:
         _node_priority_override = raft::zero_voter_priority;
     }
 
+    /**
+     * Resets node priority only if it was not blocked
+     */
+    void reset_node_priority() {
+        if (_node_priority_override == raft::min_voter_priority) {
+            unblock_new_leadership();
+        }
+    }
     /*
      * Allow the current node to become a leader for this group.
      */
@@ -455,7 +461,8 @@ private:
 
     void arm_vote_timeout();
     void update_node_append_timestamp(vnode);
-    void update_node_hbeat_timestamp(vnode);
+    void update_node_reply_timestamp(vnode);
+    void maybe_update_node_reply_timestamp(vnode);
 
     void update_follower_stats(const group_configuration&);
     void trigger_leadership_notification();
@@ -468,6 +475,7 @@ private:
     absl::flat_hash_map<vnode, follower_req_seq> next_followers_request_seq();
 
     void setup_metrics();
+    void setup_public_metrics();
 
     bytes voted_for_key() const {
         return raft::details::serialize_group_key(
@@ -570,6 +578,10 @@ private:
         }
         return false;
     }
+
+    void maybe_upgrade_configuration(group_configuration&);
+
+    void update_confirmed_term();
     // args
     vnode _self;
     raft::group_id _group;
@@ -577,7 +589,7 @@ private:
     storage::log _log;
     offset_translator _offset_translator;
     scheduling_config _scheduling;
-    model::timeout_clock::duration _disk_timeout;
+    config::binding<std::chrono::milliseconds> _disk_timeout;
     consensus_client_protocol _client_protocol;
     leader_cb_t _leader_notification;
 
@@ -639,8 +651,9 @@ private:
     storage::api& _storage;
     std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
-    raft_feature_table& _features;
+    features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;
+    uint64_t _snapshot_size{0};
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;

@@ -43,14 +43,8 @@ void offset_translator::process(const model::record_batch& batch) {
 
     // Update resource manager for the extra dirty bytes, it may hint us
     // to checkpoint early in response.
-    auto take_result = _storage_api.resources().offset_translator_take_bytes(
-      batch.size_bytes());
-    if (_bytes_processed_units.count() == 0) {
-        _bytes_processed_units = std::move(take_result.units);
-    } else {
-        _bytes_processed_units.adopt(std::move(take_result.units));
-    }
-    _checkpoint_hint |= take_result.checkpoint_hint;
+    _checkpoint_hint |= _storage_api.resources().offset_translator_take_bytes(
+      batch.size_bytes(), _bytes_processed_units);
 
     if (
       std::find(
@@ -271,7 +265,7 @@ ss::future<> offset_translator::prefix_truncate(model::offset offset) {
     ++_map_version;
 
     vlog(
-      _logger.info,
+      _logger.debug,
       "prefix_truncate at offset: {}, new state: {}",
       offset,
       _state);
@@ -339,12 +333,12 @@ ss::future<> offset_translator::maybe_checkpoint() {
 
     constexpr size_t checkpoint_threshold = 64_MiB;
 
-    co_await _checkpoint_lock.with([this]() -> ss::future<> {
+    co_await _checkpoint_lock.with([this]() {
         if (
           _bytes_processed
             < _bytes_processed_at_checkpoint + checkpoint_threshold
           && !_checkpoint_hint) {
-            co_return;
+            return ss::now();
         }
 
         vlog(
@@ -355,7 +349,7 @@ ss::future<> offset_translator::maybe_checkpoint() {
           _highest_known_offset,
           _checkpoint_hint);
 
-        co_await do_checkpoint();
+        return do_checkpoint();
     });
 }
 

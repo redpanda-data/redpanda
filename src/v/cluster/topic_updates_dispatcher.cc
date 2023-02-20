@@ -11,6 +11,7 @@
 
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "model/fundamental.h"
@@ -28,10 +29,12 @@ namespace cluster {
 topic_updates_dispatcher::topic_updates_dispatcher(
   ss::sharded<partition_allocator>& pal,
   ss::sharded<topic_table>& table,
-  ss::sharded<partition_leaders_table>& leaders)
+  ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<partition_balancer_state>& pb_state)
   : _partition_allocator(pal)
   , _topic_table(table)
-  , _partition_leaders_table(leaders) {}
+  , _partition_leaders_table(leaders)
+  , _partition_balancer_state(pb_state) {}
 
 ss::future<std::error_code>
 topic_updates_dispatcher::apply_update(model::record_batch b) {
@@ -41,7 +44,6 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
           return ss::visit(
             std::move(cmd),
             [this, base_offset](delete_topic_cmd del_cmd) {
-                auto tp_ns = del_cmd.key;
                 auto topic_assignments
                   = _topic_table.local().get_topic_assignments(del_cmd.value);
                 in_progress_map in_progress;
@@ -53,13 +55,27 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(del_cmd, base_offset)
                   .then(
                     [this,
+                     tp_ns = std::move(del_cmd.key),
                      topic_assignments = std::move(topic_assignments),
                      in_progress = std::move(in_progress)](std::error_code ec) {
                         if (ec == errc::success) {
                             vassert(
                               topic_assignments.has_value(),
                               "Topic had to exist before successful delete");
-                            deallocate_topic(*topic_assignments, in_progress);
+                            deallocate_topic(
+                              *topic_assignments,
+                              in_progress,
+                              get_allocation_domain(tp_ns));
+
+                            for (const auto& p_as : *topic_assignments) {
+                                _partition_balancer_state.local()
+                                  .handle_ntp_update(
+                                    tp_ns.ns,
+                                    tp_ns.tp,
+                                    p_as.id,
+                                    p_as.replicas,
+                                    {});
+                            }
                         }
 
                         return ec;
@@ -69,7 +85,21 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(create_cmd, base_offset)
                   .then([this, create_cmd](std::error_code ec) {
                       if (ec == errc::success) {
-                          update_allocations(create_cmd.value.assignments);
+                          const auto& tp_ns = create_cmd.key;
+                          update_allocations(
+                            create_cmd.value.assignments,
+                            get_allocation_domain(tp_ns));
+
+                          for (const auto& p_as :
+                               create_cmd.value.assignments) {
+                              _partition_balancer_state.local()
+                                .handle_ntp_update(
+                                  tp_ns.ns,
+                                  tp_ns.tp,
+                                  p_as.id,
+                                  {},
+                                  p_as.replicas);
+                          }
                       }
                       return ec;
                   })
@@ -99,14 +129,23 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                   .then([this, p_as = std::move(p_as), cmd = std::move(cmd)](
                           std::error_code ec) {
                       if (!ec) {
+                          const auto& ntp = cmd.key;
                           vassert(
                             p_as.has_value(),
                             "Partition {} have to exist before successful "
                             "partition reallocation",
-                            cmd.key);
+                            ntp);
                           auto to_add = subtract_replica_sets(
                             cmd.value, p_as->replicas);
-                          _partition_allocator.local().add_allocations(to_add);
+                          _partition_allocator.local().add_allocations(
+                            to_add, get_allocation_domain(ntp));
+
+                          _partition_balancer_state.local().handle_ntp_update(
+                            ntp.ns,
+                            ntp.tp.topic,
+                            ntp.tp.partition,
+                            p_as->replicas,
+                            cmd.value);
                       }
                       return ec;
                   });
@@ -134,21 +173,46 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                         "currently being updated",
                         ntp);
 
-                      auto to_delete = subtract_replica_sets(
-                        current_assignment->replicas, *new_target_replicas);
-                      _partition_allocator.local().remove_allocations(
-                        to_delete);
+                      _partition_balancer_state.local().handle_ntp_update(
+                        ntp.ns,
+                        ntp.tp.topic,
+                        ntp.tp.partition,
+                        current_assignment->replicas,
+                        *new_target_replicas);
                       return ec;
                   });
             },
             [this, base_offset](finish_moving_partition_replicas_cmd cmd) {
+                // initial replica set of the move command (not changed when
+                // operation is cancelled)
                 auto previous_replicas
                   = _topic_table.local().get_previous_replica_set(cmd.key);
+                // requested/target replica set of original move command(not
+                // changed when move is cancelled)
+                auto target_replicas
+                  = _topic_table.local().get_target_replica_set(cmd.key);
+                /**
+                 * Finish moving command may be related either with cancellation
+                 * or with finish of an original move
+                 *
+                 * For original move the direction of data transfer is:
+                 *
+                 *  previous_replica -> target_replicas
+                 *
+                 * for cancelled move it is:
+                 *
+                 *  target_replicas -> previous_replicas
+                 *
+                 * Finish command contains the final replica set it will be
+                 * target_replicas for finished move and previous_replicas for
+                 * finished cancellation
+                 */
                 return dispatch_updates_to_cores(cmd, base_offset)
                   .then([this,
                          ntp = std::move(cmd.key),
-                         previous_replicas = previous_replicas,
-                         current_replicas = std::move(cmd.value)](
+                         previous_replicas = std::move(previous_replicas),
+                         target_replicas = std::move(target_replicas),
+                         command_replicas = std::move(cmd.value)](
                           std::error_code ec) {
                       if (ec) {
                           return ec;
@@ -159,11 +223,95 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                         "update can only be applied to partition that is "
                         "currently being updated",
                         ntp);
+                      vassert(
+                        target_replicas.has_value(),
+                        "Target replicas for NTP {} must exists as finish "
+                        "update can only be applied to partition that is "
+                        "currently being updated",
+                        ntp);
+                      std::vector<model::broker_shard> to_delete;
+                      // move was successful, not cancelled
+                      if (target_replicas == command_replicas) {
+                          to_delete = subtract_replica_sets(
+                            *previous_replicas, command_replicas);
+                      } else {
+                          vassert(
+                            previous_replicas == command_replicas,
+                            "When finishing cancelled move of partition {} the "
+                            "finish command replica set {} must be equal to "
+                            "previous_replicas {} from topic table in progress "
+                            "update tracker",
+                            ntp,
+                            command_replicas,
+                            previous_replicas);
+                          to_delete = subtract_replica_sets(
+                            *target_replicas, command_replicas);
+                      }
+                      _partition_allocator.local().remove_allocations(
+                        to_delete, get_allocation_domain(ntp));
+
+                      return ec;
+                  });
+            },
+            [this, base_offset](revert_cancel_partition_move_cmd cmd) {
+                /**
+                 * In this case partition underlying raft group reconfiguration
+                 * already finished when it is attempted to be cancelled.
+                 *
+                 * In the case where original move was scheduled
+                 * to happen from replica set A to B:
+                 *
+                 *      A->B
+                 *
+                 * Cancellation would result in reconfiguration:
+                 *
+                 *      B->A
+                 * But since the move A->B finished we update the topic table
+                 * back to the state from before the cancellation
+                 *
+                 */
+
+                // Replica set that the original move was requested from (A from
+                // an example above)
+                auto previous_replicas
+                  = _topic_table.local().get_previous_replica_set(
+                    cmd.value.ntp);
+                auto target_replicas
+                  = _topic_table.local().get_target_replica_set(cmd.value.ntp);
+                return dispatch_updates_to_cores(cmd, base_offset)
+                  .then([this,
+                         ntp = std::move(cmd.value.ntp),
+                         previous_replicas = std::move(previous_replicas),
+                         target_replicas = std::move(target_replicas)](
+                          std::error_code ec) {
+                      if (ec) {
+                          return ec;
+                      }
+
+                      vassert(
+                        previous_replicas.has_value(),
+                        "Previous replicas for NTP {} must exists as revert "
+                        "update can only be applied to partition that move is "
+                        "currently being cancelled",
+                        ntp);
+                      vassert(
+                        target_replicas.has_value(),
+                        "Target replicas for NTP {} must exists as revert "
+                        "update can only be applied to partition that move is "
+                        "currently being cancelled",
+                        ntp);
 
                       auto to_delete = subtract_replica_sets(
-                        *previous_replicas, current_replicas);
+                        *previous_replicas, *target_replicas);
                       _partition_allocator.local().remove_allocations(
-                        to_delete);
+                        to_delete, get_allocation_domain(ntp));
+
+                      _partition_balancer_state.local().handle_ntp_update(
+                        ntp.ns,
+                        ntp.tp.topic,
+                        ntp.tp.partition,
+                        *previous_replicas,
+                        *target_replicas);
                       return ec;
                   });
             },
@@ -174,7 +322,20 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 return dispatch_updates_to_cores(cmd, base_offset)
                   .then([this, cmd](std::error_code ec) {
                       if (ec == errc::success) {
-                          update_allocations(cmd.value.assignments);
+                          const auto& tp_ns = cmd.key;
+                          update_allocations(
+                            cmd.value.assignments,
+                            get_allocation_domain(tp_ns));
+
+                          for (const auto& p_as : cmd.value.assignments) {
+                              _partition_balancer_state.local()
+                                .handle_ntp_update(
+                                  tp_ns.ns,
+                                  tp_ns.tp,
+                                  p_as.id,
+                                  {},
+                                  p_as.replicas);
+                          }
                       }
                       return ec;
                   });
@@ -183,8 +344,10 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                 auto assignments = _topic_table.local().get_topic_assignments(
                   cmd.key.source);
                 return dispatch_updates_to_cores(cmd, base_offset)
-                  .then([this, assignments = std::move(assignments)](
-                          std::error_code ec) {
+                  .then([this,
+                         assignments = std::move(assignments),
+                         allocation_domain = get_allocation_domain(
+                           cmd.key.name)](std::error_code ec) {
                       if (ec == errc::success) {
                           vassert(
                             assignments.has_value(), "null topic_metadata");
@@ -194,7 +357,45 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                             assignments->begin(),
                             assignments->end(),
                             std::back_inserter(p_as));
-                          update_allocations(std::move(p_as));
+                          update_allocations(
+                            std::move(p_as), allocation_domain);
+                      }
+                      return ec;
+                  });
+            },
+            [this, base_offset](move_topic_replicas_cmd cmd) {
+                auto assignments = _topic_table.local().get_topic_assignments(
+                  cmd.key);
+                return dispatch_updates_to_cores(cmd, base_offset)
+                  .then([this,
+                         assignments = std::move(assignments),
+                         cmd = std::move(cmd)](std::error_code ec) {
+                      if (!assignments.has_value()) {
+                          return std::error_code(errc::topic_not_exists);
+                      }
+                      if (ec == errc::success) {
+                          for (const auto& [partition_id, replicas] :
+                               cmd.value) {
+                              auto assigment_it = assignments.value().find(
+                                partition_id);
+                              auto ntp = model::ntp(
+                                cmd.key.ns, cmd.key.tp, partition_id);
+                              if (assigment_it == assignments.value().end()) {
+                                  return std::error_code(
+                                    errc::partition_not_exists);
+                              }
+                              auto to_add = subtract_replica_sets(
+                                replicas, assigment_it->replicas);
+                              _partition_allocator.local().add_allocations(
+                                to_add, get_allocation_domain(ntp));
+                              _partition_balancer_state.local()
+                                .handle_ntp_update(
+                                  ntp.ns,
+                                  ntp.tp.topic,
+                                  ntp.tp.partition,
+                                  assigment_it->replicas,
+                                  replicas);
+                          }
                       }
                       return ec;
                   });
@@ -282,22 +483,24 @@ topic_updates_dispatcher::dispatch_updates_to_cores(Cmd cmd, model::offset o) {
 
 void topic_updates_dispatcher::deallocate_topic(
   const assignments_set& topic_assignments,
-  const in_progress_map& in_progress) {
+  const in_progress_map& in_progress,
+  const partition_allocation_domain domain) {
     for (auto& p_as : topic_assignments) {
-        _partition_allocator.local().deallocate(p_as.replicas);
+        _partition_allocator.local().deallocate(p_as.replicas, domain);
         auto it = in_progress.find(p_as.id);
 
         // we must remove the allocation that would normally
         // be removed with update_finished request
         if (it != in_progress.end()) {
             auto to_delete = subtract_replica_sets(it->second, p_as.replicas);
-            _partition_allocator.local().remove_allocations(to_delete);
+            _partition_allocator.local().remove_allocations(to_delete, domain);
         }
     }
 }
 
 void topic_updates_dispatcher::update_allocations(
-  std::vector<partition_assignment> assignments) {
+  std::vector<partition_assignment> assignments,
+  const partition_allocation_domain domain) {
     // for create topics we update allocation state
     std::vector<model::broker_shard> shards;
     raft::group_id max_group_id = raft::group_id(0);
@@ -307,7 +510,8 @@ void topic_updates_dispatcher::update_allocations(
           pas.replicas.begin(), pas.replicas.end(), std::back_inserter(shards));
     }
 
-    _partition_allocator.local().update_allocation_state(shards, max_group_id);
+    _partition_allocator.local().update_allocation_state(
+      shards, max_group_id, domain);
 }
 
 } // namespace cluster

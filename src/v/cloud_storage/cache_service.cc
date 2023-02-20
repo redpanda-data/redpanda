@@ -8,6 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "bytes/iostream.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
 #include "ssx/future-util.h"
@@ -54,6 +55,8 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 }
 
 static constexpr std::string_view tmp_extension{".part"};
+
+static constexpr ss::lowres_clock::duration min_clean_up_interval = 5000ms;
 
 cache::cache(std::filesystem::path cache_dir, size_t max_cache_size) noexcept
   : _cache_dir(std::move(cache_dir))
@@ -105,19 +108,22 @@ uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 ss::future<> cache::consume_cache_space(size_t sz) {
     vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
     _current_cache_size += sz;
+    probe.set_size(_current_cache_size);
     if (_current_cache_size > _max_cache_size) {
-        auto units = ss::try_get_units(_cleanup_sm, 1);
-        if (units) {
-            co_await clean_up_cache();
+        if (ss::lowres_clock::now() - _last_clean_up > min_clean_up_interval) {
+            auto units = ss::try_get_units(_cleanup_sm, 1);
+            if (units) {
+                co_await clean_up_cache();
+            }
+            // Otherwise the cleanup is already running
         }
-        // Otherwise the cleanup is already running
     }
 }
 
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
-    auto [cache_size, candidates_for_deletion] = co_await _walker.walk(
-      _cache_dir.native(), _access_time_tracker);
+    auto [cache_size, candidates_for_deletion, empty_dirs]
+      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
     probe.set_size(cache_size);
     probe.set_num_files(candidates_for_deletion.size());
 
@@ -132,7 +138,7 @@ ss::future<> cache::clean_up_at_start() {
     _access_time_tracker.remove_others(tmp);
     _current_cache_size = cache_size;
 
-    for (auto& file_item : candidates_for_deletion) {
+    for (const auto& file_item : candidates_for_deletion) {
         auto filepath_to_remove = file_item.path;
 
         // delete only tmp files that are left from previous RedPanda run
@@ -143,12 +149,27 @@ ss::future<> cache::clean_up_at_start() {
             } catch (std::exception& e) {
                 vlog(
                   cst_log.error,
-                  "Cache eviction couldn't delete {}: {}.",
+                  "Startup cache cleanup couldn't delete {}: {}.",
                   filepath_to_remove,
                   e.what());
             }
         }
     }
+
+    for (const auto& path : empty_dirs) {
+        try {
+            co_await ss::remove_file(path);
+        } catch (std::exception& e) {
+            // Leaving an empty dir will not prevent progress, so tolerate
+            // errors on deletion (could be e.g. a permissions error)
+            vlog(
+              cst_log.error,
+              "Startup cache cleanup couldn't delete {}: {}.",
+              path,
+              e);
+        }
+    }
+
     vlog(
       cst_log.debug,
       "Clean up at start deleted files of total size {}.",
@@ -158,8 +179,8 @@ ss::future<> cache::clean_up_at_start() {
 ss::future<> cache::clean_up_cache() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
-    auto [current_cache_size, candidates_for_deletion] = co_await _walker.walk(
-      _cache_dir.native(), _access_time_tracker);
+    auto [current_cache_size, candidates_for_deletion, _]
+      = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
     _current_cache_size = current_cache_size;
     probe.set_size(_current_cache_size);
     probe.set_num_files(candidates_for_deletion.size());
@@ -179,29 +200,72 @@ ss::future<> cache::clean_up_cache() {
           = _current_cache_size
             - (_max_cache_size * (long double)_cache_size_low_watermark);
 
+        // Sort by atime for the subsequent LRU trimming loop
+        std::sort(
+          candidates_for_deletion.begin(),
+          candidates_for_deletion.end(),
+          [](auto& a, auto& b) { return a.access_time < b.access_time; });
+
         size_t i_to_delete = 0;
         while (i_to_delete < candidates_for_deletion.size()
                && deleted_size < size_to_delete) {
             auto filename_to_remove = candidates_for_deletion[i_to_delete].path;
 
             // skip tmp files since someone may be writing to it
-            if (!std::string_view(filename_to_remove)
-                   .ends_with(tmp_extension)) {
+            if (std::string_view(filename_to_remove).ends_with(tmp_extension)) {
+                i_to_delete++;
+                continue;
+            }
+
+            // Doesn't make sense to demote these independent of the segment
+            // they refer to: we will clear them out along with the main log
+            // segment file if they exist.
+            if (
+              std::string_view(filename_to_remove).ends_with(".tx")
+              || std::string_view(filename_to_remove).ends_with(".index")) {
+                i_to_delete++;
+                continue;
+            }
+
+            try {
+                auto tx_file = fmt::format("{}.tx", filename_to_remove);
+                auto index_file = fmt::format("{}.index", filename_to_remove);
+
                 try {
-                    co_await recursive_delete_empty_directory(
-                      filename_to_remove);
-                    deleted_size += candidates_for_deletion[i_to_delete].size;
-                    // Remove key if possible to make sure there is no resource
-                    // leak
-                    _access_time_tracker.remove_timestamp(
-                      std::string_view(filename_to_remove));
-                } catch (std::exception& e) {
-                    vlog(
-                      cst_log.error,
-                      "Cache eviction couldn't delete {}: {}.",
-                      filename_to_remove,
-                      e.what());
+                    auto sz = co_await ss::file_size(tx_file);
+                    co_await ss::remove_file(tx_file);
+                    deleted_size += sz;
+                } catch (std::filesystem::filesystem_error& e) {
+                    if (e.code() != std::errc::no_such_file_or_directory) {
+                        throw;
+                    }
                 }
+
+                try {
+                    auto sz = co_await ss::file_size(index_file);
+                    co_await ss::remove_file(index_file);
+                    deleted_size += sz;
+                } catch (std::filesystem::filesystem_error& e) {
+                    if (e.code() != std::errc::no_such_file_or_directory) {
+                        throw;
+                    }
+                }
+
+                co_await recursive_delete_empty_directory(filename_to_remove);
+                deleted_size += candidates_for_deletion[i_to_delete].size;
+                // Remove key if possible to make sure there is no resource
+                // leak
+                _access_time_tracker.remove_timestamp(
+                  std::string_view(filename_to_remove));
+            } catch (const ss::gate_closed_exception&) {
+                // We are shutting down, stop iterating and propagate
+                throw;
+            } catch (const std::exception& e) {
+                vlog(
+                  cst_log.error,
+                  "Cache eviction couldn't delete {}: {}.",
+                  filename_to_remove,
+                  e.what());
             }
             i_to_delete++;
         }
@@ -212,7 +276,12 @@ ss::future<> cache::clean_up_cache() {
           "Cache eviction deleted {} files of total size {}.",
           i_to_delete,
           deleted_size);
+
+        probe.set_size(_current_cache_size);
+        probe.set_num_files(candidates_for_deletion.size() - i_to_delete);
     }
+
+    _last_clean_up = ss::lowres_clock::now();
 }
 
 ss::future<> cache::load_access_time_tracker() {
@@ -330,6 +399,7 @@ ss::future<std::optional<cache_item>> cache::get(std::filesystem::path key) {
         }
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
+            probe.miss_get();
             co_return std::nullopt;
         } else {
             throw;
@@ -397,9 +467,11 @@ ss::future<> cache::put(
     ss::file tmp_cache_file;
     while (true) {
         try {
-            // recursive_delete_empty_directory may delete dir_path before we
-            // open file, in this case we recreate dir_path and try again
-            co_await ss::recursive_touch_directory(dir_path.string());
+            // recursive_delete_empty_directory may delete dir_path before
+            // we open file, in this case we recreate dir_path and try again
+            if (!co_await ss::file_exists(dir_path.string())) {
+                co_await ss::recursive_touch_directory(dir_path.string());
+            }
 
             auto flags = ss::open_flags::wo | ss::open_flags::create
                          | ss::open_flags::exclusive;
@@ -430,10 +502,12 @@ ss::future<> cache::put(
       .finally([&out]() { return out.close(); });
 
     // commit write transaction
+    auto src = (dir_path / tmp_filename).native();
     auto dest = (dir_path / filename).native();
-    co_await ss::rename_file((dir_path / tmp_filename).native(), dest);
 
-    auto put_size = co_await ss::file_size(dest);
+    auto put_size = co_await ss::file_size(src);
+
+    co_await ss::rename_file(src, dest);
 
     // Bump access time of the file
     if (ss::this_shard_id() == 0) {

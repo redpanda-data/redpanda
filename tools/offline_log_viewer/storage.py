@@ -135,6 +135,7 @@ class BatchType(Enum):
     archival_metadata = 19
     cluster_config_cmd = 20
     feature_update = 21
+    cluster_bootstrap_cmd = 22
     unknown = -1
 
     @classmethod
@@ -217,7 +218,10 @@ class Batch:
                 return None
             assert len(data) == records_size
             return Batch(index, header, data)
-        assert len(data) == 0
+
+        if len(data) < HEADER_SIZE:
+            # Short read, probably log being actively written or unclean shutdown
+            return None
 
     def __len__(self):
         return self.header.record_count

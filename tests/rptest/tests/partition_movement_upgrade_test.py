@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import threading
 from time import sleep
 import requests
@@ -18,9 +19,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
-
-from rptest.util import wait_until
-from ducktape.mark import ok_to_fail
+from ducktape.utils.util import wait_until
 
 
 class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
@@ -35,7 +34,10 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         self._stop_move = threading.Event()
 
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, (22, 1, 5))
+        self.old_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+        _, self.old_version_str = self.installer.install(
+            self.redpanda.nodes, self.old_version)
         super(PartitionMovementUpgradeTest, self).setUp()
 
     def _start_producer(self, topic_name):
@@ -60,7 +62,8 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
             topic_name,
             self._message_size,
             readers=5,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+            debug_logs=True)
         self.consumer.start(clean=False)
 
     def verify(self):
@@ -101,8 +104,15 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
 
         self.move_worker.join()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5868
-    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    # Allow unsupported version error log entry for older redpanda versions
+    #
+    # This log entry may be logged by version up to v22.1.x
+    unsupported_api_version_log_entry = re.compile(
+        "Error\[applying protocol\] .*Unsupported version \d+ for .*")
+
+    @cluster(num_nodes=6,
+             log_allow_list=RESTART_LOG_ALLOW_LIST +
+             [unsupported_api_version_log_entry])
     def test_basic_upgrade(self):
         topic = TopicSpec(partition_count=16, replication_factor=3)
         self.client().create_topic(topic)
@@ -121,27 +131,27 @@ class PartitionMovementUpgradeTest(PreallocNodesTest, PartitionMovementMixin):
         first_node = self.redpanda.nodes[0]
 
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Upgrade one node to the head version.
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Rollback the partial upgrade and ensure we go back to the original
         # state.
-        self.installer.install([first_node], (22, 1, 5))
+        self.installer.install([first_node], self.old_version)
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Only once we upgrade the rest of the nodes do we converge on the new
         # version.
         self.installer.install([first_node], RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.5" not in unique_versions, unique_versions
+        assert self.old_version_str not in unique_versions, unique_versions
 
         self.stop_moving_partitions()
         self.verify()

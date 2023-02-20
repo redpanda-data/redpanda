@@ -7,14 +7,18 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import json
 import subprocess
 import re
 import typing
 import time
+import itertools
 from typing import Optional
 from ducktape.cluster.cluster import ClusterNode
 from rptest.util import wait_until_result
 from rptest.services import tls
+from ducktape.errors import TimeoutError
+from dataclasses import dataclass
 
 DEFAULT_TIMEOUT = 30
 
@@ -30,24 +34,31 @@ class ClusterAuthorizationError(Exception):
 
 
 class RpkException(Exception):
-    def __init__(self, msg, stderr=""):
+    def __init__(self, msg, stderr="", returncode=None):
         self.msg = msg
         self.stderr = stderr
+        self.returncode = returncode
 
     def __str__(self):
         if self.stderr:
             err = f" error: {self.stderr}"
         else:
             err = ""
-        return f"RpkException<{self.msg}{err}>"
+        if self.returncode:
+            retcode = f" returncode: {self.returncode}"
+        else:
+            retcode = ""
+        return f"RpkException<{self.msg}{err}{retcode}>"
 
 
 class RpkPartition:
-    def __init__(self, id, leader, leader_epoch, replicas, hw, start_offset):
+    def __init__(self, id, leader, leader_epoch, replicas, lso, hw,
+                 start_offset):
         self.id = id
         self.leader = leader
         self.leader_epoch = leader_epoch
         self.replicas = replicas
+        self.last_stable_offset = lso
         self.high_watermark = hw
         self.start_offset = start_offset
 
@@ -104,6 +115,83 @@ class RpkMaintenanceStatus(typing.NamedTuple):
     failed: int
 
 
+class RpkOffsetDeleteResponsePartition(typing.NamedTuple):
+    topic: str
+    partition: int
+    status: str
+    error_msg: str
+
+
+@dataclass
+class RpkColumnHeader:
+    name: str
+    padding: int = 0
+
+    def width(self):
+        return len(self.name) + self.padding
+
+
+@dataclass
+class RpkTable:
+    columns: list[RpkColumnHeader]
+    rows: list[list[str]]
+
+
+def parse_rpk_table(out):
+    lines = out.splitlines()
+
+    h_idx = 0
+    for line in lines:
+        m = re.match("^\(.+\)$", line)
+        if not m:
+            break
+        h_idx += 1
+
+    header = lines[h_idx]
+
+    seen_names = set()
+    columns = []
+    while len(header) > 0:
+        m = re.match("^([^ ]+)( *)", header)
+        if not m:
+            raise RpkException(f"can't parse header: '{lines[0]}'")
+        columns.append(RpkColumnHeader(m.group(1), len(m.group(2))))
+        header = header[columns[-1].width():]
+        if columns[-1].name in seen_names:
+            raise RpkException(
+                f"rpk table have duplicated column: '{columns[-1].name}'")
+        seen_names.add(columns[-1].name)
+
+    rows = []
+    for line in lines[h_idx + 1:]:
+        row = []
+        position = 0
+        for column in columns:
+            value = None
+            if column == columns[-1]:
+                if position < len(line):
+                    value = line[position:]
+                else:
+                    value = ""
+            else:
+                if position + column.width() < len(line):
+                    if line[position + column.width() - 1] != ' ':
+                        raise RpkException(
+                            f"can't parse '{line}': value at {column.name} must end with padding"
+                        )
+                    value = line[position:position + column.width()]
+                elif position >= len(line):
+                    value = ""
+                else:
+                    value = line[position:]
+                value = value.rstrip()
+                position += column.width()
+            row.append(value)
+        rows.append(row)
+
+    return RpkTable(columns, rows)
+
+
 class RpkTool:
     """
     Wrapper around rpk.
@@ -113,16 +201,12 @@ class RpkTool:
                  username: str = None,
                  password: str = None,
                  sasl_mechanism: str = None,
-                 tls_cert: Optional[tls.Certificate] = None,
-                 get_brokers=None):
+                 tls_cert: Optional[tls.Certificate] = None):
         self._redpanda = redpanda
         self._username = username
         self._password = password
         self._sasl_mechanism = sasl_mechanism
         self._tls_cert = tls_cert
-        if get_brokers is None:
-            get_brokers = lambda: self._redpanda.brokers()
-        self._get_brokers = get_brokers
 
     def create_topic(self, topic, partitions=1, replicas=None, config=None):
         def create_topic():
@@ -143,10 +227,13 @@ class RpkTool:
                     return False
                 raise e
 
-        wait_until_result(create_topic,
-                          10,
-                          0.1,
-                          err_msg="Can't create a topic within 10s")
+        try:
+            wait_until_result(create_topic,
+                              10,
+                              0.1,
+                              err_msg="Can't create a topic within 10s")
+        except TimeoutError:
+            raise RpkException("rpk couldn't create topic within 10s timeout")
 
     def add_partitions(self, topic, partitions):
         cmd = ["add-partitions", topic, "-n", str(partitions)]
@@ -176,8 +263,8 @@ class RpkTool:
         cmd = [
             "acl", "create", "--allow-principal", principal, "--operation",
             ",".join(operations), resource, resource_name, "--brokers",
-            self._get_brokers(), "--user", username, "--password", password,
-            "--sasl-mechanism", mechanism
+            self._redpanda.brokers(), "--user", username, "--password",
+            password, "--sasl-mechanism", mechanism
         ]
         return self._run(cmd)
 
@@ -189,7 +276,26 @@ class RpkTool:
 
     def delete_topic(self, topic):
         cmd = ["delete", topic]
-        return self._run_topic(cmd)
+        output = self._run_topic(cmd)
+        table = parse_rpk_table(output)
+        expected_columns = ["TOPIC", "STATUS"]
+        expected = ",".join(expected_columns)
+        found = ",".join(map(lambda x: x.name, table.columns))
+        if expected != found:
+            raise RpkException(f"expected: {expected}; found: {found}")
+
+        if len(table.rows) != 1:
+            raise RpkException(f"expected one row; found {len(table.rows)}")
+
+        if table.rows[0][1] != "OK":
+            raise RpkException(f"status isn't ok: {table.rows[0][1]}")
+
+        if table.rows[0][0] != topic:
+            raise RpkException(
+                f"output topic {table.rows[0][0]} doesn't match input topic {topic}"
+            )
+
+        return True
 
     def list_topics(self):
         cmd = ["list"]
@@ -255,43 +361,77 @@ class RpkTool:
                          fields set to None, as long as the leader field is present.
         :return:
         """
+        def int_or_none(value):
+            m = re.match("^-?\d+$", value)
+            if m:
+                return int(value)
+            return None
+
         cmd = ['describe', topic, '-p']
         output = self._run_topic(cmd)
-        if "not found" in output:
-            raise Exception(f"Topic not found: {topic}")
-        lines = output.splitlines()[1:]
+        table = parse_rpk_table(output)
 
-        def partition_line(line):
-            m = re.match(
-                r" *(?P<id>\d+) +(?P<leader>\d+) +(?P<epoch>\d+) +\[(?P<replicas>.+?)\] +(?P<logstart>\d+?) +(?P<hw>\d+) *",
-                line)
-            if m is None and tolerant:
-                m = re.match(r" *(?P<id>\d+) +(?P<leader>\d+) .*", line)
-                if m is None:
-                    self._redpanda.logger.info(f"No match on '{line}'")
-                    return None
+        expected_columns = set([
+            "PARTITION", "LEADER", "EPOCH", "REPLICAS", "LOG-START-OFFSET",
+            "HIGH-WATERMARK", "LAST-STABLE-OFFSET"
+        ])
+        received_columns = set()
 
-                return RpkPartition(id=int(m.group('id')),
-                                    leader=int(m.group('leader')),
-                                    leader_epoch=None,
-                                    replicas=None,
-                                    hw=None,
-                                    start_offset=None)
+        for column in table.columns:
+            if column.name not in expected_columns:
+                self._redpanda.logger.error(
+                    f"Unexpected column: {column.name}")
+                raise RpkException(f"Unexpected column: {column.name}")
+            received_columns.add(column.name)
 
-            elif m is None:
-                return None
-            elif m:
-                replicas = list(
-                    map(lambda r: int(r),
-                        m.group('replicas').split()))
-                return RpkPartition(id=int(m.group('id')),
-                                    leader=int(m.group('leader')),
-                                    leader_epoch=int(m.group('epoch')),
-                                    replicas=replicas,
-                                    hw=int(m.group('hw')),
-                                    start_offset=int(m.group("logstart")))
+        missing_columns = expected_columns - received_columns
+        # sometimes LSO is present, sometimes it isn't
+        # same is true for EPOCH:
+        # https://github.com/redpanda-data/redpanda/issues/8381#issuecomment-1403051606
+        missing_columns = missing_columns - {"LAST-STABLE-OFFSET", "EPOCH"}
 
-        return filter(None, map(partition_line, lines))
+        if len(missing_columns) != 0:
+            missing_columns = ",".join(missing_columns)
+            self._redpanda.logger.error(f"Missing columns: {missing_columns}")
+            raise RpkException(f"Missing columns: {missing_columns}")
+
+        partitions = []
+        for row in table.rows:
+            obj = dict()
+            obj["LAST-STABLE-OFFSET"] = "-"
+            obj["EPOCH"] = "-1"
+            for i in range(0, len(table.columns)):
+                obj[table.columns[i].name] = row[i]
+
+            obj["PARTITION"] = int(obj["PARTITION"])
+            obj["LEADER"] = int(obj["LEADER"])
+            obj["EPOCH"] = int(obj["EPOCH"])
+            m = re.match("^\[(.+)\]$", obj["REPLICAS"])
+            if m:
+                obj["REPLICAS"] = list(map(int, m.group(1).split(" ")))
+            else:
+                obj["REPLICAS"] = None
+            obj["LOG-START-OFFSET"] = int_or_none(obj["LOG-START-OFFSET"])
+            obj["HIGH-WATERMARK"] = int_or_none(obj["HIGH-WATERMARK"])
+            obj["LAST-STABLE-OFFSET"] = int_or_none(obj["LAST-STABLE-OFFSET"])
+
+            initialized = obj["LEADER"] >= 0 and obj["EPOCH"] >= 0 and obj[
+                "REPLICAS"] != None and obj["LOG-START-OFFSET"] != None and obj[
+                    "LOG-START-OFFSET"] >= 0 and obj[
+                        "HIGH-WATERMARK"] != None and obj["HIGH-WATERMARK"] >= 0
+
+            partition = RpkPartition(id=obj["PARTITION"],
+                                     leader=obj["LEADER"],
+                                     leader_epoch=obj["EPOCH"],
+                                     replicas=obj["REPLICAS"],
+                                     lso=None,
+                                     hw=obj["HIGH-WATERMARK"],
+                                     start_offset=obj["LOG-START-OFFSET"])
+
+            if initialized or tolerant:
+                partitions.append(partition)
+
+        return iter(partitions)
 
     def describe_topic_configs(self, topic):
         cmd = ['describe', topic, '-c']
@@ -312,7 +452,21 @@ class RpkTool:
 
     def alter_topic_config(self, topic, set_key, set_value):
         cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
-        self._run_topic(cmd)
+        out = self._run_topic(cmd)
+        lines = out.splitlines()
+        lines = list(map(lambda x: x.strip(), lines))
+        if len(lines) != 2:
+            raise RpkException(
+                f"Unexpected output, expected two lines, got {len(lines)} on setting {topic} {set_key}={set_value}"
+            )
+        if not re.match("^TOPIC\\s+STATUS$", lines[0]):
+            raise RpkException(
+                f"Unexpected output, expected 'TOPIC\\s+STATUS' got '{lines[0]}' on setting {topic} {set_key}={set_value}"
+            )
+        if not re.match(f"^{topic}\\s+OK$", lines[1]):
+            raise RpkException(
+                f"Unexpected output, expected '{topic}\\s+OK' got '{lines[1]}' on setting {topic} {set_key}={set_value}"
+            )
 
     def delete_topic_config(self, topic, key):
         cmd = ['alter-config', topic, "--delete", key]
@@ -332,7 +486,8 @@ class RpkTool:
                 offset=None,
                 partition=None,
                 fetch_max_bytes=None,
-                quiet=False):
+                quiet=False,
+                timeout=None):
         cmd = ["consume", topic]
         if group is not None:
             cmd += ["-g", group]
@@ -349,7 +504,7 @@ class RpkTool:
         if quiet:
             cmd += ["-f", "_\\n"]
 
-        return self._run_topic(cmd)
+        return self._run_topic(cmd, timeout=timeout)
 
     def group_seek_to(self, group, to):
         cmd = ["seek", group, "--to", to]
@@ -365,10 +520,10 @@ class RpkTool:
         static_member_pattern = re.compile("^([^\s]+\s+){8}[^\s]+$")
 
         partition_pattern_static_member = re.compile(
-            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<instance_id>[^\s]*) *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
+            "(?P<topic>[^\s]+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<instance_id>[^\s]*) *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
         )
         partition_pattern_dynamic_member = re.compile(
-            "(?P<topic>.+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
+            "(?P<topic>[^\s]+) +(?P<partition>\d+) +(?P<offset>\d+|-) +(?P<log_end>\d+|-) +(?P<lag>-?\d+|-) *(?P<member_id>[^\s]*)? *(?P<client_id>[^\s]*)? *(?P<host>[^\s]*)?"
         )
 
         def check_lines(lines):
@@ -438,6 +593,10 @@ class RpkTool:
                     # Transient, return None to retry
                     # e.g. Kafka replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
                     return None
+                elif "connection refused" in e.msg:
+                    # Metadata directed us to a broker that is uncontactable, perhaps
+                    # it was just stopped.  Retry should succeed once metadata updates.
+                    return None
                 else:
                     raise
 
@@ -505,12 +664,13 @@ class RpkTool:
     def wasm_deploy(self, script, name, description):
         cmd = [
             self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
-            self._get_brokers(), '--name', name, '--description', description
+            self._redpanda.brokers(), '--name', name, '--description',
+            description
         ]
         return self._execute(cmd)
 
     def wasm_remove(self, name):
-        cmd = ['wasm', 'remove', name, '--brokers', self._get_brokers()]
+        cmd = ['wasm', 'remove', name, '--brokers', self._redpanda.brokers()]
         return self._execute(cmd)
 
     def wasm_gen(self, directory):
@@ -518,6 +678,45 @@ class RpkTool:
             self._rpk_binary(), 'wasm', 'generate', '--skip-version', directory
         ]
         return self._execute(cmd)
+
+    def self_test_start(self,
+                        disk_duration_ms=None,
+                        network_duration_ms=None,
+                        only_disk=False,
+                        only_network=False,
+                        node_ids=None):
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), 'cluster', 'self-test', 'start', '--no-confirm'
+        ]
+        if disk_duration_ms is not None:
+            cmd += ['--disk-duration-ms', str(disk_duration_ms)]
+        if network_duration_ms is not None:
+            cmd += ['--network-duration-ms', str(network_duration_ms)]
+        if only_disk is True:
+            cmd += ['--only-disk-test']
+        if only_network is True:
+            cmd += ['--only-network-test']
+        if node_ids is not None:
+            ids = ",".join([str(x) for x in node_ids])
+            cmd += ['--participants-node-ids', ids]
+        return self._execute(cmd)
+
+    def self_test_stop(self):
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), 'cluster', 'self-test', 'stop'
+        ]
+        return self._execute(cmd)
+
+    def self_test_status(self, output_format='json'):
+        cmd = [
+            self._rpk_binary(), '--api-urls',
+            self._admin_host(), 'cluster', 'self-test', 'status', '--format',
+            output_format
+        ]
+        output = self._execute(cmd)
+        return json.loads(output) if output_format == 'json' else output
 
     def _run_topic(self, cmd, stdin=None, timeout=None):
         cmd = [self._rpk_binary(), "topic"] + self._kafka_conn_settings() + cmd
@@ -555,7 +754,7 @@ class RpkTool:
 
         cmd = [
             self._rpk_binary(), 'cluster', 'info', '--brokers',
-            self._get_brokers()
+            self._redpanda.brokers()
         ]
         output = self._execute(cmd, stdin=None, timeout=timeout)
         parsed = map(_parse_out, output.splitlines())
@@ -563,8 +762,10 @@ class RpkTool:
 
     def _admin_host(self, node=None):
         if node is None:
-            return ",".join(
-                [f"{n.account.hostname}:9644" for n in self._redpanda.nodes])
+            return ",".join([
+                f"{n.account.hostname}:9644"
+                for n in self._redpanda.started_nodes()
+            ])
         else:
             return f"{node.account.hostname}:9644"
 
@@ -639,7 +840,7 @@ class RpkTool:
             self._redpanda.logger.error(error)
             raise RpkException(
                 'command %s returned %d, output: %s' %
-                (' '.join(cmd), p.returncode, output), error)
+                (' '.join(cmd), p.returncode, output), error, p.returncode)
 
         return output
 
@@ -718,7 +919,7 @@ class RpkTool:
     def _kafka_conn_settings(self):
         flags = [
             "--brokers",
-            self._get_brokers(),
+            self._redpanda.brokers(),
         ]
         if self._username:
             flags += [
@@ -779,6 +980,24 @@ class RpkTool:
             "--cluster",
         ] + self._kafka_conn_settings()
         output = self._execute(cmd)
+        table = parse_rpk_table(output)
+        expected_columns = [
+            "PRINCIPAL", "HOST", "RESOURCE-TYPE", "RESOURCE-NAME",
+            "RESOURCE-PATTERN-TYPE", "OPERATION", "PERMISSION", "ERROR"
+        ]
+
+        expected = ",".join(expected_columns)
+        found = ",".join(map(lambda x: x.name, table.columns))
+        if expected != found:
+            raise RpkException(f"expected: {expected}; found: {found}")
+
+        if len(table.rows) != 1:
+            raise RpkException(f"expected one row; found {len(table.rows)}")
+
+        if table.rows[0][-1] != "":
+            raise RpkException(
+                f"acl_create_allow_cluster failed with {table.rows[0][-1]}")
+
         return output
 
     def cluster_metadata_id(self):
@@ -789,7 +1008,7 @@ class RpkTool:
         """
         cmd = [
             self._rpk_binary(), '--brokers',
-            self._get_brokers(), 'cluster', 'metadata'
+            self._redpanda.brokers(), 'cluster', 'metadata'
         ]
         output = self._execute(cmd)
         lines = output.strip().split("\n")
@@ -828,3 +1047,77 @@ class RpkTool:
         ]
 
         return self._execute(cmd)
+
+    def offset_delete(self, group, topic_partitions):
+        # rpk group offset-delete expects the topic-partition input data as a file
+
+        def parse_offset_delete_output(output):
+            regex = re.compile(
+                r"\s*(?P<topic>\S*)\s*(?P<partition>\d*)\s*(?P<status>\w+):?(?P<error>.*)"
+            )
+            matched = [regex.match(x) for x in output]
+            failed_matches = [x for x in matched if x is None]
+            if len(failed_matches) > 0:
+                raise RuntimeError("Failed to parse offset-delete output")
+            return [
+                RpkOffsetDeleteResponsePartition(x['topic'],
+                                                 int(x['partition']),
+                                                 x['status'], x['error'])
+                for x in matched
+            ]
+
+        def parse_offset_delete_output_err(output):
+            if len(output) == 0:
+                raise RuntimeError("Unexpected rpk output")
+            regex = re.compile(r"(\w*):(.*)")
+            matched = regex.match(output[0])
+            if matched is None:
+                raise RuntimeError("Failed to parse offset-delete output")
+            return RpkOffsetDeleteResponsePartition(None, None,
+                                                    matched.group(1),
+                                                    matched.group(2))
+
+        def try_offset_delete(retries=5):
+            retriable_codes = set(['NOT_COORDINATOR'])
+            while retries > 0:
+                try:
+                    output = self._execute(cmd)
+                    return parse_offset_delete_output(output.splitlines())
+                except RpkException as e:
+                    if e.returncode != 1:
+                        raise e
+                    err = parse_offset_delete_output_err(e.stderr.splitlines())
+                    if err.status not in retriable_codes:
+                        return err
+                    retries -= 1
+            raise RpkException("Max number of retries exceeded")
+
+        # First convert partitions from integers to strings
+        as_strings = {
+            k: ",".join([str(x) for x in v])
+            for k, v in topic_partitions.items()
+        }
+
+        # Group each kv pair to string item like '<topic>:p1,p2,p3'
+        request_args = [f"{x}:{y}" for x, y in as_strings.items()]
+
+        # Append each arg with the -t (topic) flag
+        # interleaves a list of -t strings with each argument producing
+        # [-t, arg1, -t arg2, ... , -t argn]
+        request_args_w_flags = list(
+            itertools.chain(
+                *zip(["-t"
+                      for _ in range(0, len(request_args))], request_args)))
+
+        # Execute the rpk group offset-delete command
+        cmd = [
+            self._rpk_binary(),
+            "--brokers",
+            self._redpanda.brokers(),
+            "group",
+            "offset-delete",
+            group,
+        ] + request_args_w_flags
+
+        # Retry if the command exits 1 (in case top level ec was returned)
+        return try_offset_delete(retries=5)

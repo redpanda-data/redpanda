@@ -18,11 +18,17 @@ v_cc_library(
     remote_partition.cc
     remote_segment_index.cc
     tx_range_manifest.cc
+    materialized_segments.cc
+    segment_state.cc
+    recovery_errors.cc
+    recovery_request.cc
+    topic_recovery_service.cc
+    recovery_utils.cc
   DEPS
     Seastar::seastar
     v::bytes
     v::http
-    v::s3
+    v::cloud_storage_clients
     v::json
     v::model
     v::rphashing

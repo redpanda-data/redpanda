@@ -31,8 +31,6 @@ class RedpandaTest(Test):
                  test_context,
                  num_brokers=None,
                  extra_rp_conf=dict(),
-                 enable_pp=False,
-                 enable_sr=False,
                  si_settings=None,
                  **kwargs):
         """
@@ -54,17 +52,18 @@ class RedpandaTest(Test):
             else:
                 num_brokers = 1
 
-        if self.si_settings:
-            self.si_settings.load_context(self.logger, test_context)
-
         self.redpanda = RedpandaService(test_context,
                                         num_brokers,
                                         extra_rp_conf=extra_rp_conf,
-                                        enable_pp=enable_pp,
-                                        enable_sr=enable_sr,
                                         si_settings=self.si_settings,
                                         **kwargs)
         self._client = DefaultClient(self.redpanda)
+
+    def early_exit_hook(self):
+        """
+        Hook for `skip_debug_mode` decorator
+        """
+        self.redpanda.set_skip_if_no_redpanda_log(True)
 
     @property
     def topic(self):
@@ -93,8 +92,8 @@ class RedpandaTest(Test):
         return os.environ.get('CI', None) != 'false'
 
     @property
-    def s3_client(self):
-        return self.redpanda.s3_client
+    def cloud_storage_client(self):
+        return self.redpanda.cloud_storage_client
 
     def setUp(self):
         self.redpanda.start()

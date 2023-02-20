@@ -1,24 +1,131 @@
-"/v1/shadow_indexing/sync_local_state/{topic}/{partition}": {
-  "post": {
-    "summary": "Sync content of the bucket with local partition metadata",
-    "operationId": "sync_local_state",
-    "parameters": [
+{
+  "apiVersion": "0.0.1",
+  "swaggerVersion": "1.2",
+  "basePath": "/v1",
+  "resourcePath": "/cloud_storage",
+  "produces": [
+    "application/json"
+  ],
+  "apis": [
+    {
+      "path": "/v1/cloud_storage/sync_local_state/{topic}/{partition}",
+      "operations": [
         {
-            "name": "topic",
-            "in": "path",
-            "required": true,
-            "type": "string"
+          "method": "POST",
+          "summary": "Sync content of the bucket with local partition metadata",
+          "operationId": "sync_local_state",
+          "nickname": "sync_local_state",
+          "parameters": [
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "partition",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            }
+          ],
+          "responseMessages": [
+            {
+              "code": 200,
+              "message": "Partition metadata is up to date"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "/v1/cloud_storage/automated_recovery",
+      "operations": [
+        {
+          "method": "POST",
+          "summary": "Initiate topic scan on bucket and start topic recovery",
+          "operationId": "initiate_topic_scan_and_recovery",
+          "nickname": "initiate_topic_scan_and_recovery",
+          "parameters": [
+            {
+              "name": "body",
+              "paramType": "body",
+              "required": false
+            }
+          ],
+          "responseMessages": [
+            {
+              "code": 200,
+              "message": "Topic scan was initiated successfully"
+            }
+          ]
         },
         {
-            "name":"partition",
-            "in":"path",
-            "required":true,
-            "type":"integer"
+          "method": "GET",
+          "summary": "Query status of automated topic recovery",
+          "operationId": "query_automated_recovery",
+          "nickname": "query_automated_recovery"
         }
-    ],
-    "responses": {
-      "200": {
-        "description": "Partition metadata is up to date"
+      ]
+    }
+  ],
+  "models": {
+    "init_recovery_result": {
+      "id": "init_recovery_result",
+      "description": "Result of initiation of recovery process in background",
+      "properties": {
+        "status": {
+          "type": "string",
+          "description": "current status of recovery process"
+        }
+      }
+    },
+    "topic_download_counts": {
+      "id": "topic_download_counts",
+      "properties": {
+        "topic_namespace": {
+          "type": "string"
+        },
+        "pending_downloads": {
+          "type": "int"
+        },
+        "successful_downloads": {
+          "type": "int"
+        },
+        "failed_downloads": {
+          "type": "int"
+        }
+      }
+    },
+    "recovery_request_params": {
+      "id": "recovery_request_params",
+      "properties": {
+        "topic_names_pattern": {
+          "type": "string"
+        },
+        "retention_bytes": {
+          "type": "int"
+        },
+        "retention_ms": {
+          "type": "int"
+        }
+      }
+    },
+    "topic_recovery_status": {
+      "id": "topic_recovery_status",
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "topic_download_counts": {
+          "type": "array",
+          "items": {
+            "type": "topic_download_counts"
+          }
+        },
+        "request": {
+          "type": "recovery_request_params"
+        }
       }
     }
   }

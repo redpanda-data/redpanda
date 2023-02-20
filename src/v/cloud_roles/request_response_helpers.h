@@ -14,28 +14,24 @@
 #include "http/client.h"
 #include "json/document.h"
 
-#include <boost/property_tree/ptree.hpp>
-
 namespace cloud_roles {
-
-inline constexpr std::chrono::milliseconds default_request_timeout{5000};
 
 ss::future<api_response> make_request(
   http::client client,
   http::client::request_header req,
-  std::chrono::milliseconds timeout = default_request_timeout);
+  std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
 ss::future<api_response> post_request(
   http::client client,
   http::client::request_header req,
   iobuf content,
-  std::chrono::milliseconds timeout = default_request_timeout);
+  std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
 ss::future<api_response> post_request(
   http::client client,
   http::client::request_header req,
   ss::sstring content,
-  std::chrono::milliseconds timeout = default_request_timeout);
+  std::optional<std::chrono::milliseconds> timeout = std::nullopt);
 
 ss::future<boost::beast::http::status>
 get_status(http::client::response_stream_ref& resp);

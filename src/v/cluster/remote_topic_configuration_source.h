@@ -12,9 +12,9 @@
 #pragma once
 
 #include "cloud_storage/fwd.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/errc.h"
 #include "cluster/types.h"
-#include "s3/client.h"
 
 #include <seastar/core/abort_source.hh>
 
@@ -33,7 +33,7 @@ public:
      */
     ss::future<errc> set_remote_properties_in_config(
       custom_assignable_topic_configuration& cfg,
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       ss::abort_source& as);
 
     /**
@@ -46,7 +46,7 @@ public:
      */
     ss::future<errc> set_recovered_topic_properties(
       custom_assignable_topic_configuration& cfg,
-      const s3::bucket_name& bucket,
+      const cloud_storage_clients::bucket_name& bucket,
       ss::abort_source& as);
 
 private:

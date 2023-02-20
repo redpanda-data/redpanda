@@ -62,11 +62,17 @@ public:
       ss::sharded<raft::group_manager>& group_manager,
       ss::sharded<health_monitor_frontend>& hm_frontend,
       ss::sharded<health_monitor_backend>& hm_backend,
-      ss::sharded<feature_table>& table,
+      ss::sharded<features::feature_table>& table,
       ss::sharded<rpc::connection_cache>& connection_cache,
       raft::group_id raft0_group);
 
-    ss::future<> start();
+    /**
+     * \param cluster_founder_nodes When a new cluster is about to bootstrap,
+     *    this should list all cluster founder nodes. It is assumed that all
+     *    cluster founder nodes are verified to have the same logical version
+     *    as the local node. In all other cases this list will be empty.
+     */
+    ss::future<> start(std::vector<model::node_id>&& cluster_founder_nodes);
     ss::future<> stop();
 
     ss::future<std::error_code> write_action(cluster::feature_update_action);
@@ -94,6 +100,13 @@ public:
 private:
     void update_node_version(model::node_id, cluster_version v);
 
+    /**
+     * When cluster discovery has verified seed server latest versions are
+     * the same as local latest version, this function is used to initialize
+     * seed servers versions in feature manager.
+     */
+    void set_node_to_latest_version(model::node_id);
+
     ss::future<> do_maybe_update_active_version();
     ss::future<> maybe_update_active_version();
 
@@ -106,11 +119,11 @@ private:
     ss::sharded<raft::group_manager>& _group_manager;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<health_monitor_backend>& _hm_backend;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     raft::group_id _raft0_group;
 
-    std::vector<std::pair<model::node_id, cluster_version>> _updates;
+    version_map _updates;
     ss::condition_variable _update_wait;
 
     cluster::notification_id_type _leader_notify_handle{

@@ -65,6 +65,11 @@ type PartitionsMovementResult struct {
 	Result    string `json:"result,omitempty"`
 }
 
+// ClusterView represents a cluster view as seen by one node. There are
+// many keys returned, so the raw response is just unmarshalled into an
+// interface.
+type ClusterView map[string]interface{}
+
 func (a *AdminAPI) GetHealthOverview(ctx context.Context) (ClusterHealthOverview, error) {
 	var response ClusterHealthOverview
 	return response, a.sendAny(ctx, http.MethodGet, "/v1/cluster/health_overview", nil, &response)
@@ -78,4 +83,10 @@ func (a *AdminAPI) GetPartitionStatus(ctx context.Context) (PartitionBalancerSta
 func (a *AdminAPI) CancelAllPartitionsMovement(ctx context.Context) ([]PartitionsMovementResult, error) {
 	var response []PartitionsMovementResult
 	return response, a.sendAny(ctx, http.MethodPost, "/v1/cluster/cancel_reconfigurations", nil, &response)
+}
+
+// ClusterView returns a node view of the cluster.
+func (a *AdminAPI) ClusterView(ctx context.Context) (ClusterView, error) {
+	var response ClusterView
+	return response, a.sendOne(ctx, http.MethodGet, "/v1/cluster_view", nil, &response, true)
 }

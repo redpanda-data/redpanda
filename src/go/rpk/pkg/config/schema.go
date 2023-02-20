@@ -20,17 +20,18 @@ import (
 type Config struct {
 	file         *Config
 	fileLocation string
+	rawFile      []byte
 
-	NodeUUID             string          `yaml:"node_uuid,omitempty" json:"node_uuid"`
-	Organization         string          `yaml:"organization,omitempty" json:"organization"`
-	LicenseKey           string          `yaml:"license_key,omitempty" json:"license_key"`
-	ClusterID            string          `yaml:"cluster_id,omitempty" json:"cluster_id"`
-	Redpanda             RedpandaConfig  `yaml:"redpanda,omitempty" json:"redpanda"`
-	Rpk                  RpkConfig       `yaml:"rpk,omitempty" json:"rpk"`
-	Pandaproxy           *Pandaproxy     `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
-	PandaproxyClient     *KafkaClient    `yaml:"pandaproxy_client,omitempty" json:"pandaproxy_client,omitempty"`
-	SchemaRegistry       *SchemaRegistry `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
-	SchemaRegistryClient *KafkaClient    `yaml:"schema_registry_client,omitempty" json:"schema_registry_client,omitempty"`
+	NodeUUID             string             `yaml:"node_uuid,omitempty" json:"node_uuid"`
+	Organization         string             `yaml:"organization,omitempty" json:"organization"`
+	LicenseKey           string             `yaml:"license_key,omitempty" json:"license_key"`
+	ClusterID            string             `yaml:"cluster_id,omitempty" json:"cluster_id"`
+	Redpanda             RedpandaNodeConfig `yaml:"redpanda,omitempty" json:"redpanda"`
+	Rpk                  RpkConfig          `yaml:"rpk,omitempty" json:"rpk"`
+	Pandaproxy           *Pandaproxy        `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
+	PandaproxyClient     *KafkaClient       `yaml:"pandaproxy_client,omitempty" json:"pandaproxy_client,omitempty"`
+	SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
+	SchemaRegistryClient *KafkaClient       `yaml:"schema_registry_client,omitempty" json:"schema_registry_client,omitempty"`
 
 	Other map[string]interface{} `yaml:",inline"`
 }
@@ -42,16 +43,28 @@ func (c *Config) File() *Config {
 	return c.file
 }
 
+// RawFile returns the bytes of the actual file on disk, if there was one.
+// The raw bytes must be valid yaml.
+func (c *Config) RawFile() []byte {
+	return c.rawFile
+}
+
 // FileLocation returns the loaded file location; this is the path that
 // rpk uses for write operations.
 func (c *Config) FileLocation() string {
 	return c.fileLocation
 }
 
-type RedpandaConfig struct {
+// RedpandaNodeConfig is the source of truth for Redpanda node configuration.
+//
+// Cluster properties must NOT be enlisted in this struct. Adding a cluster
+// property here would cause the dependent libraries (e.g. operator) to wrongly
+// consider it a node property.
+type RedpandaNodeConfig struct {
 	Directory                  string                    `yaml:"data_directory,omitempty" json:"data_directory"`
-	ID                         int                       `yaml:"node_id" json:"node_id"`
+	ID                         *int                      `yaml:"node_id,omitempty" json:"node_id,omitempty"`
 	Rack                       string                    `yaml:"rack,omitempty" json:"rack"`
+	EmptySeedStartsCluster     *bool                     `yaml:"empty_seed_starts_cluster,omitempty" json:"empty_seed_starts_cluster,omitempty"`
 	SeedServers                []SeedServer              `yaml:"seed_servers" json:"seed_servers"`
 	RPCServer                  SocketAddress             `yaml:"rpc_server,omitempty" json:"rpc_server"`
 	RPCServerTLS               []ServerTLS               `yaml:"rpc_server_tls,omitempty" json:"rpc_server_tls"`
@@ -66,22 +79,21 @@ type RedpandaConfig struct {
 	AdvertisedRPCAPI           *SocketAddress            `yaml:"advertised_rpc_api,omitempty" json:"advertised_rpc_api,omitempty"`
 	AdvertisedKafkaAPI         []NamedSocketAddress      `yaml:"advertised_kafka_api,omitempty" json:"advertised_kafka_api,omitempty"`
 	DeveloperMode              bool                      `yaml:"developer_mode,omitempty" json:"developer_mode"`
-	AggregateMetrics           bool                      `yaml:"aggregate_metrics,omitempty" json:"aggregate_metrics,omitempty"`
-	DisablePublicMetrics       bool                      `yaml:"disable_public_metrics,omitempty" json:"disable_public_metrics,omitempty"`
+	CrashLoopLimit             *int                      `yaml:"crash_loop_limit,omitempty" json:"crash_loop_limit"`
 	Other                      map[string]interface{}    `yaml:",inline"`
 }
 
 type Pandaproxy struct {
-	PandaproxyAPI           []NamedSocketAddress   `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
-	PandaproxyAPITLS        []ServerTLS            `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
-	AdvertisedPandaproxyAPI []NamedSocketAddress   `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
-	Other                   map[string]interface{} `yaml:",inline"`
+	PandaproxyAPI           []NamedAuthNSocketAddress `yaml:"pandaproxy_api,omitempty" json:"pandaproxy_api,omitempty"`
+	PandaproxyAPITLS        []ServerTLS               `yaml:"pandaproxy_api_tls,omitempty" json:"pandaproxy_api_tls,omitempty"`
+	AdvertisedPandaproxyAPI []NamedSocketAddress      `yaml:"advertised_pandaproxy_api,omitempty" json:"advertised_pandaproxy_api,omitempty"`
+	Other                   map[string]interface{}    `yaml:",inline"`
 }
 
 type SchemaRegistry struct {
-	SchemaRegistryAPI               []NamedSocketAddress `yaml:"schema_registry_api,omitempty" json:"schema_registry_api,omitempty"`
-	SchemaRegistryAPITLS            []ServerTLS          `yaml:"schema_registry_api_tls,omitempty" json:"schema_registry_api_tls,omitempty"`
-	SchemaRegistryReplicationFactor *int                 `yaml:"schema_registry_replication_factor,omitempty" json:"schema_registry_replication_factor,omitempty"`
+	SchemaRegistryAPI               []NamedAuthNSocketAddress `yaml:"schema_registry_api,omitempty" json:"schema_registry_api,omitempty"`
+	SchemaRegistryAPITLS            []ServerTLS               `yaml:"schema_registry_api_tls,omitempty" json:"schema_registry_api_tls,omitempty"`
+	SchemaRegistryReplicationFactor *int                      `yaml:"schema_registry_replication_factor,omitempty" json:"schema_registry_replication_factor,omitempty"`
 }
 
 type KafkaClient struct {
@@ -95,6 +107,14 @@ type KafkaClient struct {
 
 type SeedServer struct {
 	Host SocketAddress `yaml:"host,omitempty" json:"host"`
+
+	// The SeedServer in older versions of redpanda was untabbed, but we support
+	// these older versions using a custom unmarshaller. We track whether the
+	// SeedServer field has been modified from the older version using this
+	// unexported field.
+	//
+	// See see github.com/redpanda-data/redpanda/issues/8915.
+	untabbed bool
 }
 
 type SocketAddress struct {
@@ -113,6 +133,18 @@ type NamedAuthNSocketAddress struct {
 	Port    int     `yaml:"port,omitempty" json:"port"`
 	Name    string  `yaml:"name,omitempty" json:"name,omitempty"`
 	AuthN   *string `yaml:"authentication_method,omitempty" json:"authentication_method,omitempty"`
+}
+
+func namedAuthnToNamed(src []NamedAuthNSocketAddress) []NamedSocketAddress {
+	dst := make([]NamedSocketAddress, 0, len(src))
+	for _, a := range src {
+		dst = append(dst, NamedSocketAddress{
+			Address: a.Address,
+			Port:    a.Port,
+			Name:    a.Name,
+		})
+	}
+	return dst
 }
 
 type TLS struct {

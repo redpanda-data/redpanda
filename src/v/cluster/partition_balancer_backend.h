@@ -29,9 +29,8 @@ public:
     partition_balancer_backend(
       consensus_ptr raft0,
       ss::sharded<controller_stm>&,
-      ss::sharded<topic_table>&,
+      ss::sharded<partition_balancer_state>&,
       ss::sharded<health_monitor_frontend>&,
-      ss::sharded<members_table>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<topics_frontend>&,
       config::binding<model::partition_autobalancing_mode>&& mode,
@@ -39,7 +38,8 @@ public:
       config::binding<unsigned>&& max_disk_usage_percent,
       config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
       config::binding<std::chrono::milliseconds>&& tick_interval,
-      config::binding<size_t>&& movement_batch_size_bytes);
+      config::binding<size_t>&& movement_batch_size_bytes,
+      config::binding<size_t>&& segment_fallocation_step);
 
     void start();
     ss::future<> stop();
@@ -70,9 +70,8 @@ private:
     consensus_ptr _raft0;
 
     controller_stm& _controller_stm;
-    topic_table& _topic_table;
+    partition_balancer_state& _state;
     health_monitor_frontend& _health_monitor;
-    members_table& _members_table;
     partition_allocator& _partition_allocator;
     topics_frontend& _topics_frontend;
 
@@ -82,6 +81,7 @@ private:
     config::binding<unsigned> _storage_space_alert_free_threshold_percent;
     config::binding<std::chrono::milliseconds> _tick_interval;
     config::binding<size_t> _movement_batch_size_bytes;
+    config::binding<size_t> _segment_fallocation_step;
 
     model::term_id _last_leader_term;
     ss::lowres_clock::time_point _last_tick_time;

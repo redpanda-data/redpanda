@@ -23,13 +23,12 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/log_eviction_stm.h"
-#include "raft/raft_feature_table.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
-#include "rpc/simple_protocol.h"
+#include "rpc/rpc_server.h"
 #include "rpc/types.h"
 #include "storage/api.h"
 #include "storage/kvstore.h"
@@ -57,7 +56,7 @@ inline ss::logger tstlog("raft_test");
 
 using namespace std::chrono_literals; // NOLINT
 
-inline static auto heartbeat_interval = 40ms;
+inline static std::chrono::milliseconds heartbeat_interval = 40ms;
 inline static const raft::replicate_options
   default_replicate_opts(raft::consistency_level::quorum_ack);
 
@@ -106,8 +105,12 @@ struct raft_node {
             .default_read_buffer_size = config::mock_binding(512_KiB),
           };
       }) {
-        _features.set_feature_active(
-          raft::raft_feature::improved_config_change);
+        feature_table.start().get();
+        feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         cache.start().get();
 
         storage
@@ -125,7 +128,8 @@ struct raft_node {
                   storage_dir,
                   segment_size,
                   storage::debug_sanitize_files::yes);
-            })
+            },
+            std::ref(feature_table))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 
@@ -161,13 +165,14 @@ struct raft_node {
           raft::scheduling_config(
             seastar::default_scheduling_group(),
             seastar::default_priority_class()),
-          std::chrono::seconds(10),
+          config::mock_binding<std::chrono::milliseconds>(10s),
           raft::make_rpc_client_protocol(self_id, cache),
           [this](raft::leadership_status st) { leader_callback(st); },
           storage.local(),
           recovery_throttle.local(),
           recovery_mem_quota,
-          _features);
+          feature_table.local(),
+          std::nullopt);
 
         // create connections to initial nodes
         consensus->config().for_each_broker(
@@ -195,24 +200,23 @@ struct raft_node {
           .invoke_on(0, [this](test_raft_manager& mgr) { mgr.c = consensus; })
           .get0();
         server
-          .invoke_on_all([this](net::server& s) {
-              auto proto = std::make_unique<rpc::simple_protocol>();
-              proto
-                ->register_service<raft::service<test_raft_manager, raft_node>>(
-                  ss::default_scheduling_group(),
-                  ss::default_smp_service_group(),
-                  raft_manager,
-                  *this,
-                  heartbeat_interval);
-              s.set_protocol(std::move(proto));
+          .invoke_on_all([this](rpc::rpc_server& s) {
+              s.register_service<raft::service<test_raft_manager, raft_node>>(
+                ss::default_scheduling_group(),
+                ss::default_smp_service_group(),
+                raft_manager,
+                *this,
+                heartbeat_interval);
           })
           .get0();
-        server.invoke_on_all(&net::server::start).get0();
+        server.invoke_on_all(&rpc::rpc_server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
-          heartbeat_interval,
+          config::mock_binding<std::chrono::milliseconds>(
+            std::chrono::milliseconds(heartbeat_interval)),
           raft::make_rpc_client_protocol(broker.id(), cache),
           broker.id(),
-          heartbeat_interval * 20);
+          config::mock_binding<std::chrono::milliseconds>(
+            heartbeat_interval * 20));
         hbeats->start().get0();
         hbeats->register_group(consensus).get();
         started = true;
@@ -283,6 +287,7 @@ struct raft_node {
               log.reset();
               return storage.stop();
           })
+          .then([this] { return feature_table.stop(); })
           .then([this] {
               tstlog.info("Node {} stopped", broker.id());
               started = false;
@@ -344,14 +349,14 @@ struct raft_node {
     ss::sharded<raft::recovery_throttle> recovery_throttle;
     std::unique_ptr<storage::log> log;
     ss::sharded<rpc::connection_cache> cache;
-    ss::sharded<net::server> server;
+    ss::sharded<rpc::rpc_server> server;
     ss::sharded<test_raft_manager> raft_manager;
     leader_clb_t leader_callback;
     raft::recovery_memory_quota recovery_mem_quota;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
-    raft::raft_feature_table _features;
+    ss::sharded<features::feature_table> feature_table;
     ss::abort_source _as;
 };
 
@@ -905,5 +910,18 @@ struct raft_test_fixture {
             leader_id.emplace(wait_for_group_leader(gr));
         }
         return gr.get_member(*leader_id).consensus;
+    }
+
+    uint64_t get_snapshot_size_from_disk(raft_node& node) const {
+        std::filesystem::path snapshot_file_path
+          = std::filesystem::path(node.log->config().work_directory())
+            / storage::simple_snapshot_manager::default_snapshot_filename;
+        bool snapshot_file_exists
+          = ss::file_exists(snapshot_file_path.string()).get();
+        if (snapshot_file_exists) {
+            return ss::file_size(snapshot_file_path.string()).get();
+        } else {
+            return 0;
+        }
     }
 };

@@ -31,6 +31,7 @@
 #include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
+#include "utils/gate_guard.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -46,6 +47,7 @@
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
@@ -56,19 +58,91 @@
 namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
+log_config::log_config(
+  storage_type type,
+  ss::sstring directory,
+  size_t segment_size,
+  debug_sanitize_files should,
+  ss::io_priority_class compaction_priority) noexcept
+  : stype(type)
+  , base_dir(std::move(directory))
+  , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
+  , segment_size_jitter(0) // For deterministic behavior in unit tests.
+  , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
+  , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
+  , sanitize_fileops(should)
+  , compaction_priority(compaction_priority)
+  , retention_bytes(config::mock_binding<std::optional<size_t>>(std::nullopt))
+  , compaction_interval(
+      config::mock_binding<std::chrono::milliseconds>(std::chrono::minutes(10)))
+  , delete_retention(
+      config::mock_binding<std::optional<std::chrono::milliseconds>>(
+        std::chrono::minutes(10080))) {}
+
+log_config::log_config(
+  storage_type type,
+  ss::sstring directory,
+  size_t segment_size,
+  debug_sanitize_files should,
+  ss::io_priority_class compaction_priority,
+  with_cache with) noexcept
+  : log_config(
+    type, std::move(directory), segment_size, should, compaction_priority) {
+    cache = with;
+}
+
+log_config::log_config(
+  storage_type type,
+  ss::sstring directory,
+  config::binding<size_t> segment_size,
+  config::binding<size_t> compacted_segment_size,
+  config::binding<size_t> max_compacted_segment_size,
+  jitter_percents segment_size_jitter,
+  debug_sanitize_files should,
+  ss::io_priority_class compaction_priority,
+  config::binding<std::optional<size_t>> ret_bytes,
+  config::binding<std::chrono::milliseconds> compaction_ival,
+  config::binding<std::optional<std::chrono::milliseconds>> del_ret,
+  with_cache c,
+  batch_cache::reclaim_options recopts,
+  std::chrono::milliseconds rdrs_cache_eviction_timeout,
+  ss::scheduling_group compaction_sg) noexcept
+  : stype(type)
+  , base_dir(std::move(directory))
+  , max_segment_size(std::move(segment_size))
+  , segment_size_jitter(segment_size_jitter)
+  , compacted_segment_size(std::move(compacted_segment_size))
+  , max_compacted_segment_size(std::move(max_compacted_segment_size))
+  , sanitize_fileops(should)
+  , compaction_priority(compaction_priority)
+  , retention_bytes(std::move(ret_bytes))
+  , compaction_interval(std::move(compaction_ival))
+  , delete_retention(std::move(del_ret))
+  , cache(c)
+  , reclaim_opts(recopts)
+  , readers_cache_eviction_timeout(rdrs_cache_eviction_timeout)
+  , compaction_sg(compaction_sg) {}
+
 log_manager::log_manager(
-  log_config config, kvstore& kvstore, storage_resources& resources) noexcept
+  log_config config,
+  kvstore& kvstore,
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) noexcept
   : _config(std::move(config))
   , _kvstore(kvstore)
   , _resources(resources)
+  , _feature_table(feature_table)
   , _jitter(_config.compaction_interval())
   , _batch_cache(config.reclaim_opts) {
-    _compaction_timer.set_callback([this] { trigger_housekeeping(); });
-    _compaction_timer.rearm(_jitter());
+    _housekeeping_timer.set_callback([this] { trigger_housekeeping(); });
+    _housekeeping_timer.rearm(_jitter());
 
     _config.compaction_interval.watch([this]() {
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
+        if (_housekeeping_timer.cancel()) {
+            _housekeeping_timer.rearm(_jitter());
+        }
     });
 }
 void log_manager::trigger_housekeeping() {
@@ -81,7 +155,7 @@ void log_manager::trigger_housekeeping() {
                                     return;
                                 }
 
-                                _compaction_timer.rearm(next_housekeeping);
+                                _housekeeping_timer.rearm(next_housekeeping);
                             });
                       }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
@@ -108,7 +182,7 @@ ss::future<> log_manager::clean_close(storage::log& log) {
 }
 
 ss::future<> log_manager::stop() {
-    _compaction_timer.cancel();
+    _housekeeping_timer.cancel();
     _abort_source.request_abort();
 
     co_await _open_gate.close();
@@ -129,6 +203,14 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 
     if (_logs_list.empty()) {
         co_return;
+    }
+
+    // TODO handle this after compaction?
+    // handle segment.ms sequentially, since compaction is already sequential
+    // when this will be unified with compaction, the whole task could be made
+    // concurrent
+    for (auto& log_meta : _logs_list) {
+        co_await log_meta.handle.housekeeping();
     }
 
     for (auto& log_meta : _logs_list) {
@@ -198,7 +280,8 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
             read_ahead,
             _config.sanitize_fileops,
             create_cache(ntp.cache_enabled()),
-            _resources);
+            _resources,
+            _feature_table);
       });
 }
 
@@ -270,10 +353,9 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
 
     co_await recover_log_state(cfg);
 
-    ss::sstring path = cfg.work_directory();
     with_cache cache_enabled = cfg.cache_enabled();
     auto segments = co_await recover_segments(
-      std::filesystem::path(path),
+      partition_path(cfg),
       _config.sanitize_fileops,
       cfg.is_compacted(),
       [this, cache_enabled] { return create_cache(cache_enabled); },
@@ -281,10 +363,11 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
       last_clean_segment,
-      _resources);
+      _resources,
+      _feature_table);
 
     auto l = storage::make_disk_backed_log(
-      std::move(cfg), *this, std::move(segments), _kvstore);
+      std::move(cfg), *this, std::move(segments), _kvstore, _feature_table);
     auto [it, success] = _logs.emplace(
       l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
     _logs_list.push_back(*it->second);
@@ -301,35 +384,56 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
         co_return;
     }
     co_await clean_close(handle.mapped()->handle);
+    vlog(stlog.debug, "Shutdown: {}", ntp);
 }
 
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
-    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
-        auto handle = _logs.extract(ntp);
-        _resources.update_partition_count(_logs.size());
-        if (handle.empty()) {
-            return ss::make_ready_future<>();
-        }
-        // 'ss::shared_ptr<>' make a copy
-        storage::log lg = handle.mapped()->handle;
-        vlog(stlog.info, "Removing: {}", lg);
-        // NOTE: it is ok to *not* externally synchronize the log here
-        // because remove, takes a write lock on each individual segments
-        // waiting for all of them to be closed before actually removing the
-        // underlying log. If there is a background operation like
-        // compaction or so, it will block correctly.
-        auto ntp_dir = lg.config().work_directory();
-        ss::sstring topic_dir = lg.config().topic_directory().string();
-        return lg.remove()
-          .then([dir = std::move(ntp_dir)] { return ss::remove_file(dir); })
-          .then([this, dir = std::move(topic_dir)]() mutable {
-              // We always dispatch topic directory deletion to core 0 as
-              // requests may come from different cores
-              return dispatch_topic_dir_deletion(std::move(dir));
-          })
-          .finally([lg] {});
-    });
+    gate_guard g(_open_gate);
+    auto handle = _logs.extract(ntp);
+    _resources.update_partition_count(_logs.size());
+    if (handle.empty()) {
+        co_return;
+    }
+    // 'ss::shared_ptr<>' make a copy
+    storage::log lg = handle.mapped()->handle;
+    vlog(stlog.info, "Removing: {}", lg);
+    // NOTE: it is ok to *not* externally synchronize the log here
+    // because remove, takes a write lock on each individual segments
+    // waiting for all of them to be closed before actually removing the
+    // underlying log. If there is a background operation like
+    // compaction or so, it will block correctly.
+    auto ntp_dir = lg.config().work_directory();
+    ss::sstring topic_dir = lg.config().topic_directory().string();
+    co_await lg.remove();
+    directory_walker walker;
+    co_await walker.walk(
+      ntp_dir, [&ntp_dir](const ss::directory_entry& de) -> ss::future<> {
+          // Concurrent truncations and compactions may conflict with each
+          // other, resulting in a mutual inability to use their staging files.
+          // If this has happened, clean up all staging files so we can fully
+          // remove the NTP directory.
+          //
+          // TODO: we should more consistently clean up the staging operations
+          // to clean up after themselves on failure.
+          if (boost::algorithm::ends_with(de.name, ".staging")) {
+              // It isn't necessarily problematic to get here since we can
+              // proceed with removal, but it points to a missing cleanup which
+              // can be problematic for users, as it needlessly consumes space.
+              // Log verbosely to make it easier to catch.
+              auto file_path = fmt::format("{}/{}", ntp_dir, de.name);
+              vlog(
+                stlog.error,
+                "Leftover staging file found, removing: {}",
+                file_path);
+              return ss::remove_file(file_path);
+          }
+          return ss::make_ready_future<>();
+      });
+    co_await remove_file(ntp_dir);
+    // We always dispatch topic directory deletion to core 0 as requests may
+    // come from different cores
+    co_await dispatch_topic_dir_deletion(topic_dir);
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
@@ -411,7 +515,7 @@ std::ostream& operator<<(std::ostream& o, const log_config& c) {
 std::ostream& operator<<(std::ostream& o, const log_manager& m) {
     return o << "{config:" << m._config << ", logs.size:" << m._logs.size()
              << ", cache:" << m._batch_cache
-             << ", compaction_timer.armed:" << m._compaction_timer.armed()
+             << ", compaction_timer.armed:" << m._housekeeping_timer.armed()
              << "}";
 }
 } // namespace storage

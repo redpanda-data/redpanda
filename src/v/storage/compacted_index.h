@@ -61,19 +61,33 @@ struct compacted_index {
         truncation = 1U,
         /// needed to determine if we should self compact first
         self_compaction = 1U << 1U,
+        /// index writer was forced to stop without writing all the entries.
+        incomplete = 1U << 2U,
     };
     struct footer {
-        // initial version of footer
-        static constexpr int8_t base_version = 0;
-        // introduced a key being a tuple of batch_type and the key content
-        static constexpr int8_t key_prefixed_with_batch_type = 1;
+        // footer versions:
+        // 0 - initial version
+        // 1 - introduced a key being a tuple of batch_type and the key content
+        //  of footer
+        // 2 - 64-bit size and keys fields
+        static constexpr int8_t current_version = 2;
 
-        uint32_t size{0};
-        uint32_t keys{0};
+        uint64_t size{0};
+        uint64_t keys{0};
+        // must be kept for backwards compatibility with pre-version 2 code
+        // (that allows using an index with a version greater than current).
+        uint32_t size_deprecated{0};
+        uint32_t keys_deprecated{0};
         footer_flags flags{0};
         uint32_t crc{0}; // crc32
-        // version *must* be the last value
-        int8_t version{key_prefixed_with_batch_type};
+        // version *must* be the last field
+        int8_t version{current_version};
+
+        static constexpr size_t footer_size = sizeof(size) + sizeof(keys)
+                                              + sizeof(size_deprecated)
+                                              + sizeof(keys_deprecated)
+                                              + sizeof(flags) + sizeof(crc)
+                                              + sizeof(version);
 
         friend std::ostream&
         operator<<(std::ostream& o, const compacted_index::footer& f) {
@@ -82,6 +96,19 @@ struct compacted_index {
                      << ", version: " << (int)f.version << "}";
         }
     };
+
+    struct footer_v1 {
+        uint32_t size{0};
+        uint32_t keys{0};
+        footer_flags flags{0};
+        uint32_t crc{0}; // crc32
+        int8_t version{1};
+
+        static constexpr size_t footer_size = sizeof(size) + sizeof(keys)
+                                              + sizeof(flags) + sizeof(crc)
+                                              + sizeof(version);
+    };
+
     enum class recovery_state {
         /**
          * Index may be missing when either was deleted or not stored when
@@ -101,11 +128,13 @@ struct compacted_index {
          */
         index_recovered
     };
-    static constexpr size_t footer_size = sizeof(footer::size)
-                                          + sizeof(footer::keys)
-                                          + sizeof(footer::flags)
-                                          + sizeof(footer::crc)
-                                          + sizeof(footer::version);
+
+    struct needs_rebuild_error final : public std::runtime_error {
+    public:
+        explicit needs_rebuild_error(std::string_view msg)
+          : std::runtime_error(msg.data()) {}
+    };
+
     // for the readers and friends
     struct entry {
         entry(

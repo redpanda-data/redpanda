@@ -111,3 +111,9 @@ func run(
 	}
 	return strings.Split(out.String(), "\n"), nil
 }
+
+// IsRunningSudo checks if you are running the program with sudo by checking the
+// caller UID and the env variable SUDO_UID.
+func IsRunningSudo() bool {
+	return os.Getuid() == 0 && os.Getenv("SUDO_UID") != "0"
+}

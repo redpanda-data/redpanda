@@ -8,10 +8,10 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from collections import defaultdict
+from rptest.clients.offline_log_viewer import OfflineLogViewer
 from rptest.services.cluster import cluster
 
-from rptest.clients.rpk import RpkTool
+from rptest.clients.rpk import RpkException, RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.kafka_cli_consumer import KafkaCliConsumer
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
@@ -19,7 +19,9 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
-from ducktape.mark import ok_to_fail
+from kafka import KafkaConsumer
+
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class ConsumerGroupTest(RedpandaTest):
@@ -31,7 +33,10 @@ class ConsumerGroupTest(RedpandaTest):
             num_brokers=3,
             *args,
             # disable leader balancer to make sure that group will not be realoaded because of leadership changes
-            extra_rp_conf={"enable_leader_balancer": False},
+            extra_rp_conf={
+                "enable_leader_balancer": False,
+                "default_topic_replications": 3
+            },
             **kwargs)
 
     def make_consumer_properties(base_properties, instance_id=None):
@@ -44,6 +49,7 @@ class ConsumerGroupTest(RedpandaTest):
     def create_consumer(self,
                         topic,
                         group,
+                        instance_name,
                         instance_id=None,
                         consumer_properties={}):
         return KafkaCliConsumer(
@@ -52,6 +58,7 @@ class ConsumerGroupTest(RedpandaTest):
             topic=topic,
             group=group,
             from_beginning=True,
+            instance_name=instance_name,
             formatter_properties={
                 'print.value': 'false',
                 'print.key': 'false',
@@ -75,10 +82,18 @@ class ConsumerGroupTest(RedpandaTest):
                 self.create_consumer(topic,
                                      group=group,
                                      instance_id=instance_id,
+                                     instance_name=f"cli-consumer-{i}",
                                      consumer_properties=consumer_properties))
 
         for c in consumers:
             c.start()
+        rpk = RpkTool(self.redpanda)
+
+        def group_is_ready():
+            gr = rpk.group_describe(group=group, summary=True)
+            return gr.members == consumer_count
+
+        wait_until(group_is_ready, 60, 1)
         return consumers
 
     def consumed_at_least(consumers, count):
@@ -98,17 +113,20 @@ class ConsumerGroupTest(RedpandaTest):
             else:
                 assert p.instance_id is None
 
-    def setup_producer(self, p_cnt):
+    def create_topic(self, p_cnt):
         # create topic
         self.topic_spec = TopicSpec(partition_count=p_cnt,
                                     replication_factor=3)
+
         self.client().create_topic(specs=self.topic_spec)
+
+    def start_producer(self, msg_cnt=5000):
+
         # produce some messages to the topic
         self.producer = RpkProducer(self._ctx, self.redpanda,
-                                    self.topic_spec.name, 128, 5000, -1)
+                                    self.topic_spec.name, 128, msg_cnt, -1)
         self.producer.start()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5885
     @cluster(num_nodes=6)
     @parametrize(static_members=True)
     @parametrize(static_members=False)
@@ -116,8 +134,7 @@ class ConsumerGroupTest(RedpandaTest):
         """
         Test validating that consumers are able to join the group and consume topic
         """
-
-        self.setup_producer(20)
+        self.create_topic(20)
         group = 'test-gr-1'
         # use 2 consumers
         consumers = self.create_consumers(2,
@@ -125,6 +142,7 @@ class ConsumerGroupTest(RedpandaTest):
                                           group,
                                           static_members=static_members)
 
+        self.start_producer()
         # wait for some messages
         wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
                    30, 2)
@@ -140,23 +158,54 @@ class ConsumerGroupTest(RedpandaTest):
             c.wait()
             c.free()
 
+        gd = RpkTool(self.redpanda).group_describe(group=group)
+        viewer = OfflineLogViewer(self.redpanda)
+        for node in self.redpanda.nodes:
+            consumer_offsets_partitions = viewer.read_consumer_offsets(
+                node=node)
+            offsets = {}
+            groups = set()
+            for partition in consumer_offsets_partitions:
+                for r in partition['records']:
+                    self.logger.info(f"{r}")
+                    if r['key']['type'] == 'group_metadata':
+                        groups.add(r['key']['group_id'])
+                    elif r['key']['type'] == 'offset_commit':
+                        tp = f"{r['key']['topic']}/{r['key']['partition']}"
+                        if tp not in offsets:
+                            offsets[tp] = -1
+                        offsets[tp] = max(r['value']['committed_offset'],
+                                          offsets[tp])
+
+            assert len(groups) == 1 and group in groups
+            assert all([
+                f"{p.topic}/{p.partition}" in offsets
+                and offsets[f"{p.topic}/{p.partition}"] == p.current_offset
+                for p in gd.partitions
+            ])
+
     @cluster(num_nodes=6)
     def test_mixed_consumers_join(self):
         """
         Test validating that dynamic and static consumers may exists in the same group
         """
-        self.setup_producer(20)
+        self.create_topic(20)
         group = 'test-gr-1'
         consumers = []
         consumers.append(
-            self.create_consumer(self.topic_spec.name, group,
-                                 "panda-instance"))
+            self.create_consumer(topic=self.topic_spec.name,
+                                 group=group,
+                                 instance_name="static-consumer",
+                                 instance_id="panda-instance"))
         consumers.append(
-            self.create_consumer(self.topic_spec.name, group, None))
+            self.create_consumer(topic=self.topic_spec.name,
+                                 group=group,
+                                 instance_name="dynamic-consumer",
+                                 instance_id=None))
 
         for c in consumers:
             c.start()
-
+        self.start_producer()
         # wait for some messages
         wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
                    30, 2)
@@ -204,7 +253,8 @@ class ConsumerGroupTest(RedpandaTest):
         """
         Test validating that re-joining static member will not casuse rebalance
         """
-        self.setup_producer(20)
+        self.create_topic(20)
+
         group = 'test-gr-1'
 
         consumers = self.create_consumers(
@@ -213,7 +263,7 @@ class ConsumerGroupTest(RedpandaTest):
             group,
             static_members=static_members,
             consumer_properties={"session.timeout.ms": 40000})
-
+        self.start_producer()
         # wait for some messages
         wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
                    30, 2)
@@ -258,7 +308,6 @@ class ConsumerGroupTest(RedpandaTest):
             c.wait()
             c.free()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5952
     @cluster(num_nodes=6)
     @parametrize(static_members=True)
     @parametrize(static_members=False)
@@ -266,7 +315,7 @@ class ConsumerGroupTest(RedpandaTest):
         """
         Test validating that consumer is evicted if it failed to deliver heartbeat to the broker
         """
-        self.setup_producer(20)
+        self.create_topic(20)
         group = 'test-gr-1'
         # using short session timeout to make the test finish faster
         consumers = self.create_consumers(
@@ -276,6 +325,7 @@ class ConsumerGroupTest(RedpandaTest):
             static_members=static_members,
             consumer_properties={"session.timeout.ms": 6000})
 
+        self.start_producer()
         # wait for some messages
         wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
                    30, 2)
@@ -308,7 +358,6 @@ class ConsumerGroupTest(RedpandaTest):
             c.wait()
             c.free()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/5079
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(static_members=True)
     @parametrize(static_members=False)
@@ -316,8 +365,9 @@ class ConsumerGroupTest(RedpandaTest):
         """
         Test validating that all offsets persisted in the group are removed when corresponding partition is removed.
         """
-        self.setup_producer(20)
         group = 'test-gr-1'
+        self.create_topic(20)
+
         # using short session timeout to make the test finish faster
         consumers = self.create_consumers(
             2,
@@ -326,6 +376,7 @@ class ConsumerGroupTest(RedpandaTest):
             static_members=static_members,
             consumer_properties={"session.timeout.ms": 6000})
 
+        self.start_producer()
         # wait for some messages
         wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
                    30, 2)
@@ -337,6 +388,10 @@ class ConsumerGroupTest(RedpandaTest):
         # stop consumers
         for c in consumers:
             c.stop()
+            c.wait()
+            c.free()
+
+        consumers.clear()
 
         rpk = RpkTool(self.redpanda)
 
@@ -353,11 +408,17 @@ class ConsumerGroupTest(RedpandaTest):
         rpk.delete_topic(self.topic_spec.name)
 
         def group_is_dead():
-            rpk_group = rpk.group_describe(group)
-
-            return rpk_group.members == 0 and rpk_group.state == "Dead"
+            try:
+                rpk_group = rpk.group_describe(group)
+                return rpk_group.members == 0 and rpk_group.state == "Dead"
+            except RpkException as e:
+                # allow RPK to throw an exception as redpanda nodes were
+                # restarted and the request may require a retry
+                return False
 
         wait_until(group_is_dead, 30, 2)
+        self.producer.wait()
+        self.producer.free()
 
         # recreate topic
         self.redpanda.restart_nodes(self.redpanda.nodes)
@@ -365,8 +426,15 @@ class ConsumerGroupTest(RedpandaTest):
         wait_until(group_is_dead, 30, 2)
 
         self.client().create_topic(self.topic_spec)
-        for c in consumers:
-            c.start()
+        # recreate consumers
+        consumers = self.create_consumers(
+            2,
+            self.topic_spec.name,
+            group,
+            static_members=static_members,
+            consumer_properties={"session.timeout.ms": 6000})
+
+        self.start_producer()
         wait_until(
             lambda: ConsumerGroupTest.consumed_at_least(consumers, 2000), 30,
             2)
@@ -376,3 +444,45 @@ class ConsumerGroupTest(RedpandaTest):
             c.free()
         self.producer.wait()
         self.producer.free()
+
+    @skip_debug_mode
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_large_group_count(self):
+        self.create_topic(20)
+        rounds = 10
+        groups_in_round = 100
+
+        import asyncio
+        ev_loop = asyncio.new_event_loop()
+
+        def poll_once(i):
+            consumer = KafkaConsumer(group_id=f"g-{i}",
+                                     bootstrap_servers=self.redpanda.brokers(),
+                                     enable_auto_commit=True)
+            consumer.subscribe([self.topic_spec.name])
+            consumer.poll(1)
+            consumer.close(autocommit=True)
+
+        async def create_groups(r):
+            await asyncio.gather(*[
+                asyncio.to_thread(poll_once, i + r * groups_in_round)
+                for i in range(groups_in_round)
+            ])
+
+        for r in range(rounds):
+            ev_loop.run_until_complete(create_groups(r))
+
+        ev_loop.stop()
+        ev_loop.close()
+
+        rpk = RpkTool(self.redpanda)
+        list = rpk.group_list()
+
+        assert len(list) == groups_in_round * rounds
+
+        # restart redpanda and check recovery
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        list = rpk.group_list()
+
+        assert len(list) == groups_in_round * rounds

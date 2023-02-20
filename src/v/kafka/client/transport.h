@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "bytes/iostream.h"
+#include "bytes/scattered_message.h"
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/flex_versions.h"
 #include "kafka/protocol/fwd.h"
@@ -78,7 +80,7 @@ private:
         ph.write(raw_size, sizeof(be_total_size));
 
         return _out.write(iobuf_as_scattered(std::move(buf)))
-          .then([this, is_flexible] {
+          .then([this, is_flexible](bool) {
               return parse_size(_in).then([this, is_flexible](
                                             std::optional<size_t> sz) {
                   if (!sz) {
@@ -110,7 +112,13 @@ private:
     }
 
 public:
-    using net::base_transport::base_transport;
+    // using net::base_transport::base_transport;
+
+    transport(
+      net::base_transport::configuration c,
+      std::optional<ss::sstring> client_id)
+      : net::base_transport(c)
+      , _client_id(std::move(client_id)) {}
 
     /*
      * TODO: the concept here can be improved once we convert all of the request
@@ -206,7 +214,7 @@ private:
         wr.write(int16_t(key()));
         wr.write(int16_t(version()));
         wr.write(int32_t(_correlation()));
-        wr.write(std::string_view("test_client"));
+        wr.write(_client_id);
         vassert(
           flex_versions::is_api_in_schema(key),
           "Attempted to send request to non-existent API: {}",
@@ -220,6 +228,7 @@ private:
     }
 
     correlation_id _correlation{0};
+    std::optional<ss::sstring> _client_id;
 };
 
 } // namespace kafka::client

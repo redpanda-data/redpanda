@@ -12,8 +12,7 @@
 #pragma once
 #include "cluster/commands.h"
 #include "model/record.h"
-#include "security/authorizer.h"
-#include "security/credential_store.h"
+#include "security/fwd.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -42,8 +41,9 @@ public:
     }
 
 private:
-    template<typename Cmd, typename T>
-    ss::future<std::error_code> dispatch_updates_to_cores(Cmd, ss::sharded<T>&);
+    template<typename Cmd, typename Service>
+    ss::future<std::error_code>
+    dispatch_updates_to_cores(Cmd, ss::sharded<Service>&);
 
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;

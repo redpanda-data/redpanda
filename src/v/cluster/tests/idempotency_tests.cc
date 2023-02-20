@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/rm_stm.h"
+#include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -31,16 +31,34 @@
 
 static ss::logger logger{"append-test"};
 
+static config::binding<uint64_t> get_config_bound() {
+    static config::config_store store;
+    static config::bounded_property<uint64_t> max_saved_pids_count(
+      store,
+      "max_saved_pids_count",
+      "Max pids count inside rm_stm states",
+      {.needs_restart = config::needs_restart::no,
+       .visibility = config::visibility::user},
+      std::numeric_limits<uint64_t>::max(),
+      {.min = 1});
+
+    return max_saved_pids_count.bind();
+}
+
 FIXTURE_TEST(
   test_rm_stm_doesnt_interfere_with_out_of_session_messages,
   mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -93,10 +111,14 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -150,10 +172,14 @@ FIXTURE_TEST(test_rm_stm_caches_last_5_offsets, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -219,10 +245,14 @@ FIXTURE_TEST(test_rm_stm_doesnt_cache_6th_offset, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -283,10 +313,14 @@ FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -340,10 +374,14 @@ FIXTURE_TEST(
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();
@@ -380,10 +418,14 @@ FIXTURE_TEST(test_rm_stm_passes_immediate_retry, mux_state_machine_fixture) {
     start_raft();
 
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
-    ss::sharded<cluster::feature_table> feature_table;
+    ss::sharded<features::feature_table> feature_table;
     feature_table.start().get0();
     cluster::rm_stm stm(
-      logger, _raft.get(), tx_gateway_frontend, feature_table);
+      logger,
+      _raft.get(),
+      tx_gateway_frontend,
+      feature_table,
+      get_config_bound());
     stm.testing_only_disable_auto_abort();
 
     stm.start().get0();

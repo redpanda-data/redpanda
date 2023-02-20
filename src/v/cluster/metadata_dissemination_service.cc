@@ -17,7 +17,6 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
 #include "cluster/metadata_dissemination_types.h"
-#include "cluster/metadata_dissemination_utils.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
@@ -114,13 +113,13 @@ ss::future<> metadata_dissemination_service::start() {
     }
     _dispatch_timer.arm(_dissemination_interval);
     // poll either seed servers or configuration
-    auto all_brokers = _members_table.local().all_brokers();
+    const auto& all_brokers = _members_table.local().nodes();
     // use hash set to deduplicate ids
     absl::flat_hash_set<net::unresolved_address> all_broker_addresses;
     all_broker_addresses.reserve(all_brokers.size() + _seed_servers.size());
     // collect ids
-    for (auto& b : all_brokers) {
-        all_broker_addresses.emplace(b->rpc_address());
+    for (auto& [_, b] : all_brokers) {
+        all_broker_addresses.emplace(b.broker.rpc_address());
     }
     for (auto& id : _seed_servers) {
         all_broker_addresses.emplace(id);
@@ -281,7 +280,7 @@ metadata_dissemination_service::dispatch_get_metadata_update(
 }
 
 void metadata_dissemination_service::collect_pending_updates() {
-    auto brokers = _members_table.local().all_broker_ids();
+    auto brokers = _members_table.local().node_ids();
     for (auto& ntp_leader : _requests) {
         auto assignment = _topics.local().get_partition_assignment(
           ntp_leader.ntp);
@@ -290,19 +289,11 @@ void metadata_dissemination_service::collect_pending_updates() {
             // Partition was removed, skip dissemination
             continue;
         }
-        auto non_overlapping = calculate_non_overlapping_nodes(
-          *assignment, brokers);
 
-        /**
-         * remove current node from non overlapping list, current node may be
-         * included into non overlapping node when new metadata set is used to
-         * calculate non overlapping nodes but partition replica still exists on
-         * current node (it is being moved)
-         */
-        std::erase_if(non_overlapping, [this](model::node_id n) {
-            return n == _self.id();
-        });
-        for (auto& id : non_overlapping) {
+        for (auto& id : brokers) {
+            if (id == _self.id()) {
+                continue;
+            }
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(
                   id, update_retry_meta{std::vector<ntp_leader_revision>{}});
@@ -321,7 +312,7 @@ void metadata_dissemination_service::collect_pending_updates() {
 void metadata_dissemination_service::cleanup_finished_updates() {
     std::vector<model::node_id> _to_remove;
     _to_remove.reserve(_pending_updates.size());
-    auto brokers = _members_table.local().all_broker_ids();
+    auto brokers = _members_table.local().node_ids();
     for (auto& [node_id, meta] : _pending_updates) {
         auto it = std::find(brokers.begin(), brokers.end(), node_id);
         if (meta.finished || it == brokers.end()) {
@@ -366,6 +357,9 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
             });
       })
       .then([this] { cleanup_finished_updates(); })
+      .handle_exception([](const std::exception_ptr& e) {
+          vlog(clusterlog.warn, "failed to disseminate leadership: {}", e);
+      })
       .finally([this] { _dispatch_timer.arm(_dissemination_interval); });
 }
 

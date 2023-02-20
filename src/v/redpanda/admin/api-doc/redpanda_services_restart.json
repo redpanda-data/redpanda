@@ -1,0 +1,31 @@
+"/v1/redpanda-services/restart": {
+  "put": {
+    "summary": "Restart a redpanda service.",
+    "operationId": "redpanda_services_restart",
+    "parameters": [
+      {
+        "name": "service",
+        "in": "query",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "Restart success"
+      },
+      "400": {
+        "description": "Service name is required"
+      },
+      "404": {
+        "description": "Service not found"
+      },
+      "500": {
+        "description": "Internal Server error"
+      }
+    }
+  }
+}

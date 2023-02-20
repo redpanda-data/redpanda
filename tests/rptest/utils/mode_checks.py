@@ -26,13 +26,11 @@ def cleanup_on_early_exit(caller):
             hook
         ), f'{name.early_exit_hook} should be a method which can be called to set up early exit from test'
         hook()
-    else:
-        caller.logger.debug(
-            f'{name} does not define action to take when skipping test on debug mode. '
-            f'Cleaning up unused nodes.')
 
-        if test_context := getattr(caller, 'test_context', None):
-            allocate_and_free(test_context.cluster, caller.logger)
+    caller.logger.debug(f'Cleaning up unused nodes.')
+
+    if test_context := getattr(caller, 'test_context', None):
+        allocate_and_free(test_context.cluster, caller.logger)
 
 
 def skip_debug_mode(func):

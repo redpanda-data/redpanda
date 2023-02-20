@@ -16,6 +16,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/node_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -107,30 +108,35 @@ const topic_table::underlying_t& metadata_cache::all_topics_metadata() const {
     return _topics_state.local().all_topics_metadata();
 }
 
-std::optional<broker_ptr> metadata_cache::get_broker(model::node_id nid) const {
-    return _members_table.local().get_broker(nid);
+std::optional<node_metadata>
+metadata_cache::get_node_metadata(model::node_id nid) const {
+    return _members_table.local().get_node_metadata(nid);
 }
 
-std::vector<broker_ptr> metadata_cache::all_brokers() const {
-    return _members_table.local().all_brokers();
+const members_table::cache_t& metadata_cache::nodes() const {
+    return _members_table.local().nodes();
 }
 
-ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
-    std::vector<broker_ptr> brokers;
+size_t metadata_cache::node_count() const {
+    return _members_table.local().node_count();
+}
+
+ss::future<std::vector<node_metadata>> metadata_cache::alive_nodes() const {
+    std::vector<node_metadata> brokers;
     auto res = co_await _health_monitor.local().get_nodes_status(
       config::shard_local_cfg().metadata_status_wait_timeout_ms()
       + model::timeout_clock::now());
     if (!res) {
         // if we were not able to refresh the cache, return all brokers
         // (controller may be unreachable)
-        co_return _members_table.local().all_brokers();
+        co_return _members_table.local().node_list();
     }
 
     std::set<model::node_id> brokers_with_health;
     for (auto& st : res.value()) {
         brokers_with_health.insert(st.id);
         if (st.is_alive) {
-            auto broker = _members_table.local().get_broker(st.id);
+            auto broker = _members_table.local().get_node_metadata(st.id);
             if (broker) {
                 brokers.push_back(std::move(*broker));
             }
@@ -142,17 +148,21 @@ ss::future<std::vector<broker_ptr>> metadata_cache::all_alive_brokers() const {
     // presume it is newly added and assume it is alive.  This avoids
     // newly added nodes being inconsistently excluded from metadata
     // responses until all nodes' health caches update.
-    for (const auto& broker : _members_table.local().all_brokers()) {
-        if (!brokers_with_health.contains(broker->id())) {
+    for (const auto& [id, broker] : _members_table.local().nodes()) {
+        if (!brokers_with_health.contains(id)) {
             brokers.push_back(broker);
         }
     }
 
-    co_return !brokers.empty() ? brokers : _members_table.local().all_brokers();
+    co_return !brokers.empty() ? brokers : _members_table.local().node_list();
 }
 
-std::vector<model::node_id> metadata_cache::all_broker_ids() const {
-    return _members_table.local().all_broker_ids();
+std::vector<node_metadata> metadata_cache::all_nodes() const {
+    return _members_table.local().node_list();
+}
+
+std::vector<model::node_id> metadata_cache::node_ids() const {
+    return _members_table.local().node_ids();
 }
 
 bool metadata_cache::should_reject_writes() const {
@@ -167,6 +177,11 @@ bool metadata_cache::contains(
 
 bool metadata_cache::contains(model::topic_namespace_view tp) const {
     return _topics_state.local().contains(tp);
+}
+
+topic_table::topic_state metadata_cache::get_topic_state(
+  model::topic_namespace_view tp, model::revision_id id) const {
+    return _topics_state.local().get_topic_state(tp, id);
 }
 
 ss::future<model::node_id> metadata_cache::get_leader(
@@ -207,6 +222,12 @@ metadata_cache::get_leaders() const {
     return _leaders.local().get_leaders();
 }
 
+void metadata_cache::set_is_node_isolated_status(bool is_node_isolated) {
+    _is_node_isolated = is_node_isolated;
+}
+
+bool metadata_cache::is_node_isolated() { return _is_node_isolated; }
+
 /**
  * hard coded defaults
  */
@@ -241,6 +262,18 @@ std::optional<std::chrono::milliseconds>
 metadata_cache::get_default_retention_duration() const {
     return config::shard_local_cfg().delete_retention_ms();
 }
+std::optional<size_t>
+metadata_cache::get_default_retention_local_target_bytes() const {
+    return config::shard_local_cfg().retention_local_target_bytes_default();
+}
+std::chrono::milliseconds
+metadata_cache::get_default_retention_local_target_ms() const {
+    return config::shard_local_cfg().retention_local_target_ms_default();
+}
+
+uint32_t metadata_cache::get_default_batch_max_bytes() const {
+    return config::shard_local_cfg().kafka_batch_max_bytes();
+}
 
 model::shadow_indexing_mode
 metadata_cache::get_default_shadow_indexing_mode() const {
@@ -255,6 +288,10 @@ metadata_cache::get_default_shadow_indexing_mode() const {
     return m;
 }
 
+std::optional<std::chrono::milliseconds>
+metadata_cache::get_default_segment_ms() const {
+    return config::shard_local_cfg().log_segment_ms();
+}
 topic_properties metadata_cache::get_default_properties() const {
     topic_properties tp;
     tp.compression = {get_default_compression()};
@@ -267,7 +304,31 @@ topic_properties metadata_cache::get_default_properties() const {
       {get_default_retention_duration()});
     tp.recovery = {false};
     tp.shadow_indexing = {get_default_shadow_indexing_mode()};
+    tp.batch_max_bytes = get_default_batch_max_bytes();
+    tp.retention_local_target_bytes = tristate{
+      get_default_retention_local_target_bytes()};
+    tp.retention_local_target_ms = tristate<std::chrono::milliseconds>{
+      get_default_retention_local_target_ms()};
+
     return tp;
+}
+
+std::optional<partition_assignment>
+metadata_cache::get_partition_assignment(const model::ntp& ntp) const {
+    return _topics_state.local().get_partition_assignment(ntp);
+}
+
+std::optional<std::vector<model::broker_shard>>
+metadata_cache::get_previous_replica_set(const model::ntp& ntp) const {
+    return _topics_state.local().get_previous_replica_set(ntp);
+}
+
+const topic_table::updates_t& metadata_cache::updates_in_progress() const {
+    return _topics_state.local().updates_in_progress();
+}
+
+bool metadata_cache::is_update_in_progress(const model::ntp& ntp) const {
+    return _topics_state.local().is_update_in_progress(ntp);
 }
 
 } // namespace cluster

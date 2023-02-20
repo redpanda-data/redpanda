@@ -107,6 +107,12 @@ configuration::configuration()
       "scram_password",
       "Password to use for SCRAM authentication mechanisms",
       {.secret = config::is_secret::yes},
-      "") {}
+      "")
+  , client_identifier(
+      *this,
+      "client_identifier",
+      "Identifier to use within the kafka request header",
+      {},
+      "test_client") {}
 
 } // namespace kafka::client

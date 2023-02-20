@@ -682,7 +682,16 @@ struct instance_generator<cluster::topic_properties> {
           tests::random_optional([] { return tests::random_bool(); }),
           tests::random_optional(
             [] { return tests::random_named_string<ss::sstring>(); }),
-          instance_generator<cluster::remote_topic_properties>::random()};
+          instance_generator<cluster::remote_topic_properties>::random(),
+          tests::random_optional(
+            [] { return random_generators::get_int<uint32_t>(1024 * 1024); }),
+          tests::random_tristate(
+            [] { return random_generators::get_int<size_t>(); }),
+          tests::random_tristate([] { return tests::random_duration_ms(); }),
+          // Remote delete always false to enable ADL roundtrip (ADL
+          // always decodes to false for legacy topics)
+          false,
+          tests::random_tristate([] { return tests::random_duration_ms(); })};
     }
 
     static std::vector<cluster::topic_properties> limits() { return {}; }
@@ -824,6 +833,11 @@ struct instance_generator<cluster::incremental_topic_updates> {
                   return instance_generator<
                     model::shadow_indexing_mode>::random();
               });
+          }),
+          .remote_delete = random_property_update([] {
+              // Enable ADL roundtrip, which always decodes as false
+              // for legacy topics
+              return false;
           })};
     }
 

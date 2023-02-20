@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "storage/disk_log_appender.h"
 #include "storage/failure_probes.h"
@@ -53,7 +54,12 @@ public:
      */
     static constexpr size_t segment_size_hard_limit = 3_GiB;
 
-    disk_log_impl(ntp_config, log_manager&, segment_set, kvstore&);
+    disk_log_impl(
+      ntp_config,
+      log_manager&,
+      segment_set,
+      kvstore&,
+      ss::sharded<features::feature_table>& feature_table);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = default;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
@@ -66,6 +72,7 @@ public:
     ss::future<> truncate(truncate_config) final;
     ss::future<> truncate_prefix(truncate_prefix_config) final;
     ss::future<> compact(compaction_config) final;
+    ss::future<> do_housekeeping() final override;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
     void set_collectible_offset(model::offset) final;
@@ -79,6 +86,7 @@ public:
     timequery(timequery_config cfg) final;
     size_t segment_count() const final { return _segs.size(); }
     offset_stats offsets() const final;
+    model::timestamp start_timestamp() const final;
     std::optional<model::term_id> get_term(model::offset) const final;
     std::optional<model::offset>
     get_term_last_offset(model::term_id term) const final;
@@ -124,7 +132,7 @@ private:
       std::pair<segment_set::iterator, segment_set::iterator>,
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
-    find_compaction_range();
+    find_compaction_range(const compaction_config&);
     ss::future<> gc(compaction_config);
 
     ss::future<> remove_empty_segments();
@@ -138,18 +146,19 @@ private:
       model::term_id term_for_this_segment,
       ss::io_priority_class prio);
 
-    ss::future<> do_truncate(truncate_config);
+    ss::future<> do_truncate(
+      truncate_config,
+      std::optional<std::pair<ssx::semaphore_units, ssx::semaphore_units>>
+        lock_guards);
     ss::future<> remove_full_segments(model::offset o);
 
     ss::future<> do_truncate_prefix(truncate_prefix_config);
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
-    ss::future<>
-    garbage_collect_max_partition_size(size_t max_bytes, ss::abort_source*);
-    ss::future<>
-    garbage_collect_oldest_segments(model::timestamp, ss::abort_source*);
+    ss::future<> garbage_collect_max_partition_size(compaction_config cfg);
+    ss::future<> garbage_collect_oldest_segments(compaction_config cfg);
     ss::future<> garbage_collect_segments(
-      model::offset, ss::abort_source*, std::string_view);
+      compaction_config cfg, model::offset, std::string_view);
     model::offset size_based_gc_max_offset(size_t);
     model::offset time_based_gc_max_offset(model::timestamp);
 
@@ -161,6 +170,10 @@ private:
 
     void wrote_stm_bytes(size_t);
 
+    compaction_config override_retention_config(compaction_config cfg) const;
+
+    bool is_cloud_retention_active() const;
+
 private:
     size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
@@ -171,12 +184,13 @@ private:
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
-    float _segment_size_jitter;
     bool _closed{false};
-    ss::gate _compaction_gate;
+    ss::gate _compaction_housekeeping_gate;
     log_manager& _manager;
+    float _segment_size_jitter;
     segment_set _segs;
     kvstore& _kvstore;
+    ss::sharded<features::feature_table>& _feature_table;
     model::offset _start_offset;
     // Used to serialize updates to _start_offset. See the update_start_offset
     // method.
@@ -191,8 +205,19 @@ private:
     // average ratio of segment sizes after segment size before compaction
     moving_average<double, 5> _compaction_ratio{1.0};
 
+    // Mutually exclude operations that do non-appending modification
+    // to segments: adjacent segment compaction and truncation.  Truncation
+    // repeatedly takes+releases segment read locks, and without this extra
+    // coarse grained lock, the compaction can happen in between steps.
+    // See https://github.com/redpanda-data/redpanda/issues/7118
+    mutex _segment_rewrite_lock;
+
     // Bytes written since last time we requested stm snapshot
     ssx::semaphore_units _stm_dirty_bytes_units;
+
+    // Mutually exclude operations that will cause segment rolling
+    // do_housekeeping and maybe_roll
+    mutex _segments_rolling_lock;
 };
 
 } // namespace storage

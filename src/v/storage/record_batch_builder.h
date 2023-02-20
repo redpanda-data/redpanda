@@ -53,6 +53,11 @@ public:
 
     void set_timestamp(model::timestamp ts) { _timestamp = ts; }
 
+    /*
+     * Returns true if no records have been added, and false otherwise.
+     */
+    bool empty() const { return _records.empty(); }
+
 private:
     static constexpr int64_t zero_vint_size = vint::vint_size(0);
     struct serialized_record {

@@ -10,6 +10,7 @@
 import subprocess
 import time
 import json
+from typing import Optional
 
 from rptest.util import wait_until_result
 
@@ -26,10 +27,23 @@ class KafkaCat:
     def metadata(self):
         return self._cmd(["-L"])
 
-    def consume_one(self, topic, partition, offset):
+    def consume_one(self,
+                    topic,
+                    partition,
+                    offset=None,
+                    *,
+                    first_timestamp: Optional[int] = None):
+        if offset is not None:
+            # <value>  (absolute offset)
+            query = offset
+        else:
+            assert first_timestamp is not None
+            # s@<value> (timestamp in ms to start at)
+            query = f"s@{first_timestamp}"
+
         return self._cmd([
             "-C", "-e", "-t", f"{topic}", "-p", f"{partition}", "-o",
-            f"{offset}", "-c1"
+            f"{query}", "-c1"
         ])
 
     def produce_one(self, topic, msg, tx_id=None):
@@ -46,6 +60,19 @@ class KafkaCat:
 
     def _cmd_raw(self, cmd, input=None):
         for retry in reversed(range(10)):
+            if getattr(self._redpanda, "sasl_enabled", lambda: False)():
+                cfg = self._redpanda.security_config()
+                cmd += [
+                    "-X", f"security.protocol={cfg['security_protocol']}", "-X"
+                    f"sasl.mechanism={cfg['sasl_mechanism']}", "-X",
+                    f"sasl.username={cfg['sasl_plain_username']}", "-X",
+                    f"sasl.password={cfg['sasl_plain_password']}"
+                ]
+                if cfg['sasl_mechanism'] == "GSSAPI":
+                    cmd += [
+                        "-X", "sasl.kerberos.service.name=redpanda",
+                        '-Xsasl.kerberos.kinit.cmd=kinit client -t /var/lib/redpanda/client.keytab'
+                    ]
             try:
                 res = subprocess.check_output(
                     ["kcat", "-b", self._redpanda.brokers()] + cmd,

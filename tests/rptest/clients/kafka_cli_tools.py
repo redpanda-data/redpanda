@@ -10,6 +10,8 @@
 import subprocess
 import tempfile
 from rptest.clients.types import TopicSpec
+import json
+from ducktape.utils.util import wait_until
 
 
 class AuthenticationError(Exception):
@@ -69,8 +71,12 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             args += [
                 "--config", "cleanup.policy={}".format(spec.cleanup_policy)
             ]
-        if spec.segment_bytes is not None:
+        if spec.segment_bytes:
             args += ["--config", f"segment.bytes={spec.segment_bytes}"]
+        if spec.retention_bytes:
+            args += ["--config", f"retention.bytes={spec.retention_bytes}"]
+        if spec.retention_ms:
+            args += ["--config", f"retention.ms={spec.retention_ms}"]
         return self._run("kafka-topics.sh", args)
 
     def create_topic_partitions(self, topic, partitions):
@@ -242,6 +248,160 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
     def get_api_versions(self):
         return self._run("kafka-run-class.sh", [],
                          "kafka.admin.BrokerApiVersionsCommand")
+
+    def reassign_partitions(self,
+                            reassignments: dict,
+                            operation: str,
+                            write_reassignments_to_disk: bool = True):
+        assert "version" in reassignments
+        assert reassignments["version"] == 1
+        assert "partitions" in reassignments
+
+        json_filename = "reassignments.json"
+        if write_reassignments_to_disk:
+            with open(json_filename, "w") as outfile:
+                json.dump(reassignments, outfile)
+
+        args = ["--reassignment-json-file", json_filename]
+        if operation == "execute":
+            args.append("--execute")
+        elif operation == "verify":
+            args.append("--verify")
+            args.append("--preserve-throttles")
+        elif operation == "cancel":
+            args.append("--cancel")
+            args.append("--preserve-throttles")
+        else:
+            raise NotImplementedError(f"Unknown operation: {operation}")
+
+        return self._run("kafka-reassign-partitions.sh", args)
+
+    def execute_reassign_partitions(self, reassignments: dict):
+        output = self.reassign_partitions(reassignments=reassignments,
+                                          operation="execute")
+        return output.splitlines()
+
+    def verify_reassign_partitions(self, reassignments: dict, timeout_s: int):
+        output = None
+
+        def do_reassign_partitions():
+            nonlocal output
+            output = self.reassign_partitions(
+                reassignments=reassignments,
+                operation="verify",
+                write_reassignments_to_disk=False)
+
+            # Retry the script if there is reassignment still in progress
+            return "is still in progress." not in output
+
+        wait_until(do_reassign_partitions,
+                   timeout_sec=timeout_s,
+                   backoff_sec=1)
+
+        return output.splitlines()
+
+    def cancel_reassign_partitions(self, reassignments: dict):
+        output = self.reassign_partitions(reassignments=reassignments,
+                                          operation="cancel",
+                                          write_reassignments_to_disk=False)
+
+        return output.splitlines()
+
+    def describe_producers(self, topic, partition):
+        expected_columns = [
+            "ProducerId", "ProducerEpoch", "LatestCoordinatorEpoch",
+            "LastSequence", "LastTimestamp", "CurrentTransactionStartOffset"
+        ]
+        self._redpanda.logger.debug(
+            "Describe producers for topic %s partition %s", topic, partition)
+        cmd = [self._script("kafka-transactions.sh")]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        cmd += ["describe-producers"]
+        cmd += ["--topic", topic]
+        cmd += ["--partition", str(partition)]
+        res = self._execute(cmd)
+
+        producers = []
+        split_str = res.split("\n")
+        info_str = split_str[0]
+        info_key = info_str.strip().split("\t")
+        assert info_key == expected_columns, f"{info_key}"
+
+        assert split_str[-1] == ""
+
+        lines = split_str[1:-1]
+        for line in lines:
+            producer_raw = line.strip().split("\t")
+            assert len(producer_raw) == len(expected_columns)
+            producer = {}
+            for i in range(len(info_key)):
+                producer_info = producer_raw[i].strip()
+                producer[info_key[i]] = producer_info
+            producers.append(producer)
+
+        return producers
+
+    def list_transactions(self):
+        expected_columns = [
+            "TransactionalId", "Coordinator", "ProducerId", "TransactionState"
+        ]
+        self._redpanda.logger.debug("List transactions")
+        cmd = [self._script("kafka-transactions.sh")]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        cmd += ["list"]
+        res = self._execute(cmd)
+
+        txs = []
+        split_str = res.split("\n")
+        info_str = split_str[0]
+        info_key = info_str.strip().split("\t")
+        assert info_key == expected_columns, f"{info_key}"
+
+        assert split_str[-1] == ""
+
+        lines = split_str[1:-1]
+        for line in lines:
+            tx_raw = line.strip().split("\t")
+            assert len(tx_raw) == len(expected_columns)
+            tx = {}
+            for i in range(len(info_key)):
+                tx_info = tx_raw[i].strip()
+                tx[info_key[i]] = tx_info
+            txs.append(tx)
+        return txs
+
+    def describe_transaction(self, tx_id):
+        expected_columns = [
+            "CoordinatorId", "TransactionalId", "ProducerId", "ProducerEpoch",
+            "TransactionState", "TransactionTimeoutMs",
+            "CurrentTransactionStartTimeMs", "TransactionDurationMs",
+            "TopicPartitions"
+        ]
+        self._redpanda.logger.debug("Describe transaction tx_id: %s", tx_id)
+        cmd = [self._script("kafka-transactions.sh")]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        cmd += ["describe"]
+        cmd += ["--transactional-id", str(tx_id)]
+        res = self._execute(cmd)
+        # 0 - keys, 1 - tx info, 2 - empty string
+        split_str = res.split("\n")
+        assert len(split_str) == 3
+
+        info_str = info_str = split_str[0]
+        info_key = info_str.strip().split("\t")
+        assert info_key == expected_columns, f"{info_key}"
+
+        assert split_str[2] == ""
+
+        line = split_str[1]
+        tx_raw = line.strip().split("\t")
+        assert len(tx_raw) == len(expected_columns)
+
+        tx = {}
+        for i in range(len(info_key)):
+            tx_info = tx_raw[i].strip()
+            tx[info_key[i]] = tx_info
+        return tx
 
     def _run(self, script, args, classname=None):
         cmd = [self._script(script)]

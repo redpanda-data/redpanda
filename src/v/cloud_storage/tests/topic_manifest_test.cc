@@ -10,6 +10,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
@@ -140,7 +141,7 @@ SEASTAR_THREAD_TEST_CASE(update_topic_manifest_correct_path) {
 
 SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
     topic_manifest m(cfg, model::initial_revision_id(0));
-    auto [is, size] = m.serialize();
+    auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
     ss::copy(is, os).get();
@@ -155,7 +156,7 @@ SEASTAR_THREAD_TEST_CASE(construct_serialize_update_same_object) {
 SEASTAR_THREAD_TEST_CASE(update_serialize_update_same_object) {
     topic_manifest m;
     m.update(make_manifest_stream(min_topic_manifest_json)).get();
-    auto [is, size] = m.serialize();
+    auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
     ss::copy(is, os).get();
@@ -186,10 +187,10 @@ SEASTAR_THREAD_TEST_CASE(min_config_update_all_fields_correct) {
     BOOST_REQUIRE(!topic_config.properties.segment_size);
     BOOST_REQUIRE(
       !topic_config.properties.retention_bytes.is_disabled()
-      && !topic_config.properties.retention_bytes.has_value());
+      && !topic_config.properties.retention_bytes.has_optional_value());
     BOOST_REQUIRE(
       !topic_config.properties.retention_duration.is_disabled()
-      && !topic_config.properties.retention_duration.has_value());
+      && !topic_config.properties.retention_duration.has_optional_value());
 }
 
 SEASTAR_THREAD_TEST_CASE(full_config_update_all_fields_correct) {
@@ -267,7 +268,7 @@ SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
     topic_manifest m;
     m.update(make_manifest_stream(full_topic_manifest_json)).get();
 
-    auto [is, size] = m.serialize();
+    auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
     ss::copy(is, os).get();
@@ -282,7 +283,7 @@ SEASTAR_THREAD_TEST_CASE(full_update_serialize_update_same_object) {
 SEASTAR_THREAD_TEST_CASE(update_non_empty_manifest) {
     topic_manifest m(cfg, model::initial_revision_id(0));
     m.update(make_manifest_stream(full_topic_manifest_json)).get();
-    auto [is, size] = m.serialize();
+    auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
     ss::copy(is, os).get();

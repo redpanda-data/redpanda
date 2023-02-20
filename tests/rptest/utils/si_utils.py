@@ -1,15 +1,12 @@
 import collections
 import json
 import pprint
-import random
 import struct
 from collections import defaultdict, namedtuple
-from typing import Sequence
-
-import confluent_kafka
+from typing import Sequence, Optional
 import xxhash
 
-from rptest.archival.s3_client import S3ObjectMetadata, S3Client
+from rptest.archival.s3_client import ObjectMetadata, S3Client
 from rptest.clients.types import TopicSpec
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 
@@ -40,7 +37,7 @@ MISSING_DATA_ERRORS = [
 ]
 
 TRANSIENT_ERRORS = RESTART_LOG_ALLOW_LIST + [
-    "raft::offset_monitor::wait_aborted",
+    "raft::offset_monitor::wait_timed_out",
     "Upload loop error: seastar::timed_out_error"
 ]
 
@@ -214,12 +211,32 @@ def gen_manifest_path(ntp, rev):
     return f"{hash}/meta/{path}/manifest.json"
 
 
-def _gen_segment_path(ntp, rev, name):
-    x = xxhash.xxh32()
-    path = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{rev}/{name}"
-    x.update(path.encode('ascii'))
-    hash = x.hexdigest()
-    return f"{hash}/{path}"
+def gen_segment_name_from_meta(meta: dict, key: Optional[str]) -> str:
+    """
+    Generates segment name using the sname_format. If v2 is supplied,
+    new segment name format is generated. If v1 is supplied, the key from
+    manifest is used.
+    :param meta: the segment meta object from manifest
+    :param key: the segment key which is also the old style path for v1
+    :return: adjusted path
+    """
+    version = meta.get('sname_format', 1)
+    if version == 2:
+        head = '-'.join([
+            str(meta[k]) for k in ('base_offset', 'committed_offset',
+                                   'size_bytes', 'segment_term')
+        ])
+        return f'{head}-v1.log'
+    else:
+        return key
+
+
+def gen_local_path_from_remote(remote_path: str) -> str:
+    head, tail = remote_path.rsplit('/', 1)
+    tokens = tail.split('-')
+    # extract base offset and term from new style path
+    adjusted = f'{tokens[0]}-{tokens[-2]}-{tokens[-1]}'
+    return f'{head}/{adjusted}'
 
 
 def get_on_disk_size_per_ntp(chk):
@@ -238,11 +255,47 @@ def get_on_disk_size_per_ntp(chk):
     return size_bytes_per_ntp
 
 
+def get_expected_ntp_restored_size(nodes_segments_report: dict[str,
+                                                               dict[str,
+                                                                    (str,
+                                                                     int)]],
+                                   retention_policy: int):
+    """ Get expected retestored ntp disk size
+    We expect that redpanda will restore max
+    amount of segments with total size less
+    than retention_policy
+    """
+    size_bytes_per_ntp = {}
+    segments_sizes_per_ntp = {}
+    for _node, report in nodes_segments_report.items():
+        tmp_partition_size = defaultdict(int)
+        tmp_segments_sizes = defaultdict(dict)
+        for path, summary in report.items():
+            segment = _parse_checksum_entry(path, summary, True)
+            ntp = segment.ntp
+            size = summary[1]
+            tmp_partition_size[ntp] += size
+            tmp_segments_sizes[ntp][segment.base_offset] = size
+        for ntp, size in tmp_partition_size.items():
+            if not ntp in size_bytes_per_ntp or size_bytes_per_ntp[ntp] < size:
+                size_bytes_per_ntp[ntp] = size
+                segments_sizes_per_ntp[ntp] = tmp_segments_sizes[ntp]
+        expected_restored_sizes = {}
+        for ntp, segments in segments_sizes_per_ntp.items():
+            expected_restored_sizes[ntp] = 0
+            for segment in sorted(segments.keys(), reverse=True):
+                if expected_restored_sizes[ntp] + segments_sizes_per_ntp[ntp][
+                        segment] > retention_policy:
+                    break
+                expected_restored_sizes[ntp] += segments_sizes_per_ntp[ntp][
+                    segment]
+    return expected_restored_sizes
+
+
 def is_close_size(actual_size, expected_size):
     """Checks if the log size is close to expected size.
     The actual size shouldn't be less than expected. Also, the difference
     between two values shouldn't be greater than the size of one segment.
-    It also takes into account segment size jitter.
     """
     lower_bound = expected_size
     upper_bound = expected_size + default_log_segment_size + \
@@ -259,16 +312,16 @@ class PathMatcher:
             for t in self.topic_names
         }
 
-    def is_partition_manifest(self, o: S3ObjectMetadata) -> bool:
-        return o.Key.endswith('/manifest.json') and any(
-            tn in o.Key for tn in self.topic_names)
+    def is_partition_manifest(self, o: ObjectMetadata) -> bool:
+        return o.key.endswith('/manifest.json') and any(
+            tn in o.key for tn in self.topic_names)
 
-    def is_topic_manifest(self, o: S3ObjectMetadata) -> bool:
-        return any(o.Key.endswith(t) for t in self.topic_manifest_paths)
+    def is_topic_manifest(self, o: ObjectMetadata) -> bool:
+        return any(o.key.endswith(t) for t in self.topic_manifest_paths)
 
-    def is_segment(self, o: S3ObjectMetadata) -> bool:
+    def is_segment(self, o: ObjectMetadata) -> bool:
         try:
-            return parse_s3_segment_path(o.Key).ntp.topic in self.topic_names
+            return parse_s3_segment_path(o.key).ntp.topic in self.topic_names
         except Exception:
             return False
 
@@ -276,56 +329,7 @@ class PathMatcher:
         return any(t in path for t in self.topic_names)
 
 
-class Producer:
-    def __init__(self, brokers, name, logger, timeout_sec: float = 60.0):
-        self.keys = []
-        self.cur_offset = 0
-        self.brokers = brokers
-        self.logger = logger
-        self.num_aborted = 0
-        self.name = name
-        self.timeout_sec = timeout_sec
-        self.reconnect()
-
-    def reconnect(self):
-        self.producer = confluent_kafka.Producer({
-            'bootstrap.servers':
-            self.brokers,
-            'transactional.id':
-            self.name,
-            'transaction.timeout.ms':
-            5000,
-        })
-        self.producer.init_transactions(self.timeout_sec)
-
-    def produce(self, topic):
-        """produce some messages inside a transaction with increasing keys
-        and random values. Then randomly commit/abort the transaction."""
-
-        n_msgs = random.randint(50, 100)
-        keys = []
-
-        self.producer.begin_transaction()
-        for _ in range(n_msgs):
-            val = ''.join(
-                map(chr, (random.randint(0, 256)
-                          for _ in range(random.randint(100, 1000)))))
-            self.producer.produce(topic, val, str(self.cur_offset))
-            keys.append(str(self.cur_offset).encode('utf8'))
-            self.cur_offset += 1
-
-        self.logger.info(f"writing {len(keys)} msgs: {keys[0]}-{keys[-1]}...")
-        self.producer.flush()
-        if random.random() < 0.1:
-            self.producer.abort_transaction()
-            self.num_aborted += 1
-            self.logger.info("aborted txn")
-        else:
-            self.producer.commit_transaction()
-            self.keys.extend(keys)
-
-
-class S3View:
+class S3Snapshot:
     def __init__(self, expected_topics: Sequence[TopicSpec], client: S3Client,
                  bucket: str, logger):
         self.logger = logger
@@ -337,15 +341,15 @@ class S3View:
         self.partition_manifests = {}
         for o in self.objects:
             if self.path_matcher.is_partition_manifest(o):
-                manifest_path = parse_s3_manifest_path(o.Key)
-                data = self.client.get_object_data(self.bucket, o.Key)
+                manifest_path = parse_s3_manifest_path(o.key)
+                data = self.client.get_object_data(self.bucket, o.key)
                 self.partition_manifests[manifest_path.ntp] = json.loads(data)
                 self.logger.debug(
                     f'registered partition manifest for {manifest_path.ntp}: '
                     f'{pprint.pformat(self.partition_manifests[manifest_path.ntp], indent=2)}'
                 )
 
-    def is_segment_part_of_a_manifest(self, o: S3ObjectMetadata) -> bool:
+    def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
         """
         Queries that given object is a segment, and is a part of one of the test partition manifests
         with a matching archiver term
@@ -354,7 +358,7 @@ class S3View:
             if not self.path_matcher.is_segment(o):
                 return False
 
-            segment_path = parse_s3_segment_path(o.Key)
+            segment_path = parse_s3_segment_path(o.key)
             partition_manifest = self.partition_manifests.get(segment_path.ntp)
             if not partition_manifest:
                 self.logger.warn(f'no manifest found for {segment_path.ntp}')
@@ -364,10 +368,15 @@ class S3View:
             # Filename for segment contains the archiver term, eg:
             # 4886-1-v1.log.2 -> 4886-1-v1.log and 2
             base_name, archiver_term = segment_path.name.rsplit('.', 1)
-            segment_entry = segments_in_manifest.get(base_name)
+
+            # New segment path format is base-committed-size-term-v1.log
+            base_name_tokens = base_name.split('-')
+            manifest_key = '-'.join([base_name_tokens[i] for i in (0, -2)])
+            manifest_key = f'{manifest_key}-v1.log'
+            segment_entry = segments_in_manifest.get(manifest_key)
             if not segment_entry:
                 self.logger.warn(
-                    f'no entry found for segment path {base_name} '
+                    f'no entry found for segment path {manifest_key} '
                     f'in manifest: {pprint.pformat(segments_in_manifest, indent=2)}'
                 )
                 return False
@@ -384,3 +393,61 @@ class S3View:
         except Exception as e:
             self.logger.info(f'error {e} while checking if {o} is a segment')
             return False
+
+    def is_ntp_in_manifest(self,
+                           topic: str,
+                           partition: int,
+                           ns: str = "kafka") -> bool:
+        ntp = NTP(ns, topic, partition)
+        return ntp in self.partition_manifests
+
+    def manifest_for_ntp(self,
+                         topic: str,
+                         partition: int,
+                         ns: str = 'kafka') -> dict:
+        ntp = NTP(ns, topic, partition)
+        assert ntp in self.partition_manifests, f'NTP {ntp} not in manifests in S3: ' \
+                                                f'{pprint.pformat(self.partition_manifests)}'
+        manifest_data = self.partition_manifests[ntp]
+        self.logger.debug(f'manifest: {pprint.pformat(manifest_data)}')
+        return manifest_data
+
+    def cloud_log_segment_count_for_ntp(self,
+                                        topic: str,
+                                        partition: int,
+                                        ns: str = 'kafka') -> int:
+        manifest = self.manifest_for_ntp(topic, partition, ns)
+        if 'segments' not in manifest:
+            return 0
+
+        return len(manifest['segments'])
+
+    def cloud_log_size_for_ntp(self,
+                               topic: str,
+                               partition: int,
+                               ns: str = 'kafka') -> int:
+        manifest = self.manifest_for_ntp(topic, partition, ns)
+
+        if 'segments' not in manifest:
+            return 0
+
+        return sum(seg_meta['size_bytes']
+                   for seg_meta in manifest['segments'].values())
+
+    def assert_at_least_n_uploaded_segments_compacted(self,
+                                                      topic: str,
+                                                      partition: int,
+                                                      n=1):
+        manifest_data = self.manifest_for_ntp(topic, partition)
+        segments = manifest_data['segments']
+        compacted_segments = len(
+            [meta for meta in segments.values() if meta['is_compacted']])
+        assert compacted_segments >= n, f"Could not find {n} compacted segments, " \
+                                        f"total uploaded: {len(segments)}, " \
+                                        f"total compacted: {compacted_segments}"
+
+    def assert_segments_replaced(self, topic: str, partition: int):
+        manifest_data = self.manifest_for_ntp(topic, partition)
+        assert len(
+            manifest_data['replaced']
+        ) > 0, f"No replaced segments after compacted segments uploaded"

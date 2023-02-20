@@ -19,6 +19,7 @@
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/list_groups.h"
 #include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/protocol/txn_offset_commit.h"
@@ -40,6 +41,8 @@
 
 #include <absl/container/node_hash_map.h>
 #include <cluster/partition_manager.h>
+
+#include <span>
 
 namespace kafka {
 
@@ -120,8 +123,8 @@ public:
       ss::sharded<cluster::partition_manager>& pm,
       ss::sharded<cluster::topic_table>&,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      ss::sharded<features::feature_table>&,
       group_metadata_serializer_factory,
-      config::configuration& conf,
       enable_group_metrics group_metrics);
 
     ss::future<> start();
@@ -162,6 +165,9 @@ public:
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);
 
+    ss::future<offset_delete_response>
+    offset_delete(offset_delete_request&& request);
+
     // returns the set of registered groups, and an error if one occurred while
     // retrieving the group list (e.g. coordinator_load_in_progress).
     std::pair<error_code, std::vector<listed_group>> list_groups() const;
@@ -195,6 +201,7 @@ private:
 
     void attach_partition(ss::lw_shared_ptr<cluster::partition>);
     void detach_partition(const model::ntp&);
+    ss::future<> do_detach_partition(model::ntp);
 
     struct attached_partition {
         bool loading;
@@ -217,7 +224,7 @@ private:
       ss::lw_shared_ptr<cluster::partition>,
       std::optional<model::node_id>);
 
-    void handle_topic_delta(const std::vector<cluster::topic_table_delta>&);
+    void handle_topic_delta(std::span<const cluster::topic_table_delta>);
 
     ss::future<> cleanup_removed_topic_partitions(
       const std::vector<model::topic_partition>&);
@@ -227,10 +234,22 @@ private:
       ss::lw_shared_ptr<attached_partition>,
       std::optional<model::node_id> leader_id);
 
+    ss::future<> write_version_fence(
+      model::term_id, ss::lw_shared_ptr<attached_partition>);
+
     ss::future<> recover_partition(
       model::term_id,
       ss::lw_shared_ptr<attached_partition>,
       group_recovery_consumer_state);
+
+    ss::future<size_t> delete_offsets(
+      group_ptr group, std::vector<model::topic_partition> offsets);
+
+    ss::future<> do_recover_group(
+      model::term_id,
+      ss::lw_shared_ptr<attached_partition>,
+      group_id,
+      group_stm);
 
     ss::future<> gc_partition_state(ss::lw_shared_ptr<attached_partition>);
 
@@ -252,10 +271,17 @@ private:
           groups, [](auto group_ptr) { return group_ptr->shutdown(); });
     }
 
+    std::optional<std::chrono::seconds> offset_retention_enabled();
+    std::optional<bool> _prev_offset_retention_enabled;
+
+    ss::timer<> _timer;
+    ss::future<> handle_offset_expiration();
+    ss::future<size_t> delete_expired_offsets(group_ptr, std::chrono::seconds);
     ss::sharded<raft::group_manager>& _gm;
     ss::sharded<cluster::partition_manager>& _pm;
     ss::sharded<cluster::topic_table>& _topic_table;
     ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
+    ss::sharded<features::feature_table>& _feature_table;
     group_metadata_serializer_factory _serializer_factory;
     config::configuration& _conf;
     absl::node_hash_map<group_id, group_ptr> _groups;
@@ -265,6 +291,7 @@ private:
 
     model::broker _self;
     enable_group_metrics _enable_group_metrics;
+    config::binding<std::chrono::milliseconds> _offset_retention_check;
 };
 
 } // namespace kafka

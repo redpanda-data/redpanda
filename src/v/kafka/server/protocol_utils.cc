@@ -20,8 +20,8 @@
 
 namespace kafka {
 
-ss::future<std::optional<request_header>>
-parse_header(ss::input_stream<char>& src) {
+static ss::future<std::optional<request_header>>
+parse_v1_header(ss::input_stream<char>& src) {
     constexpr int16_t no_client_id = -1;
 
     auto buf = co_await src.read_exactly(request_header_size);
@@ -72,16 +72,24 @@ parse_header(ss::input_stream<char>& src) {
     header.client_id = std::string_view(
       header.client_id_buffer.get(), header.client_id_buffer.size());
     validate_utf8(*header.client_id);
+    co_return header;
+}
 
-    /// Conditionally handle v1 (flex) header
-    if (!flex_versions::is_api_in_schema(header.key)) {
-        /// User provided unsupported an invalid key that does not map
-        /// to any known kafka requests, code will throw when it eventually
-        /// reaches the request router
-    } else if (flex_versions::is_flexible_request(header.key, header.version)) {
-        auto [tags, bytes_read] = co_await parse_tags(src);
-        header.tags = std::move(tags);
-        header.tags_size_bytes = bytes_read;
+ss::future<std::optional<request_header>>
+parse_header(ss::input_stream<char>& src) {
+    auto header = co_await parse_v1_header(src);
+    if (header) {
+        /// Conditionally handle v1 (flex) header
+        if (!flex_versions::is_api_in_schema(header->key)) {
+            /// User provided unsupported an invalid key that does not map
+            /// to any known kafka requests, code will throw when it eventually
+            /// reaches the request router
+        } else if (flex_versions::is_flexible_request(
+                     header->key, header->version)) {
+            auto [tags, bytes_read] = co_await parse_tags(src);
+            header->tags = std::move(tags);
+            header->tags_size_bytes = bytes_read;
+        }
     }
     co_return header;
 }

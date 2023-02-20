@@ -78,7 +78,7 @@ func NewInternalAdminAPI(
 //
 
 type AdminAPIClient interface {
-	Config(ctx context.Context) (admin.Config, error)
+	Config(ctx context.Context, includeDefaults bool) (admin.Config, error)
 	ClusterConfigStatus(ctx context.Context, sendToLeader bool) (admin.ConfigStatusResponse, error)
 	ClusterConfigSchema(ctx context.Context) (admin.ConfigSchema, error)
 	PatchClusterConfig(ctx context.Context, upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
@@ -88,13 +88,18 @@ type AdminAPIClient interface {
 	DeleteUser(ctx context.Context, username string) error
 
 	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
+	SetLicense(ctx context.Context, license interface{}) error
+	GetLicenseInfo(ctx context.Context) (admin.License, error)
 
 	Brokers(ctx context.Context) ([]admin.Broker, error)
+	Broker(ctx context.Context, nodeID int) (admin.Broker, error)
 	DecommissionBroker(ctx context.Context, node int) error
 	RecommissionBroker(ctx context.Context, node int) error
 
 	EnableMaintenanceMode(ctx context.Context, node int) error
 	DisableMaintenanceMode(ctx context.Context, node int) error
+
+	GetHealthOverview(ctx context.Context) (admin.ClusterHealthOverview, error)
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}

@@ -24,7 +24,7 @@ import (
 )
 
 func fillRpkConfig(path, mode string) *config.Config {
-	conf := config.Default()
+	conf := config.DevDefault()
 	val := mode == config.ModeProd
 	conf.Redpanda.DeveloperMode = !val
 	conf.Rpk = config.RpkConfig{
@@ -149,7 +149,9 @@ func TestModeCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(t, err)
 
-			require.Exactly(t, tt.exp, conf.File())
+			expRaw, err := yaml.Marshal(tt.exp)
+			require.NoError(t, err)
+			require.YAMLEq(t, string(expRaw), string(conf.RawFile()))
 		})
 	}
 }

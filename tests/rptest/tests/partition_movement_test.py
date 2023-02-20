@@ -9,48 +9,31 @@
 
 import random
 import time
-from numpy import record
 import requests
 
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark import matrix, ok_to_fail
+from ducktape.mark import ignore, matrix
 
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
-from rptest.services.redpanda_installer import InstallOptions
+from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 from rptest.tests.partition_movement import PartitionMovementMixin
 from rptest.util import wait_until_result
 from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, SISettings
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
     # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exist on target broker
     "raft - .*raft group does not exist on target broker"
-]
-
-PREV_VERSION_LOG_ALLOW_LIST = [
-    # e.g. cluster - controller_backend.cc:400 - Error while reconciling topics - seastar::abort_requested_exception (abort requested)
-    "cluster - .*Error while reconciling topic.*",
-    # Typo fixed in recent versions.
-    # e.g.  raft - [follower: {id: {1}, revision: {10}}] [group_id:3, {kafka/topic/2}] - recovery_stm.cc:422 - recovery append entries error: raft group does not exists on target broker
-    "raft - .*raft group does not exists on target broker",
-    # e.g. rpc - Service handler thrown an exception - seastar::gate_closed_exception (gate closed)
-    "rpc - .*gate_closed_exception.*",
-    # Tests on mixed versions will start out with an unclean restart before
-    # starting a workload.
-    "(raft|rpc) - .*(disconnected_endpoint|Broken pipe|Connection reset by peer)",
-    # e.g.  raft - [group_id:3, {kafka/topic/2}] consensus.cc:2317 - unable to replicate updated configuration: raft::errc::replicated_entry_truncated
-    "raft - .*unable to replicate updated configuration: .*",
-    # e.g. recovery_stm.cc:432 - recovery append entries error: rpc::errc::client_request_timeout"
-    "raft - .*recovery append entries error.*client_request_timeout"
 ]
 
 
@@ -787,7 +770,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         # Force shadow indexing to be used by most reads
         # in one test
         si_settings = SISettings(
-            cloud_storage_reconciliation_interval_ms=500,
+            ctx,
             cloud_storage_max_connections=5,
             log_segment_size=10240,  # 10KiB
             cloud_storage_enable_remote_read=True,
@@ -817,9 +800,23 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         partitions = 1 if self.debug_mode else 10
         return throughput, records, moves, partitions
 
+    def _partial_upgrade(self, num_to_upgrade: int):
+        nodes = self.redpanda.nodes[0:num_to_upgrade]
+
+        self.redpanda._installer.install(nodes, RedpandaInstaller.HEAD)
+        self.redpanda.rolling_restart_nodes(nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
-    @matrix(num_to_upgrade=[0, 2])
-    def test_shadow_indexing(self, num_to_upgrade):
+    # Redpandas before v23.1 did not have support for ABS.
+    # TODO(vlad): This @ignore can be removed once v23.1 becomes
+    # the "previous version".
+    @ignore(num_to_upgrade=2, cloud_storage_type=CloudStorageType.ABS)
+    @matrix(num_to_upgrade=[0, 2],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
+    def test_shadow_indexing(self, num_to_upgrade, cloud_storage_type):
         """
         Test interaction between the shadow indexing and the partition movement.
         Partition movement generate partitions with different revision-ids and the
@@ -830,9 +827,10 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         test_mixed_versions = num_to_upgrade > 0
         install_opts = InstallOptions(
-            install_previous_version=test_mixed_versions,
-            num_to_upgrade=num_to_upgrade)
+            install_previous_version=test_mixed_versions)
         self.start_redpanda(num_nodes=3, install_opts=install_opts)
+        installer = self.redpanda._installer
+
         spec = TopicSpec(name="topic",
                          partition_count=partitions,
                          replication_factor=3)
@@ -841,25 +839,48 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
         self.await_startup()
-        for _ in range(moves):
+
+        # We will start an upgrade halfway through the test: this ensures
+        # that a single-version cluster existed for long enough to actually
+        # upload some data to S3, before the upgrade potentially pauses
+        # PUTs, as it does in a format-changing step like a 22.2->22.3 upgrade
+        upgrade_at_step = moves // 2
+
+        for i in range(moves):
+            if i == upgrade_at_step and test_mixed_versions:
+                self._partial_upgrade(num_to_upgrade)
+
             self._move_and_verify()
+
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
                             min_records=records)
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
-    @matrix(num_to_upgrade=[0, 2])
-    def test_cross_shard(self, num_to_upgrade):
+    # Redpandas before v23.1 did not have support for ABS.
+    # TODO(vlad): This @ignore can be removed once v23.1 becomes
+    # the "previous version".
+    @ignore(num_to_upgrade=2, cloud_storage_type=CloudStorageType.ABS)
+    @matrix(num_to_upgrade=[0, 2],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
+    def test_cross_shard(self, num_to_upgrade, cloud_storage_type):
         """
         Test interaction between the shadow indexing and the partition movement.
         Move partitions with SI enabled between shards.
         """
+
+        # Redpandas before v23.1 did not have support for ABS.
+        # TODO(vlad): This check can be removed once v23.1 becomes
+        # the "previous version".
+        if num_to_upgrade > 0 and cloud_storage_type == CloudStorageType.ABS:
+            return
+
         throughput, records, moves, partitions = self._get_scale_params()
 
         test_mixed_versions = num_to_upgrade > 0
         install_opts = InstallOptions(
-            install_previous_version=test_mixed_versions,
-            num_to_upgrade=num_to_upgrade)
+            install_previous_version=test_mixed_versions)
         self.start_redpanda(num_nodes=3, install_opts=install_opts)
 
         spec = TopicSpec(name="topic",
@@ -875,7 +896,16 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         topic = self.topic
         partition = 0
 
-        for _ in range(moves):
+        # We will start an upgrade halfway through the test: this ensures
+        # that a single-version cluster existed for long enough to actually
+        # upload some data to S3, before the upgrade potentially pauses
+        # PUTs, as it does in a format-changing step like a 22.2->22.3 upgrade
+        upgrade_at_step = moves // 2
+
+        for i in range(moves):
+            if i == upgrade_at_step and test_mixed_versions:
+                self._partial_upgrade(num_to_upgrade)
+
             assignments = self._get_assignments(admin, topic, partition)
             for a in assignments:
                 # Bounce between core 0 and 1

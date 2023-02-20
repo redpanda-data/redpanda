@@ -513,16 +513,17 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
     auto buf = reflection::to_iobuf(std::move(statuses));
     auto result_v0 = reflection::from_iobuf<std::vector<partition_status_v0>>(
       std::move(buf));
-    for (auto i = 0; i < statuses.size(); ++i) {
+    for (auto i = 0; i < original.size(); ++i) {
         BOOST_CHECK(result_v0[i].id == original[i].id);
         BOOST_CHECK(result_v0[i].term == original[i].term);
         BOOST_CHECK(result_v0[i].leader_id == original[i].leader_id);
     }
 
+    statuses = original;
     buf = reflection::to_iobuf(std::move(statuses));
     auto result_v1 = reflection::from_iobuf<std::vector<partition_status_v1>>(
       std::move(buf));
-    for (auto i = 0; i < statuses.size(); ++i) {
+    for (auto i = 0; i < original.size(); ++i) {
         BOOST_CHECK(result_v1[i].id == original[i].id);
         BOOST_CHECK(result_v1[i].term == original[i].term);
         BOOST_CHECK(result_v1[i].leader_id == original[i].leader_id);
@@ -592,6 +593,10 @@ cluster::topic_properties old_random_topic_properties() {
       [] { return tests::random_bool(); });
     properties.shadow_indexing = tests::random_optional(
       [] { return model::random_shadow_indexing_mode(); });
+
+    // Always test with remote_delete=false so that we survive
+    // an ADL roundtrip
+    properties.remote_delete = false;
     return properties;
 }
 
@@ -606,6 +611,9 @@ cluster::topic_properties random_topic_properties() {
     });
     properties.remote_topic_properties = tests::random_optional(
       [] { return random_remote_topic_properties(); });
+
+    // Always set remote_delete=false to survive an ADL roundtrip
+    properties.remote_delete = false;
 
     return properties;
 }
@@ -940,7 +948,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             tests::random_tristate([] { return tests::random_duration_ms(); })),
           .shadow_indexing = random_property_update(tests::random_optional(
             [] { return model::random_shadow_indexing_mode(); })),
-        };
+          .remote_delete = random_property_update(tests::random_bool())};
         roundtrip_test(updates);
     }
     { roundtrip_test(old_random_topic_configuration()); }
@@ -2155,6 +2163,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         // append_entries_request -> iobuf
         iobuf serde_out;
+        const auto node_id = data.node_id;
+        const auto target_node_id = data.target_node_id;
+        const auto meta = data.meta;
+        const auto flush = data.flush;
         serde::write_async(serde_out, std::move(data)).get();
 
         // iobuf -> append_entries_request
@@ -2162,10 +2174,10 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         auto from_serde
           = serde::read_async<raft::append_entries_request>(serde_in).get0();
 
-        BOOST_REQUIRE(from_serde.node_id == data.node_id);
-        BOOST_REQUIRE(from_serde.target_node_id == data.target_node_id);
-        BOOST_REQUIRE(from_serde.meta == data.meta);
-        BOOST_REQUIRE(from_serde.flush == data.flush);
+        BOOST_REQUIRE(from_serde.node_id == node_id);
+        BOOST_REQUIRE(from_serde.target_node_id == target_node_id);
+        BOOST_REQUIRE(from_serde.meta == meta);
+        BOOST_REQUIRE(from_serde.flush == flush);
 
         auto batches_from_serde = model::consume_reader_to_memory(
                                     std::move(from_serde.batches()),

@@ -12,6 +12,7 @@ import random
 
 import requests
 from rptest.services.admin import Admin
+from rptest.util import wait_until_result
 from ducktape.utils.util import wait_until
 
 
@@ -61,7 +62,18 @@ class PartitionMovementMixin():
 
     @staticmethod
     def _get_assignments(admin, topic, partition):
-        res = admin.get_partitions(topic, partition)
+        def try_get_partitions():
+            try:
+                res = admin.get_partitions(topic, partition)
+                return (True, res)
+            except requests.exceptions.HTTPError:
+                # Retry HTTP errors, eg. 404 if the receiving node's controller
+                # is catching up and doesn't yet know about the partition.
+                return (False, None)
+
+        res = wait_until_result(try_get_partitions,
+                                timeout_sec=30,
+                                backoff_sec=1)
 
         def normalize(a):
             return dict(node_id=a["node_id"], core=a["core"])
@@ -116,6 +128,34 @@ class PartitionMovementMixin():
             return self._equal_assignments(info, assignments)
 
         wait_until(derived_done, timeout_sec=timeout_sec, backoff_sec=2)
+
+    def _wait_post_cancel(self, topic, partition, prev_assignments,
+                          new_assignment, timeout_sec):
+        admin = Admin(self.redpanda)
+
+        def cancel_finished():
+            results = []
+            for n in self.redpanda._started:
+                info = admin.get_partitions(topic, partition, node=n)
+                results.append(info["status"] == "done")
+
+            return all(results)
+
+        wait_until(cancel_finished, timeout_sec=timeout_sec, backoff_sec=1)
+
+        result_configuration = admin.wait_stable_configuration(
+            topic=topic, partition=partition, timeout_s=timeout_sec)
+
+        movement_cancelled = self._equal_assignments(
+            result_configuration.replicas, prev_assignments)
+
+        # Can happen if movement was already in un revertable state
+        movement_finished = False
+        if new_assignment is not None:
+            movement_finished = self._equal_assignments(
+                result_configuration.replicas, new_assignment)
+
+        assert movement_cancelled or movement_finished
 
     def _do_move_and_verify(self, topic, partition, timeout_sec):
         admin = Admin(self.redpanda)
@@ -218,9 +258,16 @@ class PartitionMovementMixin():
                              partition,
                              previous_assignment,
                              unclean_abort,
+                             new_assignment=None,
                              timeout=90):
         """
-        Request partition movement to interrupt and validates resulting cancellation against previous assignment
+        Request partition movement to interrupt and validates
+        resulting cancellation against previous assignment
+
+        Move can also be already in no return state, then
+        result can be equal to initial movement assignment. (PR 8393)
+        When request cancellation without throttling recovery rate
+        or partition is empty, initial movement assignment must be provided
         """
         self._wait_for_move_in_progress(topic, partition)
         admin = Admin(self.redpanda)
@@ -234,5 +281,6 @@ class PartitionMovementMixin():
             assert e.response.status_code == 400
             return
 
-        # wait for previous assignment
-        self._wait_post_move(topic, partition, previous_assignment, timeout)
+        # wait for previous assignment or new assigment if movement cannot be cancelled
+        self._wait_post_cancel(topic, partition, previous_assignment,
+                               new_assignment, timeout)

@@ -41,6 +41,7 @@ type consumer struct {
 	fetchMaxBytes int32
 	fetchMaxWait  time.Duration
 	readCommitted bool
+	printControl  bool
 
 	f        *kgo.RecordFormatter // if not json
 	num      int
@@ -132,6 +133,7 @@ func newConsumeCommand(fs afero.Fs) *cobra.Command {
 	cmd.Flags().Int32Var(&c.fetchMaxBytes, "fetch-max-bytes", 1<<20, "Maximum amount of bytes per fetch request per broker")
 	cmd.Flags().DurationVar(&c.fetchMaxWait, "fetch-max-wait", 5*time.Second, "Maximum amount of time to wait when fetching from a broker before the broker replies")
 	cmd.Flags().BoolVar(&c.readCommitted, "read-committed", false, "Opt in to reading only committed offsets")
+	cmd.Flags().BoolVar(&c.printControl, "print-control-records", false, "Opt in to printing control records")
 
 	cmd.Flags().StringVarP(&format, "format", "f", "json", "Output format (see --help for details)")
 	cmd.Flags().IntVarP(&c.num, "num", "n", 0, "Quit after consuming this number of records (0 is unbounded)")
@@ -176,7 +178,7 @@ func (c *consumer) consume() {
 			}
 
 			for _, r := range p.Records {
-				if !r.Attrs.IsControl() {
+				if !r.Attrs.IsControl() || c.printControl {
 					if c.f == nil {
 						c.writeRecordJSON(r)
 					} else {
@@ -425,14 +427,15 @@ func unixMilli(nano int64) int64 { return nano / 1e6 }
 // The expressions below all end in (?::|$), meaning, a non capturing group for
 // the first time followed by a colon or the second time at the end.
 func parseConsumeTimestamp(
-	half string,
-) (length int, at time.Time, end bool, err error) {
+	half string, baseTimestamp time.Time,
+) (length int, at time.Time, end bool, fromTimestamp bool, err error) {
 	switch {
 	// 13 digits is a millisecond.
 	case regexp.MustCompile(`^\d{13}(?::|$)`).MatchString(half):
 		length = 13
 		n, _ := strconv.ParseInt(half[:length], 10, 64)
 		at = time.Unix(0, n*1e6)
+		fromTimestamp = true
 		return
 
 	// 10 digits is a unix second.
@@ -440,12 +443,14 @@ func parseConsumeTimestamp(
 		length = 10
 		n, _ := strconv.ParseInt(half[:length], 10, 64)
 		at = time.Unix(n, 0)
+		fromTimestamp = true
 		return
 
 	// YYYY-MM-DD
 	case regexp.MustCompile(`^\d{4}-\d{2}-\d{2}(?::|$)`).MatchString(half):
 		length = 10
 		at, _ = time.ParseInLocation("2006-01-02", half[:length], time.UTC)
+		fromTimestamp = true
 		return
 
 	// Z marks the end of an RFC3339; we try to parse it and if it
@@ -461,6 +466,7 @@ func parseConsumeTimestamp(
 		if err != nil {
 			err = fmt.Errorf("unable to parse RFC3339 timestamp in %q: %v", half, err)
 		}
+		fromTimestamp = true
 		return
 
 	case half == "end": // t2
@@ -486,7 +492,7 @@ func parseConsumeTimestamp(
 		if negate {
 			rel = -rel
 		}
-		at = time.Now().Add(rel)
+		at = baseTimestamp.Add(rel).UTC()
 		return
 	}
 }
@@ -494,12 +500,24 @@ func parseConsumeTimestamp(
 // parseTimeOffset is a bit more complicated, because our start & end
 // timestamps can have colons in them (RFC3339). Rather than parse the
 // whole string at a time, we parse each half individually.
+//
+// If the first half is a timestamp, then if the second half is a duration,
+// we parse relative to the first half. If both are durations, we parse
+// relative to now.
 func (c *consumer) parseTimeOffset(
 	offset string, topics []string, adm *kadm.Client,
 ) error {
 	c.resetOffset = kgo.NewOffset().AtStart() // default to start; likely overridden below
+	var (
+		length        int
+		startAt       time.Time
+		endAt         time.Time
+		end           bool
+		fromTimestamp bool
+		err           error
+	)
 	if !strings.HasPrefix(offset, ":") {
-		length, startAt, end, err := parseConsumeTimestamp(offset)
+		length, startAt, end, fromTimestamp, err = parseConsumeTimestamp(offset, time.Now())
 		if err != nil {
 			return err
 		} else if end {
@@ -522,7 +540,12 @@ func (c *consumer) parseTimeOffset(
 	}
 	offset = offset[1:] // strip start:end delimiting colon
 
-	length, endAt, end, err := parseConsumeTimestamp(offset)
+	if fromTimestamp {
+		length, endAt, end, _, err = parseConsumeTimestamp(offset, startAt)
+	} else {
+		length, endAt, end, _, err = parseConsumeTimestamp(offset, time.Now())
+	}
+
 	if err != nil {
 		return err
 	} else if len(offset) != length {
@@ -636,7 +659,7 @@ func (c *consumer) intoOptions(topics []string) ([]kgo.Opt, error) {
 
 	// If we have ends, we have to consume control records because a
 	// control record might be the end.
-	if c.partEnds != nil {
+	if c.partEnds != nil || c.printControl {
 		opts = append(opts, kgo.KeepControlRecords())
 	}
 
@@ -736,6 +759,7 @@ Percent encoding prints record fields, fetch partition fields, or extra values:
     %o    offset
     %e    leader epoch
     %d    timestamp (formatting described below)
+    %a    record attributes (formatting described below)
     %x    producer id
     %y    producer epoch
 
@@ -781,6 +805,7 @@ Formatting number values can have the following modifiers:
      little8     alias for byte
 
      byte        one byte number
+     bool        "true" if the number is non-zero, "false" if the number is zero
 
 All numbers are truncated as necessary per the modifier. Printing %V{byte} for
 a length 256 value will print a single null, whereas printing %V{big8} would
@@ -809,6 +834,41 @@ side are used to wrap the formatting. Further details on Go time formatting can
 be found at https://pkg.go.dev/time, while further details on strftime
 formatting can be read by checking "man strftime".
 
+ATTRIBUTES
+
+Each record (or batch of records) has a set of possible attributes. Internally,
+these are packed into bit flags. Printing an attribute requires first selecting
+which attribute you want to print, and then optionally specifying how you want
+it to be printed:
+
+     %a{compression}
+     %a{compression;number}
+     %a{compression;big64}
+     %a{compression;hex8}
+
+Compression is by default printed as text ("none", "gzip", ...). Compression
+can be printed as a number with ";number", where number is any number
+formatting option described above. No compression is 0, gzip is 1, etc.
+
+     %a{timestamp-type}
+     %a{timestamp-type;big64}
+
+The record's timestamp type is printed as -1 for very old records (before
+timestamps existed), 0 for client generated timestamps, and 1 for broker
+generated timestamps. Number formatting can be controlled with ";number".
+
+     %a{transactional-bit}
+     %a{transactional-bit;bool}
+
+Prints 1 if the record a part of a transaction or 0 if it is not.
+Number formatting can be controlled with ";number".
+
+     %a{control-bit}
+     %a{control-bit;bool}
+
+Prints 1 if the record is a commit marker or 0 if it is not.
+Number formatting can be controlled with ";number".
+
 TEXT
 
 Text fields without modifiers default to writing the raw bytes. Alternatively,
@@ -816,10 +876,12 @@ there are the following modifiers:
 
     %t{hex}
     %k{base64}
+    %v{base64raw}
     %v{unpack[<bBhH>iIqQc.$]}
 
-The hex modifier hex encodes the text, and the base64 modifier base64 encodes
-the text with standard encoding. The unpack modifier has a further internal
+The hex modifier hex encodes the text, the base64 modifier base64 encodes the
+text with standard encoding, and the base64raw modifier encodes the text with
+raw standard encoding. The unpack modifier has a further internal
 specification, similar to timestamps above:
 
     x    pad character (does not parse input)

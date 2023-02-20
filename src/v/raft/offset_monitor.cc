@@ -9,6 +9,7 @@
 
 #include "raft/offset_monitor.h"
 
+#include "raft/logger.h"
 #include "vassert.h"
 
 #include <seastar/core/future-util.hh>
@@ -17,7 +18,7 @@ namespace raft {
 
 void offset_monitor::stop() {
     for (auto& waiter : _waiters) {
-        waiter.second->done.set_exception(wait_aborted());
+        waiter.second->done.set_exception(ss::abort_requested_exception());
     }
     _waiters.clear();
 }
@@ -62,22 +63,40 @@ offset_monitor::waiter::waiter(
   : mon(mon) {
     if (as) {
         auto opt_sub = as->get().subscribe(
-          [this]() noexcept { handle_abort(); });
+          [this]() noexcept { handle_abort(false); });
         if (opt_sub) {
             sub = std::move(*opt_sub);
         } else {
-            done.set_exception(wait_aborted());
+            done.set_exception(ss::abort_requested_exception());
             return;
         }
     }
     if (timeout != model::no_timeout) {
-        timer.set_callback([this] { handle_abort(); });
+        timer.set_callback([this] { handle_abort(true); });
         timer.arm(timeout);
     }
 }
 
-void offset_monitor::waiter::handle_abort() {
-    done.set_exception(wait_aborted());
+/**
+ * Set an exception on our `done` promise and clean up waiters.
+ *
+ * This is behaviourally the same for aborts and timeouts, but
+ * we raise a different exception for those respective cases
+ * to help callers interpret it properly (distinguish between
+ * worrying timeouts, and non-worrying aborts during shutdown).
+ *
+ * @param is_timeout control the exception type that will be set
+ *                   on the future.
+ */
+void offset_monitor::waiter::handle_abort(bool is_timeout) {
+    if (is_timeout) {
+        done.set_exception(ss::timed_out_error());
+    } else {
+        // Use the generic seastar abort_requested_exception, because
+        // in many locations we handle this gracefully and do not log
+        // it as an error during shutdown.
+        done.set_exception(ss::abort_requested_exception());
+    }
     auto it = std::find_if(
       mon->_waiters.begin(),
       mon->_waiters.end(),

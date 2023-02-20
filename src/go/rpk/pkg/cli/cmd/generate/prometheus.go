@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -29,27 +30,32 @@ type ScrapeConfig struct {
 	JobName       string         `yaml:"job_name"`
 	StaticConfigs []StaticConfig `yaml:"static_configs"`
 	MetricsPath   string         `yaml:"metrics_path"`
-	TLSConfig     TLSConfig      `yaml:"tls_config,omitempty"`
+	TLSConfig     prometheusTLS  `yaml:"tls_config,omitempty"`
 }
 
 type StaticConfig struct {
 	Targets []string `yaml:"targets"`
 }
 
-type TLSConfig struct {
+type prometheusTLS struct {
 	CAFile   string `yaml:"ca_file,omitempty"`
 	CertFile string `yaml:"cert_file,omitempty"`
 	KeyFile  string `yaml:"key_file,omitempty"`
 }
 
+type tlsConfig struct {
+	TLS       config.TLS
+	enableTLS bool
+}
+
 func newPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
 	var (
+		configFile string
+		intMetrics bool
 		jobName    string
 		nodeAddrs  []string
 		seedAddr   string
-		configFile string
-		intMetrics bool
-		tlsConfig  TLSConfig
+		tlsConfig  tlsConfig
 	)
 	command := &cobra.Command{
 		Use:   "prometheus-config",
@@ -60,13 +66,14 @@ output should be added to the 'scrape_configs' array in your Prometheus
 instance's YAML config file.
 
 If --seed-addr is passed, it will be used to discover the rest of the cluster
-hosts via redpanda's Kafka API. If --node-addrs is passed, they will be used
+hosts via Redpanda's Kafka API. If --node-addrs is passed, they will be used
 directly. Otherwise, 'rpk generate prometheus-conf' will read the redpanda
 config file and use the node IP configured there. --config may be passed to
 specify an arbitrary config file.
 
-You can include tls_config to the job by using the flags --ca-file, --cert-file
-and --key-file.`,
+If the node you want to scrape uses TLS, you can provide the TLS flags:
+--tls-key, --tls-cert, and --tls-truststore and rpk will generate the required
+tls_config section in the scrape configuration.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
@@ -79,6 +86,7 @@ and --key-file.`,
 				seedAddr,
 				intMetrics,
 				tlsConfig,
+				fs,
 			)
 			out.MaybeDieErr(err)
 			fmt.Println(string(yml))
@@ -107,9 +115,14 @@ and --key-file.`,
 		"",
 		"The path to the redpanda config file")
 	command.Flags().BoolVar(&intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
-	command.Flags().StringVar(&tlsConfig.CAFile, "ca-file", "", "CA certificate used to sign node_exporter certificate")
-	command.Flags().StringVar(&tlsConfig.CertFile, "cert-file", "", "Cert file presented to node_exporter to authenticate Prometheus as a client")
-	command.Flags().StringVar(&tlsConfig.KeyFile, "key-file", "", "Key file presented to node_exporter to authenticate Prometheus as a client")
+	command.Flags().StringVar(&tlsConfig.TLS.TruststoreFile, "ca-file", "", "CA certificate used to sign node_exporter certificate")
+	command.Flags().StringVar(&tlsConfig.TLS.CertFile, "cert-file", "", "Cert file presented to node_exporter to authenticate Prometheus as a client")
+	command.Flags().StringVar(&tlsConfig.TLS.KeyFile, "key-file", "", "Key file presented to node_exporter to authenticate Prometheus as a client")
+	command.Flags().MarkHidden("ca-file")
+	command.Flags().MarkHidden("cert-file")
+	command.Flags().MarkHidden("key-file")
+
+	common.AddTLSFlags(command, &tlsConfig.enableTLS, &tlsConfig.TLS.CertFile, &tlsConfig.TLS.KeyFile, &tlsConfig.TLS.TruststoreFile)
 	return command
 }
 
@@ -119,10 +132,11 @@ func executePrometheusConfig(
 	nodeAddrs []string,
 	seedAddr string,
 	intMetrics bool,
-	tlsConfig TLSConfig,
+	tlsCfg tlsConfig,
+	fs afero.Fs,
 ) ([]byte, error) {
 	if len(nodeAddrs) > 0 {
-		return renderConfig(jobName, nodeAddrs, intMetrics, tlsConfig)
+		return renderConfig(jobName, nodeAddrs, intMetrics, tlsCfg.TLS)
 	}
 	if seedAddr != "" {
 		host, port, err := splitAddress(seedAddr)
@@ -132,43 +146,51 @@ func executePrometheusConfig(
 		if port == 0 {
 			port = 9092
 		}
-		hosts, err := discoverHosts(host, port)
+		hosts, err := discoverHosts(host, port, tlsCfg, fs)
 		if err != nil {
 			return []byte(""), err
 		}
-		return renderConfig(jobName, hosts, intMetrics, tlsConfig)
+		return renderConfig(jobName, hosts, intMetrics, tlsCfg.TLS)
 	}
 	hosts, err := discoverHosts(
 		cfg.Redpanda.KafkaAPI[0].Address,
 		cfg.Redpanda.KafkaAPI[0].Port,
+		tlsCfg,
+		fs,
 	)
 	if err != nil {
 		return []byte(""), err
 	}
-	return renderConfig(jobName, hosts, intMetrics, tlsConfig)
+	return renderConfig(jobName, hosts, intMetrics, tlsCfg.TLS)
 }
 
-func renderConfig(jobName string, targets []string, intMetrics bool, tlsConfig TLSConfig) ([]byte, error) {
+func renderConfig(jobName string, targets []string, intMetrics bool, tlsConfig config.TLS) ([]byte, error) {
+	prometheusTLSConfig := prometheusTLS{
+		CAFile:   tlsConfig.TruststoreFile,
+		CertFile: tlsConfig.CertFile,
+		KeyFile:  tlsConfig.KeyFile,
+	}
+
 	scrapeConfigs := []ScrapeConfig{{
 		JobName:       jobName,
 		StaticConfigs: []StaticConfig{{Targets: targets}},
 		MetricsPath:   "/public_metrics",
-		TLSConfig:     tlsConfig,
+		TLSConfig:     prometheusTLSConfig,
 	}}
 	if intMetrics {
 		scrapeConfigs = append(scrapeConfigs, ScrapeConfig{
 			JobName:       jobName,
 			StaticConfigs: []StaticConfig{{Targets: targets}},
 			MetricsPath:   "/metrics",
-			TLSConfig:     tlsConfig,
+			TLSConfig:     prometheusTLSConfig,
 		})
 	}
 	return yaml.Marshal(scrapeConfigs)
 }
 
-func discoverHosts(url string, port int) ([]string, error) {
+func discoverHosts(url string, port int, tlsConfig tlsConfig, fs afero.Fs) ([]string, error) {
 	addr := net.JoinHostPort(url, strconv.Itoa(port))
-	cl, err := kgo.NewClient(kgo.SeedBrokers(addr))
+	cl, err := createClient(fs, addr, tlsConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -205,4 +227,21 @@ func splitAddress(address string) (string, int, error) {
 		return "", 0, err
 	}
 	return host, port, nil
+}
+
+func createClient(fs afero.Fs, addr string, tlsCfg tlsConfig) (*kgo.Client, error) {
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(addr),
+	}
+	if tlsCfg.TLS != (config.TLS{}) || tlsCfg.enableTLS {
+		tc, err := tlsCfg.TLS.Config(fs)
+		if err != nil {
+			return nil, err
+		}
+		if tc != nil {
+			opts = append(opts, kgo.DialTLSConfig(tc))
+		}
+	}
+
+	return kgo.NewClient(opts...)
 }

@@ -12,6 +12,7 @@
 #include "cluster/metrics_reporter.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cluster/config_frontend.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_frontend.h"
@@ -38,6 +39,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/algorithm/container.h>
 #include <absl/container/node_hash_map.h>
 #include <boost/lexical_cast.hpp>
 #include <boost/random/seed_seq.hpp>
@@ -190,12 +192,12 @@ metrics_reporter::build_metrics_snapshot() {
         auto& metrics = it->second;
         metrics.is_alive = (bool)ns.is_alive;
 
-        auto broker = _members_table.local().get_broker(ns.id);
-        if (!broker) {
+        auto nm = _members_table.local().get_node_metadata_ref(ns.id);
+        if (!nm) {
             continue;
         }
 
-        metrics.cpu_count = broker.value()->properties().cores;
+        metrics.cpu_count = nm->get().broker.properties().cores;
     }
 
     for (auto& report : report.value().node_reports) {
@@ -239,6 +241,10 @@ metrics_reporter::build_metrics_snapshot() {
     for (auto& [_, m] : metrics_map) {
         snapshot.nodes.push_back(std::move(m));
     }
+
+    snapshot.has_kafka_gssapi = absl::c_any_of(
+      config::shard_local_cfg().sasl_mechanisms(),
+      [](auto const& mech) { return mech == "GSSAPI"; });
 
     co_return snapshot;
 }
@@ -451,6 +457,8 @@ void rjson_serialize(
         rjson_serialize(w, m);
     }
     w.EndArray();
+    w.Key("has_kafka_gssapi");
+    w.Bool(snapshot.has_kafka_gssapi);
     w.EndObject();
 }
 

@@ -108,14 +108,15 @@ partition_produce_stages make_ready_stage(produce_response::partition p) {
     };
 }
 
-static raft::replicate_options acks_to_replicate_options(int16_t acks) {
+static raft::replicate_options
+acks_to_replicate_options(int16_t acks, std::chrono::milliseconds timeout) {
     switch (acks) {
     case -1:
-        return raft::replicate_options(raft::consistency_level::quorum_ack);
+        return {raft::consistency_level::quorum_ack, timeout};
     case 0:
-        return raft::replicate_options(raft::consistency_level::no_ack);
+        return {raft::consistency_level::no_ack, timeout};
     case 1:
-        return raft::replicate_options(raft::consistency_level::leader_ack);
+        return {raft::consistency_level::leader_ack, timeout};
     default:
         throw std::invalid_argument("Not supported ack level");
     };
@@ -161,6 +162,8 @@ static error_code map_produce_error_code(std::error_code ec) {
             return error_code::out_of_order_sequence_number;
         case cluster::errc::invalid_request:
             return error_code::invalid_request;
+        case cluster::errc::generic_tx_error:
+            return error_code::unknown_server_error;
         default:
             return error_code::request_timed_out;
         }
@@ -180,9 +183,10 @@ static partition_produce_stages partition_append(
   model::record_batch_reader reader,
   int16_t acks,
   int32_t num_records,
-  int64_t num_bytes) {
+  int64_t num_bytes,
+  std::chrono::milliseconds timeout_ms) {
     auto stages = partition->replicate(
-      bid, std::move(reader), acks_to_replicate_options(acks));
+      bid, std::move(reader), acks_to_replicate_options(acks, timeout_ms));
     return partition_produce_stages{
       .dispatched = std::move(stages.request_enqueued),
       .produced = stages.replicate_finished.then_wrapped(
@@ -245,22 +249,29 @@ static partition_produce_stages produce_topic_partition(
     if (!shard) {
         return make_ready_stage(produce_response::partition{
           .partition_index = ntp.tp.partition,
-          .error_code = error_code::unknown_topic_or_partition});
+          .error_code = error_code::not_leader_for_partition});
     }
 
     // steal the batch from the adapter
     auto batch = std::move(part.records->adapter.batch.value());
 
+    auto topic_cfg = octx.rctx.metadata_cache().get_topic_cfg(
+      model::topic_namespace_view(model::kafka_namespace, topic.name));
+
+    if (!topic_cfg) {
+        return make_ready_stage(produce_response::partition{
+          .partition_index = ntp.tp.partition,
+          .error_code = error_code::unknown_topic_or_partition});
+    }
     /*
      * grab timestamp type topic configuration option out of the
      * metadata cache. For append time setting we have to recalculate
      * the CRC.
      */
-    auto timestamp_type
-      = octx.rctx.metadata_cache()
-          .get_topic_timestamp_type(
-            model::topic_namespace_view(model::kafka_namespace, topic.name))
-          .value_or(octx.rctx.metadata_cache().get_default_timestamp_type());
+    const auto timestamp_type = topic_cfg->properties.timestamp_type.value_or(
+      octx.rctx.metadata_cache().get_default_timestamp_type());
+    const auto batch_max_bytes = topic_cfg->properties.batch_max_bytes.value_or(
+      octx.rctx.metadata_cache().get_default_batch_max_bytes());
 
     if (timestamp_type == model::timestamp_type::append_time) {
         batch.set_max_timestamp(
@@ -289,12 +300,22 @@ static partition_produce_stages produce_topic_partition(
              batch_size,
              bid,
              acks = octx.request.data.acks,
+             batch_max_bytes,
+             timeout = octx.request.data.timeout_ms,
              source_shard = ss::this_shard_id()](
               cluster::partition_manager& mgr) mutable {
                 auto partition = mgr.get(ntp);
                 if (!partition) {
                     return finalize_request_with_error_code(
-                      error_code::unknown_topic_or_partition,
+                      error_code::not_leader_for_partition,
+                      std::move(dispatch),
+                      ntp,
+                      source_shard);
+                }
+                if (unlikely(
+                      static_cast<uint32_t>(batch_size) > batch_max_bytes)) {
+                    return finalize_request_with_error_code(
+                      error_code::message_too_large,
                       std::move(dispatch),
                       ntp,
                       source_shard);
@@ -321,7 +342,8 @@ static partition_produce_stages produce_topic_partition(
                   std::move(reader),
                   acks,
                   num_records,
-                  batch_size);
+                  batch_size,
+                  timeout);
                 return stages.dispatched
                   .then_wrapped([source_shard, dispatch = std::move(dispatch)](
                                   ss::future<> f) mutable {
@@ -383,6 +405,24 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
             continue;
         }
 
+        const auto& kafka_noproduce_topics
+          = config::shard_local_cfg().kafka_noproduce_topics();
+        const auto is_noproduce_topic = std::find(
+                                          kafka_noproduce_topics.begin(),
+                                          kafka_noproduce_topics.end(),
+                                          topic.name)
+                                        != kafka_noproduce_topics.end();
+
+        if (is_noproduce_topic) {
+            partitions_dispatched.push_back(ss::now());
+            partitions_produced.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition{
+                  .partition_index = part.partition_index,
+                  .error_code = error_code::topic_authorization_failed}));
+            continue;
+        }
+
         if (!octx.rctx.metadata_cache().contains(
               model::topic_namespace_view(model::kafka_namespace, topic.name),
               part.partition_index)) {
@@ -406,7 +446,7 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
             continue;
         }
 
-        // an error occured handling legacy messages (magic 0 or 1)
+        // an error occurred handling legacy messages (magic 0 or 1)
         if (unlikely(part.records->adapter.legacy_error)) {
             partitions_dispatched.push_back(ss::now());
             partitions_produced.push_back(
@@ -487,7 +527,7 @@ process_result_stages
 produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request;
     request.decode(ctx.reader(), ctx.header().version);
-
+    log_request(ctx.header(), request);
     if (ctx.metadata_cache().should_reject_writes()) {
         thread_local static ss::logger::rate_limit rate(despam_interval);
         klog.log(
@@ -502,7 +542,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           ctx.respond(request.make_full_disk_response()));
     }
 
-    // determine if the request has transactional / idemponent batches
+    // determine if the request has transactional / idempotent batches
     for (auto& topic : request.data.topics) {
         for (auto& part : topic.partitions) {
             if (part.records) {
@@ -562,8 +602,6 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       produce_ctx(std::move(ctx), std::move(request), ssg),
       [dispatched_promise = std::move(dispatched_promise)](
         produce_ctx& octx) mutable {
-          vlog(klog.trace, "handling produce request {}", octx.request);
-
           // dispatch produce requests for each topic
           auto stages = produce_topics(octx);
           std::vector<ss::future<>> dispatched;
@@ -609,7 +647,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                               }
                           }
 
-                          // in the absense of errors, acks = 0 results in the
+                          // in the absence of errors, acks = 0 results in the
                           // response being dropped, as the client does not
                           // expect a response. here we mark the response as
                           // noop, but let it flow back so that it can be

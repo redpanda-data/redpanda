@@ -15,16 +15,20 @@ class OMBSampleConfigurations:
 
     # These are copied over from OMB/bin/generate_charts.py
     # All metrics are in milliseconds unless specially suffixed.
+    PUB_LATENCY_MIN = "publishLatencyMin"
     PUB_LATENCY_AVG = "aggregatedPublishLatencyAvg"
     PUB_LATENCY_50PCT = "aggregatedPublishLatency50pct"
-    PUB_LATENCY_99PCT = "aggregatedPublishLatency99pct"
+    PUB_LATENCY_75PCT = "aggregatedPublishLatency75pct"
+    PUB_LATENCY_95PCT = "aggregatedPublishLatency95pct"
     PUB_LATENCY_MAX = "aggregatedPublishLatencyMax"
     PUB_DELAY_LATENCY_AVG = "aggregatedPublishDelayLatencyAvg"
     PUB_DELAY_LATENCY_50PCT = "aggregatedPublishDelayLatency50pct"
     PUB_DELAY_LATENCY_99PCT = "aggregatedPublishDelayLatency99pct"
+    E2E_LATENCY_MIN = "endToEndLatencyMin"
     E2E_LATENCY_AVG = "aggregatedEndToEndLatencyAvg"
     E2E_LATENCY_50PCT = "aggregatedEndToEndLatency50pct"
-    E2E_LATENCY_99PCT = "aggregatedEndToEndLatency99pct"
+    E2E_LATENCY_75PCT = "aggregatedEndToEndLatency75pct"
+    E2E_LATENCY_95PCT = "aggregatedEndToEndLatency95pct"
     E2E_LATENCY_MAX = "aggregatedEndToEndLatencyMax"
     AVG_THROUGHPUT_MBPS = "throughputMBps"
 
@@ -54,6 +58,33 @@ class OMBSampleConfigurations:
     UNIT_TEST_LATENCY_VALIDATOR = {
         E2E_LATENCY_50PCT: [lte(30)],
         E2E_LATENCY_AVG: [lte(50)],
+    }
+
+    # As benchmarked on
+    # - i3en.6xlarge for 3 Redpanda;
+    # - c5n.9xlarge for 2 clients
+    #
+    # Publish latencies
+    #   min <= 1ms
+    #   p50 <= 3ms
+    #   p75 <= 4ms
+    #   p95 <= 8ms
+    #
+    # E2E latencies
+    #   min <= 1ms
+    #   p50 <= 4ms
+    #   p75 <= 5ms
+    #   p95 <= 10ms
+    RELEASE_SMOKE_TEST_VALIDATOR = {
+        PUB_LATENCY_MIN: [lte(1)],
+        PUB_LATENCY_50PCT: [lte(3)],
+        PUB_LATENCY_75PCT: [lte(4)],
+        PUB_LATENCY_95PCT: [lte(8)],
+        E2E_LATENCY_MIN: [lte(1)],
+        E2E_LATENCY_50PCT: [lte(4)],
+        E2E_LATENCY_75PCT: [lte(5)],
+        E2E_LATENCY_95PCT: [lte(10)],
+        AVG_THROUGHPUT_MBPS: [gte(600)]
     }
 
     def validate_metrics(metrics, validator):
@@ -201,6 +232,21 @@ class OMBSampleConfigurations:
         "test_duration_minutes": 15,
         "warmup_duration_minutes": 5,
     }
+
+    # Release certifying smoke test we use for perf run.
+    RELEASE_CERT_SMOKE_LOAD_625k = {
+        "name": "SmokeLoad625kReleaseCert",
+        "topics": 1,
+        "partitions_per_topic": 100,
+        "subscriptions_per_topic": 1,
+        "consumer_per_subscription": 8,
+        "producers_per_topic": 16,
+        "producer_rate": 625000,
+        "consumer_backlog_size_GB": 0,
+        "test_duration_minutes": 5,
+        "warmup_duration_minutes": 5,
+    }
+
     # ------- Workload configurations end--------
 
     # We have another level of indirection from name -> driver/workload
@@ -232,5 +278,7 @@ class OMBSampleConfigurations:
         "DEDICATED_NODE_WORKLOAD":
         (DEDICATED_NODE_WORKLOAD, UNIT_TEST_LATENCY_VALIDATOR),
         "TOPIC1_PART100_1KB_4PROD_1250K_RATE":
-        (TOPIC1_PART100_1KB_4PROD_1250K_RATE, PROD_ENV_VALIDATOR)
+        (TOPIC1_PART100_1KB_4PROD_1250K_RATE, PROD_ENV_VALIDATOR),
+        "RELEASE_CERT_SMOKE_LOAD_625k":
+        (RELEASE_CERT_SMOKE_LOAD_625k, RELEASE_SMOKE_TEST_VALIDATOR)
     }

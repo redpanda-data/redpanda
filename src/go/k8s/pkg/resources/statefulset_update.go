@@ -22,7 +22,9 @@ import (
 	"time"
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
+	"github.com/prometheus/common/expfmt"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -34,10 +36,13 @@ const (
 	// RequeueDuration is the time controller should
 	// requeue resource reconciliation.
 	RequeueDuration = time.Second * 10
-	adminAPITimeout = time.Millisecond * 100
+	adminAPITimeout = time.Second * 2
 )
 
-var errRedpandaNotReady = errors.New("redpanda not ready")
+var (
+	errRedpandaNotReady         = errors.New("redpanda not ready")
+	errUnderReplicatedPartition = errors.New("partition under replicated")
+)
 
 // runUpdate handles image changes and additional storage in the redpanda cluster
 // CR by removing statefulset with orphans Pods. The stateful set is then recreated
@@ -78,7 +83,12 @@ func (r *StatefulSetResource) runUpdate(
 	if err = r.updateRestartingStatus(ctx, true); err != nil {
 		return fmt.Errorf("unable to turn on restarting status in cluster custom resource: %w", err)
 	}
+
 	if err = r.updateStatefulSet(ctx, current, modified); err != nil {
+		return err
+	}
+
+	if err = r.isClusterHealthy(ctx); err != nil {
 		return err
 	}
 
@@ -89,6 +99,37 @@ func (r *StatefulSetResource) runUpdate(
 	// Update is complete for all pods (and all are ready). Set restarting status to false.
 	if err = r.updateRestartingStatus(ctx, false); err != nil {
 		return fmt.Errorf("unable to turn off restarting status in cluster custom resource: %w", err)
+	}
+
+	return nil
+}
+
+func (r *StatefulSetResource) isClusterHealthy(ctx context.Context) error {
+	if !featuregates.ClusterHealth(r.pandaCluster.Status.Version) {
+		r.logger.V(debugLogLevel).Info("Cluster health endpoint is not available", "version", r.pandaCluster.Spec.Version)
+		return nil
+	}
+
+	adminAPIClient, err := r.getAdminAPIClient(ctx)
+	if err != nil {
+		return fmt.Errorf("creating admin API client: %w", err)
+	}
+
+	health, err := adminAPIClient.GetHealthOverview(ctx)
+	if err != nil {
+		return fmt.Errorf("getting cluster health overview: %w", err)
+	}
+
+	restarting := "not restarting"
+	if r.pandaCluster.Status.IsRestarting() {
+		restarting = "restarting"
+	}
+
+	if !health.IsHealthy {
+		return &RequeueAfterError{
+			RequeueAfter: RequeueDuration,
+			Msg:          fmt.Sprintf("wait for cluster to become healthy (cluster %s)", restarting),
+		}
 	}
 
 	return nil
@@ -120,29 +161,11 @@ func (r *StatefulSetResource) rollingUpdate(
 		volumes[vol.Name] = new(interface{})
 	}
 
-	opts := []patch.CalculateOption{
-		patch.IgnoreStatusFields(),
-		ignoreKubernetesTokenVolumeMounts(),
-		ignoreDefaultToleration(),
-		ignoreExistingVolumes(volumes),
-	}
-
 	for i := range podList.Items {
 		pod := podList.Items[i]
 
-		patchResult, err := patch.DefaultPatchMaker.Calculate(&pod, &artificialPod, opts...)
-		if err != nil {
+		if err = r.podEviction(ctx, &pod, &artificialPod, volumes); err != nil {
 			return err
-		}
-
-		if !patchResult.IsEmpty() {
-			r.logger.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
-				"pod-name", pod.Name,
-				"patch", patchResult.Patch)
-			if err = r.Delete(ctx, &pod); err != nil {
-				return fmt.Errorf("unable to remove Redpanda pod: %w", err)
-			}
-			return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
 		}
 
 		if !utils.IsPodReady(&pod) {
@@ -161,10 +184,102 @@ func (r *StatefulSetResource) rollingUpdate(
 			Path:   "v1/status/ready",
 		}
 
-		r.logger.Info("Verify that Ready endpoint returns HTTP status OK")
+		r.logger.Info("Verify that Ready endpoint returns HTTP status OK", "pod-name", pod.Name)
 		if err = r.queryRedpandaStatus(ctx, &adminURL); err != nil {
 			return fmt.Errorf("unable to query Redpanda ready status: %w", err)
 		}
+
+		adminURL.Path = "metrics"
+
+		if err = r.evaluateUnderReplicatedPartitions(ctx, &adminURL); err != nil {
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("broker reported under replicated partitions: %v", err),
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPod *corev1.Pod, newVolumes map[string]interface{}) error {
+	opts := []patch.CalculateOption{
+		patch.IgnoreStatusFields(),
+		ignoreKubernetesTokenVolumeMounts(),
+		ignoreDefaultToleration(),
+		ignoreExistingVolumes(newVolumes),
+	}
+
+	patchResult, err := patch.DefaultPatchMaker.Calculate(pod, artificialPod, opts...)
+	if err != nil {
+		return err
+	}
+
+	if patchResult.IsEmpty() {
+		return nil
+	}
+
+	var ordinal int64
+	ordinal, err = utils.GetPodOrdinal(pod.Name, r.pandaCluster.Name)
+	if err != nil {
+		return fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", r.pandaCluster.Name, pod.Name, err)
+	}
+
+	if *r.pandaCluster.Spec.Replicas > 1 {
+		if err = r.putInMaintenanceMode(ctx, int32(ordinal)); err != nil {
+			// As maintenance mode can not be easily watched using controller runtime the requeue error
+			// is always returned. That way a rolling update will not finish when operator waits for
+			// maintenance mode finished.
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("putting node (%s) into maintenance mode: %v", pod.Name, err),
+			}
+		}
+	}
+
+	r.logger.Info("Changes in Pod definition other than activeDeadlineSeconds, configurator and Redpanda container name. Deleting pod",
+		"pod-name", pod.Name,
+		"patch", patchResult.Patch)
+
+	if err = r.Delete(ctx, pod); err != nil {
+		return fmt.Errorf("unable to remove Redpanda pod: %w", err)
+	}
+
+	return &RequeueAfterError{RequeueAfter: RequeueDuration, Msg: "wait for pod restart"}
+}
+
+var (
+	ErrMaintenanceNotFinished = errors.New("maintenance mode is not finished")
+	ErrMaintenanceMissing     = errors.New("maintenance definition not returned")
+)
+
+func (r *StatefulSetResource) putInMaintenanceMode(ctx context.Context, ordinal int32) error {
+	adminAPIClient, err := r.getAdminAPIClient(ctx, ordinal)
+	if err != nil {
+		return fmt.Errorf("creating admin API client: %w", err)
+	}
+
+	nodeConf, err := adminAPIClient.GetNodeConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("getting node config: %w", err)
+	}
+
+	err = adminAPIClient.EnableMaintenanceMode(ctx, nodeConf.NodeID)
+	if err != nil {
+		return fmt.Errorf("enabling maintenance mode: %w", err)
+	}
+
+	br, err := adminAPIClient.Broker(ctx, nodeConf.NodeID)
+	if err != nil {
+		return fmt.Errorf("getting broker infromations: %w", err)
+	}
+
+	if br.Maintenance == nil {
+		return ErrMaintenanceMissing
+	}
+
+	if !br.Maintenance.Finished {
+		return fmt.Errorf("draining (%t), errors (%t), failed (%d), finished (%t): %w", br.Maintenance.Draining, br.Maintenance.Errors, br.Maintenance.Failed, br.Maintenance.Finished, ErrMaintenanceNotFinished)
 	}
 
 	return nil
@@ -410,6 +525,85 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	return nil
 }
 
+// Temporarily using the status/ready endpoint until we have a specific one for restarting.
+func (r *StatefulSetResource) evaluateUnderReplicatedPartitions(
+	ctx context.Context, adminURL *url.URL,
+) error {
+	client := &http.Client{Timeout: adminAPITimeout}
+
+	// TODO right now we support TLS only on one listener so if external
+	// connectivity is enabled, TLS is enabled only on external listener. This
+	// will be fixed by https://github.com/redpanda-data/redpanda/issues/1084
+	if r.pandaCluster.AdminAPITLS() != nil &&
+		r.pandaCluster.AdminAPIExternal() == nil {
+		tlsConfig, err := r.adminTLSConfigProvider.GetTLSConfig(ctx, r)
+		if err != nil {
+			return err
+		}
+
+		client.Transport = &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+		adminURL.Scheme = "https"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL.String(), http.NoBody)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("getting broker metrics (%s): %w", adminURL.String(), errRedpandaNotReady)
+	}
+
+	var parser expfmt.TextParser
+	metrics, err := parser.TextToMetricFamilies(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	for name, metricFamily := range metrics {
+		if name != "vectorized_cluster_partition_under_replicated_replicas" {
+			continue
+		}
+
+		for _, m := range metricFamily.Metric {
+			if m == nil {
+				continue
+			}
+			if m.Gauge == nil {
+				r.logger.Info("cluster_partition_under_replicated_replicas metric does not have value", "labels", m.Label)
+				continue
+			}
+
+			var namespace, partition, shard, topic string
+			for _, l := range m.Label {
+				switch *l.Name {
+				case "namespace":
+					namespace = *l.Value
+				case "partition":
+					partition = *l.Value
+				case "shard":
+					shard = *l.Value
+				case "topic":
+					topic = *l.Value
+				}
+			}
+
+			if r.pandaCluster.Spec.RestartConfig != nil && *m.Gauge.Value > float64(r.pandaCluster.Spec.RestartConfig.UnderReplicatedPartitionThreshold) {
+				return fmt.Errorf("in topic (%s), partition (%s), shard (%s), namespace (%s): %w", topic, partition, shard, namespace, errUnderReplicatedPartition)
+			}
+		}
+	}
+
+	return nil
+}
+
 // RequeueAfterError error carrying the time after which to requeue.
 type RequeueAfterError struct {
 	RequeueAfter time.Duration
@@ -418,6 +612,10 @@ type RequeueAfterError struct {
 
 func (e *RequeueAfterError) Error() string {
 	return fmt.Sprintf("RequeueAfterError %s", e.Msg)
+}
+
+func (e *RequeueAfterError) Is(target error) bool {
+	return e.Error() == target.Error()
 }
 
 // RequeueError error to requeue using default retry backoff.

@@ -51,11 +51,13 @@ SEASTAR_THREAD_TEST_CASE(test_post_subject_versions_parser) {
       payload.data(), pps::post_subject_versions_request_handler{sub})};
 
     // canonicalisation now requires a sharded_store, for now, minify.
+    // NOLINTBEGIN(bugprone-use-after-move)
     result = {
       std::move(result).sub(),
       pps::unparsed_schema_definition{
         ppj::minify(result.def().raw()()), pps::schema_type::avro},
       std::move(result).refs()};
+    // NOLINTEND(bugprone-use-after-move)
 
     BOOST_REQUIRE_EQUAL(expected, result);
 }

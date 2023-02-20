@@ -28,6 +28,11 @@
 #include <optional>
 #include <type_traits>
 
+namespace seastar {
+template<typename T>
+class input_stream;
+}
+
 namespace kafka {
 
 class request_reader {
@@ -53,6 +58,9 @@ public:
     }
 
     ss::sstring read_string() { return do_read_string(read_int16()); }
+    ss::sstring read_string_unchecked(int16_t len) {
+        return do_read_string(len);
+    }
 
     ss::sstring read_flex_string() {
         return do_read_flex_string(read_unsigned_varint());

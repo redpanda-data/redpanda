@@ -17,6 +17,7 @@
 #include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
+#include "net/types.h"
 #include "utils/to_string.h"
 #include "vlog.h"
 
@@ -81,14 +82,16 @@ process_result_stages process_generic(
   const session_resources& sres) {
     vlog(
       klog.trace,
-      "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}",
+      "[{}:{}] processing name:{}, key:{}, version:{} for {}, mem_units: {}, "
+      "ctx_size: {}",
       ctx.connection()->client_host(),
       ctx.connection()->client_port(),
       handler->name(),
       ctx.header().key,
       ctx.header().version,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")),
-      sres.memlocks.count());
+      sres.memlocks.count(),
+      ctx.reader().bytes_left());
 
     // We do a version check for most API requests, but for api_version
     // requests we skip them. We do not apply them for api_versions,
@@ -107,10 +110,10 @@ process_result_stages process_generic(
     return handler->handle(std::move(ctx), g);
 }
 
-class kafka_authentication_exception : public std::runtime_error {
+class kafka_authentication_exception : public net::authentication_exception {
 public:
     explicit kafka_authentication_exception(const std::string& m)
-      : std::runtime_error(m) {}
+      : net::authentication_exception(m) {}
 };
 
 /*

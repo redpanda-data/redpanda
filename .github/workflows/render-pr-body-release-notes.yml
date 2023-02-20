@@ -1,0 +1,45 @@
+# Copyright 2022 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: Render PR Body Release Notes
+on:
+  pull_request:
+    types: [opened, edited]
+jobs:
+  render:
+    if: ${{ ! ( github.event.pull_request.user.login == 'vbotbuildovich' && startsWith(github.event.pull_request.title, 'merge') ) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Curl rpchangelog
+        run: |
+          mkdir -v -p rpchangelog
+          curl -s -S -f -L -o rpchangelog/requirements.txt https://vectorized-public.s3.us-west-2.amazonaws.com/rpchangelog/requirements.txt
+          curl -s -S -f -L -o rpchangelog/rpchangelog.py https://vectorized-public.s3.us-west-2.amazonaws.com/rpchangelog/rpchangelog.py
+          chmod +x rpchangelog/rpchangelog.py
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      - run: pip3 install -r ./rpchangelog/requirements.txt
+      - name: Render PR body release notes to job summary
+        env:
+          PR_NUM: ${{ github.event.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./rpchangelog/rpchangelog.py --log-level=DEBUG --github-owner="$GITHUB_REPOSITORY_OWNER" pr "$PR_NUM" >> "$GITHUB_STEP_SUMMARY"
+          LINK_TO_SUMMARY="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          FINAL_MSG="View rendered release notes of PR #$PR_NUM in the job summary: $LINK_TO_SUMMARY"
+          if grep -q '## Unclear' "$GITHUB_STEP_SUMMARY"; then
+             echo '❌ Release Notes Unclear'
+             echo $FINAL_MSG
+             exit 1
+          else
+             echo '✔ Release Notes Clear'
+             echo $FINAL_MSG
+          fi

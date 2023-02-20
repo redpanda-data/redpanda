@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/oncore.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "vassert.h"
@@ -22,7 +23,7 @@ class allocation_node;
 class allocation_state;
 
 /**
- * Constraints evaluators loosely inspired by Fenzo Constrainst Solver.
+ * Constraints evaluators loosely inspired by Fenzo Constraints Solver.
  *
  * https://github.com/Netflix/Fenzo/blob/master/fenzo-core/src/main/java/com/netflix/fenzo/ConstraintEvaluator.java
  * https://github.com/Netflix/Fenzo/blob/master/fenzo-core/src/main/java/com/netflix/fenzo/VMTaskFitnessCalculator.java
@@ -108,7 +109,7 @@ private:
 
 /**
  * Configuration used to request partition allocation, if current allocations
- * are not empty then allocation strategy will allocate as many replis as
+ * are not empty then allocation strategy will allocate as many replicas as
  * required to achieve requested replication factor.
  */
 struct allocation_constraints {
@@ -124,15 +125,33 @@ struct allocation_constraints {
     operator<<(std::ostream&, const allocation_constraints&);
 };
 /**
- * RAII based helper holding allocated partititions, allocation is reverted
+ * RAII based helper holding allocated partitions, allocation is reverted
  * after this object goes out of scope.
+ *
+ * WARNING: this object contains an embedded reference to the partition
+ * allocator service (specifically, the allocation_state associated with that
+ * allocator) and so it must be destroyed on the same shard the original units
+ * were allocated on. I.e., if original units A are moved into B, B must be
+ * destroyed the shard A was allocated on (or the shard of the object that was
+ * moved into A and so on).
  */
 struct allocation_units {
-    allocation_units(std::vector<partition_assignment>, allocation_state*);
+    /**
+     * A foreign unique pointer to some units. Given the warning above about
+     * cross-core destruction, it is best to use this pointer class when dealing
+     * with units allocated on another core.
+     */
+    using pointer = ss::foreign_ptr<std::unique_ptr<allocation_units>>;
+
+    allocation_units(
+      std::vector<partition_assignment>,
+      allocation_state*,
+      partition_allocation_domain);
     allocation_units(
       std::vector<partition_assignment>,
       std::vector<model::broker_shard>,
-      allocation_state*);
+      allocation_state*,
+      partition_allocation_domain);
     allocation_units& operator=(allocation_units&&) = default;
     allocation_units& operator=(const allocation_units&) = delete;
     allocation_units(const allocation_units&) = delete;
@@ -151,12 +170,15 @@ private:
     absl::node_hash_set<model::broker_shard> _previous;
     // keep the pointer to make this type movable
     allocation_state* _state;
+    partition_allocation_domain _domain;
+    // oncore checker to ensure destruction happens on the same core
+    [[no_unique_address]] oncore _oncore;
 };
 
 /**
  * Configuration used to request manual allocation configuration for topic.
  * Custom allocation only designate nodes where partition should be placed but
- * not the shards on each node, allocation strategy will assing shards to each
+ * not the shards on each node, allocation strategy will assign shards to each
  * replica
  */
 struct partition_constraints {
@@ -173,7 +195,9 @@ struct partition_constraints {
 };
 
 struct allocation_request {
-    allocation_request() = default;
+    allocation_request() = delete;
+    explicit allocation_request(const partition_allocation_domain domain_)
+      : domain(domain_) {}
     allocation_request(const allocation_request&) = delete;
     allocation_request(allocation_request&&) = default;
     allocation_request& operator=(const allocation_request&) = delete;
@@ -181,6 +205,7 @@ struct allocation_request {
     ~allocation_request() = default;
 
     std::vector<partition_constraints> partitions;
+    partition_allocation_domain domain;
 
     friend std::ostream& operator<<(std::ostream&, const allocation_request&);
 };

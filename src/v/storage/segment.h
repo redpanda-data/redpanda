@@ -13,6 +13,7 @@
 
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/fs_utils.h"
 #include "storage/fwd.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
@@ -24,6 +25,7 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/rwlock.hh>
+#include <seastar/core/sharded.hh>
 
 #include <exception>
 #include <optional>
@@ -88,7 +90,8 @@ public:
     ss::future<> close();
     ss::future<> flush();
     ss::future<> release_appender(readers_cache*);
-    ss::future<> truncate(model::offset, size_t physical);
+    ss::future<> truncate(
+      model::offset, size_t physical, model::timestamp new_max_timestamp);
 
     /// main write interface
     /// auto indexes record_batch
@@ -96,6 +99,7 @@ public:
     /// do not need to take ownership of the batch itself
     ss::future<append_result> append(model::record_batch&&);
     ss::future<append_result> append(const model::record_batch&);
+    ss::future<append_result> do_append(const model::record_batch&);
     ss::future<bool> materialize_index();
 
     /// main read interface
@@ -121,7 +125,8 @@ public:
     // please use higher level API's when possible
     segment_reader& reader();
     size_t file_size() const { return _reader.file_size(); }
-    const ss::sstring& filename() const { return _reader.filename(); }
+    const ss::sstring filename() const { return _reader.filename(); }
+    const segment_full_path& path() const { return _reader.path(); }
     segment_index& index();
     const segment_index& index() const;
     segment_appender_ptr release_appender();
@@ -160,11 +165,27 @@ public:
     generation_id get_generation_id() const { return _generation_id; }
     void advance_generation() { _generation_id++; }
 
+    /**
+     * Timestamp of the first data batch written to this segment.
+     * Note that this isn't the first timestamp of a data batch in the log,
+     * and is only set if the segment was appended to while this segment was
+     * active. I.e. a closed segment following a restart wouldn't have this
+     * value set, because we only intend on using this in the context of an
+     * active segment.
+     */
+    constexpr std::optional<ss::lowres_clock::time_point>
+    first_write_ts() const {
+        return _first_write;
+    }
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);
     void check_segment_not_closed(const char* msg);
-    ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
+    ss::future<> do_truncate(
+      model::offset prev_last_offset,
+      size_t physical,
+      model::timestamp new_max_timestamp);
     ss::future<> do_close();
     ss::future<> do_flush();
     ss::future<> do_release_appender(
@@ -217,6 +238,11 @@ private:
 
     absl::btree_map<size_t, model::offset> _inflight;
 
+    // Timestamp from server time of first data written to this segment,
+    // field is set when a raft_data batch is appended.
+    // Used to implement segment.ms rolling
+    std::optional<ss::lowres_clock::time_point> _first_write;
+
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
 
@@ -236,12 +262,13 @@ private:
  * exist
  */
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  std::filesystem::path path,
+  segment_full_path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
 
 ss::future<ss::lw_shared_ptr<segment>> make_segment(
   const ntp_config& ntpc,
@@ -253,7 +280,8 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  storage_resources&);
+  storage_resources&,
+  ss::sharded<features::feature_table>& feature_table);
 
 // bitflags operators
 [[gnu::always_inline]] inline segment::bitflags

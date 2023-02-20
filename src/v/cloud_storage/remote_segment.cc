@@ -11,6 +11,7 @@
 #include "cloud_storage/remote_segment.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/partition_manifest.h"
@@ -53,8 +54,13 @@ using namespace std::chrono_literals;
 
 static constexpr size_t max_consume_size = 128_KiB;
 
+// These timeout/backoff settings are for S3 requests
 static ss::lowres_clock::duration cache_hydration_timeout = 60s;
 static ss::lowres_clock::duration cache_hydration_backoff = 250ms;
+
+// This backoff is for failure of the local cache to retain recently
+// promoted data (i.e. highly stressed cache)
+static ss::lowres_clock::duration cache_thrash_backoff = 5000ms;
 
 download_exception::download_exception(
   download_result r, std::filesystem::path p)
@@ -90,16 +96,16 @@ static ss::sstring generate_log_prefix(
     return ssx::sformat(
       "{} [{}:{}]",
       m.get_ntp().path(),
-      key.base_offset,
+      meta->base_offset,
       meta->committed_offset);
 }
 
 remote_segment::remote_segment(
   remote& r,
   cache& c,
-  s3::bucket_name bucket,
+  cloud_storage_clients::bucket_name bucket,
   const partition_manifest& m,
-  const partition_manifest::key& key,
+  model::offset key,
   retry_chain_node& parent)
   : _api(r)
   , _cache(c)
@@ -107,48 +113,24 @@ remote_segment::remote_segment(
   , _ntp(m.get_ntp())
   , _rtc(&parent)
   , _ctxlog(cst_log, _rtc, generate_log_prefix(m, key))
-  , _wait_list(expiry_handler_impl) {
+  , _wait_list(expiry_handler_impl)
+  , _cache_backoff_jitter(cache_thrash_backoff) {
     auto meta = m.get(key);
     vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
 
-    _path = m.generate_segment_path(key, *meta);
+    _path = m.generate_segment_path(*meta);
 
-    auto parsed_name = parse_segment_name(
-      generate_segment_name(key.base_offset, key.term));
-    vassert(parsed_name, "Can't parse segment name, name: {}", key);
-    _term = parsed_name->term;
+    _term = meta->segment_term;
 
     _base_rp_offset = meta->base_offset;
     _max_rp_offset = meta->committed_offset;
     _base_offset_delta = std::clamp(
-      meta->delta_offset, model::offset(0), model::offset::max());
+      meta->delta_offset, model::offset_delta(0), model::offset_delta::max());
+    _compacted = meta->is_compacted;
 
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
 }
-
-// Find manifest key in the manifest using base offset of the segment.
-// Invariant: 'o' is a valid base offset inside the manifest.
-static inline segment_name_components
-find_manifest_key(const partition_manifest& m, model::offset o) {
-    auto it = m.find(o);
-    vassert(
-      it != m.end(),
-      "Can't find base offset {} in the manifest for ntp {}",
-      o,
-      m.get_ntp());
-    return it->first;
-}
-
-remote_segment::remote_segment(
-  remote& r,
-  cache& c,
-  s3::bucket_name bucket,
-  const partition_manifest& m,
-  model::offset base_offset,
-  retry_chain_node& parent)
-  : remote_segment(
-    r, c, std::move(bucket), m, find_manifest_key(m, base_offset), parent) {}
 
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
 
@@ -156,7 +138,7 @@ const model::offset remote_segment::get_max_rp_offset() const {
     return _max_rp_offset;
 }
 
-const model::offset remote_segment::get_base_offset_delta() const {
+const model::offset_delta remote_segment::get_base_offset_delta() const {
     return _base_offset_delta;
 }
 
@@ -164,13 +146,18 @@ const model::offset remote_segment::get_base_rp_offset() const {
     return _base_rp_offset;
 }
 
-const model::offset remote_segment::get_base_kafka_offset() const {
+const kafka::offset remote_segment::get_base_kafka_offset() const {
     return _base_rp_offset - _base_offset_delta;
 }
 
 const model::term_id remote_segment::get_term() const { return _term; }
 
 ss::future<> remote_segment::stop() {
+    if (_stopped) {
+        vlog(_ctxlog.warn, "remote segment {} already stopped", _path);
+        co_return;
+    }
+
     vlog(_ctxlog.debug, "remote segment stop");
     _bg_cvar.broken();
     co_await _gate.close();
@@ -181,6 +168,8 @@ ss::future<> remote_segment::stop() {
                 _ctxlog.error, "Error '{}' while closing the '{}'", err, _path);
           });
     }
+
+    _stopped = true;
 }
 
 ss::future<storage::segment_reader_handle>
@@ -200,19 +189,42 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
 
 ss::future<remote_segment::input_stream_with_offsets>
 remote_segment::offset_data_stream(
-  model::offset kafka_offset, ss::io_priority_class io_priority) {
+  kafka::offset kafka_offset,
+  std::optional<model::timestamp> first_timestamp,
+  ss::io_priority_class io_priority) {
     vlog(
       _ctxlog.debug,
       "remote segment file input stream at offset {}",
       kafka_offset);
     ss::gate::holder g(_gate);
     co_await hydrate();
-    auto pos = maybe_get_offsets(kafka_offset)
-                 .value_or(offset_index::find_result{
-                   .rp_offset = _base_rp_offset,
-                   .kaf_offset = _base_rp_offset - _base_offset_delta,
-                   .file_pos = 0,
-                 });
+    offset_index::find_result pos;
+    if (first_timestamp) {
+        // Time queries are linear search from front of the segment.  The
+        // dominant cost of a time query on a remote partition is promoting
+        // the segment into our local cache: once it's here, the cost of
+        // a scan is comparatively small.  For workloads that do many time
+        // queries in close proximity on the same partition, an additional
+        // index could be added here, for hydrated segments.
+        pos = {
+          .rp_offset = _base_rp_offset,
+          .kaf_offset = _base_rp_offset - _base_offset_delta,
+          .file_pos = 0,
+        };
+    } else {
+        pos = maybe_get_offsets(kafka_offset)
+                .value_or(offset_index::find_result{
+                  .rp_offset = _base_rp_offset,
+                  .kaf_offset = _base_rp_offset - _base_offset_delta,
+                  .file_pos = 0,
+                });
+    }
+    vlog(
+      _ctxlog.debug,
+      "Offset data stream start reading at {}, log offset {}, delta {}",
+      pos.file_pos,
+      pos.rp_offset,
+      pos.rp_offset - pos.kaf_offset);
     ss::file_input_stream_options options{};
     options.buffer_size = config::shard_local_cfg().storage_read_buffer_size();
     options.read_ahead
@@ -228,7 +240,7 @@ remote_segment::offset_data_stream(
 }
 
 std::optional<offset_index::find_result>
-remote_segment::maybe_get_offsets(model::offset kafka_offset) {
+remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
     if (!_index) {
         return {};
     }
@@ -247,58 +259,66 @@ remote_segment::maybe_get_offsets(model::offset kafka_offset) {
     return pos;
 }
 
-ss::future<> remote_segment::do_hydrate_segment() {
-    auto callback = [this](
-                      uint64_t size_bytes,
-                      ss::input_stream<char> s) -> ss::future<uint64_t> {
-        offset_index tmpidx(
-          get_base_rp_offset(),
-          get_base_kafka_offset(),
-          0,
-          remote_segment_sampling_step_bytes);
-        auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
-        auto parser = make_remote_segment_index_builder(
-          std::move(sparse),
-          tmpidx,
-          _base_offset_delta,
-          remote_segment_sampling_step_bytes);
-        auto fparse = parser->consume().finally(
-          [parser] { return parser->close(); });
-        auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
-            return sref.get().close();
-        });
-        auto [rparse, rput] = co_await ss::when_all(
-          std::move(fparse), std::move(fput));
-        bool index_prepared = true;
-        if (rparse.failed()) {
-            auto parse_exception = rparse.get_exception();
-            vlog(
-              _ctxlog.warn,
-              "Failed to build a remote_segment index, error: {}",
-              parse_exception);
-            index_prepared = false;
-        }
-        if (rput.failed()) {
-            auto put_exception = rput.get_exception();
-            vlog(
-              _ctxlog.warn,
-              "Failed to write a segment file to cache, error: {}",
-              put_exception);
-            std::rethrow_exception(put_exception);
-        }
-        if (index_prepared) {
-            auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
-            co_await _cache.put(_path().native() + ".index", index_stream);
-            _index = std::move(tmpidx);
-        }
-        co_return size_bytes;
-    };
+/**
+ * Called by do_hydrate_segment on the stream the S3 remote creates for
+ * a GET response: pass the dat through into the cache.
+ */
+ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
+  uint64_t size_bytes, ss::input_stream<char> s) {
+    offset_index tmpidx(
+      get_base_rp_offset(),
+      get_base_kafka_offset(),
+      0,
+      remote_segment_sampling_step_bytes);
+    auto [sparse, sput] = input_stream_fanout<2>(std::move(s), 1);
+    auto parser = make_remote_segment_index_builder(
+      std::move(sparse),
+      tmpidx,
+      _base_offset_delta,
+      remote_segment_sampling_step_bytes);
+    auto fparse = parser->consume().finally(
+      [parser] { return parser->close(); });
+    auto fput = _cache.put(_path, sput).finally([sref = std::ref(sput)] {
+        return sref.get().close();
+    });
+    auto [rparse, rput] = co_await ss::when_all(
+      std::move(fparse), std::move(fput));
+    bool index_prepared = true;
+    if (rparse.failed()) {
+        auto parse_exception = rparse.get_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to build a remote_segment index, error: {}",
+          parse_exception);
+        index_prepared = false;
+    }
+    if (rput.failed()) {
+        auto put_exception = rput.get_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to write a segment file to cache, error: {}",
+          put_exception);
+        std::rethrow_exception(put_exception);
+    }
+    if (index_prepared) {
+        auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
+        co_await _cache.put(_path().native() + ".index", index_stream);
+        _index = std::move(tmpidx);
+    }
+    co_return size_bytes;
+}
 
+ss::future<> remote_segment::do_hydrate_segment() {
     retry_chain_node local_rtc(
       cache_hydration_timeout, cache_hydration_backoff, &_rtc);
 
     auto res = co_await _api.download_segment(
-      _bucket, _path, callback, local_rtc);
+      _bucket,
+      _path,
+      [this](uint64_t size_bytes, ss::input_stream<char> s) {
+          return do_hydrate_segment_inner(size_bytes, std::move(s));
+      },
+      local_rtc);
 
     if (res != download_result::success) {
         vlog(
@@ -318,23 +338,29 @@ ss::future<> remote_segment::do_hydrate_txrange() {
 
     tx_range_manifest manifest(_path);
 
-    auto res = co_await _api.download_manifest(
-      _bucket, manifest.get_manifest_path(), manifest, local_rtc);
+    if (!_compacted) {
+        // Record barches generated by the aborted transactions are removed
+        // during compaction process. We don't need to try to download them
+        // but we need to write empty tx manifest to the cache.
+        auto res = co_await _api.maybe_download_manifest(
+          _bucket, manifest.get_manifest_path(), manifest, local_rtc);
 
-    vlog(
-      _ctxlog.debug,
-      "hydrate tx_range {}, {}, {} waiters will be invoked",
-      manifest.get_manifest_path(),
-      res,
-      _wait_list.size());
+        vlog(
+          _ctxlog.debug,
+          "hydrate tx_range {}, {}, {} waiters will be invoked",
+          manifest.get_manifest_path(),
+          res,
+          _wait_list.size());
 
-    if (res != download_result::success && res != download_result::notfound) {
-        throw download_exception(res, _path);
+        if (
+          res != download_result::success && res != download_result::notfound) {
+            throw download_exception(res, _path);
+        }
+
+        auto [stream, size] = co_await manifest.serialize();
+        co_await _cache.put(manifest.get_manifest_path(), stream)
+          .finally([&s = stream]() mutable { return s.close(); });
     }
-
-    auto [stream, size] = manifest.serialize();
-    co_await _cache.put(manifest.get_manifest_path(), stream)
-      .finally([&s = stream]() mutable { return s.close(); });
 
     _tx_range = std::move(manifest).get_tx_range();
 }
@@ -358,6 +384,16 @@ ss::future<bool> remote_segment::do_materialize_segment() {
           "re-hydrated, {} waiter are pending",
           _path,
           _wait_list.size());
+
+        // If we got here, the cache is in a stressed state: it has
+        // evicted an object that we probably only just promoted.  We can
+        // live-lock if many readers are all trying to promote their objects
+        // concurrently and none of them is getting all their objects in
+        // the cache at the same time: reduce chance of this by backing off.
+        // TODO: this should be a sleep_abortable, but remote_segment does not
+        // have an abort source.
+        co_await ss::sleep(_cache_backoff_jitter.next_duration());
+
         co_return false;
     }
     _data_file = maybe_file->body;
@@ -375,9 +411,15 @@ ss::future<bool> remote_segment::do_materialize_segment() {
 ss::future<bool> remote_segment::do_materialize_txrange() {
     if (_tx_range) {
         vlog(
-          _ctxlog.info,
+          _ctxlog.debug,
           "materialize tx_range, {} transactions available",
           _tx_range->size());
+        co_return true;
+    }
+    if (_compacted) {
+        // construct empty tx-range vector for compacted segments
+        // since they don't have any aborted transactions by design
+        _tx_range.emplace();
         co_return true;
     }
     auto path = generate_remote_tx_path(_path);
@@ -399,7 +441,7 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
             co_await manifest.update(std::move(inp_stream));
             _tx_range = std::move(manifest).get_tx_range();
             vlog(
-              _ctxlog.info,
+              _ctxlog.debug,
               "materialize tx_range, {} transactions materialized",
               _tx_range->size());
         } catch (...) {
@@ -412,7 +454,7 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
         co_await cache_item->body.close();
     } else {
         vlog(
-          _ctxlog.info,
+          _ctxlog.debug,
           "tx_range '{}' is not available in cache, retrying",
           path);
         co_return false;
@@ -519,8 +561,23 @@ combine_statuses(cache_element_status segment, cache_element_status tx_range) {
     }
 }
 
+void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
+    while (!_wait_list.empty()) {
+        auto& p = _wait_list.front();
+        p.set_exception(err);
+        _wait_list.pop_front();
+    }
+};
+
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
+
+    // Track whether we have seen our objects in the cache during the loop
+    // below, so that we can detect regression: one object falling out the
+    // cache while the other is read.  We will back off on regression.
+    bool segment_was_cached = false;
+    bool txrange_was_cached = false;
+
     try {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
@@ -533,14 +590,31 @@ ss::future<> remote_segment::run_hydrate_bg() {
               _wait_list.size(),
               _data_file ? "available" : "not available");
             std::exception_ptr err;
-            if (!_data_file) {
+            if (!_data_file || !_tx_range) {
                 // We don't have a _data_file set so we have to check cache
                 // and retrieve the file out of it or hydrate.
                 // If _data_file is initialized we can use it safely since the
                 // cache can't delete it until we close it.
                 auto tx_path = generate_remote_tx_path(_path);
                 auto segment_status = co_await _cache.is_cached(_path);
+                segment_was_cached |= segment_status
+                                      != cache_element_status::not_available;
                 auto txrange_status = co_await _cache.is_cached(tx_path);
+                txrange_was_cached |= txrange_status
+                                      != cache_element_status::not_available;
+
+                if (
+                  (txrange_status == cache_element_status::not_available
+                   && txrange_was_cached)
+                  || (segment_status == cache_element_status::not_available && segment_was_cached)) {
+                    vlog(
+                      _ctxlog.warn,
+                      "Cache thrashing detected while downloading segment {}, "
+                      "backing off",
+                      _path);
+                    co_await ss::sleep(_cache_backoff_jitter.next_duration());
+                }
+
                 auto status = combine_statuses(segment_status, txrange_status);
                 switch (status) {
                 case segment_txrange_status::in_progress:
@@ -616,12 +690,18 @@ ss::future<> remote_segment::run_hydrate_bg() {
             }
         }
     } catch (const ss::broken_condition_variable&) {
-        vlog(_ctxlog.debug, "Hydraton loop is stopped");
+        vlog(_ctxlog.debug, "Hydration loop shut down");
+        set_waiter_errors(std::current_exception());
+    } catch (const ss::abort_requested_exception&) {
+        vlog(_ctxlog.debug, "Hydration loop shut down");
+        set_waiter_errors(std::current_exception());
+    } catch (const ss::gate_closed_exception&) {
+        vlog(_ctxlog.debug, "Hydration loop shut down");
+        set_waiter_errors(std::current_exception());
     } catch (...) {
-        vlog(
-          _ctxlog.error,
-          "Error in hydraton loop: {}",
-          std::current_exception());
+        const auto err = std::current_exception();
+        vlog(_ctxlog.error, "Error in hydraton loop: {}", err);
+        set_waiter_errors(err);
     }
 }
 
@@ -708,9 +788,9 @@ public:
     /// Translate redpanda offset to kafka offset
     ///
     /// \note this can only be applied to current record batch
-    model::offset rp_to_kafka(model::offset k) const noexcept {
+    kafka::offset rp_to_kafka(model::offset k) const noexcept {
         vassert(
-          k >= _parent._cur_delta,
+          k() >= _parent._cur_delta(),
           "Redpanda offset {} is smaller than the delta {}",
           k,
           _parent._cur_delta);
@@ -720,7 +800,7 @@ public:
     /// Translate kafka offset to redpanda offset
     ///
     /// \note this can only be applied to current record batch
-    model::offset kafka_to_rp(model::offset k) const noexcept {
+    model::offset kafka_to_rp(kafka::offset k) const noexcept {
         return k + _parent._cur_delta;
     }
 
@@ -735,7 +815,7 @@ public:
         if (header.type == model::record_batch_type::raft_data) {
             auto next = rp_to_kafka(header.last_offset()) + model::offset(1);
             if (next > _config.start_offset) {
-                _config.start_offset = next;
+                _config.start_offset = kafka::offset_cast(next);
             }
         }
     }
@@ -791,9 +871,7 @@ public:
             return batch_consumer::consume_result::stop_parser;
         }
 
-        if (_config.first_timestamp > header.first_timestamp) {
-            // kakfa needs to guarantee that the returned record is >=
-            // first_timestamp
+        if (_config.first_timestamp > header.max_timestamp) {
             vlog(
               _ctxlog.debug,
               "accept_batch_start skip because header timestamp is {}",
@@ -837,8 +915,6 @@ public:
               "remote_segment_batch_consumer not initialized",
               _parent._seg->get_ntp());
 
-            _parent._cur_ot_state->get().add_gap(
-              header.base_offset, header.last_offset());
             vlog(
               _ctxlog.debug,
               "added offset translation gap [{}-{}], current state: {}",
@@ -846,7 +922,9 @@ public:
               header.last_offset(),
               _parent._cur_ot_state);
 
-            _parent._cur_delta += header.last_offset_delta + model::offset{1};
+            _parent._cur_ot_state->get().add_gap(
+              header.base_offset, header.last_offset());
+            _parent._cur_delta += header.last_offset_delta + model::offset(1);
         }
     }
 
@@ -863,7 +941,8 @@ public:
         // NOTE: we need to translate offset of the batch after we updated
         // start offset of the config since it assumes that the header has
         // redpanda offset.
-        batch.header().base_offset = rp_to_kafka(batch.base_offset());
+        batch.header().base_offset = kafka::offset_cast(
+          rp_to_kafka(batch.base_offset()));
 
         size_t sz = _parent.produce(std::move(batch));
 
@@ -895,14 +974,16 @@ private:
 remote_segment_batch_reader::remote_segment_batch_reader(
   ss::lw_shared_ptr<remote_segment> s,
   const storage::log_reader_config& config,
-  partition_probe& probe) noexcept
+  partition_probe& probe,
+  ssx::semaphore_units units) noexcept
   : _seg(std::move(s))
   , _config(config)
   , _probe(probe)
   , _rtc(_seg->get_retry_chain_node())
   , _ctxlog(cst_log, _rtc, _seg->get_ntp().path())
   , _cur_rp_offset(_seg->get_base_rp_offset())
-  , _cur_delta(_seg->get_base_offset_delta()) {
+  , _cur_delta(_seg->get_base_offset_delta())
+  , _units(std::move(units)) {
     _probe.segment_reader_created();
 }
 
@@ -957,9 +1038,12 @@ remote_segment_batch_reader::init_parser() {
       _ctxlog.debug,
       "remote_segment_batch_reader::init_parser, start_offset: {}",
       _config.start_offset);
+
     auto stream_off = co_await _seg->offset_data_stream(
-      _config.start_offset,
+      model::offset_cast(_config.start_offset),
+      _config.first_timestamp,
       priority_manager::local().shadow_indexing_priority());
+
     auto parser = std::make_unique<storage::continuous_batch_parser>(
       std::make_unique<remote_segment_batch_consumer>(
         _config, *this, _seg->get_term(), _seg->get_ntp(), _rtc),
@@ -978,6 +1062,14 @@ size_t remote_segment_batch_reader::produce(model::record_batch batch) {
 }
 
 ss::future<> remote_segment_batch_reader::stop() {
+    if (_stopped) {
+        vlog(
+          _ctxlog.warn,
+          "remote_segment_batch_reader::stop called when reader already "
+          "stopped");
+        co_return;
+    }
+
     vlog(_ctxlog.debug, "remote_segment_batch_reader::stop");
     co_await _gate.close();
     if (_parser) {

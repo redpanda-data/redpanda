@@ -9,11 +9,13 @@
  */
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cache_test_fixture.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/cache_service.h"
 #include "test_utils/fixture.h"
 #include "units.h"
+#include "utils/file_io.h"
 
 #include <seastar/core/fstream.hh>
 #include <seastar/core/seastar.hh>
@@ -368,4 +370,49 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
         auto ts = out.estimate_timestamp(names[i]);
         BOOST_REQUIRE(ts.value() >= timestamps[i]);
     }
+}
+
+/**
+ * Validate that .part files and empty directories are deleted if found during
+ * the startup walk of the cache.
+ */
+FIXTURE_TEST(test_clean_up_on_start, cache_test_fixture) {
+    // A temporary file, this should be deleted on startup
+    put_into_cache(create_data_string('a', 1_KiB), KEY);
+    std::filesystem::path tmp_key = KEY;
+    tmp_key.replace_extension(".part");
+    ss::rename_file((CACHE_DIR / KEY).native(), (CACHE_DIR / tmp_key).native())
+      .get();
+
+    // A normal looking segment, we'll check this isn't deleted
+    put_into_cache(create_data_string('b', 1_KiB), KEY);
+
+    // An empty directory, this should be deleted
+    auto empty_dir_path = std::filesystem::path{CACHE_DIR / "empty_dir"};
+    ss::make_directory(empty_dir_path.native()).get();
+
+    // A non-empty-directory, this should be preserved
+    auto populated_dir_path = CACHE_DIR / "populated_dir";
+    ss::make_directory(populated_dir_path.native()).get();
+    write_fully(populated_dir_path / "populated_file", {}).get();
+
+    clean_up_at_start().get();
+
+    BOOST_CHECK(ss::file_exists((CACHE_DIR / KEY).native()).get());
+    BOOST_CHECK(!ss::file_exists((CACHE_DIR / tmp_key).native()).get());
+    BOOST_CHECK(!ss::file_exists(empty_dir_path.native()).get());
+    BOOST_CHECK(ss::file_exists(populated_dir_path.native()).get());
+}
+
+/**
+ * Validate that the empty directory deletion code in clean_up_at_start
+ * does not consider the cache directory itself an empty directory
+ * to be deleted.
+ */
+FIXTURE_TEST(test_clean_up_on_start_empty, cache_test_fixture) {
+    ss::make_directory(CACHE_DIR.native()).get();
+
+    clean_up_at_start().get();
+
+    BOOST_CHECK(ss::file_exists(CACHE_DIR.native()).get());
 }

@@ -10,11 +10,11 @@
  */
 
 #pragma once
+#include "bytes/oncore.h"
 #include "config/base_property.h"
 #include "config/rjson_serialization.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
-#include "oncore.h"
 #include "reflection/type_traits.h"
 #include "utils/intrusive_list_helpers.h"
 #include "utils/to_string.h"
@@ -371,6 +371,12 @@ concept is_collection = requires(T x) {
 };
 
 template<typename T>
+concept is_pair = requires(T x) {
+    typename T::first_type;
+    typename T::second_type;
+};
+
+template<typename T>
 struct dependent_false : std::false_type {};
 
 template<typename T>
@@ -386,6 +392,8 @@ consteval std::string_view property_type_name() {
         return property_type_name<typename type::value_type>();
     } else if constexpr (is_collection<type>) {
         return property_type_name<typename type::value_type>();
+    } else if constexpr (is_pair<type>) {
+        return property_type_name<typename type::second_type>();
     } else if constexpr (has_type_name<type>) {
         return type::type_name();
     } else if constexpr (std::is_same_v<type, model::compression>) {
@@ -393,9 +401,6 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::is_same_v<type, model::timestamp_type>) {
         return "string";
     } else if constexpr (std::is_same_v<type, model::cleanup_policy_bitflags>) {
-        return "string";
-    } else if constexpr (std::
-                           is_same_v<type, model::violation_recovery_policy>) {
         return "string";
     } else if constexpr (std::is_same_v<type, config::data_directory_path>) {
         return "string";
@@ -529,6 +534,51 @@ private:
             }
         } else {
             value.push_back(std::move(n.as<T>()));
+        }
+        return value;
+    }
+};
+
+/*
+ * Same as property<std::unordered_map<T::key_type, T>> but will also decode a
+ * single T. This can be useful for dealing with backwards compatibility or
+ * creating easier yaml schemas that have simplified special cases.
+ */
+template<typename T>
+class one_or_many_map_property
+  : public property<std::unordered_map<typename T::key_type, T>> {
+public:
+    using property<std::unordered_map<typename T::key_type, T>>::property;
+
+    bool set_value(YAML::Node n) override {
+        auto value = decode_yaml(std::move(n));
+        return property<std::unordered_map<typename T::key_type, T>>::
+          update_value(std::move(value));
+    }
+
+    std::optional<validation_error> validate(YAML::Node n) const override {
+        std::unordered_map<typename T::key_type, T> value = decode_yaml(
+          std::move(n));
+        return property<std::unordered_map<typename T::key_type, T>>::validate(
+          value);
+    }
+
+private:
+    /**
+     * Given either a single value or a list of values, return
+     * a hash_map of decoded values.
+     **/
+    std::unordered_map<typename T::key_type, T>
+    decode_yaml(const YAML::Node& n) const {
+        std::unordered_map<typename T::key_type, T> value;
+        if (n.IsSequence()) {
+            for (const auto& elem : n) {
+                auto elem_val = elem.as<T>();
+                value.emplace(elem_val.key(), std::move(elem_val));
+            }
+        } else {
+            auto elem_val = n.as<T>();
+            value.emplace(elem_val.key(), std::move(elem_val));
         }
         return value;
     }

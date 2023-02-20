@@ -8,7 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/iobuf.h"
-#include "compression/stream_zstd.h"
+#include "bytes/scattered_message.h"
+#include "compression/async_stream_zstd.h"
 #include "hashing/xx.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
@@ -26,34 +27,38 @@ iobuf header_as_iobuf(const header& h) {
 }
 /// \brief used to send the bytes down the wire
 /// we re-compute the header-checksum on every call
-ss::scattered_message<char> netbuf::as_scattered() && {
-    if (_hdr.correlation_id == 0 || _hdr.meta == 0) {
+ss::future<ss::scattered_message<char>> netbuf::as_scattered() && {
+    // Move object members into coroutine before first supension.
+    iobuf out_buf = std::move(_out);
+    auto hdr = std::move(_hdr);
+
+    if (hdr.correlation_id == 0 || hdr.meta == 0) {
         throw std::runtime_error(
           "cannot compose scattered view with incomplete header. missing "
           "correlation_id or remote method id");
     }
     if (
-      _out.size_bytes() >= _min_compression_bytes
-      && rpc::compression_type::zstd == _hdr.compression) {
-        compression::stream_zstd fn;
-        _out = fn.compress(std::move(_out));
+      out_buf.size_bytes() >= _min_compression_bytes
+      && rpc::compression_type::zstd == hdr.compression) {
+        auto& zstd_inst = compression::async_stream_zstd_instance();
+        out_buf = co_await zstd_inst.compress(std::move(out_buf));
     } else {
         // didn't meet min requirements
-        _hdr.compression = rpc::compression_type::none;
+        hdr.compression = rpc::compression_type::none;
     }
     incremental_xxhash64 h;
-    auto in = iobuf::iterator_consumer(_out.cbegin(), _out.cend());
-    in.consume(_out.size_bytes(), [&h](const char* src, size_t sz) {
+    auto in = iobuf::iterator_consumer(out_buf.cbegin(), out_buf.cend());
+    in.consume(out_buf.size_bytes(), [&h](const char* src, size_t sz) {
         h.update(src, sz);
         return ss::stop_iteration::no;
     });
-    _hdr.payload_checksum = h.digest();
-    _hdr.payload_size = _out.size_bytes();
-    _hdr.header_checksum = rpc::checksum_header_only(_hdr);
-    _out.prepend(header_as_iobuf(_hdr));
+    hdr.payload_checksum = h.digest();
+    hdr.payload_size = out_buf.size_bytes();
+    hdr.header_checksum = rpc::checksum_header_only(hdr);
+    out_buf.prepend(header_as_iobuf(hdr));
 
     // prepare for output
-    return iobuf_as_scattered(std::move(_out));
+    co_return iobuf_as_scattered(std::move(out_buf));
 }
 
 } // namespace rpc

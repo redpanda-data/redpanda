@@ -9,12 +9,14 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/server/protocol.h"
+#include "config/property.h"
 #include "kafka/server/response.h"
+#include "kafka/server/server.h"
 #include "kafka/types.h"
 #include "net/server.h"
 #include "seastarx.h"
 #include "security/acl.h"
+#include "security/authorizer.h"
 #include "security/mtls.h"
 #include "security/sasl_authentication.h"
 #include "ssx/semaphore.h"
@@ -63,6 +65,11 @@ private:
     net::server_probe& _probe;
 };
 
+struct request_data {
+    api_key request_key;
+    ss::sstring client_id;
+};
+
 // Used to hold resources associated with a given request until
 // the response has been send, as well as to track some statistics
 // about the request.
@@ -78,25 +85,28 @@ struct session_resources {
     ssx::semaphore_units queue_units;
     std::unique_ptr<hdr_hist::measurement> method_latency;
     std::unique_ptr<request_tracker> tracker;
+    request_data request_data;
 };
 
 class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context> {
 public:
     connection_context(
-      protocol& p,
-      net::server::resources&& r,
+      server& s,
+      ss::lw_shared_ptr<net::connection> conn,
       std::optional<security::sasl_server> sasl,
       bool enable_authorizer,
-      std::optional<security::tls::mtls_state> mtls_state) noexcept
-      : _proto(p)
-      , _rs(std::move(r))
+      std::optional<security::tls::mtls_state> mtls_state,
+      config::binding<uint32_t> max_request_size) noexcept
+      : _server(s)
+      , conn(conn)
       , _sasl(std::move(sasl))
       // tests may build a context without a live connection
-      , _client_addr(_rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{})
+      , _client_addr(conn ? conn->addr.addr() : ss::net::inet_address{})
       , _enable_authorizer(enable_authorizer)
       , _authlog(_client_addr, client_port())
-      , _mtls_state(std::move(mtls_state)) {}
+      , _mtls_state(std::move(mtls_state))
+      , _max_request_size(std::move(max_request_size)) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -104,8 +114,8 @@ public:
     connection_context& operator=(const connection_context&) = delete;
     connection_context& operator=(connection_context&&) = delete;
 
-    protocol& server() { return _proto; }
-    const ss::sstring& listener() const { return _rs.conn->name(); }
+    server& server() { return _server; }
+    const ss::sstring& listener() const { return conn->name(); }
     std::optional<security::sasl_server>& sasl() { return _sasl; }
 
     template<typename T>
@@ -122,21 +132,19 @@ public:
             } else if (_sasl) {
                 return _sasl->principal();
             }
-            return ss::sstring{}; // anonymous user
+            // anonymous user
+            return security::acl_principal{security::principal_type::user, {}};
         };
         return authorized_user(get_principal(), operation, name, quiet);
     }
 
     template<typename T>
     bool authorized_user(
-      ss::sstring user,
+      security::acl_principal principal,
       security::acl_operation operation,
       const T& name,
       authz_quiet quiet) {
-        security::acl_principal principal(
-          security::principal_type::user, std::move(user));
-
-        bool authorized = _proto.authorizer().authorized(
+        bool authorized = _server.authorizer().authorized(
           name, operation, principal, security::acl_host(_client_addr));
 
         if (!authorized) {
@@ -146,7 +154,7 @@ public:
                       _authlog.debug,
                       "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
                       "resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       security::sasl_state_to_str(_sasl->state()),
                       operation,
                       principal,
@@ -156,7 +164,7 @@ public:
                       _authlog.info,
                       "proto: {}, sasl state: {}, acl op: {}, principal: {}, "
                       "resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       security::sasl_state_to_str(_sasl->state()),
                       operation,
                       principal,
@@ -167,7 +175,7 @@ public:
                     vlog(
                       _authlog.debug,
                       "proto: {}, acl op: {}, principal: {}, resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       operation,
                       principal,
                       name);
@@ -175,7 +183,7 @@ public:
                     vlog(
                       _authlog.info,
                       "proto: {}, acl op: {}, principal: {}, resource: {}",
-                      _proto.name(),
+                      _server.name(),
                       operation,
                       principal,
                       name);
@@ -186,19 +194,39 @@ public:
         return authorized;
     }
 
+    ss::future<> process();
     ss::future<> process_one_request();
-    bool is_finished_parsing() const;
     ss::net::inet_address client_host() const { return _client_addr; }
-    uint16_t client_port() const {
-        return _rs.conn ? _rs.conn->addr.port() : 0;
-    }
+    uint16_t client_port() const { return conn ? conn->addr.port() : 0; }
 
 private:
+    bool is_finished_parsing() const;
+
     // Reserve units from memory from the memory semaphore in proportion
     // to the number of bytes the request procesisng is expected to
     // take.
     ss::future<ssx::semaphore_units>
     reserve_request_units(api_key key, size_t size);
+
+    /// Calculated throttle delay pair.
+    /// \p request is the primary throttle delay that should be applied now.
+    /// In Kafka 2.0 compliant behaviour, it is only reported to the clients in
+    /// the throttle_ms field, so that they can do the throttling on client
+    /// side.
+    /// \p enforce is the delay value that has not been implemented by the
+    /// client on the last response, and has to be implemented here in the
+    /// broker.
+    struct delay_t {
+        using clock = ss::lowres_clock;
+        clock::duration request{};
+        clock::duration enforce{};
+    };
+
+    /// Update throughput trackers (per-client, per-shard, and whatever are
+    /// going to emerge) on ingress traffic and claculate aggregated throttle
+    /// delays from all of them.
+    delay_t record_tp_and_calculate_throttle(
+      const request_header& hdr, size_t request_size);
 
     // Apply backpressure sequence, where the request processing may be
     // delayed for various reasons, including throttling but also because
@@ -291,8 +319,8 @@ private:
         uint16_t _client_port;
     };
 
-    protocol& _proto;
-    net::server::resources _rs;
+    class server& _server;
+    ss::lw_shared_ptr<net::connection> conn;
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
@@ -301,6 +329,8 @@ private:
     const bool _enable_authorizer;
     ctx_log _authlog;
     std::optional<security::tls::mtls_state> _mtls_state;
+    config::binding<uint32_t> _max_request_size;
+    ss::lowres_clock::time_point _throttled_until;
 };
 
 } // namespace kafka

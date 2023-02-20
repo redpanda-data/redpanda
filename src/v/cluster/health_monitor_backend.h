@@ -13,6 +13,7 @@
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/node/local_monitor.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "rpc/fwd.h"
@@ -52,13 +53,9 @@ public:
       ss::sharded<partition_manager>&,
       ss::sharded<raft::group_manager>&,
       ss::sharded<ss::abort_source>&,
-      ss::sharded<storage::node_api>&,
-      ss::sharded<storage::api>&,
+      ss::sharded<node::local_monitor>&,
       ss::sharded<drain_manager>&,
-      ss::sharded<feature_table>&,
-      config::binding<size_t> min_bytes_alert,
-      config::binding<unsigned> min_percent_alert,
-      config::binding<size_t> min_bytes);
+      ss::sharded<features::feature_table>&);
 
     ss::future<> stop();
 
@@ -79,6 +76,8 @@ public:
 
     ss::future<cluster_health_overview>
       get_cluster_health_overview(model::timeout_clock::time_point);
+
+    bool does_raft0_have_leader();
 
 private:
     /**
@@ -149,7 +148,7 @@ private:
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<drain_manager>& _drain_manager;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
@@ -163,7 +162,7 @@ private:
 
     ss::gate _gate;
     mutex _refresh_mutex;
-    node::local_monitor _local_monitor;
+    ss::sharded<node::local_monitor>& _local_monitor;
 
     std::vector<std::pair<cluster::notification_id_type, health_node_cb_t>>
       _node_callbacks;

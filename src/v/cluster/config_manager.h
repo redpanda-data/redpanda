@@ -12,6 +12,9 @@
 #pragma once
 
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
+#include "features/feature_table.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "rpc/fwd.h"
 
@@ -49,7 +52,8 @@ public:
       ss::sharded<config_frontend>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
-      ss::sharded<feature_table>&,
+      ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::members_table>&,
       ss::sharded<ss::abort_source>&);
 
     static ss::future<preload_result> preload(YAML::Node const&);
@@ -105,6 +109,8 @@ private:
 
     static std::filesystem::path bootstrap_path();
     static std::filesystem::path cache_path();
+    ss::future<> wait_for_bootstrap();
+    void handle_cluster_members_update(const std::vector<model::node_id>&);
 
     config_status my_latest_status;
     status_map status;
@@ -116,7 +122,10 @@ private:
     ss::sharded<config_frontend>& _frontend;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_leaders_table>& _leaders;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<cluster::members_table>& _members;
+    notification_id_type _member_removed_notification;
+    notification_id_type _raft0_leader_changed_notification;
 
     ss::condition_variable _reconcile_wait;
     ss::sharded<ss::abort_source>& _as;

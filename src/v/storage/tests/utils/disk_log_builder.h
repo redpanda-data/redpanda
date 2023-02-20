@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -97,13 +98,13 @@ inline constexpr auto add_segment = [](auto&&... args) {
 };
 
 inline constexpr auto add_random_batch = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 6>();
+    arg_3_way_assert<sizeof...(args), 1, 7>();
     return std::make_tuple(
       add_random_batch_tag(), std::forward<decltype(args)>(args)...);
 };
 
 inline constexpr auto add_random_batches = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 5>();
+    arg_3_way_assert<sizeof...(args), 1, 6>();
     return std::make_tuple(
       add_random_batches_tag(), std::forward<decltype(args)>(args)...);
 };
@@ -208,6 +209,16 @@ public:
                   std::get<5>(args),
                   std::get<6>(args))
                   .get();
+            } else if constexpr (size == 8) {
+                add_random_batch(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args),
+                  std::get<6>(args),
+                  std::get<7>(args))
+                  .get();
             }
 
         } else if constexpr (std::is_same_v<type, add_batch_tag>) {
@@ -243,6 +254,23 @@ public:
                   std::get<3>(args),
                   std::get<4>(args))
                   .get();
+            } else if constexpr (size == 6) {
+                add_random_batches(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args))
+                  .get();
+            } else if constexpr (size == 7) {
+                add_random_batches(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args),
+                  std::get<6>(args))
+                  .get();
             }
         }
         return *this;
@@ -254,13 +282,19 @@ public:
       maybe_compress_batches comp = maybe_compress_batches::yes,
       model::record_batch_type bt = model::record_batch_type::raft_data, // data
       log_append_config config = append_config(),
+      should_flush_after flush = should_flush_after::yes,
+      std::optional<model::timestamp> base_ts = std::nullopt);
+    ss::future<> add_random_batch(
+      model::test::record_batch_spec spec,
+      log_append_config config = append_config(),
       should_flush_after flush = should_flush_after::yes);
     ss::future<> add_random_batches(
       model::offset offset,
       int count,
       maybe_compress_batches comp = maybe_compress_batches::yes,
       log_append_config config = append_config(),
-      should_flush_after flush = should_flush_after::yes);
+      should_flush_after flush = should_flush_after::yes,
+      std::optional<model::timestamp> base_ts = std::nullopt);
     ss::future<> add_random_batches(
       model::offset offset,
       log_append_config config = append_config(),
@@ -317,12 +351,22 @@ public:
         return consume_impl(std::move(c), std::move(config));
     }
 
+    ss::future<> update_configuration(ntp_config::default_overrides o) {
+        if (_log) {
+            return _log->update_configuration(o);
+        }
+
+        return ss::make_ready_future<>();
+    }
+
     // Configuration getters
     const log_config& get_log_config() const;
 
     size_t bytes_written() const { return _bytes_written; }
 
     storage::api& storage() { return _storage; }
+
+    void set_time(model::timestamp t) { _ts_cursor = t; }
 
 private:
     template<typename Consumer>
@@ -333,17 +377,33 @@ private:
           });
     }
 
+    std::optional<model::timestamp> now(std::optional<model::timestamp> input) {
+        if (input) {
+            return input;
+        } else if (_ts_cursor) {
+            return _ts_cursor;
+        } else {
+            return model::timestamp::now();
+        }
+    }
+
+    void advance_time(const model::record_batch& b) {
+        _ts_cursor = model::timestamp{b.header().max_timestamp() + 1};
+    }
+
     ss::future<> write(
       ss::circular_buffer<model::record_batch> buff,
       const log_append_config& config,
       should_flush_after flush);
 
+    ss::sharded<features::feature_table> _feature_table;
     storage::log_config _log_config;
     storage::api _storage;
     std::optional<log> _log;
     size_t _bytes_written{0};
     std::vector<std::vector<model::record_batch>> _batches;
     ss::abort_source _abort_source;
+    std::optional<model::timestamp> _ts_cursor;
 };
 
 } // namespace storage

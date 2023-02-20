@@ -24,8 +24,10 @@
 
 using namespace std::chrono_literals;
 
+static ss::abort_source never_abort;
+
 SEASTAR_THREAD_TEST_CASE(check_fmt) {
-    retry_chain_node n1(ss::lowres_clock::now() + 100ms, 50ms);
+    retry_chain_node n1(never_abort, ss::lowres_clock::now() + 100ms, 50ms);
     BOOST_REQUIRE_EQUAL(n1(), "[fiber0|0|100ms]");
     {
         retry_chain_node n2(&n1);
@@ -49,13 +51,13 @@ SEASTAR_THREAD_TEST_CASE(check_fmt) {
         retry_chain_node n7(&n1);
         BOOST_REQUIRE_EQUAL(n7(), "[fiber0~1|0|100ms]");
     }
-    retry_chain_node n8(ss::lowres_clock::now() + 100ms, 50ms);
+    retry_chain_node n8(never_abort, ss::lowres_clock::now() + 100ms, 50ms);
     BOOST_REQUIRE_EQUAL(n8(), "[fiber1|0|100ms]");
     BOOST_REQUIRE_EQUAL(n8("{} + {}", 1, 2), "[fiber1|0|100ms 1 + 2]");
 }
 
 SEASTAR_THREAD_TEST_CASE(check_retry1) {
-    retry_chain_node n1;
+    retry_chain_node n1(never_abort);
     std::array<
       std::pair<ss::lowres_clock::duration, ss::lowres_clock::duration>,
       4>
@@ -72,7 +74,7 @@ SEASTAR_THREAD_TEST_CASE(check_retry1) {
     for (int i = 0; i < 4; i++) {
         permit = n2.retry();
         BOOST_REQUIRE(permit.is_allowed);
-        BOOST_REQUIRE(permit.abort_source == nullptr);
+        BOOST_REQUIRE(permit.abort_source == &never_abort);
         BOOST_REQUIRE(permit.delay >= intervals.at(i).first);
         BOOST_REQUIRE(permit.delay < intervals.at(i).second);
     }
@@ -81,7 +83,8 @@ SEASTAR_THREAD_TEST_CASE(check_retry1) {
 }
 
 SEASTAR_THREAD_TEST_CASE(check_retry2) {
-    retry_chain_node n1(ss::lowres_clock::now() + 1600ms, 100ms);
+    ss::abort_source never_abort;
+    retry_chain_node n1(never_abort, ss::lowres_clock::now() + 1600ms, 100ms);
     std::array<
       std::pair<ss::lowres_clock::duration, ss::lowres_clock::duration>,
       4>
@@ -95,7 +98,7 @@ SEASTAR_THREAD_TEST_CASE(check_retry2) {
     for (int i = 0; i < 4; i++) {
         permit = n1.retry();
         BOOST_REQUIRE(permit.is_allowed);
-        BOOST_REQUIRE(permit.abort_source == nullptr);
+        BOOST_REQUIRE(permit.abort_source == &never_abort);
         BOOST_REQUIRE(permit.delay >= intervals.at(i).first);
         BOOST_REQUIRE(permit.delay < intervals.at(i).second);
     }
@@ -107,7 +110,7 @@ SEASTAR_THREAD_TEST_CASE(check_retry2) {
     for (int i = 0; i < 4; i++) {
         permit = n2.retry();
         BOOST_REQUIRE(permit.is_allowed);
-        BOOST_REQUIRE(permit.abort_source == nullptr);
+        BOOST_REQUIRE(permit.abort_source == &never_abort);
         BOOST_REQUIRE(permit.delay >= intervals.at(i).first);
         BOOST_REQUIRE(permit.delay < intervals.at(i).second);
     }
@@ -145,29 +148,40 @@ SEASTAR_THREAD_TEST_CASE(check_abort_requested) {
     BOOST_REQUIRE_THROW(n2.check_abort(), ss::abort_requested_exception);
 }
 
-SEASTAR_THREAD_TEST_CASE(check_abort_requested_fail) {
-    retry_chain_node n1(ss::lowres_clock::now() + 1000ms, 100ms);
-    retry_chain_node n2(&n1);
-    BOOST_REQUIRE_THROW(n2.request_abort(), std::logic_error);
-}
-
 SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_1) {
-    retry_chain_node n1;
+    retry_chain_node n1(never_abort);
     retry_chain_node n2(1000ms, 100ms, &n1);
     BOOST_REQUIRE(n1.get_timeout() == 0ms);
     BOOST_REQUIRE(n2.get_timeout() == 1000ms);
 }
 
 SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_2) {
-    retry_chain_node n1(1000ms, 100ms);
+    retry_chain_node n1(never_abort, 1000ms, 100ms);
     retry_chain_node n2(500ms, 100ms, &n1);
     BOOST_REQUIRE(n1.get_timeout() == 1000ms);
     BOOST_REQUIRE(n2.get_timeout() == 500ms);
 }
 
 SEASTAR_THREAD_TEST_CASE(check_deadline_propogation_3) {
-    retry_chain_node n1(500ms, 100ms);
+    retry_chain_node n1(never_abort, 500ms, 100ms);
     retry_chain_node n2(1000ms, 100ms, &n1);
     BOOST_REQUIRE(n1.get_timeout() == 500ms);
     BOOST_REQUIRE(n2.get_timeout() == 500ms);
+}
+
+SEASTAR_THREAD_TEST_CASE(check_node_comparison) {
+    ss::abort_source as;
+    retry_chain_node r1(as);
+    retry_chain_node r2(as);
+    retry_chain_node c11(&r1);
+    retry_chain_node c111(&c11);
+    retry_chain_node c12(&r1);
+    retry_chain_node c21(&r2);
+    BOOST_REQUIRE(r1.same_root(r1));
+    BOOST_REQUIRE(r1.same_root(c11));
+    BOOST_REQUIRE(r1.same_root(c111));
+    BOOST_REQUIRE(c11.same_root(c12));
+    BOOST_REQUIRE(!r1.same_root(r2));
+    BOOST_REQUIRE(!r1.same_root(c21));
+    BOOST_REQUIRE(!c11.same_root(c21));
 }

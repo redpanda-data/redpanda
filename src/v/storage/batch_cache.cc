@@ -11,13 +11,16 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
+#include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
+#include "storage/logger.h"
 #include "utils/gate_guard.h"
 #include "utils/to_string.h"
 #include "vassert.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/ostream.h>
 
@@ -116,14 +119,36 @@ uint32_t batch_cache::range::add(const model::record_batch& b) {
     return offset;
 }
 
+static resources::available_memory::deregister_holder
+register_memory_reporter(const batch_cache& bc) {
+    auto& ab = resources::available_memory::local();
+    return ab.register_reporter(
+      "batch_cache", [&bc] { return bc.size_bytes(); });
+}
+
+batch_cache::batch_cache(const reclaim_options& opts)
+  : _reclaimer(
+    [this](reclaimer::request r) { return reclaim(r); }, reclaim_scope::sync)
+  , _reclaim_opts(opts)
+  , _reclaim_size(_reclaim_opts.min_size)
+  , _background_reclaimer(
+      *this, opts.min_free_memory, opts.background_reclaimer_sg)
+  , _available_mem_deregister(register_memory_reporter(*this)) {
+    _background_reclaimer.start();
+}
+
 batch_cache::entry
 batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
+    // notify no matter what the exit path
+    auto notify_guard = ss::defer([this] { _background_reclaimer.notify(); });
+
 #ifdef SEASTAR_DEFAULT_ALLOCATOR
     static const size_t threshold = ss::memory::stats().total_memory() * .2;
     while (_size_bytes > threshold) {
         reclaim(1);
     }
 #endif
+
     // we must copy memory to prevent holding onto bigger memory from
     // temporary buffers
 
@@ -153,7 +178,6 @@ batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
     int64_t diff = (int64_t)index._small_batches_range->memory_size()
                    - initial_sz;
     _size_bytes += diff;
-    _background_reclaimer.notify();
     return entry(offset, index._small_batches_range->weak_from_this());
 }
 
@@ -178,6 +202,12 @@ void batch_cache::evict(range_ptr&& e) {
 }
 
 size_t batch_cache::reclaim(size_t size) {
+    // update the available_memory low-water mark: this is a good place to do
+    // this because under memory pressure the reclaimer will be called
+    // frequently so we expect the LWM to track closely the true LWM if we
+    // update it here
+    resources::available_memory().update_low_water_mark();
+
     if (is_memory_reclaiming()) {
         return 0;
     }
@@ -304,7 +334,7 @@ batch_cache_index::read_result batch_cache_index::read(
         auto batch = it->second.batch();
 
         auto take = !type_filter || type_filter == batch.header().type;
-        take &= !first_ts || batch.header().first_timestamp >= *first_ts;
+        take &= !first_ts || batch.header().max_timestamp >= *first_ts;
         offset = batch.last_offset() + model::offset(1);
         if (take) {
             batch_cache::range::lock_guard g(*it->second.range());

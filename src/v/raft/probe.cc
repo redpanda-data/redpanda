@@ -30,6 +30,31 @@ probe::create_metric_labels(const model::ntp& ntp) {
     };
 }
 
+void probe::setup_public_metrics(const model::ntp& ntp) {
+    namespace sm = ss::metrics;
+
+    auto ns_label = ssx::metrics::make_namespaced_label("namespace");
+    auto topic_label = ssx::metrics::make_namespaced_label("topic");
+    auto partition_label = ssx::metrics::make_namespaced_label("partition");
+
+    auto labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition())};
+
+    auto aggregate_labels = {sm::shard_label, partition_label};
+
+    _public_metrics.add_group(
+      prometheus_sanitize::metrics_name("raft"),
+      {sm::make_counter(
+         "leadership_changes",
+         [this] { return _leadership_changes; },
+         sm::description("Number of leadership changes across all partitions "
+                         "of a given topic"),
+         labels)
+         .aggregate(aggregate_labels)});
+}
+
 void probe::setup_metrics(const model::ntp& ntp) {
     namespace sm = ss::metrics;
     auto labels = create_metric_labels(ntp);

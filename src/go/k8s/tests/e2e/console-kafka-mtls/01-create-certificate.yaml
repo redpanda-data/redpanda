@@ -1,0 +1,49 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-tls-secret-selfsigned-issuer
+  namespace: console-kafka-mtls
+spec:
+  selfSigned: {}
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-secret-root-certificate
+  namespace: console-kafka-mtls
+spec:
+  isCA: true
+  commonName: root-common-name
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-secret-selfsigned-issuer
+  secretName: cluster-tls-secret-root-certificate
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-tls-secret-root-issuer
+  namespace: console-kafka-mtls
+spec:
+  ca:
+    secretName: cluster-tls-secret-root-certificate
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-secret-node-certificate
+  namespace: console-kafka-mtls
+spec:
+  dnsNames:
+    # Kakfa API
+    - "*.cluster.console-kafka-mtls.svc.cluster.local"
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-secret-root-issuer
+  secretName: cluster-tls-secret-node-certificate

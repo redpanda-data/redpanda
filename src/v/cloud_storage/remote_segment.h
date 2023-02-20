@@ -17,9 +17,9 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "s3/client.h"
 #include "storage/parser.h"
 #include "storage/segment_reader.h"
 #include "storage/translating_reader.h"
@@ -58,15 +58,7 @@ public:
     remote_segment(
       remote& r,
       cache& cache,
-      s3::bucket_name bucket,
-      const partition_manifest& m,
-      const partition_manifest::key& name,
-      retry_chain_node& parent);
-
-    remote_segment(
-      remote& r,
-      cache& cache,
-      s3::bucket_name bucket,
+      cloud_storage_clients::bucket_name bucket,
       const partition_manifest& m,
       model::offset base_offset,
       retry_chain_node& parent);
@@ -86,13 +78,13 @@ public:
 
     /// Number of non-data batches in all previous
     /// segments
-    const model::offset get_base_offset_delta() const;
+    const model::offset_delta get_base_offset_delta() const;
 
     /// Get base offset of the segment (redpanda offset)
     const model::offset get_base_rp_offset() const;
 
     /// Get base offset of the segment (kafka offset)
-    const model::offset get_base_kafka_offset() const;
+    const kafka::offset get_base_kafka_offset() const;
 
     ss::future<> stop();
 
@@ -104,12 +96,14 @@ public:
     struct input_stream_with_offsets {
         ss::input_stream<char> stream;
         model::offset rp_offset;
-        model::offset kafka_offset;
+        kafka::offset kafka_offset;
     };
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
-    ss::future<input_stream_with_offsets>
-    offset_data_stream(model::offset kafka_offset, ss::io_priority_class);
+    ss::future<input_stream_with_offsets> offset_data_stream(
+      kafka::offset kafka_offset,
+      std::optional<model::timestamp>,
+      ss::io_priority_class);
 
     /// Hydrate the segment
     ss::future<> hydrate();
@@ -125,11 +119,20 @@ public:
     ss::future<std::vector<model::tx_range>>
     aborted_transactions(model::offset from, model::offset to);
 
+    const remote_segment_path& get_segment_path() const noexcept {
+        return _path;
+    }
+
+    bool is_stopped() const { return _stopped; }
+
 private:
     /// get a file offset for the corresponding kafka offset
     /// if the index is available
     std::optional<offset_index::find_result>
-    maybe_get_offsets(model::offset kafka_offset);
+    maybe_get_offsets(kafka::offset kafka_offset);
+
+    /// Sets the results of the waiters of this segment as the given error.
+    void set_waiter_errors(const std::exception_ptr& err);
 
     /// Run hydration loop. The method is supposed to be constantly running
     /// in the background. The background loop is triggered by the condition
@@ -141,6 +144,11 @@ private:
     /// Actually hydrate the segment. The method downloads the segment file
     /// to the cache dir and updates the segment index.
     ss::future<> do_hydrate_segment();
+
+    /// Helper for do_hydrate_segment
+    ss::future<uint64_t>
+      do_hydrate_segment_inner(uint64_t, ss::input_stream<char>);
+
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.
     ss::future<> do_hydrate_txrange();
@@ -156,13 +164,13 @@ private:
     ss::gate _gate;
     remote& _api;
     cache& _cache;
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
     const model::ntp& _ntp;
     remote_segment_path _path;
 
     model::term_id _term;
     model::offset _base_rp_offset;
-    model::offset _base_offset_delta;
+    model::offset_delta _base_offset_delta;
     model::offset _max_rp_offset;
 
     retry_chain_node _rtc;
@@ -180,6 +188,12 @@ private:
 
     using tx_range_vec = fragmented_vector<model::tx_range>;
     std::optional<tx_range_vec> _tx_range;
+
+    // For backing off on apparent thrash/saturation of the local cache
+    simple_time_jitter<ss::lowres_clock> _cache_backoff_jitter;
+
+    bool _compacted{false};
+    bool _stopped{false};
 };
 
 class remote_segment_batch_consumer;
@@ -208,7 +222,8 @@ public:
     remote_segment_batch_reader(
       ss::lw_shared_ptr<remote_segment>,
       const storage::log_reader_config& config,
-      partition_probe& probe) noexcept;
+      partition_probe& probe,
+      ssx::semaphore_units) noexcept;
 
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = delete;
@@ -233,11 +248,26 @@ public:
     /// Get base offset (redpanda offset)
     model::offset base_rp_offset() const { return _seg->get_base_rp_offset(); }
 
+    kafka::offset base_kafka_offset() const {
+        return _seg->get_base_kafka_offset();
+    }
+
     bool is_eof() const { return _cur_rp_offset > _seg->get_max_rp_offset(); }
 
     void set_eof() {
         _cur_rp_offset = _seg->get_max_rp_offset() + model::offset{1};
     }
+
+    model::offset current_rp_offset() const { return _cur_rp_offset; }
+    kafka::offset current_kafka_offset() const {
+        return _cur_rp_offset - _cur_delta;
+    }
+
+    bool reads_from_segment(const remote_segment& segm) const {
+        return &segm == _seg.get();
+    }
+
+    bool is_stopped() const { return _stopped; }
 
 private:
     friend class single_record_consumer;
@@ -257,10 +287,14 @@ private:
     std::unique_ptr<storage::continuous_batch_parser> _parser;
     model::term_id _term;
     model::offset _cur_rp_offset;
-    model::offset _cur_delta;
+    model::offset_delta _cur_delta;
     size_t _bytes_consumed{0};
     ss::gate _gate;
     bool _stopped{false};
+
+    /// Units for limiting concurrently-instantiated readers, they belong
+    /// to materialized_segments.
+    ssx::semaphore_units _units;
 };
 
 } // namespace cloud_storage

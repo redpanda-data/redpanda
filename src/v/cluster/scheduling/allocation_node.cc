@@ -11,18 +11,18 @@
 
 #include "cluster/scheduling/allocation_node.h"
 
+#include <fmt/ranges.h>
+
 namespace cluster {
 allocation_node::allocation_node(
   model::node_id id,
   uint32_t cpus,
-  absl::node_hash_map<ss::sstring, ss::sstring> labels,
   std::optional<model::rack_id> rack,
   config::binding<uint32_t> partitions_per_shard,
   config::binding<uint32_t> partitions_reserve_shard0)
   : _id(id)
   , _weights(cpus)
   , _max_capacity((cpus * partitions_per_shard()) - partitions_reserve_shard0())
-  , _machine_labels(std::move(labels))
   , _rack(std::move(rack))
   , _partitions_per_shard(std::move(partitions_per_shard))
   , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
@@ -48,14 +48,17 @@ allocation_node::allocation_node(
     });
 }
 
-ss::shard_id allocation_node::allocate() {
+ss::shard_id
+allocation_node::allocate(const partition_allocation_domain domain) {
     auto it = std::min_element(_weights.begin(), _weights.end());
     (*it)++; // increment the weights
     _allocated_partitions++;
+    ++_allocated_domain_partitions[domain];
     return std::distance(_weights.begin(), it);
 }
 
-void allocation_node::deallocate(ss::shard_id core) {
+void allocation_node::deallocate_on(
+  ss::shard_id core, const partition_allocation_domain domain) {
     vassert(
       core < _weights.size(),
       "Tried to deallocate a non-existing core:{} - {}",
@@ -67,11 +70,23 @@ void allocation_node::deallocate(ss::shard_id core) {
       core,
       *this);
 
+    allocation_capacity& domain_partitions
+      = _allocated_domain_partitions[domain];
+    vassert(
+      domain_partitions > allocation_capacity{0}
+        && domain_partitions <= _allocated_partitions,
+      "Unable to deallocate partition from core {} in domain {} at node {}",
+      core,
+      domain,
+      *this);
+    --domain_partitions;
+
     _allocated_partitions--;
     _weights[core]--;
 }
 
-void allocation_node::allocate(ss::shard_id core) {
+void allocation_node::allocate_on(
+  ss::shard_id core, const partition_allocation_domain domain) {
     vassert(
       core < _weights.size(),
       "Tried to allocate a non-existing core:{} - {}",
@@ -79,11 +94,7 @@ void allocation_node::allocate(ss::shard_id core) {
       *this);
     _weights[core]++;
     _allocated_partitions++;
-}
-
-const absl::node_hash_map<ss::sstring, ss::sstring>&
-allocation_node::machine_labels() const {
-    return _machine_labels;
+    ++_allocated_domain_partitions[domain];
 }
 
 void allocation_node::update_core_count(uint32_t core_count) {
@@ -116,17 +127,22 @@ std::ostream& operator<<(std::ostream& o, allocation_node::state s) {
 std::ostream& operator<<(std::ostream& o, const allocation_node& n) {
     fmt::print(
       o,
-      "{{node: {}, max_partitions_per_core: {}, state: {}, partition_capacity: "
-      "{}, weights: [",
+      "{{node: {}, max_partitions_per_core: {}, state: {}, allocated: {}, "
+      "partition_capacity: {}, weights: [",
       n._id,
       n._partitions_per_shard(),
       n._state,
+      n._allocated_partitions,
       n.partition_capacity());
 
     for (auto w : n._weights) {
         fmt::print(o, "({})", w);
     }
-    fmt::print(o, "]}}");
+    fmt::print(
+      o,
+      "], allocated: {}({})}}",
+      n._allocated_partitions,
+      n._allocated_domain_partitions);
     return o;
 }
 

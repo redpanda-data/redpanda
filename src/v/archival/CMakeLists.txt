@@ -3,16 +3,19 @@ v_cc_library(
   NAME archival
   SRCS
     archival_policy.cc
-    service.cc
     ntp_archiver_service.cc
     probe.cc
     types.cc
     upload_controller.cc
+    segment_reupload.cc
+    retention_calculator.cc
+    upload_housekeeping_service.cc
+    adjacent_segment_merger.cc
   DEPS
     Seastar::seastar
     v::bytes
     v::http
-    v::s3
+    v::cloud_storage_clients
     v::cloud_storage
     v::json
     v::model

@@ -34,7 +34,10 @@ ss::future<> state_machine::start() {
     return ss::now();
 }
 
-void state_machine::set_next(model::offset offset) { _next = offset; }
+void state_machine::set_next(model::offset offset) {
+    _next = offset;
+    _waiters.notify(model::prev_offset(offset));
+}
 
 ss::future<> state_machine::handle_eviction() {
     vlog(
@@ -45,17 +48,20 @@ ss::future<> state_machine::handle_eviction() {
 }
 
 ss::future<> state_machine::stop() {
-    vlog(_log.debug, "Asked to stop state_machine");
+    vlog(_log.debug, "Asked to stop state_machine {}", _raft->ntp());
     _waiters.stop();
     _as.request_abort();
-    return _gate.close().then(
-      [this] { vlog(_log.debug, "state_machine is stopped"); });
+    return _gate.close().then([this] {
+        vlog(_log.debug, "state_machine is stopped {}", _raft->ntp());
+    });
 }
 
 ss::future<> state_machine::wait(
-  model::offset offset, model::timeout_clock::time_point timeout) {
-    return ss::with_gate(_gate, [this, timeout, offset] {
-        return _waiters.wait(offset, timeout, std::nullopt);
+  model::offset offset,
+  model::timeout_clock::time_point timeout,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    return ss::with_gate(_gate, [this, timeout, offset, as] {
+        return _waiters.wait(offset, timeout, as);
     });
 }
 
@@ -136,11 +142,22 @@ ss::future<> state_machine::apply() {
                 }
             });
       })
-      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {})
+      .handle_exception_type([this](const ss::timed_out_error&) {
+          // This is a safe retry, but if it happens in tests we're interested
+          // in seeing what happened in the debug log
+          vlog(
+            _log.debug,
+            "Timeout in state_machine::apply on ntp {}",
+            _raft->ntp());
+      })
+      .handle_exception_type([](const ss::abort_requested_exception&) {})
       .handle_exception_type([](const ss::gate_closed_exception&) {})
       .handle_exception([this](const std::exception_ptr& e) {
           vlog(
-            _log.info, "State machine for ntp={} handles {}", _raft->ntp(), e);
+            _log.info,
+            "State machine for ntp={} caught exception {}",
+            _raft->ntp(),
+            e);
       });
 }
 

@@ -5,17 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/cloudhut/common/rest"
 	"github.com/go-logr/logr"
-	"github.com/redpanda-data/console/backend/pkg/connect"
-	"github.com/redpanda-data/console/backend/pkg/kafka"
-	"github.com/redpanda-data/console/backend/pkg/schema"
+	"github.com/redpanda-data/console/backend/pkg/config"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	labels "github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -51,8 +52,18 @@ func NewConfigMap(
 
 // Ensure implements Resource interface
 func (cm *ConfigMap) Ensure(ctx context.Context) error {
-	if cm.consoleobj.Status.ConfigMapRef != nil {
-		return nil
+	if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil {
+		cm.log.V(debugLogLevel).Info("config map ref still exist", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
+		// Check ConfigMap is present, in case it is manually deleted
+		err := cm.Get(ctx, client.ObjectKey{Namespace: ref.Namespace, Name: ref.Name}, &corev1.ConfigMap{})
+		if apierrors.IsNotFound(err) {
+			cm.consoleobj.Status.ConfigMapRef = nil
+			if updateErr := cm.Status().Update(ctx, cm.consoleobj); updateErr != nil {
+				return updateErr
+			}
+			return &resources.RequeueError{Msg: err.Error()}
+		}
+		return err
 	}
 
 	// If old ConfigMaps can't be deleted for any reason, it will not continue reconciliation
@@ -75,13 +86,12 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 		return err
 	}
 	username := string(secret.Data[corev1.BasicAuthUsernameKey])
-	password := string(secret.Data[corev1.BasicAuthPasswordKey])
 
-	config, err := cm.generateConsoleConfig(ctx, username, password)
+	configuration, err := cm.generateConsoleConfig(ctx, username)
 	if err != nil {
 		return err
 	}
-	cm.log.V(debugLogLevel).Info("Creating new ConfigMap", "data", config)
+	cm.log.V(debugLogLevel).Info("Creating new ConfigMap", "data", configuration)
 
 	// Create new ConfigMap instead of updating existing so Deployment will trigger a reconcile
 	immutable := true
@@ -92,7 +102,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 			Labels:       labels.ForConsole(cm.consoleobj),
 		},
 		Data: map[string]string{
-			"config.yaml": config,
+			"config.yaml": configuration,
 		},
 		Immutable: &immutable,
 	}
@@ -108,6 +118,7 @@ func (cm *ConfigMap) Ensure(ctx context.Context) error {
 	// Other Resources may set Console status if they are also watching GenerationMatchesObserved()
 	cm.consoleobj.Status.ConfigMapRef = &corev1.ObjectReference{Namespace: obj.GetNamespace(), Name: obj.GetName()}
 
+	cm.log.Info("config map ref updated", "config map name", cm.consoleobj.Status.ConfigMapRef.Name, "config map namespace", cm.consoleobj.Status.ConfigMapRef.Namespace)
 	return nil
 }
 
@@ -120,14 +131,15 @@ func (cm *ConfigMap) Key() types.NamespacedName {
 // This should match the fields at https://github.com/redpanda-data/console/blob/master/docs/config/console.yaml
 // We are copying the fields instead of importing them because (1) they don't have json tags (2) some fields aren't ideal for K8s (e.g. TLS certs shouldn't be file paths but Secret reference)
 func (cm *ConfigMap) generateConsoleConfig(
-	ctx context.Context, username, password string,
+	ctx context.Context, username string,
 ) (configString string, err error) {
 	consoleConfig := &ConsoleConfig{
 		MetricsNamespace: cm.consoleobj.Spec.MetricsPrefix,
 		ServeFrontend:    cm.consoleobj.Spec.ServeFrontend,
 		Server:           cm.genServer(),
-		Kafka:            cm.genKafka(username, password),
+		Kafka:            cm.genKafka(username),
 		Enterprise:       cm.genEnterprise(),
+		Redpanda:         cm.genRedpanda(),
 	}
 
 	consoleConfig.Connect, err = cm.genConnect(ctx)
@@ -146,11 +158,50 @@ func (cm *ConfigMap) generateConsoleConfig(
 		return "", err
 	}
 
-	config, err := yaml.Marshal(consoleConfig)
+	consoleConfig.SecretStore = cm.genSecretStore()
+
+	consoleConfig.Cloud = cm.genCloud()
+
+	configuration, err := yaml.Marshal(consoleConfig)
 	if err != nil {
 		return "", err
 	}
-	return string(config), nil
+	return string(configuration), nil
+}
+
+func (cm *ConfigMap) genRedpanda() (r Redpanda) {
+	if rp := cm.consoleobj.Spec.Redpanda; rp != nil {
+		if aa := rp.AdminAPI; aa != nil && aa.Enabled {
+			r.AdminAPI = cm.buildRedpandaAdmin(aa)
+		}
+	}
+	return r
+}
+
+func (cm *ConfigMap) buildRedpandaAdmin(
+	aa *redpandav1alpha1.RedpandaAdmin,
+) RedpandaAdmin {
+	r := RedpandaAdmin{
+		Enabled: aa.Enabled,
+		URLs:    cm.clusterobj.AdminAPIURLs(),
+	}
+	if l := cm.clusterobj.AdminAPIListener(); l != nil && l.TLS.Enabled {
+		nodeSecretRef := &corev1.ObjectReference{
+			Namespace: cm.clusterobj.GetNamespace(),
+			Name:      fmt.Sprintf("%s-%s", cm.clusterobj.GetName(), adminAPINodeCertSuffix),
+		}
+		ca := &SecretTLSCa{NodeSecretRef: nodeSecretRef}
+		tls := RedpandaAdminTLS{
+			Enabled:    aa.Enabled,
+			CaFilepath: ca.FilePath(AdminAPITLSCaFilePath),
+		}
+		if l.IsMutualTLSEnabled() {
+			tls.CertFilepath = AdminAPITLSCertFilePath
+			tls.KeyFilepath = AdminAPITLSKeyFilePath
+		}
+		r.TLS = tls
+	}
+	return r
 }
 
 func (cm *ConfigMap) genEnterprise() (e Enterprise) {
@@ -165,10 +216,46 @@ func (cm *ConfigMap) genEnterprise() (e Enterprise) {
 	return e
 }
 
+func (cm *ConfigMap) genCloud() CloudConfig {
+	if cm.consoleobj.Spec.Cloud == nil ||
+		cm.consoleobj.Spec.Cloud.PrometheusEndpoint == nil {
+		return CloudConfig{}
+	}
+	prometheus := cm.consoleobj.Spec.Cloud.PrometheusEndpoint
+	cc := CloudConfig{
+		PrometheusEndpoint: PrometheusEndpointConfig{
+			Enabled: prometheus.Enabled,
+			BasicAuth: struct {
+				Username string "yaml:\"username\""
+			}{
+				Username: prometheus.BasicAuth.Username,
+			},
+		},
+	}
+	if prometheus.ResponseCacheDuration != nil {
+		cc.PrometheusEndpoint.ResponseCacheDuration = prometheus.ResponseCacheDuration.Duration
+	}
+	if prometheus.Prometheus != nil {
+		cc.PrometheusEndpoint.Prometheus = PrometheusConfig{
+			Address: prometheus.Prometheus.Address,
+		}
+		if prometheus.Prometheus.TargetRefreshInterval != nil {
+			cc.PrometheusEndpoint.Prometheus.TargetRefreshInterval = prometheus.Prometheus.TargetRefreshInterval.Duration
+		}
+		for _, promJob := range prometheus.Prometheus.Jobs {
+			cc.PrometheusEndpoint.Prometheus.Jobs = append(cc.PrometheusEndpoint.Prometheus.Jobs, PrometheusScraperJobConfig{
+				JobName:    promJob.JobName,
+				KeepLabels: promJob.KeepLabels,
+			})
+		}
+	}
+	return cc
+}
+
 var (
-	// DefaultLicenseSecretKey is the default key required in secret referenced by `SecretKeyRef`.
-	// The license will be provided to console to allow enterprise features.
-	DefaultLicenseSecretKey = "license"
+	// gcpCredentialsFilepath is the path to the service account JSON file that is
+	// used to authenticate API calls with the given service account.
+	gcpCredentialsFilepath = "/secret/gcp-service-account.json" //nolint:gosec // not a secret
 
 	// DefaultJWTSecretKey is the default key required in secret referenced by `SecretKeyRef`.
 	// The secret should consist of JWT used to authenticate into google SSO.
@@ -187,7 +274,9 @@ var (
 	EnterpriseGoogleClientSecretKey = "clientSecret"
 )
 
-func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error) {
+func (cm *ConfigMap) genLogin(
+	ctx context.Context,
+) (e EnterpriseLogin, err error) {
 	if provider := cm.consoleobj.Spec.Login; provider != nil { //nolint:nestif // login config is complex
 		enterpriseLogin := EnterpriseLogin{
 			Enabled: provider.Enabled,
@@ -246,13 +335,63 @@ func (cm *ConfigMap) genLogin(ctx context.Context) (e EnterpriseLogin, err error
 	return e, nil
 }
 
+func (cm *ConfigMap) genSecretStore() EnterpriseSecretStore {
+	if cm.consoleobj.Spec.SecretStore == nil {
+		return EnterpriseSecretStore{}
+	}
+
+	ss := cm.consoleobj.Spec.SecretStore
+	smGCP := EnterpriseSecretManagerGCP{}
+	if ss.GCPSecretManager != nil {
+		smGCP = EnterpriseSecretManagerGCP{
+			Enabled:   ss.GCPSecretManager.Enabled,
+			ProjectID: ss.GCPSecretManager.ProjectID,
+			Labels:    ss.GCPSecretManager.Labels,
+		}
+		if ss.GCPSecretManager.CredentialsSecretRef != nil {
+			smGCP.CredentialsFilepath = gcpCredentialsFilepath
+		}
+	}
+
+	smAWS := EnterpriseSecretManagerAWS{}
+	if ss.AWSSecretManager != nil {
+		smAWS = EnterpriseSecretManagerAWS{
+			Enabled:  ss.AWSSecretManager.Enabled,
+			Region:   ss.AWSSecretManager.Region,
+			KmsKeyID: ss.AWSSecretManager.KmsKeyID,
+			Tags:     ss.AWSSecretManager.Tags,
+		}
+	}
+
+	kc := EnterpriseSecretStoreKafkaConnect{}
+	if ss.KafkaConnect != nil {
+		kc = EnterpriseSecretStoreKafkaConnect{
+			Enabled: ss.KafkaConnect.Enabled,
+		}
+		for i := 0; i < len(ss.KafkaConnect.Clusters); i++ {
+			c := ss.KafkaConnect.Clusters[i]
+			kc.Clusters = append(kc.Clusters, EnterpriseSecretStoreKafkaConnectCluster{
+				Name:                   c.Name,
+				SecretNamePrefixAppend: c.SecretNamePrefixAppend,
+			})
+		}
+	}
+	return EnterpriseSecretStore{
+		Enabled:          ss.Enabled,
+		SecretNamePrefix: ss.SecretNamePrefix,
+		GCPSecretManager: smGCP,
+		AWSSecretManager: smAWS,
+		KafkaConnect:     kc,
+	}
+}
+
 func (cm *ConfigMap) genLicense(ctx context.Context) (string, error) {
 	if license := cm.consoleobj.Spec.LicenseRef; license != nil {
 		licenseSecret, err := license.GetSecret(ctx, cm.Client)
 		if err != nil {
 			return "", err
 		}
-		licenseValue, err := license.GetValue(licenseSecret, DefaultLicenseSecretKey)
+		licenseValue, err := license.GetValue(licenseSecret, redpandav1alpha1.DefaultLicenseSecretKey)
 		if err != nil {
 			return "", err
 		}
@@ -291,30 +430,41 @@ var (
 
 	SchemaRegistryTLSDir          = "/redpanda/schema-registry"
 	SchemaRegistryTLSCaFilePath   = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "ca.crt")
-	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.crt")
-	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, "tls.key")
+	SchemaRegistryTLSCertFilePath = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, corev1.TLSCertKey)
+	SchemaRegistryTLSKeyFilePath  = fmt.Sprintf("%s/%s", SchemaRegistryTLSDir, corev1.TLSPrivateKeyKey)
 
 	ConnectTLSDir          = "/redpanda/connect"
 	ConnectTLSCaFilePath   = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "ca.crt")
-	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.crt")
-	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, "tls.key")
+	ConnectTLSCertFilePath = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, corev1.TLSCertKey)
+	ConnectTLSKeyFilePath  = fmt.Sprintf("%s/%%s/%s", ConnectTLSDir, corev1.TLSPrivateKeyKey)
+
+	KafkaTLSDir          = "/redpanda/kafka"
+	KafkaTLSCaFilePath   = fmt.Sprintf("%s/%s", KafkaTLSDir, "ca.crt")
+	KafkaTLSCertFilePath = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSCertKey)
+	KafkaTLSKeyFilePath  = fmt.Sprintf("%s/%s", KafkaTLSDir, corev1.TLSPrivateKeyKey)
+
+	AdminAPITLSDir          = "/redpanda/admin-api"
+	AdminAPITLSCaFilePath   = fmt.Sprintf("%s/%s", AdminAPITLSDir, "ca.crt")
+	AdminAPITLSCertFilePath = fmt.Sprintf("%s/%s", AdminAPITLSDir, corev1.TLSCertKey)
+	AdminAPITLSKeyFilePath  = fmt.Sprintf("%s/%s", AdminAPITLSDir, corev1.TLSPrivateKeyKey)
 )
 
-// SchemaRegistryTLSCa handles mounting CA cert
-type SchemaRegistryTLSCa struct {
-	NodeSecretRef *corev1.ObjectReference
+// SecretTLSCa handles mounting CA cert
+type SecretTLSCa struct {
+	NodeSecretRef  *corev1.ObjectReference
+	UsePublicCerts bool
 }
 
 // FilePath returns the CA filepath mount
-func (s *SchemaRegistryTLSCa) FilePath() string {
+func (s *SecretTLSCa) FilePath(defaultCaCert string) string {
 	if s.useCaCert() {
-		return SchemaRegistryTLSCaFilePath
+		return defaultCaCert
 	}
 	return DefaultCaFilePath
 }
 
 // Volume returns mount Volume definition
-func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
+func (s *SecretTLSCa) Volume(name string) *corev1.Volume {
 	if s.useCaCert() {
 		return &corev1.Volume{
 			Name: name,
@@ -330,45 +480,69 @@ func (s *SchemaRegistryTLSCa) Volume(name string) *corev1.Volume {
 }
 
 // useCaCert checks if the CA certificate referenced by NodeSecretRef should be used
-func (s *SchemaRegistryTLSCa) useCaCert() bool {
-	return !UsePublicCerts && s.NodeSecretRef != nil
+func (s *SecretTLSCa) useCaCert() bool {
+	return !s.UsePublicCerts && s.NodeSecretRef != nil
 }
 
-func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
-	k := kafka.Config{
+func (cm *ConfigMap) genKafka(username string) config.Kafka {
+	k := config.Kafka{
 		Brokers:  getBrokers(cm.clusterobj),
 		ClientID: fmt.Sprintf("redpanda-console-%s-%s", cm.consoleobj.GetNamespace(), cm.consoleobj.GetName()),
 	}
 
-	schemaRegistry := schema.Config{Enabled: false}
+	schemaRegistry := config.Schema{Enabled: false}
 	if y := cm.consoleobj.Spec.SchemaRegistry.Enabled; y {
-		tls := schema.TLSConfig{Enabled: false}
+		tls := config.SchemaTLS{Enabled: false}
 		if yy := cm.clusterobj.IsSchemaRegistryTLSEnabled(); yy {
-			ca := &SchemaRegistryTLSCa{
-				// SchemaRegistryAPITLS cannot be nil
-				cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+			ca := &SecretTLSCa{
+				NodeSecretRef:  cm.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+				UsePublicCerts: UsePublicCerts,
 			}
-			tls = schema.TLSConfig{
+			tls = config.SchemaTLS{
 				Enabled:    y,
-				CaFilepath: ca.FilePath(),
+				CaFilepath: ca.FilePath(SchemaRegistryTLSCaFilePath),
 			}
 			if cm.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
 				tls.CertFilepath = SchemaRegistryTLSCertFilePath
 				tls.KeyFilepath = SchemaRegistryTLSKeyFilePath
 			}
 		}
-		schemaRegistry = schema.Config{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
+		schemaRegistry = config.Schema{Enabled: y, URLs: []string{cm.clusterobj.SchemaRegistryAPIURL()}, TLS: tls}
+		if cm.clusterobj.IsSchemaRegistryAuthHTTPBasic() {
+			schemaRegistry.Username = username
+		}
+
+		// Default protobuf values to enable decoding in SchemaRegistry
+		// REF https://app.zenhub.com/workspaces/cloud-62684e2c6635e100149514fd/issues/redpanda-data/cloud/2834
+		k.Protobuf = config.Proto{
+			Enabled: y,
+			SchemaRegistry: config.ProtoSchemaRegistry{
+				Enabled:         y,
+				RefreshInterval: time.Second * 10,
+			},
+		}
 	}
 	k.Schema = schemaRegistry
 
-	sasl := kafka.SASLConfig{Enabled: false}
+	tls := config.KafkaTLS{Enabled: false}
+	if l := cm.clusterobj.KafkaListener(); l.IsMutualTLSEnabled() {
+		ca := &SecretTLSCa{NodeSecretRef: l.TLS.NodeSecretRef}
+		tls = config.KafkaTLS{
+			Enabled:      true,
+			CaFilepath:   ca.FilePath(KafkaTLSCaFilePath),
+			CertFilepath: KafkaTLSCertFilePath,
+			KeyFilepath:  KafkaTLSKeyFilePath,
+		}
+	}
+	k.TLS = tls
+
+	sasl := config.KafkaSASL{Enabled: false}
 	// Set defaults because Console complains SASL mechanism is not set even if SASL is disabled
 	sasl.SetDefaults()
-	if yes := cm.clusterobj.Spec.EnableSASL; yes {
-		sasl = kafka.SASLConfig{
+	if yes := cm.clusterobj.IsSASLOnInternalEnabled(); yes {
+		sasl = config.KafkaSASL{
 			Enabled:   yes,
 			Username:  username,
-			Password:  password,
 			Mechanism: admin.ScramSha256,
 		}
 	}
@@ -378,7 +552,7 @@ func (cm *ConfigMap) genKafka(username, password string) kafka.Config {
 }
 
 func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
-	if l := clusterobj.InternalListener(); l != nil {
+	if l := clusterobj.KafkaListener(); !l.External.Enabled {
 		brokers := []string{}
 		for _, host := range clusterobj.Status.Nodes.Internal {
 			port := fmt.Sprintf("%d", l.Port)
@@ -390,8 +564,10 @@ func getBrokers(clusterobj *redpandav1alpha1.Cluster) []string {
 	return clusterobj.Status.Nodes.External
 }
 
-func (cm *ConfigMap) genConnect(ctx context.Context) (conn connect.Config, err error) {
-	clusters := []connect.ConfigCluster{}
+func (cm *ConfigMap) genConnect(
+	ctx context.Context,
+) (conn config.Connect, err error) {
+	clusters := []config.ConnectCluster{}
 	for _, c := range cm.consoleobj.Spec.Connect.Clusters {
 		cluster, err := cm.buildConfigCluster(ctx, c)
 		if err != nil {
@@ -400,7 +576,7 @@ func (cm *ConfigMap) genConnect(ctx context.Context) (conn connect.Config, err e
 		clusters = append(clusters, *cluster)
 	}
 
-	return connect.Config{
+	return config.Connect{
 		Enabled:        cm.consoleobj.Spec.Connect.Enabled,
 		Clusters:       clusters,
 		ConnectTimeout: cm.consoleobj.Spec.Connect.ConnectTimeout.Duration,
@@ -418,8 +594,8 @@ func getOrEmpty(key string, data map[string][]byte) string {
 
 func (cm *ConfigMap) buildConfigCluster(
 	ctx context.Context, c redpandav1alpha1.ConnectCluster,
-) (*connect.ConfigCluster, error) {
-	cluster := &connect.ConfigCluster{Name: c.Name, URL: c.URL}
+) (*config.ConnectCluster, error) {
+	cluster := &config.ConnectCluster{Name: c.Name, URL: c.URL}
 
 	if c.BasicAuthRef != nil {
 		ref := corev1.Secret{}
@@ -457,6 +633,7 @@ func (cm *ConfigMap) buildConfigCluster(
 // ConfigMaps are recreated upon Console update, old ones should be cleaned up
 func (cm *ConfigMap) DeleteUnused(ctx context.Context) error {
 	if ref := cm.consoleobj.Status.ConfigMapRef; ref != nil {
+		cm.log.Info("delete unused config map reference", "config map name", ref.Name, "config map namespace", ref.Namespace)
 		if err := cm.delete(ctx, ref.Name); err != nil {
 			return err
 		}

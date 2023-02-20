@@ -20,51 +20,53 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/spf13/afero"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 const (
-	hostNameEnvVar                                       = "HOSTNAME"
-	svcFQDNEnvVar                                        = "SERVICE_FQDN"
-	configSourceDirEnvVar                                = "CONFIG_SOURCE_DIR"
 	configDestinationEnvVar                              = "CONFIG_DESTINATION"
-	redpandaRPCPortEnvVar                                = "REDPANDA_RPC_PORT"
-	nodeNameEnvVar                                       = "NODE_NAME"
-	externalConnectivityEnvVar                           = "EXTERNAL_CONNECTIVITY"
-	externalConnectivitySubDomainEnvVar                  = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
+	configSourceDirEnvVar                                = "CONFIG_SOURCE_DIR"
 	externalConnectivityAddressTypeEnvVar                = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
+	externalConnectivityEnvVar                           = "EXTERNAL_CONNECTIVITY"
 	externalConnectivityKafkaEndpointTemplateEnvVar      = "EXTERNAL_CONNECTIVITY_KAFKA_ENDPOINT_TEMPLATE"
 	externalConnectivityPandaProxyEndpointTemplateEnvVar = "EXTERNAL_CONNECTIVITY_PANDA_PROXY_ENDPOINT_TEMPLATE"
+	externalConnectivitySubDomainEnvVar                  = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostIPEnvVar                                         = "HOST_IP_ADDRESS"
+	hostNameEnvVar                                       = "HOSTNAME"
 	hostPortEnvVar                                       = "HOST_PORT"
+	nodeNameEnvVar                                       = "NODE_NAME"
 	proxyHostPortEnvVar                                  = "PROXY_HOST_PORT"
+	rackAwarenessEnvVar                                  = "RACK_AWARENESS"
+	redpandaRPCPortEnvVar                                = "REDPANDA_RPC_PORT"
+	svcFQDNEnvVar                                        = "SERVICE_FQDN"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName                                       string
-	svcFQDN                                        string
-	configSourceDir                                string
 	configDestination                              string
-	nodeName                                       string
-	subdomain                                      string
+	configSourceDir                                string
 	externalConnectivity                           bool
 	externalConnectivityAddressType                corev1.NodeAddressType
 	externalConnectivityKafkaEndpointTemplate      string
 	externalConnectivityPandaProxyEndpointTemplate string
-	redpandaRPCPort                                int
-	hostPort                                       int
-	proxyHostPort                                  int
 	hostIP                                         string
+	hostName                                       string
+	hostPort                                       int
+	nodeName                                       string
+	proxyHostPort                                  int
+	rackAwareness                                  bool
+	redpandaRPCPort                                int
+	subdomain                                      string
+	svcFQDN                                        string
 }
 
 func (c *configuratorConfig) String() string {
@@ -79,7 +81,8 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivityAddressType: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
+		"proxyHostPort: %d\n"+
+		"rackAwareness: %t\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -90,7 +93,8 @@ func (c *configuratorConfig) String() string {
 		c.externalConnectivityAddressType,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.rackAwareness)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -105,11 +109,15 @@ func main() {
 
 	log.Print(c.String())
 
-	fs := afero.NewOsFs()
-	p := config.Params{ConfigPath: path.Join(c.configSourceDir, "redpanda.yaml")}
-	cfg, err := p.Load(fs)
+	p := path.Join(c.configSourceDir, "redpanda.yaml")
+	cf, err := os.ReadFile(p)
 	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file: %w", err))
+		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file, %q: %w", p, err))
+	}
+	cfg := &config.Config{}
+	err = yaml.Unmarshal(cf, cfg)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to parse the redpanda configuration file, %q: %w", p, err))
 	}
 
 	kafkaAPIPort, err := getInternalKafkaAPIPort(cfg)
@@ -136,14 +144,29 @@ func main() {
 		}
 	}
 
-	cfg.Redpanda.ID = int(hostIndex)
+	// New bootstrap with v22.3, if redpanda.empty_seed_starts_cluster is false redpanda automatically
+	// generated IDs and forms clusters using the full set of nodes.
+	if cfg.Redpanda.EmptySeedStartsCluster != nil && !*cfg.Redpanda.EmptySeedStartsCluster {
+		cfg.Redpanda.ID = nil
+	} else {
+		cfg.Redpanda.ID = new(int)
+		*cfg.Redpanda.ID = int(hostIndex)
 
-	// In case of a single seed server, the list should contain the current node itself.
-	// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
-	// configured to use mutual TLS on the Kafka API (see Helm test).
-	// So, we clear the list of seeds to help Redpanda.
-	if len(cfg.Redpanda.SeedServers) == 1 {
-		cfg.Redpanda.SeedServers = []config.SeedServer{}
+		// In case of a single seed server, the list should contain the current node itself.
+		// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
+		// configured to use mutual TLS on the Kafka API (see Helm test).
+		// So, we clear the list of seeds to help Redpanda.
+		if len(cfg.Redpanda.SeedServers) == 1 {
+			cfg.Redpanda.SeedServers = []config.SeedServer{}
+		}
+	}
+
+	if c.rackAwareness {
+		zone, zoneID, errZone := getZoneLabels(c.nodeName)
+		if errZone != nil {
+			log.Fatalf("%s", fmt.Errorf("unable to retrieve zone labels: %w", errZone))
+		}
+		populateRack(cfg, zone, zoneID)
 	}
 
 	cfgBytes, err := yaml.Marshal(cfg)
@@ -159,6 +182,23 @@ func main() {
 }
 
 var errInternalPortMissing = errors.New("port configration is missing internal port")
+
+func getZoneLabels(nodeName string) (zone, zoneID string, err error) {
+	node, err := getNode(nodeName)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to retrieve node: %w", err)
+	}
+	zone = node.Labels["topology.kubernetes.io/zone"]
+	zoneID = node.Labels["topology.cloud.redpanda.com/zone-id"]
+	return zone, zoneID, nil
+}
+
+func populateRack(cfg *config.Config, zone, zoneID string) {
+	cfg.Redpanda.Rack = zoneID
+	if zoneID == "" {
+		cfg.Redpanda.Rack = zone
+	}
+}
 
 func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
 	for _, l := range cfg.Redpanda.KafkaAPI {
@@ -374,6 +414,15 @@ func checkEnvVars() (configuratorConfig, error) {
 
 	var err error
 	c.externalConnectivity, err = strconv.ParseBool(extCon)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	rackAwareness, exist := os.LookupEnv(rackAwarenessEnvVar)
+	if !exist {
+		result = multierror.Append(result, fmt.Errorf("%s %w", rackAwarenessEnvVar, errorMissingEnvironmentVariable))
+	}
+	c.rackAwareness, err = strconv.ParseBool(rackAwareness)
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
 	}

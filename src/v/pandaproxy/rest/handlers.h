@@ -19,34 +19,37 @@
 
 namespace pandaproxy::rest {
 
-ss::future<ctx_server<proxy>::reply_t>
-get_brokers(ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+get_brokers(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t> get_topics_names(
-  ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+get_topics_names(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t> get_topics_records(
-  ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+get_topics_records(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t> post_topics_name(
-  ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+post_topics_name(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t>
-create_consumer(ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+create_consumer(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t>
-remove_consumer(ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+remove_consumer(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t> subscribe_consumer(
-  ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+subscribe_consumer(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t>
-consumer_fetch(ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+consumer_fetch(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t> get_consumer_offsets(
-  ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+get_consumer_offsets(proxy::server::request_t rq, proxy::server::reply_t rp);
 
-ss::future<ctx_server<proxy>::reply_t> post_consumer_offsets(
-  ctx_server<proxy>::request_t rq, ctx_server<proxy>::reply_t rp);
+ss::future<proxy::server::reply_t>
+post_consumer_offsets(proxy::server::request_t rq, proxy::server::reply_t rp);
+
+ss::future<proxy::server::reply_t>
+status_ready(proxy::server::request_t rq, proxy::server::reply_t rp);
 
 } // namespace pandaproxy::rest

@@ -13,6 +13,7 @@
 
 #include "config/property.h"
 #include "seastarx.h"
+#include "security/acl.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -72,12 +73,12 @@ private:
 class mtls_state {
 public:
     explicit mtls_state(ss::sstring principal)
-      : _principal{std::move(principal)} {}
+      : _principal{principal_type::user, std::move(principal)} {}
 
-    const ss::sstring& principal() { return _principal; }
+    const acl_principal& principal() { return _principal; }
 
 private:
-    ss::sstring _principal;
+    acl_principal _principal;
 };
 
 std::optional<ss::sstring>

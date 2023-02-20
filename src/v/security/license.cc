@@ -11,11 +11,11 @@
 
 #include "security/license.h"
 
+#include "hashing/secure.h"
 #include "json/document.h"
 #include "json/validator.h"
 #include "utils/base64.h"
 
-#include <boost/filesystem.hpp>
 #include <cryptopp/base64.h>
 #include <cryptopp/rsa.h>
 #include <cryptopp/sha.h>
@@ -191,6 +191,16 @@ static void parse_data_section(license& lc, const json::Document& doc) {
     lc.type = integer_to_license_type(doc.FindMember("type")->value.GetInt());
 }
 
+static ss::sstring calculate_sha256_checksum(const ss::sstring& raw_license) {
+    bytes checksum;
+    hash_sha256 h;
+    h.update(raw_license);
+    const auto digest = h.reset();
+    checksum.resize(digest.size());
+    std::copy_n(digest.begin(), digest.size(), checksum.begin());
+    return to_hex(checksum);
+}
+
 license make_license(const ss::sstring& raw_license) {
     try {
         license lc;
@@ -205,6 +215,7 @@ license make_license(const ss::sstring& raw_license) {
             throw license_malformed_exception("Malformed data section");
         }
         parse_data_section(lc, doc);
+        lc.checksum = calculate_sha256_checksum(raw_license);
         return lc;
     } catch (const base64_decoder_exception&) {
         throw license_malformed_exception("Failed to decode data section");

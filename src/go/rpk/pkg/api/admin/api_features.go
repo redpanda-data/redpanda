@@ -48,6 +48,7 @@ type LicenseProperties struct {
 	Organization string `json:"org"`
 	Type         string `json:"type"`
 	Expires      int64  `json:"expires"`
+	Checksum     string `json:"sha256"`
 }
 
 // GetFeatures returns information about the available features.

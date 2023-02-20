@@ -13,16 +13,17 @@
 
 #include "cloud_storage/fwd.h"
 #include "cluster/controller_stm.h"
-#include "cluster/data_policy_frontend.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/remote_topic_configuration_source.h"
 #include "cluster/scheduling/types.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "config/property.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
+#include "partition_balancer_types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -43,10 +44,12 @@ public:
       ss::sharded<partition_allocator>&,
       ss::sharded<partition_leaders_table>&,
       ss::sharded<topic_table>&,
-      ss::sharded<data_policy_frontend>&,
+      ss::sharded<health_monitor_frontend>&,
       ss::sharded<ss::abort_source>&,
       ss::sharded<cloud_storage::remote>&,
-      ss::sharded<feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<cluster::members_table>&,
+      config::binding<unsigned>);
 
     ss::future<std::vector<topic_result>> create_topics(
       std::vector<custom_assignable_topic_configuration>,
@@ -64,10 +67,24 @@ public:
       model::timeout_clock::time_point,
       std::optional<model::term_id> = std::nullopt);
 
+    /**
+     * This overload of move_partition_replicas will use the partition allocator
+     * to generate a new replica set (i.e., a vector<broker_shard>) based on the
+     * given ntp and list of node ids.
+     */
+    ss::future<std::error_code> move_partition_replicas(
+      model::ntp,
+      std::vector<model::node_id>,
+      model::timeout_clock::time_point,
+      std::optional<model::term_id> = std::nullopt);
+
     ss::future<std::error_code> finish_moving_partition_replicas(
       model::ntp,
       std::vector<model::broker_shard>,
       model::timeout_clock::time_point);
+
+    ss::future<std::error_code> revert_cancel_partition_move(
+      model::ntp, model::timeout_clock::time_point);
 
     /**
      * Cancelling partition replicas move will use graceful path i.e. will never
@@ -105,9 +122,6 @@ public:
 
     ss::future<bool> validate_shard(model::node_id node, uint32_t shard) const;
 
-    void disable_partition_movement() { _partition_movement_disabled = true; }
-    void enable_partition_movement() { _partition_movement_disabled = false; }
-
     ss::future<result<std::vector<move_cancellation_result>>>
       cancel_moving_partition_replicas_node(
         model::node_id,
@@ -117,6 +131,13 @@ public:
     ss::future<result<std::vector<move_cancellation_result>>>
       cancel_moving_all_partition_replicas(model::timeout_clock::time_point);
 
+    // High level code should use update_topic_properties (which will RPC
+    // to the controller leader as needed).  This lower level method is only
+    // used by upgrade migration code to update topic properties directly
+    // from the controller leader.
+    ss::future<topic_result> do_update_topic_properties(
+      topic_properties_update, model::timeout_clock::time_point);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -124,7 +145,9 @@ private:
       custom_assignable_topic_configuration, model::timeout_clock::time_point);
 
     ss::future<topic_result> replicate_create_topic(
-      topic_configuration, allocation_units, model::timeout_clock::time_point);
+      topic_configuration,
+      allocation_units::pointer,
+      model::timeout_clock::time_point);
 
     ss::future<topic_result>
       do_delete_topic(model::topic_namespace, model::timeout_clock::time_point);
@@ -143,10 +166,23 @@ private:
       std::vector<non_replicable_topic> topics,
       model::timeout_clock::duration timeout);
 
-    ss::future<std::error_code> do_update_data_policy(
+    ss::future<std::error_code> do_update_replication_factor(
       topic_properties_update&, model::timeout_clock::time_point);
-    ss::future<topic_result> do_update_topic_properties(
-      topic_properties_update, model::timeout_clock::time_point);
+
+    ss::future<std::error_code> change_replication_factor(
+      model::topic_namespace,
+      cluster::replication_factor,
+      model::timeout_clock::time_point);
+
+    using new_replicas_assigment = std::vector<move_topic_replicas_data>;
+    ss::future<std::error_code> increase_replication_factor(
+      model::topic_namespace,
+      cluster::replication_factor,
+      model::timeout_clock::time_point);
+    ss::future<std::error_code> decrease_replication_factor(
+      model::topic_namespace,
+      cluster::replication_factor,
+      model::timeout_clock::time_point);
 
     ss::future<result<model::offset>>
       stm_linearizable_barrier(model::timeout_clock::time_point);
@@ -164,17 +200,41 @@ private:
       do_cancel_moving_partition_replicas(
         std::vector<model::ntp>, model::timeout_clock::time_point);
 
+    struct capacity_info {
+        absl::flat_hash_map<model::node_id, node_disk_space> node_disk_reports;
+        absl::flat_hash_map<model::partition_id, int64_t> ntp_sizes;
+    };
+
+    partition_constraints get_partition_constraints(
+      model::partition_id id,
+      cluster::replication_factor new_replication_factor,
+      double max_disk_usage_ratio,
+      const capacity_info& info) const;
+
+    ss::future<capacity_info> get_health_info(
+      model::topic_namespace topic, int32_t partition_count) const;
+
+    // Generates a new partition assignment for a single partition
+    ss::future<result<std::vector<partition_assignment>>>
+    generate_reassignments(
+      model::ntp, std::vector<model::node_id> new_replicas);
+
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<topic_table>& _topics;
-    ss::sharded<data_policy_frontend>& _dp_frontend;
+    ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<cloud_storage::remote>& _cloud_storage_api;
-    ss::sharded<feature_table>& _features;
-    bool _partition_movement_disabled = false;
+    ss::sharded<features::feature_table>& _features;
+
+    ss::sharded<cluster::members_table>& _members_table;
+
+    config::binding<unsigned> _hard_max_disk_usage_ratio;
+
+    static constexpr std::chrono::seconds _get_health_report_timeout = 10s;
 };
 
 } // namespace cluster

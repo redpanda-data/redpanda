@@ -10,6 +10,7 @@
 package debug
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug/bundle"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +22,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		newBundleCommand(fs),
+		bundle.NewCommand(fs),
 		NewInfoCommand(),
 	)
 

@@ -46,7 +46,8 @@ static constexpr clock_type::time_point no_timeout
 using group_id = named_type<int64_t, struct raft_group_id_type>;
 
 struct protocol_metadata
-  : serde::envelope<protocol_metadata, serde::version<0>> {
+  : serde::
+      envelope<protocol_metadata, serde::version<0>, serde::compat_version<0>> {
     group_id group;
     model::offset commit_index;
     model::term_id term;
@@ -98,8 +99,8 @@ struct follower_index_metadata {
     model::offset next_index;
     model::offset last_sent_offset;
     // timestamp of last append_entries_rpc call
-    clock_type::time_point last_sent_append_entries_req_timesptamp;
-    clock_type::time_point last_received_append_entries_reply_timestamp;
+    clock_type::time_point last_sent_append_entries_req_timestamp;
+    clock_type::time_point last_received_reply_timestamp;
     uint32_t heartbeats_failed{0};
     // The pair of sequences used to track append entries requests sent and
     // received by the follower. Every time append entries request is created
@@ -193,7 +194,10 @@ struct follower_metrics {
 };
 
 struct append_entries_request
-  : serde::envelope<append_entries_request, serde::version<0>> {
+  : serde::envelope<
+      append_entries_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
     /*
@@ -273,7 +277,7 @@ struct append_entries_request
     }
 
     ss::future<> serde_async_write(iobuf& out);
-    ss::future<> serde_async_read(iobuf_parser&, const serde::header&);
+    ss::future<> serde_async_read(iobuf_parser&, const serde::header);
 
 private:
     /*
@@ -291,7 +295,10 @@ private:
  * efficient encoding of a vectory of append_entries_reply.
  */
 struct append_entries_reply
-  : serde::envelope<append_entries_reply, serde::version<0>> {
+  : serde::envelope<
+      append_entries_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
     enum class status : uint8_t {
         success,
         failure,
@@ -352,7 +359,8 @@ struct heartbeat_metadata {
 /// individual raft responses one at a time - for example to start replaying the
 /// log at some offset
 struct heartbeat_request
-  : serde::envelope<heartbeat_request, serde::version<0>> {
+  : serde::
+      envelope<heartbeat_request, serde::version<0>, serde::compat_version<0>> {
     std::vector<heartbeat_metadata> heartbeats;
 
     heartbeat_request() noexcept = default;
@@ -369,7 +377,9 @@ struct heartbeat_request
     void serde_read(iobuf_parser&, const serde::header&);
 };
 
-struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>> {
+struct heartbeat_reply
+  : serde::
+      envelope<heartbeat_reply, serde::version<0>, serde::compat_version<0>> {
     std::vector<append_entries_reply> meta;
 
     heartbeat_reply() noexcept = default;
@@ -385,7 +395,8 @@ struct heartbeat_reply : serde::envelope<heartbeat_reply, serde::version<0>> {
     void serde_read(iobuf_parser&, const serde::header&);
 };
 
-struct vote_request : serde::envelope<vote_request, serde::version<0>> {
+struct vote_request
+  : serde::envelope<vote_request, serde::version<0>, serde::compat_version<0>> {
     vnode node_id;
     // node id to validate on receiver
     vnode target_node_id;
@@ -418,7 +429,8 @@ struct vote_request : serde::envelope<vote_request, serde::version<0>> {
     }
 };
 
-struct vote_reply : serde::envelope<vote_reply, serde::version<0>> {
+struct vote_reply
+  : serde::envelope<vote_reply, serde::version<0>, serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's term, for the caller to upate itself
@@ -472,9 +484,15 @@ enum class consistency_level { quorum_ack, leader_ack, no_ack };
 
 struct replicate_options {
     explicit replicate_options(consistency_level l)
-      : consistency(l) {}
+      : consistency(l)
+      , timeout(std::nullopt) {}
+
+    replicate_options(consistency_level l, std::chrono::milliseconds timeout)
+      : consistency(l)
+      , timeout(timeout) {}
 
     consistency_level consistency;
+    std::optional<std::chrono::milliseconds> timeout;
 };
 
 using offset_translator_delta = named_type<int64_t, struct ot_delta_tag>;
@@ -502,7 +520,10 @@ struct snapshot_metadata {
 };
 
 struct install_snapshot_request
-  : serde::envelope<install_snapshot_request, serde::version<0>> {
+  : serde::envelope<
+      install_snapshot_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     // leader’s term
@@ -572,7 +593,10 @@ private:
 };
 
 struct install_snapshot_reply
-  : serde::envelope<install_snapshot_reply, serde::version<0>> {
+  : serde::envelope<
+      install_snapshot_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     // current term, for leader to update itself
@@ -616,7 +640,10 @@ struct write_snapshot_cfg {
 };
 
 struct timeout_now_request
-  : serde::envelope<timeout_now_request, serde::version<0>> {
+  : serde::envelope<
+      timeout_now_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
 
@@ -650,7 +677,8 @@ struct timeout_now_request
 };
 
 struct timeout_now_reply
-  : serde::envelope<timeout_now_reply, serde::version<0>> {
+  : serde::
+      envelope<timeout_now_reply, serde::version<0>, serde::compat_version<0>> {
     enum class status : uint8_t { success, failure };
     // node id to validate on receiver
     vnode target_node_id;
@@ -677,7 +705,10 @@ struct timeout_now_reply
 
 // if not target is specified then the most up-to-date node will be selected
 struct transfer_leadership_request
-  : serde::envelope<transfer_leadership_request, serde::version<0>> {
+  : serde::envelope<
+      transfer_leadership_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
     group_id group;
     std::optional<model::node_id> target;
     raft::group_id target_group() const { return group; }
@@ -696,7 +727,10 @@ struct transfer_leadership_request
 };
 
 struct transfer_leadership_reply
-  : serde::envelope<transfer_leadership_reply, serde::version<0>> {
+  : serde::envelope<
+      transfer_leadership_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
     bool success{false};
     raft::errc result;
 
@@ -759,6 +793,9 @@ struct scheduling_config {
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
 std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
+
+using with_learner_recovery_throttle
+  = ss::bool_class<struct with_recovery_throttle_tag>;
 } // namespace raft
 
 namespace reflection {

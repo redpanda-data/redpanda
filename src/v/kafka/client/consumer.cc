@@ -37,6 +37,7 @@
 #include <chrono>
 #include <exception>
 #include <iterator>
+#include <utility>
 
 namespace kafka::client {
 
@@ -110,15 +111,15 @@ void consumer::start() {
     _heartbeat_timer.set_callback([me{shared_from_this()}]() {
         vlog(kclog.trace, "Consumer: {}: timer cb", *me);
         (void)me->heartbeat()
-          .handle_exception_type([me](const consumer_error& e) {
+          .handle_exception_type([me](const exception_base& e) {
               vlog(
-                kclog.error,
-                "Consumer: {}: heartbeat failed: {}",
-                *me,
-                e.error);
+                kclog.info, "Consumer: {}: heartbeat failed: {}", *me, e.error);
           })
           .handle_exception_type([me](const ss::gate_closed_exception& e) {
               vlog(kclog.trace, "Consumer: {}: heartbeat failed: {}", *me, e);
+          })
+          .handle_exception([me](const std::exception_ptr& e) {
+              vlog(kclog.error, "Consumer: {}: heartbeat failed: {}", *me, e);
           });
     });
     _heartbeat_timer.rearm_periodic(_config.consumer_heartbeat_interval());
@@ -132,8 +133,11 @@ ss::future<> consumer::stop() {
     _inactive_timer.cancel();
     _inactive_timer.set_callback([]() {});
 
-    _as.request_abort();
     _on_stopped(_name);
+    if (_as.abort_requested()) {
+        return ss::now();
+    }
+    _as.request_abort();
     return _coordinator->stop()
       .then([this]() { return _gate.close(); })
       .finally([me{shared_from_this()}] {});
@@ -156,7 +160,7 @@ ss::future<> consumer::join() {
           .session_timeout_ms = cfg.consumer_session_timeout(),
           .rebalance_timeout_ms = cfg.consumer_rebalance_timeout(),
           .member_id = me->_member_id,
-          .protocol_type = protocol_type{"consumer"},
+          .protocol_type = consumer_group_protocol_type,
           .protocols = make_join_group_request_protocols(me->_topics)};
         return req;
     };
@@ -261,8 +265,8 @@ consumer::get_subscribed_topic_metadata() {
           std::vector<metadata_response::topic> topics;
           topics.reserve(_subscribed_topics.size());
           std::set_intersection(
-            res.data.topics.begin(),
-            res.data.topics.end(),
+            std::make_move_iterator(res.data.topics.begin()),
+            std::make_move_iterator(res.data.topics.end()),
             _subscribed_topics.begin(),
             _subscribed_topics.end(),
             std::back_inserter(topics),

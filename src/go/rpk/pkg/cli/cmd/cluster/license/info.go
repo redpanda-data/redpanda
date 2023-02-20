@@ -50,11 +50,12 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 				if format == "json" {
 					tm := time.Unix(info.Properties.Expires, 0).Format("Jan 2 2006")
 					props, err := json.MarshalIndent(struct {
-						Organization string
-						Type         string
-						Expires      string
-						Expired      bool `json:"license_expired,omitempty"`
-					}{info.Properties.Organization, info.Properties.Type, tm, expired}, "", "  ")
+						Organization string `json:"organization"`
+						Type         string `json:"type"`
+						Expires      string `json:"expires"`
+						Checksum     string `json:"checksum_sha256,omitempty"`
+						Expired      bool   `json:"license_expired,omitempty"`
+					}{info.Properties.Organization, info.Properties.Type, tm, info.Properties.Checksum, expired}, "", "  ")
 					out.MaybeDie(err, "unable to print license information as json: %v", err)
 					fmt.Printf("%s\n", props)
 				} else {

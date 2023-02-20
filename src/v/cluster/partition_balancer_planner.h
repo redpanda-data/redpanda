@@ -34,14 +34,15 @@ struct planner_config {
     // Size of partitions that can be planned to move in one request
     size_t movement_disk_size_batch;
     std::chrono::seconds node_availability_timeout_sec;
+    // Fallocation step used to calculate upperbound for partition size
+    size_t segment_fallocation_step;
 };
 
 class partition_balancer_planner {
 public:
     partition_balancer_planner(
       planner_config config,
-      topic_table& topic_table,
-      members_table& members_table,
+      partition_balancer_state& state,
       partition_allocator& partition_allocator);
 
     enum class status {
@@ -58,6 +59,12 @@ public:
         std::vector<model::ntp> cancellations;
         size_t failed_reassignments_count = 0;
         status status = status::empty;
+
+        void add_reassignment(
+          model::ntp,
+          const std::vector<model::broker_shard>& orig_replicas,
+          allocation_units,
+          std::string_view reason);
     };
 
     plan_data plan_reassignments(
@@ -81,7 +88,6 @@ private:
 
     partition_constraints get_partition_constraints(
       const partition_assignment& assignments,
-      const topic_metadata& topic_metadata,
       size_t partition_size,
       double max_disk_usage_ratio,
       reallocation_request_state&) const;
@@ -95,6 +101,9 @@ private:
       reallocation_request_state&);
 
     void get_unavailable_nodes_reassignments(
+      plan_data&, reallocation_request_state&);
+
+    void get_rack_constraint_repair_reassignments(
       plan_data&, reallocation_request_state&);
 
     void get_full_node_reassignments(plan_data&, reallocation_request_state&);
@@ -121,8 +130,7 @@ private:
     bool all_reports_received(const reallocation_request_state&);
 
     planner_config _config;
-    topic_table& _topic_table;
-    members_table& _members_table;
+    partition_balancer_state& _state;
     partition_allocator& _partition_allocator;
 };
 

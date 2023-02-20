@@ -60,6 +60,14 @@ constexpr unsigned default_segment_readahead_count = 10;
 
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     auto conf = make_config();
+
+    ss::sharded<features::feature_table> feature_table;
+    feature_table.start().get();
+    feature_table
+      .invoke_on_all(
+        [](features::feature_table& f) { f.testing_activate_all(); })
+      .get();
+
     storage::api store(
       [conf]() {
           return storage::kvstore_config(
@@ -68,9 +76,13 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
             conf.base_dir,
             storage::debug_sanitize_files::yes);
       },
-      [conf]() { return conf; });
+      [conf]() { return conf; },
+      feature_table);
     store.start().get();
-    auto stop_kvstore = ss::defer([&store] { store.stop().get(); });
+    auto stop_kvstore = ss::defer([&store, &feature_table] {
+        store.stop().get();
+        feature_table.stop().get();
+    });
     auto& m = store.log_mgr();
     std::vector<storage::ntp_config> ntps;
     ntps.reserve(4);

@@ -44,7 +44,15 @@ class waiter_queue {
     std::vector<std::unique_ptr<wait_item>> _items;
 
 public:
-    ~waiter_queue() {
+    ~waiter_queue() { abort_all(); }
+
+    /**
+     * Callers of await() *should* use abort sources that fire
+     * before this object is destroyed.  However, to make it
+     * easier to reason about safety during shutdown, we also
+     * explicitly evict them all.
+     */
+    void abort_all() {
         for (auto& i : _items) {
             i->p.set_exception(ss::abort_requested_exception());
         }

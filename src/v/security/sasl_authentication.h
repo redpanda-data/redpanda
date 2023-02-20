@@ -9,6 +9,7 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "outcome.h"
+#include "security/acl.h"
 #include "vassert.h"
 
 #include <memory>
@@ -24,8 +25,8 @@ public:
     virtual ~sasl_mechanism() = default;
     virtual bool complete() const = 0;
     virtual bool failed() const = 0;
-    virtual const ss::sstring& principal() const = 0;
-    virtual result<bytes> authenticate(bytes_view) = 0;
+    virtual const acl_principal& principal() const = 0;
+    virtual ss::future<result<bytes>> authenticate(bytes) = 0;
 };
 
 /*
@@ -52,8 +53,8 @@ public:
     bool has_mechanism() const { return bool(_mechanism); }
     sasl_mechanism& mechanism() { return *_mechanism; }
 
-    result<bytes> authenticate(bytes data) {
-        return _mechanism->authenticate(data);
+    ss::future<result<bytes>> authenticate(bytes data) {
+        return _mechanism->authenticate(std::move(data));
     }
 
     void set_mechanism(std::unique_ptr<sasl_mechanism> m) {
@@ -61,7 +62,7 @@ public:
         _mechanism = std::move(m);
     }
 
-    const ss::sstring& principal() const { return _mechanism->principal(); }
+    const acl_principal& principal() const { return _mechanism->principal(); }
 
     bool handshake_v0() const { return _handshake_v0; }
     void set_handshake_v0() { _handshake_v0 = true; }

@@ -154,10 +154,12 @@ void check_kafka_binary_format(
       b == result,
       fmt::format(
         "Mismatched binary data detected for api: {} at version: {} "
-        "is_request: {}",
+        "is_request: {} re-encoded size_bytes: {} expected size_bytes: {}",
         key,
         version,
-        is_request));
+        is_request,
+        b.size(),
+        result.size()));
 }
 
 template<kafka::KafkaApiHandlerAny H>

@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "model/metadata.h"
 #include "model/record.h"
 
 #include <optional>
@@ -24,5 +25,7 @@ struct record_essence {
     std::optional<iobuf> value;
     std::vector<model::record_header> headers;
 };
+
+inline constexpr model::node_id consumer_replica_id{-1};
 
 } // namespace kafka::client

@@ -27,7 +27,7 @@ licenses           @emaxerrno @dswang
 #
 # rpk
 #
-/src/go/rpk        @twmb @0x5d @r-vasquez
+/src/go/rpk        @twmb @r-vasquez @gene-redpanda
 
 #
 # testing

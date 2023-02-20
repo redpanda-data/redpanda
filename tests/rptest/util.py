@@ -8,14 +8,15 @@
 # by the Apache License, Version 2.0
 
 import os
+import pprint
 from contextlib import contextmanager
+from typing import Optional
+
+from ducktape.utils.util import wait_until
 from requests.exceptions import HTTPError
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.storage import Segment
-
-from ducktape.errors import TimeoutError
-import time
 
 
 class Scale:
@@ -48,31 +49,6 @@ class Scale:
     @property
     def release(self):
         return self._scale == Scale.RELEASE
-
-
-def wait_until(condition,
-               timeout_sec,
-               backoff_sec=.1,
-               err_msg="",
-               retry_on_exc=False):
-    start = time.time()
-    stop = start + timeout_sec
-    last_exception = None
-    while time.time() < stop:
-        try:
-            if condition():
-                return
-            else:
-                last_exception = None
-        except BaseException as e:
-            last_exception = e
-            if not retry_on_exc:
-                raise e
-        time.sleep(backoff_sec)
-
-    # it is safe to call Exception from None - will be just treated as a normal exception
-    raise TimeoutError(
-        err_msg() if callable(err_msg) else err_msg) from last_exception
 
 
 def wait_until_result(condition, *args, **kwargs):
@@ -123,14 +99,43 @@ def segments_count(redpanda, topic, partition_idx):
     )
 
 
-def produce_until_segments(redpanda, topic, partition_idx, count, acks=-1):
+def produce_total_bytes(redpanda,
+                        topic,
+                        partition_index,
+                        bytes_to_produce,
+                        acks=-1):
+    kafka_tools = KafkaCliTools(redpanda)
+
+    def done():
+        nonlocal bytes_to_produce
+
+        kafka_tools.produce(topic, 10000, 1024, acks=acks)
+        bytes_to_produce -= 10000 * 1024
+        return bytes_to_produce < 0
+
+    wait_until(done,
+               timeout_sec=60,
+               backoff_sec=1,
+               err_msg="f{bytes_to_produce} bytes still left to produce")
+
+
+def produce_until_segments(redpanda,
+                           topic,
+                           partition_idx,
+                           count,
+                           acks=-1,
+                           record_size=1024,
+                           batch_size=10000):
     """
     Produce into the topic until given number of segments will appear
     """
     kafka_tools = KafkaCliTools(redpanda)
 
     def done():
-        kafka_tools.produce(topic, 10000, 1024, acks=acks)
+        kafka_tools.produce(topic,
+                            batch_size,
+                            record_size=record_size,
+                            acks=acks)
         topic_partitions = segments_count(redpanda, topic, partition_idx)
         partitions = []
         for p in topic_partitions:
@@ -141,6 +146,25 @@ def produce_until_segments(redpanda, topic, partition_idx, count, acks=-1):
                timeout_sec=120,
                backoff_sec=2,
                err_msg="Segments were not created")
+
+
+def wait_until_segments(redpanda,
+                        topic,
+                        partition_idx,
+                        count,
+                        timeout_sec=180):
+    def done():
+        topic_partitions = segments_count(redpanda, topic, partition_idx)
+        redpanda.logger.debug(
+            f'wait_until_segments: '
+            f'segment count: {list(segments_count(redpanda, topic, partition_idx))}'
+        )
+        return all([p >= count for p in topic_partitions])
+
+    wait_until(done,
+               timeout_sec=timeout_sec,
+               backoff_sec=2,
+               err_msg=f"{count} segments were not created")
 
 
 def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
@@ -159,10 +183,11 @@ def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
     """
     def segments_removed():
         current_snapshot = redpanda.storage(all_nodes=True).segments_by_node(
-            "kafka", topic, 0)
+            "kafka", topic, partition_idx)
 
         redpanda.logger.debug(
-            f"Current segment snapshot for topic {topic}: {current_snapshot}")
+            f"Current segment snapshot for topic {topic}: {pprint.pformat(current_snapshot, indent=1)}"
+        )
 
         # Check how many of the original segments were removed
         # for each of the nodes in the provided snapshot.
@@ -186,7 +211,55 @@ def wait_for_removal_of_n_segments(redpanda, topic: str, partition_idx: int,
                err_msg="Segments were not removed from all nodes")
 
 
-def wait_for_segments_removal(redpanda, topic, partition_idx, count):
+def wait_for_local_storage_truncate(redpanda,
+                                    topic: str,
+                                    partition_idx: int,
+                                    target_bytes: int,
+                                    timeout_sec: Optional[int] = None,
+                                    nodes: Optional[list] = None):
+    """
+    For use in tiered storage tests: wait until the locally etained data
+    size for this partition is below a threshold on all nodes.
+    """
+    def is_truncated():
+        storage = redpanda.storage(sizes=True)
+        sizes = []
+        for node_partition in storage.partitions("kafka", topic):
+            if node_partition.num != partition_idx:
+                continue
+            if nodes is not None and node_partition.node not in nodes:
+                continue
+
+            total_size = sum(s.size if s.size else 0
+                             for s in node_partition.segments.values())
+            redpanda.logger.debug(
+                f"  {topic}/{partition_idx} node {node_partition.node.name} local size {total_size} ({len(node_partition.segments)} segments)"
+            )
+            for s in node_partition.segments.values():
+                redpanda.logger.debug(
+                    f"    {topic}/{partition_idx} node {node_partition.node.name} {s.name} {s.size}"
+                )
+            sizes.append(total_size)
+
+        # The segment which is open for appends will differ in Redpanda's internal
+        # sizing (exact) vs. what the filesystem reports for a falloc'd file (to the
+        # nearest page).  Since our filesystem view may over-estimate the size of
+        # the log by a page, adjust the target size by that much.
+        threshold = target_bytes + 4096
+
+        # We expect to have measured size on at least one node, or this isn't meaningful
+        assert len(sizes) > 0
+
+        return all(s <= threshold for s in sizes)
+
+    wait_until(is_truncated, timeout_sec=timeout_sec, backoff_sec=1)
+
+
+def wait_for_segments_removal(redpanda,
+                              topic,
+                              partition_idx,
+                              count,
+                              timeout_sec: Optional[int] = None):
     """
     Wait until only given number of segments will left in a partitions
     """
@@ -197,9 +270,12 @@ def wait_for_segments_removal(redpanda, topic, partition_idx, count):
             partitions.append(p <= count)
         return all(partitions)
 
+    if timeout_sec is None:
+        timeout_sec = 120
+
     try:
         wait_until(done,
-                   timeout_sec=120,
+                   timeout_sec=timeout_sec,
                    backoff_sec=5,
                    err_msg="Segments were not removed")
     except Exception as e:
@@ -261,29 +337,43 @@ def inject_remote_script(node, script_name):
     return remote_path
 
 
-def get_cluster_license():
-    license = os.environ.get("REDPANDA_SAMPLE_LICENSE", None)
+def _get_cluster_license(env_var):
+    license = os.environ.get(env_var, None)
     if license is None:
         is_ci = os.environ.get("CI", "false")
         if is_ci == "true":
             raise RuntimeError(
-                "Expected REDPANDA_SAMPLE_LICENSE variable to be set in this environment"
-            )
+                f"Expected {env_var} variable to be set in this environment")
 
     return license
+
+
+def get_cluster_license():
+    return _get_cluster_license("REDPANDA_SAMPLE_LICENSE")
+
+
+def get_second_cluster_license():
+    return _get_cluster_license("REDPANDA_SECOND_SAMPLE_LICENSE")
 
 
 class firewall_blocked:
     """Temporary firewall barrier that isolates set of redpanda
     nodes from the ip-address"""
-    def __init__(self, nodes, blocked_port):
+    def __init__(self, nodes, blocked_port, full_block=False):
         self._nodes = nodes
         self._port = blocked_port
+
+        self.mode_for_input = "sport"
+        if full_block:
+            self.mode_for_input = "dport"
 
     def __enter__(self):
         """Isolate certain ips from the nodes using firewall rules"""
         cmd = []
-        cmd.append(f"iptables -A INPUT -p tcp --sport {self._port} -j DROP")
+        mode_for_inut = "sport"
+        cmd.append(
+            f"iptables -A INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP"
+        )
         cmd.append(f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP")
         cmd = " && ".join(cmd)
         for node in self._nodes:
@@ -292,7 +382,9 @@ class firewall_blocked:
     def __exit__(self, type, value, traceback):
         """Remove firewall rules that isolate ips from the nodes"""
         cmd = []
-        cmd.append(f"iptables -D INPUT -p tcp --sport {self._port} -j DROP")
+        cmd.append(
+            f"iptables -D INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP"
+        )
         cmd.append(f"iptables -D OUTPUT -p tcp --dport {self._port} -j DROP")
         cmd = " && ".join(cmd)
         for node in self._nodes:

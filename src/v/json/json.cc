@@ -47,6 +47,12 @@ void rjson_serialize(
 
     std::ostringstream a;
     a << v.addr();
+    if (!a.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "failed to format socket_address, state: {}",
+          a.rdstate()));
+    }
 
     w.Key("address");
     w.String(a.str());

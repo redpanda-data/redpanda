@@ -22,27 +22,29 @@ const (
 	DefaultSchemaRegPort = 8081
 	DefaultProxyPort     = 8082
 	DefaultAdminPort     = 9644
+	DefaultRPCPort       = 33145
+	DefaultListenAddress = "0.0.0.0"
 
 	DefaultBallastFilePath = "/var/lib/redpanda/data/ballast"
 	DefaultBallastFileSize = "1GiB"
 )
 
-func Default() *Config {
+func DevDefault() *Config {
 	return &Config{
 		fileLocation: DefaultPath,
-		Redpanda: RedpandaConfig{
+		Redpanda: RedpandaNodeConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{
-				Address: "0.0.0.0",
-				Port:    33145,
+				Address: DefaultListenAddress,
+				Port:    DefaultRPCPort,
 			},
 			KafkaAPI: []NamedAuthNSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9092,
+				Address: DefaultListenAddress,
+				Port:    DefaultKafkaPort,
 			}},
 			AdminAPI: []NamedSocketAddress{{
-				Address: "0.0.0.0",
-				Port:    9644,
+				Address: DefaultListenAddress,
+				Port:    DefaultAdminPort,
 			}},
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
@@ -55,6 +57,11 @@ func Default() *Config {
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
 	}
+}
+
+func ProdDefault() *Config {
+	cfg := DevDefault()
+	return setProduction(cfg)
 }
 
 func SetMode(mode string, conf *Config) (*Config, error) {
@@ -90,7 +97,7 @@ func setDevelopment(conf *Config) *Config {
 		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
 		EnableUsageStats:     conf.Rpk.EnableUsageStats,
 		CoredumpDir:          conf.Rpk.CoredumpDir,
-		SMP:                  Default().Rpk.SMP,
+		SMP:                  DevDefault().Rpk.SMP,
 		BallastFilePath:      conf.Rpk.BallastFilePath,
 		BallastFileSize:      conf.Rpk.BallastFileSize,
 		Overprovisioned:      true,
@@ -150,7 +157,7 @@ func (c *Config) FileOrDefaults() *Config {
 	if c.File() != nil {
 		return c.File()
 	} else {
-		cfg := Default()
+		cfg := DevDefault()
 		// --config set but the file doesn't exist yet:
 		if c.fileLocation != "" {
 			cfg.fileLocation = c.fileLocation
@@ -178,7 +185,7 @@ func checkRedpandaConfig(cfg *Config) []error {
 	if rp.Directory == "" {
 		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
 	}
-	if rp.ID < 0 {
+	if rp.ID != nil && *rp.ID < 0 {
 		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
 	}
 

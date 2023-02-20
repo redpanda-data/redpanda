@@ -26,52 +26,6 @@
 
 namespace cluster {
 
-/**
- * Broker patch should included all nodes which properties changed as additions
- * (connections may require update after addresses changed, etc) and nodes that
- * were deleted as deletions. We keep `membership_state` in model::broker. This
- * state must not be included into comparision when calculating added brokers.
- * Previous implementation used equality operator from `model::broker` type
- * which lead to propagating broker added events when their internal state was
- * updated.
- */
-patch<broker_ptr> calculate_changed_brokers(
-  const std::vector<broker_ptr>& new_list,
-  const std::vector<broker_ptr>& old_list) {
-    patch<broker_ptr> patch;
-
-    for (auto br : new_list) {
-        auto it = std::find_if(
-          old_list.begin(), old_list.end(), [&br](const broker_ptr& ptr) {
-              // compare only those properties which have to cause update
-              return br->id() == ptr->id()
-                     && br->kafka_advertised_listeners()
-                          == ptr->kafka_advertised_listeners()
-                     && br->rpc_address() == ptr->rpc_address()
-                     && br->properties() == ptr->properties();
-          });
-
-        if (it == old_list.end()) {
-            patch.additions.push_back(br);
-        }
-    }
-
-    for (auto br : old_list) {
-        auto it = std::find_if(
-          new_list.begin(), new_list.end(), [&br](const broker_ptr& ptr) {
-              // it is enough to compare ids since other properties does not
-              // influence deletion
-              return br->id() == ptr->id();
-          });
-
-        if (it == new_list.end()) {
-            patch.deletions.push_back(br);
-        }
-    }
-
-    return patch;
-}
-
 std::vector<ss::shard_id>
 virtual_nodes(model::node_id self, model::node_id node) {
     std::set<ss::shard_id> owner_shards;
@@ -129,7 +83,8 @@ ss::future<> maybe_create_tcp_client(
                     .server_addr = std::move(rpc_address),
                     .credentials = cert,
                     .disable_metrics = net::metrics_disabled(
-                      config::shard_local_cfg().disable_metrics)},
+                      config::shard_local_cfg().disable_metrics),
+                    .version = cache.get_default_transport_version()},
                   rpc::make_exponential_backoff_policy<rpc::clock_type>(
                     std::chrono::seconds(1), std::chrono::seconds(15)));
             });
@@ -192,8 +147,15 @@ model::broker make_self_broker(const config::node_config& node_cfg) {
     // As for memory, if disk_gb is zero this is handled like a legacy broker.
     uint32_t disk_gb = space_info.capacity >> 30;
 
+    // If this node hasn't been configured with a node ID, use -1 to indicate
+    // that we don't yet know it yet. This shouldn't be used during the normal
+    // operation of a broker, and instead should be used to indicate a broker
+    // that needs to be assigned a node ID when it first starts up.
+    model::node_id node_id = node_cfg.node_id() == std::nullopt
+                               ? model::unassigned_node_id
+                               : *node_cfg.node_id();
     return model::broker(
-      model::node_id(node_cfg.node_id),
+      node_id,
       kafka_addr,
       rpc_addr,
       node_cfg.rack,
@@ -310,6 +272,7 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
         case rpc::errc::success:
             return errc::success;
         case rpc::errc::client_request_timeout:
+        case rpc::errc::connection_timeout:
             return errc::timeout;
         case rpc::errc::disconnected_endpoint:
         case rpc::errc::exponential_backoff:
@@ -317,6 +280,7 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
         case rpc::errc::service_error:
         case rpc::errc::method_not_found:
         case rpc::errc::version_not_supported:
+        case rpc::errc::unknown:
             return errc::replication_error;
         }
         __builtin_unreachable();
@@ -327,6 +291,14 @@ cluster::errc map_update_interruption_error_code(std::error_code ec) {
           ec.message());
         return errc::unknown_update_interruption_error;
     }
+}
+
+partition_allocation_domain
+get_allocation_domain(const model::topic_namespace_view tp_ns) {
+    if (tp_ns == model::kafka_consumer_offsets_nt) {
+        return partition_allocation_domains::consumer_offsets;
+    }
+    return partition_allocation_domains::common;
 }
 
 } // namespace cluster

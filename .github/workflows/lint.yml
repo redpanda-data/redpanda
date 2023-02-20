@@ -21,103 +21,93 @@ on:
 jobs:
   go:
     name: Lint go files
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
 
-    - name: Check out code
+    - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Set up Go
+    - name: Setup go
       uses: actions/setup-go@v3
       with:
-        go-version: 1.17.8
+        go-version: 1.19.2
 
-    - name: lint rpk
+    - name: Run golangci-lint
       uses: golangci/golangci-lint-action@v3
       with:
         version: v1.49.0
         args: --timeout 5m
         working-directory: src/go/rpk/
 
-    - name: install gofumpt
-      working-directory: src/go/rpk
+    - name: Install gofumpt
+      env:
+        GOFUMPT_VER: 0.4.0
       run: |
-        go install mvdan.cc/gofumpt@v0.3.0
+        mkdir -v -p "$HOME/.local/bin"
+        wget -O "$HOME/.local/bin/gofumpt" "https://github.com/mvdan/gofumpt/releases/download/v${GOFUMPT_VER}/gofumpt_v${GOFUMPT_VER}_linux_amd64"
+        chmod 0700 "$HOME/.local/bin/gofumpt"
 
-    - name: format go files
-      working-directory: src/go
+    - name: Run gofumpt
       run: |
-        find . -name *.go -type f | xargs -n1 gofumpt -w -lang=1.17
+        find src/go -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.19
         git diff --exit-code
 
   js:
     name: Lint js files
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
 
-    - name: Check out code
-      uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: Set up Node
-      uses: actions/setup-node@v2-beta
-      with:
-        node-version: '12.16.1'
+    - name: Install prettier
+      run: npm install prettier@2.7.1
 
-    - name: Set up prettier
-      run: npm install prettier@2.3.0
-
-    - name: Lint JS files
-      run: npx prettier --list-different src/**/*.{ts,js}
+    - name: Run prettier
+      run: npx prettier --check 'src/**/*.{ts,js}'
 
   py:
     name: Lint python files
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
 
-    - name: Check out code
-      uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: Set up python
-      run: |
-        sudo apt-get install -y python3 python3-pip
-        sudo pip install yapf==0.30.0
+    - name: Install yapf
+      run: pip install yapf==0.32.0
 
-    - name: lint python files
-      run: find . -name *.py -type f | xargs -n1 yapf -d
+    - name: Run yapf
+      run: find . -type f -name '*.py' | xargs -n1 yapf -d
 
   cpp:
     name: Lint files with clang-format
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
 
-    - name: Fetch clang-format
-      run: |
-        curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository --yes --update 'deb http://apt.llvm.org/focal/ llvm-toolchain-focal-14 main'
-        sudo apt-get install -y git clang-format-14
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: Check out code
-      uses: actions/checkout@v2
-
-    - name: Run clang fmt
+    - name: Run clang-format
       run: |
-        find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-14 -i -style=file -fallback-style=none
+        find . -type f -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)' | xargs -n1 clang-format-14 -i -style=file -fallback-style=none
         git diff --exit-code
 
   sh:
     name: Lint shell scripts
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
 
-    - name: Check out code
-      uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: setup shfmt
+    - name: Install shfmt
+      env:
+        SHFMT_VER: 3.6.0
       run: |
-        wget "https://github.com/mvdan/sh/releases/download/v3.2.0/shfmt_v3.2.0_linux_amd64" -O shfmt
-        chmod +x shfmt
+        mkdir -v -p "$HOME/.local/bin"
+        wget -O "$HOME/.local/bin/shfmt" "https://github.com/mvdan/sh/releases/download/v${SHFMT_VER}/shfmt_v${SHFMT_VER}_linux_amd64"
+        chmod 0700 "$HOME/.local/bin/shfmt"
 
     - name: Run shfmt
-      run: ./shfmt -i 2 -ci -s -d .
+      run: shfmt -i 2 -ci -s -d .

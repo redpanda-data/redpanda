@@ -87,7 +87,8 @@ class KgoVerifierSelfTest(PreallocNodesTest):
                                        topic,
                                        16384,
                                        1000,
-                                       custom_node=self.preallocated_nodes)
+                                       custom_node=self.preallocated_nodes,
+                                       debug_logs=True)
         producer.start()
         producer.wait_for_acks(1000, timeout_sec=30, backoff_sec=1)
         producer.wait_for_offset_map()
@@ -99,14 +100,18 @@ class KgoVerifierSelfTest(PreallocNodesTest):
             16384,
             100,
             2,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+            debug_logs=True,
+            trace_logs=True)
         rand_consumer.start(clean=False)
 
         seq_consumer = KgoVerifierSeqConsumer(self.test_context,
                                               self.redpanda,
                                               topic,
                                               16384,
-                                              nodes=self.preallocated_nodes)
+                                              nodes=self.preallocated_nodes,
+                                              debug_logs=True,
+                                              trace_logs=True)
         seq_consumer.start(clean=False)
 
         group_consumer = KgoVerifierConsumerGroupConsumer(
@@ -115,7 +120,9 @@ class KgoVerifierSelfTest(PreallocNodesTest):
             topic,
             16384,
             2,
-            nodes=self.preallocated_nodes)
+            nodes=self.preallocated_nodes,
+            debug_logs=True,
+            trace_logs=True)
         group_consumer.start(clean=False)
 
         producer.wait(timeout_sec=60)

@@ -372,18 +372,13 @@ ss::future<> configuration_manager::maybe_store_highest_known_offset(
     _highest_known_offset = offset;
     _bytes_since_last_offset_update += bytes;
 
-    auto take_result = _storage.resources().configuration_manager_take_bytes(
-      bytes);
-    if (_bytes_since_last_offset_update_units.count()) {
-        _bytes_since_last_offset_update_units.adopt(
-          std::move(take_result.units));
-    } else {
-        _bytes_since_last_offset_update_units = std::move(take_result.units);
-    }
+    auto checkpoint_hint
+      = _storage.resources().configuration_manager_take_bytes(
+        bytes, _bytes_since_last_offset_update_units);
 
     if (
       _bytes_since_last_offset_update < offset_update_treshold
-      && !take_result.checkpoint_hint) {
+      && !checkpoint_hint) {
         co_return;
     }
 

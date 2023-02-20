@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include "compression/stream_zstd.h"
+#include "bytes/iostream.h"
+#include "compression/async_stream_zstd.h"
 #include "hashing/xx.h"
 #include "likely.h"
 #include "reflection/async_adl.h"
@@ -275,25 +276,28 @@ ss::future<T> parse_type(ss::input_stream<char>& in, const header& h) {
     return read_iobuf_exactly(in, h.payload_size).then([h](iobuf io) {
         validate_payload_and_header(io, h);
 
+        ss::future<iobuf> iobuf_fut = ss::make_ready_future<iobuf>();
+
         switch (h.compression) {
         case compression_type::none:
+            iobuf_fut = ss::make_ready_future<iobuf>(std::move(io));
             break;
-
         case compression_type::zstd: {
-            compression::stream_zstd fn;
-            io = fn.uncompress(std::move(io));
+            auto& zstd_inst = compression::async_stream_zstd_instance();
+            iobuf_fut = zstd_inst.uncompress(std::move(io));
             break;
         }
-
         default:
-            return ss::make_exception_future<T>(std::runtime_error(
+            iobuf_fut = ss::make_exception_future<iobuf>(std::runtime_error(
               fmt::format("no compression supported. header: {}", h)));
         }
 
-        auto p = std::make_unique<iobuf_parser>(std::move(io));
-        auto raw = p.get();
-        return Codec::template decode<T>(*raw, h.version)
-          .finally([p = std::move(p)] {});
+        return iobuf_fut.then([h](iobuf io) {
+            auto p = std::make_unique<iobuf_parser>(std::move(io));
+            auto raw = p.get();
+            return Codec::template decode<T>(*raw, h.version)
+              .finally([p = std::move(p)] {});
+        });
     });
 }
 

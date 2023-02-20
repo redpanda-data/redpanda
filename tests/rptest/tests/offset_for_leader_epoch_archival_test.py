@@ -42,6 +42,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
                 "log_compaction_interval_ms": 1000
             },
             si_settings=SISettings(
+                test_context,
                 log_segment_size=OffsetForLeaderEpochArchivalTest.segment_size,
                 cloud_storage_cache_size=5 *
                 OffsetForLeaderEpochArchivalTest.segment_size))
@@ -52,11 +53,12 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
         def alter_and_verify():
             try:
                 rpk.alter_topic_config(
-                    topic, TopicSpec.PROPERTY_RETENTION_BYTES,
+                    topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
                     OffsetForLeaderEpochArchivalTest.segment_size)
 
                 cfgs = rpk.describe_topic_configs(topic)
-                retention = int(cfgs[TopicSpec.PROPERTY_RETENTION_BYTES][0])
+                retention = int(
+                    cfgs[TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES][0])
                 return retention == OffsetForLeaderEpochArchivalTest.segment_size
             except:
                 return False

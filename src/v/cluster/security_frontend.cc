@@ -78,7 +78,7 @@ security_frontend::security_frontend(
   ss::sharded<controller_stm>& s,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
-  ss::sharded<feature_table>& features,
+  ss::sharded<features::feature_table>& features,
   ss::sharded<ss::abort_source>& as,
   ss::sharded<security::authorizer>& authorizer)
   : _self(self)
@@ -309,22 +309,14 @@ security_frontend::dispatch_delete_acls_to_leader(
       });
 }
 
-/**
- * For use during cluster creation, if RP_BOOTSTRAP_USER is set
- * then write a user creation message to the controller log.
- *
- * @returns an error code if controller log write failed.  If the
- *          environment variable is missing or malformed this is
- *          not considered an error.
- *
- */
-ss::future<std::error_code> security_frontend::maybe_create_bootstrap_user() {
-    static const ss::sstring bootstrap_user_env_key{"RP_BOOTSTRAP_USER"};
+static const ss::sstring bootstrap_user_env_key{"RP_BOOTSTRAP_USER"};
 
+/*static*/ std::optional<user_and_credential>
+security_frontend::get_bootstrap_user_creds_from_env() {
     auto creds_str_ptr = std::getenv(bootstrap_user_env_key.c_str());
     if (creds_str_ptr == nullptr) {
         // Environment variable is not set
-        co_return errc::success;
+        return {};
     }
 
     ss::sstring creds_str = creds_str_ptr;
@@ -336,32 +328,15 @@ ss::future<std::error_code> security_frontend::maybe_create_bootstrap_user() {
           clusterlog.warn,
           "Invalid value of {} (expected \"username:password\")",
           bootstrap_user_env_key);
-        co_return errc::success;
+        return {};
     }
 
     auto username = security::credential_user{creds_str.substr(0, colon)};
     auto password = creds_str.substr(colon + 1);
     auto credentials = security::scram_sha256::make_credentials(
       password, security::scram_sha256::min_iterations);
-
-    auto err = co_await create_user(
-      username, credentials, model::timeout_clock::now() + 5s);
-
-    if (err) {
-        vlog(
-          clusterlog.warn,
-          "Failed to apply {}: {}",
-          bootstrap_user_env_key,
-          err.message());
-    } else {
-        vlog(
-          clusterlog.info,
-          "Created user '{}' via {}",
-          username,
-          bootstrap_user_env_key);
-    }
-
-    co_return err;
+    return std::optional<user_and_credential>(
+      std::in_place, std::move(username), std::move(credentials));
 }
 
 } // namespace cluster

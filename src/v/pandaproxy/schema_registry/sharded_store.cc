@@ -26,7 +26,6 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
-#include <seastar/core/std-coroutine.hh>
 
 #include <functional>
 
@@ -171,10 +170,13 @@ ss::future<bool> sharded_store::upsert(
   schema_id id,
   schema_version version,
   is_deleted deleted) {
+    // NOLINTNEXTLINE(bugprone-use-after-move)
     co_await upsert_schema(id, std::move(schema).def());
     co_return co_await upsert_subject(
       marker,
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       std::move(schema).sub(),
+      // NOLINTNEXTLINE(bugprone-use-after-move)
       std::move(schema).refs(),
       version,
       id,

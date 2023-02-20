@@ -15,6 +15,7 @@
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/fs_utils.h"
 #include "storage/segment_utils.h"
 #include "storage/spill_key_index.h"
 #include "test_utils/fixture.h"
@@ -83,7 +84,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     info("{}", idx);
 
     iobuf data = std::move(index_data).release_iobuf();
-    BOOST_REQUIRE_EQUAL(data.size_bytes(), 1048);
+    BOOST_REQUIRE_EQUAL(data.size_bytes(), 1064);
     iobuf_parser p(data.share(0, data.size_bytes()));
     (void)p.consume_type<uint16_t>(); // SIZE
     (void)p.consume_type<uint8_t>();  // TYPE
@@ -103,8 +104,7 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
       sizeof(uint16_t) + 1 /*type*/ + 1 /*offset*/ + 2 /*delta*/
         + 1 /*batch_type*/ + 1024 /*key*/);
     BOOST_REQUIRE_EQUAL(
-      footer.version,
-      storage::compacted_index::footer::key_prefixed_with_batch_type);
+      footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
 }
 FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
@@ -126,7 +126,7 @@ FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       data.size_bytes(),
-      storage::compacted_index::footer_size
+      storage::compacted_index::footer::footer_size
         + std::numeric_limits<uint16_t>::max() - 2 * vint::max_length
         + vint::vint_size(42) + vint::vint_size(66) + 1 + 2);
     iobuf_parser p(data.share(0, data.size_bytes()));
@@ -149,15 +149,14 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
     auto footer = rdr.load_footer().get0();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
-      footer.version,
-      storage::compacted_index::footer::key_prefixed_with_batch_type);
+      footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
     auto vec = compaction_index_reader_to_memory(std::move(rdr)).get0();
     BOOST_REQUIRE_EQUAL(vec.size(), 1);
@@ -176,15 +175,14 @@ FIXTURE_TEST(
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
     auto footer = rdr.load_footer().get0();
     BOOST_REQUIRE_EQUAL(footer.keys, 1);
     BOOST_REQUIRE_EQUAL(
-      footer.version,
-      storage::compacted_index::footer::key_prefixed_with_batch_type);
+      footer.version, storage::compacted_index::footer::current_version);
     BOOST_REQUIRE(footer.crc != 0);
     auto vec = compaction_index_reader_to_memory(std::move(rdr)).get0();
     BOOST_REQUIRE_EQUAL(vec.size(), 1);
@@ -217,7 +215,7 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -258,7 +256,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -324,7 +322,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     info("{}", idx);
 
     auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
+      storage::segment_full_path::mock("dummy name"),
       ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
@@ -355,7 +353,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     final_idx.close().get();
     {
         auto final_rdr = storage::make_file_backed_compacted_reader(
-          "dummy name - final ",
+          storage::segment_full_path::mock("dummy name - final "),
           ss::file(ss::make_shared(tmpbuf_file(final_data))),
           ss::default_priority_class(),
           32_KiB);
@@ -374,5 +372,131 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
             BOOST_REQUIRE(offset_list.contains(model::offset(98)));
             BOOST_REQUIRE(offset_list.contains(model::offset(99)));
         }
+    }
+}
+
+namespace storage {
+
+struct index_footer_v1 {
+    uint32_t size{0};
+    uint32_t keys{0};
+    compacted_index::footer_flags flags{0};
+    uint32_t crc{0}; // crc32
+    int8_t version{1};
+
+    static constexpr size_t footer_size = sizeof(size) + sizeof(keys)
+                                          + sizeof(flags) + sizeof(crc)
+                                          + sizeof(version);
+};
+
+} // namespace storage
+
+FIXTURE_TEST(footer_v1_compatibility, compacted_topic_fixture) {
+    tmpbuf_file::store_t store;
+    auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
+    const auto key = random_generators::get_bytes(1024);
+    auto bt = random_batch_type();
+    idx.index(bt, bytes(key), model::offset(42), 66).get();
+    idx.close().get();
+
+    iobuf data = std::move(store).release_iobuf();
+
+    // check that the footer suffix can be read as v1 footer
+
+    auto footer = reflection::adl<storage::compacted_index::footer>{}.from(
+      data.share(
+        data.size_bytes() - storage::compacted_index::footer::footer_size,
+        storage::compacted_index::footer::footer_size));
+    info("{}", footer);
+
+    auto footer_v1 = reflection::adl<storage::index_footer_v1>{}.from(
+      data.share(
+        data.size_bytes() - storage::index_footer_v1::footer_size,
+        storage::index_footer_v1::footer_size));
+
+    BOOST_CHECK_EQUAL(footer.size, footer.size_deprecated);
+    BOOST_CHECK_EQUAL(footer.size, footer_v1.size);
+    BOOST_CHECK_EQUAL(footer.keys, footer.keys_deprecated);
+    BOOST_CHECK_EQUAL(footer.keys, footer_v1.keys);
+    BOOST_CHECK(footer.flags == footer_v1.flags);
+    BOOST_CHECK_EQUAL(footer.crc, footer_v1.crc);
+    BOOST_CHECK_EQUAL(footer.version, footer_v1.version);
+}
+
+static iobuf substitute_index_for_v1(iobuf data) {
+    auto footer = reflection::adl<storage::compacted_index::footer>{}.from(
+      data.share(
+        data.size_bytes() - storage::compacted_index::footer::footer_size,
+        storage::compacted_index::footer::footer_size));
+    auto footer_v1 = storage::index_footer_v1{
+      .size = static_cast<uint32_t>(footer.size),
+      .keys = static_cast<uint32_t>(footer.keys),
+      .flags = footer.flags,
+      .crc = footer.crc};
+
+    auto ret = data
+                 .share(
+                   0,
+                   data.size_bytes()
+                     - storage::compacted_index::footer::footer_size)
+                 .copy();
+    reflection::adl<storage::index_footer_v1>{}.to(ret, footer_v1);
+    return ret;
+};
+
+static storage::compacted_index::footer
+verify_index_integrity(const iobuf& data) {
+    tmpbuf_file::store_t store;
+    ss::file file{ss::make_shared(tmpbuf_file(store))};
+    auto fstream = ss::make_file_output_stream(file).get();
+    for (const auto& fragment : data) {
+        fstream.write(fragment.get(), fragment.size()).get();
+    }
+    fstream.flush().get();
+
+    auto rdr = storage::make_file_backed_compacted_reader(
+      storage::segment_full_path::mock("dummy name"),
+      file,
+      ss::default_priority_class(),
+      32_KiB);
+    rdr.verify_integrity().get();
+    return rdr.load_footer().get();
+}
+
+// test that indices with v1 footers are correctly loaded
+FIXTURE_TEST(v1_footers_compatibility, compacted_topic_fixture) {
+    {
+        // empty index
+        tmpbuf_file::store_t store;
+        auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
+        idx.close().get();
+        auto idx_data = std::move(store).release_iobuf();
+        verify_index_integrity(idx_data);
+        auto idx_data_v1 = substitute_index_for_v1(std::move(idx_data));
+        auto footer = verify_index_integrity(idx_data_v1);
+        BOOST_CHECK_EQUAL(footer.size, 0);
+        BOOST_CHECK_EQUAL(footer.keys, 0);
+        BOOST_CHECK(
+          footer.flags == storage::compacted_index::footer_flags::none);
+        BOOST_CHECK_EQUAL(footer.crc, 0);
+    }
+
+    {
+        // index with some keys
+        tmpbuf_file::store_t store;
+        auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
+        const auto key = random_generators::get_bytes(1024);
+        auto bt = random_batch_type();
+        idx.index(bt, bytes(key), model::offset(42), 66).get();
+        idx.close().get();
+        auto idx_data = std::move(store).release_iobuf();
+        auto footer_before = verify_index_integrity(idx_data);
+        auto idx_data_v1 = substitute_index_for_v1(std::move(idx_data));
+        auto footer_after = verify_index_integrity(idx_data_v1);
+        BOOST_CHECK_EQUAL(footer_before.size, footer_after.size);
+        BOOST_CHECK_EQUAL(footer_after.keys, 1);
+        BOOST_CHECK(
+          footer_after.flags == storage::compacted_index::footer_flags::none);
+        BOOST_CHECK_EQUAL(footer_before.crc, footer_after.crc);
     }
 }

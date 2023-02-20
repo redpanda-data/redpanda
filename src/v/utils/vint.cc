@@ -8,10 +8,14 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #include "utils/vint.h"
 
+#include "utils/vint_iostream.h"
+
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/iostream.hh>
+
+#include <utility>
 
 namespace unsigned_vint {
 

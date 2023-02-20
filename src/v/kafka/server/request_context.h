@@ -18,10 +18,11 @@
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/logger.h"
-#include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
+#include "kafka/server/server.h"
 #include "kafka/types.h"
 #include "seastarx.h"
+#include "security/fwd.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
@@ -32,6 +33,7 @@
 #include <seastar/util/log.hh>
 
 #include <memory>
+#include <type_traits>
 
 namespace kafka {
 
@@ -54,6 +56,11 @@ struct request_header {
     bool is_flexible() const { return tags_size_bytes > 0; }
 
     friend std::ostream& operator<<(std::ostream&, const request_header&);
+};
+
+template<typename T>
+concept has_throttle_time_ms = requires(T a) {
+    {a.data.throttle_time_ms};
 };
 
 class request_context {
@@ -80,7 +87,7 @@ public:
 
     request_reader& reader() { return _reader; }
 
-    latency_probe& probe() { return _conn->server().probe(); }
+    latency_probe& probe() { return _conn->server().latency_probe(); }
 
     const cluster::metadata_cache& metadata_cache() const {
         return _conn->server().metadata_cache();
@@ -94,11 +101,13 @@ public:
         return _conn->server().topics_frontend();
     }
 
+    quota_manager& quota_mgr() { return _conn->server().quota_mgr(); }
+
     ss::sharded<cluster::config_frontend>& config_frontend() const {
         return _conn->server().config_frontend();
     }
 
-    ss::sharded<cluster::feature_table>& feature_table() const {
+    ss::sharded<features::feature_table>& feature_table() const {
         return _conn->server().feature_table();
     }
 
@@ -118,10 +127,9 @@ public:
         return _conn->server().tx_gateway_frontend();
     }
 
-    int32_t throttle_delay_ms() const {
+    std::chrono::milliseconds throttle_delay_ms() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
-                 _throttle_delay)
-          .count();
+          _throttle_delay);
     }
 
     kafka::group_router& groups() { return _conn->server().group_router(); }
@@ -150,13 +158,24 @@ public:
         { r.encode(writer, version) } -> std::same_as<void>;
     }
     ss::future<response_ptr> respond(ResponseType r) {
+        /// Many responses contain a throttle_time_ms field, to prevent each
+        /// handler from manually having to set this value, it can be done in
+        /// one place here, with this concept check
+        if constexpr (has_throttle_time_ms<ResponseType>) {
+            /// Allow request handlers to override the throttle response, if
+            /// multiple throttles detected, choose larger of the two
+            r.data.throttle_time_ms = std::max(
+              r.data.throttle_time_ms, throttle_delay_ms());
+        }
+
         vlog(
           klog.trace,
-          "[{}:{}] sending {}:{} response {}",
+          "[{}:{}] sending {}:{} for {}, response {}",
           _conn->client_host(),
           _conn->client_port(),
           ResponseType::api_type::key,
           ResponseType::api_type::name,
+          _header.client_id,
           r);
         /// KIP-511 bumps api_versions_request/response to 3, past the first
         /// supported flex version for this API, and makes an exception
@@ -174,6 +193,7 @@ public:
                 version = api_version(0);
             }
         }
+
         auto resp = std::make_unique<response>(is_flexible);
         r.encode(resp->writer(), version);
         return ss::make_ready_future<response_ptr>(std::move(resp));
@@ -199,10 +219,6 @@ public:
 
     cluster::security_frontend& security_frontend() const {
         return _conn->server().security_frontend();
-    }
-
-    v8_engine::data_policy_table& data_policy_table() const {
-        return _conn->server().data_policy_table();
     }
 
     security::authorizer& authorizer() { return _conn->server().authorizer(); }

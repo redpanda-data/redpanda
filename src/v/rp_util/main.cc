@@ -23,9 +23,8 @@ namespace {
 int corpus_write(char** argv, std::filesystem::path dir) {
     seastar::app_template app;
     try {
-        return app.run(1, argv, [dir = std::move(dir)]() -> ss::future<int> {
-            co_await compat::write_corpus(dir);
-            co_return 0;
+        return app.run(1, argv, [dir = std::move(dir)]() {
+            return compat::write_corpus(dir).then([] { return 0; });
         });
     } catch (...) {
         std::cerr << std::current_exception() << "\n";
@@ -37,8 +36,7 @@ int corpus_check(char** argv, std::filesystem::path path) {
     seastar::app_template app;
     try {
         return app.run(1, argv, [path = std::move(path)]() -> ss::future<int> {
-            co_await compat::check_type(path);
-            co_return 0;
+            return compat::check_type(path).then([] { return 0; });
         });
     } catch (...) {
         std::cerr << std::current_exception() << "\n";

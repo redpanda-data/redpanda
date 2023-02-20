@@ -29,8 +29,9 @@ class FailureSpec:
     FAILURE_NETEM_PACKET_DUPLICATE = 7
 
     FAILURE_TYPES = [
-        FAILURE_KILL, FAILURE_SUSPEND, FAILURE_TERMINATE,
-        FAILURE_NETEM_RANDOM_DELAY
+        FAILURE_KILL,
+        FAILURE_SUSPEND,
+        FAILURE_TERMINATE,
     ]
     NETEM_FAILURE_TYPES = [
         FAILURE_NETEM_RANDOM_DELAY, FAILURE_NETEM_PACKET_LOSS,
@@ -45,10 +46,23 @@ class FailureSpec:
     def __str__(self):
         return f"type: {self.type}, length: {self.length} seconds, node: {self.node.account.hostname}"
 
+    def __repr__(self):
+        return self.__str__()
+
+    def __hash__(self):
+        return hash(self.as_tuple())
+
+    def __eq__(self, rhs):
+        return self.as_tuple() == rhs.as_tuple()
+
+    def as_tuple(self):
+        return (self.type, self.length, self.node)
+
 
 class FailureInjector:
     def __init__(self, redpanda):
         self.redpanda = redpanda
+        self._in_flight = set()
 
     def __enter__(self):
         return self
@@ -57,6 +71,11 @@ class FailureInjector:
         self._heal_all()
 
     def inject_failure(self, spec):
+        if spec in self._in_flight:
+            self.redpanda.logger.info(
+                f"Ignoring failure injection, already in flight {spec}")
+            return
+
         self.redpanda.logger.info(f"injecting failure: {spec}")
         try:
             self._start_func(spec.type)(spec.node)
@@ -74,10 +93,22 @@ class FailureInjector:
                 if spec.length == 0:
                     self._stop_func(spec.type)(spec.node)
                 else:
-                    stop_timer = threading.Timer(function=self._stop_func(
-                        spec.type),
-                                                 args=[spec.node],
+
+                    def cleanup():
+                        if spec in self._in_flight:
+                            self._stop_func(spec.type)(spec.node)
+                            self._in_flight.remove(spec)
+                        else:
+                            # The stop timers may outlive the test, handle case
+                            # where they run after we already had a heal_all call.
+                            self.redpanda.logger.warn(
+                                f"Skipping failure stop action, already cleaned up?"
+                            )
+
+                    stop_timer = threading.Timer(function=cleanup,
+                                                 args=[],
                                                  interval=spec.length)
+                    self._in_flight.add(spec)
                     stop_timer.start()
 
     def _start_func(self, tp):
@@ -130,27 +161,44 @@ class FailureInjector:
 
     def _heal(self, node):
         self.redpanda.logger.info(f"healing node {node.account.hostname}")
-        cmd = "iptables -D OUTPUT -p tcp --destination-port 33145 -j DROP"
-        node.account.ssh(cmd)
-        cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
-        node.account.ssh(cmd)
+        try:
+            cmd = "iptables -D OUTPUT -p tcp --destination-port 33145 -j DROP"
+            node.account.ssh(cmd)
+        except Exception as e:
+            self.redpanda.logger.error(
+                f"Failed to clean up OUTPUT rule on {node.name}: {e}")
+
+        try:
+            cmd = "iptables -D INPUT -p tcp --destination-port 33145 -j DROP"
+            node.account.ssh(cmd)
+        except Exception as e:
+            self.redpanda.logger.error(
+                f"Failed to clean up INPUT rule on {node.name}: {e}")
 
     def _delete_netem(self, node):
         tc_netem.tc_netem_delete(node)
 
     def _heal_all(self):
-        self.redpanda.logger.info(f"healling all network failures")
+        self.redpanda.logger.info(f"healing all network failures")
+
+        actions = [
+            lambda n: n.account.ssh("iptables -P INPUT ACCEPT"),
+            lambda n: n.account.ssh("iptables -P FORWARD ACCEPT"),
+            lambda n: n.account.ssh("iptables -P OUTPUT ACCEPT"),
+            lambda n: n.account.ssh("iptables -F"),
+            lambda n: n.account.ssh("iptables -X"),
+            lambda n: self._delete_netem(n)
+        ]
+
         for n in self.redpanda.nodes:
-            n.account.ssh("iptables -P INPUT ACCEPT")
-            n.account.ssh("iptables -P FORWARD ACCEPT")
-            n.account.ssh("iptables -P OUTPUT ACCEPT")
-            n.account.ssh("iptables -F")
-            n.account.ssh("iptables -X")
-            try:
-                self._delete_netem(n)
-            except:
-                # skip error as deleting netem may fail if there are no rules applied
-                pass
+            for action in actions:
+                try:
+                    action(n)
+                except Exception as e:
+                    # Cleanups can fail, e.g. rule does not exist
+                    self.redpanda.logger.warn(f"_heal_all: {e}")
+
+        self._in_flight.clear()
 
     def _suspend(self, node):
         self.redpanda.logger.info(

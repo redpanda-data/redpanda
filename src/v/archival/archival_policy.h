@@ -12,6 +12,8 @@
 
 #include "archival/probe.h"
 #include "archival/types.h"
+#include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/types.h"
 #include "model/fundamental.h"
 #include "storage/fwd.h"
 #include "storage/log_manager.h"
@@ -23,7 +25,6 @@
 namespace archival {
 
 struct upload_candidate {
-    ss::lw_shared_ptr<storage::segment> source;
     segment_name exposed_name;
     model::offset starting_offset;
     size_t file_offset;
@@ -32,8 +33,16 @@ struct upload_candidate {
     size_t final_file_offset;
     model::timestamp base_timestamp;
     model::timestamp max_timestamp;
+    model::term_id term;
+    std::vector<ss::lw_shared_ptr<storage::segment>> sources;
+    std::vector<cloud_storage::remote_segment_path> remote_sources;
 
     friend std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
+};
+
+struct upload_candidate_with_locks {
+    upload_candidate candidate;
+    std::vector<ss::rwlock::holder> read_locks;
 };
 
 /// Archival policy is responsible for extracting segments from
@@ -54,11 +63,18 @@ public:
     /// \param end_exclusive is an exclusive end of the range
     /// \param lm is a log manager
     /// \return initializd struct on success, empty struct on failure
-    ss::future<upload_candidate> get_next_candidate(
+    ss::future<upload_candidate_with_locks> get_next_candidate(
       model::offset begin_inclusive,
       model::offset end_exclusive,
       storage::log,
-      const storage::offset_translator_state&);
+      const storage::offset_translator_state&,
+      ss::lowres_clock::duration segment_lock_duration);
+
+    ss::future<upload_candidate_with_locks> get_next_compacted_segment(
+      model::offset begin_inclusive,
+      storage::log log,
+      const cloud_storage::partition_manifest& manifest,
+      ss::lowres_clock::duration segment_lock_duration);
 
 private:
     /// Check if the upload have to be forced due to timeout

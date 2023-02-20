@@ -18,8 +18,8 @@ import subprocess
 # Expected log errors in tests that test misbehaving
 # transactional clients.
 TX_ERROR_LOGS = [
-    # e.g. cluster - rm_stm.cc:370 - Can't prepare pid:{producer_identity: id=1, epoch=27} - unknown session
-    "cluster - rm_stm.*unknown session"
+    # e.g. tx - [{kafka/topic1/0}] - rm_stm.cc:461 - Can't prepare pid:{producer_identity: id=1, epoch=27} - unknown session
+    "tx -.*rm_stm.*unknown session"
 ]
 
 
@@ -29,10 +29,6 @@ class TxVerifierTest(RedpandaTest):
     """
     def __init__(self, test_context):
         extra_rp_conf = {
-            "enable_idempotence": True,
-            "enable_transactions": True,
-            "transaction_coordinator_replication": 3,
-            "id_allocator_replication": 3,
             "default_topic_replications": 3,
             "default_topic_partitions": 1,
             "enable_leader_balancer": False,
@@ -43,7 +39,7 @@ class TxVerifierTest(RedpandaTest):
                                              extra_rp_conf=extra_rp_conf)
 
     def verify(self, tests):
-        verifier_jar = "/opt/tx-verifier/tx-verifier.jar"
+        verifier_jar = "/opt/verifiers/verifiers.jar"
 
         self.redpanda.logger.info("creating topics")
 
@@ -57,7 +53,7 @@ class TxVerifierTest(RedpandaTest):
             self.redpanda.logger.info(
                 "testing txn test \"{test}\"".format(test=test))
             try:
-                cmd = "{java} -jar {verifier_jar} {test} {brokers}".format(
+                cmd = "{java} -cp {verifier_jar} io.vectorized.tx_verifier.Verifier {test} {brokers}".format(
                     java="java",
                     verifier_jar=verifier_jar,
                     test=test,

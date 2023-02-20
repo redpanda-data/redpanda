@@ -196,6 +196,7 @@ venv.bak/
 tags
 .ccls-cache
 .clangd
+*.sublime-*
 
 # Configuration
 *.bk

@@ -10,8 +10,10 @@
  */
 
 #pragma once
+#include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "rpc/logger.h"
+#include "rpc/types.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -68,7 +70,8 @@ public:
 
     void setup_metrics(
       ss::metrics::metric_groups& mgs,
-      const std::optional<ss::sstring>& service_name,
+      const std::optional<rpc::connection_cache_label>& label,
+      const std::optional<model::node_id>& node_id,
       const net::unresolved_address& target_addr);
 
 private:

@@ -1,0 +1,34 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster
+  namespace: console-admin-api
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+    - port: 9092
+    adminApi:
+    - port: 9644
+      tls:
+        enabled: true
+        requireClientAuth: true
+    schemaRegistry:
+      port: 8081
+    pandaproxyApi:
+     - port: 8082
+    developerMode: true
+  additionalConfiguration:
+    redpanda.append_chunk_size: "40960"
+    redpanda.segment_appender_flush_timeout_ms: "1003"

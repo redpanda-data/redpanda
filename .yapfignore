@@ -4,3 +4,4 @@ vtools/*
 depot_tools/*
 src/v/dashboard/node_modules/*
 go/*
+.git/*

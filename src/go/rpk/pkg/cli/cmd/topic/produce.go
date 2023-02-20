@@ -31,12 +31,14 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 		recHeaders []string
 		partition  int32
 
-		inFormat    string
-		outFormat   string
-		compression string
-		acks        int
+		inFormat        string
+		outFormat       string
+		compression     string
+		acks            int
+		maxMessageBytes int32
 
-		tombstone bool
+		tombstone              bool
+		allowAutoTopicCreation bool
 
 		timeout time.Duration
 	)
@@ -68,6 +70,10 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 				out.Die("invalid compression codec %q", compression)
 			}
 
+			if allowAutoTopicCreation {
+				opts = append(opts, kgo.AllowAutoTopicCreation())
+			}
+
 			switch acks {
 			case -1:
 				opts = append(opts, kgo.RequiredAcks(kgo.AllISRAcks()))
@@ -88,6 +94,9 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 			}
 			if partition >= 0 {
 				opts = append(opts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
+			}
+			if maxMessageBytes >= 0 {
+				opts = append(opts, kgo.ProducerBatchMaxBytes(maxMessageBytes))
 			}
 			var defaultTopic string
 			if len(args) == 1 {
@@ -162,6 +171,7 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 	cmd.Flags().IntVar(&acks, "acks", -1, "Number of acks required for producing (-1=all, 0=none, 1=leader)")
 	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "Per-record delivery timeout, if non-zero, min 1s")
 	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")
+	cmd.Flags().Int32Var(&maxMessageBytes, "max-message-bytes", -1, "If non-negative, maximum size of a record batch before compression")
 
 	cmd.Flags().StringVarP(&inFormat, "format", "f", "%v\n", "Input record format")
 	cmd.Flags().StringVarP(
@@ -174,6 +184,7 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 	cmd.Flags().StringArrayVarP(&recHeaders, "header", "H", nil, "Headers in format key:value to add to each record (repeatable)")
 	cmd.Flags().StringVarP(&key, "key", "k", "", "A fixed key to use for each record (parsed input keys take precedence)")
 	cmd.Flags().BoolVarP(&tombstone, "tombstone", "Z", false, "Produce empty values as tombstones")
+	cmd.Flags().BoolVar(&allowAutoTopicCreation, "allow-auto-topic-creation", false, "Auto-create non-existent topics; requires auto_create_topics_enabled on the broker")
 
 	// Deprecated
 	cmd.Flags().IntVarP(new(int), "num", "n", 1, "")
@@ -255,8 +266,8 @@ Reading number values can have the following modifiers:
      little8     alias for byte
 
      byte        one byte number
-
      <digits>    directly specify the length as this many digits
+     bool        read "true" as 1, "false" as 0
 
 When reading number sizes, the size corresponds to the size of the encoded
 values, not the decoded values. "%T{6}%t{hex}" will read six hex bytes and

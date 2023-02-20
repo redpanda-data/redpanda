@@ -9,12 +9,13 @@
 from enum import Enum, auto, unique
 import json
 import random
-import itertools
+import re
 import string
 from threading import Event, Condition
 import threading
 import time
 from ducktape.utils.util import wait_until
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from time import sleep
 
@@ -26,26 +27,9 @@ from rptest.services.admin import Admin
 class OperationCtx:
     def __init__(self, redpanda):
         self.redpanda = redpanda
-        self.brokers_list = redpanda.brokers_list()
-        self.cur_first_broker = itertools.cycle(self.brokers_list)
-
-    def _get_brokers(self):
-        # This is a bit of an ugly hack to deal with the consequences of
-        # https://github.com/redpanda-data/redpanda/issues/6317
-        # If the first broker in the list is suspended, rpk won't try other
-        # brokers and will fail straight away. This is a problem even if we
-        # shuffle the brokers list (as redpanda.brokers_list() does) and add
-        # retries - there is a small chance that the first broker will be the
-        # bad one in all retries! To mitigate this we deteriministically choose
-        # the first broker so that it is always different from the previous
-        # invocation and shuffle the rest.
-        first = next(self.cur_first_broker)
-        others = [b for b in self.brokers_list if b != first]
-        random.shuffle(others)
-        return ",".join([first] + others)
 
     def rpk(self):
-        return RpkTool(self.redpanda, get_brokers=self._get_brokers)
+        return RpkTool(self.redpanda)
 
     def admin(self):
         return Admin(self.redpanda)
@@ -62,7 +46,8 @@ class Operation():
 
 def random_string(length):
     return ''.join(
-        [random.choice(string.ascii_letters) for i in range(0, length)])
+        [random.choice(string.ascii_lowercase) for i in range(0, length)]
+    )  # Using only lower case to avoid getting "ERROR" or other string that would be perceived as an error in the log
 
 
 @unique
@@ -133,7 +118,8 @@ class DeleteTopicOperation(Operation):
         self.topic = None
 
     def execute(self, ctx):
-        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+        if self.topic is None:
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Deleting topic: {self.topic}")
@@ -144,8 +130,19 @@ class DeleteTopicOperation(Operation):
         if self.topic is None:
             return False
         ctx.redpanda.logger.info(f"Validating topic {self.topic} deletion")
-        topics = ctx.rpk().list_topics()
-        return self.topic not in topics
+
+        # since metadata in Redpanda and Kafka are eventually consistent
+        # we must check all the nodes before proceeding
+        for n in ctx.redpanda.started_nodes():
+            partitions = ctx.admin().get_partitions(node=n)
+            for p in partitions:
+                if p['topic'] == self.topic:
+                    ctx.redpanda.logger.info(
+                        f"found deleted topic {self.topic} on node {n.account.hostname}"
+                    )
+                    return False
+
+        return True
 
     def describe(self):
         return {
@@ -164,9 +161,9 @@ class UpdateTopicOperation(Operation):
         TopicSpec.PROPERTY_TIMESTAMP_TYPE:
         lambda: random.choice(['CreateTime', 'LogAppendTime']),
         TopicSpec.PROPERTY_SEGMENT_SIZE:
-        lambda: random.randint(10 * 2 ^ 20, 512 * 2 ^ 20),
+        lambda: random.randint(10 * 2**20, 512 * 2**20),
         TopicSpec.PROPERTY_RETENTION_BYTES:
-        lambda: random.randint(10 * 2 ^ 20, 512 * 2 ^ 20),
+        lambda: random.randint(10 * 2**20, 512 * 2**20),
         TopicSpec.PROPERTY_RETENTION_TIME:
         lambda: random.randint(10000, 1000000)
     }
@@ -178,14 +175,13 @@ class UpdateTopicOperation(Operation):
         self.value = None
 
     def execute(self, ctx):
-        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
-
         if self.topic is None:
-            return False
-
-        self.property = random.choice(
-            list(UpdateTopicOperation.properties.keys()))
-        self.value = UpdateTopicOperation.properties[self.property]()
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+            if self.topic is None:
+                return False
+            self.property = random.choice(
+                list(UpdateTopicOperation.properties.keys()))
+            self.value = UpdateTopicOperation.properties[self.property]()
 
         ctx.redpanda.logger.info(
             f"Updating topic: {self.topic} with: {self.property}={self.value}")
@@ -219,20 +215,22 @@ class AddPartitionsOperation(Operation):
         self.prefix = prefix
         self.topic = None
         self.total = None
+        self.current = None
 
     def execute(self, ctx):
-        self.topic = _choice_random_topic(ctx, prefix=self.prefix)
+        if self.topic is None:
+            self.topic = _choice_random_topic(ctx, prefix=self.prefix)
         if self.topic is None:
             return False
-
-        rpk = ctx.rpk()
-        current = len(list(rpk.describe_topic(self.topic)))
-        to_add = random.randint(1, 5)
-        self.total = current + to_add
+        if self.total is None:
+            self.current = len(
+                list(ctx.rpk().describe_topic(self.topic, tolerant=True)))
+            self.total = random.randint(self.current + 1, self.current + 5)
         ctx.redpanda.logger.info(
-            f"Updating topic: {self.topic} partitions count, current: {current} adding: {to_add} partitions"
+            f"Updating topic: {self.topic} partitions count. Current partition count: {self.current} new partition count: {self.total}"
         )
-        rpk.add_topic_partitions(self.topic, to_add)
+        cli = KafkaCliTools(ctx.redpanda)
+        cli.create_topic_partitions(self.topic, self.total)
         return True
 
     def validate(self, ctx):
@@ -317,7 +315,8 @@ class CreateAclOperation(Operation):
         self.user = None
 
     def execute(self, ctx):
-        self.user = _choice_random_user(ctx, prefix=self.prefix)
+        if self.user is None:
+            self.user = _choice_random_user(ctx, prefix=self.prefix)
         if self.user is None:
             return False
 
@@ -397,7 +396,8 @@ class AdminOperationsFuzzer():
                  operations_interval=1,
                  max_partitions=10,
                  min_replication=1,
-                 max_replication=3):
+                 max_replication=3,
+                 allowed_operations=None):
         self.redpanda = redpanda
         self.operation_ctx = OperationCtx(self.redpanda)
         self.initial_entities = initial_entities
@@ -408,10 +408,20 @@ class AdminOperationsFuzzer():
         self.max_partitions = max_partitions
         self.min_replication = min_replication
         self.max_replication = max_replication
+        if allowed_operations is None:
+            # Enable back the ADD_PARTITIONS operation
+            # https://github.com/redpanda-data/redpanda/issues/8747
+            self.allowed_operations = [
+                o for o in RedpandaAdminOperation
+                if o != RedpandaAdminOperation.ADD_PARTITIONS
+            ]
+        else:
+            self.allowed_operations = allowed_operations
 
         self.prefix = f'fuzzy-operator-{random.randint(0,10000)}'
         self._stopping = Event()
         self.executed = 0
+        self.attempted = 0
         self.history = []
         self.error = None
 
@@ -422,6 +432,7 @@ class AdminOperationsFuzzer():
     def start(self):
         self.thread = threading.Thread(target=lambda: self.thread_loop(),
                                        args=())
+        self.thread.daemon = True
         # pre-populate cluster with users and topics
         for i in range(0, self.initial_entities):
             tp = CreateTopicOperation(self.prefix, 1, self.min_replication,
@@ -472,15 +483,16 @@ class AdminOperationsFuzzer():
 
             def validate_result():
                 try:
-                    op.validate(self.operation_ctx)
+                    return op.validate(self.operation_ctx)
                 except Exception as e:
                     self.redpanda.logger.debug(
-                        f"Error validating operation {op_type} - {e}")
+                        f"Error validating operation {op_type}", exc_info=True)
                     return False
 
             try:
+                self.attempted += 1
                 if self.execute_with_retries(op_type, op):
-                    wait_until(lambda: validate_result,
+                    wait_until(validate_result,
                                timeout_sec=self.operation_timeout,
                                backoff_sec=1)
                     self.executed += 1
@@ -490,7 +502,8 @@ class AdminOperationsFuzzer():
                         f"Skipped operation: {op_type}, current cluster state does not allow executing the operation"
                     )
             except Exception as e:
-                self.redpanda.logger.error(f"Operation: {op_type} error: {e}")
+                self.redpanda.logger.debug(f"Operation: {op_type}",
+                                           exc_info=True)
                 self.error = e
                 self._stopping.set()
 
@@ -514,13 +527,13 @@ class AdminOperationsFuzzer():
             except Exception as e:
                 error = e
                 self.redpanda.logger.info(
-                    f"Operation: {op_type} error: {error}, retries left: {self.retries-retry}/{self.retries}"
-                )
+                    f"Operation: {op_type}, retries left: {self.retries-retry}/{self.retries}",
+                    exc_info=True)
                 sleep(self.retries_interval)
         raise error
 
     def make_random_operation(self) -> Operation:
-        op = random.choice([o for o in RedpandaAdminOperation])
+        op = random.choice(self.allowed_operations)
         actions = {
             RedpandaAdminOperation.CREATE_TOPIC:
             lambda:
@@ -544,12 +557,44 @@ class AdminOperationsFuzzer():
         return (op, actions[op]())
 
     def stop(self):
+        if self._stopping.is_set():
+            return
+
         self.redpanda.logger.info(
             f"operations history: {json.dumps(self.history)}")
         self._stopping.set()
         self.thread.join()
 
         assert self.error is None, f"Encountered an error in admin operations fuzzer: {self.error}"
+
+    def ensure_progress(self):
+        executed = self.executed
+        attempted = self.attempted
+
+        def check():
+            # Drop out immediately if the main loop errored out.
+            if self.error:
+                self.redpanda.logger.error(
+                    f"wait: terminating for error {self.error}")
+                raise self.error
+
+            # the attempted condition gurantees that we measure progress
+            # by use an operation which started after ensure_progress is
+            # invoked
+            if self.executed > executed and self.attempted > attempted:
+                return True
+            elif self._stopping.is_set():
+                # We cannot ever reach the count, error out
+                self.redpanda.logger.error(f"wait: terminating for stop")
+                raise RuntimeError(f"Stopped without observing progress")
+            return False
+
+        # we use 2*self.operation_timeout to give time (self.operation_timeout) for
+        # the operation started before ensure_progress is invoked to finish prior to
+        # measuring the real indicator (next self.operation_timeout)
+        wait_until(check,
+                   timeout_sec=2 * self.operation_timeout,
+                   backoff_sec=2)
 
     def wait(self, count, timeout):
         def check():
@@ -567,5 +612,6 @@ class AdminOperationsFuzzer():
                 raise RuntimeError(
                     f"Stopped without reaching target ({self.executed}/{count})"
                 )
+            return False
 
         wait_until(check, timeout_sec=timeout, backoff_sec=2)

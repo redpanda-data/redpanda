@@ -9,6 +9,7 @@
  */
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/remote_segment_index.h"
 #include "common_def.h"
 #include "model/record_batch_types.h"
@@ -33,10 +34,10 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     // rows + almost full buffer.
     size_t segment_num_batches = 1023;
     model::offset segment_base_rp_offset{1234};
-    model::offset segment_base_kaf_offset{1210};
+    kafka::offset segment_base_kaf_offset{1210};
 
     std::vector<model::offset> rp_offsets;
-    std::vector<model::offset> kaf_offsets;
+    std::vector<kafka::offset> kaf_offsets;
     std::vector<size_t> file_offsets;
     int64_t rp = segment_base_rp_offset();
     int64_t kaf = segment_base_kaf_offset();
@@ -45,7 +46,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     for (size_t i = 0; i < segment_num_batches; i++) {
         if (!is_config) {
             rp_offsets.push_back(model::offset(rp));
-            kaf_offsets.push_back(model::offset(kaf));
+            kaf_offsets.push_back(kafka::offset(kaf));
             file_offsets.push_back(fpos);
         }
         // The test queries every element using the key that matches the element
@@ -63,7 +64,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     offset_index tmp_index(
       segment_base_rp_offset, segment_base_kaf_offset, 0U, 1000);
     model::offset last;
-    model::offset klast;
+    kafka::offset klast;
     size_t flast;
     for (size_t i = 0; i < rp_offsets.size(); i++) {
         tmp_index.add(rp_offsets.at(i), kaf_offsets.at(i), file_offsets.at(i));
@@ -83,7 +84,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     BOOST_REQUIRE(!opt_first.has_value());
 
     auto kopt_first = index.find_kaf_offset(
-      segment_base_kaf_offset - model::offset(1));
+      segment_base_kaf_offset - kafka::offset(1));
     BOOST_REQUIRE(!kopt_first.has_value());
 
     for (unsigned ix = 0; ix < rp_offsets.size(); ix++) {
@@ -106,7 +107,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
     BOOST_REQUIRE_EQUAL(kaf_last, klast);
     BOOST_REQUIRE_EQUAL(file_last, flast);
 
-    auto kopt_last = index.find_kaf_offset(klast + model::offset(1));
+    auto kopt_last = index.find_kaf_offset(klast + kafka::offset(1));
     BOOST_REQUIRE_EQUAL(kopt_last->rp_offset, last);
     BOOST_REQUIRE_EQUAL(kopt_last->kaf_offset, klast);
     BOOST_REQUIRE_EQUAL(kopt_last->file_pos, flast);
@@ -114,6 +115,7 @@ BOOST_AUTO_TEST_CASE(remote_segment_index_search_test) {
 
 SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
     static const model::offset base_offset{100};
+    static const kafka::offset kbase_offset{100};
     std::vector<batch_t> batches;
     for (int i = 0; i < 1000; i++) {
         auto num_records = random_generators::get_int(1, 20);
@@ -130,21 +132,23 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
     }
     auto segment = generate_segment(base_offset, batches);
     auto is = make_iobuf_input_stream(std::move(segment));
-    offset_index ix(base_offset, base_offset, 0, 0);
+    offset_index ix(base_offset, kbase_offset, 0, 0);
     auto parser = make_remote_segment_index_builder(
-      std::move(is), ix, model::offset(0), 0);
+      std::move(is), ix, model::offset_delta(0), 0);
     auto result = parser->consume().get();
     BOOST_REQUIRE(result.has_value());
     BOOST_REQUIRE(result.value() != 0);
     parser->close().get();
 
     auto offset = base_offset;
+    auto koffset = kbase_offset;
     for (const auto& batch : batches) {
         auto res = ix.find_rp_offset(offset + model::offset(1));
         BOOST_REQUIRE(res.has_value());
         BOOST_REQUIRE_EQUAL(res->rp_offset, offset);
-        BOOST_REQUIRE_EQUAL(res->kaf_offset, offset);
+        BOOST_REQUIRE_EQUAL(res->kaf_offset, koffset);
 
         offset += batch.num_records;
+        koffset += batch.num_records;
     }
 }

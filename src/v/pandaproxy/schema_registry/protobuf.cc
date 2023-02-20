@@ -173,6 +173,9 @@ build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
 ss::future<const pb::FileDescriptor*> build_file_with_refs(
   pb::DescriptorPool& dp, sharded_store& store, canonical_schema schema) {
     for (const auto& ref : schema.refs()) {
+        if (dp.FindFileByName(ref.name)) {
+            continue;
+        }
         auto dep = co_await store.get_subject_schema(
           ref.sub, ref.version, include_deleted::no);
         co_await build_file_with_refs(
@@ -238,6 +241,7 @@ validate_protobuf_schema(sharded_store& store, canonical_schema schema) {
 
 ss::future<canonical_schema>
 make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
+    // NOLINTBEGIN(bugprone-use-after-move)
     canonical_schema temp{
       std::move(schema).sub(),
       {canonical_schema_definition::raw_string{schema.def().raw()()},
@@ -247,6 +251,7 @@ make_canonical_protobuf_schema(sharded_store& store, unparsed_schema schema) {
     auto validated = co_await validate_protobuf_schema(store, temp);
     co_return canonical_schema{
       std::move(temp).sub(), std::move(validated), std::move(temp).refs()};
+    // NOLINTEND(bugprone-use-after-move)
 }
 
 namespace {

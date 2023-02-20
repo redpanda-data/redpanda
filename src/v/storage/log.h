@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -52,6 +53,10 @@ public:
         virtual ss::future<> truncate(truncate_config) = 0;
         virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
 
+        // TODO should compact be merged in this?
+        // run housekeeping task, like rolling segments
+        virtual ss::future<> do_housekeeping() = 0;
+
         virtual ss::future<model::record_batch_reader>
           make_reader(log_reader_config) = 0;
         virtual log_appender make_appender(log_append_config) = 0;
@@ -70,6 +75,7 @@ public:
 
         virtual size_t segment_count() const = 0;
         virtual storage::offset_stats offsets() const = 0;
+        virtual model::timestamp start_timestamp() const = 0;
         virtual std::ostream& print(std::ostream& o) const = 0;
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
         virtual std::optional<model::offset>
@@ -147,6 +153,10 @@ public:
 
     size_t segment_count() const { return _impl->segment_count(); }
 
+    model::timestamp start_timestamp() const {
+        return _impl->start_timestamp();
+    }
+
     storage::offset_stats offsets() const { return _impl->offsets(); }
 
     std::optional<model::term_id> get_term(model::offset o) const {
@@ -165,6 +175,7 @@ public:
 
     ss::future<> compact(compaction_config cfg) { return _impl->compact(cfg); }
 
+    ss::future<> housekeeping() { return _impl->do_housekeeping(); }
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *
@@ -212,6 +223,11 @@ class log_manager;
 class segment_set;
 class kvstore;
 log make_memory_backed_log(ntp_config);
-log make_disk_backed_log(ntp_config, log_manager&, segment_set, kvstore&);
+log make_disk_backed_log(
+  ntp_config,
+  log_manager&,
+  segment_set,
+  kvstore&,
+  ss::sharded<features::feature_table>& feature_table);
 
 } // namespace storage

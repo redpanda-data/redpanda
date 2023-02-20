@@ -12,8 +12,8 @@ package container
 import (
 	"context"
 	"sync"
-	"time"
 
+	"github.com/docker/docker/api/types/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -64,11 +64,13 @@ You may start a new cluster with 'rpk container start'`,
 			ctx := context.Background()
 			// Redpanda sometimes takes a while to stop, so 20
 			// seconds is a safe estimate
-			timeout := 20 * time.Second
+			timeout := 20 // seconds
 			err := c.ContainerStop(
 				ctx,
 				common.Name(state.ID),
-				&timeout,
+				container.StopOptions{
+					Timeout: &timeout,
+				},
 			)
 			if err != nil {
 				log.Errorf("Couldn't stop node %d", state.ID)

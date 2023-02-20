@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -133,7 +134,7 @@ func startCluster(
 	// If a cluster was restarted, there's nothing else to do.
 	if len(restarted) != 0 {
 		log.Info("\nFound an existing cluster:\n")
-		renderClusterInfo(restarted)
+		renderClusterInfo(c)
 		if len(restarted) != int(n) {
 			log.Infof(
 				"\nTo change the number of nodes, first purge" +
@@ -242,7 +243,7 @@ func startCluster(
 				"--seeds",
 				net.JoinHostPort(
 					seedState.ContainerIP,
-					strconv.Itoa(config.Default().Redpanda.RPCServer.Port),
+					strconv.Itoa(config.DevDefault().Redpanda.RPCServer.Port),
 				),
 			}
 			state, err := common.CreateNode(
@@ -291,23 +292,13 @@ func startCluster(
 	if err != nil {
 		return err
 	}
-	renderClusterInfo(nodes)
-	var brokers []string
-	for _, node := range nodes {
-		brokers = append(brokers, node.addr)
+
+	log.Infof("Cluster started!")
+	dockerNodes, err := renderClusterInfo(c)
+	if err != nil {
+		return err
 	}
-	m := `
-Cluster started! You may use rpk to interact with it. E.g:
-
-  rpk cluster info --brokers %s
-
-You may also set an environment variable with the comma-separated list of broker addresses:
-
-  export REDPANDA_BROKERS="%s"
-  rpk cluster info
-`
-	b := strings.Join(brokers, ",")
-	log.Infof(m, b, b)
+	renderClusterInteract(dockerNodes)
 
 	return nil
 }
@@ -411,19 +402,72 @@ func waitForCluster(check func() error, retries uint) error {
 	)
 }
 
-func renderClusterInfo(nodes []node) {
+func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
+	nodes, err := common.GetExistingNodes(c)
+	if err != nil {
+		return nil, err
+	}
+	if len(nodes) == 0 {
+		log.Info("No Redpanda nodes detected - use `rpk container start` or check `docker ps` if you expected nodes")
+		return nil, nil
+	}
+
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetColWidth(80)
 	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Node ID", "Address"})
+	t.SetHeader([]string{"Node-ID", "Status", "Kafka-Address", "Admin-Address", "Proxy-Address"})
+	sort.Slice(nodes, func(i, j int) bool {
+		return nodes[i].ID < nodes[j].ID
+	})
 	for _, node := range nodes {
+		kafka := nodeAddr(node.HostKafkaPort)
+		admin := nodeAddr(node.HostAdminPort)
+		proxy := nodeAddr(node.HostProxyPort)
+		if node.HostKafkaPort == 0 {
+			kafka = "-"
+		}
+		if node.HostAdminPort == 0 {
+			admin = "-"
+		}
+		if node.HostProxyPort == 0 {
+			proxy = "-"
+		}
 		t.Append([]string{
-			fmt.Sprint(node.id),
-			node.addr,
+			fmt.Sprint(node.ID),
+			node.Status,
+			kafka,
+			admin,
+			proxy,
 		})
 	}
-
 	t.Render()
+	return nodes, nil
+}
+
+func renderClusterInteract(nodes []*common.NodeState) {
+	var brokers []string
+	for _, node := range nodes {
+		if node.Running {
+			brokers = append(brokers, nodeAddr(node.HostKafkaPort))
+		}
+	}
+	if len(brokers) == 0 {
+		return
+	}
+
+	m := `
+You can use rpk to interact with this cluster. E.g:
+
+	rpk cluster info --brokers %s
+
+You may also set an environment variable with the comma-separated list of
+broker addresses:
+
+	export REDPANDA_BROKERS="%s"
+	rpk cluster info
+`
+	b := strings.Join(brokers, ",")
+	log.Infof(m, b, b)
 }
 
 func nodeAddr(port uint) string {

@@ -15,10 +15,10 @@ fi
 mkdir -p ./bin
 
 if [ "$(uname)" == 'Darwin' ]; then
-  curl -L https://github.com/alenkacz/cert-manager-verifier/releases/download/v"${VERSION}"/cert-manager-verifier_"${VERSION}"_Darwin_x86_64.tar.gz | tar -xvf - -C ./bin
+  curl -Lv https://github.com/alenkacz/cert-manager-verifier/releases/download/v"${VERSION}"/cert-manager-verifier_"${VERSION}"_Darwin_x86_64.tar.gz | tar -xvf - -C ./bin
 else
-  curl -L https://github.com/alenkacz/cert-manager-verifier/releases/download/v"${VERSION}"/cert-manager-verifier_"${VERSION}"_Linux_x86_64.tar.gz | tar -xzvf - -C ./bin
+  curl -Lv https://github.com/alenkacz/cert-manager-verifier/releases/download/v"${VERSION}"/cert-manager-verifier_"${VERSION}"_Linux_x86_64.tar.gz | tar -xzvf - -C ./bin
 fi
 
-kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.4.4/cert-manager.yaml
-./bin/cm-verifier
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.11.0/cert-manager.yaml
+./bin/cm-verifier --timeout 5m

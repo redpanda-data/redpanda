@@ -9,12 +9,12 @@
 import socket
 import time
 from ducktape.errors import TimeoutError
-from ducktape.mark import parametrize, matrix, ignore
+from ducktape.mark import parametrize, matrix, ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
-from rptest.clients.rpk import RpkTool, ClusterAuthorizationError
+from rptest.clients.rpk import RpkTool, ClusterAuthorizationError, RpkException
 from rptest.services.redpanda import SecurityConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services import tls
@@ -281,12 +281,29 @@ class AccessControlListTest(RedpandaTest):
 
         self.logger.info(f"startup_should_fail={startup_should_fail}")
 
-        self.prepare_cluster(use_tls,
-                             use_sasl,
-                             enable_authz,
-                             authn_method,
-                             client_auth=client_auth,
-                             expect_fail=startup_should_fail)
+        prepare_failed_auth = False
+        try:
+            self.prepare_cluster(use_tls,
+                                 use_sasl,
+                                 enable_authz,
+                                 authn_method,
+                                 client_auth=client_auth,
+                                 expect_fail=startup_should_fail)
+        except RpkException as e:
+            if "CLUSTER_AUTHORIZATION_FAILED" not in str(e):
+                raise
+            prepare_failed_auth = True
+
+        # these combinations end up causing anonymous user and so we get authz
+        # failed rejected when preparing the cluster above.
+        if authn_method == "none" and enable_authz is True:
+            assert prepare_failed_auth
+        elif authn_method == "none" and enable_authz is None and use_sasl:
+            assert prepare_failed_auth
+        elif authn_method is None and enable_authz is True:
+            assert prepare_failed_auth
+        else:
+            assert not prepare_failed_auth
 
         if startup_should_fail:
             return
@@ -347,11 +364,24 @@ class AccessControlListTest(RedpandaTest):
         """
         security::acl_operation::describe, security::default_cluster_name
         """
-        self.prepare_cluster(use_tls=True,
-                             use_sasl=False,
-                             enable_authz=True,
-                             authn_method="mtls_identity",
-                             principal_mapping_rules=rules)
+        prepare_failed_auth = False
+        try:
+            self.prepare_cluster(use_tls=True,
+                                 use_sasl=False,
+                                 enable_authz=True,
+                                 authn_method="mtls_identity",
+                                 principal_mapping_rules=rules)
+        except RpkException as e:
+            if "CLUSTER_AUTHORIZATION_FAILED" not in str(e):
+                raise
+            prepare_failed_auth = True
+
+        # fail will be cluster auth when preparing, but one case the failure
+        # comes later (see below in check permissions)
+        if fail and "service.admin" not in rules:
+            assert prepare_failed_auth
+        else:
+            assert not prepare_failed_auth
 
         self.check_permissions(pass_w_cluster_user=not fail,
                                err_msg='check_permissions failed')
@@ -446,10 +476,13 @@ class AccessControlListTestUpgrade(AccessControlListTest):
 
     # Test that a cluster configured with enable_sasl can be upgraded
     # from v22.1.x, and still have sasl enabled. See PR 5292.
-    @cluster(num_nodes=3)
+    @cluster(num_nodes=3,
+             log_allow_list=[
+                 r'rpc - .* The TLS connection was non-properly terminated.*'
+             ])
     def test_upgrade_sasl(self):
-
-        self.installer.install(self.redpanda.nodes, (22, 1, 3))
+        old_version, old_version_str = self.installer.install(
+            self.redpanda.nodes, (22, 1))
         self.prepare_cluster(use_tls=True,
                              use_sasl=True,
                              enable_authz=None,
@@ -462,10 +495,10 @@ class AccessControlListTestUpgrade(AccessControlListTest):
             pass_w_super_user=True,
             err_msg='check_permissions failed before upgrade')
 
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
+        self.installer.install(self.redpanda.nodes, (22, 2))
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" not in unique_versions
+        assert old_version_str not in unique_versions
 
         self.check_permissions(
             pass_w_base_user=False,

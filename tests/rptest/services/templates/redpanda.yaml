@@ -12,7 +12,9 @@ organization: "vectorized"
 redpanda:
   developer_mode: true
   data_directory: "{{data_dir}}"
+{% if node_id is not none %}
   node_id: {{node_id}}
+{% endif %}
   rpc_server:
     address: "{{node.account.hostname}}"
     port: 33145
@@ -29,6 +31,9 @@ redpanda:
       {% if endpoint_authn_method %}
       authentication_method: {{ endpoint_authn_method }}
       {% endif %}
+    - name: kerberoslistener
+      address: "{{fqdn}}"
+      port: {{kafka_kerberos_port}}
   admin:
     - address: 127.0.0.1
       port: 9644
@@ -39,26 +44,42 @@ redpanda:
       port: {{admin_alternate_port}}
 
 
-{% if node_id > 1 %}
+{% if include_seed_servers %}
   seed_servers:
+  {% for node in seed_servers %}
     - host:
-        address: {{nodes[1].account.hostname}}
+        address: {{node.account.hostname}}
         port: 33145
-      node_id: 1
+  {% endfor %}
 {% endif %}
 
-{% if enable_pp %}
+{% if pandaproxy_config is not none %}
 pandaproxy:
   # Pandaproxy transport
   pandaproxy_api:
     address: "0.0.0.0"
     port: 8082
+    {% if pandaproxy_config.authn_method %}
+    authentication_method: {{ pandaproxy_config.authn_method }}
+    {% endif %}
+
+  client_keep_alive: {{ pandaproxy_config.cache_keep_alive_ms }}
+  client_cache_max_size: {{ pandaproxy_config.cache_max_size }}
 
   advertised_pandaproxy_api:
     address: "{{node.account.hostname}}"
     port: 8082
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
+
+  {% if pandaproxy_config.truststore_file is not none %}
+  pandaproxy_api_tls:
+    enabled: true
+    require_client_auth: {{ pandaproxy_config.require_client_auth }}
+    key_file: {{ pandaproxy_config.server_key }}
+    cert_file: {{ pandaproxy_config.server_crt }}
+    truststore_file: {{ pandaproxy_config.truststore_file }}
+  {% endif %}
 
 pandaproxy_client:
   # kafka-api compatible brokers
@@ -68,22 +89,68 @@ pandaproxy_client:
       port: 9092
   {% endfor %}
 
+  {% if pandaproxy_config.truststore_file is not none %}
+  broker_tls:
+    enabled: true
+    require_client_auth: {{ pandaproxy_config.require_client_auth }}
+    key_file: {{ pandaproxy_config.PP_TLS_CLIENT_KEY_FILE }}
+    cert_file: {{ pandaproxy_config.PP_TLS_CLIENT_CRT_FILE }}
+    truststore_file: {{ pandaproxy_config.truststore_file }}
+  {% endif %}
+
   retries: 10
   retry_base_backoff_ms: 10
-  {% if sasl_enabled %}
+  {% if sasl_enabled and not auto_auth %}
   sasl_mechanism: {{superuser[2]}}
   scram_username: {{superuser[0]}}
   scram_password: {{superuser[1]}}
   {% endif %}
 {% endif %}
 
-{% if enable_sr %}
+{% if schema_registry_config is not none %}
 schema_registry:
   schema_registry_api:
     address: "{{node.account.hostname}}"
     port: 8081
+    {% if schema_registry_config.authn_method %}
+    authentication_method: {{ schema_registry_config.authn_method }}
+    {% endif %}
 
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
+
+  {% if schema_registry_config.truststore_file is not none %}
+  schema_registry_api_tls:
+    enabled: true
+    require_client_auth: {{ schema_registry_config.require_client_auth }}
+    key_file: {{ schema_registry_config.server_key }}
+    cert_file: {{ schema_registry_config.server_crt }}
+    truststore_file: {{ schema_registry_config.truststore_file }}
+  {% endif %}
+
+schema_registry_client:
+  # kafka-api compatible brokers
+  brokers:
+  {% for node in nodes.values() %}
+    - address: "{{node.account.hostname}}"
+      port: 9092
+  {% endfor %}
+
+  {% if schema_registry_config.truststore_file is not none %}
+  broker_tls:
+    enabled: true
+    require_client_auth: {{ schema_registry_config.require_client_auth }}
+    key_file: {{ schema_registry_config.SR_TLS_CLIENT_KEY_FILE }}
+    cert_file: {{ schema_registry_config.SR_TLS_CLIENT_CRT_FILE }}
+    truststore_file: {{ schema_registry_config.truststore_file }}
+  {% endif %}
+
+  retries: 10
+  retry_base_backoff_ms: 10
+  {% if sasl_enabled and not auto_auth %}
+  sasl_mechanism: {{superuser[2]}}
+  scram_username: {{superuser[0]}}
+  scram_password: {{superuser[1]}}
+  {% endif %}
 {% endif %}
 
 rpk:

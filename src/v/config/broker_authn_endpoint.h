@@ -10,6 +10,7 @@
 #pragma once
 
 #include "config/convert.h"
+#include "config/from_string_view.h"
 #include "config/property.h"
 #include "json/_include_first.h"
 #include "json/stringbuffer.h"
@@ -25,10 +26,6 @@
 #include <string>
 
 namespace config {
-
-template<typename E>
-std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
-  from_string_view(std::string_view);
 
 enum class broker_authn_method {
     none = 0,

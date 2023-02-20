@@ -11,12 +11,14 @@ package resources_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -59,22 +61,30 @@ func TestEnsure(t *testing.T) {
 	noSidecarSts := stsFromCluster(noSidecarCluster)
 
 	withoutShadowIndexCacheDirectory := cluster.DeepCopy()
-	withoutShadowIndexCacheDirectory.Spec.Version = "dev"
+	withoutShadowIndexCacheDirectory.Spec.Version = "v21.10.1"
 	stsWithoutSecondPersistentVolume := stsFromCluster(withoutShadowIndexCacheDirectory)
 	// Remove shadow-indexing-cache from the volume claim templates
 	stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates = stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates[:1]
+
+	unhealthyRedpandaCluster := cluster.DeepCopy()
 
 	tests := []struct {
 		name           string
 		existingObject client.Object
 		pandaCluster   *redpandav1alpha1.Cluster
 		expectedObject *v1.StatefulSet
+		clusterHealth  bool
+		expectedError  error
 	}{
-		{"none existing", nil, cluster, stsResource},
-		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
-		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts},
-		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
-		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume},
+		{"none existing", nil, cluster, stsResource, true, nil},
+		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts, true, nil},
+		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts, true, nil},
+		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts, true, nil},
+		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume, true, nil},
+		{"update none healthy cluster", stsResource, unhealthyRedpandaCluster, stsResource, false, &res.RequeueAfterError{
+			RequeueAfter: res.RequeueDuration,
+			Msg:          "wait for cluster to become healthy (cluster restarting)",
+		}},
 	}
 
 	for _, tt := range tests {
@@ -110,12 +120,21 @@ func TestEnsure(t *testing.T) {
 					ImagePullPolicy:       "Always",
 				},
 				func(ctx context.Context) (string, error) { return hash, nil },
-				adminutils.NewInternalAdminAPI,
+				func(ctx context.Context, k8sClient client.Reader, redpandaCluster *redpandav1alpha1.Cluster, fqdn string, adminTLSProvider resourcetypes.AdminTLSConfigProvider, ordinals ...int32) (adminutils.AdminAPIClient, error) {
+					health := tt.clusterHealth
+					adminAPI := &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
+					adminAPI.SetClusterHealth(health)
+					return adminAPI, nil
+				},
 				time.Second,
 				ctrl.Log.WithName("test"))
 
 			err = sts.Ensure(context.Background())
-			assert.NoError(t, err, tt.name)
+			if tt.expectedError != nil && errors.Is(err, tt.expectedError) {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err, tt.name)
+			}
 
 			actual := &v1.StatefulSet{}
 			err = c.Get(context.Background(), sts.Key(), actual)
@@ -250,8 +269,8 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 		},
 		Spec: redpandav1alpha1.ClusterSpec{
 			Image:    "image",
-			Version:  "v21.11.1",
-			Replicas: pointer.Int32Ptr(replicas),
+			Version:  "v22.3.0",
+			Replicas: pointer.Int32(replicas),
 			CloudStorage: redpandav1alpha1.CloudStorageConfig{
 				Enabled: true,
 				CacheStorage: &redpandav1alpha1.StorageSpec{
@@ -265,7 +284,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			},
 			Configuration: redpandav1alpha1.RedpandaConfig{
 				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
-				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}},
+				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123, AuthenticationMethod: "none"}},
 			},
 			Resources: redpandav1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{

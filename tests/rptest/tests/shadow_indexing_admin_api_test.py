@@ -6,31 +6,24 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-from rptest.clients.kafka_cat import KafkaCat
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import RedpandaService, SISettings
+import re
 
-from rptest.services.admin import Admin
-from rptest.archival.s3_client import S3Client
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
+import requests
+from ducktape.mark import parametrize
+from ducktape.utils.util import wait_until
+
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import CloudStorageType, SISettings
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     produce_until_segments,
     wait_for_segments_removal,
 )
-from ducktape.utils.util import wait_until
-
-import xxhash
-from collections import namedtuple, defaultdict
-import time
-import os
-import json
-import traceback
-import uuid
-import sys
-import re
+from random import choice
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted
@@ -43,13 +36,14 @@ CONNECTION_ERROR_LOGS = [
 
 
 class SIAdminApiTest(RedpandaTest):
+
     log_segment_size = 1048576  # 1MB
 
     topics = (TopicSpec(), )
 
     def __init__(self, test_context):
         si_settings = SISettings(
-            cloud_storage_reconciliation_interval_ms=500,
+            test_context,
             cloud_storage_max_connections=5,
             log_segment_size=self.log_segment_size,
             cloud_storage_enable_remote_read=True,
@@ -79,11 +73,13 @@ class SIAdminApiTest(RedpandaTest):
         self.redpanda.set_cluster_config({'admin_api_require_auth': True})
 
     def tearDown(self):
-        self.s3_client.empty_bucket(self.s3_bucket_name)
+        self.cloud_storage_client.empty_bucket(self.s3_bucket_name)
         super().tearDown()
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_bucket_validation(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_bucket_validation(self, cloud_storage_type):
         """
         The test produces to the partition and waits untils the
         data is uploaded to S3 and the oldest segments are picked
@@ -98,7 +94,7 @@ class SIAdminApiTest(RedpandaTest):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 1024,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES: 1024,
             },
         )
 
@@ -121,14 +117,14 @@ class SIAdminApiTest(RedpandaTest):
 
         segment_to_remove = self.find_deletion_candidate()
         self.logger.info(f"trying to remove segment {segment_to_remove}")
-        self.s3_client.delete_object(self.s3_bucket_name, segment_to_remove,
-                                     True)
+        self.cloud_storage_client.delete_object(self.s3_bucket_name,
+                                                segment_to_remove, True)
 
         self.logger.info("trying to sync remote partition")
-        for node in self.redpanda.nodes:
-            validation_result = self.admin.si_sync_local_state(
-                self.topic, 0, node)
-            self.logger.info(f"sync result {validation_result}")
+
+        node = choice(self.redpanda.nodes)
+        validation_result = self.admin.si_sync_local_state(self.topic, 0, node)
+        self.logger.info(f"sync result {validation_result}")
 
         def start_offset_not_zero():
             for partition in rpk.describe_topic(self.topic):
@@ -142,8 +138,56 @@ class SIAdminApiTest(RedpandaTest):
             assert part.start_offset > 0, f"start-offset of the partition is {part.start_offset}, should be greater than 0"
 
     def find_deletion_candidate(self):
-        for obj in self.s3_client.list_objects(self.s3_bucket_name):
-            key = obj.Key[:-2]
-            if key.endswith("/0-1-v1.log"):
-                return obj.Key
+        for obj in self.cloud_storage_client.list_objects(self.s3_bucket_name):
+            if re.match(r'.*/0-[\d-]*-1-v1.log\.\d+$', obj.key):
+                return obj.key
         return None
+
+    def _get_non_controller_node(self):
+        self.admin.wait_stable_configuration('controller',
+                                             namespace='redpanda')
+        controller_leader = self.admin.get_partition_leader(
+            namespace='redpanda', topic='controller', partition=0)
+        not_controller = next(
+            (node_id for node_id in
+             {self.redpanda.node_id(node)
+              for node in self.redpanda.nodes}
+             if node_id != controller_leader))
+        return self.redpanda.get_node(not_controller)
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_redirects_to_controller_leader(self):
+        response = self.admin.initiate_topic_scan_and_recovery(
+            node=self._get_non_controller_node(), allow_redirects=False)
+        assert response.status_code == requests.status_codes.codes[
+            'temporary_redirect']
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_on_leader(self):
+        response = self.admin.initiate_topic_scan_and_recovery(
+            node=self._get_non_controller_node())
+        assert response.status_code == requests.status_codes.codes['ok']
+        assert response.json() == {'status': 'recovery started'}
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_request_validation(self):
+        for payload in ({
+                'x': 1
+        }, {
+                'topic_names_pattern': 'x',
+                'retention_ms': 1,
+                'retention_bytes': 1
+        }):
+            try:
+                response = self.admin.initiate_topic_scan_and_recovery(
+                    payload=payload)
+            except requests.exceptions.HTTPError as e:
+                assert e.response.status_code == requests.status_codes.codes[
+                    'bad_request'], f'unexpected status code: {response} for {payload}'
+
+    @cluster(num_nodes=3)
+    def test_topic_recovery_status_to_non_controller(self):
+        self.admin.initiate_topic_scan_and_recovery()
+        response = self.admin.get_topic_recovery_status(
+            node=self._get_non_controller_node(), allow_redirects=False)
+        assert response.status_code == requests.status_codes.codes['ok']

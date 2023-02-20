@@ -10,14 +10,26 @@
 #include "storage/types.h"
 
 #include "storage/compacted_index.h"
+#include "storage/logger.h"
 #include "storage/ntp_config.h"
 #include "utils/human.h"
 #include "utils/to_string.h"
+#include "vlog.h"
 
 #include <fmt/core.h>
 #include <fmt/ostream.h>
 
 namespace storage {
+
+model::offset stm_manager::max_collectible_offset() {
+    model::offset result = model::offset::max();
+    for (const auto& stm : _stms) {
+        auto mco = stm->max_collectible_offset();
+        result = std::min(result, mco);
+        vlog(stlog.trace, "max_collectible_offset[{}] = {}", stm->name(), mco);
+    }
+    return result;
+}
 
 std::ostream& operator<<(std::ostream& o, const disk_space_alert d) {
     switch (d) {
@@ -91,13 +103,19 @@ operator<<(std::ostream& o, const ntp_config::default_overrides& v) {
     fmt::print(
       o,
       "{{compaction_strategy: {}, cleanup_policy_bitflags: {}, segment_size: "
-      "{}, retention_bytes: {}, retention_time_ms: {}, recovery_enabled: {}}}",
+      "{}, retention_bytes: {}, retention_time_ms: {}, recovery_enabled: {}, "
+      "retention_local_target_bytes: {}, retention_local_target_ms: {}, "
+      "remote_delete: {}, segment_ms: {}}}",
       v.compaction_strategy,
       v.cleanup_policy_bitflags,
       v.segment_size,
       v.retention_bytes,
       v.retention_time,
-      v.recovery_enabled);
+      v.recovery_enabled,
+      v.retention_local_target_bytes,
+      v.retention_local_target_ms,
+      v.remote_delete,
+      v.segment_ms);
 
     return o;
 }
@@ -186,4 +204,5 @@ operator<<(std::ostream& o, compacted_index::recovery_state state) {
     }
     __builtin_unreachable();
 }
+
 } // namespace storage

@@ -7,6 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/hash.h"
+#include "bytes/iostream.h"
 #include "bytes/tests/utils.h"
 
 #include <seastar/testing/thread_test_case.hh>

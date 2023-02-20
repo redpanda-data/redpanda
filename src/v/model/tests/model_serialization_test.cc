@@ -66,6 +66,6 @@ SEASTAR_THREAD_TEST_CASE(tristate_rt_test) {
 
     BOOST_REQUIRE_EQUAL(r_disabled.is_disabled(), true);
     BOOST_REQUIRE_EQUAL(r_empty.is_disabled(), false);
-    BOOST_REQUIRE_EQUAL(r_empty.has_value(), false);
+    BOOST_REQUIRE_EQUAL(r_empty.has_optional_value(), false);
     BOOST_REQUIRE_EQUAL(r_present.value(), 1024);
 }

@@ -30,6 +30,8 @@ deb_deps=(
   curl
   git
   golang-go
+  libkrb5-dev
+  libgssapi-krb5-2
   libsnappy-dev
   libstdc++-10-dev
   libxxhash-dev
@@ -43,6 +45,7 @@ deb_deps=(
   rapidjson-dev
   zip
   unzip
+  libre2-dev
 )
 fedora_deps=(
   ccache
@@ -50,6 +53,8 @@ fedora_deps=(
   curl
   git
   golang
+  krb5-libs
+  krb5-devel
   libzstd-devel
   libzstd-static
   llvm
@@ -65,6 +70,7 @@ fedora_deps=(
   xz
   zip
   unzip
+  re2-devel
 )
 arch_deps=(
   ccache

@@ -1,5 +1,5 @@
 {
-    "name": "@vectorizedio/wasm-api",
+    "name": "@redpanda-data/wasm-api",
     "version": "${version}",
     "description": "wasm api helps to define wasm function",
     "main": "${dependencyName}",

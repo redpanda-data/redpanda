@@ -153,9 +153,11 @@ SEASTAR_THREAD_TEST_CASE(read_write) {
     auto read_metadata = reader->read_metadata().get0();
     BOOST_TEST(read_metadata == metadata_orig);
     auto blob_read = reader->input().read_exactly(blob.size()).get0();
+    BOOST_TEST(
+      reader->get_snapshot_size().get0() == mgr.get_snapshot_size().get0());
     reader->close().get0();
     BOOST_TEST(blob_read.size() == 1234);
-    BOOST_TEST(blob == ss::to_sstring(std::move(blob_read)));
+    BOOST_TEST(blob == ss::to_sstring(blob_read.clone()));
 }
 
 SEASTAR_THREAD_TEST_CASE(remove_partial_snapshots) {

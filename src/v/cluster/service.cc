@@ -20,6 +20,7 @@
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
@@ -46,9 +47,10 @@ service::service(
   ss::sharded<config_frontend>& config_frontend,
   ss::sharded<config_manager>& config_manager,
   ss::sharded<feature_manager>& feature_manager,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<health_monitor_frontend>& hm_frontend,
-  ss::sharded<rpc::connection_cache>& conn_cache)
+  ss::sharded<rpc::connection_cache>& conn_cache,
+  ss::sharded<partition_manager>& partition_manager)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
   , _members_manager(mm)
@@ -61,7 +63,8 @@ service::service(
   , _feature_manager(feature_manager)
   , _feature_table(feature_table)
   , _hm_frontend(hm_frontend)
-  , _conn_cache(conn_cache) {}
+  , _conn_cache(conn_cache)
+  , _partition_manager(partition_manager) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context& context) {
@@ -81,7 +84,7 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
     if (expect_version == invalid_version) {
         // Feature table isn't initialized, fall back to requiring that
         // joining node is as recent as this node.
-        expect_version = feature_table::get_latest_logical_version();
+        expect_version = features::feature_table::get_latest_logical_version();
     }
 
     if (req.logical_version < expect_version) {
@@ -314,6 +317,14 @@ ss::future<finish_reallocation_reply> service::finish_reallocation(
       [this, req]() mutable { return do_finish_reallocation(req); });
 }
 
+ss::future<revert_cancel_partition_move_reply>
+service::revert_cancel_partition_move(
+  revert_cancel_partition_move_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(),
+      [this, req]() mutable { return do_revert_cancel_partition_move(req); });
+}
+
 ss::future<set_maintenance_mode_reply> service::set_maintenance_mode(
   set_maintenance_mode_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
@@ -429,6 +440,26 @@ service::do_finish_reallocation(finish_reallocation_request req) {
     }
 
     co_return finish_reallocation_reply{.error = errc::success};
+}
+
+ss::future<revert_cancel_partition_move_reply>
+service::do_revert_cancel_partition_move(
+  revert_cancel_partition_move_request req) {
+    auto ec = co_await _topics_frontend.local().revert_cancel_partition_move(
+      std::move(req.ntp),
+      config::shard_local_cfg().replicate_append_timeout_ms()
+        + model::timeout_clock::now());
+    if (ec) {
+        if (ec.category() == error_category()) {
+            co_return revert_cancel_partition_move_reply{
+              .result = errc(ec.value())};
+        } else {
+            co_return revert_cancel_partition_move_reply{
+              .result = errc::replication_error};
+        }
+    }
+
+    co_return revert_cancel_partition_move_reply{.result = errc::success};
 }
 
 cluster::errc map_health_monitor_error_code(std::error_code e) {
@@ -610,6 +641,31 @@ service::do_cancel_node_partition_movements(
     co_return cancel_partition_movements_reply{
       .general_error = errc::success,
       .partition_results = std::move(ret.value())};
+}
+
+ss::future<transfer_leadership_reply> service::transfer_leadership(
+  transfer_leadership_request&& r, rpc::streaming_context&) {
+    auto shard_id = _api.local().shard_for(r.group);
+    if (!shard_id.has_value()) {
+        co_return transfer_leadership_reply{
+          .success = false, .result = raft::errc::group_not_exists};
+    } else {
+        auto errc = co_await _partition_manager.invoke_on(
+          shard_id.value(),
+          [r = std::move(r)](
+            partition_manager& pm) -> ss::future<std::error_code> {
+              auto partition_ptr = pm.partition_for(r.group);
+              if (!partition_ptr) {
+                  return ss::make_ready_future<std::error_code>(
+                    raft::errc::group_not_exists);
+              } else {
+                  return partition_ptr->transfer_leadership(r.target);
+              }
+          });
+        co_return transfer_leadership_reply{
+          .success = (errc == raft::make_error_code(raft::errc::success)),
+          .result = raft::errc{int16_t(errc.value())}};
+    }
 }
 
 } // namespace cluster

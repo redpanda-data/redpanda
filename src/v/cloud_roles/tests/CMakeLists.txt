@@ -28,6 +28,7 @@ rp_test(
     v::seastar_testing_main
     v::cloud_roles
     Boost::unit_test_framework
+    v::http_test_utils
     ARGS "-- -c 1"
     LABELS cloud_roles
 )

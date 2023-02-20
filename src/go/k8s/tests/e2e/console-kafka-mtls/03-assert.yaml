@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console
+  namespace: console-kafka-mtls
+status:
+  readyReplicas: 1
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda-console
+  tail: -1
+- type: pod
+  namespace: redpanda-system
+  selector: control-plane=controller-manager
+  tail: -1

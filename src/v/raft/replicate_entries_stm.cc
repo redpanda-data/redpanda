@@ -230,7 +230,7 @@ inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
     if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
         const auto timeout = clock_type::now()
                              - _ptr->_replicate_append_timeout;
-        if (it->second.last_received_append_entries_reply_timestamp < timeout) {
+        if (it->second.last_received_reply_timestamp < timeout) {
             vlog(
               _ctxlog.trace,
               "Skipping sending append request to {} - didn't receive "
@@ -284,10 +284,9 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
         }
         if (rni != _ptr->self()) {
             auto it = _ptr->_fstats.find(rni);
-            if (it == _ptr->_fstats.end()) {
-                return;
+            if (it != _ptr->_fstats.end()) {
+                it->second.last_sent_offset = _dirty_offset;
             }
-            it->second.last_sent_offset = _dirty_offset;
         }
         ++_requests_count;
         (void)dispatch_one(rni); // background
@@ -295,12 +294,13 @@ ss::future<result<replicate_result>> replicate_entries_stm::apply(units_t u) {
 
     // wait for the requests to be dispatched in background and then release
     // units
-    (void)ss::with_gate(_req_bg, [this]() -> ss::future<> {
+    (void)ss::with_gate(_req_bg, [this]() {
         // Wait until all RPCs will be dispatched
-        co_await _dispatch_sem.wait(_requests_count);
-        // release memory reservations, and destroy data
-        _req.reset();
-        _units.release();
+        return _dispatch_sem.wait(_requests_count).then([this] {
+            // release memory reservations, and destroy data
+            _req.reset();
+            _units.release();
+        });
     });
 
     co_return build_replicate_result();

@@ -20,6 +20,8 @@
 #include <boost/lexical_cast.hpp>
 #include <yaml-cpp/yaml.h>
 
+#include <unordered_map>
+
 namespace YAML {
 
 template<>
@@ -55,41 +57,18 @@ struct convert<std::optional<T>> {
 };
 
 template<>
-struct convert<model::violation_recovery_policy> {
-    using type = model::violation_recovery_policy;
-    static Node encode(const type& rhs) {
-        Node node;
-        if (rhs == model::violation_recovery_policy::crash) {
-            node = "crash";
-        } else if (rhs == model::violation_recovery_policy::best_effort) {
-            node = "best_effort";
-        } else {
-            node = "crash";
-        }
-        return node;
-    }
-    static bool decode(const Node& node, type& rhs) {
-        auto value = node.as<std::string>();
-
-        if (value == "crash") {
-            rhs = model::violation_recovery_policy::crash;
-        } else if (value == "best_effort") {
-            rhs = model::violation_recovery_policy::best_effort;
-        } else {
-            return false;
-        }
-
-        return true;
-    }
-};
-
-template<>
 struct convert<ss::socket_address> {
     using type = ss::socket_address;
     static Node encode(const type& rhs) {
         Node node;
         std::ostringstream o;
         o << rhs.addr();
+        if (!o.good()) {
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "failed to format socket_address, state: {}",
+              o.rdstate()));
+        }
         node["address"] = o.str();
         node["port"] = rhs.port();
         return node;
@@ -310,6 +289,42 @@ struct convert<model::partition_autobalancing_mode> {
             return false;
         }
 
+        return true;
+    }
+};
+
+template<typename T>
+concept has_hashable_key_type = requires(T x) {
+    x.key_name();
+    {
+        std::hash<typename T::key_type>{}(x.key())
+        } -> std::convertible_to<std::size_t>;
+};
+
+template<has_hashable_key_type T>
+struct convert<std::unordered_map<typename T::key_type, T>> {
+    using type = std::unordered_map<typename T::key_type, T>;
+    static Node encode(const type& rhs) {
+        Node node;
+        for (const auto& group : rhs) {
+            node.push_back(convert<T>::encode(group.second));
+        }
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        rhs = std::unordered_map<typename T::key_type, T>{};
+        if (node.IsSequence()) {
+            for (auto elem : node) {
+                if (!elem[T::key_name()]) {
+                    return false;
+                }
+                auto elem_val = elem.as<T>();
+                rhs.emplace(elem_val.key(), elem_val);
+            }
+        } else {
+            auto elem_val = node.as<T>();
+            rhs.emplace(elem_val.key(), elem_val);
+        }
         return true;
     }
 };

@@ -1,0 +1,49 @@
+redpanda:
+    data_directory: /var/lib/redpanda/data
+    empty_seed_starts_cluster: false
+    seed_servers:
+        - host:
+            address: cluster-0.cluster.local
+            port: 33145
+    rpc_server:
+        address: 0.0.0.0
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 123
+          name: kafka
+          authentication_method: none
+    admin:
+        - address: 0.0.0.0
+          port: 345
+          name: admin
+    cloud_storage_cache_directory: /var/lib/shadow-index-cache
+    advertised_rpc_api:
+        address: 0.0.0.0
+        port: 33145
+    auto_create_topics_enabled: false
+    cloud_storage_cache_size: "10737418240"
+    cloud_storage_disable_tls: false
+    cloud_storage_enabled: true
+    cloud_storage_secret_key: XXX
+    cloud_storage_segment_max_upload_interval_sec: 1800
+    enable_rack_awareness: true
+    log_segment_size: 536870912
+rpk:
+    tune_network: true
+    tune_disk_scheduler: true
+    tune_disk_nomerges: true
+    tune_disk_write_cache: true
+    tune_disk_irq: true
+    tune_cpu: true
+    tune_aio_events: true
+    tune_clocksource: true
+    tune_swappiness: true
+    coredump_dir: /var/lib/redpanda/coredump
+    tune_ballast_file: true
+pandaproxy: {}
+schema_registry:
+    schema_registry_api:
+        - address: 0.0.0.0
+          port: 8081
+          name: external

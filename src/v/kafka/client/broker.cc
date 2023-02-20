@@ -12,10 +12,10 @@
 #include "cluster/cluster_utils.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/sasl_client.h"
+#include "net/connection.h"
 #include "net/dns.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/std-coroutine.hh>
 
 namespace kafka::client {
 
@@ -25,10 +25,12 @@ ss::future<shared_broker_t> make_broker(
   const configuration& config) {
     return cluster::maybe_build_reloadable_certificate_credentials(
              config.broker_tls())
-      .then([addr](ss::shared_ptr<ss::tls::certificate_credentials> creds) {
+      .then([addr, client_id = config.client_identifier()](
+              ss::shared_ptr<ss::tls::certificate_credentials> creds) mutable {
           return ss::make_lw_shared<transport>(
             net::base_transport::configuration{
-              .server_addr = addr, .credentials = std::move(creds)});
+              .server_addr = addr, .credentials = std::move(creds)},
+            std::move(client_id));
       })
       .then([node_id, addr](ss::lw_shared_ptr<transport> client) {
           return client->connect().then(
@@ -43,18 +45,17 @@ ss::future<shared_broker_t> make_broker(
             });
       })
       .handle_exception_type([node_id](const std::system_error& ex) {
-          if (
-            ex.code() == std::errc::host_unreachable
-            || ex.code() == std::errc::connection_refused) {
+          if (net::is_reconnect_error(ex)) {
               return ss::make_exception_future<shared_broker_t>(
                 broker_error(node_id, error_code::network_exception));
           }
           vlog(kclog.warn, "std::system_error: {}", ex.what());
           return ss::make_exception_future<shared_broker_t>(ex);
       })
-      .then([&config](shared_broker_t broker) -> ss::future<shared_broker_t> {
-          co_await do_authenticate(broker, config);
-          co_return broker;
+      .then([&config](shared_broker_t broker) {
+          return do_authenticate(broker, config).then([broker]() {
+              return broker;
+          });
       });
 }
 

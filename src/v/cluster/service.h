@@ -13,6 +13,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/fwd.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "rpc/fwd.h"
 #include "rpc/types.h"
 
@@ -35,9 +36,10 @@ public:
       ss::sharded<config_frontend>&,
       ss::sharded<config_manager>&,
       ss::sharded<feature_manager>&,
-      ss::sharded<feature_table>&,
+      ss::sharded<features::feature_table>&,
       ss::sharded<health_monitor_frontend>&,
-      ss::sharded<rpc::connection_cache>&);
+      ss::sharded<rpc::connection_cache>&,
+      ss::sharded<partition_manager>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -56,6 +58,9 @@ public:
 
     ss::future<finish_partition_update_reply> finish_partition_update(
       finish_partition_update_request&&, rpc::streaming_context&) final;
+
+    ss::future<revert_cancel_partition_move_reply> revert_cancel_partition_move(
+      revert_cancel_partition_move_request&&, rpc::streaming_context&) final;
 
     ss::future<update_topic_properties_reply> update_topic_properties(
       update_topic_properties_request&&, rpc::streaming_context&) final;
@@ -107,6 +112,9 @@ public:
     cancel_node_partition_movements(
       cancel_node_partition_movements_request&&, rpc::streaming_context&) final;
 
+    ss::future<transfer_leadership_reply> transfer_leadership(
+      transfer_leadership_request&& r, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::
@@ -124,6 +132,9 @@ private:
 
     ss::future<finish_reallocation_reply>
       do_finish_reallocation(finish_reallocation_request);
+
+    ss::future<revert_cancel_partition_move_reply>
+      do_revert_cancel_partition_move(revert_cancel_partition_move_request);
 
     ss::future<get_node_health_reply>
       do_collect_node_health_report(get_node_health_request);
@@ -147,8 +158,9 @@ private:
     ss::sharded<config_frontend>& _config_frontend;
     ss::sharded<config_manager>& _config_manager;
     ss::sharded<feature_manager>& _feature_manager;
-    ss::sharded<feature_table>& _feature_table;
+    ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<health_monitor_frontend>& _hm_frontend;
     ss::sharded<rpc::connection_cache>& _conn_cache;
+    ss::sharded<partition_manager>& _partition_manager;
 };
 } // namespace cluster

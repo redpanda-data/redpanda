@@ -109,15 +109,67 @@ group_recovery_consumer::operator()(model::record_batch batch) {
 
         co_return ss::stop_iteration::no;
     } else if (batch.header().type == model::record_batch_type::tx_fence) {
-        auto cmd = parse_tx_batch<group_log_fencing>(
-          batch, group::fence_control_record_version);
-
-        auto [group_it, _] = _state.groups.try_emplace(cmd.cmd.group_id);
-        group_it->second.try_set_fence(cmd.pid.get_id(), cmd.pid.get_epoch());
+        apply_tx_fence(std::move(batch));
+        co_return ss::stop_iteration::no;
+    } else if (batch.header().type == model::record_batch_type::version_fence) {
+        auto fence = features::feature_table::decode_version_fence(
+          std::move(batch));
+        if (fence.active_version >= cluster::cluster_version{9}) {
+            _state.has_offset_retention_feature_fence = true;
+        }
         co_return ss::stop_iteration::no;
     } else {
         vlog(klog.trace, "ignoring batch with type {}", batch.header().type);
         co_return ss::stop_iteration::no;
+    }
+}
+
+void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
+    vassert(
+      batch.record_count() == 1, "tx fence batch must contain a single record");
+    auto r = batch.copy_records();
+    auto& record = *r.begin();
+    auto key_buf = record.release_key();
+    auto val_buf = record.release_value();
+
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
+      key_reader);
+    const auto& hdr = batch.header();
+    vassert(
+      hdr.type == batch_type,
+      "broken tx group message. expected batch type {} got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    auto bid = model::batch_identity::from(hdr);
+    vassert(
+      p_id == bid.pid.id,
+      "broken tx group message. expected pid/id {} got: {}",
+      bid.pid.id,
+      p_id);
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto fence_version = reflection::adl<int8_t>{}.from(val_reader);
+
+    if (fence_version == group::fence_control_record_v0_version) {
+        auto cmd = reflection::adl<group_log_fencing_v0>{}.from(val_reader);
+        auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
+        group_it->second.try_set_fence(bid.pid.get_id(), bid.pid.get_epoch());
+    } else if (fence_version == group::fence_control_record_version) {
+        auto cmd = reflection::adl<group_log_fencing>{}.from(val_reader);
+        auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
+        group_it->second.try_set_fence(
+          bid.pid.get_id(),
+          bid.pid.get_epoch(),
+          cmd.tx_seq,
+          cmd.transaction_timeout_ms);
+    } else {
+        vassert(
+          false,
+          "unknown group fence record version: {} expected at most: {}",
+          fence_version,
+          group::fence_control_record_version);
     }
 }
 
@@ -175,6 +227,9 @@ void group_recovery_consumer::handle_offset_metadata(offset_metadata_kv md) {
         // always take the latest entry in the log.
         auto [group_it, _] = _state.groups.try_emplace(
           md.key.group_id, group_stm());
+        if (_state.has_offset_retention_feature_fence) {
+            md.value->non_reclaimable = false;
+        }
         group_it->second.update_offset(
           tp, _batch_base_offset, std::move(*md.value));
     } else {

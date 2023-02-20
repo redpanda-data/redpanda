@@ -15,6 +15,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_balancer_planner.h"
+#include "cluster/partition_balancer_state.h"
 #include "cluster/topics_frontend.h"
 #include "random/generators.h"
 
@@ -33,9 +34,8 @@ static constexpr std::chrono::seconds add_move_cmd_timeout = 10s;
 partition_balancer_backend::partition_balancer_backend(
   consensus_ptr raft0,
   ss::sharded<controller_stm>& controller_stm,
-  ss::sharded<topic_table>& topic_table,
+  ss::sharded<partition_balancer_state>& state,
   ss::sharded<health_monitor_frontend>& health_monitor,
-  ss::sharded<members_table>& members_table,
   ss::sharded<partition_allocator>& partition_allocator,
   ss::sharded<topics_frontend>& topics_frontend,
   config::binding<model::partition_autobalancing_mode>&& mode,
@@ -43,12 +43,12 @@ partition_balancer_backend::partition_balancer_backend(
   config::binding<unsigned>&& max_disk_usage_percent,
   config::binding<unsigned>&& storage_space_alert_free_threshold_percent,
   config::binding<std::chrono::milliseconds>&& tick_interval,
-  config::binding<size_t>&& movement_batch_size_bytes)
+  config::binding<size_t>&& movement_batch_size_bytes,
+  config::binding<size_t>&& segment_fallocation_step)
   : _raft0(std::move(raft0))
   , _controller_stm(controller_stm.local())
-  , _topic_table(topic_table.local())
+  , _state(state.local())
   , _health_monitor(health_monitor.local())
-  , _members_table(members_table.local())
   , _partition_allocator(partition_allocator.local())
   , _topics_frontend(topics_frontend.local())
   , _mode(std::move(mode))
@@ -58,6 +58,7 @@ partition_balancer_backend::partition_balancer_backend(
       std::move(storage_space_alert_free_threshold_percent))
   , _tick_interval(std::move(tick_interval))
   , _movement_batch_size_bytes(std::move(movement_batch_size_bytes))
+  , _segment_fallocation_step(std::move(segment_fallocation_step))
   , _timer([this] { tick(); }) {}
 
 void partition_balancer_backend::start() {
@@ -159,9 +160,8 @@ ss::future<> partition_balancer_backend::do_tick() {
             .hard_max_disk_usage_ratio = hard_max_disk_usage_ratio,
             .movement_disk_size_batch = _movement_batch_size_bytes(),
             .node_availability_timeout_sec = _availability_timeout(),
-          },
-          _topic_table,
-          _members_table,
+            .segment_fallocation_step = _segment_fallocation_step()},
+          _state,
           _partition_allocator)
           .plan_reassignments(health_report.value(), follower_metrics);
 
@@ -169,7 +169,7 @@ ss::future<> partition_balancer_backend::do_tick() {
     _last_tick_time = ss::lowres_clock::now();
     _last_violations = std::move(plan_data.violations);
     if (
-      _topic_table.has_updates_in_progress()
+      _state.topics().has_updates_in_progress()
       || plan_data.status == planner_status::cancellations_planned
       || plan_data.status == planner_status::movement_planned) {
         _last_status = partition_balancer_status::in_progress;
@@ -193,7 +193,7 @@ ss::future<> partition_balancer_backend::do_tick() {
           _last_status,
           _last_violations.unavailable_nodes.size(),
           _last_violations.full_nodes.size(),
-          _topic_table.updates_in_progress().size(),
+          _state.topics().updates_in_progress().size(),
           plan_data.reassignments.size(),
           plan_data.cancellations.size(),
           plan_data.failed_reassignments_count);
@@ -201,18 +201,19 @@ ss::future<> partition_balancer_backend::do_tick() {
 
     co_await ss::max_concurrent_for_each(
       plan_data.cancellations, 32, [this, current_term](model::ntp& ntp) {
-          vlog(clusterlog.info, "cancel movement for ntp {}", ntp);
           return _topics_frontend
             .cancel_moving_partition_replicas(
               ntp,
               model::timeout_clock::now() + add_move_cmd_timeout,
               current_term)
             .then([ntp = std::move(ntp)](auto errc) {
-                vlog(
-                  clusterlog.info,
-                  "{} movement cancellation submitted, errc: {}",
-                  ntp,
-                  errc);
+                if (errc) {
+                    vlog(
+                      clusterlog.warn,
+                      "submitting {} movement cancellation failed, error: {}",
+                      ntp,
+                      errc.message());
+                }
             });
       });
 
@@ -220,12 +221,6 @@ ss::future<> partition_balancer_backend::do_tick() {
       plan_data.reassignments,
       32,
       [this, current_term](ntp_reassignments& reassignment) {
-          vlog(
-            clusterlog.info,
-            "moving {} to {}",
-            reassignment.ntp,
-            reassignment.allocation_units.get_assignments().front().replicas);
-
           return _topics_frontend
             .move_partition_replicas(
               reassignment.ntp,
@@ -233,11 +228,13 @@ ss::future<> partition_balancer_backend::do_tick() {
               model::timeout_clock::now() + add_move_cmd_timeout,
               current_term)
             .then([reassignment = std::move(reassignment)](auto errc) {
-                vlog(
-                  clusterlog.info,
-                  "{} reassignment submitted, errc: {}",
-                  reassignment.ntp,
-                  errc);
+                if (errc) {
+                    vlog(
+                      clusterlog.warn,
+                      "submitting {} reassignment failed, error: {}",
+                      reassignment.ntp,
+                      errc.message());
+                }
             });
       });
 }

@@ -1,0 +1,77 @@
+# Set specific configurator version - this will be reflected in all configurator containers of managed redpanda clusters (new or old)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda-controller-manager
+  namespace: redpanda-system
+spec:
+  template:
+    spec:
+      containers:
+      - name: manager
+        image: localhost/redpanda-operator:dev
+        args:
+          - "--health-probe-bind-address=:8081"
+          - "--metrics-bind-address=127.0.0.1:8080"
+          - "--leader-elect"
+          - "--webhook-enabled=true"
+          - "--configurator-base-image=vectorized/configurator"
+          - "--configurator-tag=v22.1.3"
+          - "--configurator-image-pull-policy=IfNotPresent"
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 1
+        ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          limits:
+            cpu: 100m
+            memory: 128Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+          - mountPath: /tmp/k8s-webhook-server/serving-certs
+            name: cert
+            readOnly: true
+      - args:
+        - --secure-listen-address=0.0.0.0:8443
+        - --upstream=http://127.0.0.1:8080/
+        - --logtostderr=true
+        - --v=10
+        image: gcr.io/kubebuilder/kube-rbac-proxy:v0.8.0
+        imagePullPolicy: IfNotPresent
+        name: kube-rbac-proxy
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+---
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+- command: kubectl get deployment redpanda-controller-manager -n redpanda-system -o json

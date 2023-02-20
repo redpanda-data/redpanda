@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/configuration.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -23,6 +24,7 @@
 #include <seastar/core/abort_source.hh>
 
 #include <filesystem>
+#include <optional>
 #include <system_error>
 #include <vector>
 
@@ -34,6 +36,8 @@ struct manual_deletion_fixture : public raft_test_fixture {
         storage::log_config::storage_type::disk,
         model::cleanup_policy_bitflags::deletion,
         1_KiB) {
+        config::shard_local_cfg().log_segment_size_min.set_value(
+          std::optional<uint64_t>());
         gr.enable_all();
     }
 

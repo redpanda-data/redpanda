@@ -312,6 +312,8 @@ public:
 
     void set_transactional_type() { _attributes |= transactional_mask; }
 
+    void unset_transactional_type() { _attributes &= ~transactional_mask; }
+
     bool operator==(const record_batch_attributes& other) const {
         return _attributes == other._attributes;
     }
@@ -442,13 +444,14 @@ using producer_id = named_type<int64_t, struct producer_identity_id>;
 using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
 
 struct producer_identity
-  : serde::envelope<producer_identity, serde::version<0>> {
+  : serde::
+      envelope<producer_identity, serde::version<0>, serde::compat_version<0>> {
     int64_t id{-1};
     int16_t epoch{0};
 
     producer_identity() noexcept = default;
 
-    producer_identity(int64_t id, int16_t epoch)
+    constexpr producer_identity(int64_t id, int16_t epoch)
       : id(id)
       , epoch(epoch) {}
 
@@ -480,6 +483,15 @@ struct tx_range {
 
     auto operator<=>(const tx_range&) const = default;
 };
+
+// Comparator that sorts in ascending order by first offset.
+struct tx_range_cmp {
+    auto operator()(const tx_range& l, const tx_range& r) {
+        return l.first > r.first;
+    }
+};
+
+static constexpr producer_identity unknown_pid{-1, -1};
 
 struct batch_identity {
     static int32_t increment_sequence(int32_t sequence, int32_t increment) {
@@ -658,7 +670,18 @@ public:
         verify_iterable();
         iobuf_const_parser parser(_records);
         for (auto i = 0; i < _header.record_count; i++) {
-            f(model::parse_one_record_copy_from_buffer(parser));
+            if constexpr (std::is_same_v<
+                            std::invoke_result_t<Func, model::record>,
+                            void>) {
+                f(model::parse_one_record_copy_from_buffer(parser));
+
+            } else {
+                ss::stop_iteration s = f(
+                  model::parse_one_record_copy_from_buffer(parser));
+                if (s == ss::stop_iteration::yes) {
+                    return;
+                }
+            }
         }
         if (unlikely(parser.bytes_left())) {
             throw std::out_of_range(fmt::format(

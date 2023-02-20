@@ -45,7 +45,7 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 			cl, err := admin.NewHostClient(fs, cfg, host)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
-			conf, err := cl.Config(cmd.Context())
+			conf, err := cl.Config(cmd.Context(), true)
 			out.MaybeDie(err, "unable to request configuration: %v", err)
 
 			marshaled, err := json.MarshalIndent(conf, "", "  ")
@@ -176,27 +176,31 @@ var possibleLoggers = []string{
 	"archival",
 	"archival-ctrl",
 	"assert",
+	"cloud_roles",
 	"cloud_storage",
 	"cluster",
 	"compaction_ctrl",
 	"compression",
+	"controller_rate_limiter_log",
 	"coproc",
 	"dns_resolver",
 	"exception",
 	"fault_injector",
+	"features",
 	"http",
 	"httpd",
 	"io",
 	"json",
 	"kafka",
-	// "kafka/client", disabled until redpanda supports slashes in the handler
+	"kafka/client",
 	"kvstore",
+	"main",
 	"metrics-reporter",
 	"offset_translator",
 	"pandaproxy",
-	// "r/heartbeat", disabled until redpanda supports slashes in the handler
+	"r/heartbeat",
 	"raft",
-	"redpanda::main",
+	"request_auth",
 	"rpc",
 	"s3",
 	"scheduler",

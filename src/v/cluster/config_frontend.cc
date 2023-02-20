@@ -21,14 +21,14 @@ config_frontend::config_frontend(
   ss::sharded<controller_stm>& stm,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
-  ss::sharded<feature_table>& features,
+  ss::sharded<features::feature_table>& features,
   ss::sharded<ss::abort_source>& as)
   : _stm(stm)
   , _connections(connections)
   , _leaders(leaders)
   , _features(features)
   , _as(as)
-  , _self(config::node().node_id()) {}
+  , _self(*config::node().node_id()) {}
 
 /**
  * RPC wrapper on do_patch, to dispatch to the controller leader

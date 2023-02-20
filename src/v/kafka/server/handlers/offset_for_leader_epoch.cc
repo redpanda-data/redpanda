@@ -178,7 +178,7 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
   request_context ctx, ss::smp_service_group) {
     offset_for_leader_epoch_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
+    log_request(ctx.header(), request);
 
     std::vector<offset_for_leader_topic_result> unauthorized;
 
@@ -218,8 +218,6 @@ ss::future<response_ptr> offset_for_leader_epoch_handler::handle(
 
     offset_for_leader_epoch_response response;
     response.data.topics = std::move(results);
-    response.data.throttle_time_ms = std::chrono::milliseconds(
-      ctx.throttle_delay_ms());
 
     // merge with unauthorized topics
     std::move(

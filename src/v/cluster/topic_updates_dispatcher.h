@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -23,9 +24,9 @@ namespace cluster {
 
 // The topic updates dispatcher is responsible for receiving update_apply
 // upcalls from controller state machine and propagating updates to topic state
-// core local copies. The dispatcher handles partition_allocator updates. The
-// partition allocator exists only on core 0 hence the updates have to be
-// executed at the same core.
+// core local copies. The dispatcher also handles partition_allocator and
+// partition_balancer_state updates. Those services exist only on core 0 hence
+// the updates have to be executed at the same core.
 //
 //
 //                                  +----------------+        +------------+
@@ -53,7 +54,8 @@ public:
     topic_updates_dispatcher(
       ss::sharded<partition_allocator>&,
       ss::sharded<topic_table>&,
-      ss::sharded<partition_leaders_table>&);
+      ss::sharded<partition_leaders_table>&,
+      ss::sharded<partition_balancer_state>&);
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -65,7 +67,9 @@ public:
       update_topic_properties_cmd,
       create_partition_cmd,
       create_non_replicable_topic_cmd,
-      cancel_moving_partition_replicas_cmd>();
+      cancel_moving_partition_replicas_cmd,
+      move_topic_replicas_cmd,
+      revert_cancel_partition_move_cmd>();
 
     bool is_batch_applicable(const model::record_batch& batch) const {
         return batch.header().type
@@ -81,9 +85,13 @@ private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader> leaders);
-    void update_allocations(std::vector<partition_assignment>);
+    void update_allocations(
+      std::vector<partition_assignment>, partition_allocation_domain);
 
-    void deallocate_topic(const assignments_set&, const in_progress_map&);
+    void deallocate_topic(
+      const assignments_set&,
+      const in_progress_map&,
+      partition_allocation_domain);
 
     in_progress_map
     collect_in_progress(const model::topic_namespace&, const assignments_set&);
@@ -91,6 +99,7 @@ private:
     ss::sharded<partition_allocator>& _partition_allocator;
     ss::sharded<topic_table>& _topic_table;
     ss::sharded<partition_leaders_table>& _partition_leaders_table;
+    ss::sharded<partition_balancer_state>& _partition_balancer_state;
 };
 
 } // namespace cluster

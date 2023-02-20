@@ -60,7 +60,13 @@ struct foreign_entry_fixture {
               test_dir,
               1_GiB,
               storage::debug_sanitize_files::yes);
-        }) {
+        },
+        _feature_table) {
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
         _storage.start().get();
         (void)_storage.log_mgr()
           .manage(storage::ntp_config(_ntp, "test.dir"))
@@ -128,8 +134,12 @@ struct foreign_entry_fixture {
         return raft::group_configuration(
           std::move(nodes), model::revision_id(1));
     }
-    ~foreign_entry_fixture() { _storage.stop().get(); }
+    ~foreign_entry_fixture() {
+        _storage.stop().get();
+        _feature_table.stop().get();
+    }
     model::offset _base_offset{0};
+    ss::sharded<features::feature_table> _feature_table;
     storage::api _storage;
     storage::log get_log() { return _storage.log_mgr().get(_ntp).value(); }
     model::ntp _ntp{

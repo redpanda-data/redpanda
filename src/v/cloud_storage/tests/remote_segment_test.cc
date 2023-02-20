@@ -10,6 +10,7 @@
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
@@ -17,9 +18,9 @@
 #include "cloud_storage/tests/cloud_storage_fixture.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
-#include "s3/client.h"
 #include "seastarx.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
@@ -54,20 +55,22 @@ using namespace cloud_storage;
 
 inline ss::logger test_log("test"); // NOLINT
 
-static cloud_storage::lazy_abort_source always_continue("no-op", [](auto&) {
-    return false;
+static ss::abort_source never_abort;
+
+static cloud_storage::lazy_abort_source always_continue([]() {
+    return std::nullopt;
 });
 
 /**
  * Helper: generate a function suitable for passing to upload_segment(),
  * exposing some synthetic data as a segment_reader_handle.
  */
-ss::noncopyable_function<ss::future<storage::segment_reader_handle>()>
-make_reset_fn(iobuf& segment_bytes) {
-    return [&segment_bytes]() -> ss::future<storage::segment_reader_handle> {
+remote::reset_input_stream make_reset_fn(iobuf& segment_bytes) {
+    return [&segment_bytes] {
         auto out = iobuf_deep_copy(segment_bytes);
-        co_return storage::segment_reader_handle(
-          make_iobuf_input_stream(std::move(out)));
+        return ss::make_ready_future<std::unique_ptr<storage::stream_provider>>(
+          std::make_unique<storage::segment_reader_handle>(
+            make_iobuf_input_stream(std::move(out))));
     };
 }
 
@@ -78,17 +81,16 @@ FIXTURE_TEST(
   test_remote_segment_successful_download, cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    remote remote(connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = partition_manifest::key{
-      .base_offset = model::offset(1), .term = model::term_id(2)};
+    auto key = model::offset(1);
     model::initial_revision_id segment_ntp_revision{777};
     iobuf segment_bytes = generate_segment(model::offset(1), 20);
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = make_reset_fn(segment_bytes);
-    retry_chain_node fib(1000ms, 200ms);
+    retry_chain_node fib(never_abort, 1000ms, 200ms);
     partition_manifest::segment_meta meta{
       .is_compacted = false,
       .size_bytes = segment_bytes.size_bytes(),
@@ -96,9 +98,9 @@ FIXTURE_TEST(
       .committed_offset = model::offset(20),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = segment_ntp_revision};
-    auto path = m.generate_segment_path(key, meta);
+    auto path = m.generate_segment_path(meta);
     auto upl_res = remote
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -123,11 +125,11 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    remote remote(connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
     auto name = segment_name("7-8-v1.log");
-    partition_manifest::key key = parse_segment_name(name).value();
+    auto key = parse_segment_name(name).value();
     m.add(
       name,
       partition_manifest::segment_meta{
@@ -137,11 +139,12 @@ FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT
         .committed_offset = model::offset(123),
         .base_timestamp = {},
         .max_timestamp = {},
-        .delta_offset = model::offset(0),
+        .delta_offset = model::offset_delta(0),
         .ntp_revision = manifest_revision});
 
-    retry_chain_node fib(100ms, 20ms);
-    remote_segment segment(remote, cache.local(), bucket, m, key, fib);
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+    remote_segment segment(
+      remote, cache.local(), bucket, m, key.base_offset, fib);
     BOOST_REQUIRE_THROW(
       segment.data_stream(0, ss::default_priority_class()).get(),
       download_exception);
@@ -153,11 +156,10 @@ FIXTURE_TEST(
   cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    remote remote(connection_limit(10), conf, config_file);
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = partition_manifest::key{
-      .base_offset = model::offset(1), .term = model::term_id(2)};
+    auto key = model::offset(1);
     iobuf segment_bytes = generate_segment(model::offset(1), 100);
     partition_manifest::segment_meta meta{
       .is_compacted = false,
@@ -166,13 +168,13 @@ FIXTURE_TEST(
       .committed_offset = model::offset(100),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision};
-    auto path = m.generate_segment_path(key, meta);
+    auto path = m.generate_segment_path(meta);
     uint64_t clen = segment_bytes.size_bytes();
     auto action = ss::defer([&remote] { remote.stop().get(); });
     auto reset_stream = make_reset_fn(segment_bytes);
-    retry_chain_node fib(1000ms, 200ms);
+    retry_chain_node fib(never_abort, 1000ms, 200ms);
     auto upl_res = remote
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -185,7 +187,8 @@ FIXTURE_TEST(
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, cache.local(), bucket, m, key, fib);
     partition_probe probe(manifest_ntp);
-    remote_segment_batch_reader reader(segment, reader_config, probe);
+    remote_segment_batch_reader reader(
+      segment, reader_config, probe, ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     auto s = reader.read_some(model::no_timeout, ot_state).get();
@@ -239,13 +242,12 @@ void test_remote_segment_batch_reader(
 
     fixture.set_expectations_and_listen({});
     auto conf = fixture.get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    remote remote(connection_limit(10), conf, config_file);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = partition_manifest::key{
-      .base_offset = model::offset(1), .term = model::term_id(2)};
+    auto key = model::offset(1);
     uint64_t clen = segment_bytes.size_bytes();
     partition_manifest::segment_meta meta{
       .is_compacted = false,
@@ -254,11 +256,11 @@ void test_remote_segment_batch_reader(
       .committed_offset = headers.back().last_offset(),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision};
-    auto path = m.generate_segment_path(key, meta);
+    auto path = m.generate_segment_path(meta);
     auto reset_stream = make_reset_fn(segment_bytes);
-    retry_chain_node fib(1000ms, 200ms);
+    retry_chain_node fib(never_abort, 1000ms, 200ms);
     auto upl_res = remote
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -276,7 +278,8 @@ void test_remote_segment_batch_reader(
     auto segment = ss::make_lw_shared<remote_segment>(
       remote, fixture.cache.local(), bucket, m, key, fib);
     partition_probe probe(manifest_ntp);
-    remote_segment_batch_reader reader(segment, reader_config, probe);
+    remote_segment_batch_reader reader(
+      segment, reader_config, probe, ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     size_t batch_ix = 0;
@@ -351,13 +354,12 @@ FIXTURE_TEST(
 
     set_expectations_and_listen({});
     auto conf = get_configuration();
-    auto bucket = s3::bucket_name("bucket");
-    remote remote(s3_connection_limit(10), conf, config_file);
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    remote remote(connection_limit(10), conf, config_file);
     auto action = ss::defer([&remote] { remote.stop().get(); });
 
     partition_manifest m(manifest_ntp, manifest_revision);
-    auto key = partition_manifest::key{
-      .base_offset = model::offset(1), .term = model::term_id(2)};
+    auto key = model::offset(1);
     uint64_t clen = segment_bytes.size_bytes();
     partition_manifest::segment_meta meta{
       .is_compacted = false,
@@ -366,11 +368,11 @@ FIXTURE_TEST(
       .committed_offset = headers.back().last_offset(),
       .base_timestamp = {},
       .max_timestamp = {},
-      .delta_offset = model::offset(0),
+      .delta_offset = model::offset_delta(0),
       .ntp_revision = manifest_revision};
-    auto path = m.generate_segment_path(key, meta);
+    auto path = m.generate_segment_path(meta);
     auto reset_stream = make_reset_fn(segment_bytes);
-    retry_chain_node fib(1000ms, 200ms);
+    retry_chain_node fib(never_abort, 1000ms, 200ms);
     auto upl_res = remote
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -388,7 +390,8 @@ FIXTURE_TEST(
         headers.at(0).base_offset,
         headers.at(0).last_offset(),
         ss::default_priority_class()),
-      probe);
+      probe,
+      ssx::semaphore_units());
     storage::offset_translator_state ot_state(m.get_ntp());
 
     auto s = reader.read_some(model::no_timeout, ot_state).get();

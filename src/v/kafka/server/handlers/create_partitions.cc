@@ -18,6 +18,7 @@
 #include "kafka/protocol/schemata/create_partitions_response.h"
 #include "kafka/server/errors.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/quota_manager.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
@@ -91,6 +92,31 @@ request_iterator validate_range(
     return valid_range_end;
 }
 
+template<typename ResultIter, typename Predicate>
+ss::future<request_iterator> validate_range_async(
+  request_iterator begin,
+  request_iterator end,
+  ResultIter out_it,
+  error_code ec,
+  const ss::sstring& error_message,
+  Predicate&& p) {
+    auto valid_range_end = co_await ssx::partition(
+      begin, end, std::forward<Predicate>(p));
+
+    std::transform(
+      valid_range_end,
+      end,
+      out_it,
+      [ec, &error_message](const create_partitions_topic& req) {
+          return create_partitions_topic_result{
+            .name = req.name,
+            .error_code = ec,
+            .error_message = error_message,
+          };
+      });
+    co_return valid_range_end;
+}
+
 ss::future<std::vector<cluster::topic_result>> do_create_partitions(
   request_context& ctx,
   request_iterator begin,
@@ -122,6 +148,7 @@ ss::future<response_ptr> create_partitions_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     create_partitions_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
     create_partitions_response resp;
 
     if (request.data.topics.empty()) {
@@ -159,6 +186,19 @@ ss::future<response_ptr> create_partitions_handler::handle(
             model::topic_namespace(model::kafka_namespace, tp.name));
       });
 
+    valid_range_end = validate_range(
+      request.data.topics.begin(),
+      valid_range_end,
+      std::back_inserter(resp.data.results),
+      error_code::invalid_request,
+      "Partition count must be greater then current number of partitions",
+      [&ctx](const create_partitions_topic& tp) {
+          return tp.count > ctx.metadata_cache()
+                              .get_topic_cfg(model::topic_namespace_view(
+                                model::kafka_namespace, tp.name))
+                              ->partition_count;
+      });
+
     // validate custom assignment
     valid_range_end = validate_range(
       request.data.topics.begin(),
@@ -192,6 +232,31 @@ ss::future<response_ptr> create_partitions_handler::handle(
           });
         co_return co_await ctx.respond(std::move(resp));
     }
+
+    valid_range_end = co_await validate_range_async(
+      request.data.topics.begin(),
+      valid_range_end,
+      std::back_inserter(resp.data.results),
+      ((ctx.header().version >= api_version(3))
+         ? error_code::throttling_quota_exceeded
+         : error_code::unknown_server_error),
+      "Too many partition mutations requested",
+      [&ctx, &resp](const create_partitions_topic& tp) {
+          const auto cfg = ctx.metadata_cache().get_topic_cfg(
+            model::topic_namespace_view(model::kafka_namespace, tp.name));
+          vassert(cfg, "Topic exist check has already occurred");
+          vassert(
+            tp.count > cfg->partition_count,
+            "Sanity check for request increase partition count failed");
+          const auto mutations = (tp.count - cfg->partition_count);
+          return ctx.quota_mgr()
+            .record_partition_mutations(ctx.header().client_id, mutations)
+            .then([&resp](std::chrono::milliseconds delay) {
+                resp.data.throttle_time_ms = std::max(
+                  resp.data.throttle_time_ms, delay);
+                return delay == 0ms;
+            });
+      });
 
     auto results = co_await do_create_partitions(
       ctx,

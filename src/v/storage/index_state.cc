@@ -28,6 +28,13 @@
 
 namespace storage {
 
+index_state index_state::make_empty_index(offset_delta_time with_offset) {
+    index_state idx{};
+    idx.with_offset = with_offset;
+
+    return idx;
+}
+
 bool index_state::maybe_index(
   size_t accumulator,
   size_t step,
@@ -35,7 +42,8 @@ bool index_state::maybe_index(
   model::offset batch_base_offset,
   model::offset batch_max_offset,
   model::timestamp first_timestamp,
-  model::timestamp last_timestamp) {
+  model::timestamp last_timestamp,
+  bool user_data) {
     vassert(
       batch_base_offset >= base_offset,
       "cannot track offsets that are lower than our base, o:{}, "
@@ -45,26 +53,54 @@ bool index_state::maybe_index(
       *this);
 
     bool retval = false;
+
+    // The first non-config batch in the segment, use its timestamp
+    // to override the timestamps of any config batch that was indexed
+    // by virtue of being the first in the segment.
+    if (user_data && non_data_timestamps) {
+        vassert(relative_time_index.size() == 1, "");
+        relative_time_index[0]
+          = offset_time_index{last_timestamp, with_offset}.raw_value();
+
+        base_timestamp = first_timestamp;
+        max_timestamp = first_timestamp;
+        non_data_timestamps = false;
+    }
+
     // index_state
     if (empty()) {
+        // Ordinarily, we do not allow configuration batches to contribute to
+        // the segment's timestamp bounds (because config batches use walltime
+        // but user data timestamps may be anything).  However, for the first
+        // batch we set the timestamps, and then set a `non_data_timestamps`
+        // flag so that the next time we see user data we will overwrite
+        // the walltime timestamps with the user data timestamps.
+        non_data_timestamps = !user_data;
+
         base_timestamp = first_timestamp;
         max_timestamp = first_timestamp;
         retval = true;
     }
+
     // NOTE: we don't need the 'max()' trick below because we controll the
     // offsets ourselves and it would be a bug otherwise - see assert above
     max_offset = batch_max_offset;
-    // some clients leave max timestamp uninitialized in cases there is a
-    // single record in a batch in this case we use first timestamp as a
-    // last one
-    last_timestamp = std::max(first_timestamp, last_timestamp);
-    max_timestamp = std::max(max_timestamp, last_timestamp);
+
+    // Do not allow config batches to contribute to segment timestamp bounds,
+    // because their timestamps may differ wildly from user-provided timestamps
+    if (user_data) {
+        // some clients leave max timestamp uninitialized in cases there is a
+        // single record in a batch in this case we use first timestamp as a
+        // last one
+        last_timestamp = std::max(first_timestamp, last_timestamp);
+        max_timestamp = std::max(max_timestamp, last_timestamp);
+    }
     // always saving the first batch simplifies a lot of book keeping
-    if (accumulator >= step || retval) {
-        // We know that a segment cannot be > 4GB
+    if ((accumulator >= step && user_data) || retval) {
         add_entry(
+          // We know that a segment cannot be > 4GB
           batch_base_offset() - base_offset(),
-          std::max(last_timestamp() - base_timestamp(), int64_t{0}),
+          offset_time_index{last_timestamp - base_timestamp, with_offset},
           starting_position_in_file);
 
         retval = true;
@@ -77,7 +113,9 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
              << ", base_offset:" << s.base_offset
              << ", max_offset:" << s.max_offset
              << ", base_timestamp:" << s.base_timestamp
-             << ", max_timestamp:" << s.max_timestamp << ", index("
+             << ", max_timestamp:" << s.max_timestamp
+             << ", batch_timestamps_are_monotonic:"
+             << s.batch_timestamps_are_monotonic << ", index("
              << s.relative_offset_index.size() << ","
              << s.relative_time_index.size() << "," << s.position_index.size()
              << ")}";
@@ -95,6 +133,9 @@ void index_state::serde_write(iobuf& out) const {
     write(tmp, relative_offset_index.copy());
     write(tmp, relative_time_index.copy());
     write(tmp, position_index.copy());
+    write(tmp, batch_timestamps_are_monotonic);
+    write(tmp, with_offset);
+    write(tmp, non_data_timestamps);
 
     crc::crc32c crc;
     crc_extend_iobuf(crc, tmp);
@@ -120,6 +161,7 @@ void read_nested(
     if (compat_version == serde_compat::index_state_serde::ondisk_version) {
         in.skip(sizeof(int8_t));
         st = serde_compat::index_state_serde::decode(in);
+        st.batch_timestamps_are_monotonic = false;
         return;
     }
 
@@ -166,6 +208,14 @@ void read_nested(
     read_nested(p, st.relative_offset_index, 0U);
     read_nested(p, st.relative_time_index, 0U);
     read_nested(p, st.position_index, 0U);
+
+    if (compat_version < index_state::monotonic_timestamps_version) {
+        st.batch_timestamps_are_monotonic = false;
+    } else {
+        read_nested(p, st.batch_timestamps_are_monotonic, 0U);
+        read_nested(p, st.with_offset, 0U);
+        read_nested(p, st.non_data_timestamps, 0U);
+    }
 }
 
 } // namespace storage

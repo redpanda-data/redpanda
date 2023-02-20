@@ -44,11 +44,6 @@ partition_probe::partition_probe(const model::ntp& ntp) {
           labels),
 
         sm::make_gauge(
-          "segments",
-          [this] { return _cur_segments; },
-          sm::description("Current number of remote segments"),
-          labels),
-        sm::make_gauge(
           "materialized_segments",
           [this] { return _cur_materialized_segments; },
           sm::description("Current number of materialized remote segments"),

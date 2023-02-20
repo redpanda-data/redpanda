@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "compression/async_stream_zstd.h"
 #include "compression/internal/gzip_compressor.h"
 #include "compression/internal/lz4_frame_compressor.h"
 #include "compression/internal/snappy_java_compressor.h"
@@ -37,6 +38,7 @@ static inline constexpr std::array<size_t, 16> sizes{{
   8_KiB,
   10_KiB,
 }};
+static constexpr size_t default_decompression_size = 2_MiB;
 
 static std::vector<size_t> get_test_sizes() {
     std::vector<size_t> test_sizes;
@@ -81,6 +83,77 @@ SEASTAR_THREAD_TEST_CASE(stream_zstd_test) {
         iobuf buf = gen(i);
         auto cbuf = fn.compress(buf.share(0, i));
         auto dbuf = fn.uncompress(std::move(cbuf));
+        BOOST_CHECK_EQUAL(dbuf, buf);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(async_stream_zstd_test) {
+    compression::async_stream_zstd fn(default_decompression_size, 1);
+    auto test_sizes = get_test_sizes();
+    for (size_t i : sizes) {
+        iobuf buf = gen(i);
+
+        auto cbuf = fn.compress(buf.share(0, i)).get();
+        auto dbuf = fn.uncompress(std::move(cbuf)).get();
+
+        BOOST_CHECK_EQUAL(dbuf, buf);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(interleaved_async_stream_zstd_test) {
+    std::array<size_t, 5> test_sizes{
+      50_MiB,
+      50_MiB,
+      50_MiB,
+      50_MiB,
+      50_MiB,
+    };
+
+    std::vector<iobuf> gen_data;
+    for (size_t i : test_sizes) {
+        gen_data.push_back(gen(i));
+    }
+
+    auto fut = ss::parallel_for_each(
+      gen_data.begin(), gen_data.end(), [](iobuf& buf) {
+          return ss::do_with(
+            std::move(buf),
+            compression::async_stream_zstd(default_decompression_size, 3),
+            [](auto& buf, auto& fn) {
+                return fn.compress(buf.share(0, buf.size_bytes()))
+                  .then(
+                    [&](iobuf cbuf) { return fn.uncompress(std::move(cbuf)); })
+                  .then([&](iobuf dbuf) { BOOST_CHECK_EQUAL(dbuf, buf); });
+            });
+      });
+
+    fut.get();
+}
+
+SEASTAR_THREAD_TEST_CASE(async_stream_to_stream_test) {
+    compression::async_stream_zstd fn(default_decompression_size, 1);
+    compression::stream_zstd fn_s;
+    auto test_sizes = get_test_sizes();
+    for (size_t i : sizes) {
+        iobuf buf = gen(i);
+
+        auto cbuf = fn.compress(buf.share(0, i)).get();
+        auto dbuf = fn_s.uncompress(std::move(cbuf));
+
+        BOOST_CHECK_EQUAL(dbuf, buf);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(stream_to_async_stream_test) {
+    compression::async_stream_zstd fn(default_decompression_size, 1);
+    compression::stream_zstd fn_s;
+    auto test_sizes = get_test_sizes();
+    for (size_t i : sizes) {
+        iobuf buf = gen(i);
+
+        auto cbuf = fn_s.compress(buf.share(0, i));
+        auto dbuf = fn.uncompress(std::move(cbuf)).get();
+
         BOOST_CHECK_EQUAL(dbuf, buf);
     }
 }

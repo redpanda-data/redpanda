@@ -15,5 +15,5 @@
 namespace kafka {
 
 using offset_for_leader_epoch_handler
-  = single_stage_handler<offset_for_leader_epoch_api, 0, 3>;
+  = single_stage_handler<offset_for_leader_epoch_api, 0, 4>;
 }

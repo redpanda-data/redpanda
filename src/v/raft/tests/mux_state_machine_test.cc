@@ -9,6 +9,7 @@
 
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "outcome.h"
 #include "raft/tests/mux_state_machine_fixture.h"
@@ -183,7 +184,11 @@ FIXTURE_TEST(
     start_raft();
     simple_kv<batch_type_1> state;
     raft::mux_state_machine stm(
-      kvlog, _raft.get(), raft::persistent_last_applied::yes, state);
+      kvlog,
+      _raft.get(),
+      raft::persistent_last_applied::yes,
+      {model::record_batch_type::raft_configuration},
+      state);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     wait_for_becoming_leader();
@@ -254,7 +259,11 @@ FIXTURE_TEST(test_concurrent_sets, mux_state_machine_fixture) {
     start_raft();
     simple_kv<batch_type_1> state;
     raft::mux_state_machine stm(
-      kvlog, _raft.get(), raft::persistent_last_applied::yes, state);
+      kvlog,
+      _raft.get(),
+      raft::persistent_last_applied::yes,
+      {model::record_batch_type::raft_configuration},
+      state);
     stm.start().get0();
     wait_for_becoming_leader();
     ss::abort_source as;
@@ -342,7 +351,11 @@ FIXTURE_TEST(test_stm_recovery, mux_state_machine_fixture) {
     start_raft();
     simple_kv<batch_type_1> state;
     raft::mux_state_machine stm(
-      kvlog, _raft.get(), raft::persistent_last_applied::yes, state);
+      kvlog,
+      _raft.get(),
+      raft::persistent_last_applied::yes,
+      {model::record_batch_type::raft_configuration},
+      state);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     wait_for_becoming_leader();
@@ -359,7 +372,12 @@ FIXTURE_TEST(test_mulitple_states, mux_state_machine_fixture) {
     simple_kv<batch_type_1> state_1;
     simple_kv<batch_type_2> state_2;
     raft::mux_state_machine stm(
-      kvlog, _raft.get(), raft::persistent_last_applied::yes, state_1, state_2);
+      kvlog,
+      _raft.get(),
+      raft::persistent_last_applied::yes,
+      {model::record_batch_type::raft_configuration},
+      state_1,
+      state_2);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     wait_for_becoming_leader();
@@ -431,7 +449,11 @@ FIXTURE_TEST(timeout_test, mux_state_machine_fixture) {
     start_raft();
     simple_kv<batch_type_1> state_1;
     raft::mux_state_machine stm(
-      kvlog, _raft.get(), raft::persistent_last_applied::yes, state_1);
+      kvlog,
+      _raft.get(),
+      raft::persistent_last_applied::yes,
+      {model::record_batch_type::raft_configuration},
+      state_1);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
     wait_for_becoming_leader();

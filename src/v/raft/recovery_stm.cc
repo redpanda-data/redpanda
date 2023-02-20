@@ -218,45 +218,58 @@ recovery_stm::read_range_for_recovery(
     }
 
     vlog(_ctxlog.trace, "Reading batches, starting from: {}", start_offset);
-
-    // TODO: add timeout of maybe 1minute?
     auto reader = co_await _ptr->_log.make_reader(cfg);
-    auto batches = co_await model::consume_reader_to_memory(
-      std::move(reader), model::no_timeout);
+    try {
+        auto batches = co_await model::consume_reader_to_memory(
+          std::move(reader),
+          _ptr->_disk_timeout() + model::timeout_clock::now());
 
-    if (batches.empty()) {
-        vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
+        if (batches.empty()) {
+            vlog(_ctxlog.trace, "Read no batches for recovery, stopping");
+            _stop_requested = true;
+            co_return std::nullopt;
+        }
+        vlog(
+          _ctxlog.trace,
+          "Read batches in range [{},{}] for recovery",
+          batches.front().base_offset(),
+          batches.back().last_offset());
+
+        auto gap_filled_batches = details::make_ghost_batches_in_gaps(
+          start_offset, std::move(batches));
+        _base_batch_offset = gap_filled_batches.begin()->base_offset();
+        _last_batch_offset = gap_filled_batches.back().last_offset();
+
+        if (is_learner && _ptr->_recovery_throttle) {
+            const auto size = std::accumulate(
+              gap_filled_batches.cbegin(),
+              gap_filled_batches.cend(),
+              size_t{0},
+              [](size_t acc, const auto& batch) {
+                  return acc + batch.size_bytes();
+              });
+            vlog(
+              _ctxlog.trace,
+              "Requesting throttle for {} bytes, available in throttle: {}",
+              size,
+              _ptr->_recovery_throttle->get().available());
+            co_await _ptr->_recovery_throttle->get()
+              .throttle(size, _ptr->_as)
+              .handle_exception_type([this](const ss::broken_semaphore&) {
+                  vlog(_ctxlog.info, "Recovery throttling has stopped");
+              });
+        }
+
+        co_return model::make_foreign_memory_record_batch_reader(
+          std::move(gap_filled_batches));
+    } catch (const ss::timed_out_error& e) {
+        vlog(
+          _ctxlog.error,
+          "Timeout reading batches starting from {}. Stopping recovery",
+          start_offset);
         _stop_requested = true;
         co_return std::nullopt;
     }
-    vlog(
-      _ctxlog.trace,
-      "Read batches in range [{},{}] for recovery",
-      batches.front().base_offset(),
-      batches.back().last_offset());
-
-    auto gap_filled_batches = details::make_ghost_batches_in_gaps(
-      start_offset, std::move(batches));
-    _base_batch_offset = gap_filled_batches.begin()->base_offset();
-    _last_batch_offset = gap_filled_batches.back().last_offset();
-
-    if (is_learner && _ptr->_recovery_throttle) {
-        const auto size = std::accumulate(
-          gap_filled_batches.cbegin(),
-          gap_filled_batches.cend(),
-          size_t{0},
-          [](size_t acc, const auto& batch) {
-              return acc + batch.size_bytes();
-          });
-        co_await _ptr->_recovery_throttle->get()
-          .throttle(size, _ptr->_as)
-          .handle_exception_type([this](const ss::broken_semaphore&) {
-              vlog(_ctxlog.info, "Recovery throttling has stopped");
-          });
-    }
-
-    co_return model::make_foreign_memory_record_batch_reader(
-      std::move(gap_filled_batches));
 }
 
 ss::future<> recovery_stm::open_snapshot_reader() {
@@ -329,8 +342,9 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
         return close_snapshot_reader();
     }
     if (reply.value().term > _ptr->_term) {
-        return close_snapshot_reader().then(
-          [this, term = reply.value().term] { return _ptr->step_down(term); });
+        return close_snapshot_reader().then([this, term = reply.value().term] {
+            return _ptr->step_down(term, "snapshot response with greater term");
+        });
     }
     _sent_snapshot_bytes = reply.value().bytes_stored;
 

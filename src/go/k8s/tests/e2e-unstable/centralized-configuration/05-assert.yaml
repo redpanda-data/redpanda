@@ -9,7 +9,7 @@ status:
       state:
         terminated:
           message: |
-            40960
+            true
   phase: Succeeded
 ---
 

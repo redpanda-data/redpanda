@@ -13,6 +13,7 @@
 #include "likely.h"
 #include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "raft/rpc_client_protocol.h"
 #include "resource_mgmt/io_priority.h"
 
 #include <seastar/core/scheduling.hh>
@@ -23,22 +24,27 @@ namespace raft {
 
 group_manager::group_manager(
   model::node_id self,
-  model::timeout_clock::duration disk_timeout,
   ss::scheduling_group raft_sg,
-  std::chrono::milliseconds heartbeat_interval,
-  std::chrono::milliseconds heartbeat_timeout,
+  group_manager::config_provider_fn cfg,
   recovery_memory_quota::config_provider_fn recovery_mem_cfg,
   ss::sharded<rpc::connection_cache>& clients,
   ss::sharded<storage::api>& storage,
-  ss::sharded<recovery_throttle>& recovery_throttle)
+  ss::sharded<recovery_throttle>& recovery_throttle,
+  ss::sharded<features::feature_table>& feature_table)
   : _self(self)
-  , _disk_timeout(disk_timeout)
   , _raft_sg(raft_sg)
   , _client(make_rpc_client_protocol(self, clients))
-  , _heartbeats(heartbeat_interval, _client, _self, heartbeat_timeout)
+  , _configuration(cfg())
+  , _heartbeats(
+      _configuration.heartbeat_interval,
+      _client,
+      _self,
+      _configuration.heartbeat_timeout)
   , _storage(storage.local())
   , _recovery_throttle(recovery_throttle.local())
-  , _recovery_mem_quota(std::move(recovery_mem_cfg)) {
+  , _recovery_mem_quota(std::move(recovery_mem_cfg))
+  , _feature_table(feature_table.local())
+  , _is_ready(false) {
     setup_metrics();
 }
 
@@ -59,16 +65,26 @@ ss::future<> group_manager::stop() {
           [](ss::lw_shared_ptr<consensus> raft) { return raft->stop(); });
     });
 }
+void group_manager::set_ready() {
+    _is_ready = true;
+    std::for_each(
+      _groups.begin(), _groups.end(), [](ss::lw_shared_ptr<consensus>& c) {
+          c->reset_node_priority();
+      });
+}
 
 ss::future<> group_manager::stop_heartbeats() { return _heartbeats.stop(); }
 
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
-  raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
+  raft::group_id id,
+  std::vector<model::broker> nodes,
+  storage::log log,
+  with_learner_recovery_throttle enable_learner_recovery_throttle) {
     auto revision = log.config().get_revision();
     auto raft_cfg = raft::group_configuration(std::move(nodes), revision);
 
-    if (unlikely(!_raft_feature_table.is_feature_active(
-          raft_feature::improved_config_change))) {
+    if (unlikely(!_feature_table.is_active(
+          features::feature::raft_improved_configuration))) {
         raft_cfg.set_version(group_configuration::version_t(3));
     }
 
@@ -80,15 +96,19 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
         config::shard_local_cfg().raft_election_timeout_ms()),
       log,
       scheduling_config(_raft_sg, raft_priority()),
-      _disk_timeout,
+      _configuration.raft_io_timeout_ms,
       _client,
       [this](raft::leadership_status st) {
           trigger_leadership_notification(std::move(st));
       },
       _storage,
-      _recovery_throttle,
+      enable_learner_recovery_throttle
+        ? std::make_optional<std::reference_wrapper<recovery_throttle>>(
+          _recovery_throttle)
+        : std::nullopt,
       _recovery_mem_quota,
-      _raft_feature_table);
+      _feature_table,
+      _is_ready ? std::nullopt : std::make_optional(min_voter_priority));
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {
@@ -126,9 +146,7 @@ void group_manager::trigger_leadership_notification(
         leader_id = st.current_leader->id();
     }
 
-    for (auto& cb : _notifications) {
-        cb.second(st.group, st.term, leader_id);
-    }
+    _notifications.notify(st.group, st.term, leader_id);
 }
 
 void group_manager::setup_metrics() {
@@ -144,10 +162,6 @@ void group_manager::setup_metrics() {
         "group_count",
         [this] { return _groups.size(); },
         sm::description("Number of raft groups"))});
-}
-
-void group_manager::set_feature_active(raft_feature f) {
-    _raft_feature_table.set_feature_active(f);
 }
 
 } // namespace raft

@@ -30,7 +30,7 @@ func TestGatherMetrics(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			return afero.WriteFile(
 				fs,
-				config.Default().PIDFile(),
+				config.DevDefault().PIDFile(),
 				// Usual /proc/sys/kernel/pid_max value
 				[]byte("4194304"),
 				0o755,
@@ -45,7 +45,7 @@ func TestGatherMetrics(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			err := afero.WriteFile(
 				fs,
-				config.Default().PIDFile(),
+				config.DevDefault().PIDFile(),
 				// Usual /proc/sys/kernel/pid_max value
 				[]byte("4194304"),
 				0o755,
@@ -67,7 +67,7 @@ func TestGatherMetrics(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			err := afero.WriteFile(
 				fs,
-				config.Default().PIDFile(),
+				config.DevDefault().PIDFile(),
 				// Usual /proc/sys/kernel/pid_max value
 				[]byte("4194304"),
 				0o755,
@@ -89,7 +89,7 @@ func TestGatherMetrics(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			fs := afero.NewMemMapFs()
-			conf := config.Default()
+			conf := config.DevDefault()
 			if tt.conf != nil {
 				conf = tt.conf()
 			}

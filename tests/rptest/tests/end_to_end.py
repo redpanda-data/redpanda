@@ -18,7 +18,7 @@
 # - Replaced dependency on Kafka with Redpanda
 # - Imported annotate_missing_msgs helper from kafka test suite
 
-from collections import namedtuple
+from collections import defaultdict, namedtuple
 from typing import Optional
 import os
 from typing import Optional
@@ -82,7 +82,9 @@ class EndToEndTest(Test):
                        extra_rp_conf=None,
                        si_settings=None,
                        environment=None,
-                       install_opts: Optional[InstallOptions] = None):
+                       install_opts: Optional[InstallOptions] = None,
+                       new_bootstrap=False,
+                       max_num_seeds=3):
         if si_settings is not None:
             self.si_settings = si_settings
 
@@ -101,6 +103,12 @@ class EndToEndTest(Test):
                                         extra_node_conf=self._extra_node_conf,
                                         si_settings=self.si_settings,
                                         environment=environment)
+        if new_bootstrap:
+            seeds = [
+                self.redpanda.nodes[i]
+                for i in range(0, min(len(self.redpanda.nodes), max_num_seeds))
+            ]
+            self.redpanda.set_seed_servers(seeds)
         version_to_install = None
         if install_opts:
             if install_opts.install_previous_version:
@@ -112,7 +120,9 @@ class EndToEndTest(Test):
         if version_to_install:
             self.redpanda._installer.install(self.redpanda.nodes,
                                              version_to_install)
-        self.redpanda.start()
+
+        self.redpanda.start(auto_assign_node_id=new_bootstrap,
+                            omit_seeds_on_idx_one=not new_bootstrap)
         if version_to_install and install_opts.num_to_upgrade > 0:
             # Perform the upgrade rather than starting each node on the
             # appropriate version. Redpanda may not start up if starting a new
@@ -145,19 +155,30 @@ class EndToEndTest(Test):
         """
         return os.environ.get('BUILD_TYPE', None) == 'debug'
 
-    def start_consumer(self, num_nodes=1, group_id="test_group"):
-        assert self.redpanda
+    def start_consumer(self,
+                       num_nodes=1,
+                       group_id="test_group",
+                       verify_offsets=True,
+                       redpanda_cluster=None):
+        if redpanda_cluster is None:
+            assert self.redpanda
+            redpanda_cluster = self.redpanda
         assert self.topic
         self.consumer = VerifiableConsumer(
             self.test_context,
             num_nodes=num_nodes,
-            redpanda=self.redpanda,
+            redpanda=redpanda_cluster,
             topic=self.topic,
             group_id=group_id,
-            on_record_consumed=self.on_record_consumed)
+            on_record_consumed=self.on_record_consumed,
+            verify_offsets=verify_offsets)
         self.consumer.start()
 
-    def start_producer(self, num_nodes=1, throughput=1000):
+    def start_producer(self,
+                       num_nodes=1,
+                       throughput=1000,
+                       repeating_keys=None,
+                       enable_idempotence=False):
         assert self.redpanda
         assert self.topic
         self.producer = VerifiableProducer(
@@ -166,20 +187,23 @@ class EndToEndTest(Test):
             redpanda=self.redpanda,
             topic=self.topic,
             throughput=throughput,
-            message_validator=is_int_with_prefix)
+            message_validator=is_int_with_prefix,
+            repeating_keys=repeating_keys,
+            enable_idempotence=enable_idempotence)
         self.producer.start()
 
     def on_record_consumed(self, record, node):
         partition = TopicPartition(record["topic"], record["partition"])
+        key = record["key"]
         record_id = record["value"]
         offset = record["offset"]
         self.last_consumed_offsets[partition] = offset
-        self.records_consumed.append(record_id)
+        self.records_consumed.append((key, record_id))
 
     def await_consumed_offsets(self, last_acked_offsets, timeout_sec):
         def has_finished_consuming():
             for partition, offset in last_acked_offsets.items():
-                if not partition in self.last_consumed_offsets:
+                if partition not in self.last_consumed_offsets:
                     return False
                 last_commit = self.consumer.last_commit(partition)
                 if not last_commit or last_commit <= offset:
@@ -211,6 +235,12 @@ class EndToEndTest(Test):
                    err_msg="Timed out after %ds while awaiting record consumption of %d records" %\
                    (timeout_sec, min_records))
 
+    def _collect_segment_data(self):
+        # TODO: data collection is disabled because it was
+        # affecting other tests.
+        # See issue https://github.com/redpanda-data/redpanda/issues/7179
+        pass
+
     def _collect_all_logs(self):
         for s in self.test_context.services:
             self.mark_for_collect(s)
@@ -226,7 +256,8 @@ class EndToEndTest(Test):
                        min_records=5000,
                        producer_timeout_sec=30,
                        consumer_timeout_sec=30,
-                       enable_idempotence=False):
+                       enable_idempotence=False,
+                       enable_compaction=False):
         try:
             self.await_num_produced(min_records, producer_timeout_sec)
 
@@ -235,14 +266,16 @@ class EndToEndTest(Test):
             self.producer.stop()
             self.run_consumer_validation(
                 consumer_timeout_sec=consumer_timeout_sec,
-                enable_idempotence=enable_idempotence)
+                enable_idempotence=enable_idempotence,
+                enable_compaction=enable_compaction)
         except BaseException:
             self._collect_all_logs()
             raise
 
     def run_consumer_validation(self,
                                 consumer_timeout_sec=30,
-                                enable_idempotence=False) -> None:
+                                enable_idempotence=False,
+                                enable_compaction=False) -> None:
         try:
             # Take copy of this dict in case a rogue VerifiableProducer
             # thread modifies it.
@@ -257,12 +290,70 @@ class EndToEndTest(Test):
 
             self.consumer.stop()
 
-            self.validate(enable_idempotence)
+            self.validate(enable_idempotence, enable_compaction)
         except BaseException:
             self._collect_all_logs()
             raise
 
-    def validate(self, enable_idempotence):
+    def validate_compacted(self):
+
+        consumer_state = {}
+
+        acked_producer_state = {}
+        not_acked_producer_state = defaultdict(set)
+
+        for k, v in self.producer.acked:
+            acked_producer_state[k] = v
+
+        # some of the not acked records may have been received and persisted,
+        # we need to store all of them and check if consumer result is one of them
+        for k, v in self.producer.not_acked:
+            not_acked_producer_state[k].add(v)
+
+        for k, v in self.records_consumed:
+            consumer_state[k] = v
+
+        msg = ""
+        success = True
+        errors = []
+
+        for consumed_key, consumed_value in consumer_state.items():
+            # invalid key consumed
+            if consumed_key not in acked_producer_state and consumed_key not in not_acked_producer_state:
+                return False, f"key {consumed_key} was consumed but it is missing in produced state"
+
+            # success case, simply continue
+            if acked_producer_state[consumed_key] == consumed_value:
+                continue
+
+            # we must check not acked state as it might have been caused
+            # by request timeout and a message might still have been consumed by consumer
+            self.logger.debug(
+                f"Checking not acked produced messages for key: {consumed_key}, "
+                f"previous acked value: {acked_producer_state[consumed_key]}, "
+                f"consumed value: {consumed_value}")
+            # consumed value is one of the not acked produced values
+            if consumed_key in not_acked_producer_state and consumed_value in not_acked_producer_state[
+                    consumed_key]:
+                continue
+
+            # consumed value is not equal to last acked produced value and any of not acked value, error out
+            success = False
+            errors.append((consumed_key, consumed_value,
+                           acked_producer_state.get(consumed_key, None),
+                           not_acked_producer_state.get(consumed_key, None)))
+
+        if not success:
+            msg += "Invalid value detected for consumed compacted topic records. errors: ["
+            for key, consumed_value, produced_acked, producer_not_acked in errors:
+                msg += f"key: {key} consumed value: {consumed_value}, " \
+                       f"produced values: (acked: {produced_acked}, " \
+                       f"not_acked: {producer_not_acked})\n"
+            msg += "]"
+
+        return success, msg
+
+    def validate(self, enable_idempotence, enable_compaction):
         self.logger.info("Number of acked records: %d" %
                          len(self.producer.acked))
         self.logger.info("Number of consumed records: %d" %
@@ -270,26 +361,29 @@ class EndToEndTest(Test):
 
         success = True
         msg = ""
+        if enable_compaction:
+            success, msg = self.validate_compacted()
+        else:
+            # Correctness of the set difference operation depends on using equivalent
+            # message_validators in producer and consumer
+            missing = set(self.producer.acked) - set(self.records_consumed)
 
-        # Correctness of the set difference operation depends on using equivalent
-        # message_validators in producer and consumer
-        missing = set(self.producer.acked) - set(self.records_consumed)
-
-        if len(missing) > 0:
-            success = False
-            msg = annotate_missing_msgs(missing, self.producer.acked,
-                                        self.records_consumed, msg)
-
-        # Are there duplicates?
-        if len(set(self.records_consumed)) != len(self.records_consumed):
-            num_duplicates = abs(
-                len(set(self.records_consumed)) - len(self.records_consumed))
-
-            if enable_idempotence:
+            if len(missing) > 0:
                 success = False
-                msg += "Detected %d duplicates even though idempotence was enabled.\n" % num_duplicates
-            else:
-                msg += "(There are also %d duplicate messages in the log - but that is an acceptable outcome)\n" % num_duplicates
+                msg = annotate_missing_msgs(missing, self.producer.acked,
+                                            self.records_consumed, msg)
+
+            # Are there duplicates?
+            if len(set(self.records_consumed)) != len(self.records_consumed):
+                num_duplicates = abs(
+                    len(set(self.records_consumed)) -
+                    len(self.records_consumed))
+
+                if enable_idempotence:
+                    success = False
+                    msg += "Detected %d duplicates even though idempotence was enabled.\n" % num_duplicates
+                else:
+                    msg += "(There are also %d duplicate messages in the log - but that is an acceptable outcome)\n" % num_duplicates
 
         # Collect all logs if validation fails
         if not success:

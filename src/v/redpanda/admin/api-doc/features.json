@@ -118,6 +118,10 @@
                     "type": "long",
                     "description": "Logical version of cluster"
                 },
+                "original_cluster_version": {
+                    "type": "long",
+                    "description": "Logical version at time of cluster creation"
+                },
                 "features": {
                     "type": "array",
                     "description": "list of feature_state for each feature",
@@ -144,6 +148,10 @@
                 "expires": {
                     "type": "long",
                     "description": "Expiration date of the license in Unix epoch seconds"
+                },
+                "sha256": {
+                    "type": "string",
+                    "description": "Checksum (sha256) of the raw license data"
                 }
             }
         },

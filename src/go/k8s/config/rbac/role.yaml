@@ -73,6 +73,7 @@ rules:
   - configmaps
   verbs:
   - create
+  - delete
   - get
   - list
   - patch
@@ -89,7 +90,7 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - pods
+  - persistentvolumeclaims
   verbs:
   - delete
   - get
@@ -98,11 +99,28 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - pods
+  verbs:
+  - delete
+  - get
+  - list
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - ""
+  resources:
   - secrets
   verbs:
   - create
   - get
   - list
+  - update
   - watch
 - apiGroups:
   - ""

@@ -29,8 +29,16 @@ node_config::node_config() noexcept
   , node_id(
       *this,
       "node_id",
-      "Unique id identifying a node in the cluster",
-      {.required = required::yes, .visibility = visibility::user})
+      "Unique id identifying a node in the cluster. If missing, a unique id "
+      "will be assigned for this node when it joins the cluster",
+      {.visibility = visibility::user},
+      std::nullopt,
+      [](std::optional<model::node_id> id) -> std::optional<ss::sstring> {
+          if (id && (*id)() < 0) {
+              return fmt::format("Negative node_id ({}) not allowed", *id);
+          }
+          return std::nullopt;
+      })
   , rack(
       *this,
       "rack",
@@ -44,7 +52,27 @@ node_config::node_config() noexcept
       "seed_server list is empty the node will be a cluster root and it will "
       "form a new cluster",
       {.visibility = visibility::user},
-      {})
+      {},
+      [](std::vector<seed_server> s) -> std::optional<ss::sstring> {
+          std::sort(s.begin(), s.end());
+          const auto s_dupe_i = std::adjacent_find(s.cbegin(), s.cend());
+          if (s_dupe_i != s.cend()) {
+              return fmt::format(
+                "Duplicate items in seed_servers: {}", *s_dupe_i);
+          }
+          return std::nullopt;
+      })
+  , empty_seed_starts_cluster(
+      *this,
+      "empty_seed_starts_cluster",
+      "If true, an empty seed_servers list will denote that this node should "
+      "form a cluster. At most one node in the cluster should be configured "
+      "configured with an empty seed_servers list. If no such configured node "
+      "exists, or if configured to false, all nodes denoted by the "
+      "seed_servers list must be identical among those nodes' configurations, "
+      "and those nodes will form the initial cluster.",
+      {.visibility = visibility::user},
+      true)
   , rpc_server(
       *this,
       "rpc_server",
@@ -107,6 +135,13 @@ node_config::node_config() noexcept
       {.visibility = visibility::user},
       std::nullopt)
   , enable_central_config(*this, "enable_central_config")
+  , crash_loop_limit(
+      *this,
+      "crash_loop_limit",
+      "Maximum consecutive crashes (unclean shutdowns) allowed after which "
+      "operator intervention is needed to startup the broker.",
+      {.visibility = visibility::user},
+      std::nullopt)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",

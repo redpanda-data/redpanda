@@ -142,7 +142,7 @@ group_configuration::group_configuration(
   std::vector<model::broker> brokers, model::revision_id revision)
   : _brokers(std::move(brokers))
   , _revision(revision) {
-    _current.voters.resize(brokers.size());
+    _current.voters.reserve(_brokers.size());
     std::transform(
       _brokers.cbegin(),
       _brokers.cend(),

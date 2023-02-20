@@ -6,7 +6,6 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import time
 from typing import NamedTuple, Optional
 from rptest.services.cluster import cluster
 
@@ -18,11 +17,8 @@ from rptest.util import expect_exception
 
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
-from ducktape.mark import ok_to_fail
 
-import json
-
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import CloudStorageType, RedpandaService
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
@@ -40,27 +36,28 @@ class BucketUsage(NamedTuple):
 class TestReadReplicaService(EndToEndTest):
     log_segment_size = 1048576  # 5MB
     topic_name = "panda-topic"
-    si_settings = SISettings(
-        cloud_storage_reconciliation_interval_ms=500,
-        cloud_storage_max_connections=5,
-        log_segment_size=log_segment_size,
-        cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-        cloud_storage_segment_max_upload_interval_sec=5)
-
-    # Read reaplica shouldn't have it's own bucket.
-    # We're adding 'none' as a bucket name without creating
-    # an actual bucket with such name.
-    rr_settings = SISettings(
-        cloud_storage_bucket='none',
-        bypass_bucket_creation=True,
-        cloud_storage_reconciliation_interval_ms=500,
-        cloud_storage_max_connections=5,
-        log_segment_size=log_segment_size,
-        cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-        cloud_storage_segment_max_upload_interval_sec=5)
 
     def __init__(self, test_context: TestContext):
-        super(TestReadReplicaService, self).__init__(test_context=test_context)
+        super(TestReadReplicaService, self).__init__(
+            test_context=test_context,
+            si_settings=SISettings(
+                test_context,
+                cloud_storage_max_connections=5,
+                log_segment_size=TestReadReplicaService.log_segment_size,
+                cloud_storage_readreplica_manifest_sync_timeout_ms=500,
+                cloud_storage_segment_max_upload_interval_sec=5))
+
+        # Read reaplica shouldn't have it's own bucket.
+        # We're adding 'none' as a bucket name without creating
+        # an actual bucket with such name.
+        self.rr_settings = SISettings(
+            test_context,
+            bypass_bucket_creation=True,
+            cloud_storage_max_connections=5,
+            log_segment_size=TestReadReplicaService.log_segment_size,
+            cloud_storage_readreplica_manifest_sync_timeout_ms=500,
+            cloud_storage_segment_max_upload_interval_sec=5,
+            cloud_storage_housekeeping_interval_ms=10)
         self.second_cluster = None
 
     def start_second_cluster(self) -> None:
@@ -78,6 +75,20 @@ class TestReadReplicaService(EndToEndTest):
             self.si_settings.cloud_storage_bucket,
         }
         rpk_second_cluster.create_topic(self.topic_name, config=conf)
+
+        def has_leader():
+            partitions = list(
+                rpk_second_cluster.describe_topic(self.topic_name,
+                                                  tolerant=True))
+            for part in partitions:
+                if part.leader == -1:
+                    return False
+            return True
+
+        wait_until(has_leader,
+                   timeout_sec=60,
+                   backoff_sec=10,
+                   err_msg="No leader in read-replica")
 
     def start_consumer(self) -> None:
         # important side effect for superclass; we will use the replica
@@ -135,11 +146,8 @@ class TestReadReplicaService(EndToEndTest):
                             str(self.producer.last_acked_offsets))
             self.producer.stop()
 
-        # Make original topic upload data to S3
-        rpk = RpkTool(self.redpanda)
-        rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
-
         self.start_second_cluster()
+
         # wait until the read replica topic creation succeeds
         wait_until(
             self.create_read_replica_topic_success,
@@ -149,15 +157,15 @@ class TestReadReplicaService(EndToEndTest):
             "because topic manifest is not in S3.")
 
     def _bucket_usage(self) -> BucketUsage:
-        assert self.redpanda and self.redpanda.s3_client
+        assert self.redpanda and self.redpanda.cloud_storage_client
         keys: set[str] = set()
-        s3 = self.redpanda.s3_client
+        s3 = self.redpanda.cloud_storage_client
         num_objects = total_bytes = 0
         bucket = self.si_settings.cloud_storage_bucket
         for o in s3.list_objects(bucket):
             num_objects += 1
-            total_bytes += o.ContentLength
-            keys.add(o.Key)
+            total_bytes += o.content_length
+            keys.add(o.key)
         self.redpanda.logger.info(f"bucket usage {num_objects} objects, " +
                                   f"{total_bytes} bytes for {bucket}")
         return BucketUsage(num_objects, total_bytes, keys)
@@ -174,12 +182,19 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return None
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6073
-    @cluster(num_nodes=6)
-    @matrix(partition_count=[10])
-    def test_produce_is_forbidden(self, partition_count: int) -> None:
+    @cluster(num_nodes=7)
+    @matrix(partition_count=[10],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_writes_forbidden(self, partition_count: int,
+                              cloud_storage_type: CloudStorageType) -> None:
+        """
+        Verify that the read replica cluster does not permit writes,
+        and does not perform other data-modifying actions such as
+        removing objects from S3 on topic deletion.
+        """
 
-        self._setup_read_replica(partition_count=partition_count)
+        self._setup_read_replica(partition_count=partition_count,
+                                 num_messages=1000)
         second_rpk = RpkTool(self.second_cluster)
         with expect_exception(
                 RpkException, lambda e:
@@ -187,11 +202,29 @@ class TestReadReplicaService(EndToEndTest):
                 in str(e)):
             second_rpk.produce(self.topic_name, "", "test payload")
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/6073
+        objects_before = set(
+            self.redpanda.cloud_storage_client.list_objects(
+                self.si_settings.cloud_storage_bucket))
+        assert len(objects_before) > 0
+        second_rpk.delete_topic(self.topic_name)
+        objects_after = set(
+            self.redpanda.cloud_storage_client.list_objects(
+                self.si_settings.cloud_storage_bucket))
+        if len(objects_after) < len(objects_before):
+            deleted = objects_before - objects_after
+            self.logger.error(f"Objects unexpectedly deleted: {deleted}")
+
+            # This is not an exact equality check because the source
+            # cluster might still be uploading segments: the object
+            # count is permitted to increase.
+            assert len(objects_after) >= len(objects_before)
+
     @cluster(num_nodes=9)
-    @matrix(partition_count=[10], min_records=[10000])
-    def test_simple_end_to_end(self, partition_count: int,
-                               min_records: int) -> None:
+    @matrix(partition_count=[10],
+            min_records=[10000],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_simple_end_to_end(self, partition_count: int, min_records: int,
+                               cloud_storage_type: CloudStorageType) -> None:
 
         self._setup_read_replica(num_messages=min_records,
                                  partition_count=partition_count)
@@ -222,6 +255,8 @@ class TestReadReplicaService(EndToEndTest):
 
         # Let replica consumer run to completion, assert no s3 writes
         self.run_consumer_validation()
+        # Check read-replica logs
+        self.second_cluster.raise_on_bad_logs()
 
         post_usage = self._bucket_usage()
         self.logger.info(f"post_usage {post_usage}")

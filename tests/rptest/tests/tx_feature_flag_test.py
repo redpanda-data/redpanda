@@ -27,10 +27,6 @@ class TxFeatureFlagTest(EndToEndTest):
         # it unavailable when one of the nodes is down,
         self.start_redpanda(num_nodes=3,
                             extra_rp_conf={
-                                "transaction_coordinator_replication": 3,
-                                "id_allocator_replication": 3,
-                                "enable_idempotence": True,
-                                "enable_transactions": True,
                                 "default_topic_replications": 1,
                                 "default_topic_partitions": 1,
                                 "health_manager_tick_interval": 3600000
@@ -52,11 +48,6 @@ class TxFeatureFlagTest(EndToEndTest):
         for n in self.redpanda.nodes:
             self.redpanda.start_node(n,
                                      override_cfg_params={
-                                         "transaction_coordinator_replication":
-                                         3,
-                                         "id_allocator_replication": 3,
-                                         "enable_idempotence": False,
-                                         "enable_transactions": False,
                                          "transactional_id_expiration_ms":
                                          1000,
                                          "default_topic_replications": 3,

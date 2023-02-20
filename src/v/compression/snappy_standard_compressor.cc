@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "likely.h"
 #include "units.h"
+#include "vassert.h"
 
 #include <fmt/format.h>
 

@@ -12,6 +12,7 @@
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "model/metadata.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/seq_writer.h"
 #include "pandaproxy/schema_registry/service.h"
@@ -43,7 +44,10 @@ ss::future<> api::start() {
     _store = std::make_unique<sharded_store>();
     co_await _store->start(_sg);
     co_await _client.start(
-      config::to_yaml(_client_cfg, config::redact_secrets::no));
+      config::to_yaml(_client_cfg, config::redact_secrets::no),
+      [this](std::exception_ptr ex) {
+          return _service.local().mitigate_error(ex);
+      });
     co_await _sequencer.start(
       _node_id, _sg, std::ref(_client), std::ref(*_store));
     co_await _service.start(
@@ -65,6 +69,12 @@ ss::future<> api::stop() {
     if (_store) {
         co_await _store->stop();
     }
+}
+
+ss::future<> api::restart() {
+    vlog(plog.info, "Restarting the schema registry");
+    co_await stop();
+    co_await start();
 }
 
 } // namespace pandaproxy::schema_registry

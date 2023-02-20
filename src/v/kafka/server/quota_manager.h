@@ -10,12 +10,15 @@
  */
 
 #pragma once
-#include "config/configuration.h"
+#include "config/client_group_byte_rate_quota.h"
+#include "config/property.h"
+#include "kafka/server/token_bucket_rate_tracker.h"
 #include "resource_mgmt/rate.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 
@@ -26,6 +29,9 @@
 #include <string_view>
 
 namespace kafka {
+
+// Shard on which partition mutation rate metrics are aggregated on
+static constexpr ss::shard_id quota_manager_shard = 0;
 
 // quota_manager tracks quota usage
 //
@@ -44,67 +50,113 @@ namespace kafka {
 //   shards or track stats globally to produce a more accurate per-node
 //   representation of a statistic (e.g. bandwidth).
 //
-class quota_manager {
+class quota_manager : public ss::peering_sharded_service<quota_manager> {
 public:
     using clock = ss::lowres_clock;
 
     struct throttle_delay {
-        bool first_violation;
-        clock::duration duration;
+        bool enforce{false};
+        clock::duration duration{0};
+        clock::duration enforce_duration() const {
+            if (enforce) {
+                return duration;
+            } else {
+                return clock::duration::zero();
+            }
+        }
     };
 
-    quota_manager()
-      : _default_num_windows(
-        config::shard_local_cfg().default_num_windows.bind())
-      , _default_window_width(
-          config::shard_local_cfg().default_window_sec.bind())
-      , _target_tp_rate(config::shard_local_cfg().target_quota_byte_rate.bind())
-      , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
-      , _max_delay(
-          config::shard_local_cfg().max_kafka_throttle_delay_ms.bind()) {
-        _gc_timer.set_callback([this] {
-            auto full_window = _default_num_windows() * _default_window_width();
-            gc(full_window);
-        });
-    }
-
+    quota_manager();
     quota_manager(const quota_manager&) = delete;
     quota_manager& operator=(const quota_manager&) = delete;
     quota_manager(quota_manager&&) = delete;
     quota_manager& operator=(quota_manager&&) = delete;
-
     ~quota_manager();
 
     ss::future<> stop();
 
     ss::future<> start();
 
-    // record a new observation and return <previous delay, new delay>
-    throttle_delay record_tp_and_throttle(
+    // record a new observation
+    throttle_delay record_produce_tp_and_throttle(
       std::optional<std::string_view> client_id,
       uint64_t bytes,
       clock::time_point now = clock::now());
+
+    // record a new observation
+    void record_fetch_tp(
+      std::optional<std::string_view> client_id,
+      uint64_t bytes,
+      clock::time_point now = clock::now());
+
+    throttle_delay throttle_fetch_tp(
+      std::optional<std::string_view> client_id,
+      clock::time_point now = clock::now());
+
+    // Used to record new number of partitions mutations
+    // Only for use with the quotas introduced by KIP-599, namely to track
+    // partition creation and deletion events (create topics, delete topics &
+    // create partitions)
+    //
+    // NOTE: This method will be invoked on shard 0, therefore ensure that it is
+    // not called within a tight loop from another shard
+    ss::future<std::chrono::milliseconds> record_partition_mutations(
+      std::optional<std::string_view> client_id,
+      uint32_t mutations,
+      clock::time_point now = clock::now());
+
+private:
+    std::chrono::milliseconds do_record_partition_mutations(
+      std::optional<std::string_view> client_id,
+      uint32_t mutations,
+      clock::time_point now);
+
+    // throttle, return <previous delay, new delay>
+    std::chrono::milliseconds throttle(
+      std::optional<std::string_view> client_id,
+      uint32_t target_rate,
+      const clock::time_point& now,
+      rate_tracker& rate_tracker);
+
+    // Accounting for quota on per-client and per-client-group basis
+    // last_seen: used for gc keepalive
+    // delay: last calculated delay
+    // tp_rate: throughput tracking
+    // pm_rate: partition mutation quota tracking - only on home shard
+    struct client_quota {
+        clock::time_point last_seen;
+        clock::duration delay;
+        rate_tracker tp_produce_rate;
+        rate_tracker tp_fetch_rate;
+        std::optional<token_bucket_rate_tracker> pm_rate;
+    };
+    using client_quotas_t = absl::flat_hash_map<ss::sstring, client_quota>;
 
 private:
     // erase inactive tracked quotas. windows are considered inactive if they
     // have not received any updates in ten window's worth of time.
     void gc(clock::duration full_window);
 
-private:
-    // last_seen: used for gc keepalive
-    // delay: last calculated delay
-    // tp_rate: throughput tracking
-    struct quota {
-        clock::time_point last_seen;
-        clock::duration delay;
-        rate_tracker tp_rate;
-    };
+    client_quotas_t::iterator maybe_add_and_retrieve_quota(
+      const std::optional<std::string_view>&, const clock::time_point&);
+    int64_t get_client_target_produce_tp_rate(
+      const std::optional<std::string_view>& quota_id);
+    std::optional<int64_t> get_client_target_fetch_tp_rate(
+      const std::optional<std::string_view>& quota_id);
 
+private:
     config::binding<int16_t> _default_num_windows;
     config::binding<std::chrono::milliseconds> _default_window_width;
 
-    config::binding<uint32_t> _target_tp_rate;
-    absl::flat_hash_map<ss::sstring, quota> _quotas;
+    config::binding<uint32_t> _default_target_produce_tp_rate;
+    config::binding<std::optional<uint32_t>> _default_target_fetch_tp_rate;
+    config::binding<std::optional<uint32_t>> _target_partition_mutation_quota;
+    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
+      _target_produce_tp_rate_per_client_group;
+    config::binding<std::unordered_map<ss::sstring, config::client_group_quota>>
+      _target_fetch_tp_rate_per_client_group;
+
+    client_quotas_t _client_quotas;
 
     ss::timer<> _gc_timer;
     clock::duration _gc_freq;

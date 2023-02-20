@@ -15,6 +15,6 @@
 namespace kafka {
 
 using describe_configs_handler
-  = single_stage_handler<describe_configs_api, 0, 2>;
+  = single_stage_handler<describe_configs_api, 0, 4>;
 
 }

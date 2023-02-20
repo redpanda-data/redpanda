@@ -35,10 +35,10 @@ SEASTAR_THREAD_TEST_CASE(netbuf_pod) {
     src.y = 88;
     src.z = 88;
     n.set_correlation_id(42);
-    n.set_service_method_id(66);
-    reflection::async_adl<pod>{}.to(n.buffer(), std::move(src)).get();
+    n.set_service_method({"test::test", 66});
+    reflection::async_adl<pod>{}.to(n.buffer(), src).get();
     // forces the computation of the header
-    auto bufs = std::move(n).as_scattered().release().release();
+    auto bufs = std::move(n).as_scattered().get().release().release();
     auto in = make_iobuf_input_stream(iobuf(std::move(bufs)));
     const pod dst = rpc::parse_framed<pod>(in).get0();
     BOOST_REQUIRE_EQUAL(src.x, dst.x);

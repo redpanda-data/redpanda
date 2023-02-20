@@ -10,6 +10,9 @@
 
 #include "cloud_roles/aws_refresh_impl.h"
 
+#include "cloud_roles/logger.h"
+#include "cloud_roles/request_response_helpers.h"
+
 namespace cloud_roles {
 
 struct ec2_response_schema {
@@ -60,6 +63,8 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
     }
 
     http::client::request_header creds_req;
+    creds_req.insert(
+      boost::beast::http::field::host, {api_host().data(), api_host().size()});
     creds_req.method(boost::beast::http::verb::get);
     creds_req.target(
       fmt::format("/latest/meta-data/iam/security-credentials/{}", *_role));
@@ -104,6 +109,8 @@ api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
 
 ss::future<api_response> aws_refresh_impl::fetch_role_name() {
     http::client::request_header role_req;
+    role_req.insert(
+      boost::beast::http::field::host, {api_host().data(), api_host().size()});
     role_req.method(boost::beast::http::verb::get);
     role_req.target("/latest/meta-data/iam/security-credentials/");
     co_return co_await make_request(

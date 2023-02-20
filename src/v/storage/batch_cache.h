@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/record.h"
+#include "resource_mgmt/available_memory.h"
 #include "ssx/semaphore.h"
 #include "units.h"
 #include "utils/intrusive_list_helpers.h"
@@ -225,16 +226,7 @@ public:
         range_ptr _range;
     };
 
-    explicit batch_cache(const reclaim_options& opts)
-      : _reclaimer(
-        [this](reclaimer::request r) { return reclaim(r); },
-        reclaim_scope::sync)
-      , _reclaim_opts(opts)
-      , _reclaim_size(_reclaim_opts.min_size)
-      , _background_reclaimer(
-          *this, opts.min_free_memory, opts.background_reclaimer_sg) {
-        _background_reclaimer.start();
-    }
+    explicit batch_cache(const reclaim_options& opts);
 
     batch_cache(const batch_cache&) = delete;
     batch_cache& operator=(const batch_cache&) = delete;
@@ -308,6 +300,18 @@ public:
      */
     bool is_memory_reclaiming() const { return _is_reclaiming; }
 
+    /**
+     * @brief The estimated size of the cache in bytes.
+     *
+     * This is a slight underestimate of the true size of the memory used by the
+     * cache since it only counts the size of each underlying iobuf (arena) but
+     * not other overhead such as the iobuf struct itself, index structures,
+     * etc.
+     *
+     * @return size_t estimate of the in-memory size of the cache
+     */
+    size_t size_bytes() const { return _size_bytes; }
+
 private:
     friend batch_cache_test_fixture;
     struct batch_reclaiming_lock {
@@ -379,6 +383,7 @@ private:
     ss::lowres_clock::time_point _last_reclaim;
     size_t _reclaim_size;
     background_reclaimer _background_reclaimer;
+    resources::available_memory::deregister_holder _available_mem_deregister;
 
     friend std::ostream& operator<<(std::ostream&, const reclaim_options&);
     friend std::ostream& operator<<(std::ostream&, const batch_cache&);

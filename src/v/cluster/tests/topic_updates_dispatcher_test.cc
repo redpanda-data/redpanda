@@ -21,7 +21,7 @@ using namespace std::chrono_literals;
 
 struct topic_table_updates_dispatcher_fixture : topic_table_fixture {
     topic_table_updates_dispatcher_fixture()
-      : dispatcher(allocator, table, leaders) {}
+      : dispatcher(allocator, table, leaders, pb_state) {}
 
     void create_topics() {
         auto cmd_1 = make_create_topic_cmd("test_tp_1", 1, 3);

@@ -54,6 +54,11 @@
             "name": "abort_group_tx",
             "input_type": "abort_group_tx_request",
             "output_type": "abort_group_tx_reply"
+        },
+        {
+            "name": "fetch_tx",
+            "input_type": "fetch_tx_request",
+            "output_type": "fetch_tx_reply"
         }
     ]
 }

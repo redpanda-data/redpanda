@@ -10,6 +10,7 @@
 import os
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import parametrize
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -20,7 +21,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierRandomConsumer,
     KgoVerifierConsumerGroupConsumer,
 )
-from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 
@@ -38,26 +39,46 @@ class KgoVerifierBase(PreallocNodesTest):
     CONSUMER_GROUP_READERS = None
 
     def __init__(self, test_context, *args, **kwargs):
+        try:
+            extra_rp_conf = kwargs.pop('extra_rp_conf')
+        except KeyError:
+            extra_rp_conf = {}
+
+        # Enable segment size jitter as this is a stress test and does not
+        # rely on exact segment counts.
+        extra_rp_conf['log_segment_size_jitter_percent'] = 5
+
+        # Set a modest reader concurrency limit to run safely on GB-per-core
+        # test environments
+        extra_rp_conf['cloud_storage_max_readers_per_shard'] = 500
+
         super().__init__(test_context=test_context,
                          node_prealloc_count=1,
                          *args,
+                         extra_rp_conf=extra_rp_conf,
                          **kwargs)
 
         self._producer = KgoVerifierProducer(test_context, self.redpanda,
                                              self.topic, self.MSG_SIZE,
                                              self.PRODUCE_COUNT,
                                              self.preallocated_nodes)
-        self._seq_consumer = KgoVerifierSeqConsumer(test_context,
-                                                    self.redpanda, self.topic,
-                                                    self.MSG_SIZE,
-                                                    self.preallocated_nodes)
+        self._seq_consumer = KgoVerifierSeqConsumer(
+            test_context,
+            self.redpanda,
+            self.topic,
+            self.MSG_SIZE,
+            nodes=self.preallocated_nodes)
         self._rand_consumer = KgoVerifierRandomConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
             self.preallocated_nodes)
         self._cg_consumer = KgoVerifierConsumerGroupConsumer(
-            test_context, self.redpanda, self.topic, self.MSG_SIZE,
-            self.CONSUMER_GROUP_READERS, self.preallocated_nodes)
+            test_context,
+            self.redpanda,
+            self.topic,
+            self.MSG_SIZE,
+            self.CONSUMER_GROUP_READERS,
+            nodes=self.preallocated_nodes)
 
         self._consumers = [
             self._seq_consumer, self._rand_consumer, self._cg_consumer
@@ -124,9 +145,11 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
 
     def __init__(self, ctx):
         # Allow enough space for each parallel random read to be able to evict a segment
-        si_settings = SISettings(cloud_storage_cache_size=(
-            self.cloud_storage_cache_size or self.RANDOM_READ_PARALLEL *
-            self.segment_size))
+        si_settings = SISettings(
+            ctx,
+            cloud_storage_cache_size=(self.cloud_storage_cache_size
+                                      or self.RANDOM_READ_PARALLEL *
+                                      self.segment_size))
 
         super(KgoVerifierWithSiTest, self).__init__(
             test_context=ctx,
@@ -144,6 +167,7 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
                 # intervals
                 'election_timeout_ms': 5000,
                 'raft_heartbeat_interval_ms': 500,
+                'log_segment_size_jitter_percent': 5,
             },
             si_settings=si_settings)
 
@@ -151,7 +175,7 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
         rpk = RpkTool(self.redpanda)
         rpk.alter_topic_config(self.topic, 'redpanda.remote.write', 'true')
         rpk.alter_topic_config(self.topic, 'redpanda.remote.read', 'true')
-        rpk.alter_topic_config(self.topic, 'retention.bytes',
+        rpk.alter_topic_config(self.topic, 'retention.local.target.bytes',
                                str(segment_size))
 
         self._producer.start(clean=False)
@@ -162,7 +186,7 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
         objects = list(self.redpanda.get_objects_from_si())
         assert len(objects) > 0
         for o in objects:
-            self.logger.info(f"S3 object: {o.Key}, {o.ContentLength}")
+            self.logger.info(f"S3 object: {o.key}, {o.content_length}")
 
         wrote_at_least = self._producer.produce_status.acked
 
@@ -202,11 +226,15 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
 
 class KgoVerifierWithSiTestLargeSegments(KgoVerifierWithSiTest):
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    def test_si_without_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_si_without_timeboxed(self, cloud_storage_type):
         self.without_timeboxed()
 
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    def test_si_with_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_si_with_timeboxed(self, cloud_storage_type):
         self.with_timeboxed()
 
 
@@ -214,9 +242,13 @@ class KgoVerifierWithSiTestSmallSegments(KgoVerifierWithSiTest):
     segment_size = 20 * 2**20
 
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    def test_si_without_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_si_without_timeboxed(self, cloud_storage_type):
         self.without_timeboxed()
 
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    def test_si_with_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_si_with_timeboxed(self, cloud_storage_type):
         self.with_timeboxed()

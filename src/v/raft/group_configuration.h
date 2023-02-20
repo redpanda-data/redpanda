@@ -25,7 +25,8 @@ struct broker_revision {
 };
 
 static constexpr model::revision_id no_revision{};
-class vnode : public serde::envelope<vnode, serde::version<0>> {
+class vnode
+  : public serde::envelope<vnode, serde::version<0>, serde::compat_version<0>> {
 public:
     constexpr vnode() = default;
 
@@ -99,7 +100,10 @@ struct group_nodes {
 };
 
 struct configuration_update
-  : serde::envelope<configuration_update, serde::version<0>> {
+  : serde::envelope<
+      configuration_update,
+      serde::version<0>,
+      serde::compat_version<0>> {
     std::vector<vnode> replicas_to_add;
     std::vector<vnode> replicas_to_remove;
 

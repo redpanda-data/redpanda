@@ -23,128 +23,217 @@ import (
 )
 
 func TestBootstrap(t *testing.T) {
-	defaultRPCPort := config.Default().Redpanda.RPCServer.Port
-	tests := []struct {
-		name           string
-		ips            []string
-		expSeedServers []config.SeedServer
-		self           string
-		id             string
-		expectedErr    string
+	for _, test := range []struct {
+		name string
+		ips  []string
+		self string
+		id   string
+
+		cfgFile string
+
+		exp string
 	}{
 		{
-			name: "it should set the root node config for a single node",
+			name: "sets defaults with node_id",
 			id:   "1",
 			self: "192.168.34.5",
-		},
-		{
-			name: "it should fill the seed servers",
-			ips:  []string{"187.89.76.3", "192.168.34.5", "192.168.45.8"},
-			expSeedServers: []config.SeedServer{
-				{
-					Host: config.SocketAddress{
-						Address: "187.89.76.3",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "192.168.34.5",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "192.168.45.8",
-						Port:    defaultRPCPort,
-					},
-				},
-			},
-			self: "192.168.34.5",
-			id:   "1",
-		},
-		{
-			name: "it should fill the seed servers with hostnames",
-			ips:  []string{"187.89.76.3", "localhost", "redpanda.com", "test-url.net", "187.89.76.3:80"},
-			expSeedServers: []config.SeedServer{
-				{
-					Host: config.SocketAddress{
-						Address: "187.89.76.3",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "localhost",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "redpanda.com",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "test-url.net",
-						Port:    defaultRPCPort,
-					},
-				},
-				{
-					Host: config.SocketAddress{
-						Address: "187.89.76.3",
-						Port:    80,
-					},
-				},
-			},
-			self: "192.168.34.5",
-			id:   "1",
-		},
-	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+			exp: `redpanda:
+    data_directory: /var/lib/redpanda/data
+    node_id: 1
+    seed_servers: []
+    rpc_server:
+        address: 192.168.34.5
+        port: 33145
+    kafka_api:
+        - address: 192.168.34.5
+          port: 9092
+    admin:
+        - address: 192.168.34.5
+          port: 9644
+    developer_mode: true
+rpk:
+    coredump_dir: /var/lib/redpanda/coredump
+    overprovisioned: true
+pandaproxy: {}
+schema_registry: {}
+`,
+		},
+
+		{
+			name: "fill seed servers with ip and hostnames",
+			ips:  []string{"187.89.76.3", "192.168.34.5", "localhost", "192.168.45.8", "redpanda.com"},
+			self: "192.168.34.5",
+			id:   "1",
+
+			exp: `redpanda:
+    data_directory: /var/lib/redpanda/data
+    node_id: 1
+    seed_servers:
+        - host:
+            address: 187.89.76.3
+            port: 33145
+        - host:
+            address: 192.168.34.5
+            port: 33145
+        - host:
+            address: localhost
+            port: 33145
+        - host:
+            address: 192.168.45.8
+            port: 33145
+        - host:
+            address: redpanda.com
+            port: 33145
+    rpc_server:
+        address: 192.168.34.5
+        port: 33145
+    kafka_api:
+        - address: 192.168.34.5
+          port: 9092
+    admin:
+        - address: 192.168.34.5
+          port: 9644
+    developer_mode: true
+rpk:
+    coredump_dir: /var/lib/redpanda/coredump
+    overprovisioned: true
+pandaproxy: {}
+schema_registry: {}
+`,
+		},
+
+		{
+			name: "modify existing file default and preserve modifications",
+			ips:  []string{"127.0.0.1"},
+			self: "192.168.34.5",
+			id:   "2",
+
+			// rpc_server address modified, port is default
+			// kafka_api address is default, port modified
+			// admin address and port are modified
+			//
+			// node_id modified but reverted back to flag value of 2
+			cfgFile: `redpanda:
+    data_directory: /foo
+    node_id: 5
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+    rpc_server:
+        address: 127.0.0.5
+        port: 33145
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9093
+    admin:
+        - address: 127.0.03
+          port: 5677
+`,
+			exp: `redpanda:
+    data_directory: /foo
+    node_id: 2
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+    rpc_server:
+        address: 127.0.0.5
+        port: 33145
+    kafka_api:
+        - address: 192.168.34.5
+          port: 9093
+    admin:
+        - address: 127.0.03
+          port: 5677
+`,
+		},
+
+		{
+			name: "existing file with modifications 2",
+			ips:  []string{"127.0.0.1"},
+			self: "192.168.34.5",
+			id:   "3",
+
+			// rpc_server custom port, default host
+			// kafka_api modified, 0.0.0.0 kept because multiple of elements
+			// admin api missing, added as default
+			cfgFile: `redpanda:
+    data_directory: /foo
+    node_id: 5
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+    rpc_server:
+        address: 0.0.0.0
+        port: 33333
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9093
+        - address: 127.0.03
+          port: 5677
+`,
+			exp: `redpanda:
+    data_directory: /foo
+    node_id: 3
+    seed_servers:
+        - host:
+            address: 127.0.0.1
+            port: 33145
+    rpc_server:
+        address: 192.168.34.5
+        port: 33333
+    kafka_api:
+        - address: 0.0.0.0
+          port: 9093
+        - address: 127.0.03
+          port: 5677
+    admin:
+        - address: 192.168.34.5
+          port: 9644
+`,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
+
+			if test.cfgFile != "" {
+				err := afero.WriteFile(fs, config.DefaultPath, []byte(test.cfgFile), 0o644)
+				if err != nil {
+					t.Errorf("unexpected failure writing passed config file: %v", err)
+					return
+				}
+			}
+
 			c := bootstrap(fs)
+
 			var args []string
-			if len(tt.ips) != 0 {
-				args = append(
-					args,
-					"--ips",
-					strings.Join(tt.ips, ","),
-				)
+			if len(test.ips) != 0 {
+				args = append(args, "--ips", strings.Join(test.ips, ","))
 			}
-			if tt.self != "" {
-				args = append(args, "--self", tt.self)
+			if test.self != "" {
+				args = append(args, "--self", test.self)
 			}
-			if tt.id != "" {
-				args = append(args, "--id", tt.id)
+			if test.id != "" {
+				args = append(args, "--id", test.id)
 			}
 			c.SetArgs(args)
-			err := c.Execute()
-			if tt.expectedErr != "" {
-				require.EqualError(t, err, tt.expectedErr)
-				return
-			}
-			require.NoError(t, err)
-			_, err = fs.Stat(config.DefaultPath)
-			require.NoError(t, err)
-			conf, err := new(config.Params).Load(fs)
-			require.NoError(t, err)
 
-			require.Equal(t, tt.self, conf.Redpanda.RPCServer.Address)
-			require.Equal(t, tt.self, conf.Redpanda.KafkaAPI[0].Address)
-			require.Equal(t, tt.self, conf.Redpanda.AdminAPI[0].Address)
-			if len(tt.ips) == 1 {
-				require.Equal(
-					t,
-					[]*config.SeedServer{},
-					conf.Redpanda.SeedServers,
-				)
+			if err := c.Execute(); err != nil {
+				t.Errorf("unexpected err: %v", err)
 				return
 			}
-			require.ElementsMatch(t, tt.expSeedServers, conf.Redpanda.SeedServers)
+
+			file, err := afero.ReadFile(fs, config.DefaultPath)
+			if err != nil {
+				t.Errorf("unexpected failure reading config file: %v", err)
+				return
+			}
+			if got := string(file); got != test.exp {
+				t.Errorf("got file != exp file:\ngot:\n%s\nexp:\n%s\n\n", got, test.exp)
+			}
 		})
 	}
 }
@@ -159,7 +248,7 @@ func TestInitNode(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			c := config.Default()
+			c := config.DevDefault()
 			if test.prevID != "" {
 				c.NodeUUID = test.prevID
 			}
@@ -198,7 +287,6 @@ func TestSetCommand(t *testing.T) {
 			name: "set without config file on disk",
 			exp: `redpanda:
     data_directory: /var/lib/redpanda/data
-    node_id: 0
     rack: redpanda-rack
     seed_servers: []
     rpc_server:
@@ -223,7 +311,6 @@ schema_registry: {}
 			name: "set with loaded config",
 			cfgFile: `redpanda:
     data_directory: data/dir
-    node_id: 0
     rack: redpanda-rack
     seed_servers: []
     rpc_server:
@@ -242,7 +329,6 @@ rpk:
 `,
 			exp: `redpanda:
     data_directory: data/dir
-    node_id: 0
     rack: redpanda-rack
     seed_servers: []
     rpc_server:

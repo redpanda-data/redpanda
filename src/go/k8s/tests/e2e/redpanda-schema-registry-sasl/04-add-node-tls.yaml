@@ -1,0 +1,11 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: schema-registry
+spec:
+  configuration:
+    schemaRegistry:
+      port: 8081
+      authenticationMethod: http_basic
+      tls:
+        enabled: true

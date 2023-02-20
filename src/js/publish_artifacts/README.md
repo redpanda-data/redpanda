@@ -1,4 +1,4 @@
-# vectorized wasm-api
+# redpanda wasm-api
 
 Redpanda coprocessing client library for nodejs
 
@@ -9,7 +9,7 @@ Redpanda coprocessing client library for nodejs
 ```
 const wasmJs = const {
   SimpleTransform,
-} = require("@vectorizedio/wasm-api");
+} = require("@redpanda-data/wasm-api");
 const transform = new SimpleTransform();
 ```
 

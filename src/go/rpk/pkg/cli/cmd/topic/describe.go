@@ -188,18 +188,11 @@ partitions section. By default, the summary and configs sections are printed.
 }
 
 // We optionally include the following columns:
-//   - epoch, if any leader epoch is non-negative
 //   - offline-replicas, if any are offline
 //   - load-error, if metadata indicates load errors any partitions
 //   - last-stable-offset, if it is ever not equal to the high watermark (transactions)
-func getDescribeUsed(
-	partitions []kmsg.MetadataResponseTopicPartition,
-	offsets []startStableEndOffset,
-) (useEpoch, useOffline, useErr, useStable bool) {
+func getDescribeUsed(partitions []kmsg.MetadataResponseTopicPartition, offsets []startStableEndOffset) (useOffline, useErr, useStable bool) {
 	for _, p := range partitions {
-		if p.LeaderEpoch != -1 {
-			useEpoch = true
-		}
 		if len(p.OfflineReplicas) > 0 {
 			useOffline = true
 		}
@@ -219,11 +212,8 @@ func describePartitionsHeaders(
 	partitions []kmsg.MetadataResponseTopicPartition,
 	offsets []startStableEndOffset,
 ) []string {
-	epoch, offline, err, stable := getDescribeUsed(partitions, offsets)
-	headers := []string{"partition", "leader"}
-	if epoch {
-		headers = append(headers, "epoch")
-	}
+	offline, err, stable := getDescribeUsed(partitions, offsets)
+	headers := []string{"partition", "leader", "epoch"}
 	headers = append(headers, "replicas") // TODO add isr see #1928
 	if offline {
 		headers = append(headers, "offline-replicas")
@@ -247,13 +237,10 @@ func describePartitionsRows(
 		return partitions[i].Partition < partitions[j].Partition
 	})
 
-	epoch, offline, err, stable := getDescribeUsed(partitions, offsets)
+	offline, err, stable := getDescribeUsed(partitions, offsets)
 	var rows [][]interface{}
 	for _, p := range partitions {
-		row := []interface{}{p.Partition, p.Leader}
-		if epoch {
-			row = append(row, p.LeaderEpoch)
-		}
+		row := []interface{}{p.Partition, p.Leader, p.LeaderEpoch}
 		row = append(row, int32s(p.Replicas).sort())
 		if offline {
 			row = append(row, int32s(p.OfflineReplicas).sort())

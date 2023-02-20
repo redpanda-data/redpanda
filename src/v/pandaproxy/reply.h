@@ -104,13 +104,16 @@ inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
     } catch (const schema_registry::exception_base& e) {
         return errored_body(e.code(), e.message());
     } catch (const seastar::httpd::base_exception& e) {
-        return errored_body(reply_error_code::kafka_bad_request, e.what());
+        return errored_body(make_error_condition(e.status()), e.what());
     } catch (...) {
-        vlog(plog.error, "exception_reply: {}", std::current_exception());
-        auto ise = make_error_condition(
-          reply_error_code::internal_server_error);
-        return errored_body(
-          reply_error_code::internal_server_error, ise.message());
+        auto ise = reply_error_code::internal_server_error;
+        auto eb = errored_body(ise, make_error_condition(ise).message());
+        vlog(
+          plog.error,
+          "exception_reply: {}, exception: {}",
+          eb->_content,
+          std::current_exception());
+        return eb;
     }
 }
 

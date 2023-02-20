@@ -38,10 +38,16 @@ struct base_fixture {
     base_fixture()
       : _test_dir(
         fmt::format("test_{}", random_generators::gen_alphanum_string(6))) {
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
         _api
           .start(
             [this]() { return make_kv_cfg(); },
-            [this]() { return make_log_cfg(); })
+            [this]() { return make_log_cfg(); },
+            std::ref(_feature_table))
           .get();
         _api.invoke_on_all(&storage::api::start).get();
     }
@@ -74,9 +80,13 @@ struct base_fixture {
     model::ntp test_ntp = model::ntp(
       model::ns("test"), model::topic("tp"), model::partition_id(0));
     ss::sstring _test_dir;
+    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<storage::api> _api;
 
-    ~base_fixture() { _api.stop().get(); }
+    ~base_fixture() {
+        _api.stop().get();
+        _feature_table.stop().get();
+    }
 };
 
 void validate_translation(
@@ -638,16 +648,26 @@ FIXTURE_TEST(test_moving_persistent_state, base_fixture) {
             raft::group_id(0),
             ntp,
             api.local()};
-          co_await remote_ot.start(
-            raft::offset_translator::must_reset::no,
-            raft::offset_translator::bootstrap_state{});
-
-          validate_translation(remote_ot, model::offset(0), model::offset(0));
-          validate_translation(remote_ot, model::offset(1), model::offset(1));
-          validate_translation(remote_ot, model::offset(7), model::offset(2));
-          validate_translation(remote_ot, model::offset(9), model::offset(3));
-          validate_translation(remote_ot, model::offset(10), model::offset(4));
-          validate_translation(remote_ot, model::offset(11), model::offset(5));
+          return ss::do_with(std::move(remote_ot), [](auto& remote_ot) {
+              return remote_ot
+                .start(
+                  raft::offset_translator::must_reset::no,
+                  raft::offset_translator::bootstrap_state{})
+                .then([&remote_ot] {
+                    validate_translation(
+                      remote_ot, model::offset(0), model::offset(0));
+                    validate_translation(
+                      remote_ot, model::offset(1), model::offset(1));
+                    validate_translation(
+                      remote_ot, model::offset(7), model::offset(2));
+                    validate_translation(
+                      remote_ot, model::offset(9), model::offset(3));
+                    validate_translation(
+                      remote_ot, model::offset(10), model::offset(4));
+                    validate_translation(
+                      remote_ot, model::offset(11), model::offset(5));
+                });
+          });
       })
       .get();
 

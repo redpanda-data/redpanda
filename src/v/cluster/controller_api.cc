@@ -10,10 +10,13 @@
  */
 #include "cluster/controller_api.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
+#include "cluster/health_monitor_frontend.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
@@ -24,6 +27,8 @@
 #include "rpc/connection_cache.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -36,12 +41,16 @@ controller_api::controller_api(
   ss::sharded<topic_table>& topics,
   ss::sharded<shard_table>& shard_table,
   ss::sharded<rpc::connection_cache>& cache,
+  ss::sharded<health_monitor_frontend>& health_monitor,
+  ss::sharded<members_table>& members,
   ss::sharded<ss::abort_source>& as)
   : _self(self)
   , _backend(backend)
   , _topics(topics)
   , _shard_table(shard_table)
   , _connections(cache)
+  , _health_monitor(health_monitor)
+  , _members(members)
   , _as(as) {}
 
 ss::future<std::vector<ntp_reconciliation_state>>
@@ -74,16 +83,17 @@ controller_api::all_reconciliations_done(std::vector<model::ntp> ntps) {
         co_await ss::parallel_for_each(
           ntps.begin() + i,
           ntps.begin() + i + this_batch,
-          [this, reduced](const model::ntp& ntp) -> ss::future<> {
-              auto status = co_await get_reconciliation_state(ntp);
-              if (
-                status.cluster_errc() != errc::success
-                && reduced->err == errc::success) {
-                  reduced->err = status.cluster_errc();
-              }
-              if (status.status() != reconciliation_status::done) {
-                  reduced->complete = false;
-              }
+          [this, reduced](const model::ntp& ntp) {
+              return get_reconciliation_state(ntp).then([reduced](auto status) {
+                  if (
+                    status.cluster_errc() != errc::success
+                    && reduced->err == errc::success) {
+                      reduced->err = status.cluster_errc();
+                  }
+                  if (status.status() != reconciliation_status::done) {
+                      reduced->complete = false;
+                  }
+              });
           });
 
         // Return as soon as we have a conclusive result, avoid
@@ -130,7 +140,7 @@ controller_api::get_reconciliation_state(model::topic_namespace_view tp_ns) {
     co_return co_await get_reconciliation_state(std::move(ntps));
 }
 
-ss::future<std::vector<topic_table_delta>>
+ss::future<std::vector<controller_backend::delta_metadata>>
 controller_api::get_remote_core_deltas(model::ntp ntp, ss::shard_id shard) {
     return _backend.invoke_on(
       shard, [ntp = std::move(ntp)](controller_backend& backend) {
@@ -161,11 +171,11 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
           local_deltas.begin(),
           local_deltas.end(),
           std::back_inserter(ops),
-          [shard](topic_table_delta& delta) {
+          [shard](controller_backend::delta_metadata& m) {
               return backend_operation{
                 .source_shard = shard,
-                .p_as = std::move(delta.new_assignment),
-                .type = delta.type,
+                .p_as = std::move(m.delta.new_assignment),
+                .type = m.delta.type,
               };
           });
     }
@@ -306,4 +316,135 @@ ss::future<result<bool>> controller_api::are_ntps_ready(
         return !is_ready_result.has_error() && is_ready_result.value();
     });
 }
+
+ss::future<result<std::vector<partition_reconfiguration_state>>>
+controller_api::get_partitions_reconfiguration_state(
+  std::vector<model::ntp> partitions,
+  model::timeout_clock::time_point timeout) {
+    auto& updates_in_progress = _topics.local().in_progress_updates();
+
+    partitions_filter partitions_filter;
+    absl::node_hash_map<model::ntp, partition_reconfiguration_state> states;
+    for (auto& ntp : partitions) {
+        auto progress_it = updates_in_progress.find(ntp);
+        if (progress_it == updates_in_progress.end()) {
+            continue;
+        }
+        auto p_as = _topics.local().get_partition_assignment(ntp);
+        if (!p_as) {
+            continue;
+        }
+        partition_reconfiguration_state state;
+        state.ntp = ntp;
+
+        state.current_assignment = std::move(p_as->replicas);
+        state.previous_assignment = progress_it->second.get_previous_replicas();
+        state.state = progress_it->second.get_state();
+        states.emplace(ntp, std::move(state));
+
+        auto [tp_it, _] = partitions_filter.namespaces.try_emplace(
+          ntp.ns, partitions_filter::topic_map_t{});
+
+        auto [p_it, inserted] = tp_it->second.try_emplace(
+          ntp.tp.topic, partitions_filter::partitions_set_t{});
+
+        p_it->second.emplace(ntp.tp.partition);
+    }
+
+    auto result = co_await _health_monitor.local().get_cluster_health(
+      cluster_report_filter{
+        .node_report_filter
+        = node_report_filter{.ntp_filters = std::move(partitions_filter)}},
+      force_refresh::no,
+      timeout);
+
+    if (!result) {
+        co_return result.error();
+    }
+
+    auto& report = result.value();
+
+    for (auto& node_report : report.node_reports) {
+        for (auto& tp : node_report.topics) {
+            for (auto& p : tp.partitions) {
+                model::ntp ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id);
+                auto it = states.find(ntp);
+                if (it == states.end()) {
+                    continue;
+                }
+
+                if (p.leader_id == node_report.id) {
+                    it->second.current_partition_size = p.size_bytes;
+                }
+                const auto moving_to = moving_to_node(
+                  node_report.id,
+                  it->second.previous_assignment,
+                  it->second.current_assignment);
+
+                // node was added to replica set
+                if (moving_to) {
+                    it->second.already_transferred_bytes.emplace_back(
+                      replica_bytes{
+                        .node = node_report.id, .bytes = p.size_bytes});
+                }
+
+                co_await ss::maybe_yield();
+            }
+        }
+    }
+    std::vector<partition_reconfiguration_state> ret;
+    ret.reserve(states.size());
+    for (auto& [_, state] : states) {
+        ret.push_back(std::move(state));
+    }
+    co_return ret;
+}
+
+ss::future<result<node_decommission_progress>>
+controller_api::get_node_decommission_progress(
+  model::node_id id, model::timeout_clock::time_point timeout) {
+    node_decommission_progress ret{};
+    auto node = _members.local().get_node_metadata_ref(id);
+
+    if (!node) {
+        auto removed_node = _members.local().get_removed_node_metadata_ref(id);
+        // node was removed, decommissioning is done
+        if (removed_node) {
+            ret.finished = true;
+            co_return ret;
+        }
+        co_return errc::node_does_not_exists;
+    }
+
+    if (
+      node.value().get().state.get_membership_state()
+      != model::membership_state::draining) {
+        co_return errc::invalid_node_operation;
+    }
+
+    ret.replicas_left = _topics.local().get_node_partition_count(id);
+    auto moving_from_node = _topics.local().ntps_moving_from_node(id);
+
+    // replicas that are moving from decommissioned node are still present on a
+    // node but their metadata is update, add them explicitly
+    ret.replicas_left += moving_from_node.size();
+    auto states = co_await get_partitions_reconfiguration_state(
+      std::move(moving_from_node), timeout);
+
+    if (states) {
+        ret.current_reconfigurations = std::move(states.value());
+    }
+
+    co_return ret;
+}
+
+std::optional<ss::shard_id>
+controller_api::shard_for(const raft::group_id& group) const {
+    if (_shard_table.local().contains(group)) {
+        return _shard_table.local().shard_for(group);
+    } else {
+        return std::nullopt;
+    }
+}
+
 } // namespace cluster

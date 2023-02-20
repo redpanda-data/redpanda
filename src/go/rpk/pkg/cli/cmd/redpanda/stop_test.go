@@ -55,7 +55,7 @@ func TestStopCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			conf := config.Default()
+			conf := config.DevDefault()
 			command := baseCommand
 			// trap the signals we want to ignore, to check that the
 			// signal escalation is working.

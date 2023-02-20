@@ -12,10 +12,10 @@
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -32,9 +32,9 @@ members_frontend::members_frontend(
   ss::sharded<controller_stm>& stm,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
-  ss::sharded<feature_table>& feature_table,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as)
-  : _self(config::node().node_id())
+  : _self(*config::node().node_id())
   , _node_op_timeout(
       config::shard_local_cfg().node_management_operation_timeout_ms)
   , _stm(stm)
@@ -134,7 +134,8 @@ members_frontend::recommission_node(model::node_id id) {
 
 ss::future<std::error_code>
 members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
-    if (!_feature_table.local().is_active(cluster::feature::maintenance_mode)) {
+    if (!_feature_table.local().is_active(
+          features::feature::maintenance_mode)) {
         vlog(
           clusterlog.info,
           "Maintenance mode feature is not active (upgrade in progress?)");

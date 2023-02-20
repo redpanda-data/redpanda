@@ -33,29 +33,6 @@ static constexpr size_t max_retry_chain_depth = 8;
 static constexpr uint16_t max_retry_count = std::numeric_limits<uint16_t>::max()
                                             - 1;
 
-retry_chain_node::retry_chain_node()
-  : _id(fiber_count++) // generate new head id
-  , _backoff{0}
-  , _deadline{ss::lowres_clock::time_point::min()}
-  , _parent() {}
-
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::time_point deadline,
-  ss::lowres_clock::duration backoff)
-  : _id(fiber_count++) // generate new head id
-  , _backoff{std::chrono::duration_cast<std::chrono::milliseconds>(backoff)}
-  , _deadline{deadline}
-  , _parent() {
-    vassert(
-      backoff <= milliseconds_uint16_t::max(),
-      "Initial backoff {} is too large",
-      backoff);
-}
-
-retry_chain_node::retry_chain_node(
-  ss::lowres_clock::duration timeout, ss::lowres_clock::duration backoff)
-  : retry_chain_node(ss::lowres_clock::now() + timeout, backoff) {}
-
 retry_chain_node::retry_chain_node(ss::abort_source& as)
   : _id(fiber_count++) // generate new head id
   , _backoff{0}
@@ -164,7 +141,11 @@ const ss::abort_source* retry_chain_node::get_abort_source() const {
 }
 
 retry_chain_node::~retry_chain_node() {
-    vassert(_num_children == 0, "Fiber stopped before its dependencies");
+    vassert(
+      _num_children == 0,
+      "{} Fiber stopped before its dependencies, num children {}",
+      (*this)(),
+      _num_children);
     if (auto parent = get_parent(); parent != nullptr) {
         parent->rem_child();
     }
@@ -178,25 +159,38 @@ ss::sstring retry_chain_node::operator()() const {
     return ss::sstring(buf.data(), buf.size());
 }
 
-retry_permit retry_chain_node::retry(retry_strategy st) {
-    auto as = find_abort_source();
-    if (as) {
-        as->check();
+const retry_chain_node* retry_chain_node::get_root() const {
+    auto it = this;
+    auto root = it;
+    while (it) {
+        root = it;
+        it = it->get_parent();
     }
+    return root;
+}
+
+bool retry_chain_node::same_root(const retry_chain_node& other) const {
+    return get_root() == other.get_root();
+}
+
+retry_permit retry_chain_node::retry(retry_strategy st) {
+    auto& as = root_abort_source();
+    as.check();
+
     auto now = ss::lowres_clock::now();
     if (
       _deadline < now || _deadline == ss::lowres_clock::time_point::min()
       || _retry == max_retry_count) {
         // deadline is not set or _retry counter is about to overflow (which
         // will lead to 0ms backoff time) retries are not allowed
-        return {.is_allowed = false, .abort_source = as, .delay = 0ms};
+        return {.is_allowed = false, .abort_source = &as, .delay = 0ms};
     }
     auto required_delay = st == retry_strategy::backoff ? get_backoff()
                                                         : get_poll_interval();
     _retry++;
     return {
       .is_allowed = (now + required_delay) < _deadline,
-      .abort_source = as,
+      .abort_source = &as,
       .delay = required_delay};
 }
 
@@ -300,14 +294,19 @@ void retry_chain_node::check_abort() const {
     }
 }
 
-ss::abort_source* retry_chain_node::find_abort_source() {
+ss::abort_source& retry_chain_node::root_abort_source() {
     auto it = this;
     auto root = it;
     while (it) {
         root = it;
         it = it->get_parent();
     }
-    return root->get_abort_source();
+    auto as_ptr = root->get_abort_source();
+
+    // This should never happen: our destructor asserts that all children
+    // are destroyed before the parent.
+    vassert(as_ptr != nullptr, "Root of retry_chain_node has no abort source!");
+    return *as_ptr;
 }
 
 void retry_chain_logger::do_log(

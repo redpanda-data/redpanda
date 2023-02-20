@@ -1,8 +1,18 @@
+/*
+ * Copyright 2022 Redpanda Data, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
+ */
 #include "cloud_storage/tx_range_manifest.h"
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
 #include "json/istreamwrapper.h"
@@ -77,13 +87,19 @@ void tx_range_manifest::update(const rapidjson::Document& doc) {
     _ranges.shrink_to_fit();
 }
 
-serialized_json_stream tx_range_manifest::serialize() const {
+ss::future<serialized_json_stream> tx_range_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
     serialize(os);
+    if (!os.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "could not serialize tx range manifest {}",
+          get_manifest_path()));
+    }
     size_t size_bytes = serialized.size_bytes();
-    return {
+    co_return serialized_json_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }

@@ -22,9 +22,9 @@ spec:
           args:
             - >
               url=http://centralized-configuration-0.centralized-configuration.$NAMESPACE.svc.cluster.local:9644/v1/config
-              res=$(curl --silent -L $url | grep -o '\"append_chunk_size\":[^,}]*' | grep -o '[^:]*$') &&
+              res=$(curl --silent -L $url | grep -o '\"aggregate_metrics\":[^,}]*' | grep -o '[^:]*$') &&
               echo $res > /dev/termination-log &&
-              if [[ "$res" != "40960" ]]; then
+              if [[ "$res" != "true" ]]; then
                 exit 1;
               fi
       restartPolicy: Never

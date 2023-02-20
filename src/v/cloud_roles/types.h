@@ -26,6 +26,8 @@ namespace cloud_roles {
 static constexpr auto retryable_system_error_codes = std::to_array(
   {ECONNREFUSED, ENETUNREACH, ETIMEDOUT, ECONNRESET, EPIPE});
 
+bool is_retryable(const std::system_error& ec);
+
 static constexpr auto retryable_http_status = std::to_array({
   boost::beast::http::status::request_timeout,
   boost::beast::http::status::gateway_timeout,
@@ -35,6 +37,8 @@ static constexpr auto retryable_http_status = std::to_array({
   boost::beast::http::status::network_connect_timeout_error,
 });
 
+bool is_retryable(boost::beast::http::status status);
+
 enum class api_request_error_kind { failed_abort, failed_retryable };
 
 std::ostream& operator<<(std::ostream& os, api_request_error_kind kind);
@@ -43,6 +47,12 @@ struct api_request_error {
     ss::sstring reason;
     api_request_error_kind error_kind;
 };
+
+api_request_error make_abort_error(const std::exception& ex);
+api_request_error make_abort_error(ss::sstring reason);
+
+api_request_error make_retryable_error(const std::exception& ex);
+api_request_error make_retryable_error(ss::sstring reason);
 
 std::ostream&
 operator<<(std::ostream& os, const api_request_error& request_error);
@@ -75,6 +85,7 @@ using public_key_str = named_type<ss::sstring, struct s3_public_key_str>;
 using private_key_str = named_type<ss::sstring, struct s3_private_key_str>;
 using timestamp = std::chrono::time_point<std::chrono::system_clock>;
 using s3_session_token = named_type<ss::sstring, struct s3_session_token_str>;
+using storage_account = named_type<ss::sstring, struct storage_account_tag>;
 
 struct aws_credentials {
     public_key_str access_key_id;
@@ -83,9 +94,15 @@ struct aws_credentials {
     aws_region_name region;
 };
 
+struct abs_credentials {
+    storage_account storage_account;
+    private_key_str shared_key;
+};
+
 std::ostream& operator<<(std::ostream& os, const aws_credentials& ac);
 
-using credentials = std::variant<aws_credentials, gcp_credentials>;
+using credentials
+  = std::variant<aws_credentials, gcp_credentials, abs_credentials>;
 
 std::ostream& operator<<(std::ostream& os, const credentials& c);
 

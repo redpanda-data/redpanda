@@ -93,7 +93,8 @@ func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
 		conf.Rpk.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
 	}
 	if flags.Changed(nodeIDFlag) {
-		conf.Redpanda.ID, _ = flags.GetInt(nodeIDFlag)
+		conf.Redpanda.ID = new(int)
+		*conf.Redpanda.ID, _ = flags.GetInt(nodeIDFlag)
 	}
 }
 
@@ -228,7 +229,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 					",",
 				),
 			)
-			proxyAPI, err := parseNamedAddresses(
+			proxyAPI, err := parseNamedAuthNAddresses(
 				proxyAddr,
 				config.DefaultProxyPort,
 			)
@@ -237,7 +238,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 			if len(proxyAPI) > 0 {
 				if cfg.Pandaproxy == nil {
-					cfg.Pandaproxy = config.Default().Pandaproxy
+					cfg.Pandaproxy = config.DevDefault().Pandaproxy
 				}
 				cfg.Pandaproxy.PandaproxyAPI = proxyAPI
 			}
@@ -249,7 +250,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 					",",
 				),
 			)
-			schemaRegAPI, err := parseNamedAddresses(
+			schemaRegAPI, err := parseNamedAuthNAddresses(
 				schemaRegAddr,
 				config.DefaultSchemaRegPort,
 			)
@@ -258,7 +259,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			}
 			if len(schemaRegAPI) > 0 {
 				if cfg.SchemaRegistry == nil {
-					cfg.SchemaRegistry = config.Default().SchemaRegistry
+					cfg.SchemaRegistry = config.DevDefault().SchemaRegistry
 				}
 				cfg.SchemaRegistry.SchemaRegistryAPI = schemaRegAPI
 			}
@@ -269,7 +270,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			)
 			rpcServer, err := parseAddress(
 				rpcAddr,
-				config.Default().Redpanda.RPCServer.Port,
+				config.DevDefault().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
 				return err
@@ -311,9 +312,9 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if advProxyAPI != nil {
+			if len(advProxyAPI) > 0 {
 				if cfg.Pandaproxy == nil {
-					cfg.Pandaproxy = config.Default().Pandaproxy
+					cfg.Pandaproxy = config.DevDefault().Pandaproxy
 				}
 				cfg.Pandaproxy.AdvertisedPandaproxyAPI = advProxyAPI
 			}
@@ -324,7 +325,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			)
 			advRPCApi, err := parseAddress(
 				advertisedRPC,
-				config.Default().Redpanda.RPCServer.Port,
+				config.DevDefault().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
 				return err
@@ -343,13 +344,14 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 				sFlags,
 				cmd.Flags(),
 				!prestartCfg.checkEnabled,
+				resolveWellKnownIo,
 			)
 			if err != nil {
 				return err
 			}
 
 			if cfg.Redpanda.Directory == "" {
-				cfg.Redpanda.Directory = config.Default().Redpanda.Directory
+				cfg.Redpanda.Directory = config.DevDefault().Redpanda.Directory
 			}
 
 			err = prestart(fs, rpArgs, cfg, prestartCfg, timeout)
@@ -377,10 +379,9 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	command.Flags().IntVar(
 		&nodeID,
 		nodeIDFlag,
-		0,
-		"The node ID. Must be an integer and must be unique"+
-			" within a cluster",
-	)
+		-1,
+		"The node ID. Must be an integer and must be unique within a cluster. If unset, Redpanda will assign one automatically")
+	command.Flags().MarkHidden(nodeIDFlag)
 	command.Flags().StringSliceVarP(
 		&seeds,
 		"seeds",
@@ -551,6 +552,7 @@ func buildRedpandaFlags(
 	sFlags seastarFlags,
 	flags *pflag.FlagSet,
 	skipChecks bool,
+	ioResolver func(*config.Config, bool) (*iotune.IoProperties, error),
 ) (*rp.RedpandaArgs, error) {
 	wellKnownIOSet := conf.Rpk.WellKnownIo != ""
 	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
@@ -562,32 +564,38 @@ func buildRedpandaFlags(
 		)
 	}
 
+	// We want to preserve the IOProps flags in case we find them either by
+	// finding the file in the default location or by resolving to a well known
+	// IO.
+	preserve := make(map[string]bool, 2)
 	if !ioPropsSet {
 		// If --io-properties-file and --io-properties weren't set, try
 		// finding an IO props file in the default location.
-		sFlags.ioPropertiesFile = rp.GetIOConfigPath(
-			filepath.Dir(conf.FileLocation()),
-		)
+		sFlags.ioPropertiesFile = rp.GetIOConfigPath(filepath.Dir(conf.FileLocation()))
+		preserve[ioPropertiesFileFlag] = true
+
 		if exists, _ := afero.Exists(fs, sFlags.ioPropertiesFile); !exists {
 			sFlags.ioPropertiesFile = ""
-		}
-		// Otherwise, try to deduce the IO props.
-		if sFlags.ioPropertiesFile == "" {
-			ioProps, err := resolveWellKnownIo(conf, skipChecks)
+			preserve[ioPropertiesFileFlag] = false
+
+			// If the file is not located in the default location either, we try
+			// to deduce the IO props.
+			ioProps, err := ioResolver(conf, skipChecks)
 			if err != nil {
 				log.Warn(err)
 			} else if ioProps != nil {
-				yaml, err := iotune.ToYaml(*ioProps)
+				json, err := iotune.ToJSON(*ioProps)
 				if err != nil {
 					return nil, err
 				}
-				sFlags.ioProperties = fmt.Sprintf("'%s'", yaml)
+				sFlags.ioProperties = json
+				preserve[ioPropertiesFlag] = true
 			}
 		}
 	}
 	flagsMap := flagsMap(sFlags)
 	for flag := range flagsMap {
-		if !flags.Changed(flag) {
+		if !flags.Changed(flag) && !preserve[flag] {
 			delete(flagsMap, flag)
 		}
 	}
@@ -599,12 +607,12 @@ func buildRedpandaFlags(
 	for n, v := range flagsMap {
 		if _, alreadyPresent := finalFlags[n]; alreadyPresent {
 			return nil, fmt.Errorf(
-				"Configuration conflict. Flag '--%s'"+
+				"configuration conflict. Flag '--%s'"+
 					" is also present in"+
 					" 'rpk.additional_start_flags' in"+
 					" configuration file '%s'. Please"+
 					" remove it and pass '--%s' directly"+
-					" to `rpk start`.",
+					" to `rpk start`",
 				n,
 				conf.FileLocation(),
 				n,
@@ -845,7 +853,7 @@ func parseFlags(flags []string) map[string]string {
 
 func parseSeeds(seeds []string) ([]config.SeedServer, error) {
 	seedServers := []config.SeedServer{}
-	defaultPort := config.Default().Redpanda.RPCServer.Port
+	defaultPort := config.DevDefault().Redpanda.RPCServer.Port
 	for _, s := range seeds {
 		addr, err := parseAddress(s, defaultPort)
 		if err != nil {
@@ -1042,6 +1050,9 @@ func setContainerModeCfgFields(cfg *config.Config) {
 	cfg.Redpanda.Other["group_topic_partitions"] = 3
 	cfg.Redpanda.Other["storage_min_free_bytes"] = 10485760
 	cfg.Redpanda.Other["topic_partitions_per_shard"] = 1000
+	cfg.Redpanda.Other["fetch_reads_debounce_timeout"] = 10
+	cfg.Redpanda.Other["group_initial_rebalance_delay"] = 0
+	cfg.Redpanda.Other["log_segment_size_min"] = 1
 }
 
 func getOrFindInstallDir(fs afero.Fs, installDir string) (string, error) {
@@ -1069,6 +1080,9 @@ environments:
         * group_topic_partitions: 3
         * storage_min_free_bytes: 10485760 (10MiB)
         * topic_partitions_per_shard: 1000
+        * fetch_reads_debounce_timeout: 10
+        * group_initial_rebalance_delay: 0
+        * log_segment_size_min: 1
 
 After redpanda starts you can modify the cluster properties using:
     rpk config set <key> <value>`

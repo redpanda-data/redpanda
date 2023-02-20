@@ -37,14 +37,16 @@ PERF_TEST_F(partition_allocator_fixture, deallocation_3) {
     std::vector<model::broker_shard> replicas;
     {
         auto vals = std::move(allocator.allocate(std::move(req)).value());
-        replicas = vals.get_assignments().front().replicas;
+        replicas = vals->get_assignments().front().replicas;
         allocator.update_allocation_state(
-          vals.get_assignments().front().replicas,
-          vals.get_assignments().front().group);
+          vals->get_assignments().front().replicas,
+          vals->get_assignments().front().group,
+          cluster::partition_allocation_domains::common);
     }
     perf_tests::do_not_optimize(replicas);
     perf_tests::start_measuring_time();
-    allocator.deallocate(replicas);
+    allocator.deallocate(
+      replicas, cluster::partition_allocation_domains::common);
     perf_tests::stop_measuring_time();
 }
 PERF_TEST_F(partition_allocator_fixture, recovery) {
@@ -62,6 +64,8 @@ PERF_TEST_F(partition_allocator_fixture, recovery) {
 
     perf_tests::start_measuring_time();
     allocator.update_allocation_state(
-      replicas, raft::group_id(replicas.size() / 3));
+      replicas,
+      raft::group_id(replicas.size() / 3),
+      cluster::partition_allocation_domains::common);
     perf_tests::stop_measuring_time();
 }

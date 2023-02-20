@@ -22,7 +22,7 @@
 #include "units.h"
 
 struct partition_allocator_fixture {
-    static constexpr uint32_t partitions_per_shard = 7000;
+    static constexpr uint32_t partitions_per_shard = 1000;
     static constexpr uint32_t partitions_reserve_shard0 = 2;
 
     partition_allocator_fixture()
@@ -47,7 +47,6 @@ struct partition_allocator_fixture {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           model::node_id(id),
           core_count,
-          absl::node_hash_map<ss::sstring, ss::sstring>{},
           std::nullopt,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
           config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
@@ -57,7 +56,6 @@ struct partition_allocator_fixture {
         allocator.register_node(std::make_unique<cluster::allocation_node>(
           model::node_id(id),
           core_count,
-          absl::node_hash_map<ss::sstring, ss::sstring>{},
           std::move(rack),
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
           config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
@@ -67,8 +65,11 @@ struct partition_allocator_fixture {
         auto units = allocator.allocate(
           make_allocation_request(max_capacity(), 1));
 
-        for (auto& pas : units.value().get_assignments()) {
-            allocator.state().apply_update(pas.replicas, pas.group);
+        for (auto& pas : units.value()->get_assignments()) {
+            allocator.state().apply_update(
+              pas.replicas,
+              pas.group,
+              cluster::partition_allocation_domains::common);
         }
     }
 
@@ -102,7 +103,8 @@ struct partition_allocator_fixture {
 
     cluster::allocation_request
     make_allocation_request(int partitions, uint16_t replication_factor) {
-        cluster::allocation_request req;
+        cluster::allocation_request req(
+          cluster::partition_allocation_domains::common);
         req.partitions.reserve(partitions);
         for (int i = 0; i < partitions; ++i) {
             req.partitions.emplace_back(

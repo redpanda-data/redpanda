@@ -11,7 +11,12 @@
 
 #include "storage/offset_translator_state.h"
 
+#include "model/fundamental.h"
+#include "storage/logger.h"
 #include "vassert.h"
+#include "vlog.h"
+
+#include <iterator>
 
 namespace storage {
 
@@ -125,17 +130,48 @@ void offset_translator_state::add_gap(
       "ntp {}: offsets map shouldn't be empty",
       _ntp);
 
+    if (last_offset < _last_offset2batch.begin()->first) {
+        // The gap is added before the
+        vlog(
+          stlog.error,
+          "ntp {}: can't add gap before the begining of the map, base offset: "
+          "{}, last offset: {}, OT start offset: {}",
+          _ntp,
+          base_offset,
+          last_offset,
+          _last_offset2batch.begin()->first);
+        return;
+    }
     auto rbegin = _last_offset2batch.rbegin();
-    vassert(
-      base_offset > rbegin->first,
-      "ntp {}: trying to add batch to offset translator at offset {} that "
-      "is not higher than the previous last offset {}",
-      _ntp,
-      base_offset,
-      rbegin->first);
-
     int64_t length = last_offset() - base_offset() + 1;
     int64_t next_delta = rbegin->second.next_delta + length;
+
+    if (base_offset <= rbegin->first) {
+        auto it = _last_offset2batch.find(last_offset);
+        if (
+          it == _last_offset2batch.end()
+          || it->second.base_offset != base_offset) {
+            // If the gap is added second time it should match
+            // the existing one.
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
+              "ntp {}: inconsistent add_gap: {}-{}, next gap offset: {}, next "
+              "gap delta: {}",
+              _ntp,
+              base_offset,
+              last_offset,
+              rbegin->second.base_offset,
+              rbegin->second.next_delta));
+        }
+        return;
+    }
+
+    vlog(
+      stlog.debug,
+      "add_gap: {} - {}, next delta {}",
+      base_offset,
+      last_offset,
+      next_delta);
     _last_offset2batch.emplace(
       last_offset,
       batch_info{.base_offset = base_offset, .next_delta = next_delta});
@@ -143,46 +179,48 @@ void offset_translator_state::add_gap(
 
 bool offset_translator_state::add_absolute_delta(
   model::offset offset, int64_t delta) {
-    auto prev = model::prev_offset(offset);
+    vassert(
+      delta <= offset(),
+      "ntp {}: inconsistent add_absolute_delta: delta {} can't be > offset "
+      "{}",
+      _ntp,
+      delta,
+      offset);
 
-    if (_last_offset2batch.empty()) {
-        vassert(
-          delta <= offset(),
-          "ntp {}: inconsistent add_absolute_delta: delta {} can't be > offset "
-          "{}",
-          _ntp,
-          delta,
-          offset);
-
-        model::offset base_offset = offset - model::offset{delta};
-        _last_offset2batch.emplace(
-          prev, batch_info{.base_offset = base_offset, .next_delta = delta});
-        return true;
-    } else {
-        int64_t last_delta = _last_offset2batch.rbegin()->second.next_delta;
-        int64_t gap_length = delta - last_delta;
-
-        if (gap_length != 0) {
-            model::offset last_offset = _last_offset2batch.rbegin()->first;
-            auto base_offset = offset - model::offset{gap_length};
-            vassert(
-              base_offset > last_offset && base_offset < offset,
+    // Remove all overlapping elements
+    auto gap_end = model::prev_offset(offset);
+    auto gap_length = delta;
+    auto it = _last_offset2batch.upper_bound(gap_end);
+    // Add new element if empty or delta is different
+    model::offset gap_begin = offset - model::offset(delta);
+    if (it != _last_offset2batch.begin()) {
+        auto back_it = std::prev(it);
+        gap_length -= back_it->second.next_delta;
+        gap_begin = offset - model::offset(gap_length);
+        if (gap_length < 0) {
+            // gap is inconsistent and will overlap with the previous
+            // one
+            throw std::runtime_error(fmt_with_ctx(
+              fmt::format,
               "ntp {}: inconsistent add_absolute_delta (offset {}, delta {}), "
-              "but last_offset: {}, last_delta: {}",
+              "but last_offset: {}, last_delta: {}, last_base_offset: {}, "
+              "gap_length: {}",
               _ntp,
               offset,
               delta,
-              last_offset,
-              last_delta);
-
-            _last_offset2batch.emplace(
-              prev,
-              batch_info{.base_offset = base_offset, .next_delta = delta});
-            return true;
-        } else {
-            return false;
+              back_it->first,
+              back_it->second.next_delta,
+              back_it->second.base_offset,
+              gap_length));
         }
     }
+    _last_offset2batch.erase(it, _last_offset2batch.end());
+    if (gap_length > 0 || _last_offset2batch.empty()) {
+        _last_offset2batch.emplace(
+          gap_end, batch_info{.base_offset = gap_begin, .next_delta = delta});
+        return true;
+    }
+    return false;
 }
 
 bool offset_translator_state::truncate(model::offset offset) {
@@ -194,7 +232,8 @@ bool offset_translator_state::truncate(model::offset offset) {
     auto it = _last_offset2batch.lower_bound(offset);
     if (it == _last_offset2batch.begin()) {
         throw std::runtime_error{fmt::format(
-          "ntp {}: trying to truncate offset_translator at offset {} which is "
+          "ntp {}: trying to truncate offset_translator at offset {} which "
+          "is "
           "<= base translation offset {}",
           _ntp,
           offset,
@@ -204,7 +243,8 @@ bool offset_translator_state::truncate(model::offset offset) {
     if (it != _last_offset2batch.end()) {
         if (offset > it->second.base_offset) {
             throw std::runtime_error{fmt::format(
-              "ntp {}: trying to truncate offset_translator at offset {} which "
+              "ntp {}: trying to truncate offset_translator at offset {} "
+              "which "
               "is in the middle of the batch [{},{}]",
               _ntp,
               offset,
@@ -228,7 +268,8 @@ bool offset_translator_state::prefix_truncate(model::offset offset) {
     auto it = _last_offset2batch.upper_bound(offset);
     if (it != _last_offset2batch.end() && offset >= it->second.base_offset) {
         throw std::runtime_error{fmt::format(
-          "ntp {}: trying to prefix truncate offset translator at offset {} "
+          "ntp {}: trying to prefix truncate offset translator at offset "
+          "{} "
           "which is in the middle of the batch {}-{}",
           _ntp,
           offset,

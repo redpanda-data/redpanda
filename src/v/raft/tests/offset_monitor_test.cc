@@ -95,13 +95,7 @@ SEASTAR_THREAD_TEST_CASE(stop) {
     BOOST_REQUIRE(mon.empty());
 
     for (auto& f : fs) {
-        BOOST_CHECK_EXCEPTION(
-          f.get(),
-          raft::offset_monitor::wait_aborted,
-          [](raft::offset_monitor::wait_aborted e) {
-              return std::string(e.what()).find("offset monitor wait aborted")
-                     != std::string::npos;
-          });
+        BOOST_CHECK_THROW(f.get(), ss::abort_requested_exception);
     }
 }
 
@@ -154,13 +148,7 @@ SEASTAR_THREAD_TEST_CASE(wait_timeout) {
     BOOST_REQUIRE(!f0.available());
     BOOST_REQUIRE(!mon.empty());
 
-    BOOST_CHECK_EXCEPTION(
-      f0.get(),
-      raft::offset_monitor::wait_aborted,
-      [](raft::offset_monitor::wait_aborted e) {
-          return std::string(e.what()).find("offset monitor wait aborted")
-                 != std::string::npos;
-      });
+    BOOST_CHECK_THROW(f0.get(), ss::timed_out_error);
 
     BOOST_REQUIRE(mon.empty());
 }
@@ -176,13 +164,7 @@ SEASTAR_THREAD_TEST_CASE(wait_abort_source) {
     as.request_abort();
     BOOST_REQUIRE(f0.failed());
 
-    BOOST_CHECK_EXCEPTION(
-      f0.get(),
-      raft::offset_monitor::wait_aborted,
-      [](raft::offset_monitor::wait_aborted e) {
-          return std::string(e.what()).find("offset monitor wait aborted")
-                 != std::string::npos;
-      });
+    BOOST_CHECK_THROW(f0.get(), ss::abort_requested_exception);
 
     BOOST_REQUIRE(mon.empty());
 }
@@ -196,13 +178,7 @@ SEASTAR_THREAD_TEST_CASE(wait_abort_source_already_aborted) {
     BOOST_REQUIRE(mon.empty());
 
     BOOST_REQUIRE(f0.failed());
-    BOOST_CHECK_EXCEPTION(
-      f0.get(),
-      raft::offset_monitor::wait_aborted,
-      [](raft::offset_monitor::wait_aborted e) {
-          return std::string(e.what()).find("offset monitor wait aborted")
-                 != std::string::npos;
-      });
+    BOOST_CHECK_THROW(f0.get(), ss::abort_requested_exception);
 }
 
 SEASTAR_THREAD_TEST_CASE(wait_abort_source_with_timeout_first) {
@@ -215,13 +191,7 @@ SEASTAR_THREAD_TEST_CASE(wait_abort_source_with_timeout_first) {
 
     // there is an abort source, but only wait on timeout
 
-    BOOST_CHECK_EXCEPTION(
-      f0.get(),
-      raft::offset_monitor::wait_aborted,
-      [](raft::offset_monitor::wait_aborted e) {
-          return std::string(e.what()).find("offset monitor wait aborted")
-                 != std::string::npos;
-      });
+    BOOST_CHECK_THROW(f0.get(), ss::timed_out_error);
 
     BOOST_REQUIRE(mon.empty());
 }
@@ -238,13 +208,7 @@ SEASTAR_THREAD_TEST_CASE(wait_abort_source_with_timeout_abort_first) {
     BOOST_REQUIRE(f0.failed());
     BOOST_REQUIRE(mon.empty());
 
-    BOOST_CHECK_EXCEPTION(
-      f0.get(),
-      raft::offset_monitor::wait_aborted,
-      [](raft::offset_monitor::wait_aborted e) {
-          return std::string(e.what()).find("offset monitor wait aborted")
-                 != std::string::npos;
-      });
+    BOOST_CHECK_THROW(f0.get(), ss::abort_requested_exception);
 
     BOOST_REQUIRE(mon.empty());
 }
@@ -262,13 +226,7 @@ SEASTAR_THREAD_TEST_CASE(wait_abort_source_with_timeout_abort_before_timeout) {
 
     as.request_abort();
 
-    BOOST_CHECK_EXCEPTION(
-      f0.get(),
-      raft::offset_monitor::wait_aborted,
-      [](raft::offset_monitor::wait_aborted e) {
-          return std::string(e.what()).find("offset monitor wait aborted")
-                 != std::string::npos;
-      });
+    BOOST_CHECK_THROW(f0.get(), ss::abort_requested_exception);
 
     BOOST_REQUIRE(mon.empty());
 }

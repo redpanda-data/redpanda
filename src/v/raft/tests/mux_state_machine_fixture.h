@@ -17,6 +17,7 @@
 #include "net/unresolved_address.h"
 #include "raft/group_manager.h"
 #include "raft/mux_state_machine.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "rpc/connection_cache.h"
 #include "storage/api.h"
@@ -38,7 +39,13 @@ struct mux_state_machine_fixture {
       : _self{0}
       , _data_dir("test_dir_" + random_generators::gen_alphanum_string(6)) {}
 
-    void start_raft() {
+    void start_raft(storage::ntp_config::default_overrides overrides = {}) {
+        ss::smp::invoke_on_all([]() {
+            // We want immediate elections, to avoid a sleep at the start of
+            // every instantiation of a test setup.
+            config::shard_local_cfg().raft_election_timeout_ms.set_value(10ms);
+        }).get();
+
         // configure and start kvstore
         storage::kvstore_config kv_conf(
           8192,
@@ -49,7 +56,8 @@ struct mux_state_machine_fixture {
         _storage
           .start(
             [kv_conf]() { return kv_conf; },
-            [this]() { return default_log_cfg(); })
+            [this]() { return default_log_cfg(); },
+            std::ref(_feature_table))
           .get0();
         _storage.invoke_on_all(&storage::api::start).get0();
         _connections.start().get0();
@@ -58,13 +66,26 @@ struct mux_state_machine_fixture {
             ss::sharded_parameter([] { return config::mock_binding(100_MiB); }))
           .get();
 
+        _feature_table.start().get();
+        _feature_table
+          .invoke_on_all(
+            [](features::feature_table& f) { f.testing_activate_all(); })
+          .get();
+
         _group_mgr
           .start(
             _self,
-            30s,
             ss::default_scheduling_group(),
-            std::chrono::milliseconds(100),
-            std::chrono::milliseconds(2000),
+            [] {
+                return raft::group_manager::configuration{
+                  .heartbeat_interval
+                  = config::mock_binding<std::chrono::milliseconds>(100ms),
+                  .heartbeat_timeout
+                  = config::mock_binding<std::chrono::milliseconds>(2000ms),
+                  .raft_io_timeout_ms
+                  = config::mock_binding<std::chrono::milliseconds>(30s),
+                };
+            },
             [] {
                 return raft::recovery_memory_quota::configuration{
                   .max_recovery_memory
@@ -74,18 +95,27 @@ struct mux_state_machine_fixture {
             },
             std::ref(_connections),
             std::ref(_storage),
-            std::ref(_recovery_throttle))
+            std::ref(_recovery_throttle),
+            std::ref(_feature_table))
           .get0();
 
         _group_mgr.invoke_on_all(&raft::group_manager::start).get0();
 
         _raft = _storage.local()
                   .log_mgr()
-                  .manage(storage::ntp_config(_ntp, _data_dir))
+                  .manage(storage::ntp_config(
+                    _ntp,
+                    _data_dir,
+                    std::make_unique<storage::ntp_config::default_overrides>(
+                      overrides)))
                   .then([this](storage::log&& log) mutable {
                       auto group = raft::group_id(0);
                       return _group_mgr.local()
-                        .create_group(group, {self_broker()}, log)
+                        .create_group(
+                          group,
+                          {self_broker()},
+                          log,
+                          raft::with_learner_recovery_throttle::yes)
                         .then([log](ss::lw_shared_ptr<raft::consensus> c) {
                             return c->start().then([c] { return c; });
                         });
@@ -94,12 +124,17 @@ struct mux_state_machine_fixture {
 
         _started = true;
     }
-    ~mux_state_machine_fixture() {
+    ~mux_state_machine_fixture() { stop_all(); }
+
+    void stop_all() {
         if (_started) {
             _recovery_throttle.stop().get();
             _group_mgr.stop().get0();
-            _raft.release();
+            if (_raft) {
+                _raft.release();
+            }
             _connections.stop().get0();
+            _feature_table.stop().get0();
             _storage.stop().get0();
         }
     }
@@ -152,6 +187,7 @@ struct mux_state_machine_fixture {
     cluster::consensus_ptr _raft;
     ss::sharded<rpc::connection_cache> _connections;
     ss::sharded<storage::api> _storage;
+    ss::sharded<features::feature_table> _feature_table;
     ss::sharded<raft::group_manager> _group_mgr;
     ss::sharded<raft::recovery_throttle> _recovery_throttle;
     bool _started = false;

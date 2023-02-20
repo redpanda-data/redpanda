@@ -12,25 +12,24 @@
 
 #include "cloud_storage/offset_translation_layer.h"
 #include "cloud_storage/remote.h"
-#include "cloud_storage/topic_manifest.h"
-#include "cloud_storage/types.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "s3/client.h"
 #include "storage/ntp_config.h"
-#include "utils/named_type.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
-#include <compare>
-#include <iterator>
 #include <vector>
 
+namespace cluster {
+class topic_recovery_status_frontend;
+}
+
 namespace cloud_storage {
+
+struct topic_recovery_service;
 
 /// Log download result
 ///
@@ -49,7 +48,7 @@ struct log_recovery_result {
 class partition_recovery_manager {
 public:
     partition_recovery_manager(
-      s3::bucket_name bucket, ss::sharded<remote>& remote);
+      cloud_storage_clients::bucket_name bucket, ss::sharded<remote>& remote);
 
     partition_recovery_manager(const partition_recovery_manager&) = delete;
     partition_recovery_manager(partition_recovery_manager&&) = delete;
@@ -76,9 +75,24 @@ public:
       model::initial_revision_id remote_revsion,
       int32_t remote_partition_count);
 
+    void set_topic_recovery_components(
+      ss::sharded<cluster::topic_recovery_status_frontend>&
+        topic_recovery_status_frontend,
+      ss::sharded<cloud_storage::topic_recovery_service>&
+        topic_recovery_service);
+
 private:
-    s3::bucket_name _bucket;
+    ss::future<bool> is_topic_recovery_active() const;
+
+    cloud_storage_clients::bucket_name _bucket;
     ss::sharded<remote>& _remote;
+    // Late initialized objects
+    std::optional<std::reference_wrapper<
+      ss::sharded<cluster::topic_recovery_status_frontend>>>
+      _topic_recovery_status_frontend;
+    std::optional<std::reference_wrapper<
+      ss::sharded<cloud_storage::topic_recovery_service>>>
+      _topic_recovery_service;
     ss::gate _gate;
     retry_chain_node _root;
     ss::abort_source _as;
@@ -95,7 +109,7 @@ public:
       remote* remote,
       model::initial_revision_id remote_revision_id,
       int32_t remote_partition_count,
-      s3::bucket_name bucket,
+      cloud_storage_clients::bucket_name bucket,
       ss::gate& gate_root,
       retry_chain_node& parent,
       storage::opt_abort_source_t as);
@@ -158,31 +172,34 @@ private:
       std::vector<partition_downloader::offset_range> dloffsets,
       partition_downloader::download_part& dlpart);
 
-    struct segment {
-        partition_manifest::key manifest_key;
-        partition_manifest::segment_meta meta;
-    };
-
     /// Download segment file to the target location
     ///
     /// The downloaded file will have a custom suffix
     /// which has to be changed. The downloaded file path
     /// is returned by the futue.
-    ss::future<std::optional<offset_range>>
-    download_segment_file(const segment& segm, const download_part& part);
+    ss::future<std::optional<cloud_storage::stream_stats>>
+    download_segment_file(const segment_meta& segm, const download_part& part);
 
-    using offset_map_t = absl::btree_map<model::offset, segment>;
+    /// Helper for download_segment_file
+    ss::future<uint64_t> download_segment_file_stream(
+      uint64_t,
+      ss::input_stream<char>,
+      const download_part&,
+      remote_segment_path,
+      std::filesystem::path,
+      offset_translator,
+      stream_stats&);
 
-    ss::future<offset_map_t> build_offset_map(const recovery_material& mat);
+    using offset_map_t = absl::btree_map<model::offset, segment_meta>;
 
     ss::future<download_part> download_log_with_capped_size(
-      const offset_map_t& offset_map,
+      offset_map_t offset_map,
       const partition_manifest& manifest,
       const std::filesystem::path& prefix,
       size_t max_size);
 
     ss::future<download_part> download_log_with_capped_time(
-      const offset_map_t& offset_map,
+      offset_map_t offset_map,
       const partition_manifest& manifest,
       const std::filesystem::path& prefix,
       model::timestamp_clock::duration retention_time);
@@ -194,7 +211,7 @@ private:
     read_first_record_header(const std::filesystem::path& path);
 
     const storage::ntp_config& _ntpc;
-    s3::bucket_name _bucket;
+    cloud_storage_clients::bucket_name _bucket;
     remote* _remote;
     model::initial_revision_id _remote_revision_id;
     int32_t _remote_partition_count;

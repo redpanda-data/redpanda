@@ -61,6 +61,8 @@ std::ostream& operator<<(std::ostream& o, const status& s) {
         return o << "rpc::status::server_error";
     case status::version_not_supported:
         return o << "rpc::status::version_not_supported";
+    case status::service_unavailable:
+        return o << "rpc::status::service_unavailable";
     default:
         return o << "rpc::status::unknown";
     }

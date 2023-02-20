@@ -199,18 +199,26 @@ offset_metadata_key offset_metadata_key::decode(request_reader& reader) {
 
 void offset_metadata_value::encode(
   response_writer& writer, const offset_metadata_value& v) {
-    writer.write(v.version);
+    const auto version = v.expiry_timestamp != model::timestamp(-1)
+                           ? group_metadata_version{1}
+                           : offset_metadata_value::latest_version;
+    writer.write(version);
     writer.write(v.offset);
-    writer.write(v.leader_epoch);
+    if (version >= group_metadata_version{3}) {
+        writer.write(v.leader_epoch);
+    }
     writer.write(v.metadata);
     writer.write(v.commit_timestamp);
+    if (version == group_metadata_version{1}) {
+        writer.write(v.expiry_timestamp);
+    }
 }
 
 offset_metadata_value offset_metadata_value::decode(request_reader& reader) {
     offset_metadata_value ret;
-    auto version = read_metadata_version(reader);
+    const auto version = read_metadata_version(reader);
     validate_version_range(
-      version, "offset_metadata_value", offset_metadata_value::version);
+      version, "offset_metadata_value", offset_metadata_value::latest_version);
 
     ret.offset = model::offset(reader.read_int64());
     if (version >= group_metadata_version{3}) {
@@ -218,9 +226,9 @@ offset_metadata_value offset_metadata_value::decode(request_reader& reader) {
     }
     ret.metadata = reader.read_string();
     ret.commit_timestamp = model::timestamp(reader.read_int64());
-    // read and ignore expiry_timestamp only present in version 1
+    // read expiry_timestamp only present in version 1
     if (version == group_metadata_version{1}) {
-        reader.read_int64();
+        ret.expiry_timestamp = model::timestamp(reader.read_int64());
     }
 
     return ret;
@@ -314,156 +322,6 @@ iobuf maybe_unwrap_from_iobuf(iobuf buffer) {
     return buffer;
 }
 } // namespace
-
-group_metadata_serializer make_backward_compatible_serializer() {
-    struct impl : group_metadata_serializer::impl {
-        group_metadata_type get_metadata_type(iobuf buffer) final {
-            auto key = reflection::from_iobuf<old::group_log_record_key>(
-              maybe_unwrap_from_iobuf(std::move(buffer)));
-            switch (key.record_type) {
-            case old::group_log_record_key::type::offset_commit:
-                return group_metadata_type::offset_commit;
-            case old::group_log_record_key::type::group_metadata:
-                return group_metadata_type::group_metadata;
-            case old::group_log_record_key::type::noop:
-                return group_metadata_type::noop;
-            }
-        };
-
-        group_metadata_serializer::key_value to_kv(group_metadata_kv md) final {
-            group_metadata_serializer::key_value ret;
-            ret.key = reflection::to_iobuf(old::group_log_record_key{
-              .record_type = old::group_log_record_key::type::group_metadata,
-              .key = reflection::to_iobuf(md.key.group_id),
-            });
-
-            if (md.value) {
-                old::group_log_group_metadata old_metadata{
-                  .protocol_type = std::move(md.value->protocol_type),
-                  .generation = md.value->generation,
-                  .protocol = std::move(md.value->protocol),
-                  .leader = std::move(md.value->leader),
-                  .state_timestamp = static_cast<int32_t>(
-                    md.value->state_timestamp.value()),
-                };
-
-                old_metadata.members.reserve(md.value->members.size());
-                std::transform(
-                  md.value->members.begin(),
-                  md.value->members.end(),
-                  std::back_inserter(old_metadata.members),
-                  [](member_state& ms) {
-                      return old::member_state{
-                        .id = std::move(ms.id),
-                        .session_timeout = ms.session_timeout,
-                        .rebalance_timeout = ms.rebalance_timeout,
-                        .instance_id = ms.instance_id,
-                        .assignment = std::move(ms.assignment),
-                        .client_id = std::move(ms.client_id),
-                        .client_host = std::move(ms.client_host),
-                      };
-                  });
-                ret.value = reflection::to_iobuf(std::move(old_metadata));
-            }
-
-            return ret;
-        }
-        group_metadata_serializer::key_value
-        to_kv(offset_metadata_kv md) final {
-            group_metadata_serializer::key_value ret;
-
-            ret.key = reflection::to_iobuf(old::group_log_record_key{
-              .record_type = old::group_log_record_key::type::offset_commit,
-              .key = reflection::to_iobuf(old::group_log_offset_key{
-                std::move(md.key.group_id),
-                std::move(md.key.topic),
-                md.key.partition,
-              }),
-            });
-
-            if (md.value) {
-                ret.value = reflection::to_iobuf(old::group_log_offset_metadata{
-                  md.value->offset,
-                  md.value->leader_epoch,
-                  md.value->metadata,
-                });
-            }
-            return ret;
-        }
-
-        group_metadata_kv decode_group_metadata(model::record record) final {
-            group_metadata_kv ret;
-            auto record_key = reflection::from_iobuf<old::group_log_record_key>(
-              maybe_unwrap_from_iobuf(record.release_key()));
-            auto group_id = kafka::group_id(
-              reflection::from_iobuf<kafka::group_id::type>(
-                std::move(record_key.key)));
-
-            ret.key = group_metadata_key{.group_id = group_id};
-
-            if (record.has_value()) {
-                auto md = reflection::from_iobuf<old::group_log_group_metadata>(
-                  record.release_value());
-
-                ret.value = group_metadata_value{
-                  .protocol_type = std::move(md.protocol_type),
-                  .generation = md.generation,
-                  .protocol = std::move(md.protocol),
-                  .leader = std::move(md.leader),
-                  .state_timestamp = model::timestamp(md.state_timestamp),
-                };
-                ret.value->members.reserve(md.members.size());
-                std::transform(
-                  md.members.begin(),
-                  md.members.end(),
-                  std::back_inserter(ret.value->members),
-                  [](old::member_state& member) {
-                      return member_state{
-                        .id = std::move(member.id),
-                        .instance_id = std::move(member.instance_id),
-                        .client_id = std::move(member.client_id),
-                        .client_host = std::move(member.client_host),
-                        .rebalance_timeout = member.rebalance_timeout,
-                        .session_timeout = member.session_timeout,
-                        .subscription = iobuf{},
-                        .assignment = std::move(member.assignment),
-                      };
-                  });
-            }
-
-            return ret;
-        }
-
-        offset_metadata_kv decode_offset_metadata(model::record r) final {
-            offset_metadata_kv ret;
-            auto record_key = reflection::from_iobuf<old::group_log_record_key>(
-              maybe_unwrap_from_iobuf(r.release_key()));
-            auto key = reflection::from_iobuf<old::group_log_offset_key>(
-              std::move(record_key.key));
-
-            ret.key = offset_metadata_key{
-              .group_id = std::move(key.group),
-              .topic = std::move(key.topic),
-              .partition = key.partition,
-            };
-
-            if (r.has_value()) {
-                auto metadata
-                  = reflection::from_iobuf<old::group_log_offset_metadata>(
-                    r.release_value());
-
-                ret.value = offset_metadata_value{
-                  .offset = metadata.offset,
-                  .leader_epoch = kafka::leader_epoch(metadata.leader_epoch),
-                  .metadata = metadata.metadata.value_or(""),
-                  .commit_timestamp = model::timestamp(-1),
-                };
-            }
-            return ret;
-        }
-    };
-    return group_metadata_serializer(std::make_unique<impl>());
-}
 
 group_metadata_serializer make_consumer_offsets_serializer() {
     struct impl final : group_metadata_serializer::impl {
@@ -568,145 +426,13 @@ std::ostream& operator<<(std::ostream& o, const offset_metadata_key& v) {
 std::ostream& operator<<(std::ostream& o, const offset_metadata_value& v) {
     fmt::print(
       o,
-      "{{offset: {}, leader_epoch: {}, metadata: {}, commit_timestap: {}}}",
+      "{{offset: {}, leader_epoch: {}, metadata: {}, commit_timestamp: {}, "
+      "expiry_timestamp: {}}}",
       v.offset,
       v.leader_epoch,
       v.metadata,
-      v.commit_timestamp);
+      v.commit_timestamp,
+      v.expiry_timestamp);
     return o;
 }
-namespace old {
-std::ostream& operator<<(std::ostream& os, const group_log_offset_key& key) {
-    fmt::print(
-      os,
-      "group {} topic {} partition {}",
-      key.group(),
-      key.topic(),
-      key.partition());
-    return os;
-}
-
-std::ostream&
-operator<<(std::ostream& os, const group_log_offset_metadata& md) {
-    fmt::print(os, "offset {}", md.offset());
-    return os;
-}
-} // namespace old
 } // namespace kafka
-namespace reflection {
-
-namespace old {
-struct member_state_v0 {
-    kafka::member_id id;
-    std::chrono::milliseconds session_timeout;
-    std::chrono::milliseconds rebalance_timeout;
-    std::optional<kafka::group_instance_id> instance_id;
-    kafka::protocol_type protocol_type;
-    std::vector<kafka::member_protocol> protocols;
-    iobuf assignment;
-};
-
-struct group_log_group_metadata_v0 {
-    kafka::protocol_type protocol_type;
-    kafka::generation_id generation;
-    std::optional<kafka::protocol_name> protocol;
-    std::optional<kafka::member_id> leader;
-    int32_t state_timestamp;
-    std::vector<member_state_v0> members;
-};
-
-struct client_host_id {
-    kafka::client_id id;
-    kafka::client_host host;
-};
-} // namespace old
-
-void adl<kafka::old::group_log_group_metadata>::to(
-  iobuf& out, kafka::old::group_log_group_metadata&& data) {
-    // create instance of old version of members
-    std::vector<old::member_state_v0> members_v0;
-    members_v0.reserve(data.members.size());
-    for (auto& member : data.members) {
-        members_v0.push_back(old::member_state_v0{
-          .id = std::move(member.id),
-          .session_timeout = member.session_timeout,
-          .rebalance_timeout = member.rebalance_timeout,
-          .instance_id = std::move(member.instance_id),
-          .protocol_type = std::move(member.protocol_type),
-          .protocols = std::move(member.protocols),
-          .assignment = std::move(member.assignment),
-        });
-    }
-
-    // create instance of old version of group metadata
-    old::group_log_group_metadata_v0 metadata_v0{
-      .protocol_type = std::move(data.protocol_type),
-      .generation = data.generation,
-      .protocol = std::move(data.protocol),
-      .leader = std::move(data.leader),
-      .state_timestamp = data.state_timestamp,
-      .members = std::move(members_v0),
-    };
-
-    // this puts a version on disk that older code can read
-    serialize(out, std::move(metadata_v0));
-
-    // now append the client host/id information for new code
-    std::vector<old::client_host_id> client_info;
-    client_info.reserve(data.members.size());
-    for (auto& member : data.members) {
-        client_info.push_back(old::client_host_id{
-          .id = std::move(member.client_id),
-          .host = std::move(member.client_host),
-        });
-    }
-    serialize(out, std::move(client_info));
-}
-
-kafka::old::group_log_group_metadata
-adl<kafka::old::group_log_group_metadata>::from(iobuf_parser& in) {
-    auto metadata_v0 = adl<old::group_log_group_metadata_v0>{}.from(in);
-
-    std::vector<old::client_host_id> client_info;
-    if (in.bytes_left()) {
-        client_info = adl<std::vector<old::client_host_id>>{}.from(in);
-        vassert(
-          client_info.size() == metadata_v0.members.size(),
-          "Expected client info size {} got {}",
-          metadata_v0.members.size(),
-          client_info.size());
-    }
-
-    std::vector<kafka::old::member_state> members_out;
-    members_out.reserve(metadata_v0.members.size());
-
-    for (auto& member : metadata_v0.members) {
-        members_out.push_back(kafka::old::member_state{
-          .id = std::move(member.id),
-          .session_timeout = member.session_timeout,
-          .rebalance_timeout = member.rebalance_timeout,
-          .instance_id = std::move(member.instance_id),
-          .protocol_type = std::move(member.protocol_type),
-          .protocols = std::move(member.protocols),
-          .assignment = std::move(member.assignment),
-        });
-    }
-
-    for (size_t i = 0; i < client_info.size(); i++) {
-        members_out[i].client_id = std::move(client_info[i].id);
-        members_out[i].client_host = std::move(client_info[i].host);
-    }
-
-    kafka::old::group_log_group_metadata metadata_out{
-      .protocol_type = std::move(metadata_v0.protocol_type),
-      .generation = metadata_v0.generation,
-      .protocol = std::move(metadata_v0.protocol),
-      .leader = std::move(metadata_v0.leader),
-      .state_timestamp = metadata_v0.state_timestamp,
-      .members = std::move(members_out),
-    };
-
-    return metadata_out;
-}
-
-} // namespace reflection

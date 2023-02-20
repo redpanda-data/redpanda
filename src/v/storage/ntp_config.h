@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "ssx/sformat.h"
@@ -26,6 +27,12 @@ using topic_recovery_enabled
 
 class ntp_config {
 public:
+    // Remote deletes are enabled by default in new tiered storage topics,
+    // disabled by default in legacy topics during upgrade (the legacy path
+    // is handled during adl/serde decode).
+    static constexpr bool default_remote_delete{true};
+    static constexpr bool legacy_remote_delete{false};
+
     struct default_overrides {
         // if not set use the log_manager's configuration
         std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -44,10 +51,19 @@ public:
         topic_recovery_enabled recovery_enabled = topic_recovery_enabled::yes;
         // if set the value will control how data is uploaded and retrieved
         // to/from S3
-        model::shadow_indexing_mode shadow_indexing_mode
-          = model::shadow_indexing_mode::disabled;
+        std::optional<model::shadow_indexing_mode> shadow_indexing_mode;
 
         std::optional<bool> read_replica;
+
+        tristate<size_t> retention_local_target_bytes{std::nullopt};
+        tristate<std::chrono::milliseconds> retention_local_target_ms{
+          std::nullopt};
+
+        // Controls whether topic deletion should imply deletion in S3
+        std::optional<bool> remote_delete;
+
+        // time before rolling a segment, from first write
+        tristate<std::chrono::milliseconds> segment_ms{std::nullopt};
 
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
@@ -142,19 +158,81 @@ public:
         _overrides = std::make_unique<default_overrides>(o);
     }
 
+    std::optional<size_t> retention_bytes() const {
+        if (_overrides) {
+            // Handle the special "-1" case.
+            if (_overrides->retention_bytes.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->retention_bytes.has_optional_value()) {
+                return _overrides->retention_bytes.value();
+            }
+            // If no value set, fall through and use the cluster-wide default.
+        }
+        return config::shard_local_cfg().retention_bytes();
+    }
+
+    std::optional<std::chrono::milliseconds> retention_duration() const {
+        if (_overrides) {
+            // Handle the special "-1" case.
+            if (_overrides->retention_time.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->retention_time.has_optional_value()) {
+                return _overrides->retention_time.value();
+            }
+            // If no value set, fall through and use the cluster-wide default.
+        }
+        return config::shard_local_cfg().delete_retention_ms();
+    }
+
     bool is_archival_enabled() const {
-        return _overrides != nullptr
-               && model::is_archival_enabled(_overrides->shadow_indexing_mode);
+        return _overrides != nullptr && _overrides->shadow_indexing_mode
+               && model::is_archival_enabled(
+                 _overrides->shadow_indexing_mode.value());
     }
 
     bool is_remote_fetch_enabled() const {
-        return _overrides != nullptr
-               && model::is_fetch_enabled(_overrides->shadow_indexing_mode);
+        return _overrides != nullptr && _overrides->shadow_indexing_mode
+               && model::is_fetch_enabled(
+                 _overrides->shadow_indexing_mode.value());
     }
 
     bool is_read_replica_mode_enabled() const {
         return _overrides != nullptr && _overrides->read_replica
                && _overrides->read_replica.value();
+    }
+
+    /**
+     * True if the topic is configured for "normal" tiered storage, i.e.
+     * both reads and writes to S3, and is not a read replica.
+     */
+    bool is_tiered_storage() const {
+        return _overrides != nullptr
+               && !_overrides->read_replica.value_or(false)
+               && _overrides->shadow_indexing_mode
+                    == model::shadow_indexing_mode::full;
+    }
+
+    bool remote_delete() const {
+        if (_overrides == nullptr) {
+            return default_remote_delete;
+        } else {
+            return _overrides->remote_delete.value_or(default_remote_delete);
+        }
+    }
+
+    auto segment_ms() const -> std::optional<std::chrono::milliseconds> {
+        if (_overrides) {
+            if (_overrides->segment_ms.is_disabled()) {
+                return std::nullopt;
+            }
+            if (_overrides->segment_ms.has_optional_value()) {
+                return _overrides->segment_ms.value();
+            }
+            // fall through to server config
+        }
+        return config::shard_local_cfg().log_segment_ms;
     }
 
 private:

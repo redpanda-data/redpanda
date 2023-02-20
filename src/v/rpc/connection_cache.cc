@@ -17,6 +17,9 @@
 
 namespace rpc {
 
+connection_cache::connection_cache(std::optional<connection_cache_label> label)
+  : _label(std::move(label)) {}
+
 /// \brief needs to be a future, because mutations may come from different
 /// fibers and they need to be synchronized
 ss::future<> connection_cache::emplace(
@@ -33,7 +36,7 @@ ss::future<> connection_cache::emplace(
         _cache.emplace(
           n,
           ss::make_lw_shared<rpc::reconnect_transport>(
-            std::move(c), std::move(backoff_policy)));
+            std::move(c), std::move(backoff_policy), _label, n));
     });
 }
 ss::future<> connection_cache::remove(model::node_id n) {

@@ -25,7 +25,10 @@ namespace net {
 /// Class representing unresolved network address in form of <host name, port>
 /// tuple
 class unresolved_address
-  : public serde::envelope<unresolved_address, serde::version<0>> {
+  : public serde::envelope<
+      unresolved_address,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     using inet_family = std::optional<ss::net::inet_address::family>;
 
@@ -43,6 +46,8 @@ public:
     inet_family family() const { return _family; }
 
     bool operator==(const unresolved_address& other) const = default;
+    friend bool operator<(const unresolved_address&, const unresolved_address&)
+      = default;
 
     auto serde_fields() { return std::tie(_host, _port, _family); }
 

@@ -219,3 +219,8 @@ class RpkGroupCommandsTest(RedpandaTest):
         self.rpk.group_seek_to(group_1, time_1)
         rpk_group = self.rpk.group_describe(group_1)
         self.validate_partition(rpk_group.partitions[0], 5, 10, 5)
+
+        # Seek to the future
+        self.rpk.group_seek_to(group_1, str(int(time.time()) + 10))
+        rpk_group = self.rpk.group_describe(group_1)
+        self.validate_partition(rpk_group.partitions[0], 10, 10, 0)

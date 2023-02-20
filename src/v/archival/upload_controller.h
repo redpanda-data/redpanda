@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "archival/service.h"
+#include "cluster/fwd.h"
 #include "seastarx.h"
 #include "storage/backlog_controller.h"
 #include "utils/named_type.h"
@@ -23,12 +23,13 @@
 
 namespace archival {
 
-/// PID controller to controll compaction scheduling and IO shares
+/// PID controller to control compaction scheduling and IO shares
 /// Modeled after compaction_controller.
 class upload_controller {
 public:
     upload_controller(
-      ss::sharded<scheduler_service>&, storage::backlog_controller_config);
+      ss::sharded<cluster::partition_manager>&,
+      storage::backlog_controller_config);
 
     ss::future<> start() { return _ctrl.start(); }
     ss::future<> stop() { return _ctrl.stop(); }

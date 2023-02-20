@@ -184,6 +184,7 @@ ss::future<std::vector<model::node_id>> wait_for_leaders(
   model::timeout_clock::time_point);
 
 ss::future<> wait_for_topics(
+  cluster::metadata_cache&,
   std::vector<cluster::topic_result>,
   cluster::controller_api&,
   model::timeout_clock::time_point);

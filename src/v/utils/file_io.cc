@@ -12,6 +12,7 @@
 #include "utils/file_io.h"
 
 #include "bytes/iobuf.h"
+#include "bytes/iostream.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>

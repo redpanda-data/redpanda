@@ -107,6 +107,7 @@ public:
       , _io_prio(io_prio) {}
 
     ss::future<std::optional<snapshot_reader>> open_snapshot(ss::sstring);
+    ss::future<uint64_t> get_snapshot_size(ss::sstring);
 
     ss::future<snapshot_writer> start_snapshot(ss::sstring);
     ss::future<> finish_snapshot(snapshot_writer&);
@@ -258,6 +259,10 @@ public:
         return _snapshot.open_snapshot(_filename);
     }
 
+    ss::future<uint64_t> get_snapshot_size() {
+        return _snapshot.get_snapshot_size(_filename);
+    }
+
     ss::future<snapshot_writer> start_snapshot() {
         return _snapshot.start_snapshot(_filename);
     }
@@ -276,6 +281,8 @@ public:
     ss::future<> remove_snapshot() {
         return _snapshot.remove_snapshot(_filename);
     }
+
+    const ss::sstring& name() { return _filename; }
 
 private:
     ss::sstring _filename;

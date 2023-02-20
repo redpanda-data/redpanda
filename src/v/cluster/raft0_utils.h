@@ -26,17 +26,18 @@ static ss::future<consensus_ptr> create_raft0(
   ss::sharded<shard_table>& st,
   const ss::sstring& data_directory,
   std::vector<model::broker> initial_brokers) {
-    // root, otherwise it will use one of the seed servers to join the
-    // cluster
     if (!initial_brokers.empty()) {
-        vlog(clusterlog.info, "Current node is cluster root");
+        vlog(clusterlog.info, "Current node is a cluster founder");
     }
 
     return pm.local()
       .manage(
         storage::ntp_config(model::controller_ntp, data_directory),
         raft::group_id(0),
-        std::move(initial_brokers))
+        std::move(initial_brokers),
+        std::nullopt,
+        std::nullopt,
+        raft::with_learner_recovery_throttle::no)
       .then([&st](consensus_ptr p) {
           // Add raft 0 to shard table
           return st

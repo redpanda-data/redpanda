@@ -14,10 +14,10 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_manifest.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "s3/client.h"
 
 namespace cluster {
 
@@ -30,7 +30,7 @@ download_topic_manifest(
   cloud_storage::remote& remote,
   custom_assignable_topic_configuration& cfg,
   cloud_storage::topic_manifest& manifest,
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as) {
     auto timeout
       = config::shard_local_cfg().cloud_storage_manifest_upload_timeout_ms();
@@ -60,7 +60,7 @@ download_topic_manifest(
 ss::future<errc>
 remote_topic_configuration_source::set_remote_properties_in_config(
   custom_assignable_topic_configuration& cfg,
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as) {
     cloud_storage::topic_manifest manifest;
 
@@ -93,10 +93,10 @@ static void apply_retention_defaults(
     if (!target.cleanup_policy_bitflags) {
         target.cleanup_policy_bitflags = source.cleanup_policy_bitflags;
     }
-    if (!target.retention_bytes.has_value()) {
+    if (!target.retention_bytes.has_optional_value()) {
         target.retention_bytes = source.retention_bytes;
     }
-    if (!target.retention_duration.has_value()) {
+    if (!target.retention_duration.has_optional_value()) {
         target.retention_duration = source.retention_duration;
     }
 }
@@ -104,7 +104,7 @@ static void apply_retention_defaults(
 ss::future<errc>
 remote_topic_configuration_source::set_recovered_topic_properties(
   custom_assignable_topic_configuration& cfg,
-  const s3::bucket_name& bucket,
+  const cloud_storage_clients::bucket_name& bucket,
   ss::abort_source& as) {
     cloud_storage::topic_manifest manifest;
 

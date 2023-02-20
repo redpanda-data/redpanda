@@ -10,42 +10,81 @@
 #include "pandaproxy/schema_registry/service.h"
 
 #include "cluster/controller.h"
+#include "cluster/ephemeral_credential_frontend.h"
+#include "cluster/members_table.h"
+#include "cluster/security_frontend.h"
+#include "kafka/client/brokers.h"
 #include "kafka/client/client_fetch_batch_reader.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/list_offsets.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/api/api-doc/schema_registry.json.h"
+#include "pandaproxy/auth_utils.h"
+#include "pandaproxy/config_utils.h"
 #include "pandaproxy/error.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/handlers.h"
 #include "pandaproxy/schema_registry/storage.h"
+#include "pandaproxy/util.h"
+#include "security/acl.h"
+#include "security/ephemeral_credential_store.h"
 #include "ssx/semaphore.h"
 #include "utils/gate_guard.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
-#include <seastar/core/std-coroutine.hh>
+#include <seastar/coroutine/parallel_for_each.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 namespace pandaproxy::schema_registry {
 
 using server = ctx_server<service>;
+const security::acl_principal principal{
+  security::principal_type::ephemeral_user, "__schema_registry"};
 
-template<typename Handler>
-auto wrap(ss::gate& g, one_shot& os, Handler h) {
-    return [&g, &os, _h{std::move(h)}](
-             server::request_t rq,
-             server::reply_t rp) -> ss::future<server::reply_t> {
-        auto h{_h};
-        auto units = co_await os();
-        auto guard = gate_guard(g);
-        co_return co_await h(std::move(rq), std::move(rp));
-    };
-}
+class wrap {
+public:
+    wrap(ss::gate& g, one_shot& os, server::function_handler h)
+      : _g{g}
+      , _os{os}
+      , _h{std::move(h)} {}
+
+    ss::future<server::reply_t>
+    operator()(server::request_t rq, server::reply_t rp) const {
+        rq.authn_method = config::get_authn_method(
+          rq.service().config().schema_registry_api.value(),
+          rq.req->get_listener_idx());
+        rq.user = maybe_authenticate_request(
+          rq.authn_method, rq.service().authenticator(), *rq.req);
+
+        auto units = co_await _os();
+        auto guard = gate_guard(_g);
+        try {
+            co_return co_await _h(std::move(rq), std::move(rp));
+        } catch (kafka::client::partition_error const& ex) {
+            if (
+              ex.error == kafka::error_code::unknown_topic_or_partition
+              && ex.tp.topic == model::schema_registry_internal_tp.topic) {
+                throw exception(
+                  kafka::error_code::unknown_server_error,
+                  "_schemas topic does not exist");
+            }
+            throw;
+        }
+    }
+
+private:
+    ss::gate& _g;
+    one_shot& _os;
+    server::function_handler _h;
+};
 
 server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
     server::routes_t routes;
@@ -121,23 +160,102 @@ server::routes_t get_schema_registry_routes(ss::gate& gate, one_shot& es) {
       ss::httpd::schema_registry_json::compatibility_subject_version,
       wrap(gate, es, compatibility_subject_version)});
 
+    routes.routes.emplace_back(server::route_t{
+      ss::httpd::schema_registry_json::schema_registry_status_ready,
+      wrap(gate, es, status_ready)});
+
     return routes;
 }
 
 ss::future<> service::do_start() {
+    if (_is_started) {
+        co_return;
+    }
     auto guard = gate_guard(_gate);
     try {
+        co_await configure();
         co_await create_internal_topic();
-        co_await fetch_internal_topic();
-        vlog(
-          plog.info, "Schema registry successfully initialized internal topic");
+        vlog(plog.info, "Schema registry successfully initialized");
     } catch (...) {
         vlog(
           plog.error,
-          "Schema registry failed to initialize internal topic: {}",
+          "Schema registry failed to initialize: {}",
           std::current_exception());
         throw;
     }
+    co_await container().invoke_on_all(_ctx.smp_sg, [](service& s) {
+        s._is_started = true;
+        return s.fetch_internal_topic();
+    });
+}
+
+ss::future<> service::configure() {
+    auto config = co_await pandaproxy::create_client_credentials(
+      *_controller,
+      config::shard_local_cfg(),
+      _client.local().config(),
+      principal);
+    co_await set_client_credentials(*config, _client);
+
+    auto const& store = _controller->get_ephemeral_credential_store().local();
+    bool has_ephemeral_credentials = store.has(store.find(principal));
+    co_await container().invoke_on_all(
+      _ctx.smp_sg, [has_ephemeral_credentials](service& s) {
+          s._has_ephemeral_credentials = has_ephemeral_credentials;
+      });
+    co_await _controller->get_security_frontend().local().create_acls(
+      {security::acl_binding{
+        security::resource_pattern{
+          security::resource_type::topic,
+          model::schema_registry_internal_tp.topic,
+          security::pattern_type::literal},
+        security::acl_entry{
+          principal,
+          security::acl_host::wildcard_host(),
+          security::acl_operation::all,
+          security::acl_permission::allow}}},
+      5s);
+}
+
+ss::future<> service::mitigate_error(std::exception_ptr eptr) {
+    if (_gate.is_closed()) {
+        // Return so that the client doesn't try to mitigate.
+        return ss::now();
+    }
+    vlog(plog.warn, "mitigate_error: {}", eptr);
+    return ss::make_exception_future<>(eptr).handle_exception_type(
+      [this, eptr](kafka::client::broker_error const& ex) {
+          if (
+            ex.error == kafka::error_code::sasl_authentication_failed
+            && _has_ephemeral_credentials) {
+              return inform(ex.node_id).then([this]() {
+                  // This fully mitigates, don't rethrow.
+                  return _client.local().connect();
+              });
+          }
+          // Rethrow unhandled exceptions
+          return ss::make_exception_future<>(eptr);
+      });
+}
+
+ss::future<> service::inform(model::node_id id) {
+    vlog(plog.trace, "inform: {}", id);
+
+    // Inform a particular node
+    if (id != kafka::client::unknown_node_id) {
+        return do_inform(id);
+    }
+
+    // Inform all nodes
+    return seastar::parallel_for_each(
+      _controller->get_members_table().local().node_ids(),
+      [this](model::node_id id) { return do_inform(id); });
+}
+
+ss::future<> service::do_inform(model::node_id id) {
+    auto& fe = _controller->get_ephemeral_credential_frontend().local();
+    auto ec = co_await fe.inform(id, principal);
+    vlog(plog.info, "Informed: broker: {}, ec: {}", id, ec);
 }
 
 ss::future<> service::create_internal_topic() {
@@ -153,6 +271,7 @@ ss::future<> service::create_internal_topic() {
       replication_factor);
 
     auto make_internal_topic = [replication_factor]() {
+        constexpr std::string_view retain_forever = "-1";
         return kafka::creatable_topic{
           .name{model::schema_registry_internal_tp.topic},
           .num_partitions = 1,
@@ -162,7 +281,17 @@ ss::future<> service::create_internal_topic() {
             {.name{ss::sstring{kafka::topic_property_cleanup_policy}},
              .value{"compact"}},
             {.name{ss::sstring{kafka::topic_property_compression}},
-             .value{ssx::sformat("{}", model::compression::none)}}}};
+             .value{ssx::sformat("{}", model::compression::none)}},
+            {.name{ss::sstring{kafka::topic_property_retention_bytes}},
+             .value{retain_forever}},
+            {.name{ss::sstring{kafka::topic_property_retention_duration}},
+             .value{retain_forever}},
+            {.name{
+               ss::sstring{kafka::topic_property_retention_local_target_bytes}},
+             .value{retain_forever}},
+            {.name{
+               ss::sstring{kafka::topic_property_retention_local_target_ms}},
+             .value{retain_forever}}}};
     };
     auto res = co_await _client.local().create_topic(make_internal_topic());
     if (res.data.topics.size() != 1) {
@@ -228,7 +357,8 @@ service::service(
   , _store(store)
   , _writer(sequencer)
   , _controller(controller)
-  , _ensure_started{[this]() { return do_start(); }} {}
+  , _ensure_started{[this]() { return do_start(); }}
+  , _auth{config::always_true(), controller.get()} {}
 
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};

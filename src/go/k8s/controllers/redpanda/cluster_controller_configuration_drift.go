@@ -40,11 +40,12 @@ const (
 // ClusterConfigurationDriftReconciler detects drifts in the cluster configuration and triggers a reconciliation.
 type ClusterConfigurationDriftReconciler struct {
 	client.Client
-	Log                   logr.Logger
-	clusterDomain         string
-	Scheme                *runtime.Scheme
-	DriftCheckPeriod      *time.Duration
-	AdminAPIClientFactory adminutils.AdminAPIClientFactory
+	Log                       logr.Logger
+	clusterDomain             string
+	Scheme                    *runtime.Scheme
+	DriftCheckPeriod          *time.Duration
+	AdminAPIClientFactory     adminutils.AdminAPIClientFactory
+	RestrictToRedpandaVersion string
 }
 
 // Reconcile detects drift in configuration for clusters and schedules a patch.
@@ -65,6 +66,10 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 		}
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
+	if redpandaCluster.GetDeletionTimestamp() != nil {
+		log.Info("not reconciling deleted Cluster")
+		return ctrl.Result{}, nil
+	}
 
 	if !featuregates.CentralizedConfiguration(redpandaCluster.Spec.Version) {
 		return ctrl.Result{RequeueAfter: r.getDriftCheckPeriod()}, nil
@@ -72,6 +77,9 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{RequeueAfter: r.getDriftCheckPeriod()}, nil
+	}
+	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
+		return ctrl.Result{}, nil
 	}
 
 	condition := redpandaCluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType)
@@ -104,18 +112,21 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 
 	var proxySu *resources.SuperUsersResource
 	var proxySuKey types.NamespacedName
-	if redpandaCluster.Spec.EnableSASL && redpandaCluster.PandaproxyAPIInternal() != nil {
+	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.PandaproxyAPIInternal() != nil {
 		proxySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramPandaproxyUsername, resources.PandaProxySuffix, log)
 		proxySuKey = proxySu.Key()
 	}
 	var schemaRegistrySu *resources.SuperUsersResource
 	var schemaRegistrySuKey types.NamespacedName
-	if redpandaCluster.Spec.EnableSASL && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
+	if redpandaCluster.IsSASLOnInternalEnabled() && redpandaCluster.Spec.Configuration.SchemaRegistry != nil {
 		schemaRegistrySu = resources.NewSuperUsers(r.Client, &redpandaCluster, r.Scheme, resources.ScramSchemaRegistryUsername, resources.SchemaRegistrySuffix, log)
 		schemaRegistrySuKey = schemaRegistrySu.Key()
 	}
-	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
-	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, log)
+	pki, err := certmanager.NewPki(ctx, r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("creating pki: %w", err)
+	}
+	configMapResource := resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), proxySuKey, schemaRegistrySuKey, pki.BrokerTLSConfigProvider(), log)
 
 	lastAppliedConfig, cmExists, err := configMapResource.GetLastAppliedConfigurationFromCluster(ctx)
 	if err != nil {
@@ -133,7 +144,7 @@ func (r *ClusterConfigurationDriftReconciler) Reconcile(
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not get cluster schema to check drifts: %w", err)
 	}
-	clusterConfig, err := adminAPI.Config(ctx)
+	clusterConfig, err := adminAPI.Config(ctx, true)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("could not get cluster configuration to check drifts: %w", err)
 	}

@@ -10,6 +10,9 @@
  */
 
 #pragma once
+#include "archival/types.h"
+#include "cloud_roles/types.h"
+#include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/members_table.h"
@@ -20,12 +23,13 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/broker_authn_endpoint.h"
+#include "config/mock_property.h"
 #include "config/node_config.h"
 #include "coproc/api.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
-#include "kafka/server/protocol.h"
+#include "kafka/server/server.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
@@ -45,7 +49,15 @@
 
 #include <fmt/format.h>
 
+#include <chrono>
 #include <filesystem>
+
+// Whether or not the fixtures should be configured with a node ID.
+// NOTE: several fixtures may still require a node ID be supplied for the sake
+// of differentiating ports, data directories, loggers, etc.
+using configure_node_id = ss::bool_class<struct configure_node_id_tag>;
+using empty_seed_starts_cluster
+  = ss::bool_class<struct empty_seed_starts_cluster_tag>;
 
 class redpanda_thread_fixture {
 public:
@@ -61,7 +73,14 @@ public:
       std::vector<config::seed_server> seed_servers,
       ss::sstring base_dir,
       std::optional<scheduling_groups> sch_groups,
-      bool remove_on_shutdown)
+      bool remove_on_shutdown,
+      std::optional<cloud_storage_clients::s3_configuration> s3_config
+      = std::nullopt,
+      std::optional<archival::configuration> archival_cfg = std::nullopt,
+      std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
+      configure_node_id use_node_id = configure_node_id::yes,
+      const empty_seed_starts_cluster empty_seed_starts_cluster_val
+      = empty_seed_starts_cluster::yes)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -73,7 +92,12 @@ public:
           kafka_port,
           rpc_port,
           coproc_supervisor_port,
-          std::move(seed_servers));
+          std::move(seed_servers),
+          std::move(s3_config),
+          std::move(archival_cfg),
+          std::move(cloud_cfg),
+          use_node_id,
+          empty_seed_starts_cluster_val);
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -81,18 +105,20 @@ public:
           proxy_client_config(kafka_port),
           sch_groups);
         app.check_environment();
-        app.configure_admin_server();
-        app.wire_up_services();
-        app.start(*app_signal);
+        app.wire_up_and_start(*app_signal, true);
+
+        configs.start(ss::sstring("fixture_config")).get();
 
         // used by request context builder
-        proto = std::make_unique<kafka::protocol>(
+        proto = std::make_unique<kafka::server>(
+          &configs,
           app.smp_service_groups.kafka_smp_sg(),
           app.metadata_cache,
           app.controller->get_topics_frontend(),
           app.controller->get_config_frontend(),
           app.controller->get_feature_table(),
           app.quota_mgr,
+          app.snc_quota_mgr,
           app.group_router,
           app.shard_table,
           app.partition_manager,
@@ -104,8 +130,10 @@ public:
           app.controller->get_api(),
           app.tx_gateway_frontend,
           app.cp_partition_manager,
-          app.data_policies,
-          std::nullopt);
+          std::nullopt,
+          *app.thread_worker);
+
+        configs.stop().get();
     }
 
     // creates single node with default configuration
@@ -136,6 +164,26 @@ public:
         std::nullopt,
         true) {}
 
+    struct init_cloud_storage_tag {};
+
+    // Start redpanda with shadow indexing enabled
+    explicit redpanda_thread_fixture(
+      init_cloud_storage_tag, std::optional<uint16_t> port = std::nullopt)
+      : redpanda_thread_fixture(
+        model::node_id(1),
+        9092,
+        33145,
+        8082,
+        8081,
+        43189,
+        {},
+        ssx::sformat("test.dir_{}", time(0)),
+        std::nullopt,
+        true,
+        get_s3_config(port),
+        get_archival_config(),
+        get_cloud_config(port)) {}
+
     ~redpanda_thread_fixture() {
         shutdown();
         if (remove_on_shutdown) {
@@ -152,19 +200,66 @@ public:
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
+    static cloud_storage_clients::s3_configuration
+    get_s3_config(std::optional<uint16_t> port = std::nullopt) {
+        net::unresolved_address server_addr("127.0.0.1", port.value_or(4430));
+        cloud_storage_clients::s3_configuration s3conf;
+        s3conf.uri = cloud_storage_clients::access_point_uri("127.0.0.1");
+        s3conf.access_key = cloud_roles::public_key_str("acess-key");
+        s3conf.secret_key = cloud_roles::private_key_str("secret-key");
+        s3conf.region = cloud_roles::aws_region_name("us-east-1");
+        s3conf.server_addr = server_addr;
+        return s3conf;
+    }
+
+    static archival::configuration get_archival_config() {
+        archival::configuration aconf;
+        aconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
+        aconf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled::yes;
+        aconf.svc_metrics_disabled = archival::service_metrics_disabled::yes;
+        aconf.cloud_storage_initial_backoff = 100ms;
+        aconf.segment_upload_timeout = 1s;
+        aconf.manifest_upload_timeout = 1s;
+        aconf.time_limit = std::nullopt;
+        return aconf;
+    }
+
+    static cloud_storage::configuration
+    get_cloud_config(std::optional<uint16_t> port = std::nullopt) {
+        auto s3conf = get_s3_config(port);
+        cloud_storage::configuration cconf;
+        cconf.client_config = s3conf;
+        cconf.bucket_name = cloud_storage_clients::bucket_name("test-bucket");
+        cconf.connection_limit = archival::connection_limit(4);
+        cconf.metrics_disabled = cloud_storage::remote_metrics_disabled::yes;
+        return cconf;
+    }
+
     void configure(
       model::node_id node_id,
       int32_t kafka_port,
       int32_t rpc_port,
       int32_t coproc_supervisor_port,
-      std::vector<config::seed_server> seed_servers) {
+      std::vector<config::seed_server> seed_servers,
+      std::optional<cloud_storage_clients::s3_configuration> s3_config
+      = std::nullopt,
+      std::optional<archival::configuration> archival_cfg = std::nullopt,
+      std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
+      configure_node_id use_node_id = configure_node_id::yes,
+      const empty_seed_starts_cluster empty_seed_starts_cluster_val
+      = empty_seed_starts_cluster::yes) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
                                 rpc_port,
                                 coproc_supervisor_port,
                                 seed_servers = std::move(seed_servers),
-                                base_path]() mutable {
+                                base_path,
+                                s3_config,
+                                archival_cfg,
+                                cloud_cfg,
+                                use_node_id,
+                                empty_seed_starts_cluster_val]() mutable {
             auto& config = config::shard_local_cfg();
 
             config.get("enable_pid_file").set_value(false);
@@ -177,9 +272,13 @@ public:
             node_config.get("admin").set_value(
               std::vector<model::broker_endpoint>());
             node_config.get("developer_mode").set_value(true);
-            node_config.get("node_id").set_value(node_id);
+            node_config.get("node_id").set_value(
+              use_node_id ? std::make_optional(node_id)
+                          : std::optional<model::node_id>(std::nullopt));
+            node_config.get("empty_seed_starts_cluster")
+              .set_value(bool(empty_seed_starts_cluster_val));
             node_config.get("rack").set_value(
-              std::optional<model::rack_id>(model::rack_id(rack_name)));
+              std::make_optional(model::rack_id(rack_name)));
             node_config.get("seed_servers").set_value(seed_servers);
             node_config.get("rpc_server")
               .set_value(net::unresolved_address("127.0.0.1", rpc_port));
@@ -193,14 +292,53 @@ public:
             node_config.get("coproc_supervisor_server")
               .set_value(
                 net::unresolved_address("127.0.0.1", coproc_supervisor_port));
+            if (s3_config) {
+                config.get("cloud_storage_enabled").set_value(true);
+                config.get("cloud_storage_region")
+                  .set_value(std::make_optional(s3_config->region()));
+                config.get("cloud_storage_access_key")
+                  .set_value(std::make_optional((*s3_config->access_key)()));
+                config.get("cloud_storage_secret_key")
+                  .set_value(std::make_optional((*s3_config->secret_key)()));
+                config.get("cloud_storage_api_endpoint")
+                  .set_value(std::make_optional(s3_config->server_addr.host()));
+                config.get("cloud_storage_api_endpoint_port")
+                  .set_value(
+                    static_cast<int16_t>(s3_config->server_addr.port()));
+            }
+            if (archival_cfg) {
+                config.get("cloud_storage_disable_tls").set_value(true);
+                config.get("cloud_storage_bucket")
+                  .set_value(std::make_optional(archival_cfg->bucket_name()));
+                config.get("cloud_storage_initial_backoff_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->cloud_storage_initial_backoff));
+                config.get("cloud_storage_manifest_upload_timeout_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->manifest_upload_timeout));
+                config.get("cloud_storage_segment_upload_timeout_ms")
+                  .set_value(
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                      archival_cfg->segment_upload_timeout));
+            }
+            if (cloud_cfg) {
+                config.get("cloud_storage_enable_remote_read").set_value(true);
+                config.get("cloud_storage_enable_remote_write").set_value(true);
+                config.get("cloud_storage_max_connections")
+                  .set_value(
+                    static_cast<int16_t>(cloud_cfg->connection_limit()));
+            }
         }).get0();
     }
 
     YAML::Node proxy_config(uint16_t proxy_port = 8082) {
         pandaproxy::rest::configuration cfg;
         cfg.get("pandaproxy_api")
-          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            net::unresolved_address("127.0.0.1", proxy_port))});
+          .set_value(std::vector<config::rest_authn_endpoint>{
+            config::rest_authn_endpoint{
+              .address = net::unresolved_address("127.0.0.1", proxy_port)}});
         return to_yaml(cfg, config::redact_secrets::no);
     }
 
@@ -217,8 +355,9 @@ public:
     YAML::Node schema_reg_config(uint16_t listen_port = 8081) {
         pandaproxy::schema_registry::configuration cfg;
         cfg.get("schema_registry_api")
-          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
-            net::unresolved_address("127.0.0.1", listen_port))});
+          .set_value(std::vector<config::rest_authn_endpoint>{
+            config::rest_authn_endpoint{
+              .address = net::unresolved_address("127.0.0.1", listen_port)}});
         cfg.get("schema_registry_replication_factor")
           .set_value(std::make_optional<int16_t>(1));
         return to_yaml(cfg, config::redact_secrets::no);
@@ -257,16 +396,17 @@ public:
 
               // Await initial config status messages from all nodes
               auto& members = app.controller->get_members_table().local();
-              return config_mgr.get_status().size()
-                     == members.all_brokers().size();
+              return config_mgr.get_status().size() == members.node_count();
           });
     }
 
-    ss::future<kafka::client::transport> make_kafka_client() {
+    ss::future<kafka::client::transport>
+    make_kafka_client(std::optional<ss::sstring> client_id = "test_client") {
         return ss::make_ready_future<kafka::client::transport>(
           net::base_transport::configuration{
             .server_addr = config::node().kafka_api()[0].address,
-          });
+          },
+          std::move(client_id));
     }
 
     model::ntp
@@ -385,7 +525,9 @@ public:
           });
     }
 
-    model::ntp make_data(model::revision_id rev) {
+    model::ntp make_data(
+      model::revision_id rev,
+      std::optional<model::timestamp> base_ts = std::nullopt) {
         auto topic_name = ssx::sformat("my_topic_{}", 0);
         model::ntp ntp(
           model::kafka_namespace,
@@ -397,9 +539,18 @@ public:
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT
+
         builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
           | add_random_batches(
-            model::offset(0), 20, maybe_compress_batches::yes)
+            model::offset(0),
+            20,
+            maybe_compress_batches::yes,
+            log_append_config{
+              .should_fsync = log_append_config::fsync::yes,
+              .io_priority = ss::default_priority_class(),
+              .timeout = model::no_timeout},
+            disk_log_builder::should_flush_after::yes,
+            base_ts)
           | stop();
 
         add_topic(model::topic_namespace_view(ntp)).get();
@@ -411,10 +562,11 @@ public:
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
         auto conn = ss::make_lw_shared<kafka::connection_context>(
           *proto,
-          net::server::resources(nullptr, nullptr),
+          nullptr,
           std::move(sasl),
           false,
-          std::nullopt);
+          std::nullopt,
+          config::mock_property<uint32_t>(100_MiB).bind());
 
         kafka::request_header header;
         auto encoder_context = kafka::request_context(
@@ -438,7 +590,8 @@ public:
     uint16_t proxy_port;
     uint16_t schema_reg_port;
     std::filesystem::path data_dir;
-    std::unique_ptr<kafka::protocol> proto;
+    ss::sharded<net::server_configuration> configs;
+    std::unique_ptr<kafka::server> proto;
     bool remove_on_shutdown;
     std::unique_ptr<::stop_signal> app_signal;
 };

@@ -10,7 +10,8 @@
 import uuid
 
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
@@ -31,13 +32,15 @@ class MultiRestartTest(EndToEndTest):
                                                extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    def test_recovery_after_multiple_restarts(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_recovery_after_multiple_restarts(self, cloud_storage_type):
         # If a debug build has to do a restart across a significant
         # number of partitions, it gets slow.  Use fewer partitions
         # on debug builds.
         partition_count = 10 if self.debug_mode else 60
 
-        si_settings = SISettings(cloud_storage_reconciliation_interval_ms=500,
+        si_settings = SISettings(self.test_context,
                                  cloud_storage_max_connections=5,
                                  log_segment_size=self.log_segment_size)
         self.s3_bucket_name = si_settings.cloud_storage_bucket

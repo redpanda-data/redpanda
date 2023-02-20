@@ -88,9 +88,14 @@ public:
     void make_snapshot_in_background() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
     model::offset max_collectible_offset() override;
+    ss::future<std::vector<model::tx_range>>
+      aborted_tx_ranges(model::offset, model::offset) override;
+    const ss::sstring& name() override { return _snapshot_mgr.name(); }
+
     virtual ss::future<> remove_persistent_state();
 
     ss::future<> make_snapshot();
+    virtual uint64_t get_snapshot_size() const;
     /*
      * Usually start() acts as a barrier and we don't call any methods on the
      * object before start returns control flow.
@@ -149,6 +154,7 @@ protected:
     bool _is_catching_up{false};
     model::term_id _insync_term;
     model::offset _insync_offset;
+    uint64_t _snapshot_size{0};
     raft::consensus* _c;
     storage::simple_snapshot_manager _snapshot_mgr;
     ss::logger& _log;

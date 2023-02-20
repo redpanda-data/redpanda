@@ -11,7 +11,7 @@ import re
 from typing import Optional, Callable
 from rptest.util import wait_until_result
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.utils.util import TimeoutError
+from ducktape.utils.util import wait_until, TimeoutError
 
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
@@ -90,42 +90,60 @@ class ClusterMetricsTest(RedpandaTest):
             hosts=started_hosts,
             check=lambda node_id: node_id != self.redpanda.idx(prev))
 
-    def _get_value_from_samples(self, samples: MetricSamples):
-        """
-        Extract the metric value from the samples.
-        Only one sample is expected as cluster level metrics have no labels.
-        """
-        assert len(samples.samples) == 1
-        return samples.samples[0].value
+    def _get_metrics_value_from_node(self, node: ClusterNode, pattern: str):
+        samples = self._get_metrics_from_node(node, [pattern])
+        assert pattern in samples
+        value = samples[pattern].samples[0].value
+        self.logger.info(f"Found metric value {value} for {pattern}")
+        return value
 
-    def _assert_cluster_metrics(
+    def _wait_until_metric_has_value(self, node: ClusterNode, pattern: str,
+                                     value):
+        wait_until(
+            lambda: value == self._get_metrics_value_from_node(node, pattern),
+            timeout_sec=10,
+            backoff_sec=2,
+            err_msg=f"Metric {pattern} never reached expected value {value}")
+
+    def _wait_until_metric_holds_value(self, node: ClusterNode, pattern: str,
+                                       value):
+        self._wait_until_metric_has_value(node, pattern, value)
+
+        try:
+            wait_until(lambda: value != self._get_metrics_value_from_node(
+                node, pattern),
+                       timeout_sec=5,
+                       backoff_sec=1)
+        except TimeoutError as e:
+            # Timing out is the desirable outcome here as it means
+            # that the value remained constant.
+            return
+
+        assert False, f"Metric {pattern} did not stabilise on {value}"
+
+    def _get_metrics_from_node(
             self, node: ClusterNode,
-            expect_metrics: bool) -> Optional[dict[str, MetricSamples]]:
-        """
-        Assert that cluster metrics are reported (or not) from the specified node.
-        """
+            patterns: list[str]) -> Optional[dict[str, MetricSamples]]:
         def get_metrics_from_node_sync(patterns: list[str]):
             samples = self.redpanda.metrics_samples(
                 patterns, [node], MetricsEndpoint.PUBLIC_METRICS)
             success = samples is not None
             return success, samples
 
-        def get_metrics_from_node(patterns: list[str]):
-            metrics = None
+        try:
+            return wait_until_result(
+                lambda: get_metrics_from_node_sync(patterns),
+                timeout_sec=2,
+                backoff_sec=.1)
+        except TimeoutError as e:
+            return None
 
-            try:
-                metrics = wait_until_result(
-                    lambda: get_metrics_from_node_sync(patterns),
-                    timeout_sec=2,
-                    backoff_sec=.1)
-            except TimeoutError as e:
-                if expect_metrics:
-                    raise e
-
-            return metrics
-
-        metrics_samples = get_metrics_from_node(
-            ClusterMetricsTest.cluster_level_metrics)
+    def _assert_cluster_metrics(self, node: ClusterNode, expect_metrics: bool):
+        """
+        Assert that cluster metrics are reported (or not) from the specified node.
+        """
+        metrics_samples = self._get_metrics_from_node(
+            node, ClusterMetricsTest.cluster_level_metrics)
 
         if expect_metrics:
             assert metrics_samples, f"Missing expected metrics from node {node.name}"
@@ -188,8 +206,11 @@ class ClusterMetricsTest(RedpandaTest):
         cluster_metrics = MetricCheck(
             self.logger,
             self.redpanda,
-            controller,
-            re.compile("redpanda_cluster_.*"),
+            controller, [
+                "redpanda_cluster_brokers", "redpanda_cluster_topics",
+                "redpanda_cluster_partitions",
+                "redpanda_cluster_unavailable_partitions"
+            ],
             metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
 
         RpkTool(self.redpanda).create_topic("test-topic", partitions=3)
@@ -223,3 +244,32 @@ class ClusterMetricsTest(RedpandaTest):
         # 'disable_public_metrics' == true
         controller = self._wait_until_controller_leader_is_stable()
         self._assert_cluster_metrics(controller, expect_metrics=False)
+
+    @cluster(num_nodes=3)
+    def partition_count_decreases_on_deletion_test(self):
+        controller = self._wait_until_controller_leader_is_stable()
+        self._assert_reported_by_controller(controller)
+
+        try:
+            self._wait_until_metric_has_value(controller,
+                                              "cluster_partitions",
+                                              value=0)
+
+            RpkTool(self.redpanda).create_topic("topic-a", partitions=20)
+            RpkTool(self.redpanda).create_topic("topic-b", partitions=10)
+            self._wait_until_metric_holds_value(controller,
+                                                "cluster_partitions",
+                                                value=30)
+
+            RpkTool(self.redpanda).delete_topic("topic-a")
+            self._wait_until_metric_holds_value(controller,
+                                                "cluster_partitions",
+                                                value=10)
+
+            RpkTool(self.redpanda).create_topic("topic-a", partitions=30)
+            self._wait_until_metric_holds_value(controller,
+                                                "cluster_partitions",
+                                                value=40)
+        except Exception as e:
+            topics_info = RpkTool(self.redpanda).list_topics()
+            raise e

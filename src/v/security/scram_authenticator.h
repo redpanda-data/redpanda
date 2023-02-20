@@ -9,7 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "security/credential_store.h"
+#include "security/acl.h"
+#include "security/fwd.h"
 #include "security/sasl_authentication.h"
 #include "security/scram_algorithm.h"
 
@@ -20,27 +21,25 @@ class scram_authenticator final : public sasl_mechanism {
     static constexpr int nonce_size = 130;
 
 public:
+    using scram = ScramMechanism;
+
     explicit scram_authenticator(credential_store& credentials)
       : _state{state::client_first_message}
       , _credentials(credentials) {}
 
-    result<bytes> authenticate(bytes_view auth_bytes) override;
+    ss::future<result<bytes>> authenticate(bytes auth_bytes) override;
 
     bool complete() const override { return _state == state::complete; }
     bool failed() const override { return _state == state::failed; }
 
-    const ss::sstring& principal() const override { return authid(); }
-
-    const ss::sstring& authid() const {
+    const acl_principal& principal() const override {
         vassert(
           _state == state::complete,
           "Authentication id is not valid until auth process complete");
-        return _authid;
+        return _principal;
     }
 
 private:
-    using scram = ScramMechanism;
-
     enum class state {
         client_first_message,
         client_final_message,
@@ -57,7 +56,7 @@ private:
 
     state _state;
     credential_store& _credentials;
-    ss::sstring _authid;
+    acl_principal _principal;
 
     // populated during authentication process
     std::unique_ptr<scram_credential> _credential;

@@ -19,13 +19,17 @@ import (
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	netv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // ConsoleReconciler reconciles a Console object
@@ -43,6 +47,9 @@ type ConsoleReconciler struct {
 const (
 	// ClusterNotFoundEvent is a warning event if referenced Cluster not found
 	ClusterNotFoundEvent = "ClusterNotFound"
+
+	// ClusterNotConfiguredEvent is a warning event if referenced Cluster not yet configured
+	ClusterNotConfiguredEvent = "ClusterNotConfigured"
 
 	// NoSubdomainEvent is warning event if subdomain is not found in Cluster ExternalListener
 	NoSubdomainEvent = "NoSubdomain"
@@ -72,6 +79,7 @@ func (r *ConsoleReconciler) Reconcile(
 		}
 		return ctrl.Result{}, err
 	}
+
 	// Checks if Console is valid to be created in specified namespace
 	if !console.IsAllowedNamespace() {
 		err := fmt.Errorf("invalid Console namespace") //nolint:goerr113 // no need to declare new error type
@@ -79,33 +87,41 @@ func (r *ConsoleReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	cluster := &redpandav1alpha1.Cluster{}
-	if err := r.Get(ctx, console.GetClusterRef(), cluster); err != nil {
-		if apierrors.IsNotFound(err) {
-			// Console will never reconcile if Cluster is not found
-			// Users shouldn't check logs of operator to know this
-			// Adding Conditions in Console status might not be apt, record Event instead
+	cluster, err := console.GetCluster(ctx, r.Client)
+	if err != nil {
+		// Create event instead of logging the error, so user can see in Console CR instead of checking logs in operator
+		switch {
+		case apierrors.IsNotFound(err) || (cluster != nil && !cluster.DeletionTimestamp.IsZero()):
+			// If deleting and cluster is not found or is in the process of being deleted, nothing to do
+			if console.GetDeletionTimestamp() != nil {
+				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleSAFinalizer)
+				controllerutil.RemoveFinalizer(console, consolepkg.ConsoleACLFinalizer)
+				return ctrl.Result{}, r.Update(ctx, console)
+			}
 			r.EventRecorder.Eventf(
 				console,
 				corev1.EventTypeWarning, ClusterNotFoundEvent,
-				"Unable to reconcile Console as the referenced Cluster %s/%s is not found",
-				console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name,
+				"Unable to reconcile Console as the referenced Cluster %s is not found or is being deleted", console.GetClusterRef(),
 			)
+		case errors.Is(err, redpandav1alpha1.ErrClusterNotConfigured):
+			r.EventRecorder.Eventf(
+				console,
+				corev1.EventTypeWarning, ClusterNotConfiguredEvent,
+				"Unable to reconcile Console as the referenced Cluster %s is not yet configured", console.GetClusterRef(),
+			)
+			return ctrl.Result{Requeue: true}, nil
 		}
 		return ctrl.Result{}, err
 	}
-	if cc := cluster.Status.GetCondition(redpandav1alpha1.ClusterConfiguredConditionType); cc == nil || cc.Status != corev1.ConditionTrue {
-		log.Info("Cluster not yet configured, requeueing", "redpandacluster", client.ObjectKeyFromObject(cluster).String())
-		return ctrl.Result{Requeue: true}, nil
-	}
 
+	r.Log.V(debugLogLevel).Info("console", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
 	var s state
 	switch {
-	case console.GetDeletionTimestamp() != nil:
+	case !console.GetDeletionTimestamp().IsZero():
 		s = &Deleting{r}
 	case !console.GenerationMatchesObserved():
 		if err := r.handleSpecChange(ctx, console); err != nil {
-			return ctrl.Result{}, fmt.Errorf("handle spec change: %w", err)
+			return ctrl.Result{}, fmt.Errorf("handle spec change (lastObserved: %d, currentGeneration: %d): %w", console.Status.ObservedGeneration, console.GetGeneration(), err)
 		}
 		fallthrough
 	default:
@@ -126,7 +142,7 @@ func (r *Reconciling) Do(
 	log logr.Logger,
 ) (ctrl.Result, error) {
 	// Ensure items in the store are updated
-	if err := r.Store.Sync(cluster); err != nil {
+	if err := r.Store.Sync(ctx, cluster); err != nil {
 		return ctrl.Result{}, fmt.Errorf("sync console store: %w", err)
 	}
 
@@ -141,7 +157,7 @@ func (r *Reconciling) Do(
 	// NewIngress will not create Ingress if subdomain is empty
 	subdomain := ""
 	if ex := cluster.ExternalListener(); ex != nil && ex.GetExternal().Subdomain != "" {
-		subdomain = fmt.Sprintf("console.%s", ex.GetExternal().Subdomain)
+		subdomain = ex.GetExternal().Subdomain
 	} else {
 		r.EventRecorder.Event(
 			console,
@@ -150,13 +166,22 @@ func (r *Reconciling) Do(
 		)
 	}
 
+	// Ingress with TLS and "/debug" "/admin" paths disabled
+	ingressResource := resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log)
+	ingressResource = ingressResource.WithDefaultEndpoint("console")
+	ingressResource = ingressResource.WithUserConfig(console.Spec.Ingress)
+	ingressResource = ingressResource.WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName()))
+	ingressResource = ingressResource.WithAnnotations(map[string]string{
+		"nginx.ingress.kubernetes.io/server-snippet": "if ($request_uri ~* ^/(debug|admin)) {\n\treturn 403;\n\t}",
+	})
+
 	applyResources := []resources.Resource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
-		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, log),
+		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, r.Store, log),
 		configmapResource,
 		consolepkg.NewDeployment(r.Client, r.Scheme, console, cluster, r.Store, log),
 		consolepkg.NewService(r.Client, r.Scheme, console, r.clusterDomain, log),
-		resources.NewIngress(r.Client, console, r.Scheme, subdomain, console.GetName(), consolepkg.ServicePortName, log).WithTLS(resources.LEClusterIssuer, fmt.Sprintf("%s-redpanda", cluster.GetName())),
+		ingressResource,
 	}
 	for _, each := range applyResources {
 		if err := each.Ensure(ctx); err != nil { //nolint:gocritic // more readable
@@ -179,6 +204,7 @@ func (r *Reconciling) Do(
 	}
 
 	if !console.GenerationMatchesObserved() {
+		r.Log.Info("observed generation updating", "observed generation", console.Status.ObservedGeneration, "generation", console.GetGeneration())
 		console.Status.ObservedGeneration = console.GetGeneration()
 		if err := r.Status().Update(ctx, console); err != nil {
 			return ctrl.Result{}, err
@@ -200,7 +226,7 @@ func (r *Deleting) Do(
 ) (ctrl.Result, error) {
 	applyResources := []resources.ManagedResource{
 		consolepkg.NewKafkaSA(r.Client, r.Scheme, console, cluster, r.clusterDomain, r.AdminAPIClientFactory, log),
-		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, log),
+		consolepkg.NewKafkaACL(r.Client, r.Scheme, console, cluster, r.KafkaAdminClientFactory, r.Store, log),
 	}
 
 	for _, each := range applyResources {
@@ -217,11 +243,13 @@ func (r *ConsoleReconciler) handleSpecChange(
 	ctx context.Context, console *redpandav1alpha1.Console,
 ) error {
 	if console.Status.ConfigMapRef != nil {
+		r.Log.V(debugLogLevel).Info("handle spec change", "config map name", console.Status.ConfigMapRef.Name, "config map namespace", console.Status.ConfigMapRef.Namespace)
 		// We are creating new ConfigMap for every spec change so Deployment can detect changes and redeploy Pods
 		// Unset Status.ConfigMapRef so we can delete the previous unused ConfigMap
+		previousConfigMapRef := fmt.Sprintf("%s/%s", console.Status.ConfigMapRef.Namespace, console.Status.ConfigMapRef.Name)
 		console.Status.ConfigMapRef = nil
 		if err := r.Status().Update(ctx, console); err != nil {
-			return err
+			return fmt.Errorf("removing config map ref from status (%s): %w", previousConfigMapRef, err)
 		}
 	}
 	return nil
@@ -233,8 +261,10 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&redpandav1alpha1.Console{}).
 		Owns(&corev1.Secret{}).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&corev1.ConfigMap{}, builder.WithPredicates(utils.DeletePredicate{})).
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
+		Owns(&netv1.Ingress{}).
 		Complete(r)
 }
 

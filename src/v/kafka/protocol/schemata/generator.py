@@ -96,6 +96,23 @@ path_type_map = {
             }
         }
     },
+    "OffsetDeleteRequestData": {
+        "GroupId": ("kafka::group_id", "string"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32")
+            }
+        }
+    },
+    "OffsetDeleteResponseData": {
+        "ErrorCode": ("kafka::error_code", "int16"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "ErrorCode": ("kafka::error_code", "int16"),
+            }
+        }
+    },
     "TxnOffsetCommitRequestData": {
         "MemberId": ("kafka::member_id", "string"),
         "GroupInstanceId": ("kafka::group_instance_id", "string"),
@@ -211,6 +228,7 @@ path_type_map = {
             "ResourceType": ("kafka::config_resource_type", "int8"),
             "Configs": {
                 "ConfigSource": ("kafka::describe_configs_source", "int8"),
+                "ConfigType": ("kafka::describe_configs_type", "int8"),
             },
         },
     },
@@ -287,6 +305,46 @@ path_type_map = {
                 "EndOffset": ("model::offset", "int64"),
             }
         }
+    },
+    "AlterPartitionReassignmentsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        }
+    },
+    "AlterPartitionReassignmentsResponseData": {
+        "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
+        "Responses": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        }
+    },
+    "ListPartitionReassignmentsRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "PartitionIndexes": ("model::partition_id", "int32"),
+        }
+    },
+    "ListPartitionReassignmentsResponseData": {
+        "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        }
+    },
+    "DescribeProducersRequestData": {
+        "Topics": {
+            "PartitionIndexes": ("model::partition_id", "int32"),
+        }
+    },
+    "DescribeTransactionsResponseData": {
+        "Topics": {
+            "Partitions": ("model::partition_id", "int32"),
+        }
     }
 }
 
@@ -354,7 +412,34 @@ struct_renames = {
     ("IncrementalAlterConfigsResponseData", "Responses"):
         ("AlterConfigsResourceResponse", "IncrementalAlterConfigsResourceResponse"),
 }
+
+# extra header per type name
+extra_headers = {
+    "std::optional": dict(
+        header = ("<optional>",),
+        source = "utils/to_string.h"
+    ),
+    "std::vector": dict(
+        header = "<vector>",
+    ),
+    "kafka::produce_request_record_data": dict(
+        header = "kafka/protocol/kafka_batch_adapter.h",
+    ),
+    "kafka::batch_reader": dict(
+        header = "kafka/protocol/batch_reader.h",
+    ),
+    "model::timestamp": dict(
+        header = "model/timestamp.h",
+    ),
+    "std::chrono::milliseconds": dict(
+        source = "utils/to_string.h",
+    ),
+}
 # yapf: enable
+
+# These types, when they appear as the member type of an array, will use
+# a vector implementation which resists fragmentation.
+enable_fragmentation_resistance = {'metadata_response_partition'}
 
 
 def make_context_field(path):
@@ -440,12 +525,31 @@ STRUCT_TYPES = [
     "CreatePartitionsTopic",
     "CreatePartitionsTopicResult",
     "CreatePartitionsAssignment",
+    "OffsetDeleteRequestTopic",
+    "OffsetDeleteRequestPartition",
+    "OffsetDeleteResponseTopic",
+    "OffsetDeleteResponsePartition",
     "OffsetForLeaderTopic",
     "OffsetForLeaderPartition",
     "OffsetForLeaderTopicResult",
     "EpochEndOffset",
     "SupportedFeatureKey",
     "FinalizedFeatureKey",
+    "DeleteTopicState",
+    "ReassignableTopic",
+    "ReassignablePartition",
+    "ReassignableTopicResponse",
+    "ReassignablePartitionResponse",
+    "ListPartitionReassignmentsTopics",
+    "OngoingTopicReassignment",
+    "OngoingPartitionReassignment",
+    "TopicRequest",
+    "TopicResponse",
+    "PartitionResponse",
+    "ProducerState",
+    "DescribeTransactionState",
+    "TopicData",
+    "ListTransactionState",
 ]
 
 # a list of struct types which are ineligible to have default-generated
@@ -652,6 +756,42 @@ class StructType(FieldType):
                 res.append(t)
         return res
 
+    def headers(self, which):
+        """
+        calculate extra headers needed to support this struct
+        """
+        whiches = set(("header", "source"))
+        assert which in whiches
+
+        def type_iterator(fields):
+            for field in fields:
+                yield from field.type_name_parts()
+                t = field.type()
+                if isinstance(t, ArrayType):
+                    t = t.value_type()  # unwrap value type
+                if isinstance(t, StructType):
+                    yield from type_iterator(t.fields)
+
+        types = set(type_iterator(self.fields))
+
+        def maybe_strings(s):
+            if isinstance(s, str):
+                yield s
+            else:
+                assert isinstance(s, tuple)
+                yield from s
+
+        def type_headers(t):
+            h = extra_headers.get(t, None)
+            if h is None:
+                return
+            assert isinstance(h, dict)
+            assert set(h.keys()) <= whiches
+            h = h.get(which, ())
+            yield from maybe_strings(h)
+
+        return set(h for t in types for h in type_headers(t))
+
     @property
     def is_default_comparable(self):
         return all(field.is_default_comparable for field in self.fields)
@@ -665,6 +805,11 @@ class ArrayType(FieldType):
 
     def value_type(self):
         return self._value_type
+
+    @property
+    def potentially_flexible_type(self):
+        assert isinstance(self._value_type, ScalarType)
+        return self._value_type.potentially_flexible_type
 
 
 class Field:
@@ -801,6 +946,9 @@ class Field:
         if self.is_array:
             # array fields never contain nullable types. so if this is an array
             # field then choose the non-nullable decoder for its element type.
+            if self.potentially_flexible_type and flex:
+                assert plain_decoder[3]
+                return plain_decoder[3], named_type
             assert plain_decoder[1]
             return plain_decoder[1], named_type
         if self.potentially_flexible_type:
@@ -830,8 +978,8 @@ class Field:
             # sensitive field, but it itself isn't sensitive.
             return False
         assert d is None or d is True, \
-          "expected field '{}' to be missing or True; field path: {}, remaining path: {}" \
-          .format(self._field["name"], self._path, d)
+            "expected field '{}' to be missing or True; field path: {}, remaining path: {}" \
+            .format(self._field["name"], self._path, d)
         return d
 
     @property
@@ -844,19 +992,34 @@ class Field:
 
     @property
     def potentially_flexible_type(self):
-        return isinstance(self._type,
-                          ScalarType) and self._type.potentially_flexible_type
+        return self._type.potentially_flexible_type
 
     @property
     def type_name(self):
         name, default_value = self._redpanda_type()
         if isinstance(self._type, ArrayType):
             assert default_value is None  # not supported
-            name = f"std::vector<{name}>"
+            if name in enable_fragmentation_resistance:
+                name = f'large_fragment_vector<{name}>'
+            else:
+                name = f'std::vector<{name}>'
         if self.nullable():
             assert default_value is None  # not supported
             return f"std::optional<{name}>", None
         return name, default_value
+
+    def type_name_parts(self):
+        """
+        yield normalized types required by this field
+        """
+        name, default_value = self._redpanda_type()
+        yield name
+        if isinstance(self._type, ArrayType):
+            assert default_value is None  # not supported
+            yield "std::vector"
+        if self.nullable():
+            assert default_value is None  # not supported
+            yield "std::optional"
 
     @property
     def value_type(self):
@@ -875,21 +1038,20 @@ class Field:
 
 HEADER_TEMPLATE = """
 #pragma once
-#include "kafka/types.h"
 #include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"
-#include "model/timestamp.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
-#include <seastar/core/sstring.hh>
-
-#include <chrono>
-#include <cstdint>
-#include <optional>
-#include <vector>
+{%- for header in struct.headers("header") %}
+{%- if header.startswith("<") %}
+#include {{ header }}
+{%- else %}
+#include "{{ header }}"
+{%- endif %}
+{%- endfor %}
 
 {% macro render_struct(struct) %}
 {{ render_struct_comment(struct) }}
@@ -980,10 +1142,11 @@ struct {{ request_name }}_api final {
 }
 """
 
-SOURCE_TEMPLATE = """
+COMBINED_SOURCE_TEMPLATE = """
+{%- for header in schema_headers %}
 #include "kafka/protocol/schemata/{{ header }}"
+{%- endfor %}
 
-#include "cluster/types.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/request_reader.h"
 
@@ -991,6 +1154,23 @@ SOURCE_TEMPLATE = """
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 
+{%- for header in extra_headers %}
+{%- if header.startswith("<") %}
+#include {{ header }}
+{%- else %}
+#include "{{ header }}"
+{%- endif %}
+{%- endfor %}
+
+{%- for name, source in sources %}
+/*
+ * begin: {{ name }}
+ */
+{{ source }}
+{%- endfor %}
+"""
+
+SOURCE_TEMPLATE = """
 {% macro version_guard(field, flex) %}
 {%- set guard_enum = field.versions().guard_enum %}
 {%- set e, cond = field.versions().guard(flex, first_flex) %}
@@ -1044,6 +1224,8 @@ if ({{ cond }}) {
     (void)version;
 {%- if field.type().value_type().is_struct %}
 {{- struct_serde(field.type().value_type(), methods, "v") | indent }}
+{%- elif flex and field.type().value_type().potentially_flexible_type %}
+    {{ writer }}.write_flex(v);
 {%- else %}
     {{ writer }}.write(v);
 {%- endif %}
@@ -1085,14 +1267,6 @@ if ({{ cond }}) {
 {%- set decoder, named_type = field.decoder(flex) %}
 {%- if named_type == None %}
     return reader.{{ decoder }};
-{%- elif field.nullable() %}
-    {
-        auto tmp = reader.{{ decoder }};
-        if (tmp) {
-            return {{ named_type }}(std::move(*tmp));
-        }
-        return std::nullopt;
-    }
 {%- else %}
     return {{ named_type }}(reader.{{ decoder }});
 {%- endif %}
@@ -1329,11 +1503,38 @@ void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) 
 {%- endif %}
 {%- else %}
 {%- if op_type == "request" %}
+{%- if first_flex > 0 %}
+void {{ struct.name }}::encode(response_writer& writer, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        writer.write_tags(std::move(unknown_tags));
+    }
+}
+void {{ struct.name }}::decode(request_reader& reader, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        unknown_tags = reader.read_tags();
+    }
+}
+{%- else %}
 void {{ struct.name }}::encode(response_writer&, api_version) {}
 void {{ struct.name }}::decode(request_reader&, api_version) {}
+{%- endif %}
 {%- else %}
-void {{ struct.name }}::encode(response_writer&, api_version&) {}
+{%- if first_flex > 0 %}
+void {{ struct.name }}::encode(response_writer& writer, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        write.write_tags(std::move(unknown_tags));
+    }
+}
+void {{ struct.name }}::decode(iobuf buf, api_version version) {
+    if (version >= api_version({{ first_flex }})) {
+        request_reader reader(std::move(buf));
+        unknown_tags = reader.read_tags();
+    }
+}
+{%- else %}
+void {{ struct.name }}::encode(response_writer&, api_version) {}
 void {{ struct.name }}::decode(iobuf, api_version) {}
+{%- endif %}
 {%- endif %}
 {%- endif %}
 
@@ -1372,7 +1573,8 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
 ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES) - set(["iobuf"]))
 ALLOWED_TYPES = \
     ALLOWED_SCALAR_TYPES + \
-    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES] + TAGGED_WITH_FIELDS
+    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES +
+        STRUCT_TYPES] + TAGGED_WITH_FIELDS
 
 # yapf: disable
 SCHEMA = {
@@ -1454,7 +1656,7 @@ SCHEMA = {
             ],
         },
         "fields": {"$ref": "#/definitions/fields"},
-        "listeners": { "type": "array", "optional": True }
+        "listeners": {"type": "array", "optional": True}
     },
     "required": [
         "apiKey",
@@ -1512,12 +1714,7 @@ def parse_flexible_versions(flex_version):
     return r.min
 
 
-if __name__ == "__main__":
-    assert len(sys.argv) == 4
-    schema_path = pathlib.Path(sys.argv[1])
-    hdr = pathlib.Path(sys.argv[2])
-    src = pathlib.Path(sys.argv[3])
-
+def codegen(schema_path):
     # remove comments from the json file. comments are a non-standard json
     # extension that is not supported by the python json parser.
     schema = io.StringIO()
@@ -1558,21 +1755,56 @@ if __name__ == "__main__":
     def fail(msg):
         assert False, msg
 
-    with open(hdr, 'w') as f:
-        f.write(
-            jinja2.Template(HEADER_TEMPLATE).render(
-                struct=struct,
-                render_struct_comment=render_struct_comment,
-                op_type=op_type,
-                fail=fail,
-                api_key=api_key,
-                request_name=request_name,
-                first_flex=first_flex))
+    hdr = jinja2.Template(HEADER_TEMPLATE).render(
+        struct=struct,
+        render_struct_comment=render_struct_comment,
+        op_type=op_type,
+        fail=fail,
+        api_key=api_key,
+        request_name=request_name,
+        first_flex=first_flex)
 
-    with open(src, 'w') as f:
-        f.write(
-            jinja2.Template(SOURCE_TEMPLATE).render(struct=struct,
-                                                    header=hdr.name,
-                                                    op_type=op_type,
-                                                    fail=fail,
-                                                    first_flex=first_flex))
+    src = jinja2.Template(SOURCE_TEMPLATE).render(struct=struct,
+                                                  op_type=op_type,
+                                                  fail=fail,
+                                                  first_flex=first_flex)
+
+    return hdr, src, struct.headers("source")
+
+
+if __name__ == "__main__":
+    schemata = []
+    headers = []
+    source = None
+
+    for arg in sys.argv[1:]:
+        path = pathlib.Path(arg)
+        if path.suffix == ".json":
+            schemata.append(path)
+        elif path.suffix == ".h":
+            headers.append(path)
+        elif path.suffix == ".cc":
+            assert source is None
+            source = path
+        else:
+            assert False, f"unknown arg {arg}"
+
+    assert len(schemata) == len(headers)
+    assert source is not None
+
+    sources = []
+    extra_schema_headers = set()
+    for schema, hdr_path in zip(schemata, headers):
+        hdr, src, extra = codegen(schema)
+        sources.append((schema.name, src))
+        extra_schema_headers.update(extra)
+        with open(hdr_path, 'w') as f:
+            f.write(hdr)
+
+    src = jinja2.Template(COMBINED_SOURCE_TEMPLATE).render(
+        schema_headers=map(lambda p: p.name, headers),
+        extra_headers=extra_schema_headers,
+        sources=sources)
+
+    with open(source, 'w') as f:
+        f.write(src)

@@ -301,6 +301,8 @@ inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
     switch (p.type()) {
     case security::principal_type::user:
         return fmt::format("User:{}", p.name());
+    case security::principal_type::ephemeral_user:
+        return fmt::format("Ephemeral user:{}", p.name());
     }
     __builtin_unreachable();
 }

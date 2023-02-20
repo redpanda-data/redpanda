@@ -12,7 +12,6 @@
 
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/logger.h"
@@ -23,6 +22,7 @@
 #include "config/configuration.h"
 #include "config/node_config.h"
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/fwd.h"
@@ -55,13 +55,9 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<partition_manager>& partition_manager,
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<ss::abort_source>& as,
-  ss::sharded<storage::node_api>& storage_node_api,
-  ss::sharded<storage::api>& storage_api,
+  ss::sharded<node::local_monitor>& local_monitor,
   ss::sharded<drain_manager>& drain_manager,
-  ss::sharded<feature_table>& feature_table,
-  config::binding<size_t> storage_min_bytes_alert,
-  config::binding<unsigned> storage_min_percent_alert,
-  config::binding<size_t> storage_min_bytes)
+  ss::sharded<features::feature_table>& feature_table)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -70,12 +66,7 @@ health_monitor_backend::health_monitor_backend(
   , _as(as)
   , _drain_manager(drain_manager)
   , _feature_table(feature_table)
-  , _local_monitor(
-      std::move(storage_min_bytes_alert),
-      std::move(storage_min_percent_alert),
-      std::move(storage_min_bytes),
-      storage_node_api,
-      storage_api) {
+  , _local_monitor(local_monitor) {
     _leadership_notification_handle
       = _raft_manager.local().register_leadership_notification(
         [this](
@@ -139,7 +130,7 @@ cluster_health_report health_monitor_backend::build_cluster_report(
         refresh_nodes_status();
     }
 
-    auto nodes = filter.nodes.empty() ? _members.local().all_broker_ids()
+    auto nodes = filter.nodes.empty() ? _members.local().node_ids()
                                       : filter.nodes;
     reports.reserve(nodes.size());
     statuses.reserve(nodes.size());
@@ -166,20 +157,20 @@ void health_monitor_backend::refresh_nodes_status() {
     absl::erase_if(
       _status, [this](auto& e) { return !_members.local().contains(e.first); });
 
-    for (auto& b : _members.local().all_brokers()) {
+    for (auto& [id, nm] : _members.local().nodes()) {
         node_state status;
-        status.id = b->id();
-        status.membership_state = b->get_membership_state();
+        status.id = id;
+        status.membership_state = nm.state.get_membership_state();
 
         // current node is always alive
-        if (b->id() == _raft0->self().id()) {
+        if (id == _raft0->self().id()) {
             status.is_alive = alive::yes;
         }
-        auto res = _raft0->get_follower_metrics(b->id());
+        auto res = _raft0->get_follower_metrics(id);
         if (res) {
             status.is_alive = alive(res.value().is_live);
         }
-        _status.insert_or_assign(b->id(), status);
+        _status.insert_or_assign(id, status);
     }
 }
 
@@ -219,7 +210,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
 
     report.local_state = it->second.local_state;
     report.local_state.logical_version
-      = feature_table::get_latest_logical_version();
+      = features::feature_table::get_latest_logical_version();
 
     if (f.include_partitions) {
         report.topics = filter_topic_status(it->second.topics, f.ntp_filters);
@@ -227,7 +218,7 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
 
     report.drain_status = it->second.drain_status;
     report.include_drain_status = _feature_table.local().is_active(
-      cluster::feature::maintenance_mode);
+      features::feature::maintenance_mode);
 
     return report;
 }
@@ -566,7 +557,7 @@ ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
      */
     vlog(clusterlog.debug, "collecting cluster health statistics");
     // collect all reports
-    auto ids = _members.local().all_broker_ids();
+    auto ids = _members.local().node_ids();
     auto reports = co_await ssx::async_transform(
       ids.begin(), ids.end(), [this](model::node_id id) {
           if (id == _raft0->self().id()) {
@@ -622,14 +613,13 @@ health_monitor_backend::collect_current_node_health(node_report_filter filter) {
     node_health_report ret;
     ret.id = _raft0->self().id();
 
-    co_await _local_monitor.update_state();
-    ret.local_state = _local_monitor.get_state_cached();
+    ret.local_state = _local_monitor.local().get_state_cached();
     ret.local_state.logical_version
-      = feature_table::get_latest_logical_version();
+      = features::feature_table::get_latest_logical_version();
 
     ret.drain_status = co_await _drain_manager.local().status();
     ret.include_drain_status = _feature_table.local().is_active(
-      cluster::feature::maintenance_mode);
+      features::feature::maintenance_mode);
 
     if (filter.include_partitions) {
         ret.topics = co_await collect_topic_status(
@@ -680,7 +670,7 @@ std::vector<ntp_report> collect_shard_local_reports(
                   .leader_id = p.second->get_leader_id(),
                   .revision_id = p.second->get_revision_id(),
                 },
-                .size_bytes = p.second->size_bytes(),
+                .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
               };
           });
     } else {
@@ -742,6 +732,13 @@ std::chrono::milliseconds health_monitor_backend::max_metadata_age() {
 ss::future<result<std::optional<cluster::drain_manager::drain_status>>>
 health_monitor_backend::get_node_drain_status(
   model::node_id node_id, model::timeout_clock::time_point deadline) {
+    if (node_id == _raft0->self().id()) {
+        // Fast path: if we are asked for our own drain status, give fresh
+        // data instead of spending time reloading health status which might
+        // be outdated.
+        co_return co_await _drain_manager.local().status();
+    }
+
     auto ec = co_await maybe_refresh_cluster_health(
       force_refresh::no, deadline);
     if (ec) {
@@ -763,17 +760,17 @@ health_monitor_backend::get_cluster_health_overview(
       force_refresh::no, deadline);
 
     cluster_health_overview ret;
-    const auto brokers = _members.local().all_brokers();
+    const auto& brokers = _members.local().nodes();
     ret.all_nodes.reserve(brokers.size());
 
-    for (auto& broker : brokers) {
-        ret.all_nodes.push_back(broker->id());
-        if (broker->id() == _raft0->self().id()) {
+    for (auto& [id, _] : brokers) {
+        ret.all_nodes.push_back(id);
+        if (id == _raft0->self().id()) {
             continue;
         }
-        auto it = _status.find(broker->id());
+        auto it = _status.find(id);
         if (it == _status.end() || !it->second.is_alive) {
-            ret.nodes_down.push_back(broker->id());
+            ret.nodes_down.push_back(id);
         }
     }
     absl::node_hash_set<model::ntp> leaderless;
@@ -798,4 +795,9 @@ health_monitor_backend::get_cluster_health_overview(
 
     co_return ret;
 }
+
+bool health_monitor_backend::does_raft0_have_leader() {
+    return _raft0->get_leader_id().has_value();
+}
+
 } // namespace cluster

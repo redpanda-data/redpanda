@@ -11,6 +11,7 @@
 #pragma once
 
 #include "cloud_storage/base_manifest.h"
+#include "config/configuration.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -33,6 +34,9 @@
 /// be retrieved using the GET request or deleted using the DELETE request.
 class s3_imposter_fixture {
 public:
+    uint16_t httpd_port_number();
+    static constexpr const char* httpd_host_name = "127.0.0.1";
+
     s3_imposter_fixture();
     ~s3_imposter_fixture();
 
@@ -65,7 +69,7 @@ public:
     /// Access all http requests ordered by target url
     const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
 
-    static s3::configuration get_configuration();
+    cloud_storage_clients::s3_configuration get_configuration();
 
 private:
     void set_routes(
@@ -79,4 +83,13 @@ private:
     std::vector<ss::httpd::request> _requests;
     /// Contains all accessed target urls
     std::multimap<ss::sstring, ss::httpd::request> _targets;
+};
+
+class enable_cloud_storage_fixture {
+public:
+    enable_cloud_storage_fixture();
+
+    ~enable_cloud_storage_fixture() {
+        config::shard_local_cfg().cloud_storage_enabled.set_value(false);
+    }
 };

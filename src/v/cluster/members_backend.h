@@ -14,6 +14,7 @@
 #include <absl/container/node_hash_set.h>
 
 #include <chrono>
+#include <limits>
 #include <ostream>
 namespace cluster {
 
@@ -63,9 +64,22 @@ public:
         explicit update_meta(members_manager::node_update update)
           : update(update) {}
 
-        members_manager::node_update update;
+        // on demand rebalance request
+        explicit update_meta() noexcept = default;
+
+        // optional node update, if present the update comes from
+        // members_manager, otherwise it is on demand update
+        std::optional<members_manager::node_update> update;
+
         std::vector<partition_reallocation> partition_reallocations;
         bool finished = false;
+        // unevenness error is normalized to be at most 1.0, set to max
+        absl::flat_hash_map<partition_allocation_domain, double>
+          last_unevenness_error;
+        absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
+        // revision of a related decommission command, present only in
+        // recommission update_meta
+        std::optional<model::revision_id> decommission_update_revision;
     };
 
     members_backend(
@@ -82,27 +96,52 @@ public:
     void start();
     ss::future<> stop();
 
+    ss::future<std::error_code> request_rebalance();
+
 private:
+    struct node_replicas {
+        size_t allocated_replicas;
+        size_t max_capacity;
+    };
+    struct unevenness_error_info {
+        double e;
+        double e_step;
+    };
+    using node_replicas_map_t
+      = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
     void start_reconciliation_loop();
-    ss::future<> reconcile();
+    ss::future<> reconciliation_loop();
+    ss::future<std::error_code> reconcile();
     ss::future<> reallocate_replica_set(partition_reallocation&);
 
     ss::future<> try_to_finish_update(update_meta&);
-    void calculate_reallocations(update_meta&);
+    ss::future<> calculate_reallocations(update_meta&);
 
     ss::future<> handle_updates();
     void handle_single_update(members_manager::node_update);
-    void handle_recommissioned(const members_manager::node_update&);
+    model::revision_id handle_recommissioned_and_get_decomm_revision(
+      members_manager::node_update&);
     void stop_node_decommissioning(model::node_id);
-    void stop_node_addition(model::node_id id);
+    void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
     void reassign_replicas(partition_assignment&, partition_reallocation&);
-    void calculate_reallocations_after_node_added(update_meta&) const;
-    void calculate_reallocations_after_decommissioned(update_meta&) const;
-    void calculate_reallocations_after_recommissioned(update_meta&) const;
+    void
+    calculate_reallocations_batch(update_meta&, partition_allocation_domain);
+    void reallocations_for_even_partition_count(
+      update_meta&, partition_allocation_domain);
+    ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
+    ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;
     void setup_metrics();
+    absl::node_hash_map<model::node_id, node_replicas>
+      calculate_replicas_per_node(partition_allocation_domain) const;
+
+    unevenness_error_info
+      calculate_unevenness_error(partition_allocation_domain) const;
+    bool should_stop_rebalancing_update(const update_meta&) const;
+
+    static size_t calculate_total_replicas(const node_replicas_map_t&);
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
@@ -119,17 +158,9 @@ private:
     // replicas reallocations in progress
     std::vector<update_meta> _updates;
     std::chrono::milliseconds _retry_timeout;
-    ss::timer<> _retry_timer;
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;
-    /**
-     * store revision of node decommissioning update, decommissioning command
-     * revision is stored when node is being decommissioned, it is used to
-     * determine which partition movements were scheduled before the node was
-     * decommissioned, recommissioning process will not abort those movements.
-     */
-    absl::flat_hash_map<model::node_id, model::revision_id>
-      _decommission_command_revision;
+    config::binding<size_t> _max_concurrent_reallocations;
 };
 std::ostream&
 operator<<(std::ostream&, const members_backend::reallocation_state&);

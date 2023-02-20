@@ -16,6 +16,7 @@ jobs:
             backport
             ci-repeat
             test-codecov
+            cdt
           static-args: |
             org=redpanda-data
             repo=redpanda

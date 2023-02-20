@@ -65,22 +65,25 @@ spill_key_index::spill_key_index(
 spill_key_index::~spill_key_index() {
     vassert(
       _midx.empty(),
-      "must drain all keys before destroy spill_key_index, keys left:{}",
-      _midx.size());
+      "must drain all keys before destroy spill_key_index, keys left:{} {}",
+      _midx.size(),
+      filename());
 }
 
 ss::future<> spill_key_index::index(
   const compaction_key& v, model::offset base_offset, int32_t delta) {
-    if (auto it = _midx.find(v); it != _midx.end()) {
-        auto& pair = it->second;
-        if (base_offset > pair.base_offset) {
-            pair.base_offset = base_offset;
-            pair.delta = delta;
+    return ss::try_with_gate(_gate, [this, &v, base_offset, delta]() {
+        if (auto it = _midx.find(v); it != _midx.end()) {
+            auto& pair = it->second;
+            if (base_offset > pair.base_offset) {
+                pair.base_offset = base_offset;
+                pair.delta = delta;
+            }
+            return ss::now();
         }
-        return ss::now();
-    }
-    // not found
-    return add_key(v, value_type{base_offset, delta});
+        // not found
+        return add_key(v, value_type{base_offset, delta});
+    });
 }
 
 ss::future<> spill_key_index::add_key(compaction_key b, value_type v) {
@@ -151,21 +154,24 @@ ss::future<> spill_key_index::index(
   bytes&& b,
   model::offset base_offset,
   int32_t delta) {
-    auto key = prefix_with_batch_type(batch_type, b);
-    if (auto it = _midx.find(key); it != _midx.end()) {
-        auto& pair = it->second;
-        // must use both base+delta, since we only want to keep the latest
-        // which might be inserted into the batch multiple times by client
-        const auto record = base_offset + model::offset(delta);
-        const auto current = pair.base_offset + model::offset(pair.delta);
-        if (record > current) {
-            pair.base_offset = base_offset;
-            pair.delta = delta;
-        }
-        return ss::now();
-    }
-    // not found
-    return add_key(std::move(key), value_type{base_offset, delta});
+    return ss::try_with_gate(
+      _gate, [this, batch_type, b = std::move(b), base_offset, delta]() {
+          auto key = prefix_with_batch_type(batch_type, b);
+          if (auto it = _midx.find(key); it != _midx.end()) {
+              auto& pair = it->second;
+              // must use both base+delta, since we only want to keep the latest
+              // which might be inserted into the batch multiple times by client
+              const auto record = base_offset + model::offset(delta);
+              const auto current = pair.base_offset + model::offset(pair.delta);
+              if (record > current) {
+                  pair.base_offset = base_offset;
+                  pair.delta = delta;
+              }
+              return ss::now();
+          }
+          // not found
+          return add_key(std::move(key), value_type{base_offset, delta});
+      });
 }
 ss::future<> spill_key_index::index(
   model::record_batch_type batch_type,
@@ -186,6 +192,7 @@ ss::future<> spill_key_index::spill(
   compacted_index::entry_type type, bytes_view b, value_type v) {
     constexpr size_t size_reservation = sizeof(uint16_t);
     ++_footer.keys;
+    ++_footer.keys_deprecated;
     iobuf payload;
     // INT16
     auto ph = payload.reserve(size_reservation);
@@ -213,6 +220,7 @@ ss::future<> spill_key_index::spill(
 
     // update internal state
     _footer.size += payload.size_bytes();
+    _footer.size_deprecated = _footer.size;
     for (auto& f : payload) {
         // NOLINTNEXTLINE
         _crc.extend(reinterpret_cast<const uint8_t*>(f.get()), f.size());
@@ -227,8 +235,10 @@ ss::future<> spill_key_index::spill(
 }
 
 ss::future<> spill_key_index::append(compacted_index::entry e) {
-    return ss::do_with(std::move(e), [this](compacted_index::entry& e) {
-        return spill(e.type, e.key, value_type{e.offset, e.delta});
+    return ss::try_with_gate(_gate, [this, e = std::move(e)]() {
+        return ss::do_with(std::move(e), [this](compacted_index::entry& e) {
+            return spill(e.type, e.key, value_type{e.offset, e.delta});
+        });
     });
 }
 
@@ -253,18 +263,21 @@ void spill_key_index::set_flag(compacted_index::footer_flags f) {
 }
 
 ss::future<> spill_key_index::truncate(model::offset o) {
-    set_flag(compacted_index::footer_flags::truncation);
-    return drain_all_keys().then([this, o] {
-        static constexpr std::string_view compacted_key = "compaction";
-        return spill(
-          compacted_index::entry_type::truncation,
-          bytes_view(
-            // NOLINTNEXTLINE
-            reinterpret_cast<const uint8_t*>(compacted_key.data()),
-            compacted_key.size()),
-          // this is actually the base_offset + max_delta so everything upto and
-          // including this offset must be ignored during self compaction
-          value_type{o, 0});
+    return ss::try_with_gate(_gate, [this, o]() {
+        set_flag(compacted_index::footer_flags::truncation);
+        return drain_all_keys().then([this, o] {
+            static constexpr std::string_view compacted_key = "compaction";
+            return spill(
+              compacted_index::entry_type::truncation,
+              bytes_view(
+                // NOLINTNEXTLINE
+                reinterpret_cast<const uint8_t*>(compacted_key.data()),
+                compacted_key.size()),
+              // this is actually the base_offset + max_delta so everything upto
+              // and including this offset must be ignored during self
+              // compaction
+              value_type{o, 0});
+        });
     });
 }
 
@@ -287,6 +300,7 @@ ss::future<> spill_key_index::open() {
 }
 
 ss::future<> spill_key_index::close() {
+    co_await _gate.close();
     // ::close includes a flush, which can fail, but we must catch the
     // exception to avoid potentially leaving an open handle in _appender
     std::exception_ptr ex;
@@ -303,7 +317,7 @@ ss::future<> spill_key_index::close() {
         _footer.crc = _crc.value();
         auto footer_buf = reflection::to_iobuf(_footer);
         vassert(
-          footer_buf.size_bytes() == compacted_index::footer_size,
+          footer_buf.size_bytes() == compacted_index::footer::footer_size,
           "Footer is bigger than expected: {}",
           footer_buf);
 

@@ -13,7 +13,7 @@ from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.admin import Admin
-from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer, RedpandaAdminOperation
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, RedpandaService
 from rptest.services.redpanda_installer import RedpandaInstaller
@@ -24,13 +24,18 @@ ALLOWED_LOGS = [
     # e.g. cluster - controller_backend.cc:466 - exception while executing partition operation: {type: update_finished, ntp: {kafka/test-topic-1944-1639161306808363/1}, offset: 413, new_assignment: { id: 1, group_id: 65, replicas: {{node_id: 3, shard: 2}, {node_id: 4, shard: 2}, {node_id: 1, shard: 0}} }, previous_assignment: {nullopt}} - std::__1::__fs::filesystem::filesystem_error (error system:39, filesystem error: remove failed: Directory not empty [/var/lib/redpanda/data/kafka/test-topic-1944-1639161306808363])
     re.compile("cluster - .*Directory not empty"),
 
-    # <= 22.2 versions may log bare std::exception error
+    # < 22.2 versions may log bare std::exception error
     # (https://github.com/redpanda-data/redpanda/issues/5886)
-    re.compile("rpc - .*std::exception"),
+    re.compile("(kafka|rpc) - .*std::exception"),
+
     #  <= 22.2 versions may log bare seastar::condition_variable_timed_out error
     re.compile(
-        "rpc - Service handler threw an exception: seastar::condition_variable_timed_out"
+        "(kafka|rpc) - Service handler threw an exception: seastar::condition_variable_timed_out"
     ),
+
+    # < 22.2 versions may log a "cannot find consensus group" error message
+    # (https://github.com/redpanda-data/redpanda/pull/5742)
+    re.compile("r/heartbeat - .*cannot find consensus group"),
 ]
 
 
@@ -41,14 +46,29 @@ class ControllerUpgradeTest(EndToEndTest):
         Validates that cluster is operational when upgrading controller log
         '''
 
-        # set redpanda version to v22.1 - last version without serde encoding
         self.redpanda = RedpandaService(self.test_context, 5)
-
         installer = self.redpanda._installer
-        installer.install(self.redpanda.nodes, (22, 1, 4))
+        prev_version = installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+
+        # for upgrades from v22.2.x to v22.3.x we disable setting topic
+        # configuration properties as during the upgrade phase setting
+        # topic properties is explicitly forbidden
+
+        if prev_version[0] == 22 and prev_version[1] == 2:
+            admin_operations = [
+                o for o in RedpandaAdminOperation
+                if o != RedpandaAdminOperation.UPDATE_TOPIC
+            ]
+        else:
+            admin_operations = [o for o in RedpandaAdminOperation]
+
+        installer.install(self.redpanda.nodes, prev_version)
 
         self.redpanda.start()
-        admin_fuzz = AdminOperationsFuzzer(self.redpanda)
+        admin_fuzz = AdminOperationsFuzzer(self.redpanda,
+                                           allowed_operations=admin_operations,
+                                           min_replication=3)
         self._client = DefaultClient(self.redpanda)
 
         spec = TopicSpec(partition_count=6, replication_factor=3)

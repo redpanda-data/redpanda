@@ -79,7 +79,7 @@ reconciliation_backend::reconciliation_backend(
   ss::sharded<partition_manager>& coproc_pm,
   ss::sharded<pacemaker>& pacemaker,
   ss::sharded<wasm::script_database>& sdb) noexcept
-  : _self(model::node_id(config::node().node_id))
+  : _self(model::node_id(*config::node().node_id()))
   , _data_directory(config::node().data_directory().as_sstring())
   , _topics(topics)
   , _shard_table(shard_table)
@@ -88,10 +88,10 @@ reconciliation_backend::reconciliation_backend(
   , _pacemaker(pacemaker)
   , _sdb(sdb) {}
 
-void reconciliation_backend::enqueue_events(std::vector<update_t> deltas) {
+void reconciliation_backend::enqueue_events(std::span<const update_t> deltas) {
     for (auto& d : deltas) {
         if (is_non_replicable_event(d.type)) {
-            _topic_deltas[d.ntp].push_back(std::move(d));
+            _topic_deltas[d.ntp].push_back(d);
         } else {
             /// Obtain all child ntps from the source, and key
             /// by materialized ntps, otherwise out of order
@@ -107,9 +107,9 @@ void reconciliation_backend::enqueue_events(std::vector<update_t> deltas) {
 
 ss::future<> reconciliation_backend::start() {
     _id_cb = _topics.local().register_delta_notification(
-      [this](std::vector<update_t> deltas) {
+      [this](std::span<const update_t> deltas) {
           if (!_gate.is_closed()) {
-              enqueue_events(std::move(deltas));
+              enqueue_events(deltas);
           } else {
               vlog(
                 coproclog.debug,

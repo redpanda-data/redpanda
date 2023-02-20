@@ -74,15 +74,14 @@ FIXTURE_TEST(
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
       [&cache_1, &cache_2] {
-          return cache_1.all_brokers().size() == 3
-                 && cache_2.all_brokers().size() == 3;
+          return cache_1.node_count() == 3 && cache_2.node_count() == 3;
       })
       .get0();
 
     // Make sure we have 3 working nodes
-    BOOST_REQUIRE_EQUAL(cache_0.all_brokers().size(), 3);
-    BOOST_REQUIRE_EQUAL(cache_1.all_brokers().size(), 3);
-    BOOST_REQUIRE_EQUAL(cache_2.all_brokers().size(), 3);
+    BOOST_REQUIRE_EQUAL(cache_0.node_count(), 3);
+    BOOST_REQUIRE_EQUAL(cache_1.node_count(), 3);
+    BOOST_REQUIRE_EQUAL(cache_2.node_count(), 3);
 
     // Create topic with replication factor 1
     std::vector<cluster::topic_configuration> topics;
@@ -113,11 +112,11 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
 
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
-      [&cache_1] { return cache_1.all_brokers().size() == 2; })
+      [&cache_1] { return cache_1.node_count() == 2; })
       .get0();
     // Make sure we have 2 working nodes
-    BOOST_REQUIRE_EQUAL(cache_0.all_brokers().size(), 2);
-    BOOST_REQUIRE_EQUAL(cache_1.all_brokers().size(), 2);
+    BOOST_REQUIRE_EQUAL(cache_0.node_count(), 2);
+    BOOST_REQUIRE_EQUAL(cache_1.node_count(), 2);
 
     // Create topic with replication factor 1
     std::vector<cluster::topic_configuration> topics;
@@ -136,8 +135,7 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
       [&cache_1, &cache_2] {
-          return cache_1.all_brokers().size() == 3
-                 && cache_2.all_brokers().size() == 3;
+          return cache_1.node_count() == 3 && cache_2.node_count() == 3;
       })
       .get0();
 

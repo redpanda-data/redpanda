@@ -24,5 +24,6 @@ class snapshot_manager;
 class readers_cache;
 class compaction_controller;
 class offset_translator_state;
+struct log_reader_config;
 
 } // namespace storage

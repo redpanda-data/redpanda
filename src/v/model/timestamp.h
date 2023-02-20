@@ -65,6 +65,16 @@ public:
 
     auto operator<=>(const timestamp&) const = default;
 
+    timestamp& operator-=(const timestamp& rhs) {
+        _v -= rhs();
+        return *this;
+    }
+
+    friend timestamp operator-(timestamp lhs, const timestamp& rhs) {
+        lhs -= rhs;
+        return lhs;
+    }
+
     friend std::ostream& operator<<(std::ostream&, timestamp);
 
     // ADL helpers for interfacing with the serde library.
@@ -79,6 +89,11 @@ private:
 };
 
 using timestamp_clock = std::chrono::system_clock;
+
+inline timestamp_clock::duration duration_since_epoch(timestamp ts) {
+    return std::chrono::duration_cast<timestamp_clock::duration>(
+      std::chrono::milliseconds{ts.value()});
+}
 
 inline timestamp to_timestamp(timestamp_clock::time_point ts) {
     return timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(

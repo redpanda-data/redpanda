@@ -13,6 +13,7 @@
 #include "compression/internal/lz4_frame_compressor.h"
 #include "compression/internal/snappy_java_compressor.h"
 #include "compression/internal/zstd_compressor.h"
+#include "vassert.h"
 
 namespace compression {
 iobuf compressor::compress(const iobuf& io, type t) {

@@ -10,9 +10,7 @@
 
 #pragma once
 
-#include "cloud_roles/logger.h"
 #include "cloud_roles/probe.h"
-#include "cloud_roles/request_response_helpers.h"
 #include "cloud_roles/signature.h"
 #include "model/metadata.h"
 #include "seastarx.h"
@@ -72,15 +70,7 @@ public:
         /// go over the max limit, abort the operation by throwing an exception.
         void increment_retries();
 
-        void reset_retries() {
-            if (unlikely(_retries != 0)) {
-                vlog(
-                  clrl_log.info,
-                  "resetting retry counter from {} to 0",
-                  _retries);
-                _retries = 0;
-            }
-        }
+        void reset_retries();
 
     protected:
         /// Returns an http client with the API host and port applied
@@ -94,13 +84,7 @@ public:
         /// Sets the amount of seconds to sleep before making the next API call
         /// to fetch credentials. Depends on expiry time of current set of
         /// credentials.
-        void next_sleep_duration(std::chrono::milliseconds sd) {
-            vlog(
-              clrl_log.trace,
-              "setting next sleep duration to {} seconds",
-              std::chrono::duration_cast<std::chrono::seconds>(sd).count());
-            _sleep_duration = sd;
-        }
+        void next_sleep_duration(std::chrono::milliseconds sd);
 
         /// Calculates sleep duration given a time point in future where the
         /// credentials will expire. Keeps a small buffer to allow for network

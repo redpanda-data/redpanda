@@ -121,7 +121,8 @@ public:
     using duration_type = clock_type::duration;
     using time_point_type = clock_type::time_point;
 
-    static constexpr int8_t fence_control_record_version{0};
+    static constexpr int8_t fence_control_record_v0_version{0};
+    static constexpr int8_t fence_control_record_version{1};
     static constexpr int8_t prepared_tx_record_version{0};
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};
@@ -154,6 +155,15 @@ public:
         model::offset offset;
         ss::sstring metadata;
         kafka::leader_epoch committed_leader_epoch;
+        model::timestamp commit_timestamp;
+        std::optional<model::timestamp> expiry_timestamp;
+        /*
+         * this is an offset that was written prior to upgrading to redpanda
+         * with offset retention support. because these offsets did not
+         * persistent retention metadata we act conservatively and skip
+         * automatic reclaim. offset delete api can be used to remove them.
+         */
+        bool non_reclaimable{false};
 
         friend std::ostream& operator<<(std::ostream&, const offset_metadata&);
     };
@@ -188,6 +198,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      ss::sharded<features::feature_table>&,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -198,6 +209,7 @@ public:
       config::configuration& conf,
       ss::lw_shared_ptr<cluster::partition> partition,
       ss::sharded<cluster::tx_gateway_frontend>& tx_frontend,
+      ss::sharded<features::feature_table>&,
       group_metadata_serializer,
       enable_group_metrics);
 
@@ -255,6 +267,11 @@ public:
         return _pending_members.find(member) != _pending_members.end();
     }
 
+    bool subscribed(const model::topic&) const;
+
+    static absl::node_hash_set<model::topic>
+      decode_consumer_subscriptions(iobuf);
+
     /// Reschedule all members' heartbeat expiration
     void reschedule_all_member_heartbeats() {
         for (auto& e : _members) {
@@ -267,6 +284,11 @@ public:
     /// Check if a member id refers to the group leader.
     bool is_leader(const kafka::member_id& member_id) const {
         return _leader && _leader.value() == member_id;
+    }
+
+    /// Check if this is a consumer_group or not
+    bool is_consumer_group() const {
+        return _protocol_type == consumer_group_protocol_type;
     }
 
     /// Get the group's configured protocol type (if any).
@@ -496,6 +518,7 @@ public:
       const model::topic_partition& tp, const offset_metadata& md);
 
     void reset_tx_state(model::term_id);
+    model::term_id term() const { return _term; }
 
     ss::future<cluster::commit_group_tx_reply>
     commit_tx(cluster::commit_group_tx_request r);
@@ -565,8 +588,39 @@ public:
 
     void try_set_fence(model::producer_id id, model::producer_epoch epoch) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
-        if (fence_it->second < epoch) {
+        if (fence_it->second <= epoch) {
             fence_it->second = epoch;
+        }
+    }
+
+    void try_set_tx_seq(model::producer_identity id, model::tx_seq txseq) {
+        auto fence_it = _fence_pid_epoch.find(id.get_id());
+        if (fence_it == _fence_pid_epoch.end()) {
+            return;
+        }
+        if (fence_it->second != id.get_epoch()) {
+            return;
+        }
+        auto [ongoing_it, _] = _tx_seqs.try_emplace(id.get_id(), txseq);
+        if (ongoing_it->second < txseq) {
+            ongoing_it->second = txseq;
+        }
+    }
+
+    void try_set_timeout(
+      model::producer_identity id,
+      model::timeout_clock::duration transaction_timeout_ms) {
+        auto fence_it = _fence_pid_epoch.find(id.get_id());
+        if (fence_it == _fence_pid_epoch.end()) {
+            return;
+        }
+        if (fence_it->second != id.get_epoch()) {
+            return;
+        }
+        auto [info_it, inserted] = _expiration_info.try_emplace(
+          id, expiration_info(transaction_timeout_ms));
+        if (inserted) {
+            try_arm(info_it->second.deadline());
         }
     }
 
@@ -595,6 +649,33 @@ public:
 
     // shutdown group. cancel all pending operations
     ss::future<> shutdown();
+
+    void add_offset_tombstone_record(
+      const kafka::group_id& group,
+      const model::topic_partition& tp,
+      storage::record_batch_builder& builder);
+
+    void add_group_tombstone_record(
+      const kafka::group_id& group, storage::record_batch_builder& builder);
+
+    /*
+     * Delete group offsets that have expired.
+     *
+     * If after expired offsets have been deleted the group is in the empty
+     * state and contains no offsets then the group will be marked as dead.
+     *
+     * The set of expired offsets that have been removed is returned.
+     */
+    std::vector<model::topic_partition>
+    delete_expired_offsets(std::chrono::seconds retention_period);
+
+    /*
+     *  Delete group offsets that do not have subscriptions.
+     *
+     *  Returns the set of offsets that were deleted.
+     */
+    std::vector<model::topic_partition>
+    delete_offsets(std::vector<model::topic_partition> offsets);
 
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
@@ -694,7 +775,8 @@ private:
         metadata.generation = generation();
         metadata.protocol = protocol();
         metadata.leader = leader();
-        metadata.state_timestamp = _state_timestamp;
+        metadata.state_timestamp = _state_timestamp.value_or(
+          model::timestamp(-1));
 
         for (const auto& [id, member] : _members) {
             auto state = member->state().copy();
@@ -722,6 +804,8 @@ private:
 
     cluster::abort_origin
     get_abort_origin(const model::producer_identity&, model::tx_seq) const;
+
+    bool has_offsets() const;
 
     bool has_pending_transaction(const model::topic_partition& tp) {
         if (std::any_of(
@@ -759,7 +843,8 @@ private:
       model::offset commited_offset,
       leader_epoch commited_leader_epoch,
       const ss::sstring& metadata,
-      model::timestamp commited_timestemp);
+      model::timestamp commited_timestemp,
+      std::optional<model::timestamp> expiry_timestamp);
 
     ss::future<cluster::abort_group_tx_reply> do_abort(
       kafka::group_id group_id,
@@ -771,19 +856,35 @@ private:
 
     void start_abort_timer() {
         _auto_abort_timer.set_callback([this] { abort_old_txes(); });
-        try_arm(clock_type::now() + _transactional_id_expiration);
+        try_arm(clock_type::now() + _abort_interval_ms);
     }
 
     void abort_old_txes();
     ss::future<> do_abort_old_txes();
     ss::future<> try_abort_old_tx(model::producer_identity);
-    ss::future<> do_try_abort_old_tx(model::producer_identity);
+    ss::future<cluster::tx_errc> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
     void maybe_rearm_timer();
 
+    bool is_transaction_ga() const {
+        return _feature_table.local().is_active(
+          features::feature::transaction_ga);
+    }
+
+    void update_subscriptions();
+    std::optional<absl::node_hash_set<model::topic>> _subscriptions;
+
+    std::vector<model::topic_partition> filter_expired_offsets(
+      std::chrono::seconds retention_period,
+      const std::function<bool(const model::topic&)>&,
+      const std::function<model::timestamp(const offset_metadata&)>&);
+
+    std::vector<model::topic_partition>
+    get_expired_offsets(std::chrono::seconds retention_period);
+
     kafka::group_id _id;
     group_state _state;
-    model::timestamp _state_timestamp;
+    std::optional<model::timestamp> _state_timestamp;
     kafka::generation_id _generation;
     protocol_support _supported_protocols;
     member_map _members;
@@ -806,7 +907,6 @@ private:
       model::topic_partition,
       std::unique_ptr<offset_metadata_with_probe>>
       _probe;
-    model::violation_recovery_policy _recovery_policy;
     ctx_log _ctxlog;
     ctx_log _ctx_txlog;
     group_metadata_serializer _md_serializer;
@@ -822,6 +922,7 @@ private:
     model::term_id _term;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
+    absl::node_hash_map<model::producer_id, model::tx_seq> _tx_seqs;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;
@@ -840,7 +941,7 @@ private:
     absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
 
     struct expiration_info {
-        explicit expiration_info(model::timeout_clock::duration timeout)
+        expiration_info(model::timeout_clock::duration timeout)
           : timeout(timeout)
           , last_update(model::timeout_clock::now()) {}
 
@@ -866,9 +967,10 @@ private:
 
     ss::gate _gate;
     ss::timer<clock_type> _auto_abort_timer;
-    std::chrono::milliseconds _transactional_id_expiration;
+    std::chrono::milliseconds _abort_interval_ms;
 
     ss::sharded<cluster::tx_gateway_frontend>& _tx_frontend;
+    ss::sharded<features::feature_table>& _feature_table;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

@@ -3,8 +3,8 @@ kind: Cluster
 metadata:
   name: endpoint-template
 status:
-  replicas: 2
-  readyReplicas: 2
+  replicas: 3
+  readyReplicas: 3
   restarting: false
   conditions:
   - type: ClusterConfigured
@@ -25,3 +25,5 @@ collectors:
     command: kubectl get clusters -o jsonpath={@} -n $NAMESPACE
   - type: command
     command: kubectl get pods -o jsonpath={@} -n $NAMESPACE
+  - type: command
+    command: kind export logs --name kind tests/_e2e_artifacts/endpoint-template

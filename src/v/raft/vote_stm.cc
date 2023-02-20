@@ -48,8 +48,8 @@ vote_stm::~vote_stm() {
       "Must call vote_stm::wait()");
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
-    vlog(_ctxlog.trace, "Sending vote request to {}", n);
-    auto tout = clock_type::now() + _ptr->_jit.base_duration();
+    auto tout = _ptr->_jit.base_duration();
+    vlog(_ctxlog.info, "Sending vote request to {} with timeout {}", n, tout);
 
     auto r = _req;
     _ptr->_probe.vote_request_sent();
@@ -75,6 +75,7 @@ ss::future<> vote_stm::dispatch_one(vnode n) {
               try {
                   auto r = f.get0();
                   vlog(_ctxlog.info, "vote reply from {} - {}", n, r.value());
+                  _ptr->maybe_update_node_reply_timestamp(n);
                   voter_reply->second.set_value(r);
               } catch (...) {
                   voter_reply->second.set_value(errc::vote_dispatch_error);
@@ -101,7 +102,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           }
           // 5.2.1 mark node as candidate, and update leader id
           _ptr->_vstate = consensus::vote_state::candidate;
-          //  only trigger notification when we had a leader previosly
+          //  only trigger notification when we had a leader previously
           if (_ptr->_leader_id) {
               _ptr->_leader_id = std::nullopt;
               _ptr->trigger_leadership_notification();
@@ -155,7 +156,7 @@ ss::future<> vote_stm::do_vote() {
 ss::future<> vote_stm::process_replies() {
     return ss::repeat([this] {
         // majority votes granted
-        bool majority_granted = _config->majority([this](vnode id) {
+        auto majority_granted = _config->majority([this](vnode id) {
             return _replies.find(id)->second.get_state()
                    == vmeta::state::vote_granted;
         });
@@ -166,8 +167,8 @@ ss::future<> vote_stm::process_replies() {
               ss::stop_iteration::yes);
         }
 
-        // majority votes not granted, election not successfull
-        bool majority_failed = _config->majority([this](vnode id) {
+        // majority votes not granted, election not successful
+        auto majority_failed = _config->majority([this](vnode id) {
             auto state = _replies.find(id)->second.get_state();
             // vote not granted and not in progress, it is failed
             return state != vmeta::state::vote_granted
@@ -212,20 +213,27 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
                 _ptr->_term = term;
                 _ptr->_voted_for = {};
                 _ptr->_vstate = consensus::vote_state::follower;
-                return ss::now();
+                co_return;
             }
         }
     }
-
-    if (_ptr->_vstate != consensus::vote_state::candidate) {
+    /**
+     * Use cached term value stored while the vote_stm owned an oplock in first
+     * voting phase. (the term might have changed if a node received request
+     * from other leader)
+     */
+    auto term = _req.term;
+    if (
+      _ptr->_vstate != consensus::vote_state::candidate
+      || _ptr->_term != term) {
         vlog(_ctxlog.info, "No longer a candidate, ignoring vote replies");
-        return ss::now();
+        co_return;
     }
 
     if (!_success) {
         vlog(_ctxlog.info, "Vote failed");
         _ptr->_vstate = consensus::vote_state::follower;
-        return ss::now();
+        co_return;
     }
 
     if (_ptr->_node_priority_override == zero_voter_priority) {
@@ -234,7 +242,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
           "Ignoring successful vote. Node priority too low: {}",
           _ptr->_node_priority_override.value());
         _ptr->_vstate = consensus::vote_state::follower;
-        return ss::now();
+        co_return;
     }
 
     std::vector<vnode> acks;
@@ -243,7 +251,7 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
             acks.emplace_back(id);
         }
     }
-    auto term = _ptr->term();
+
     vlog(_ctxlog.trace, "vote acks in term {} from: {}", term, acks);
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
@@ -255,30 +263,28 @@ ss::future<> vote_stm::update_vote_state(ssx::semaphore_units u) {
     _ptr->_hbeat = clock_type::time_point::max();
     vlog(_ctxlog.info, "becoming the leader term:{}", term);
     _ptr->_last_quorum_replicated_index = _ptr->_flushed_offset;
-    _ptr->trigger_leadership_notification();
 
-    return replicate_config_as_new_leader(std::move(u))
-      .then([this, term](std::error_code ec) {
-          // if we didn't replicated configuration, step down
-          if (ec) {
-              vlog(
-                _ctxlog.info,
-                "unable to replicate configuration as a leader - error code: "
-                "{} - {} ",
-                ec.value(),
-                ec.message());
-          } else {
-              vlog(_ctxlog.info, "became the leader term:{}", term);
-              if (term == _ptr->_term) {
-                  vassert(
-                    _ptr->_confirmed_term == _ptr->_term,
-                    "successfully replicated configuration should update "
-                    "_confirmed_term={} to be equal to _term={}",
-                    _ptr->_confirmed_term,
-                    _ptr->_term);
-              }
-          }
-      });
+    auto ec = co_await replicate_config_as_new_leader(std::move(u));
+
+    // if we didn't replicated configuration, step down
+    if (ec) {
+        vlog(
+          _ctxlog.info,
+          "unable to replicate configuration as a leader - error code: "
+          "{} - {} ",
+          ec.value(),
+          ec.message());
+    } else {
+        if (term == _ptr->_term) {
+            vlog(_ctxlog.info, "became the leader term: {}", term);
+            vassert(
+              _ptr->_confirmed_term == _ptr->_term,
+              "successfully replicated configuration should update "
+              "_confirmed_term={} to be equal to _term={}",
+              _ptr->_confirmed_term,
+              _ptr->_term);
+        }
+    }
 }
 
 ss::future<std::error_code>
@@ -302,10 +308,9 @@ ss::future<> vote_stm::self_vote() {
 
     vlog(_ctxlog.trace, "Voting for self in term {}", _req.term);
     _ptr->_voted_for = _ptr->_self;
-    return _ptr->write_voted_for({_ptr->_self, model::term_id(_req.term)})
-      .then([this, reply] {
-          auto m = _replies.find(_ptr->self());
-          m->second.set_value(reply);
-      });
+    return _ptr->write_voted_for({_ptr->_self, _req.term}).then([this, reply] {
+        auto m = _replies.find(_ptr->self());
+        m->second.set_value(reply);
+    });
 }
 } // namespace raft

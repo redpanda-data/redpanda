@@ -16,7 +16,7 @@ import json
 
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.util import expect_exception, get_cluster_license
+from rptest.util import expect_exception, get_cluster_license, get_second_cluster_license
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 
@@ -59,10 +59,11 @@ class RpkClusterTest(RedpandaTest):
         # commands are run on redpanda nodes.
 
         working_dir = "/tmp"
+        file_path = os.path.join(working_dir, "bundle.zip")
         node = self.redpanda.nodes[0]
 
         rpk_remote = RpkRemoteTool(self.redpanda, node)
-        output = rpk_remote.debug_bundle(working_dir)
+        output = rpk_remote.debug_bundle(file_path)
         lines = output.split("\n")
 
         # On error, rpk bundle returns 0 but writes error description to stdout
@@ -98,12 +99,11 @@ class RpkClusterTest(RedpandaTest):
                 filtered_errors.append(l)
 
         assert not filtered_errors
-        assert output_file is not None
+        assert output_file == file_path
 
-        output_path = os.path.join(working_dir, output_file)
-        node.account.copy_from(output_path, working_dir)
+        node.account.copy_from(output_file, working_dir)
 
-        zf = zipfile.ZipFile(output_path)
+        zf = zipfile.ZipFile(output_file)
         files = zf.namelist()
         assert 'redpanda.yaml' in files
         assert 'redpanda.log' in files
@@ -219,12 +219,35 @@ class RpkClusterTest(RedpandaTest):
             err_msg="unable to retrieve license information")
 
         expected_license = {
-            'Expires': "Jul 11 2122",
-            'Organization': 'redpanda-testing',
-            'Type': 'enterprise'
+            'expires':
+            "Jul 11 2122",
+            'organization':
+            'redpanda-testing',
+            'type':
+            'enterprise',
+            'checksum_sha256':
+            '2730125070a934ca1067ed073d7159acc9975dc61015892308aae186f7455daf'
         }
         result = json.loads(rp_license)
         assert expected_license == result, result
+
+        # Assert that a second put takes license
+        license = get_second_cluster_license()
+        output = self._rpk.license_set(None, license)
+        assert "Successfully uploaded license" in output
+
+        def obtain_new_license():
+            lic = self._rpk.license_info()
+            if lic is None or lic == "{}":
+                return False
+            result = json.loads(lic)
+            return result['organization'] == 'redpanda-testing-2'
+
+        wait_until(obtain_new_license,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True,
+                   err_msg="unable to retrieve new license information")
 
     @cluster(num_nodes=3)
     def test_upload_cluster_license_rpk(self):

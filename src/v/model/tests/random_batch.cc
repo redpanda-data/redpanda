@@ -81,7 +81,7 @@ static model::record _make_random_record(
       std::move(headers));
 }
 
-static model::record make_random_record(int index, iobuf key) {
+model::record make_random_record(int index, iobuf key) {
     return _make_random_record(
       index, std::make_optional<iobuf>(std::move(key)));
 }
@@ -95,13 +95,15 @@ model::record_batch make_random_batch(
   int num_records,
   bool allow_compression,
   model::record_batch_type bt,
-  std::optional<std::vector<size_t>> record_sizes) {
+  std::optional<std::vector<size_t>> record_sizes,
+  std::optional<model::timestamp> ts) {
     return make_random_batch(record_batch_spec{
       .offset = o,
       .allow_compression = allow_compression,
       .count = num_records,
       .bt = bt,
-      .record_sizes = std::move(record_sizes)});
+      .record_sizes = std::move(record_sizes),
+      .timestamp = ts});
 }
 
 model::record_batch
@@ -115,10 +117,8 @@ make_random_batch(model::offset o, int num_records, bool allow_compression) {
 }
 
 model::record_batch make_random_batch(record_batch_spec spec) {
-    auto ts = spec.timestamp.value_or(
-      model::timestamp(model::timestamp::now()() - (spec.count - 1)));
-    auto max_ts = spec.timestamp.value_or(
-      model::timestamp(ts.value() + spec.count - 1));
+    auto ts = spec.timestamp.value_or(model::timestamp::now());
+    auto max_ts = model::timestamp(ts() + spec.count - 1);
     auto header = model::record_batch_header{
       .size_bytes = 0, // computed later
       .base_offset = spec.offset,
@@ -185,22 +185,32 @@ model::record_batch make_random_batch(record_batch_spec spec) {
     return batch;
 }
 
-model::record_batch make_random_batch(model::offset o, bool allow_compression) {
+model::record_batch make_random_batch(
+  model::offset o, bool allow_compression, std::optional<model::timestamp> ts) {
     auto num_records = get_int(2, 30);
     return make_random_batch(
-      o, num_records, allow_compression, model::record_batch_type::raft_data);
+      o,
+      num_records,
+      allow_compression,
+      model::record_batch_type::raft_data,
+      std::nullopt,
+      ts);
 }
 
-ss::circular_buffer<model::record_batch>
-make_random_batches(model::offset o, int count, bool allow_compression) {
+ss::circular_buffer<model::record_batch> make_random_batches(
+  model::offset o,
+  int count,
+  bool allow_compression,
+  std::optional<model::timestamp> base_ts) {
     // start offset + count
     ss::circular_buffer<model::record_batch> ret;
     ret.reserve(count);
+    model::timestamp ts = base_ts.value_or(model::timestamp::now());
     for (int i = 0; i < count; i++) {
         // TODO: it looks like a bug: make_random_batch adds
         // random number of records like we increment offset
         // always by one
-        auto b = make_random_batch(o, allow_compression);
+        auto b = make_random_batch(o, allow_compression, ts);
         o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
@@ -219,9 +229,12 @@ make_random_batches(record_batch_spec spec) {
     ret.reserve(spec.count);
     model::offset o = spec.offset;
     int32_t base_sequence = spec.base_sequence;
+    model::timestamp ts = spec.timestamp.value_or(model::timestamp::now());
     for (int i = 0; i < spec.count; i++) {
         auto num_records = spec.records ? *spec.records : get_int(2, 30);
         auto batch_spec = spec;
+        batch_spec.timestamp = ts;
+        ts = model::timestamp(ts() + num_records);
         batch_spec.offset = o;
         batch_spec.count = num_records;
         if (spec.enable_idempotence) {

@@ -33,10 +33,12 @@ namespace storage::internal {
 ///
 ss::future<compaction_result> self_compact_segment(
   ss::lw_shared_ptr<storage::segment>,
+  ss::lw_shared_ptr<storage::stm_manager>,
   storage::compaction_config,
   storage::probe&,
   storage::readers_cache&,
-  storage::storage_resources&);
+  storage::storage_resources&,
+  offset_delta_time apply_offset);
 
 /*
  * Concatentate segments into a minimal new segment.
@@ -58,10 +60,11 @@ ss::future<compaction_result> self_compact_segment(
 ss::future<
   std::tuple<ss::lw_shared_ptr<segment>, std::vector<segment::generation_id>>>
 make_concatenated_segment(
-  std::filesystem::path,
+  segment_full_path,
   std::vector<ss::lw_shared_ptr<segment>>,
   compaction_config,
-  storage_resources& resources);
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table);
 
 ss::future<> write_concatenated_compacted_index(
   std::filesystem::path,
@@ -109,7 +112,7 @@ ss::future<compacted_index_writer> make_compacted_index_writer(
   storage_resources& resources);
 
 ss::future<segment_appender_ptr> make_segment_appender(
-  const std::filesystem::path& path,
+  const segment_full_path& path,
   storage::debug_sanitize_files debug,
   size_t number_of_chunks,
   std::optional<uint64_t> segment_size,
@@ -171,14 +174,9 @@ ss::future<> do_swap_data_file_handles(
   storage::compaction_config,
   probe&);
 
-std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
-
-using jitter_percents = named_type<int, struct jitter_percents_tag>;
-static constexpr jitter_percents default_segment_size_jitter(5);
-
 // Generates a random jitter percentage [as a fraction] with in the passed
 // percents range.
-float random_jitter(jitter_percents = default_segment_size_jitter);
+float random_jitter(jitter_percents);
 
 // key types used to store data in key-value store
 enum class kvstore_key_type : int8_t {
@@ -200,7 +198,27 @@ struct clean_segment_value
 inline bool is_compactible(const model::record_batch& b) {
     return !(
       b.header().type == model::record_batch_type::raft_configuration
-      || b.header().type == model::record_batch_type::archival_metadata);
+      || b.header().type == model::record_batch_type::archival_metadata
+      || b.header().type == model::record_batch_type::version_fence);
+}
+
+offset_delta_time should_apply_delta_time_offset(
+  ss::sharded<features::feature_table>& feature_table);
+
+template<typename Func>
+auto with_segment_reader_handle(segment_reader_handle handle, Func func) {
+    static_assert(
+      std::is_nothrow_move_constructible_v<Func>,
+      "Func's move constructor must not throw");
+
+    return ss::do_with(
+      std::move(handle),
+      [func = std::move(func)](segment_reader_handle& handle) {
+          return ss::futurize_invoke(func, handle).finally([&handle] {
+              return handle.close().then(
+                [] { return ss::make_ready_future<>(); });
+          });
+      });
 }
 
 } // namespace storage::internal

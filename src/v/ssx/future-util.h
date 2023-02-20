@@ -283,6 +283,7 @@ inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
       .handle_exception_type([](const seastar::abort_requested_exception&) {})
       .handle_exception_type([](const seastar::gate_closed_exception&) {})
       .handle_exception_type([](const seastar::broken_semaphore&) {})
+      .handle_exception_type([](const seastar::broken_promise&) {})
       .handle_exception_type([](const seastar::broken_condition_variable&) {});
 }
 
@@ -298,6 +299,37 @@ inline auto spawn_with_gate_then(seastar::gate& g, Func&& func) noexcept {
 template<typename Func>
 inline void spawn_with_gate(seastar::gate& g, Func&& func) noexcept {
     background = spawn_with_gate_then(g, std::forward<Func>(func));
+}
+
+/// \brief Works the same as std::partition however assumes that the predicate
+/// returns item of type seastar::future<bool> instead of bool.
+/// \param begin an \c InputIterator designating the beginning of the range
+/// \param end an \c InputIterator designating the end of the range
+/// \param p Function to invoke with each element in the range
+template<typename Iter, typename UnaryAsyncPredicate>
+requires requires(UnaryAsyncPredicate f, Iter i) {
+    *(++i);
+    { i != i } -> std::convertible_to<bool>;
+    seastar::futurize_invoke(f, *i).get0();
+}
+seastar::future<Iter> partition(Iter begin, Iter end, UnaryAsyncPredicate p) {
+    auto itr = begin;
+    for (; itr != end; ++itr) {
+        if (!co_await p(*itr)) {
+            break;
+        }
+    }
+    if (itr == end) {
+        co_return itr;
+    }
+
+    for (auto i = std::next(itr); i != end; ++i) {
+        if (co_await p(*i)) {
+            std::iter_swap(i, itr);
+            ++itr;
+        }
+    }
+    co_return itr;
 }
 
 /// \brief Create a future that resolves either when the original future

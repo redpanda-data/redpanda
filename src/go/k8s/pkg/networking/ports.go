@@ -83,12 +83,20 @@ func NewRedpandaPorts(rpCluster *redpandav1alpha1.Cluster) *RedpandaPorts {
 		}
 	}
 	if adminAPIExternal != nil {
-		// for admin API, we only default to internal + 1
-		result.AdminAPI.External = &resources.NamedServicePort{
-			Port: adminAPIInternal.Port + 1,
-			Name: resources.AdminPortExternalName,
+		if adminAPIExternal.Port != 0 {
+			// if port is defined, we use the port as external port
+			result.AdminAPI.External = &resources.NamedServicePort{
+				Port: adminAPIExternal.Port,
+				Name: resources.AdminPortExternalName,
+			}
+		} else {
+			// for admin API, we default to internal + 1
+			result.AdminAPI.External = &resources.NamedServicePort{
+				Port: adminAPIInternal.Port + 1,
+				Name: resources.AdminPortExternalName,
+			}
+			result.AdminAPI.ExternalPortIsGenerated = true
 		}
-		result.AdminAPI.ExternalPortIsGenerated = true
 	}
 	if proxyAPIInternal != nil {
 		result.PandaProxy.Internal = &resources.NamedServicePort{
@@ -97,12 +105,20 @@ func NewRedpandaPorts(rpCluster *redpandav1alpha1.Cluster) *RedpandaPorts {
 		}
 	}
 	if proxyAPIExternal != nil && proxyAPIInternal != nil {
-		// for pandaproxy, we only default to internal + 1
-		result.PandaProxy.External = &resources.NamedServicePort{
-			Port: proxyAPIInternal.Port + 1,
-			Name: resources.PandaproxyPortExternalName,
+		if proxyAPIExternal.Port != 0 {
+			// if port is defined, we use the port as external port
+			result.PandaProxy.External = &resources.NamedServicePort{
+				Port: proxyAPIExternal.Port,
+				Name: resources.PandaproxyPortExternalName,
+			}
+		} else {
+			// for pandaproxy, we default to internal + 1
+			result.PandaProxy.External = &resources.NamedServicePort{
+				Port: proxyAPIInternal.Port + 1,
+				Name: resources.PandaproxyPortExternalName,
+			}
+			result.PandaProxy.ExternalPortIsGenerated = true
 		}
-		result.PandaProxy.ExternalPortIsGenerated = true
 	}
 
 	// for schema registry we have only one listener right now and depending on
@@ -115,7 +131,7 @@ func NewRedpandaPorts(rpCluster *redpandav1alpha1.Cluster) *RedpandaPorts {
 		}
 		if rpCluster.IsSchemaRegistryExternallyAvailable() {
 			result.SchemaRegistry.External = schemaRegistryPort
-			result.SchemaRegistry.ExternalPortIsGenerated = true
+			result.SchemaRegistry.ExternalPortIsGenerated = !rpCluster.Spec.Configuration.SchemaRegistry.External.StaticNodePort
 		} else {
 			result.SchemaRegistry.Internal = schemaRegistryPort
 		}

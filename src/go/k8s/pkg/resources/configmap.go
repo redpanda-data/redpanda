@@ -12,7 +12,6 @@ package resources
 import (
 	"bytes"
 	"context"
-	"crypto/md5" //nolint:gosec // this is not encrypting secure info
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -72,6 +71,7 @@ type ConfigMapResource struct {
 	serviceFQDN            string
 	pandaproxySASLUser     types.NamespacedName
 	schemaRegistrySASLUser types.NamespacedName
+	tlsConfigProvider      resourcetypes.BrokerTLSConfigProvider
 	logger                 logr.Logger
 }
 
@@ -83,6 +83,7 @@ func NewConfigMap(
 	serviceFQDN string,
 	pandaproxySASLUser types.NamespacedName,
 	schemaRegistrySASLUser types.NamespacedName,
+	tlsConfigProvider resourcetypes.BrokerTLSConfigProvider,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
@@ -92,6 +93,7 @@ func NewConfigMap(
 		serviceFQDN,
 		pandaproxySASLUser,
 		schemaRegistrySASLUser,
+		tlsConfigProvider,
 		logger.WithValues("Kind", configMapKind()),
 	}
 }
@@ -217,25 +219,36 @@ func (r *ConfigMapResource) CreateConfiguration(
 	ctx context.Context,
 ) (*configuration.GlobalConfiguration, error) {
 	cfg := configuration.For(r.pandaCluster.Spec.Version)
-	cfg.NodeConfiguration = *config.Default()
+	cfg.NodeConfiguration = *config.ProdDefault()
 	mountPoints := resourcetypes.GetTLSMountPoints()
 
 	c := r.pandaCluster.Spec.Configuration
 	cr := &cfg.NodeConfiguration.Redpanda
 
 	internalListener := r.pandaCluster.InternalListener()
+	internalAuthN := &internalListener.AuthenticationMethod
+	if *internalAuthN == "" {
+		internalAuthN = nil
+	}
 	cr.KafkaAPI = []config.NamedAuthNSocketAddress{} // we don't want to inherit default kafka port
 	cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 		Address: "0.0.0.0",
 		Port:    internalListener.Port,
 		Name:    InternalListenerName,
+		AuthN:   internalAuthN,
 	})
 
-	if r.pandaCluster.ExternalListener() != nil {
+	externalListener := r.pandaCluster.ExternalListener()
+	if externalListener != nil {
+		externalAuthN := &externalListener.AuthenticationMethod
+		if *externalAuthN == "" {
+			externalAuthN = nil
+		}
 		cr.KafkaAPI = append(cr.KafkaAPI, config.NamedAuthNSocketAddress{
 			Address: "0.0.0.0",
 			Port:    calculateExternalPort(internalListener.Port, r.pandaCluster.ExternalListener().Port),
 			Name:    ExternalListenerName,
+			AuthN:   externalAuthN,
 		})
 	}
 
@@ -250,7 +263,7 @@ func (r *ConfigMapResource) CreateConfiguration(
 	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			Address: cr.AdminAPI[0].Address,
-			Port:    cr.AdminAPI[0].Port + 1,
+			Port:    calculateExternalPort(cr.AdminAPI[0].Port, r.pandaCluster.AdminAPIExternal().Port),
 			Name:    AdminPortExternalName,
 		}
 		cr.AdminAPI = append(cr.AdminAPI, externalAdminAPI)
@@ -258,15 +271,16 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	for _, tl := range r.pandaCluster.KafkaTLSListeners() {
+	kl := r.pandaCluster.KafkaTLSListeners()
+	for i := range kl {
 		tls := config.ServerTLS{
-			Name:              tl.Name,
+			Name:              kl[i].Name,
 			KeyFile:           fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.NodeCertMountDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
-			RequireClientAuth: tl.TLS.RequireClientAuth,
+			RequireClientAuth: kl[i].TLS.RequireClientAuth,
 		}
-		if tl.TLS.RequireClientAuth {
+		if kl[i].TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", mountPoints.KafkaAPI.ClientCAMountDir, cmetav1.TLSCAKey)
 		}
 		cr.KafkaAPITLS = append(cr.KafkaAPITLS, tls)
@@ -293,19 +307,9 @@ func (r *ConfigMapResource) CreateConfiguration(
 	}
 
 	if r.pandaCluster.Spec.CloudStorage.Enabled {
-		secretName := types.NamespacedName{
-			Name:      r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name,
-			Namespace: r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Namespace,
+		if err := r.prepareCloudStorage(ctx, cfg); err != nil {
+			return nil, err
 		}
-		// We need to retrieve the Secret containing the provided cloud storage secret key and extract the key itself.
-		secretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name)
-		if err != nil {
-			return nil, fmt.Errorf("cannot retrieve cloud storage secret for data archival: %w", err)
-		}
-		if secretKeyStr == "" {
-			return nil, fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errCloudStorageSecretKeyCannotBeEmpty)
-		}
-		r.prepareCloudStorage(cfg, secretKeyStr)
 	}
 
 	for _, user := range r.pandaCluster.Spec.Superusers {
@@ -316,6 +320,9 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	if r.pandaCluster.Spec.EnableSASL {
 		cfg.SetAdditionalRedpandaProperty("enable_sasl", true)
+	}
+	if r.pandaCluster.Spec.KafkaEnableAuthorization != nil && *r.pandaCluster.Spec.KafkaEnableAuthorization {
+		cfg.SetAdditionalRedpandaProperty("kafka_enable_authorization", true)
 	}
 
 	partitions := r.pandaCluster.Spec.Configuration.GroupTopicPartitions
@@ -332,37 +339,39 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	cfg.SetAdditionalRedpandaProperty("log_segment_size", logSegmentSize)
 
-	replicas := r.pandaCluster.GetCurrentReplicas()
-	for i := int32(0); i < replicas; i++ {
-		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
-			Host: config.SocketAddress{
-				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
-				Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
-				Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
-			},
-		})
+	if err := r.PrepareSeedServerList(cr); err != nil {
+		return nil, err
 	}
 
 	r.preparePandaproxy(&cfg.NodeConfiguration)
 	r.preparePandaproxyTLS(&cfg.NodeConfiguration, mountPoints)
-	err := r.preparePandaproxyClient(ctx, cfg)
+	err := r.preparePandaproxyClient(ctx, cfg, mountPoints)
 	if err != nil {
 		return nil, err
 	}
 
 	if sr := r.pandaCluster.Spec.Configuration.SchemaRegistry; sr != nil {
-		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedSocketAddress{
+		var authN *string
+		if sr.AuthenticationMethod != "" {
+			authN = &sr.AuthenticationMethod
+		}
+		cfg.NodeConfiguration.SchemaRegistry.SchemaRegistryAPI = []config.NamedAuthNSocketAddress{
 			{
 				Address: "0.0.0.0",
 				Port:    sr.Port,
 				Name:    SchemaRegistryPortName,
+				AuthN:   authN,
 			},
 		}
 	}
 	r.prepareSchemaRegistryTLS(&cfg.NodeConfiguration, mountPoints)
-	err = r.prepareSchemaRegistryClient(ctx, cfg)
+	err = r.prepareSchemaRegistryClient(ctx, cfg, mountPoints)
 	if err != nil {
 		return nil, err
+	}
+
+	if featuregates.RackAwareness(r.pandaCluster.Spec.Version) {
+		cfg.SetAdditionalRedpandaProperty("enable_rack_awareness", true)
 	}
 
 	if err := cfg.SetAdditionalFlatProperties(r.pandaCluster.Spec.AdditionalConfiguration); err != nil {
@@ -372,25 +381,48 @@ func (r *ConfigMapResource) CreateConfiguration(
 	return cfg, nil
 }
 
-// calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
-func calculateExternalPort(kafkaInternalPort, specifiedExternalPort int) int {
-	if kafkaInternalPort < 0 || kafkaInternalPort > 65535 {
+// calculateExternalPort can calculate external port based on the internal port
+// for any listener
+func calculateExternalPort(internalPort, specifiedExternalPort int) int {
+	if internalPort < 0 || internalPort > 65535 {
 		return 0
 	}
 	if specifiedExternalPort != 0 {
 		return specifiedExternalPort
 	}
-	return kafkaInternalPort + 1
+	return internalPort + 1
 }
 
 func (r *ConfigMapResource) prepareCloudStorage(
-	cfg *configuration.GlobalConfiguration, secretKeyStr string,
-) {
+	ctx context.Context, cfg *configuration.GlobalConfiguration,
+) error {
+	if r.pandaCluster.Spec.CloudStorage.AccessKey != "" {
+		cfg.SetAdditionalRedpandaProperty("cloud_storage_access_key", r.pandaCluster.Spec.CloudStorage.AccessKey)
+	}
+	if r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name != "" {
+		secretName := types.NamespacedName{
+			Name:      r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name,
+			Namespace: r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Namespace,
+		}
+		// We need to retrieve the Secret containing the provided cloud storage secret key and extract the key itself.
+		secretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name)
+		if err != nil {
+			return fmt.Errorf("cannot retrieve cloud storage secret for data archival: %w", err)
+		}
+		if secretKeyStr == "" {
+			return fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errCloudStorageSecretKeyCannotBeEmpty)
+		}
+
+		cfg.SetAdditionalRedpandaProperty("cloud_storage_secret_key", secretKeyStr)
+	}
+
+	if r.pandaCluster.Spec.CloudStorage.CredentialsSource != "" {
+		cfg.SetAdditionalRedpandaProperty("cloud_storage_credentials_source", string(r.pandaCluster.Spec.CloudStorage.CredentialsSource))
+	}
+
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_enabled", r.pandaCluster.Spec.CloudStorage.Enabled)
-	cfg.SetAdditionalRedpandaProperty("cloud_storage_access_key", r.pandaCluster.Spec.CloudStorage.AccessKey)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_region", r.pandaCluster.Spec.CloudStorage.Region)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_bucket", r.pandaCluster.Spec.CloudStorage.Bucket)
-	cfg.SetAdditionalRedpandaProperty("cloud_storage_secret_key", secretKeyStr)
 	cfg.SetAdditionalRedpandaProperty("cloud_storage_disable_tls", r.pandaCluster.Spec.CloudStorage.DisableTLS)
 
 	interval := r.pandaCluster.Spec.CloudStorage.ReconcilicationIntervalMs
@@ -422,6 +454,7 @@ func (r *ConfigMapResource) prepareCloudStorage(
 			cfg.SetAdditionalRedpandaProperty("cloud_storage_cache_size", size)
 		}
 	}
+	return nil
 }
 
 func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
@@ -430,28 +463,44 @@ func (r *ConfigMapResource) preparePandaproxy(cfgRpk *config.Config) {
 		return
 	}
 
-	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedSocketAddress{
+	var internalAuthN *string
+	if internal.AuthenticationMethod != "" {
+		internalAuthN = &internal.AuthenticationMethod
+	}
+	cfgRpk.Pandaproxy.PandaproxyAPI = []config.NamedAuthNSocketAddress{
 		{
 			Address: "0.0.0.0",
 			Port:    internal.Port,
 			Name:    PandaproxyPortInternalName,
+			AuthN:   internalAuthN,
 		},
 	}
 
-	if r.pandaCluster.PandaproxyAPIExternal() != nil {
+	var externalAuthN *string
+	external := r.pandaCluster.PandaproxyAPIExternal()
+	if external != nil {
+		if external.AuthenticationMethod != "" {
+			externalAuthN = &external.AuthenticationMethod
+		}
 		cfgRpk.Pandaproxy.PandaproxyAPI = append(cfgRpk.Pandaproxy.PandaproxyAPI,
-			config.NamedSocketAddress{
+			config.NamedAuthNSocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(internal.Port, 0),
+				Port:    calculateExternalPort(internal.Port, r.pandaCluster.PandaproxyAPIExternal().Port),
 				Name:    PandaproxyPortExternalName,
+				AuthN:   externalAuthN,
 			})
 	}
 }
 
 func (r *ConfigMapResource) preparePandaproxyClient(
-	ctx context.Context, cfg *configuration.GlobalConfiguration,
+	ctx context.Context, cfg *configuration.GlobalConfiguration, mountPoints *resourcetypes.TLSMountPoints,
 ) error {
 	if internal := r.pandaCluster.PandaproxyAPIInternal(); internal == nil {
+		return nil
+	}
+	kafkaInternal := r.pandaCluster.InternalListener()
+	if kafkaInternal == nil {
+		r.logger.Error(errors.New("pandaproxy is missing internal kafka listener. This state is forbidden by the webhook"), "") //nolint:goerr113 // no need for static error
 		return nil
 	}
 
@@ -464,7 +513,12 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 		})
 	}
 
-	if !r.pandaCluster.Spec.EnableSASL {
+	clientBrokerTLS := r.tlsConfigProvider.KafkaClientBrokerTLS(mountPoints)
+	if clientBrokerTLS != nil {
+		cfg.NodeConfiguration.PandaproxyClient.BrokerTLS = *clientBrokerTLS
+	}
+
+	if !r.pandaCluster.IsSASLOnInternalEnabled() {
 		return nil
 	}
 
@@ -482,15 +536,19 @@ func (r *ConfigMapResource) preparePandaproxyClient(
 	cfg.NodeConfiguration.PandaproxyClient.SCRAMUsername = &username
 	cfg.NodeConfiguration.PandaproxyClient.SCRAMPassword = &password
 	cfg.NodeConfiguration.PandaproxyClient.SASLMechanism = &mechanism
-
 	// Add username as superuser
 	return cfg.AppendToAdditionalRedpandaProperty(superusersConfigurationKey, username)
 }
 
 func (r *ConfigMapResource) prepareSchemaRegistryClient(
-	ctx context.Context, cfg *configuration.GlobalConfiguration,
+	ctx context.Context, cfg *configuration.GlobalConfiguration, mountPoints *resourcetypes.TLSMountPoints,
 ) error {
 	if r.pandaCluster.Spec.Configuration.SchemaRegistry == nil {
+		return nil
+	}
+	kafkaInternal := r.pandaCluster.InternalListener()
+	if kafkaInternal == nil {
+		r.logger.Error(errors.New("pandaproxy is missing internal kafka listener. This state is forbidden by the webhook"), "") //nolint:goerr113 // no need for static error
 		return nil
 	}
 
@@ -503,7 +561,12 @@ func (r *ConfigMapResource) prepareSchemaRegistryClient(
 		})
 	}
 
-	if !r.pandaCluster.Spec.EnableSASL {
+	clientBrokerTLS := r.tlsConfigProvider.KafkaClientBrokerTLS(mountPoints)
+	if clientBrokerTLS != nil {
+		cfg.NodeConfiguration.SchemaRegistryClient.BrokerTLS = *clientBrokerTLS
+	}
+
+	if !r.pandaCluster.IsSASLOnInternalEnabled() {
 		return nil
 	}
 
@@ -635,24 +698,15 @@ func generatePassword(length int) (string, error) {
 func (r *ConfigMapResource) GetNodeConfigHash(
 	ctx context.Context,
 ) (string, error) {
-	var configString string
-	if featuregates.CentralizedConfiguration(r.pandaCluster.Spec.Version) {
-		cfg, err := r.CreateConfiguration(ctx)
-		if err != nil {
-			return "", err
-		}
-		return cfg.GetNodeConfigurationHash()
-	}
-
-	// Previous behavior for v21.x
-	obj, err := r.obj(ctx)
+	cfg, err := r.CreateConfiguration(ctx)
 	if err != nil {
 		return "", err
 	}
-	configMap := obj.(*corev1.ConfigMap)
-	configString = configMap.Data[configKey]
-	md5Hash := md5.Sum([]byte(configString)) //nolint:gosec // this is not encrypting secure info
-	return fmt.Sprintf("%x", md5Hash), nil
+	if featuregates.CentralizedConfiguration(r.pandaCluster.Spec.Version) {
+		return cfg.GetNodeConfigurationHash()
+	}
+	// Previous behavior for v21.x
+	return cfg.GetFullConfigurationHash()
 }
 
 // globalConfigurationChanged verifies if the new global configuration
@@ -746,6 +800,34 @@ func (r *ConfigMapResource) SetLastAppliedConfigurationInCluster(
 		}
 		existing.Annotations[LastAppliedConfigurationAnnotationKey] = string(ser)
 		return r.Update(ctx, &existing)
+	}
+	return nil
+}
+
+func (r *ConfigMapResource) PrepareSeedServerList(cr *config.RedpandaNodeConfig) error {
+	c := r.pandaCluster.Spec.Configuration
+	replicas := r.pandaCluster.GetCurrentReplicas()
+
+	// make this the default when v22.2 is no longer supported
+	if featuregates.EmptySeedStartCluster(r.pandaCluster.Spec.Version) {
+		cr.EmptySeedStartsCluster = new(bool) // default to false
+		if r.pandaCluster.Spec.Replicas != nil {
+			replicas = *r.pandaCluster.Spec.Replicas
+		}
+		if replicas == 0 {
+			//nolint:goerr113 // out of scope for this PR
+			return fmt.Errorf("cannot create seed list for cluster with 0 replicas")
+		}
+	}
+
+	for i := int32(0); i < replicas; i++ {
+		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
+			Host: config.SocketAddress{
+				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
+				Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
+				Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
+			},
+		})
 	}
 	return nil
 }

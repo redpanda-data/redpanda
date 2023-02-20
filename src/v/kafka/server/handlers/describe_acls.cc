@@ -53,6 +53,11 @@ static void fill_response(
 
         // acl entries
         for (auto& acl : entry.second) {
+            // ignore ephemeral_users
+            auto ephemeral_user = security::principal_type::ephemeral_user;
+            if (acl.principal().type() == ephemeral_user) {
+                continue;
+            }
             acl_description desc{
               .principal = details::to_kafka_principal(acl.principal()),
               .host = details::to_kafka_host(acl.host()),
@@ -70,7 +75,7 @@ ss::future<response_ptr> describe_acls_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     describe_acls_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
+    log_request(ctx.header(), request);
 
     if (!ctx.authorized(
           security::acl_operation::describe, security::default_cluster_name)) {

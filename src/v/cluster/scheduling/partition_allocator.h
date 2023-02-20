@@ -21,6 +21,12 @@
 
 namespace cluster {
 
+// This class keeps track of the partition assignments of each group, also
+// tracking the lifecycle events (decommissioning, etc) of each node to
+// determine where to place new partitions.
+//
+// Under the hood, this doesn't do any bookkeeping of what partitions exist on
+// each shard, only how many partition replicas are assigned per shard.
 class partition_allocator {
 public:
     static constexpr ss::shard_id shard = 0;
@@ -47,28 +53,44 @@ public:
         return _state->contains_node(n);
     }
 
-    result<allocation_units> allocate(allocation_request);
+    /**
+     * Return an allocation_units object wrapping the result of the allocating
+     * the given allocation request, or an error if it was not possible.
+     */
+    result<allocation_units::pointer> allocate(allocation_request);
 
-    /// Realocates partition replicas, moving them away from decommissioned
+    /// Reallocates partition replicas, moving them away from decommissioned
     /// nodes. Replicas on nodes that were left untouched are not changed.
+    /// Allocation domain must match the one used to allocate the partition.
     ///
     /// Returns an error it reallocation is impossible
-    result<allocation_units>
-    reassign_decommissioned_replicas(const partition_assignment&);
+    result<allocation_units> reassign_decommissioned_replicas(
+      const partition_assignment&, partition_allocation_domain);
 
-    result<allocation_units>
-    reallocate_partition(partition_constraints, const partition_assignment&);
+    result<allocation_units> reallocate_partition(
+      partition_constraints,
+      const partition_assignment&,
+      partition_allocation_domain);
 
-    /// best effort. Does not throw if we cannot find the old partition
-    void deallocate(const std::vector<model::broker_shard>&);
+    /// Best effort. Does not throw if we cannot find the replicas.
+    /// Allocation domain must match the one used to allocate the partition.
+    void deallocate(
+      const std::vector<model::broker_shard>&, partition_allocation_domain);
 
     /// updates the state of allocation, it is used during recovery and
-    /// when processing raft0 committed notifications
+    /// when processing raft0 committed notifications.
+    /// Allocation domain must match the one used to allocate the partition.
     void update_allocation_state(
-      const std::vector<model::broker_shard>&, raft::group_id);
+      const std::vector<model::broker_shard>&,
+      raft::group_id,
+      partition_allocation_domain);
 
-    void add_allocations(const std::vector<model::broker_shard>&);
-    void remove_allocations(const std::vector<model::broker_shard>&);
+    void add_allocations(
+      const std::vector<model::broker_shard>&, partition_allocation_domain);
+    void remove_allocations(
+      const std::vector<model::broker_shard>&, partition_allocation_domain);
+
+    bool is_rack_awareness_enabled() const { return _enable_rack_awareness(); }
 
     allocation_state& state() { return *_state; }
 
@@ -76,8 +98,12 @@ private:
     template<typename T>
     class intermediate_allocation {
     public:
-        intermediate_allocation(allocation_state& state, size_t res)
-          : _state(state) {
+        intermediate_allocation(
+          allocation_state& state,
+          size_t res,
+          const partition_allocation_domain domain)
+          : _state(state)
+          , _domain(domain) {
             _partial.reserve(res);
         }
         void push_back(T t) { _partial.push_back(std::move(t)); }
@@ -98,11 +124,12 @@ private:
         intermediate_allocation&
         operator=(const intermediate_allocation&) noexcept = delete;
 
-        ~intermediate_allocation() { _state.rollback(_partial); }
+        ~intermediate_allocation() { _state.rollback(_partial, _domain); }
 
     private:
         std::vector<T> _partial;
         allocation_state& _state;
+        partition_allocation_domain _domain;
     };
 
     std::error_code
@@ -110,10 +137,13 @@ private:
 
     result<std::vector<model::broker_shard>> allocate_partition(
       partition_constraints,
+      partition_allocation_domain,
       const std::vector<model::broker_shard>& not_changed_replicas = {});
 
     result<std::vector<model::broker_shard>> do_reallocate_partition(
-      partition_constraints, const std::vector<model::broker_shard>&);
+      partition_constraints,
+      partition_allocation_domain,
+      const std::vector<model::broker_shard>&);
 
     std::unique_ptr<allocation_state> _state;
     allocation_strategy _allocation_strategy;

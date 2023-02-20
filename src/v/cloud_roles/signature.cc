@@ -14,6 +14,7 @@
 #include "cloud_roles/logger.h"
 #include "hashing/secure.h"
 #include "ssx/sformat.h"
+#include "utils/base64.h"
 #include "vlog.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -22,8 +23,16 @@
 #include <boost/algorithm/string/compare.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <fmt/compile.h>
 
 #include <system_error>
+
+namespace {
+constexpr auto iso_8061_date_fmt = FMT_COMPILE("{:%Y%m%d}");
+constexpr auto iso_8061_datetime_fmt = FMT_COMPILE("{:%Y%m%dT%H%M%SZ}");
+constexpr auto rfc_9110_datetime_fmt = FMT_COMPILE(
+  "{:%a, %d %b %Y %H:%M:%S %Z}");
+} // namespace
 
 namespace cloud_roles {
 
@@ -32,23 +41,23 @@ using hmac_digest = std::array<char, sha256_digest_length>;
 
 constexpr std::string_view algorithm = "AWS4-HMAC-SHA256";
 
-struct s3_error_category final : std::error_category {
+struct signing_error_category final : std::error_category {
     const char* name() const noexcept final { return "s3"; }
     std::string message(int ec) const final {
-        switch (static_cast<s3_client_error_code>(ec)) {
-        case s3_client_error_code::invalid_uri:
+        switch (static_cast<signing_error_code>(ec)) {
+        case signing_error_code::invalid_uri:
             return "Target URI shouldn't be empty or include domain name";
-        case s3_client_error_code::invalid_uri_params:
+        case signing_error_code::invalid_uri_params:
             return "Target URI contains invalid query parameters";
-        case s3_client_error_code::not_enough_arguments:
+        case signing_error_code::not_enough_arguments:
             return "Can't make request, not enough arguments";
         }
         return "unknown";
     }
 };
 
-std::error_code make_error_code(s3_client_error_code ec) noexcept {
-    static s3_error_category ecat;
+std::error_code make_error_code(signing_error_code ec) noexcept {
+    static signing_error_category ecat;
     return {static_cast<int>(ec), ecat};
 }
 
@@ -60,20 +69,16 @@ time_source::time_source()
 time_source::time_source(timestamp instant)
   : time_source([instant]() { return instant; }, 0) {}
 
-ss::sstring time_source::format(const char* fmt) const {
-    std::array<char, formatted_datetime_len> out_str{};
-    auto point = _gettime_fn();
-    std::time_t time = std::chrono::system_clock::to_time_t(point);
-    std::tm* gm = std::gmtime(&time);
-    auto ret = std::strftime(out_str.data(), out_str.size(), fmt, gm);
-    vassert(ret > 0, "Invalid date format string");
-    return ss::sstring(out_str.data(), ret);
+ss::sstring time_source::format_date() const {
+    return format(iso_8061_date_fmt);
 }
 
-ss::sstring time_source::format_date() const { return format("%Y%m%d"); }
-
 ss::sstring time_source::format_datetime() const {
-    return format("%Y%m%dT%H%M%SZ");
+    return format(iso_8061_datetime_fmt);
+}
+
+ss::sstring time_source::format_http_datetime() const {
+    return format(rfc_9110_datetime_fmt);
 }
 
 timestamp time_source::default_source() {
@@ -134,6 +139,14 @@ inline void append_hex_utf8(ss::sstring& result, char ch) {
     result.append(h.data(), h.size());
 }
 
+ss::sstring time_source::format(auto fmt) const {
+    const auto point = _gettime_fn();
+    const std::time_t time = std::chrono::system_clock::to_time_t(point);
+    const std::tm gm = fmt::gmtime(time);
+
+    return fmt::format(fmt, gm);
+}
+
 ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
     // The function defined here:
     //     https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-header-based-auth.html
@@ -157,23 +170,64 @@ ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
     return result;
 }
 
-/// \brief Get canonical URI of the request
-/// Canonical URI is everything that follows domain name starting with '/'
-/// without parameters (everythng after '?' including '?'). The uri is uri
-/// encoded. e.g. https://foo.bar/canonical-url?param=value
-///
-/// \param uri is a target of the http query (everything excluding the domain
-/// name)
-static result<ss::sstring> get_canonical_uri(ss::sstring target) {
+struct target_parts {
+    /// \brief URI Encoded canonical URI
+    /// Canonical URI is everything that follows domain name starting with '/'
+    /// without parameters (everythng after '?' including '?'). The uri is URI
+    /// encoded. e.g. https://foo.bar/canonical-url?param=value
+    ss::sstring canonical_uri;
+    /// \brief Query parameters extracted from target
+    /// They are sorted by key. Note that both the key and the value are *not*
+    /// URI encoded.
+    std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
+};
+
+/// \brief Split the target string into the canonical URI and a sorted list
+/// of query params.
+static result<target_parts> split_target(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
         vlog(clrl_log.error, "invalid URI {}", target);
-        return make_error_code(s3_client_error_code::invalid_uri);
+        return make_error_code(signing_error_code::invalid_uri);
     }
+
+    ss::sstring canonical_uri{};
     auto pos = target.find('?');
-    if (pos != ss::sstring::npos) {
-        target.resize(pos);
+    if (pos == ss::sstring::npos) {
+        return target_parts{
+          .canonical_uri = uri_encode(target, false), .query_params = {}};
+    } else {
+        auto canonical_uri = uri_encode(target.substr(0, pos), false);
+        if (pos == target.size() - 1) {
+            return target_parts{
+              .canonical_uri = canonical_uri, .query_params = {}};
+        }
+
+        auto query_str = target.substr(pos + 1);
+        std::vector<ss::sstring> params;
+        boost::split(params, query_str, boost::is_any_of("&"));
+        std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
+        for (const auto& param : params) {
+            auto p = param.find('=');
+            if (p == ss::sstring::npos) {
+                // parameter with empty value
+                query_params.emplace_back(param, "");
+            } else {
+                if (p == 0) {
+                    // parameter value can be empty but name can't
+                    return make_error_code(
+                      signing_error_code::invalid_uri_params);
+                }
+                ss::sstring pname = param.substr(0, p);
+                ss::sstring pvalue = param.substr(p + 1);
+                query_params.emplace_back(pname, pvalue);
+            }
+        }
+
+        std::sort(query_params.begin(), query_params.end());
+
+        return target_parts{
+          .canonical_uri = canonical_uri, .query_params = query_params};
     }
-    return uri_encode(target, false);
 }
 
 /// CanonicalQueryString specifies the URI-encoded query string parameters.
@@ -190,37 +244,8 @@ static result<ss::sstring> get_canonical_uri(ss::sstring target) {
 ///   UriEncode("prefix")+"="+UriEncode("somePrefix")
 ///
 /// \param target is a target of the http query (url - domain name)
-static result<ss::sstring> get_canonical_query_string(ss::sstring target) {
-    if (target.empty() || target[0] != '/') {
-        vlog(clrl_log.error, "invalid URI {}", target);
-        return make_error_code(s3_client_error_code::invalid_uri);
-    }
-    auto pos = target.find('?');
-    if (pos == ss::sstring::npos || pos == target.size() - 1) {
-        return "";
-    }
-    auto query_str = target.substr(pos + 1);
-    std::vector<ss::sstring> params;
-    boost::split(params, query_str, boost::is_any_of("&"));
-    std::vector<std::pair<ss::sstring, ss::sstring>> query_params;
-    for (const auto& param : params) {
-        auto p = param.find('=');
-        if (p == ss::sstring::npos) {
-            // parameter with empty value
-            query_params.emplace_back(param, "");
-        } else {
-            if (p == 0) {
-                // parameter value can be empty but name can't
-                return make_error_code(
-                  s3_client_error_code::invalid_uri_params);
-            }
-            ss::sstring pname = param.substr(0, p);
-            ss::sstring pvalue = param.substr(p + 1);
-            query_params.emplace_back(pname, pvalue);
-        }
-    }
-    std::sort(query_params.begin(), query_params.end());
-
+static ss::sstring get_canonical_query_string(
+  const std::vector<std::pair<ss::sstring, ss::sstring>>& query_params) {
     // Generate canonical query string
     ss::sstring result;
     int cnt = 0;
@@ -306,19 +331,20 @@ inline result<ss::sstring> create_canonical_request(
     if (target.empty() || target.at(0) != '/') {
         target = "/" + target;
     }
-    auto canonical_uri = get_canonical_uri(target);
-    if (!canonical_uri) {
-        return canonical_uri.error();
+
+    auto split_result = split_target(target);
+    if (!split_result) {
+        return split_result.error();
     }
-    auto canonical_query = get_canonical_query_string(target);
-    if (!canonical_query) {
-        return canonical_query.error();
-    }
+
+    auto& [canonical_uri, query_params] = split_result.value();
+    auto canonical_query = get_canonical_query_string(query_params);
+
     return ssx::sformat(
       "{}\n{}\n{}\n{}\n{}\n{}",
       method,
-      canonical_uri.value(),
-      canonical_query.value(),
+      canonical_uri,
+      canonical_query,
       hdr.canonical_headers,
       hdr.signed_headers,
       hashed_payload);
@@ -391,4 +417,130 @@ signature_v4::signature_v4(
   , _region(std::move(region))
   , _access_key(std::move(access_key))
   , _private_key(std::move(private_key)) {}
+
+static constexpr auto required_headers = {
+  "Content-Encoding",
+  "Content-Language",
+  "Content-Length",
+  "Content-MD5",
+  "Content-Type",
+  "Date",
+  "If-Modified-Since",
+  "If-Match",
+  "If-None-Match",
+  "If-UnmodifiedSince",
+  "Range"};
+
+result<ss::sstring> signature_abs::get_canonicalized_resource(
+  const http::client::request_header& header) const {
+    const auto target_view = header.target();
+    const ss::sstring target{target_view.data(), target_view.size()};
+    auto split_result = split_target(target);
+    if (!split_result) {
+        return split_result.error();
+    }
+
+    auto& [canonical_uri, query_params] = split_result.value();
+
+    ss::sstring result = ssx::sformat(
+      "/{}{}", _storage_account(), canonical_uri);
+
+    for (const auto& [pname, pvalue] : query_params) {
+        // TODO(vlad): List values are not supported.
+        result += ssx::sformat("\n{}:{}", pname, pvalue);
+    }
+
+    return result;
+}
+
+ss::sstring signature_abs::get_canonicalized_headers(
+  const http::client::request_header& header) const {
+    std::vector<std::pair<ss::sstring, ss::sstring>> ms_headers;
+    for (const auto& it : header) {
+        auto name = it.name_string();
+        auto value = it.value();
+
+        if (name.starts_with("x-ms-")) {
+            ss::sstring n{name.data(), name.size()};
+            ss::sstring v{value.data(), value.size()};
+            boost::trim(v);
+
+            ms_headers.emplace_back(n, v);
+        }
+    }
+
+    std::sort(ms_headers.begin(), ms_headers.end());
+
+    ss::sstring result{};
+    for (auto& ms_header : ms_headers) {
+        result += ssx::sformat(
+          "{}:{}\n", std::move(ms_header.first), std::move(ms_header.second));
+    }
+
+    return result;
+}
+
+result<ss::sstring>
+signature_abs::get_string_to_sign(http::client::request_header& header) const {
+    ss::sstring non_ms_headers{};
+    for (const auto& header_name : required_headers) {
+        auto header_value_view = header[header_name];
+        ss::sstring header_value{
+          header_value_view.data(), header_value_view.size()};
+
+        boost::trim(header_value);
+
+        // Represent 0 content-size as empty string as per
+        // https://learn.microsoft.com/en-us/rest/api/storageservices/authorize-with-shared-key#content-length-header-in-version-2014-02-14-and-earlier
+        if (
+          std::string_view{header_name} == "Content-Length"
+          && header_value == "0") {
+            header_value = "";
+        }
+
+        non_ms_headers += ssx::sformat("{}\n", header_value);
+    }
+
+    const auto canonicalized_ms_headers = get_canonicalized_headers(header);
+    auto canonicalized_res = get_canonicalized_resource(header);
+    if (!canonicalized_res) {
+        return canonicalized_res;
+    }
+
+    return ssx::sformat(
+      "{}\n{}{}{}",
+      header.method_string(),
+      non_ms_headers,
+      canonicalized_ms_headers,
+      canonicalized_res.value());
+}
+
+signature_abs::signature_abs(
+  storage_account storage_account, private_key_str shared_key, time_source ts)
+  : _sig_time(std::move(ts))
+  , _storage_account(std::move(storage_account))
+  , _shared_key(std::move(shared_key)) {}
+
+std::error_code
+signature_abs::sign_header(http::client::request_header& header) const {
+    auto ms_date = _sig_time.format_http_datetime();
+    header.set("x-ms-date", {ms_date.data(), ms_date.size()});
+    header.set("x-ms-version", azure_storage_api_version);
+
+    const auto to_sign = get_string_to_sign(header);
+    if (!to_sign) {
+        return to_sign.error();
+    }
+
+    auto digest = hmac(base64_to_string(_shared_key()), to_sign.value());
+
+    auto auth_header = fmt::format(
+      "SharedKey {}:{}",
+      _storage_account(),
+      bytes_to_base64(to_bytes_view(digest)));
+    header.set(boost::beast::http::field::authorization, auth_header);
+
+    return {};
+}
+
 } // namespace cloud_roles

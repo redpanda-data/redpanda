@@ -100,6 +100,10 @@ public:
         }
     }
 
+    constexpr ss::io_priority_class get_priority_class() const {
+        return _opts.priority;
+    }
+
 private:
     void dispatch_background_head_write();
     ss::future<> do_next_adaptive_fallocation();

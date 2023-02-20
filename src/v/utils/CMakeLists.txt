@@ -8,12 +8,18 @@ v_cc_library(
     file_io.cc
     base64.cc
     retry_chain_node.cc
+    tracking_allocator.cc
     vint.cc
+    directory_walker.cc
+    uuid.cc
+    request_auth.cc
+    bottomless_token_bucket.cc
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram
     aklomp::base64
     v::rphashing
     v::rprandom
-    v::bytes)
+    v::bytes
+    v::json)
 add_subdirectory(tests)

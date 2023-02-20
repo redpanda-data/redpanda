@@ -102,10 +102,6 @@ api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
         r.data.error_code = error_code::none;
     }
 
-    if (ctx.header().version > api_version(1)) {
-        r.data.throttle_time_ms = std::chrono::milliseconds(
-          ctx.throttle_delay_ms());
-    }
     if (
       r.data.error_code == error_code::none
       || r.data.error_code == error_code::unsupported_version) {

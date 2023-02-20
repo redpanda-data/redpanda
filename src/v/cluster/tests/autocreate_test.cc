@@ -25,16 +25,20 @@
 #include <chrono>
 #include <vector>
 
-std::vector<cluster::topic_configuration> test_topics_configuration() {
+std::vector<cluster::topic_configuration> test_topics_configuration(
+  cluster::replication_factor rf = cluster::replication_factor{1}) {
     return std::vector<cluster::topic_configuration>{
-      cluster::topic_configuration(test_ns, model::topic("tp-1"), 10, 1),
-      cluster::topic_configuration(test_ns, model::topic("tp-2"), 10, 1),
-      cluster::topic_configuration(test_ns, model::topic("tp-3"), 10, 1),
+      cluster::topic_configuration(test_ns, model::topic("tp-1"), 10, rf),
+      cluster::topic_configuration(test_ns, model::topic("tp-2"), 10, rf),
+      cluster::topic_configuration(test_ns, model::topic("tp-3"), 10, rf),
     };
 }
 
 void validate_topic_metadata(cluster::metadata_cache& cache) {
-    auto expected_topics = test_topics_configuration();
+    cluster::replication_factor expected_replication_factor
+      = cluster::replication_factor{1};
+    auto expected_topics = test_topics_configuration(
+      expected_replication_factor);
 
     for (auto& t_cfg : expected_topics) {
         auto tp_md = cache.get_topic_metadata(t_cfg.tp_ns);
@@ -44,33 +48,14 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
         auto cfg = cache.get_topic_cfg(t_cfg.tp_ns);
         BOOST_REQUIRE_EQUAL(cfg->tp_ns, t_cfg.tp_ns);
         BOOST_REQUIRE_EQUAL(cfg->partition_count, t_cfg.partition_count);
-        BOOST_REQUIRE_EQUAL(cfg->replication_factor, t_cfg.replication_factor);
+        BOOST_REQUIRE_EQUAL(
+          tp_md->get_replication_factor(), expected_replication_factor);
         BOOST_REQUIRE_EQUAL(
           cfg->properties.compaction_strategy,
           t_cfg.properties.compaction_strategy);
         BOOST_REQUIRE_EQUAL(
           cfg->properties.compression, t_cfg.properties.compression);
     }
-}
-
-void wait_for_leaders(
-  cluster::partition_leaders_table& leader_table,
-  const cluster::topic_metadata md) {
-    std::vector<ss::future<>> f;
-    f.reserve(md.get_assignments().size());
-    for (const auto& p : md.get_assignments()) {
-        model::ntp ntp(
-          md.get_configuration().tp_ns.ns,
-          md.get_configuration().tp_ns.tp,
-          p.id);
-
-        f.push_back(leader_table
-                      .wait_for_leader(
-                        ntp, model::timeout_clock::now() + 5s, std::nullopt)
-                      .discard_result());
-    }
-
-    ss::when_all_succeed(f.begin(), f.end()).get();
 }
 
 void wait_for_metadata(
@@ -112,7 +97,6 @@ FIXTURE_TEST(create_single_topic_test_at_current_broker, cluster_test_fixture) {
         auto md = app->metadata_cache.local().get_topic_metadata(r.tp_ns);
 
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
-        wait_for_leaders(app->controller->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md->get_configuration().tp_ns, r.tp_ns);
     }
 }
@@ -130,8 +114,8 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
 
     // Wait for cluster to reach stable state
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
-        return get_local_cache(model::node_id(0)).all_brokers().size() == 2
-               && get_local_cache(model::node_id(1)).all_brokers().size() == 2;
+        return get_local_cache(model::node_id(0)).node_count() == 2
+               && get_local_cache(model::node_id(1)).node_count() == 2;
     }).get();
 
     std::vector<cluster::topic_result> results;
@@ -153,8 +137,6 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache(n_1).get_topic_metadata(r.tp_ns);
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
-        wait_for_leaders(
-          app_0->controller->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md->get_configuration().tp_ns, r.tp_ns);
     }
     // Make sure caches are the same

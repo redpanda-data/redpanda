@@ -46,6 +46,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 		replicas                  = 1
 		redpandaContainerTag      = "x"
 		redpandaContainerImage    = "vectorized/redpanda"
+
+		clusterNameWithLicense = "test-cluster-with-license"
+		licenseName            = "test-cluster-with-license"
+		licenseNamespace       = "default"
 	)
 
 	Context("When creating RedpandaCluster", func() {
@@ -88,7 +92,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{Port: kafkaPort},
@@ -102,14 +106,16 @@ var _ = Describe("RedPandaCluster controller", func() {
 						},
 						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
 							{Port: pandaProxyPort},
-							{External: v1alpha1.ExternalConnectivityConfig{
+							{External: v1alpha1.PandaproxyExternalConnectivityConfig{ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
 								Enabled: true,
-							}},
+							}}},
 						},
 						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
 							Port: schemaRegistryPort,
-							External: &v1alpha1.ExternalConnectivityConfig{
-								Enabled: true,
+							External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
+								ExternalConnectivityConfig: v1alpha1.ExternalConnectivityConfig{
+									Enabled: true,
+								},
 							},
 						},
 					},
@@ -221,11 +227,16 @@ var _ = Describe("RedPandaCluster controller", func() {
 			var crb v1.ClusterRoleBinding
 			Eventually(func() bool {
 				err := k8sClient.Get(context.Background(), clusterRoleKey, &crb)
+				found := false
+				for _, s := range crb.Subjects {
+					if key.Name == s.Name && s.Kind == "ServiceAccount" {
+						found = true
+					}
+				}
 				return err == nil &&
 					crb.RoleRef.Name == clusterRoleKey.Name &&
 					crb.RoleRef.Kind == "ClusterRole" &&
-					crb.Subjects[0].Name == key.Name &&
-					crb.Subjects[0].Kind == "ServiceAccount"
+					found
 			}, timeout, interval).Should(BeTrue())
 
 			By("Creating StatefulSet")
@@ -276,7 +287,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -327,6 +338,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 										Key:  "tls.crt",
 										Path: "tls.crt",
 									},
+									{
+										Key:  "ca.crt",
+										Path: "ca.crt",
+									},
 								},
 								DefaultMode: &defaultMode,
 							},
@@ -341,6 +356,14 @@ var _ = Describe("RedPandaCluster controller", func() {
 									{
 										Key:  "ca.crt",
 										Path: "ca.crt",
+									},
+									{
+										Key:  "tls.key",
+										Path: "tls.key",
+									},
+									{
+										Key:  "tls.crt",
+										Path: "tls.crt",
 									},
 								},
 								DefaultMode: &defaultMode,
@@ -366,7 +389,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -443,7 +466,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -516,7 +539,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -610,7 +633,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Spec: v1alpha1.ClusterSpec{
 					Image:    redpandaContainerImage,
 					Version:  redpandaContainerTag,
-					Replicas: pointer.Int32Ptr(replicas),
+					Replicas: pointer.Int32(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
@@ -690,6 +713,92 @@ var _ = Describe("RedPandaCluster controller", func() {
 					rc.Status.Nodes.ExternalBootstrap != nil
 			}, timeout, interval).Should(BeTrue())
 		})
+
+		It("scaling out does not trigger a rolling restart", func() {
+			const replicas = 3
+			resources := corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}
+			key := types.NamespacedName{
+				Name:      "redpanda-no-restart",
+				Namespace: "default",
+			}
+			redpandaCluster := &v1alpha1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+				},
+				Spec: v1alpha1.ClusterSpec{
+					Image:    redpandaContainerImage,
+					Version:  redpandaContainerTag,
+					Replicas: pointer.Int32(replicas),
+					Configuration: v1alpha1.RedpandaConfig{
+						KafkaAPI: []v1alpha1.KafkaAPI{
+							{
+								Port: kafkaPort,
+							},
+						},
+						AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
+					},
+					Resources: v1alpha1.RedpandaResourceRequirements{
+						ResourceRequirements: corev1.ResourceRequirements{
+							Limits:   resources,
+							Requests: resources,
+						},
+						Redpanda: nil,
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Creating StatefulSet")
+			var sts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sts)
+				return err == nil &&
+					*sts.Spec.Replicas == replicas
+			}, timeout, interval).Should(BeTrue())
+
+			// configmap annotation should not change when scaling out cluster replicas
+			// to avoid an unnecessary rolling restart
+			configMapHash := sts.Annotations[res.ConfigMapHashAnnotationKey]
+			var existingCluster v1alpha1.Cluster
+			Expect(k8sClient.Get(context.Background(), key, &existingCluster)).Should(Succeed())
+
+			var newReplicas int32 = replicas + 2
+			existingCluster.Spec.Replicas = &newReplicas
+			Expect(k8sClient.Update(context.Background(), &existingCluster)).Should(Succeed())
+
+			// verify scale-out completed and the configmap hash did not change
+			var newSts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &newSts)
+				return err == nil &&
+					*newSts.Spec.Replicas == newReplicas
+			}, timeout, interval).Should(BeTrue())
+			newConfigMapHash := newSts.Annotations[res.ConfigMapHashAnnotationKey]
+			Expect(newConfigMapHash).Should(Equal(configMapHash))
+		})
+
+		It("Should load license", func() {
+			By("Creating the license Secret")
+			licenseSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: licenseNamespace,
+					Name:      licenseName,
+				},
+				StringData: map[string]string{v1alpha1.DefaultLicenseSecretKey: "fake-license"},
+			}
+			Expect(k8sClient.Create(context.Background(), licenseSecret)).Should(Succeed())
+
+			By("Creating a Cluster")
+			key, _, redpandaCluster, namespace := getInitialTestCluster(clusterNameWithLicense)
+			redpandaCluster.Spec.LicenseRef = &v1alpha1.SecretKeyRef{Namespace: licenseNamespace, Name: licenseName}
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
+		})
 	})
 
 	Context("Calling reconcile", func() {
@@ -710,6 +819,55 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Name:      "nonexisting",
 			}})
 			Expect(err).To(Succeed())
+		})
+	})
+
+	Context("Calling reconcile with restricted version", func() {
+		const allowedVersion = "v23.1.1"
+		It("Should throw error due to restricted redpanda version", func() {
+			restrictedVersion := "v23.1.2"
+			key, redpandaCluster := getVersionedRedpanda("restricted-redpanda-negative", restrictedVersion)
+			fc := fake.NewClientBuilder().WithObjects(redpandaCluster).Build()
+			r := &redpanda.ClusterReconciler{
+				Client:                    fc,
+				Log:                       ctrl.Log,
+				Scheme:                    scheme.Scheme,
+				AdminAPIClientFactory:     testAdminAPIFactory,
+				DecommissionWaitInterval:  100 * time.Millisecond,
+				RestrictToRedpandaVersion: allowedVersion,
+			}
+			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+			Expect(err).To(Succeed())
+			By("Reporting the existence of cluster")
+			var rc v1alpha1.Cluster
+			Eventually(func() bool {
+				err := fc.Get(context.Background(), key, &rc)
+				return err == nil
+			}, time.Second*5, interval).Should(BeTrue())
+			By("Not changing status version to a valid one")
+			Consistently(func() bool {
+				return rc.Status.Version == ""
+			}, time.Second, 100*time.Millisecond).Should(BeTrue())
+		})
+		It("Should not throw error; redpanda version allowed", func() {
+			key, redpandaCluster := getVersionedRedpanda("restricted-redpanda-positive", allowedVersion)
+			fc := fake.NewClientBuilder().WithObjects(redpandaCluster).Build()
+			r := &redpanda.ClusterReconciler{
+				Client:                    fc,
+				Log:                       ctrl.Log,
+				Scheme:                    scheme.Scheme,
+				AdminAPIClientFactory:     testAdminAPIFactory,
+				DecommissionWaitInterval:  100 * time.Millisecond,
+				RestrictToRedpandaVersion: allowedVersion,
+			}
+			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: key})
+			Expect(err).To(Succeed())
+			By("Reporting the existence of cluster and allowed version status")
+			var rc v1alpha1.Cluster
+			Eventually(func() bool {
+				err := fc.Get(context.Background(), key, &rc)
+				return err == nil && rc.Status.Version == allowedVersion
+			}, time.Second*15, interval).Should(BeTrue())
 		})
 	})
 
@@ -738,6 +896,52 @@ var _ = Describe("RedPandaCluster controller", func() {
 		Entry("Empty image pull policy", "", Not(Succeed())),
 		Entry("Random image pull policy", "asdvasd", Not(Succeed())))
 })
+
+func getVersionedRedpanda(
+	name string, version string,
+) (key types.NamespacedName, cluster *v1alpha1.Cluster) {
+	key = types.NamespacedName{
+		Name:      name,
+		Namespace: "default",
+	}
+	config := v1alpha1.RedpandaConfig{
+		KafkaAPI: []v1alpha1.KafkaAPI{
+			{
+				Port: 9644,
+			},
+		},
+		AdminAPI: []v1alpha1.AdminAPI{
+			{
+				Port: 9092,
+			},
+		},
+	}
+	resources := corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("1"),
+		corev1.ResourceMemory: resource.MustParse("2Gi"),
+	}
+	rpresources := v1alpha1.RedpandaResourceRequirements{
+		ResourceRequirements: corev1.ResourceRequirements{
+			Limits:   resources,
+			Requests: resources,
+		},
+		Redpanda: nil,
+	}
+	redpandaCluster := &v1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      key.Name,
+			Namespace: key.Namespace,
+		},
+		Spec: v1alpha1.ClusterSpec{
+			Image:         "vectorized/redpanda",
+			Version:       version,
+			Replicas:      pointer.Int32(1),
+			Configuration: config,
+			Resources:     rpresources,
+		},
+	}
+	return key, redpandaCluster
+}
 
 func findPort(ports []corev1.ServicePort, name string) int32 {
 	for _, port := range ports {

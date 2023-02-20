@@ -11,10 +11,12 @@ package v1alpha1
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"time"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -128,7 +130,19 @@ type ClusterSpec struct {
 	// List of superusers
 	Superusers []Superuser `json:"superUsers,omitempty"`
 	// SASL enablement flag
+	// +optional
+	// Deprecated: replaced by "kafkaEnableAuthorization"
 	EnableSASL bool `json:"enableSasl,omitempty"`
+	// Enable authorization for Kafka connections. Values are:
+	//
+	// - `nil`: Ignored. Authorization is enabled with `enable_sasl: true`
+	//
+	// - `true`: authorization is required
+	//
+	// - `false`: authorization is disabled;
+	//
+	// See also `enableSasl` and `configuration.kafkaApi[].authenticationMethod`
+	KafkaEnableAuthorization *bool `json:"kafkaEnableAuthorization,omitempty"`
 	// For configuration parameters not exposed, a map can be provided for string values.
 	// Such values are passed transparently to Redpanda. The key format is "<subsystem>.field", e.g.,
 	//
@@ -153,6 +167,9 @@ type ClusterSpec struct {
 	DNSTrailingDotDisabled bool `json:"dnsTrailingDotDisabled,omitempty"`
 	// RestartConfig allows to control the behavior of the cluster when restarting
 	RestartConfig *RestartConfig `json:"restartConfig,omitempty"`
+
+	// If key is not provided in the SecretRef, Secret data should have key "license"
+	LicenseRef *SecretKeyRef `json:"licenseRef,omitempty"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades
@@ -160,6 +177,26 @@ type ClusterSpec struct {
 type RestartConfig struct {
 	// DisableMaintenanceModeHooks deactivates the preStop and postStart hooks that force nodes to enter maintenance mode when stopping and exit maintenance mode when up again
 	DisableMaintenanceModeHooks *bool `json:"disableMaintenanceModeHooks,omitempty"`
+
+	// UnderReplicatedPartitionThreshold controls when rolling update will continue with
+	// restarts. The procedure can be described as follows:
+	//
+	// 1. Rolling update checks if Pod specification needs to be replaced and deletes it
+	// 2. Deleted Redpanda Pod is put into maintenance mode (postStart hook will disable
+	//    maintenance mode when new Pod starts)
+	// 3. Rolling update waits for Pod to be in Ready state
+	// 4. Rolling update checks if cluster is in healthy state
+	// 5. Rolling update checks if restarted Redpanda Pod admin API Ready endpoint returns HTTP 200 response
+	// 6. Using UnderReplicatedPartitionThreshold each under replicated partition metric is compared with the threshold
+	// 7. Rolling update moves to the next Redpanda pod
+	//
+	// The metric `vectorized_cluster_partition_under_replicated_replicas` is used in the comparison
+	//
+	// Mentioned metrics has the following help description:
+	// `vectorized_cluster_partition_under_replicated_replicas` Number of under replicated replicas
+	//
+	// By default, the UnderReplicatedPartitionThreshold will be 0, which means all partitions needs to catch up without any lag.
+	UnderReplicatedPartitionThreshold int `json:"underReplicatedPartitionThreshold,omitempty"`
 }
 
 // PDBConfig specifies how the PodDisruptionBudget should be created for the
@@ -237,6 +274,24 @@ type CloudStorageConfig struct {
 	APIEndpointPort int `json:"apiEndpointPort,omitempty"`
 	// Cache directory that will be mounted for Redpanda
 	CacheStorage *StorageSpec `json:"cacheStorage,omitempty"`
+	// Determines how to load credentials for archival storage. Supported values
+	// are config_file (default), aws_instance_metadata, sts, gcp_instance_metadata
+	// (see the cloud_storage_credentials_source property at
+	// https://docs.redpanda.com/docs/reference/cluster-properties/).
+	// When using config_file then accessKey and secretKeyRef are mandatory.
+	CredentialsSource CredentialsSource `json:"credentialsSource,omitempty"`
+}
+
+// CredentialsSource represents a mechanism for loading credentials for archival storage
+type CredentialsSource string
+
+const (
+	// credentialsSourceConfigFile is the default options for credentials source
+	CredentialsSourceConfigFile CredentialsSource = "config_file"
+)
+
+func (c CredentialsSource) IsDefault() bool {
+	return c == "" || c == CredentialsSourceConfigFile
 }
 
 // StorageSpec defines the storage specification of the Cluster
@@ -294,6 +349,15 @@ type ExternalConnectivityConfig struct {
 	PreferredAddressType string `json:"preferredAddressType,omitempty"`
 	// Configures a load balancer for bootstrapping
 	Bootstrap *LoadBalancerConfig `json:"bootstrapLoadBalancer,omitempty"`
+}
+
+// PandaproxyExternalConnectivityConfig allows to customize pandaproxy specific
+// external connectivity.
+type PandaproxyExternalConnectivityConfig struct {
+	ExternalConnectivityConfig `json:",inline"`
+
+	// Configures a ingress resource
+	Ingress *IngressConfig `json:"ingress,omitempty"`
 }
 
 // LoadBalancerConfig defines the load balancer specification
@@ -488,6 +552,10 @@ type RedpandaConfig struct {
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 	// Enable auto-creation of topics. Reference https://kafka.apache.org/documentation/#brokerconfigs_auto.create.topics.enable
 	AutoCreateTopics bool `json:"autoCreateTopics,omitempty"`
+	// Additional command line arguments that we pass to the redpanda binary
+	// These are applied last and will override any other command line arguments that may be defined,
+	// including the ones added when setting `DeveloperMode` to `true`.
+	AdditionalCommandlineArguments map[string]string `json:"additionalCommandlineArguments,omitempty"`
 }
 
 // AdminAPI configures listener for the Redpanda Admin API
@@ -510,6 +578,10 @@ type KafkaAPI struct {
 	External ExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Kafka API
 	TLS KafkaAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per Kafka
+	// listener. Available options are: none, sasl, mtls_identity.
+	// https://docs.redpanda.com/docs/security/authentication/
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // PandaproxyAPI configures listener for the Pandaproxy API
@@ -518,9 +590,12 @@ type PandaproxyAPI struct {
 	// External enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
-	External ExternalConnectivityConfig `json:"external,omitempty"`
+	External PandaproxyExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Pandaproxy API
 	TLS PandaproxyAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per pandaproxy
+	// listener. Available options are: none, http_basic.
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
 }
 
 // SchemaRegistryAPI configures the schema registry API
@@ -532,9 +607,23 @@ type SchemaRegistryAPI struct {
 	// External enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
-	External *ExternalConnectivityConfig `json:"external,omitempty"`
+	External *SchemaRegistryExternalConnectivityConfig `json:"external,omitempty"`
 	// TLS is the configuration for schema registry
 	TLS *SchemaRegistryAPITLS `json:"tls,omitempty"`
+	// AuthenticationMethod can enable authentication method per schema registry
+	// listener. Available options are: none, http_basic.
+	AuthenticationMethod string `json:"authenticationMethod,omitempty"`
+}
+
+// SchemaRegistryExternalConnectivityConfig defines the external connectivity
+// options for schema registry.
+type SchemaRegistryExternalConnectivityConfig struct {
+	ExternalConnectivityConfig `json:",inline"`
+	// Indicates that the node port for the service needs not to be generated.
+	StaticNodePort bool `json:"staticNodePort,omitempty"`
+	// Indicates the global endpoint that (together with subdomain), should be
+	// advertised for schema registry.
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 // SchemaRegistryStatus reports addresses where schema registry
@@ -609,9 +698,9 @@ type KafkaAPITLS struct {
 //
 // If Enabled is set to true, one-way TLS verification is enabled.
 // In that case, a key pair ('tls.crt', 'tls.key') and CA certificate 'ca.crt'
-// are generated and stored in a Secret with the same name and namespace as the
-// Redpanda cluster. 'ca.crt' must be used by a client as a truststore when
-// communicating with Redpanda.
+// are generated and stored in a Secret named '<redpanda-cluster-name>-admin-api-node
+// and namespace as the Redpanda cluster. 'ca.crt' must be used by a client as a
+// truststore when communicating with Redpanda.
 //
 // If RequireClientAuth is set to true, two-way TLS verification is enabled.
 // In that case, a client certificate is generated, which can be retrieved from
@@ -645,7 +734,22 @@ type AdminAPITLS struct {
 // and PKCS#12 certificate. Both stores are protected with the password that
 // is the same as the name of the Cluster custom resource.
 type PandaproxyAPITLS struct {
-	Enabled           bool `json:"enabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
+	// References cert-manager Issuer or ClusterIssuer. When provided, this
+	// issuer will be used to issue node certificates.
+	// Typically you want to provide the issuer when a generated self-signed one
+	// is not enough and you need to have a verifiable chain with a proper CA
+	// certificate.
+	IssuerRef *cmmeta.ObjectReference `json:"issuerRef,omitempty"`
+	// If provided, operator uses certificate in this secret instead of
+	// issuing its own node certificate. The secret is expected to provide
+	// the following keys: 'ca.crt', 'tls.key' and 'tls.crt'
+	// If NodeSecretRef points to secret in different namespace, operator will
+	// duplicate the secret to the same namespace as redpanda CRD to be able to
+	// mount it to the nodes
+	NodeSecretRef *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
+	// Enables two-way verification on the server side. If enabled, all
+	// Pandaproxy API clients are required to have a valid client certificate.
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
 }
 
@@ -754,6 +858,15 @@ func (r *Cluster) KafkaTLSListeners() []ListenerWithName {
 	return res
 }
 
+// KafkaListener returns a KafkaAPI listener
+// It returns internal listener if available
+func (r *Cluster) KafkaListener() *KafkaAPI {
+	if l := r.InternalListener(); l != nil {
+		return l
+	}
+	return r.ExternalListener()
+}
+
 // AdminAPIInternal returns internal admin listener
 func (r *Cluster) AdminAPIInternal() *AdminAPI {
 	for _, el := range r.Spec.Configuration.AdminAPI {
@@ -785,11 +898,48 @@ func (r *Cluster) AdminAPITLS() *AdminAPI {
 	return nil
 }
 
+// AdminAPIListener returns a AdminAPI listener
+// It returns internal listener if available
+func (r *Cluster) AdminAPIListener() *AdminAPI {
+	if l := r.AdminAPIInternal(); l != nil {
+		return l
+	}
+	return r.AdminAPIExternal()
+}
+
+// AdminAPIURLs returns a list of AdminAPI URLs.
+func (r *Cluster) AdminAPIURLs() []string {
+	aa := r.AdminAPIListener()
+	if aa == nil {
+		return []string{}
+	}
+
+	var (
+		hosts = []string{}
+		urls  = []string{}
+	)
+	if !aa.External.Enabled {
+		for _, i := range r.Status.Nodes.Internal {
+			port := fmt.Sprintf("%d", aa.Port)
+			hosts = append(hosts, net.JoinHostPort(i, port))
+		}
+	} else {
+		hosts = r.Status.Nodes.ExternalAdmin
+	}
+
+	for _, host := range hosts {
+		u := url.URL{Scheme: aa.GetHTTPScheme(), Host: host}
+		urls = append(urls, u.String())
+	}
+	return urls
+}
+
 // PandaproxyAPIInternal returns internal pandaproxy listener
 func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
-	for _, el := range r.Spec.Configuration.PandaproxyAPI {
-		if !el.External.Enabled {
-			return &el
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if !proxies[i].External.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -797,9 +947,10 @@ func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
 
 // PandaproxyAPIExternal returns the external pandaproxy listener
 func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
-	for _, el := range r.Spec.Configuration.PandaproxyAPI {
-		if el.External.Enabled {
-			return &el
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if proxies[i].External.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -808,9 +959,10 @@ func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
 // PandaproxyAPITLS returns a Pandaproxy listener that has TLS enabled.
 // It returns nil if no TLS is configured.
 func (r *Cluster) PandaproxyAPITLS() *PandaproxyAPI {
-	for i, el := range r.Spec.Configuration.PandaproxyAPI {
-		if el.TLS.Enabled {
-			return &r.Spec.Configuration.PandaproxyAPI[i]
+	proxies := r.Spec.Configuration.PandaproxyAPI
+	for i := range proxies {
+		if proxies[i].TLS.Enabled {
+			return &proxies[i]
 		}
 	}
 	return nil
@@ -865,6 +1017,13 @@ func (r *Cluster) IsSchemaRegistryMutualTLSEnabled() bool {
 		r.Spec.Configuration.SchemaRegistry.TLS.RequireClientAuth
 }
 
+// IsSchemaRegistryAuthHTTPBasic returns true if schema registry authentication method
+// is enabled with HTTP Basic
+func (r *Cluster) IsSchemaRegistryAuthHTTPBasic() bool {
+	return r.Spec.Configuration.SchemaRegistry != nil &&
+		r.Spec.Configuration.SchemaRegistry.AuthenticationMethod == httpBasicAuthorizationMechanism
+}
+
 // IsUsingMaintenanceModeHooks tells if the cluster is configured to use maintenance mode hooks on the pods.
 // Maintenance mode feature needs to be enabled for this to be relevant.
 func (r *Cluster) IsUsingMaintenanceModeHooks() bool {
@@ -903,13 +1062,15 @@ func (r *Cluster) GetCurrentReplicas() int32 {
 // ComputeInitialCurrentReplicasField calculates the initial value for status.currentReplicas.
 //
 // It needs to consider the following cases:
+// - EmptySeedStartCluster is supported: we use spec.replicas as the starting point
 // - Fresh cluster: we start from 1 replicas, then upscale if needed (initialization to bypass https://github.com/redpanda-data/redpanda/issues/333)
 // - Existing clusters: we keep spec.replicas as starting point
 func (r *Cluster) ComputeInitialCurrentReplicasField() int32 {
-	if r.Status.Replicas > 1 || r.Status.ReadyReplicas > 1 || len(r.Status.Nodes.Internal) > 1 {
+	if r.Status.Replicas > 1 || r.Status.ReadyReplicas > 1 || len(r.Status.Nodes.Internal) > 1 || featuregates.EmptySeedStartCluster(r.Spec.Version) {
 		// A cluster seems to be already running, we start from the existing amount of replicas
 		return *r.Spec.Replicas
 	}
+
 	// Clusters start from a single replica, then upscale
 	return 1
 }
@@ -950,6 +1111,13 @@ func (k KafkaAPI) GetExternal() *ExternalConnectivityConfig {
 	return &k.External
 }
 
+// IsMutualTLSEnabled returns true if API requires client aut
+//
+//nolint:gocritic // TODO KafkaAPI is now 81 bytes, consider a pointer
+func (k KafkaAPI) IsMutualTLSEnabled() bool {
+	return k.TLS.Enabled && k.TLS.RequireClientAuth
+}
+
 // Admin API
 
 // GetPort returns API port
@@ -970,6 +1138,20 @@ func (a AdminAPI) GetTLS() *TLSConfig {
 // GetExternal returns API's ExternalConnectivityConfig
 func (a AdminAPI) GetExternal() *ExternalConnectivityConfig {
 	return &a.External
+}
+
+// GetHTTPScheme returns API HTTP scheme
+func (a AdminAPI) GetHTTPScheme() string {
+	scheme := "http" //nolint:goconst // no need to set as constant
+	if a.TLS.Enabled {
+		scheme = "https" //nolint:goconst // no need to set as constant
+	}
+	return scheme
+}
+
+// IsMutualTLSEnabled returns true if API requires client auth
+func (a AdminAPI) IsMutualTLSEnabled() bool {
+	return a.TLS.Enabled && a.TLS.RequireClientAuth
 }
 
 // SchemaRegistry API
@@ -1003,29 +1185,38 @@ func (s SchemaRegistryAPI) GetTLS() *TLSConfig {
 
 // GetExternal returns API's ExternalConnectivityConfig
 func (s SchemaRegistryAPI) GetExternal() *ExternalConnectivityConfig {
-	return s.External
+	if s.External != nil {
+		return &s.External.ExternalConnectivityConfig
+	}
+	return nil
 }
 
 // PandaProxy API
 
 // GetPort returns API port
+//
+//nolint:gocritic // struct will be still quite small
 func (p PandaproxyAPI) GetPort() int {
 	return p.Port
 }
 
 // GetTLS returns API TLSConfig
+//
+//nolint:gocritic // struct will be still quite small
 func (p PandaproxyAPI) GetTLS() *TLSConfig {
 	return &TLSConfig{
 		Enabled:           p.TLS.Enabled,
 		RequireClientAuth: p.TLS.RequireClientAuth,
-		IssuerRef:         nil,
-		NodeSecretRef:     nil,
+		IssuerRef:         p.TLS.IssuerRef,
+		NodeSecretRef:     p.TLS.NodeSecretRef,
 	}
 }
 
 // GetExternal returns API's ExternalConnectivityConfig
+//
+//nolint:gocritic // struct will be still quite small
 func (p PandaproxyAPI) GetExternal() *ExternalConnectivityConfig {
-	return &p.External
+	return &p.External.ExternalConnectivityConfig
 }
 
 func defaultTLSConfig() *TLSConfig {
@@ -1035,4 +1226,13 @@ func defaultTLSConfig() *TLSConfig {
 		IssuerRef:         nil,
 		NodeSecretRef:     nil,
 	}
+}
+
+// IsSASLOnInternalEnabled replaces single check if sasl is enabled with multiple
+// check. The external kafka listener is excluded from the check as panda proxy,
+// schema registry and console should use internal kafka listener even if we have
+// external enabled.
+func (r *Cluster) IsSASLOnInternalEnabled() bool {
+	return r.Spec.KafkaEnableAuthorization != nil && *r.Spec.KafkaEnableAuthorization ||
+		r.Spec.EnableSASL
 }

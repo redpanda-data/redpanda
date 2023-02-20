@@ -14,17 +14,22 @@
 #include "cluster/config_frontend.h"
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
-#include "cluster/feature_table.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
+#include "features/feature_table.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/connection_cache.h"
 #include "utils/file_io.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+
+#include <absl/container/flat_hash_map.h>
+
+#include <algorithm>
 
 namespace cluster {
 
@@ -53,13 +58,15 @@ config_manager::config_manager(
   ss::sharded<config_frontend>& cf,
   ss::sharded<rpc::connection_cache>& cc,
   ss::sharded<partition_leaders_table>& pl,
-  ss::sharded<feature_table>& ft,
+  ss::sharded<features::feature_table>& ft,
+  ss::sharded<cluster::members_table>& mt,
   ss::sharded<ss::abort_source>& as)
-  : _self(config::node().node_id())
+  : _self(*config::node().node_id())
   , _frontend(cf)
   , _connection_cache(cc)
   , _leaders(pl)
   , _feature_table(ft)
+  , _members(mt)
   , _as(as) {
     if (ss::this_shard_id() == controller_stm_shard) {
         // Only the controller stm shard handles updates: leave these
@@ -86,54 +93,51 @@ config_manager::config_manager(
  */
 void config_manager::start_bootstrap() {
     // Detach fiber
-    ssx::background
-      = ssx::spawn_with_gate_then(_gate, [this] {
-            return ss::do_until(
-              [this] {
-                  return _as.local().abort_requested() || _bootstrap_complete;
-              },
-              [this]() -> ss::future<> {
-                  if (_seen_version != config_version_unset) {
-                      vlog(
-                        clusterlog.info,
-                        "Bootstrap complete (version {})",
-                        _seen_version);
-                      _bootstrap_complete = true;
-                      co_return;
-                  } else {
-                      auto leader = co_await _leaders.local().wait_for_leader(
-                        model::controller_ntp,
-                        model::timeout_clock::now() + bootstrap_retry,
-                        _as.local());
-                      if (leader == _self) {
-                          // We are the leader.  Proceed to bootstrap cluster
-                          // configuration from our local configuration.
-                          if (!_feature_table.local().is_active(
-                                feature::central_config)) {
-                              vlog(
-                                clusterlog.trace,
-                                "Central config feature not active, waiting");
-                              co_await _feature_table.local().await_feature(
-                                feature::central_config, _as.local());
-                          }
-                          co_await do_bootstrap();
-                          vlog(
-                            clusterlog.info, "Completed bootstrap as leader");
-                      } else {
-                          // Someone else got leadership.  Maybe they
-                          // successfully bootstrap config, maybe they don't.
-                          // Wait a short time before checking again.
-                          co_await ss::sleep_abortable(
-                            bootstrap_retry, _as.local());
-                      }
-                  }
-              });
-        }).handle_exception([](const std::exception_ptr& e) {
-            // Explicitly handle exception so that we do not risk an
-            // 'ignored exceptional future' error.  The only exceptions
-            // we expect here are things like sleep_aborted during shutdown.
-            vlog(clusterlog.warn, "Exception during bootstrap: {}", e);
-        });
+    ssx::background = ssx::spawn_with_gate_then(_gate, [this] {
+                          return ss::do_until(
+                            [this] {
+                                return _as.local().abort_requested()
+                                       || _bootstrap_complete;
+                            },
+                            [this] { return wait_for_bootstrap(); });
+                      }).handle_exception([](const std::exception_ptr& e) {
+        // Explicitly handle exception so that we do not risk an
+        // 'ignored exceptional future' error.  The only exceptions
+        // we expect here are things like sleep_aborted during shutdown.
+        vlog(clusterlog.warn, "Exception during bootstrap: {}", e);
+    });
+}
+
+ss::future<> config_manager::wait_for_bootstrap() {
+    if (_seen_version != config_version_unset) {
+        vlog(clusterlog.info, "Bootstrap complete (version {})", _seen_version);
+        _bootstrap_complete = true;
+        co_return;
+    } else {
+        auto leader = co_await _leaders.local().wait_for_leader(
+          model::controller_ntp,
+          model::timeout_clock::now() + bootstrap_retry,
+          _as.local());
+        if (leader == _self) {
+            // We are the leader.  Proceed to bootstrap cluster
+            // configuration from our local configuration.
+            if (!_feature_table.local().is_active(
+                  features::feature::central_config)) {
+                vlog(
+                  clusterlog.trace,
+                  "Central config feature not active, waiting");
+                co_await _feature_table.local().await_feature(
+                  features::feature::central_config, _as.local());
+            }
+            co_await do_bootstrap();
+            vlog(clusterlog.info, "Completed bootstrap as leader");
+        } else {
+            // Someone else got leadership.  Maybe they
+            // successfully bootstrap config, maybe they don't.
+            // Wait a short time before checking again.
+            co_await ss::sleep_abortable(bootstrap_retry, _as.local());
+        }
+    }
 }
 
 /**
@@ -213,12 +217,38 @@ ss::future<> config_manager::start() {
         vlog(clusterlog.warn, "Exception from reconcile_status: {}", e);
     });
 
+    _member_removed_notification
+      = _members.local().register_members_updated_notification(
+        [this](auto current_members) {
+            handle_cluster_members_update(std::move(current_members));
+        });
+
+    _raft0_leader_changed_notification
+      = _leaders.local().register_leadership_change_notification(
+        model::controller_ntp,
+        [this](model::ntp, model::term_id, std::optional<model::node_id>) {
+            _reconcile_wait.signal();
+        });
+
     return ss::now();
+}
+void config_manager::handle_cluster_members_update(
+  const std::vector<model::node_id>& member_ids) {
+    std::erase_if(status, [&member_ids](const auto& status_pair) {
+        // it is fine to look up every time as the members list is usually short
+        return std::find(
+                 member_ids.begin(), member_ids.end(), status_pair.first)
+               == member_ids.end();
+    });
 }
 
 ss::future<> config_manager::stop() {
     vlog(clusterlog.info, "Stopping Config Manager...");
     _reconcile_wait.broken();
+    _members.local().unregister_members_updated_notification(
+      _member_removed_notification);
+    _leaders.local().unregister_leadership_change_notification(
+      _raft0_leader_changed_notification);
     co_await _gate.close();
 }
 
@@ -519,23 +549,16 @@ ss::future<> config_manager::reconcile_status() {
 
     try {
         if (failed || should_send_status()) {
-            // * we were dirty & failed to send our update, sleep until retry
-            // OR
-            // * our status updated while we were sending, wait a short time
-            //   before sending our next update to avoid spamming the leader
-            //   with too many set_status RPCs if we are behind on seeing
-            //   updates to the controller log.
-            co_await ss::sleep_abortable(status_retry, _as.local());
+            co_await _reconcile_wait.wait(status_retry);
         } else {
             // We are clean: sleep until signalled.
-            co_await _reconcile_wait.wait();
+            co_await _reconcile_wait.wait(
+              [this]() { return should_send_status(); });
         }
     } catch (ss::condition_variable_timed_out&) {
         // Wait complete - proceed around next loop of do_until
     } catch (ss::broken_condition_variable&) {
         // Shutting down - nextiteration will drop out
-    } catch (ss::sleep_aborted&) {
-        // Shutting down - next iteration will drop out
     }
 }
 
@@ -832,16 +855,15 @@ config_manager::apply_status(cluster_config_status_cmd&& cmd) {
     auto node_id = cmd.key;
     auto data = std::move(cmd.value);
 
-    // TODO: hook into node decom to remove nodes from
-    // the status map.
-
     vlog(
       clusterlog.trace,
       "apply_status: updating node {}: {}",
       node_id,
       data.status);
-
-    status[node_id] = data.status;
+    // do not apply status to the map if node is removed
+    if (_members.local().contains(node_id)) {
+        status[node_id] = data.status;
+    }
 
     co_return errc::success;
 }

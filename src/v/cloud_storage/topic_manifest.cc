@@ -12,6 +12,7 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
+#include "bytes/iostream.h"
 #include "cloud_storage/logger.h"
 #include "cloud_storage/types.h"
 #include "cluster/types.h"
@@ -308,13 +309,19 @@ ss::future<> topic_manifest::update(ss::input_stream<char> is) {
     co_return;
 }
 
-serialized_json_stream topic_manifest::serialize() const {
+ss::future<serialized_json_stream> topic_manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
     serialize(os);
+    if (!os.good()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "could not serialize topic manifest {}",
+          get_manifest_path()));
+    }
     size_t size_bytes = serialized.size_bytes();
-    return {
+    co_return serialized_json_stream{
       .stream = make_iobuf_input_stream(std::move(serialized)),
       .size_bytes = size_bytes};
 }
@@ -381,7 +388,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     // - key is not null - tristate is enabled and set
     if (!_topic_config->properties.retention_bytes.is_disabled()) {
         w.Key("retention_bytes");
-        if (_topic_config->properties.retention_bytes.has_value()) {
+        if (_topic_config->properties.retention_bytes.has_optional_value()) {
             w.Int64(_topic_config->properties.retention_bytes.value());
         } else {
             w.Null();
@@ -389,7 +396,7 @@ void topic_manifest::serialize(std::ostream& out) const {
     }
     if (!_topic_config->properties.retention_duration.is_disabled()) {
         w.Key("retention_duration");
-        if (_topic_config->properties.retention_duration.has_value()) {
+        if (_topic_config->properties.retention_duration.has_optional_value()) {
             w.Int64(
               _topic_config->properties.retention_duration.value().count());
         } else {

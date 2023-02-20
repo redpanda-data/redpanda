@@ -298,39 +298,92 @@ GEN_COMPAT_CHECK(
       json_read(remote_revision);
       json_read(remote_partition_count);
   })
+/**
+ * Custom check for topic_properties as ADL version will not include the
+ * batch_max_bytes property. It is cleared away when serializing properties
+ */
+template<>
+struct compat_check<cluster::topic_properties> {
+    static constexpr std::string_view name = "cluster::topic_properties";
 
-GEN_COMPAT_CHECK(
-  cluster::topic_properties,
-  {
-      json::write_exceptional_member_type(wr, "compression", obj.compression);
-      json::write_exceptional_member_type(
-        wr, "cleanup_policy_bitflags", obj.cleanup_policy_bitflags);
-      json_write(compaction_strategy);
-      json::write_exceptional_member_type(
-        wr, "timestamp_type", obj.timestamp_type);
-      json_write(segment_size);
-      json_write(retention_bytes);
-      json_write(retention_duration);
-      json_write(recovery);
-      json_write(shadow_indexing);
-      json_write(read_replica);
-      json_write(read_replica_bucket);
-      json_write(remote_topic_properties);
-  },
-  {
-      json_read(compression);
-      json_read(cleanup_policy_bitflags);
-      json_read(compaction_strategy);
-      json_read(timestamp_type);
-      json_read(segment_size);
-      json_read(retention_bytes);
-      json_read(retention_duration);
-      json_read(recovery);
-      json_read(shadow_indexing);
-      json_read(read_replica);
-      json_read(read_replica_bucket);
-      json_read(remote_topic_properties);
-  })
+    static std::vector<cluster::topic_properties> create_test_cases() {
+        return generate_instances<cluster::topic_properties>();
+    }
+
+    static void to_json(
+      cluster::topic_properties obj, json::Writer<json::StringBuffer>& wr) {
+        json::write_exceptional_member_type(wr, "compression", obj.compression);
+        json::write_exceptional_member_type(
+          wr, "cleanup_policy_bitflags", obj.cleanup_policy_bitflags);
+        json_write(compaction_strategy);
+        json::write_exceptional_member_type(
+          wr, "timestamp_type", obj.timestamp_type);
+        json_write(segment_size);
+        json_write(retention_bytes);
+        json_write(retention_duration);
+        json_write(recovery);
+        json_write(shadow_indexing);
+        json_write(read_replica);
+        json_write(read_replica_bucket);
+        json_write(remote_topic_properties);
+        json_write(batch_max_bytes);
+        json_write(retention_local_target_bytes);
+        json_write(retention_local_target_ms);
+        json_write(remote_delete);
+        json_write(segment_ms);
+    }
+
+    static cluster::topic_properties from_json(json::Value& rd) {
+        cluster::topic_properties obj;
+        json_read(compression);
+        json_read(cleanup_policy_bitflags);
+        json_read(compaction_strategy);
+        json_read(timestamp_type);
+        json_read(segment_size);
+        json_read(retention_bytes);
+        json_read(retention_duration);
+        json_read(recovery);
+        json_read(shadow_indexing);
+        json_read(read_replica);
+        json_read(read_replica_bucket);
+        json_read(remote_topic_properties);
+        json_read(batch_max_bytes);
+        json_read(retention_local_target_bytes);
+        json_read(retention_local_target_ms);
+        json_read(remote_delete);
+        json_read(segment_ms);
+        return obj;
+    }
+
+    static std::vector<compat_binary> to_binary(cluster::topic_properties obj) {
+        return compat_binary::serde_and_adl(obj);
+    }
+
+    static void check(cluster::topic_properties obj, compat_binary test) {
+        if (test.name == "serde") {
+            verify_serde_only(obj, test);
+            return;
+        }
+        vassert(test.name == "adl", "Unknown compat_binary format encountered");
+        iobuf_parser iobp(std::move(test.data));
+        auto reply = reflection::adl<cluster::topic_properties>{}.from(iobp);
+
+        obj.batch_max_bytes = std::nullopt;
+        obj.retention_local_target_bytes = tristate<size_t>{std::nullopt};
+        obj.retention_local_target_ms = tristate<std::chrono::milliseconds>{
+          std::nullopt};
+
+        obj.segment_ms = tristate<std::chrono::milliseconds>{std::nullopt};
+
+        if (reply != obj) {
+            throw compat_error(fmt::format(
+              "Verify of {{cluster::topic_properties}} ADL decoding "
+              "failed:\n Expected: {}\nDecoded: {}",
+              obj,
+              reply));
+        }
+    }
+};
 
 /// adl deserializer will not interpret the `read_replica`,
 /// `read_replica_bucket`, `remote_topic_properties` fields and any
@@ -379,6 +432,18 @@ struct compat_check<cluster::topic_configuration> {
         obj.properties.read_replica = std::nullopt;
         obj.properties.read_replica_bucket = std::nullopt;
         obj.properties.remote_topic_properties = std::nullopt;
+        obj.properties.batch_max_bytes = std::nullopt;
+        obj.properties.retention_local_target_bytes = tristate<size_t>{
+          std::nullopt};
+        obj.properties.retention_local_target_ms
+          = tristate<std::chrono::milliseconds>{std::nullopt};
+
+        // ADL will always squash remote_delete to false
+        obj.properties.remote_delete = false;
+
+        obj.properties.segment_ms = tristate<std::chrono::milliseconds>{
+          std::nullopt};
+
         if (cfg != obj) {
             throw compat_error(fmt::format(
               "Verify of {{cluster::topic_property}} decoding "
@@ -428,6 +493,14 @@ struct compat_check<cluster::create_topics_request> {
             topic.properties.read_replica = std::nullopt;
             topic.properties.read_replica_bucket = std::nullopt;
             topic.properties.remote_topic_properties = std::nullopt;
+            topic.properties.batch_max_bytes = std::nullopt;
+            topic.properties.retention_local_target_bytes = tristate<size_t>{
+              std::nullopt};
+            topic.properties.retention_local_target_ms
+              = tristate<std::chrono::milliseconds>{std::nullopt};
+
+            topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
+              std::nullopt};
         }
         if (req != obj) {
             throw compat_error(fmt::format(
@@ -479,6 +552,13 @@ struct compat_check<cluster::create_topics_reply> {
             topic.properties.read_replica = std::nullopt;
             topic.properties.read_replica_bucket = std::nullopt;
             topic.properties.remote_topic_properties = std::nullopt;
+            topic.properties.batch_max_bytes = std::nullopt;
+            topic.properties.retention_local_target_bytes = tristate<size_t>{
+              std::nullopt};
+            topic.properties.retention_local_target_ms
+              = tristate<std::chrono::milliseconds>{std::nullopt};
+            topic.properties.segment_ms = tristate<std::chrono::milliseconds>{
+              std::nullopt};
         }
         if (reply != obj) {
             throw compat_error(fmt::format(
@@ -528,6 +608,7 @@ GEN_COMPAT_CHECK(
       json_write(retention_bytes);
       json_write(retention_duration);
       json_write(shadow_indexing);
+      json_write(remote_delete);
   },
   {
       json_read(compression);
@@ -538,6 +619,7 @@ GEN_COMPAT_CHECK(
       json_read(retention_bytes);
       json_read(retention_duration);
       json_read(shadow_indexing);
+      json_read(remote_delete);
   })
 
 GEN_COMPAT_CHECK(

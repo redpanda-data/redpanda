@@ -90,8 +90,7 @@ func (hwLocCmd *hwLocCmd) GetPhysIntersection(
 func (hwLocCmd *hwLocCmd) getNumberOf(
 	mask string, resource string,
 ) (uint, error) {
-	output, err := hwLocCmd.runCalc("--number-of", resource, "machine:0",
-		"--restrict", mask)
+	output, err := hwLocCmd.runCalc("--restrict", mask, "--number-of", resource, "machine:0")
 	if err != nil {
 		return 0, err
 	}

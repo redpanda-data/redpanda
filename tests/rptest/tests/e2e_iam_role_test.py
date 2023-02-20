@@ -1,4 +1,4 @@
-from ducktape.mark.resource import cluster
+from rptest.services.cluster import cluster
 
 from rptest.clients.types import TopicSpec
 from rptest.services.mock_iam_roles_server import MockIamRolesServer
@@ -46,7 +46,8 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,
@@ -118,7 +119,8 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,
@@ -187,7 +189,8 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
-                TopicSpec.PROPERTY_RETENTION_BYTES: 5 * self.segment_size,
+                TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES:
+                5 * self.segment_size,
             },
         )
         wait_for_segments_removal(redpanda=self.redpanda,

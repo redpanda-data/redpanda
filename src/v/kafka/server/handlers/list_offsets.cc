@@ -92,6 +92,17 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
         co_return list_offsets_response::make_partition(
           ntp.tp.partition, leader_epoch_err);
     }
+
+    auto offset = kafka_partition->high_watermark();
+    if (isolation_lvl == model::isolation_level::read_committed) {
+        auto maybe_lso = kafka_partition->last_stable_offset();
+        if (unlikely(!maybe_lso)) {
+            co_return list_offsets_response::make_partition(
+              ntp.tp.partition, maybe_lso.error());
+        }
+        offset = maybe_lso.value();
+    }
+
     /*
      * the responses for earliest/latest timestamp queries do not require
      * that the actual timestamp be returned. only the offset is required.
@@ -104,25 +115,15 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
           kafka_partition->leader_epoch());
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {
-        const auto offset = isolation_lvl
-                                == model::isolation_level::read_committed
-                              ? kafka_partition->last_stable_offset()
-                              : kafka_partition->high_watermark();
-
         co_return list_offsets_response::make_partition(
           ntp.tp.partition,
           model::timestamp(-1),
           offset,
           kafka_partition->leader_epoch());
     }
-    const auto offset_limit = isolation_lvl
-                                  == model::isolation_level::read_committed
-                                ? kafka_partition->last_stable_offset()
-                                : kafka_partition->high_watermark();
-
     auto res = co_await kafka_partition->timequery(storage::timequery_config{
       timestamp,
-      offset_limit,
+      offset,
       kafka_read_priority(),
       {model::record_batch_type::raft_data}});
     auto id = ntp.tp.partition;
@@ -247,7 +248,7 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     list_offsets_request request;
     request.decode(ctx.reader(), ctx.header().version);
     request.compute_duplicate_topics();
-    vlog(klog.trace, "Handling request {}", request);
+    log_request(ctx.header(), request);
 
     auto unauthorized_it = std::partition(
       request.data.topics.begin(),

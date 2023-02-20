@@ -5,6 +5,7 @@ rp_test(
     DEFINITIONS BOOST_TEST_DYN_LINK
     LIBRARIES Boost::unit_test_framework v::raft v::storage_test_utils v::model_test_utils
     LABELS raft
+    ARGS "-- -c 8"
 )
 
 rp_test(
@@ -14,6 +15,7 @@ rp_test(
     DEFINITIONS BOOST_TEST_DYN_LINK
     LIBRARIES Boost::unit_test_framework v::raft
     LABELS raft
+    ARGS "-- -c 8"
 )
 
 
@@ -39,8 +41,9 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_raft
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils v::model_test_utils
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils v::model_test_utils v::features
   LABELS raft
+  ARGS "-- -c 8"
 )
 
 rp_test(
@@ -49,4 +52,5 @@ rp_test(
   SOURCES offset_translator_tests.cc
   LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS kafka
+  ARGS "-- -c 8"
 )

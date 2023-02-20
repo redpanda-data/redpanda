@@ -14,6 +14,8 @@
 #include "kafka/protocol/errors.h"
 #include "seastarx.h"
 
+#include <seastar/http/reply.hh>
+
 #include <cstdint>
 #include <system_error>
 
@@ -25,11 +27,46 @@ namespace pandaproxy {
 // This is the default_error_condition for the proxy; to map other
 // error_codes to this, override its error_category::default_error_condition().
 enum class reply_error_code : uint16_t {
+    continue_ = 100,
+    switching_protocols = 101,
+    ok = 200,
+    created = 201,
+    accepted = 202,
+    nonauthoritative_information = 203,
+    no_content = 204,
+    reset_content = 205,
+    multiple_choices = 300,
+    moved_permanently = 301,
+    moved_temporarily = 302,
+    see_other = 303,
+    not_modified = 304,
+    use_proxy = 305,
+    temporary_redirect = 307,
+    bad_request = 400,
+    unauthorized = 401,
+    payment_required = 402,
+    forbidden = 403,
+    not_found = 404,
+    method_not_allowed = 405,
     not_acceptable = 406,
+    request_timeout = 408,
     conflict = 409,
+    gone = 410,
+    length_required = 411,
+    payload_too_large = 413,
+    uri_too_long = 414,
     unsupported_media_type = 415,
+    expectation_failed = 417,
     unprocessable_entity = 422,
+    upgrade_required = 426,
+    too_many_requests = 429,
     internal_server_error = 500,
+    not_implemented = 501,
+    bad_gateway = 502,
+    service_unavailable = 503,
+    gateway_timeout = 504,
+    http_version_not_supported = 505,
+    insufficient_storage = 507,
     kafka_bad_request = 40002,
     kafka_authentication_error = 40101,
     kafka_authorization_error = 40301,
@@ -55,6 +92,7 @@ enum class reply_error_code : uint16_t {
 
 std::error_condition make_error_condition(reply_error_code);
 std::error_condition make_error_condition(std::error_code ec);
+std::error_condition make_error_condition(ss::httpd::reply::status_type ec);
 const std::error_category& reply_category() noexcept;
 
 } // namespace pandaproxy

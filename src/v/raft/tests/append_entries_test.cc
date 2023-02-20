@@ -281,7 +281,7 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     // roll the term
     retry_with_leader(gr, 5, 1s, [](raft_node& leader) {
         return leader.consensus
-          ->step_down(leader.consensus->term() + model::term_id(1))
+          ->step_down(leader.consensus->term() + model::term_id(1), "test")
           .then([] { return true; });
     }).get0();
     // append some entries in next term
@@ -600,6 +600,9 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
           ->write_snapshot(raft::write_snapshot_cfg(
             get_leader_raft(gr)->committed_offset(), iobuf{}))
           .get0();
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
     }
     gr.enable_node(disabled_id);
     success = replicate_random_batches(gr, 5).get0();
@@ -613,6 +616,11 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
 
     validate_logs_replication(gr);
     validate_offset_translation(gr);
+    for (auto& [_, member] : gr.get_members()) {
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
+    }
 };
 
 FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
@@ -633,7 +641,8 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
     BOOST_REQUIRE(success);
     // step down so last entry in snapshot will be a configuration
     auto leader_raft = get_leader_raft(gr);
-    leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
+    leader_raft->step_down(leader_raft->term() + model::term_id(1), "test")
+      .get0();
 
     validate_logs_replication(gr);
     tests::cooperative_spin_wait_with_timeout(2s, [&gr] {
@@ -651,6 +660,9 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
           ->write_snapshot(raft::write_snapshot_cfg(
             get_leader_raft(gr)->committed_offset(), iobuf{}))
           .get0();
+        BOOST_REQUIRE_EQUAL(
+          member.consensus->get_snapshot_size(),
+          get_snapshot_size_from_disk(member));
     }
     gr.enable_node(disabled_id);
     success = replicate_random_batches(gr, 5).get0();

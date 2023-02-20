@@ -25,4 +25,4 @@ spec:
     developerMode: true
   additionalConfiguration:
     redpanda.segment_appender_flush_timeout_ms: "1003"
-    redpanda.append_chunk_size: "40960" # cluster property that currently needs restart
+    redpanda.aggregate_metrics: "true" # cluster property that currently needs restart (also see: https://github.com/redpanda-data/redpanda/issues/6514)

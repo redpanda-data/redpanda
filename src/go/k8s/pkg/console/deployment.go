@@ -60,6 +60,11 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 		return err
 	}
 
+	containers, err := d.getContainers(ctx, ss)
+	if err != nil {
+		return err
+	}
+
 	objLabels := labels.ForConsole(d.consoleobj)
 	obj := &v1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -80,7 +85,7 @@ func (d *Deployment) Ensure(ctx context.Context) error {
 				},
 				Spec: corev1.PodSpec{
 					Volumes:                       d.getVolumes(ss),
-					Containers:                    d.getContainers(ss),
+					Containers:                    containers,
 					TerminationGracePeriodSeconds: getGracePeriod(d.consoleobj.Spec.Server.ServerGracefulShutdownTimeout.Duration),
 					ServiceAccountName:            sa,
 				},
@@ -137,14 +142,23 @@ func (d *Deployment) Key() types.NamespacedName {
 func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      d.consoleobj.GetName(),
-			Namespace: d.consoleobj.GetNamespace(),
-			Labels:    labels.ForConsole(d.consoleobj),
+			Name:        d.consoleobj.GetName(),
+			Namespace:   d.consoleobj.GetNamespace(),
+			Labels:      labels.ForConsole(d.consoleobj),
+			Annotations: map[string]string{},
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ServiceAccount",
 			APIVersion: "v1",
 		},
+	}
+
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.GCPSecretManager != nil && ss.GCPSecretManager.ServiceAccountNameAnnotation != "" {
+		sa.ObjectMeta.Annotations["iam.gke.io/gcp-service-account"] = ss.GCPSecretManager.ServiceAccountNameAnnotation
+	}
+
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.AWSSecretManager != nil && ss.AWSSecretManager.ServiceAccountRoleARNAnnotation != "" {
+		sa.ObjectMeta.Annotations["eks.amazonaws.com/role-arn"] = ss.AWSSecretManager.ServiceAccountRoleARNAnnotation
 	}
 
 	err := controllerutil.SetControllerReference(d.consoleobj, sa, d.scheme)
@@ -174,79 +188,136 @@ func (d *Deployment) ensureServiceAccount(ctx context.Context) (string, error) {
 
 // ensureSyncedSecrets ensures that Secrets required by Deployment are available
 // These Secrets are synced across different namespace via the Store
-func (d *Deployment) ensureSyncedSecrets(ctx context.Context) (string, error) {
-	// Currently only copying Schema Registry certificates
-	// Nothing to do if TLS is disabled
-	if !d.clusterobj.IsSchemaRegistryTLSEnabled() {
-		return "", nil
+func (d *Deployment) ensureSyncedSecrets(
+	ctx context.Context,
+) (map[string]string, error) {
+	syncedSecrets := map[string]map[string][]byte{}
+
+	schemaRegistrySecret, err := d.syncSchemaRegistrySecret()
+	if err != nil {
+		return nil, err
+	}
+	syncedSecrets[schemaRegistrySyncedSecretKey] = schemaRegistrySecret
+
+	kafkaSecret, err := d.syncKafkaSecret()
+	if err != nil {
+		return nil, err
+	}
+	syncedSecrets[kafkaSyncedSecretKey] = kafkaSecret
+
+	adminAPISecret, err := d.syncAdminAPISecret()
+	if err != nil {
+		return nil, err
+	}
+	syncedSecrets[adminAPISyncedSecretKey] = adminAPISecret
+
+	secretNames := map[string]string{}
+	for key, ss := range syncedSecrets {
+		name, err := d.store.CreateSyncedSecret(ctx, d.consoleobj, ss, key, d.log)
+		if err != nil {
+			return nil, err
+		}
+		secretNames[key] = name
 	}
 
-	// Write the synced certs to secret
-	data := map[string][]byte{}
+	return secretNames, nil
+}
 
+func (d *Deployment) syncSchemaRegistrySecret() (map[string][]byte, error) {
+	if !d.clusterobj.IsSchemaRegistryTLSEnabled() {
+		return nil, nil
+	}
+
+	data := map[string][]byte{}
 	if d.clusterobj.IsSchemaRegistryMutualTLSEnabled() {
 		clientCert, exists := d.store.GetSchemaRegistryClientCert(d.clusterobj)
 		if !exists {
-			return "", fmt.Errorf("get schema registry client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			return nil, fmt.Errorf("get schema registry client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
 		}
-		certfile := getOrEmpty("tls.crt", clientCert.Data)
-		keyfile := getOrEmpty("tls.key", clientCert.Data)
-		data["tls.crt"] = []byte(certfile)
-		data["tls.key"] = []byte(keyfile)
+		certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+		keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+		data[corev1.TLSCertKey] = []byte(certfile)
+		data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
 	}
 
 	// Only write CA cert if not using DefaultCaFilePath
-	ca := &SchemaRegistryTLSCa{d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef}
+	ca := &SecretTLSCa{
+		NodeSecretRef:  d.clusterobj.SchemaRegistryAPITLS().TLS.NodeSecretRef,
+		UsePublicCerts: UsePublicCerts,
+	}
 	if ca.useCaCert() {
 		caCert, exists := d.store.GetSchemaRegistryNodeCert(d.clusterobj)
 		if !exists {
-			return "", fmt.Errorf("get schema registry node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+			return nil, fmt.Errorf("get schema registry node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
 		}
 		cafile := getOrEmpty("ca.crt", caCert.Data)
 		data["ca.crt"] = []byte(cafile)
 	}
+	return data, nil
+}
 
-	// Nothing to do if synced certs is empty
-	if len(data) == 0 {
-		return "", nil
+func (d *Deployment) syncKafkaSecret() (map[string][]byte, error) {
+	listener := d.clusterobj.KafkaListener()
+	if !listener.IsMutualTLSEnabled() {
+		return nil, nil
 	}
 
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-%s", d.consoleobj.GetName(), resources.SchemaRegistrySuffix),
-			Namespace: d.consoleobj.GetNamespace(),
-			Labels:    labels.ForConsole(d.consoleobj),
-		},
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: "v1",
-		},
-		Data: data,
+	data := map[string][]byte{}
+	clientCert, exists := d.store.GetKafkaClientCert(d.clusterobj)
+	if !exists {
+		return nil, fmt.Errorf("get kafka client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
 	}
+	certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+	keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+	data[corev1.TLSCertKey] = []byte(certfile)
+	data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
 
-	err := controllerutil.SetControllerReference(d.consoleobj, secret, d.scheme)
-	if err != nil {
-		return "", err
-	}
-
-	created, err := resources.CreateIfNotExists(ctx, d.Client, secret, d.log)
-	if err != nil {
-		return "", fmt.Errorf("creating Console synced secret: %w", err)
-	}
-
-	if !created {
-		var current corev1.Secret
-		err = d.Get(ctx, types.NamespacedName{Name: secret.GetName(), Namespace: secret.GetNamespace()}, &current)
-		if err != nil {
-			return "", fmt.Errorf("fetching Console synced secret: %w", err)
+	// Only write CA cert if not using DefaultCaFilePath
+	ca := &SecretTLSCa{NodeSecretRef: listener.TLS.NodeSecretRef}
+	if ca.useCaCert() {
+		caCert, exists := d.store.GetKafkaNodeCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get kafka node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
 		}
-		_, err = resources.Update(ctx, &current, secret, d.Client, d.log)
-		if err != nil {
-			return "", fmt.Errorf("updating Console synced secret: %w", err)
-		}
+		cafile := getOrEmpty("ca.crt", caCert.Data)
+		data["ca.crt"] = []byte(cafile)
+	}
+	return data, nil
+}
+
+func (d *Deployment) syncAdminAPISecret() (map[string][]byte, error) {
+	listener := d.clusterobj.AdminAPIListener()
+	if !listener.TLS.Enabled {
+		return nil, nil
 	}
 
-	return secret.GetName(), nil
+	data := map[string][]byte{}
+	if listener.IsMutualTLSEnabled() {
+		clientCert, exists := d.store.GetAdminAPIClientCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get admin api client certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+		}
+		certfile := getOrEmpty(corev1.TLSCertKey, clientCert.Data)
+		keyfile := getOrEmpty(corev1.TLSPrivateKeyKey, clientCert.Data)
+		data[corev1.TLSCertKey] = []byte(certfile)
+		data[corev1.TLSPrivateKeyKey] = []byte(keyfile)
+	}
+
+	// Only write CA cert if not using DefaultCaFilePath
+	nodeSecretRef := &corev1.ObjectReference{
+		Namespace: d.clusterobj.GetNamespace(),
+		Name:      fmt.Sprintf("%s-%s", d.clusterobj.GetName(), adminAPINodeCertSuffix),
+	}
+	ca := &SecretTLSCa{NodeSecretRef: nodeSecretRef}
+	if ca.useCaCert() {
+		caCert, exists := d.store.GetAdminAPINodeCert(d.clusterobj)
+		if !exists {
+			return nil, fmt.Errorf("get admin api node certificate: %s", "not found") //nolint:goerr113 // no need to declare new error type
+		}
+		cafile := getOrEmpty("ca.crt", caCert.Data)
+		data["ca.crt"] = []byte(cafile)
+	}
+	return data, nil
 }
 
 func getGracePeriod(period time.Duration) *int64 {
@@ -260,16 +331,38 @@ const (
 
 	tlsSchemaRegistryMountName = "tls-schema-registry"
 	tlsConnectMountName        = "tls-connect-%s"
+	tlsKafkaMountName          = "tls-kafka"
+	tlsAdminAPIMountName       = "tls-admin-api"
 
 	schemaRegistryClientCertSuffix = "schema-registry-client"
+	kafkaClientCertSuffix          = "operator-client"
+	adminAPIClientCertSuffix       = "admin-api-client"
+
+	schemaRegistryNodeCertSuffix = "schema-registry-node"
+	kafkaNodeCertSuffix          = "kafka-node"
+	adminAPINodeCertSuffix       = "admin-api-node"
 
 	enterpriseRBACMountName     = "enterprise-rbac"
 	enterpriseRBACMountPath     = "/etc/console/enterprise/rbac"
 	enterpriseGoogleSAMountName = "enterprise-google-sa"
 	enterpriseGoogleSAMountPath = "/etc/console/enterprise/google"
+
+	gcpServiceAccountVolume = "gcp-service-account"
+
+	prometheusBasicAuthPasswordEnvVar     = "CLOUD_PROMETHEUSENDPOINT_BASICAUTH_PASSWORD"
+	kafkaSASLBasicAuthPasswordEnvVar      = "KAFKA_SASL_PASSWORD"           //nolint:gosec // not a secret
+	schemaRegistryBasicAuthPasswordEnvVar = "KAFKA_SCHEMAREGISTRY_PASSWORD" //nolint:gosec // not a secret
+
+	awsAccessKeyIDEnvVar     = "AWS_ACCESS_KEY_ID"
+	awsSecretAccessKeyEnvVar = "AWS_SECRET_ACCESS_KEY" //nolint:gosec // not a secret
+	awsSessionTokenEnvVar    = "AWS_SESSION_TOKEN"     //nolint:gosec // not a hardcoded credentials
+
+	awsAccessKeyIDKey  = "AccessKeyId"
+	awsSecretAccessKey = "SecretAccessKey"
+	awsSessionTokenKey = "SessionToken"
 )
 
-func (d *Deployment) getVolumes(ss string) []corev1.Volume {
+func (d *Deployment) getVolumes(ss map[string]string) []corev1.Volume {
 	volumes := []corev1.Volume{
 		{
 			Name: configMountName,
@@ -283,12 +376,12 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 		},
 	}
 
-	if d.clusterobj.IsSchemaRegistryTLSEnabled() && ss != "" {
+	if secretName, ok := ss[schemaRegistrySyncedSecretKey]; ok && d.clusterobj.IsSchemaRegistryTLSEnabled() {
 		volumes = append(volumes, corev1.Volume{
 			Name: tlsSchemaRegistryMountName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: ss,
+					SecretName: secretName,
 				},
 			},
 		})
@@ -331,13 +424,46 @@ func (d *Deployment) getVolumes(ss string) []corev1.Volume {
 		})
 	}
 
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.GCPSecretManager != nil && ss.GCPSecretManager.CredentialsSecretRef != nil {
+		volumes = append(volumes, corev1.Volume{
+			Name: gcpServiceAccountVolume,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: ss.GCPSecretManager.CredentialsSecretRef.Name,
+				},
+			},
+		})
+	}
+
+	if secretName, ok := ss[kafkaSyncedSecretKey]; ok && d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+		volumes = append(volumes, corev1.Volume{
+			Name: tlsKafkaMountName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: secretName,
+				},
+			},
+		})
+	}
+
+	if secretName, ok := ss[adminAPISyncedSecretKey]; ok && d.clusterobj.AdminAPIListener().TLS.Enabled {
+		volumes = append(volumes, corev1.Volume{
+			Name: tlsAdminAPIMountName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: secretName,
+				},
+			},
+		})
+	}
+
 	return volumes
 }
 
 // ConsoleContainerName is the Console container name
 var ConsoleContainerName = "console"
 
-func (d *Deployment) getContainers(ss string) []corev1.Container {
+func (d *Deployment) getContainers(ctx context.Context, ss map[string]string) ([]corev1.Container, error) {
 	volumeMounts := []corev1.VolumeMount{
 		{
 			Name:      configMountName,
@@ -354,7 +480,7 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 		})
 	}
 
-	if d.clusterobj.IsSchemaRegistryTLSEnabled() && ss != "" {
+	if _, ok := ss[schemaRegistrySyncedSecretKey]; ok && d.clusterobj.IsSchemaRegistryTLSEnabled() {
 		volumeMounts = append(volumeMounts, corev1.VolumeMount{
 			Name:      tlsSchemaRegistryMountName,
 			ReadOnly:  true,
@@ -381,6 +507,35 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 		})
 	}
 
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.GCPSecretManager != nil && ss.GCPSecretManager.CredentialsSecretRef != nil {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      gcpServiceAccountVolume,
+			ReadOnly:  true,
+			MountPath: gcpCredentialsFilepath,
+		})
+	}
+
+	if _, ok := ss[kafkaSyncedSecretKey]; ok && d.clusterobj.KafkaListener().IsMutualTLSEnabled() {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      tlsKafkaMountName,
+			ReadOnly:  true,
+			MountPath: KafkaTLSDir,
+		})
+	}
+
+	if _, ok := ss[adminAPISyncedSecretKey]; ok && d.clusterobj.AdminAPIListener().TLS.Enabled {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      tlsAdminAPIMountName,
+			ReadOnly:  true,
+			MountPath: AdminAPITLSDir,
+		})
+	}
+
+	env, err := d.genEnvVars(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return []corev1.Container{
 		{
 			Name:  ConsoleContainerName,
@@ -394,6 +549,113 @@ func (d *Deployment) getContainers(ss string) []corev1.Container {
 				},
 			},
 			VolumeMounts: volumeMounts,
+			Env:          env,
 		},
+	}, nil
+}
+
+//nolint:funlen // the function could be refactored later
+func (d *Deployment) genEnvVars(ctx context.Context) (envars []corev1.EnvVar, err error) {
+	if d.clusterobj.IsSASLOnInternalEnabled() {
+		envars = append(envars, corev1.EnvVar{
+			Name: kafkaSASLBasicAuthPasswordEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: corev1.BasicAuthPasswordKey,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: KafkaSASecretKey(d.consoleobj).Name,
+					},
+				},
+			},
+		})
 	}
+
+	if d.clusterobj.IsSchemaRegistryAuthHTTPBasic() {
+		envars = append(envars, corev1.EnvVar{
+			Name: schemaRegistryBasicAuthPasswordEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: corev1.BasicAuthPasswordKey,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: KafkaSASecretKey(d.consoleobj).Name,
+					},
+				},
+			},
+		})
+	}
+
+	if d.consoleobj.Spec.Cloud != nil &&
+		d.consoleobj.Spec.Cloud.PrometheusEndpoint != nil &&
+		d.consoleobj.Spec.Cloud.PrometheusEndpoint.Enabled {
+		// the webhook enforces that the secret is in the same namespace as console
+		passwordRef := d.consoleobj.Spec.Cloud.PrometheusEndpoint.BasicAuth.PasswordRef
+		envars = append(envars, corev1.EnvVar{
+			Name: prometheusBasicAuthPasswordEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: passwordRef.Key,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: passwordRef.Name,
+					},
+				},
+			},
+		})
+	}
+
+	if ss := d.consoleobj.Spec.SecretStore; ss != nil && ss.AWSSecretManager != nil && ss.AWSSecretManager.AWSCredentialsRef != nil {
+		s := &corev1.Secret{}
+		err = d.Get(ctx, client.ObjectKey{Namespace: d.consoleobj.Namespace, Name: ss.AWSSecretManager.AWSCredentialsRef.Name}, s)
+		if err != nil {
+			return envars, fmt.Errorf("getting aws crential secret: %w", err)
+		}
+
+		if _, ok := s.Data[awsAccessKeyIDKey]; !ok {
+			return envars, fmt.Errorf("missing %s key in aws crential secret: %w", awsAccessKeyIDKey, err)
+		}
+
+		envars = append(envars, corev1.EnvVar{
+			Name: awsAccessKeyIDEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: awsAccessKeyIDKey,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: ss.AWSSecretManager.AWSCredentialsRef.Name,
+					},
+				},
+			},
+		})
+
+		if _, ok := s.Data[awsSecretAccessKey]; !ok {
+			return envars, fmt.Errorf("missing %s key in aws crential secret: %w", awsSecretAccessKey, err)
+		}
+
+		envars = append(envars, corev1.EnvVar{
+			Name: awsSecretAccessKeyEnvVar,
+			ValueFrom: &corev1.EnvVarSource{
+				SecretKeyRef: &corev1.SecretKeySelector{
+					Key: awsSecretAccessKey,
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: ss.AWSSecretManager.AWSCredentialsRef.Name,
+					},
+				},
+			},
+		})
+
+		// AWS Session Token is optional
+		if _, ok := s.Data[awsSessionTokenKey]; ok {
+			envars = append(envars, corev1.EnvVar{
+				Name: awsSessionTokenEnvVar,
+				ValueFrom: &corev1.EnvVarSource{
+					SecretKeyRef: &corev1.SecretKeySelector{
+						Key: awsSessionTokenKey,
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: ss.AWSSecretManager.AWSCredentialsRef.Name,
+						},
+					},
+				},
+			})
+		}
+	}
+
+	return envars, nil
 }

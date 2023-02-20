@@ -9,9 +9,52 @@
 
 #include "net/connection.h"
 
+#include "net/exceptions.h"
 #include "rpc/service.h"
 
+#include <gnutls/gnutls.h>
+
 namespace net {
+
+/**
+ * Identify error cases that should be quickly retried, e.g.
+ * TCP disconnects, timeouts. Network errors may also show up
+ * indirectly as errors from the TLS layer.
+ */
+bool is_reconnect_error(const std::system_error& e) {
+    auto v = e.code().value();
+
+    // The name() of seastar's gnutls_error_category class
+    constexpr std::string_view gnutls_category_name{"GnuTLS"};
+
+    if (e.code().category().name() == gnutls_category_name) {
+        switch (v) {
+        case GNUTLS_E_PUSH_ERROR:
+        case GNUTLS_E_PULL_ERROR:
+        case GNUTLS_E_UNEXPECTED_PACKET:
+        case GNUTLS_E_UNSUPPORTED_VERSION_PACKET:
+        case GNUTLS_E_NO_CIPHER_SUITES:
+        case GNUTLS_E_PREMATURE_TERMINATION:
+            return true;
+        default:
+            return false;
+        }
+    } else {
+        switch (v) {
+        case ECONNREFUSED:
+        case ENETUNREACH:
+        case ETIMEDOUT:
+        case ECONNRESET:
+        case ENOTCONN:
+        case ECONNABORTED:
+        case EPIPE:
+            return true;
+        default:
+            return false;
+        }
+    }
+    __builtin_unreachable();
+}
 
 /**
  * If the exception is a "boring" disconnection case, then populate this with
@@ -24,10 +67,7 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
     try {
         rethrow_exception(e);
     } catch (std::system_error& e) {
-        if (
-          e.code() == std::errc::broken_pipe
-          || e.code() == std::errc::connection_reset
-          || e.code() == std::errc::connection_aborted) {
+        if (is_reconnect_error(e)) {
             return e.code().message();
         }
     } catch (const net::batched_output_stream_closed& e) {
@@ -40,6 +80,11 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
         // Happens on unclean client disconnect, typically wrapping
         // an out_of_range
         return "parse error";
+    } catch (const invalid_request_error& e) {
+        if (std::strlen(e.what())) {
+            return fmt::format("invalid request: {}", e.what());
+        }
+        return "invalid request";
     } catch (...) {
         // Global catch-all prevents stranded/non-handled exceptional futures.
         // In all other non-explicity handled cases, the exception will not be
@@ -48,6 +93,18 @@ std::optional<ss::sstring> is_disconnect_exception(std::exception_ptr e) {
     }
 
     return std::nullopt;
+}
+
+bool is_auth_error(std::exception_ptr e) {
+    try {
+        rethrow_exception(e);
+    } catch (const authentication_exception& e) {
+        return true;
+    } catch (...) {
+        return false;
+    }
+
+    __builtin_unreachable();
 }
 
 connection::connection(
@@ -95,7 +152,7 @@ ss::future<> connection::shutdown() {
 
 ss::future<> connection::write(ss::scattered_message<char> msg) {
     _probe.add_bytes_sent(msg.size());
-    return _out.write(std::move(msg));
+    return _out.write(std::move(msg)).discard_result();
 }
 
 } // namespace net

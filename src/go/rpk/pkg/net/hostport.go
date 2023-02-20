@@ -102,16 +102,18 @@ var schemeHostPortRe = regexp.MustCompile(`^(?:([a-zA-Z][a-zA-Z0-9+._-]*)://)?(.
 
 // https://serverfault.com/a/638270
 // https://datatracker.ietf.org/doc/html/rfc3986#section-3.2.2
+// https://stackoverflow.com/questions/9071279/number-in-the-top-level-domain
+// https://www.icann.org/en/system/files/files/ua-factsheet-a4-17dec15-en.pdf
 //
-//   - the tld must not be all-numeric; to keep it easy, we will require a-zA-Z
 //   - labels must begin or end with alphanum
 //   - labels can contain a-zA-Z0-9-
 //   - labels must be 1 to 63 chars
 //   - the full domain must not exceed 255 characters
 //
-// In support of docker / docker-compose and local setups, we allow single
-// labels. We also allow underscores, which are technically only valid in
-// DNS names, not hostnames ("docker_n_1").
+// We could validate TLDs, but intranet / localhost resolver overrides can
+// resolve single label hosts, as well as underscores (which are technically
+// only valid in DNS names, not hostnames). However, we do require that the
+// final label must start with a letter and be more than 1 byte long.
 func isDomain(d string) bool {
 	if len(d) > 255 {
 		return false
@@ -127,10 +129,12 @@ func isDomain(d string) bool {
 		return false
 	}
 
-	if l > 1 {
-		if tld := labels[l-1]; !tldRe.MatchString(tld) {
-			return false
-		}
+	last := labels[len(labels)-1]
+	if len(last) < 2 {
+		return false
+	}
+	if b := last[0]; b >= '0' && b <= '9' {
+		return false
 	}
 
 	for _, label := range labels {
@@ -147,14 +151,6 @@ func isDomain(d string) bool {
 // labels must begin or end with alphanum, but can include dashes or
 // underscores in the middle.
 var labelRe = regexp.MustCompile(`^[a-zA-Z0-9](?:[a-zA-Z0-9_-]*[a-zA-Z0-9])?$`)
-
-// https://stackoverflow.com/questions/9071279/number-in-the-top-level-domain
-// https://www.icann.org/en/system/files/files/ua-factsheet-a4-17dec15-en.pdf
-//
-//   - top level domain should be entirely alphabetic or xn--<alphanumeric>
-//     to match IDN tld.
-//   - top level domain can be anywhere from two to 63 characters long.
-var tldRe = regexp.MustCompile(`^(?:[a-zA-Z]{2,63}|xn--[a-zA-Z0-9]{1,59})$`)
 
 // Returns whether the input is an ip address.
 //

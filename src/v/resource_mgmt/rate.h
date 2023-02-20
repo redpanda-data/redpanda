@@ -41,12 +41,16 @@ public:
       , _window_size(window_size)
       , _current(0) {}
 
-    // record an observation and return the updated rate in units/second.
-    double record_and_measure(double v, const clock::time_point& now) {
+    // record an observation.
+    void record(double v, const clock::time_point& now) {
         // update the current window
         maybe_advance_current(now);
         _windows[_current].count += v;
+    }
 
+    // return the updated rate in units/second.
+    double measure(const clock::time_point& now) {
+        maybe_advance_current(now);
         // process historical samples
         double total = 0.;
         struct window* oldest = nullptr;
@@ -84,7 +88,6 @@ public:
 
     clock::duration window_size() const { return _window_size; }
 
-private:
     // maybe advance to and reset the next window
     void maybe_advance_current(clock::time_point now) {
         if ((_windows[_current].time + _window_size) < now) {
@@ -95,6 +98,7 @@ private:
         }
     }
 
+private:
     std::vector<window> _windows;
     clock::duration _window_size;
     std::size_t _current;

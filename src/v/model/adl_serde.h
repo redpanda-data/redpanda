@@ -156,7 +156,7 @@ struct adl<tristate<T>> {
             adl<int8_t>{}.to(out, -1);
             return;
         }
-        if (!t.has_value()) {
+        if (!t.has_optional_value()) {
             adl<int8_t>{}.to(out, 0);
             return;
         }

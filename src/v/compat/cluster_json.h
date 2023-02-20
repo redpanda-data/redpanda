@@ -28,9 +28,13 @@ template<typename T>
 void rjson_serialize(
   json::Writer<json::StringBuffer>& w, const cluster::property_update<T>& pu) {
     w.StartObject();
-    if constexpr (
-      is_exceptional_enum<T> || is_exceptional_enum_wrapped_opt<T>) {
-        write_exceptional_member_type(w, "value", pu.value);
+    if constexpr (std::is_class<T>::value) {
+        if constexpr (
+          is_exceptional_enum<T> || is_exceptional_enum_wrapped_opt<T>) {
+            write_exceptional_member_type(w, "value", pu.value);
+        } else {
+            write_member(w, "value", pu.value);
+        }
     } else {
         write_member(w, "value", pu.value);
     }
@@ -577,6 +581,12 @@ inline void rjson_serialize(
     write_member(w, "read_replica", tps.read_replica);
     write_member(w, "read_replica_bucket", tps.read_replica_bucket);
     write_member(w, "remote_topic_properties", tps.remote_topic_properties);
+    write_member(w, "batch_max_bytes", tps.batch_max_bytes);
+    write_member(
+      w, "retention_local_target_bytes", tps.retention_local_target_bytes);
+    write_member(w, "retention_local_target_ms", tps.retention_local_target_ms);
+    write_member(w, "remote_delete", tps.remote_delete);
+    write_member(w, "segment_ms", tps.segment_ms);
     w.EndObject();
 }
 
@@ -593,6 +603,12 @@ inline void read_value(json::Value const& rd, cluster::topic_properties& obj) {
     read_member(rd, "read_replica", obj.read_replica);
     read_member(rd, "read_replica_bucket", obj.read_replica_bucket);
     read_member(rd, "remote_topic_properties", obj.remote_topic_properties);
+    read_member(rd, "batch_max_bytes", obj.batch_max_bytes);
+    read_member(
+      rd, "retention_local_target_bytes", obj.retention_local_target_bytes);
+    read_member(rd, "retention_local_target_ms", obj.retention_local_target_ms);
+    read_member(rd, "remote_delete", obj.remote_delete);
+    read_member(rd, "segment_ms", obj.segment_ms);
 }
 
 inline void rjson_serialize(
@@ -652,6 +668,8 @@ inline void rjson_serialize(
     write_member(w, "retention_bytes", itu.retention_bytes);
     write_member(w, "retention_duration", itu.retention_duration);
     write_member(w, "shadow_indexing", itu.shadow_indexing);
+    write_member(w, "remote_delete", itu.remote_delete);
+    write_member(w, "segment_ms", itu.segment_ms);
     w.EndObject();
 }
 
@@ -665,6 +683,8 @@ read_value(json::Value const& rd, cluster::incremental_topic_updates& itu) {
     read_member(rd, "retention_bytes", itu.retention_bytes);
     read_member(rd, "retention_duration", itu.retention_duration);
     read_member(rd, "shadow_indexing", itu.shadow_indexing);
+    read_member(rd, "remote_delete", itu.remote_delete);
+    read_member(rd, "segment_ms", itu.segment_ms);
 }
 
 inline void rjson_serialize(

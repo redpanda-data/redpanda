@@ -10,6 +10,8 @@
 #include "bytes/iobuf.h"
 
 #include "bytes/details/io_allocation_size.h"
+#include "bytes/iostream.h"
+#include "bytes/scattered_message.h"
 #include "vassert.h"
 
 #include <seastar/core/bitops.hh>
@@ -221,4 +223,85 @@ bool iobuf::operator==(std::string_view o) const {
           return !are_equal ? ss::stop_iteration::yes : ss::stop_iteration::no;
       });
     return are_equal;
+}
+
+/**
+ * For debugging, string-ize the iobuf in a format like "hexdump -C"
+ *
+ * This is useful if you are handling a parse error and would like to
+ * safely log the unparseable content.  Set an appropriate `limit` to avoid
+ * your log being too verbose.
+ *
+ * @param limit maximum number of bytes to read.
+ * @return a string populated with the following format:
+ *
+00000000 | 7b 22 76 65 72 73 69 6f  6e 22 3a 31 2c 22 6e 61  | {"version":1,"na
+00000010 | 6d 65 73 70 61 63 65 22  3a 22 74 65 73 74 2d 6e  | mespace":"test-n
+00000020 | 73 22 2c 22 74 6f 70 69  63 22 3a 22 74 65 73 74  | s","topic":"test
+00000030 | 2d 74 6f 70 69 63 22 2c  22 70 61 72 74 69 74 69  | -topic","partiti
+ */
+std::string iobuf::hexdump(size_t limit) const {
+    constexpr size_t line_length = 16;
+    auto result = std::ostringstream();
+    size_t total = 0;
+    std::string trail;
+    for (const auto& frag : *this) {
+        auto data = frag.get();
+        for (size_t i = 0; i < frag.size(); ++i) {
+            if (total % line_length == 0) {
+                if (trail.size()) {
+                    result << " | " << trail;
+                    trail.erase();
+                }
+                result << "\n  " << fmt::format("{:08x}", total) << " | ";
+            }
+
+            auto c = data[i];
+            result << fmt::format("{:02x} ", int(c));
+
+            if (std::isprint(c) && c != '\n') {
+                trail.push_back(c);
+            } else {
+                trail.push_back('.');
+            }
+
+            if (trail.size() == 8) {
+                result << " ";
+            }
+
+            if (total >= limit) {
+                return result.str();
+            } else {
+                total++;
+            }
+        }
+    }
+
+    if (trail.size()) {
+        result << " | " << trail;
+    }
+
+    return result.str();
+}
+
+void details::io_fragment::trim_front(size_t pos) {
+    // required by input_stream<char> converter
+    vassert(
+      pos <= _used_bytes,
+      "trim_front requested {} bytes but io_fragment have only {}",
+      pos,
+      _used_bytes);
+    _used_bytes -= pos;
+    _buf.trim_front(pos);
+}
+
+iobuf::placeholder iobuf::reserve(size_t sz) {
+    oncore_debug_verify(_verify_shard);
+    vassert(sz, "zero length reservations are unsupported");
+    reserve_memory(sz);
+    _size += sz;
+    auto it = std::prev(_frags.end());
+    placeholder p(it, it->size(), sz);
+    it->reserve(sz);
+    return p;
 }

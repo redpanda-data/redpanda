@@ -15,6 +15,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "http/tests/http_imposter.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -31,68 +32,12 @@
 #include <map>
 #include <vector>
 
-/// Emulates S3 REST API for testing purposes.
-/// The imposter is a simple KV-store that contains a set of expectations.
-/// Expectations are accessible by url via GET, PUT, and DELETE http calls.
-/// Expectations are provided before impster starts to listen. They have
-/// two field - url and optional body. If body is set to nullopt, attemtp
-/// to read it using GET or delete it using DELETE requests will trigger an
-/// http response with error code 404 and xml formatted error message.
-/// If the body of the expectation is set by the user or PUT request it can
-/// be retrieved using the GET request or deleted using the DELETE request.
-class s3_imposter_fixture {
-public:
-    s3_imposter_fixture();
-    ~s3_imposter_fixture();
-
-    s3_imposter_fixture(const s3_imposter_fixture&) = delete;
-    s3_imposter_fixture& operator=(const s3_imposter_fixture&) = delete;
-    s3_imposter_fixture(s3_imposter_fixture&&) = delete;
-    s3_imposter_fixture& operator=(s3_imposter_fixture&&) = delete;
-
-    struct expectation {
-        ss::sstring url;
-        std::optional<ss::sstring> body;
-    };
-
-    /// Set expectaitions on REST API calls that supposed to be made
-    /// Only the requests that described in this call will be possible
-    /// to make. This method can only be called once per test run.
-    ///
-    /// \param expectations is a collection of access points that allow GET,
-    /// PUT, and DELETE requests, each expectation has url and body. The body
-    /// will be returned by GET call if it's set or trigger error if its null.
-    /// The expectations are statefull. If the body of the expectation was set
-    /// to null but there was PUT call that sent some data, subsequent GET call
-    /// will retrieve this data.
-    void
-    set_expectations_and_listen(const std::vector<expectation>& expectations);
-
-    /// Access all http requests ordered by time
-    const std::vector<ss::httpd::request>& get_requests() const;
-
-    /// Access all http requests ordered by target url
-    const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
-
-private:
-    void set_routes(
-      ss::httpd::routes& r, const std::vector<expectation>& expectations);
-
-    ss::socket_address _server_addr;
-    ss::shared_ptr<ss::httpd::http_server_control> _server;
-
-    std::unique_ptr<ss::httpd::handler_base> _handler;
-    /// Contains saved requests
-    std::vector<ss::httpd::request> _requests;
-    /// Contains all accessed target urls
-    std::multimap<ss::sstring, ss::httpd::request> _targets;
-};
-
 struct segment_desc {
     model::ntp ntp;
     model::offset base_offset;
     model::term_id term;
     std::optional<size_t> num_batches;
+    std::optional<model::timestamp> timestamp;
 };
 
 struct offset_range {
@@ -104,6 +49,27 @@ struct segment_layout {
     model::offset base_offset;
     std::vector<offset_range> ranges;
 };
+
+namespace archival_tests {
+static constexpr std::string_view error_payload
+  = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>NoSuchKey</Code>
+    <Message>Object not found</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml";
+
+static constexpr std::string_view forbidden_payload
+  = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>AccessDenied</Code>
+    <Message>Access Denied</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml";
+
+} // namespace archival_tests
 
 /// This utility can be used to match content of the log
 /// with manifest and request content. It's also can be
@@ -139,6 +105,15 @@ public:
       const archival::segment_name& name,
       const ss::sstring& expected);
 
+    /// Given a set of segments, verifies that a concatenated segment composed
+    /// of the set was uploaded, by concatenating segments from disk log and
+    /// comparing the content with request content.
+    void verify_segments(
+      const model::ntp& ntp,
+      const std::vector<archival::segment_name>& names,
+      const ss::sstring& expected,
+      size_t expected_size);
+
     /// Verify manifest using log_manager's state,
     /// find matching segments and check the fields.
     void verify_manifest(const cloud_storage::partition_manifest& man);
@@ -148,57 +123,85 @@ public:
     void verify_manifest_content(const ss::sstring& manifest_content);
 };
 
-class enable_cloud_storage_fixture {
-public:
-    enable_cloud_storage_fixture();
-    ~enable_cloud_storage_fixture();
-};
-
 /// Archiver fixture that contains S3 mock and full redpanda stack.
 class archiver_fixture
-  : public s3_imposter_fixture
-  , public enable_cloud_storage_fixture
+  : public http_imposter_fixture
   , public redpanda_thread_fixture
   , public segment_matcher<archiver_fixture> {
 public:
+    archiver_fixture();
+    ~archiver_fixture();
+
+    std::tuple<
+      ss::lw_shared_ptr<archival::configuration>,
+      cloud_storage::configuration>
+    get_configurations();
     std::unique_ptr<storage::disk_log_builder> get_started_log_builder(
       model::ntp ntp, model::revision_id rev = model::revision_id(0));
     /// Wait unill all information will be replicated and the local node
     /// will become a leader for 'ntp'.
     void wait_for_partition_leadership(const model::ntp& ntp);
-    void delete_topic(model::ns ns, model::topic topic);
-    void wait_for_topic_deletion(const model::ntp& ntp);
-    void add_topic_with_random_data(const model::ntp& ntp, int num_batches);
     /// Provides access point for segment_matcher CRTP template
     storage::api& get_local_storage_api();
     /// \brief Init storage api for tests that require only storage
     /// The method doesn't add topics, only creates segments in data_dir
-    void init_storage_api_local(const std::vector<segment_desc>& segm);
+    void init_storage_api_local(
+      const std::vector<segment_desc>& segm,
+      std::optional<storage::ntp_config::default_overrides> overrides
+      = std::nullopt,
+      bool fit_segments = false);
 
     std::vector<segment_layout> get_layouts(const model::ntp& ntp) const {
         return layouts.find(ntp)->second;
     }
 
-    ss::future<> add_topic_with_single_partition(model::ntp ntp) {
-        co_await wait_for_controller_leadership();
-        co_await add_topic(model::topic_namespace_view(
-          model::topic_namespace(ntp.ns, ntp.tp.topic)));
-    }
-
-    ss::future<> add_topic_with_archival_enabled(
-      model::topic_namespace_view tp_ns, int partitions = 1);
-
 private:
-    void
-    initialize_shard(storage::api& api, const std::vector<segment_desc>& segm);
+    void initialize_shard(
+      storage::api& api,
+      const std::vector<segment_desc>& segm,
+      std::optional<storage::ntp_config::default_overrides> overrides,
+      bool fit_segments);
 
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };
 
-std::tuple<archival::configuration, cloud_storage::configuration>
+std::tuple<
+  ss::lw_shared_ptr<archival::configuration>,
+  cloud_storage::configuration>
 get_configurations();
 
 cloud_storage::partition_manifest load_manifest(std::string_view v);
 
 archival::remote_segment_path get_segment_path(
   const cloud_storage::partition_manifest&, const archival::segment_name&);
+
+/// Specification for the segments and data to go into the log for a test
+struct log_spec {
+    // The base offsets for all segments. The difference in adjacent base
+    // offsets is converted to how many records we will write into each segment
+    // (as a single batch)
+    std::vector<size_t> segment_starts;
+    // The indices of the segments which will be marked as compacted for the
+    // test. The segments are not actually compacted, only marked as such.
+    std::vector<size_t> compacted_segment_indices;
+    // The number of records in the final segment, required separately because
+    // there is no delta to use for the last segment.
+    size_t last_segment_num_records;
+};
+
+storage::disk_log_builder make_log_builder(std::string_view data_path);
+
+void populate_log(storage::disk_log_builder& b, const log_spec& spec);
+
+ss::future<archival::ntp_archiver::batch_result> upload_next_with_retries(
+  archival::ntp_archiver&, std::optional<model::offset> lso = std::nullopt);
+
+void upload_and_verify(
+  archival::ntp_archiver&,
+  archival::ntp_archiver::batch_result,
+  std::optional<model::offset> lso = std::nullopt);
+
+/// Creates num_batches with a single record each, used to fit segments close to
+/// each other without gaps.
+segment_layout write_random_batches_with_single_record(
+  ss::lw_shared_ptr<storage::segment> seg, size_t num_batches);

@@ -19,18 +19,26 @@
 #include <chrono>
 
 namespace cloud_storage {
+
 struct file_list_item {
     std::chrono::system_clock::time_point access_time;
     ss::sstring path;
     uint64_t size;
 };
+
+struct walk_result {
+    uint64_t cache_size{0};
+    std::vector<file_list_item> regular_files;
+    std::vector<ss::sstring> empty_dirs;
+};
+
 class recursive_directory_walker {
 public:
     ss::future<> stop();
 
     // recursively walks start_dir, returns the total size of files in this
     // directory and a list of files sorted by access time from oldest to newest
-    ss::future<std::pair<uint64_t, std::vector<file_list_item>>>
+    ss::future<walk_result>
     walk(ss::sstring start_dir, const access_time_tracker& tracker);
 
 private:

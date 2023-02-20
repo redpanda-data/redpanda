@@ -19,7 +19,7 @@ namespace cloud_storage {
 
 offset_index::offset_index(
   model::offset initial_rp,
-  model::offset initial_kaf,
+  kafka::offset initial_kaf,
   int64_t initial_file_pos,
   int64_t file_pos_step)
   : _rp_offsets{}
@@ -35,7 +35,7 @@ offset_index::offset_index(
   , _min_file_pos_step(file_pos_step) {}
 
 void offset_index::add(
-  model::offset rp_offset, model::offset kaf_offset, int64_t file_offset) {
+  model::offset rp_offset, kafka::offset kaf_offset, int64_t file_offset) {
     auto ix = index_mask & _pos++;
     _rp_offsets.at(ix) = rp_offset();
     _kaf_offsets.at(ix) = kaf_offset();
@@ -65,13 +65,13 @@ void offset_index::add(
 std::
   variant<std::monostate, offset_index::index_value, offset_index::find_result>
   offset_index::maybe_find_offset(
-    model::offset upper_bound,
+    int64_t upper_bound,
     deltafor_encoder<int64_t>& encoder,
     const std::array<int64_t, buffer_depth>& write_buffer) {
     deltafor_decoder<int64_t> decoder(
       encoder.get_initial_value(), encoder.get_row_count(), encoder.share());
     auto max_index = encoder.get_row_count() * details::FOR_buffer_depth - 1;
-    auto maybe_ix = _find_under(std::move(decoder), upper_bound());
+    auto maybe_ix = _find_under(std::move(decoder), upper_bound);
     if (!maybe_ix || maybe_ix->ix == max_index) {
         auto ixend = _pos & index_mask;
         std::optional<find_result> candidate;
@@ -79,7 +79,7 @@ std::
             if (write_buffer.at(i) < upper_bound) {
                 candidate = find_result{
                   .rp_offset = model::offset(_rp_offsets.at(i)),
-                  .kaf_offset = model::offset(_kaf_offsets.at(i)),
+                  .kaf_offset = kafka::offset(_kaf_offsets.at(i)),
                   .file_pos = _file_offsets.at(i),
                 };
             } else {
@@ -126,7 +126,7 @@ offset_index::find_rp_offset(model::offset upper_bound) {
       _kaf_index.copy());
     auto kaf_offset = _fetch_ix(std::move(kaf_dec), ix);
     vassert(kaf_offset.has_value(), "Inconsistent index state");
-    res.kaf_offset = model::offset(*kaf_offset);
+    res.kaf_offset = kafka::offset(*kaf_offset);
     foffset_decoder_t file_dec(
       _file_index.get_initial_value(),
       _file_index.get_row_count(),
@@ -138,7 +138,7 @@ offset_index::find_rp_offset(model::offset upper_bound) {
 }
 
 std::optional<offset_index::find_result>
-offset_index::find_kaf_offset(model::offset upper_bound) {
+offset_index::find_kaf_offset(kafka::offset upper_bound) {
     size_t ix = 0;
     find_result res{};
 
@@ -154,7 +154,7 @@ offset_index::find_kaf_offset(model::offset upper_bound) {
 
     // Invariant: maybe_ix here can't be nullopt
     ix = maybe_ix.ix;
-    res.kaf_offset = model::offset(maybe_ix.value);
+    res.kaf_offset = kafka::offset(maybe_ix.value);
 
     decoder_t rp_dec(
       _rp_index.get_initial_value(),
@@ -223,7 +223,7 @@ void offset_index::from_iobuf(iobuf b) {
     auto num_rows = hdr.num_elements / buffer_depth;
     _pos = hdr.num_elements;
     _initial_rp = model::offset(hdr.base_rp);
-    _initial_kaf = model::offset(hdr.base_kaf);
+    _initial_kaf = kafka::offset(hdr.base_kaf);
     _initial_file_pos = hdr.base_file;
     std::copy(
       hdr.rp_write_buf.begin(), hdr.rp_write_buf.end(), _rp_offsets.begin());
@@ -265,7 +265,7 @@ offset_index::_find_under(deltafor_decoder<int64_t> decoder, int64_t offset) {
 }
 
 remote_segment_index_builder::remote_segment_index_builder(
-  offset_index& ix, model::offset initial_delta, size_t sampling_step)
+  offset_index& ix, model::offset_delta initial_delta, size_t sampling_step)
   : _ix(ix)
   , _running_delta(initial_delta)
   , _sampling_step(sampling_step) {}

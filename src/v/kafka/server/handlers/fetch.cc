@@ -69,14 +69,17 @@ static ss::future<read_result> read_from_partition(
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
-    auto hw = part.high_watermark();
     auto lso = part.last_stable_offset();
+    if (unlikely(!lso)) {
+        co_return read_result(lso.error());
+    }
+    auto hw = part.high_watermark();
     auto start_o = part.start_offset();
     // if we have no data read, return fast
     if (
       hw < config.start_offset || config.skip_read
       || config.start_offset > config.max_offset) {
-        co_return read_result(start_o, hw, lso);
+        co_return read_result(start_o, hw, lso.value());
     }
 
     storage::log_reader_config reader_config(
@@ -100,11 +103,13 @@ static ss::future<read_result> read_from_partition(
         data = std::make_unique<iobuf>(std::move(result.data));
         part.probe().add_records_fetched(result.record_count);
         part.probe().add_bytes_fetched(data->size_bytes());
-        if (result.record_count > 0) {
+        if (result.first_tx_batch_offset && result.record_count > 0) {
             // Reader should live at least until this point to hold on to the
             // segment locks so that prefix truncation doesn't happen.
             aborted_transactions = co_await part.aborted_transactions(
-              result.base_offset, result.last_offset, std::move(rdr.ot_state));
+              result.first_tx_batch_offset.value(),
+              result.last_offset,
+              std::move(rdr.ot_state));
         }
 
     } catch (...) {
@@ -122,12 +127,16 @@ static ss::future<read_result> read_from_partition(
           ss::make_foreign<read_result::data_t>(std::move(data)),
           start_o,
           hw,
-          lso,
+          lso.value(),
           std::move(aborted_transactions));
     }
 
     co_return read_result(
-      std::move(data), start_o, hw, lso, std::move(aborted_transactions));
+      std::move(data),
+      start_o,
+      hw,
+      lso.value(),
+      std::move(aborted_transactions));
 }
 
 /**
@@ -168,11 +177,12 @@ static ss::future<read_result> do_read_from_ntp(
         if (
           ntp_config.cfg.isolation_level
           == model::isolation_level::read_committed) {
-            ntp_config.cfg.max_offset = kafka_partition->last_stable_offset();
-            if (ntp_config.cfg.max_offset > model::offset{0}) {
-                ntp_config.cfg.max_offset = ntp_config.cfg.max_offset
-                                            - model::offset{1};
+            auto maybe_lso = kafka_partition->last_stable_offset();
+            if (unlikely(!maybe_lso)) {
+                // partition is still bootstrapping
+                co_return read_result(maybe_lso.error());
             }
+            ntp_config.cfg.max_offset = model::prev_offset(maybe_lso.value());
         }
     }
 
@@ -546,7 +556,7 @@ fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {
       std::make_unique<op_context>(std::move(rctx), ssg),
       [](std::unique_ptr<op_context>& octx_ptr) {
           auto& octx = *octx_ptr;
-          vlog(klog.trace, "handling fetch request: {}", octx.request);
+          log_request(octx.rctx.header(), octx.request);
           // top-level error is used for session-level errors
           if (octx.session_ctx.has_error()) {
               octx.response.data.error_code = octx.session_ctx.error();
@@ -696,7 +706,6 @@ ss::future<response_ptr> op_context::send_response() && {
     fetch_response final_response;
     final_response.data.error_code = response.data.error_code;
     final_response.data.session_id = response.data.session_id;
-    final_response.data.throttle_time_ms = response.data.throttle_time_ms;
 
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {

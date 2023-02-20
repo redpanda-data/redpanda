@@ -11,26 +11,19 @@
 
 #pragma once
 
-#include "bytes/details/io_fragment.h"
 #include "bytes/iobuf.h"
 #include "http/chunk_encoding.h"
 #include "http/iobuf_body.h"
-#include "http/logger.h"
 #include "http/probe.h"
 #include "net/transport.h"
 #include "seastarx.h"
 #include "utils/prefix_logger.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/circular_buffer.hh>
-#include <seastar/core/deleter.hh>
 #include <seastar/core/future.hh>
-#include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
-#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
-#include <seastar/core/timer.hh>
 #include <seastar/core/weak_ptr.hh>
 
 #include <boost/beast/core.hpp>
@@ -39,8 +32,6 @@
 #include <boost/beast/http/field.hpp>
 #include <boost/beast/http/string_body.hpp>
 #include <boost/beast/http/verb.hpp>
-#include <boost/optional/optional.hpp>
-#include <boost/system/system_error.hpp>
 
 #include <chrono>
 #include <exception>
@@ -257,6 +248,25 @@ inline ss::future<> client::forward(client* client, BufferSeq&& seq) {
     auto scattered = iobuf_as_scattered(std::forward<BufferSeq>(seq));
     return client->send(std::move(scattered));
 }
+
+/// Helper to close an http client after a function has been called on it.
+/// Modeled after ss::with_file
+template<typename Func>
+auto with_client(client&& cl, Func func) {
+    static_assert(
+      std::is_nothrow_move_constructible_v<Func>,
+      "Func's move constructor must not throw");
+    return ss::do_with(
+      std::move(cl), [func = std::move(func)](client& cl) mutable {
+          return ss::futurize_invoke(func, cl).finally([&cl] {
+              return cl.stop().then([&cl] {
+                  cl.shutdown();
+                  return ss::make_ready_future<>();
+              });
+          });
+      });
+}
+
 } // namespace http
 
 template<>
@@ -273,5 +283,31 @@ struct fmt::formatter<http::client::request_header> {
         std::stringstream s;
         s << redacted;
         return fmt::format_to(ctx.out(), "{}", s.str());
+    }
+};
+
+template<>
+struct fmt::formatter<http::client::response_header> {
+    char presentation = 'u'; // 'u' for unchanged, 'l' for one line
+    constexpr auto parse(format_parse_context& ctx) {
+        auto it = ctx.begin();
+        auto end = ctx.end();
+        if (it != end && (*it == 'l' || *it == 'u')) presentation = *it++;
+        if (it != end && *it != '}') throw format_error("invalid format");
+        return it;
+    }
+
+    auto format(http::client::response_header& h, auto& ctx) const {
+        if (presentation == 'u') {
+            std::stringstream s;
+            s << h;
+            return fmt::format_to(ctx.out(), "{}", s.str());
+        }
+        // format one line
+        auto out = ctx.out();
+        for (auto& f : h) {
+            out = fmt::format_to(out, "[{}: {}];", f.name_string(), f.value());
+        }
+        return out;
     }
 };

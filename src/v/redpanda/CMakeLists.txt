@@ -11,7 +11,8 @@ set(swags
   transaction
   cluster
   debug
-  shadow_indexing)
+  shadow_indexing
+  redpanda_services_restart)
 
 set(swag_files)
 foreach(swag ${swags})
@@ -41,7 +42,6 @@ v_cc_library(
     cluster_config_schema_util.cc
     admin_server.cc
     cli_parser.cc
-    request_auth.cc
     application.cc
   DEPS
     Seastar::seastar

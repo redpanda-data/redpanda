@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/property.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
@@ -54,39 +55,21 @@ struct log_config {
       size_t segment_size,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority
-      = ss::default_priority_class()) noexcept
-      : stype(type)
-      , base_dir(std::move(directory))
-      , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
-      , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
-      , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
-      , sanitize_fileops(should)
-      , compaction_priority(compaction_priority)
-      , retention_bytes(
-          config::mock_binding<std::optional<size_t>>(std::nullopt))
-      , compaction_interval(config::mock_binding<std::chrono::milliseconds>(
-          std::chrono::minutes(10)))
-      , delete_retention(
-          config::mock_binding<std::optional<std::chrono::milliseconds>>(
-            std::chrono::minutes(10080))) {}
-
+      = ss::default_priority_class()) noexcept;
     log_config(
       storage_type type,
       ss::sstring directory,
       size_t segment_size,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
-      with_cache with) noexcept
-      : log_config(type, directory, segment_size, should, compaction_priority) {
-        cache = with;
-    }
-
+      with_cache with) noexcept;
     log_config(
       storage_type type,
       ss::sstring directory,
       config::binding<size_t> segment_size,
       config::binding<size_t> compacted_segment_size,
       config::binding<size_t> max_compacted_segment_size,
+      jitter_percents segment_size_jitter,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
       config::binding<std::optional<size_t>> ret_bytes,
@@ -95,21 +78,7 @@ struct log_config {
       with_cache c,
       batch_cache::reclaim_options recopts,
       std::chrono::milliseconds rdrs_cache_eviction_timeout,
-      ss::scheduling_group compaction_sg) noexcept
-      : stype(type)
-      , base_dir(std::move(directory))
-      , max_segment_size(segment_size)
-      , compacted_segment_size(compacted_segment_size)
-      , max_compacted_segment_size(max_compacted_segment_size)
-      , sanitize_fileops(should)
-      , compaction_priority(compaction_priority)
-      , retention_bytes(ret_bytes)
-      , compaction_interval(compaction_ival)
-      , delete_retention(del_ret)
-      , cache(c)
-      , reclaim_opts(recopts)
-      , readers_cache_eviction_timeout(rdrs_cache_eviction_timeout)
-      , compaction_sg(compaction_sg) {}
+      ss::scheduling_group compaction_sg) noexcept;
 
     ~log_config() noexcept = default;
     // must be enabled so that we can do ss::sharded<>.start(config);
@@ -122,6 +91,9 @@ struct log_config {
     storage_type stype;
     ss::sstring base_dir;
     config::binding<size_t> max_segment_size;
+
+    // Default 5% jitter on segment size thresholds
+    jitter_percents segment_size_jitter;
 
     // compacted segment size
     config::binding<size_t> compacted_segment_size;
@@ -183,7 +155,10 @@ struct log_config {
 class log_manager {
 public:
     explicit log_manager(
-      log_config, kvstore& kvstore, storage_resources&) noexcept;
+      log_config,
+      kvstore& kvstore,
+      storage_resources&,
+      ss::sharded<features::feature_table>&) noexcept;
 
     ss::future<log> manage(ntp_config);
 
@@ -195,7 +170,7 @@ public:
      * NOTE: if removal of an ntp causes the parent topic directory to become
      * empty then it is also removed. Currently topic deletion is the only
      * action that drives partition removal, so this makes sense. This must be
-     * revisted when we start removing partitions for other reasons, like
+     * revisited when we start removing partitions for other reasons, like
      * rebalancing partitions across the cluster, etc...
      */
     ss::future<> remove(model::ntp);
@@ -258,8 +233,9 @@ private:
     log_config _config;
     kvstore& _kvstore;
     storage_resources& _resources;
+    ss::sharded<features::feature_table>& _feature_table;
     simple_time_jitter<ss::lowres_clock> _jitter;
-    ss::timer<ss::lowres_clock> _compaction_timer;
+    ss::timer<ss::lowres_clock> _housekeeping_timer;
     logs_type _logs;
     compaction_list_type _logs_list;
     batch_cache _batch_cache;

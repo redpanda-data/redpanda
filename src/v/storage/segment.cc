@@ -59,7 +59,8 @@ segment::segment(
   , _idx(std::move(i))
   , _appender(std::move(a))
   , _compaction_index(std::move(ci))
-  , _cache(std::move(c)) {
+  , _cache(std::move(c))
+  , _first_write(std::nullopt) {
     if (_appender) {
         _appender->set_callbacks(&_appender_callbacks);
     }
@@ -102,12 +103,11 @@ ss::future<> segment::remove_persistent_state() {
     std::vector<std::filesystem::path> rm;
     rm.reserve(3);
     rm.emplace_back(reader().filename().c_str());
-    rm.emplace_back(index().filename().c_str());
+    rm.emplace_back(index().path().string());
     if (is_compacted_segment()) {
-        rm.push_back(
-          internal::compacted_index_path(reader().filename().c_str()));
+        rm.push_back(reader().path().to_compacted_index());
     }
-    vlog(stlog.info, "removing: {}", rm);
+    vlog(stlog.debug, "removing: {}", rm);
     return ss::do_with(
       std::move(rm), [](const std::vector<std::filesystem::path>& to_remove) {
           return ss::do_for_each(
@@ -264,9 +264,9 @@ ss::future<> segment::do_flush() {
     });
 }
 
-ss::future<> remove_compacted_index(const ss::sstring& reader_path) {
-    auto path = internal::compacted_index_path(reader_path.c_str());
-    return ss::remove_file(path.c_str())
+ss::future<> remove_compacted_index(const segment_full_path& reader_path) {
+    auto path = reader_path.to_compacted_index();
+    return ss::remove_file(path.string())
       .handle_exception([path](const std::exception_ptr& e) {
           try {
               rethrow_exception(e);
@@ -280,18 +280,23 @@ ss::future<> remove_compacted_index(const ss::sstring& reader_path) {
       });
 }
 
-ss::future<>
-segment::truncate(model::offset prev_last_offset, size_t physical) {
+ss::future<> segment::truncate(
+  model::offset prev_last_offset,
+  size_t physical,
+  model::timestamp new_max_timestamp) {
     check_segment_not_closed("truncate()");
     return write_lock().then(
-      [this, prev_last_offset, physical](ss::rwlock::holder h) {
-          return do_truncate(prev_last_offset, physical)
+      [this, prev_last_offset, physical, new_max_timestamp](
+        ss::rwlock::holder h) {
+          return do_truncate(prev_last_offset, physical, new_max_timestamp)
             .finally([h = std::move(h)] {});
       });
 }
 
-ss::future<>
-segment::do_truncate(model::offset prev_last_offset, size_t physical) {
+ss::future<> segment::do_truncate(
+  model::offset prev_last_offset,
+  size_t physical,
+  model::timestamp new_max_timestamp) {
     _tracker.committed_offset = prev_last_offset;
     _tracker.stable_offset = prev_last_offset;
     _tracker.dirty_offset = prev_last_offset;
@@ -314,12 +319,12 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
               });
         }
         // always remove compaction index when truncating compacted segments
-        f = f.then(
-          [this] { return remove_compacted_index(_reader.filename()); });
+        f = f.then([this] { return remove_compacted_index(_reader.path()); });
     }
 
-    f = f.then(
-      [this, prev_last_offset] { return _idx.truncate(prev_last_offset); });
+    f = f.then([this, prev_last_offset, new_max_timestamp] {
+        return _idx.truncate(prev_last_offset, new_max_timestamp);
+    });
 
     // physical file only needs *one* truncation call
     if (_appender) {
@@ -391,7 +396,7 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     });
 }
 
-ss::future<append_result> segment::append(const model::record_batch& b) {
+ss::future<append_result> segment::do_append(const model::record_batch& b) {
     check_segment_not_closed("append()");
     vassert(
       b.base_offset() >= _tracker.base_offset,
@@ -444,10 +449,19 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
         });
     auto index_fut = compaction_index_batch(b);
     return ss::when_all(std::move(write_fut), std::move(index_fut))
-      .then([](std::tuple<ss::future<append_result>, ss::future<>> p) {
+      .then([this, batch_type = b.header().type](
+              std::tuple<ss::future<append_result>, ss::future<>> p) {
           auto& [append_fut, index_fut] = p;
-          const bool has_error = append_fut.failed() || index_fut.failed();
+          const bool index_append_failed = index_fut.failed()
+                                           && has_compaction_index();
+          const bool has_error = append_fut.failed() || index_append_failed;
           if (!has_error) {
+              if (
+                !this->_first_write.has_value()
+                && batch_type == model::record_batch_type::raft_data) {
+                  // record time of first write of data batch
+                  this->_first_write = ss::lowres_clock::now();
+              }
               index_fut.get();
               return std::move(append_fut);
           }
@@ -470,6 +484,29 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
           return ss::make_exception_future<append_result>(index_err);
       });
 }
+
+ss::future<append_result> segment::append(const model::record_batch& b) {
+    if (has_compaction_index() && b.header().attrs.is_transactional()) {
+        // With transactional batches, we do not know ahead of time whether the
+        // batch will be committed or aborted. We may not have this information
+        // during the lifetime of this segment as the batch may be aborted in
+        // the next segment. We mark this index as `incomplete` and rebuild it
+        // later from scratch during compaction.
+        try {
+            auto index = std::exchange(_compaction_index, std::nullopt);
+            index->set_flag(compacted_index::footer_flags::incomplete);
+            vlog(
+              gclog.info,
+              "Marking compaction index {} as incomplete",
+              index->filename());
+            co_await index->close();
+        } catch (...) {
+            co_return ss::coroutine::exception(std::current_exception());
+        }
+    }
+    co_return co_await do_append(b);
+}
+
 ss::future<append_result> segment::append(model::record_batch&& b) {
     return ss::do_with(std::move(b), [this](model::record_batch& b) mutable {
         return append(b);
@@ -508,7 +545,7 @@ void segment::advance_stable_offset(size_t offset) {
 
     _reader.set_file_size(it->first);
     _tracker.stable_offset = it->second;
-    _inflight.erase(_inflight.begin(), it);
+    _inflight.erase(_inflight.begin(), std::next(it));
 }
 
 std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {
@@ -569,38 +606,34 @@ auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
 }
 
 ss::future<ss::lw_shared_ptr<segment>> open_segment(
-  std::filesystem::path path,
+  segment_full_path path,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
   size_t buf_size,
   unsigned read_ahead,
-  storage_resources& resources) {
-    auto const meta = segment_path::parse_segment_filename(
-      path.filename().string());
-    if (!meta || meta->version != record_version_type::v1) {
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
+    if (path.get_version() != record_version_type::v1) {
         throw std::runtime_error(fmt::format(
           "Segment has invalid version {} != {} path {}",
-          meta->version,
+          path.get_version(),
           record_version_type::v1,
           path));
     }
 
     auto rdr = std::make_unique<segment_reader>(
-      path.string(), buf_size, read_ahead, sanitize_fileops);
+      path, buf_size, read_ahead, sanitize_fileops);
     co_await rdr->load_size();
 
-    auto index_name = std::filesystem::path(rdr->filename().c_str())
-                        .replace_extension("base_index")
-                        .string();
-
     auto idx = segment_index(
-      index_name,
-      meta->base_offset,
+      rdr->path().to_index(),
+      path.get_base_offset(),
       segment_index::default_data_buffer_step,
+      feature_table,
       sanitize_fileops);
 
     co_return ss::make_lw_shared<segment>(
-      segment::offset_tracker(meta->term, meta->base_offset),
+      segment::offset_tracker(path.get_term(), path.get_base_offset()),
       std::move(*rdr),
       std::move(idx),
       nullptr,
@@ -619,17 +652,18 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   unsigned read_ahead,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache,
-  storage_resources& resources) {
-    auto path = segment_path::make_segment_path(
-      ntpc, base_offset, term, version);
-    vlog(stlog.info, "Creating new segment {}", path.string());
+  storage_resources& resources,
+  ss::sharded<features::feature_table>& feature_table) {
+    auto path = segment_full_path(ntpc, base_offset, term, version);
+    vlog(stlog.info, "Creating new segment {}", path);
     return open_segment(
              path,
              sanitize_fileops,
              std::move(batch_cache),
              buf_size,
              read_ahead,
-             resources)
+             resources,
+             feature_table)
       .then([path, &ntpc, sanitize_fileops, pc, &resources](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(
@@ -667,7 +701,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
             seg,
             [path, sanitize_fileops, pc, &resources](
               const ss::lw_shared_ptr<segment>& seg) {
-                auto compacted_path = internal::compacted_index_path(path);
+                auto compacted_path = path.to_compacted_index();
                 return internal::make_compacted_index_writer(
                          compacted_path, sanitize_fileops, pc, resources)
                   .then([seg, &resources](compacted_index_writer compact) {

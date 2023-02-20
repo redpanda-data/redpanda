@@ -23,6 +23,7 @@
 #include "tristate.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
+#include "utils/uuid.h"
 #include "vlog.h"
 
 #include <seastar/core/future.hh>
@@ -85,8 +86,7 @@ concept has_serde_write = requires(T t, iobuf& out) {
 };
 
 template<typename T>
-concept has_serde_async_read
-  = requires(T t, iobuf_parser& in, const header& h) {
+concept has_serde_async_read = requires(T t, iobuf_parser& in, header h) {
     { t.serde_async_read(in, h) } -> seastar::Future;
 };
 
@@ -174,6 +174,7 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, iobuf>
     || std::is_same_v<T, ss::sstring>
     || std::is_same_v<T, bytes>
+    || std::is_same_v<T, uuid_t>
     || is_absl_btree_set<T>
     || is_absl_flat_hash_map<T>
     || is_absl_node_hash_set<T>
@@ -185,9 +186,6 @@ inline constexpr auto const is_serde_compatible_v
 template<typename T>
 inline constexpr auto const are_bytes_and_string_different = !(
   std::is_same_v<T, ss::sstring> && std::is_same_v<T, bytes>);
-
-template<typename T>
-void write(iobuf&, T);
 
 template<class R, class P>
 int64_t checked_duration_cast_to_nanoseconds(
@@ -240,209 +238,304 @@ int64_t checked_duration_cast_to_nanoseconds(
       .count();
 }
 
+inline void write(iobuf& out, uuid_t t);
+
 template<typename T>
+requires(
+  std::is_scalar_v<std::decay_t<
+    T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
+
+template<typename T>
+requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t);
+
+template<typename Rep, typename Period>
+void write(iobuf& out, std::chrono::duration<Rep, Period> t);
+
+inline void write(iobuf& out, ss::sstring t);
+
+inline void write(iobuf& out, bool t);
+
+inline void write(iobuf& out, ss::net::inet_address t);
+
+template<typename T, typename Tag, typename IsConstexpr>
+void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
+
+template<typename T>
+void write(iobuf& out, std::optional<T> t);
+
+template<typename Tag>
+void write(iobuf& out, ss::bool_class<Tag> t);
+
+inline void write(iobuf& out, bytes t);
+
+template<typename T, size_t fragment_size>
+void write(iobuf& out, fragmented_vector<T, fragment_size> t);
+
+template<typename T>
+void write(iobuf& out, tristate<T> t);
+
+template<typename T>
+requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_btree_set<
+  std::decay_t<T>>
+void write(iobuf& out, T t);
+
+template<typename T>
+requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
+  std::decay_t<T>> || is_std_unordered_map<std::decay_t<T>>
+void write(iobuf& out, T t);
+
+template<typename T>
+void write(iobuf& out, std::vector<T> t);
+
+template<typename T>
+requires is_envelope<std::decay_t<T>>
+void write(iobuf& out, T t);
+
+inline void write(iobuf& out, iobuf t);
+
+inline void write(iobuf& out, uuid_t t) {
+    out.append(t.uuid().data, uuid_t::length);
+}
+
+template<typename T>
+requires(
+  std::is_scalar_v<std::decay_t<
+    T>> && !serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
+    using Type = std::decay_t<T>;
+    if constexpr (sizeof(Type) == 1) {
+        out.append(reinterpret_cast<char const*>(&t), sizeof(t));
+    } else if constexpr (std::is_same_v<float, Type>) {
+        auto const le_t = htole32(bit_cast<uint32_t>(t));
+        static_assert(sizeof(le_t) == sizeof(Type));
+        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+    } else if constexpr (std::is_same_v<double, Type>) {
+        auto const le_t = htole64(bit_cast<uint64_t>(t));
+        static_assert(sizeof(le_t) == sizeof(Type));
+        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+    } else {
+        auto const le_t = ss::cpu_to_le(t);
+        static_assert(sizeof(le_t) == sizeof(Type));
+        out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
+    }
+}
+
+template<typename T>
+requires(serde_is_enum_v<std::decay_t<T>>) void write(iobuf& out, T t) {
+    using Type = std::decay_t<T>;
+    auto const val = static_cast<std::underlying_type_t<Type>>(t);
+    if (unlikely(
+          val > std::numeric_limits<serde_enum_serialized_t>::max()
+          || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
+        throw serde_exception{fmt_with_ctx(
+          ssx::sformat,
+          "serde: enum of type {} has value {} which is out of bounds for "
+          "serde_enum_serialized_t",
+          type_str<T>(),
+          val)};
+    }
+    write(out, static_cast<serde_enum_serialized_t>(val));
+}
+
+template<typename Rep, typename Period>
+void write(iobuf& out, std::chrono::duration<Rep, Period> t) {
+    // We explicitly serialize it as ns to avoid any surprises like
+    // seastar updating underlying duration types without
+    // notice. See https://github.com/redpanda-data/redpanda/pull/5002
+    //
+    // Check for overflows/underflows.
+    // For ex: a millisecond and nanosecond use the same underlying
+    // type int64_t but converting from one to other can easily overflow,
+    // this is by design.
+    // Since we serialize with ns precision, there is a restriction of
+    // nanoseconds::max()'s equivalent on the duration to be serialized.
+    // On a typical platform which uses int64_t for 'rep', it roughly
+    // translates to ~292 years.
+    //
+    // If we detect an overflow, we will clamp it to maximum supported
+    // duration, which is nanosecond::max() and if there is an underflow,
+    // we clamp it to minimum supported duration which is nanosecond::min().
+    static_assert(
+      !std::is_floating_point_v<Rep>,
+      "Floating point duration conversions are prone to precision and "
+      "rounding issues.");
+    write<int64_t>(out, checked_duration_cast_to_nanoseconds(t));
+}
+
+inline void write(iobuf& out, ss::sstring t) {
+    write<serde_size_t>(out, t.size());
+    out.append(t.data(), t.size());
+}
+
+inline void write(iobuf& out, bool t) { write(out, static_cast<int8_t>(t)); }
+
+inline void write(iobuf& out, ss::net::inet_address t) {
+    iobuf address_bytes;
+
+    // NOLINTNEXTLINE
+    address_bytes.append((const char*)t.data(), t.size());
+
+    write(out, t.is_ipv4());
+    write(out, std::move(address_bytes));
+}
+
+template<typename T, typename Tag, typename IsConstexpr>
+void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t) {
+    return write(out, static_cast<T>(t));
+}
+
+template<typename T>
+void write(iobuf& out, std::optional<T> t) {
+    if (t) {
+        write(out, true);
+        write(out, std::move(t.value()));
+    } else {
+        write(out, false);
+    }
+}
+
+template<typename Tag>
+void write(iobuf& out, ss::bool_class<Tag> t) {
+    write(out, static_cast<int8_t>(bool(t)));
+}
+
+inline void write(iobuf& out, bytes t) {
+    write<serde_size_t>(out, t.size());
+    out.append(t.data(), t.size());
+}
+
+template<typename T, size_t fragment_size>
+void write(iobuf& out, fragmented_vector<T, fragment_size> t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: fragmented vector size {} exceeds serde_size_t",
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& el : t) {
+        write(out, std::move(el));
+    }
+}
+
+template<typename T>
+void write(iobuf& out, tristate<T> t) {
+    if (t.is_disabled()) {
+        write<int8_t>(out, -1);
+    } else if (!t.has_optional_value()) {
+        write<int8_t>(out, 0);
+    } else {
+        write<int8_t>(out, 1);
+        write(out, std::move(t.value()));
+    }
+}
+
+template<typename T>
+requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_btree_set<
+  std::decay_t<T>>
+void write(iobuf& out, T t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: {} size {} exceeds serde_size_t",
+          type_str<T>(),
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& e : t) {
+        write(out, e);
+    }
+}
+
+template<typename T>
+requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
+  std::decay_t<T>> || is_std_unordered_map<std::decay_t<T>>
+void write(iobuf& out, T t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: {} size {} exceeds serde_size_t",
+          type_str<T>(),
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& v : t) {
+        write(out, v.first);
+        write(out, std::move(v.second));
+    }
+}
+
+template<typename T>
+void write(iobuf& out, std::vector<T> t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat,
+          "serde: vector size {} exceeds serde_size_t",
+          t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& el : t) {
+        write(out, std::move(el));
+    }
+}
+
+template<typename T>
+requires is_envelope<std::decay_t<T>>
 void write(iobuf& out, T t) {
     using Type = std::decay_t<T>;
+
+    write(out, Type::redpanda_serde_version);
+    write(out, Type::redpanda_serde_compat_version);
+
+    auto size_placeholder = out.reserve(sizeof(serde_size_t));
+
+    auto checksum_placeholder = iobuf::placeholder{};
+    if constexpr (is_checksum_envelope<Type>) {
+        checksum_placeholder = out.reserve(sizeof(checksum_t));
+    }
+
+    auto const size_before = out.size_bytes();
+    if constexpr (has_serde_write<Type>) {
+        t.serde_write(out);
+    } else {
+        envelope_for_each_field(
+          t, [&out](auto& f) { write(out, std::move(f)); });
+    }
+
+    auto const written_size = out.size_bytes() - size_before;
+    if (unlikely(written_size > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception("envelope too big");
+    }
+    auto const size = ss::cpu_to_le(static_cast<serde_size_t>(written_size));
+    size_placeholder.write(
+      reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
+
+    if constexpr (is_checksum_envelope<Type>) {
+        auto crc = crc::crc32c{};
+        auto in = iobuf_const_parser{out};
+        in.skip(size_before);
+        in.consume(in.bytes_left(), [&crc](char const* src, size_t const n) {
+            crc.extend(src, n);
+            return ss::stop_iteration::no;
+        });
+        auto const checksum = ss::cpu_to_le(crc.value());
+        static_assert(
+          std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
+        checksum_placeholder.write(
+          reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
+    }
+}
+
+inline void write(iobuf& out, iobuf t) {
+    write<serde_size_t>(out, t.size_bytes());
+    out.append(t.share(0, t.size_bytes()));
+}
+
+template<typename Clock, typename Duration>
+void write(iobuf&, std::chrono::time_point<Clock, Duration> t) {
     static_assert(
-      !is_chrono_time_point<Type>,
+      !is_chrono_time_point<decltype(t)>,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
-    static_assert(are_bytes_and_string_different<Type>);
-    static_assert(has_serde_write<Type> || is_serde_compatible_v<Type>);
-
-    if constexpr (is_envelope<Type>) {
-        write(out, Type::redpanda_serde_version);
-        write(out, Type::redpanda_serde_compat_version);
-
-        auto size_placeholder = out.reserve(sizeof(serde_size_t));
-
-        auto checksum_placeholder = iobuf::placeholder{};
-        if constexpr (is_checksum_envelope<Type>) {
-            checksum_placeholder = out.reserve(sizeof(checksum_t));
-        }
-
-        auto const size_before = out.size_bytes();
-        if constexpr (has_serde_write<Type>) {
-            t.serde_write(out);
-        } else {
-            envelope_for_each_field(
-              t, [&out](auto& f) { write(out, std::move(f)); });
-        }
-
-        auto const written_size = out.size_bytes() - size_before;
-        if (unlikely(written_size > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception("envelope too big");
-        }
-        auto const size = ss::cpu_to_le(
-          static_cast<serde_size_t>(written_size));
-        size_placeholder.write(
-          reinterpret_cast<char const*>(&size), sizeof(serde_size_t));
-
-        if constexpr (is_checksum_envelope<Type>) {
-            auto crc = crc::crc32c{};
-            auto in = iobuf_const_parser{out};
-            in.skip(size_before);
-            in.consume(
-              in.bytes_left(), [&crc](char const* src, size_t const n) {
-                  crc.extend(src, n);
-                  return ss::stop_iteration::no;
-              });
-            auto const checksum = ss::cpu_to_le(crc.value());
-            static_assert(
-              std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
-            checksum_placeholder.write(
-              reinterpret_cast<char const*>(&checksum), sizeof(checksum_t));
-        }
-    } else if constexpr (std::is_same_v<bool, Type>) {
-        write<int8_t>(out, t);
-    } else if constexpr (serde_is_enum_v<Type>) {
-        auto const val = static_cast<std::underlying_type_t<Type>>(t);
-        if (unlikely(
-              val > std::numeric_limits<serde_enum_serialized_t>::max()
-              || val < std::numeric_limits<serde_enum_serialized_t>::min())) {
-            throw serde_exception{fmt_with_ctx(
-              ssx::sformat,
-              "serde: enum of type {} has value {} which is out of bounds for "
-              "serde_enum_serialized_t",
-              type_str<T>(),
-              val)};
-        }
-        write(out, static_cast<serde_enum_serialized_t>(val));
-    } else if constexpr (std::is_scalar_v<Type>) {
-        if constexpr (sizeof(Type) == 1) {
-            out.append(reinterpret_cast<char const*>(&t), sizeof(t));
-        } else if constexpr (std::is_same_v<float, Type>) {
-            auto const le_t = htole32(bit_cast<uint32_t>(t));
-            static_assert(sizeof(le_t) == sizeof(Type));
-            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-        } else if constexpr (std::is_same_v<double, Type>) {
-            auto const le_t = htole64(bit_cast<uint64_t>(t));
-            static_assert(sizeof(le_t) == sizeof(Type));
-            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-        } else {
-            auto const le_t = ss::cpu_to_le(t);
-            static_assert(sizeof(le_t) == sizeof(Type));
-            out.append(reinterpret_cast<char const*>(&le_t), sizeof(le_t));
-        }
-    } else if constexpr (reflection::is_std_vector<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: vector size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& el : t) {
-            write(out, std::move(el));
-        }
-    } else if constexpr (reflection::is_rp_named_type<Type>) {
-        return write(out, static_cast<typename Type::type>(t));
-    } else if constexpr (reflection::is_ss_bool_class<Type>) {
-        write(out, static_cast<int8_t>(bool(t)));
-    } else if constexpr (std::is_same_v<Type, iobuf>) {
-        write<serde_size_t>(out, t.size_bytes());
-        out.append(t.share(0, t.size_bytes()));
-    } else if constexpr (std::is_same_v<Type, ss::sstring>) {
-        write<serde_size_t>(out, t.size());
-        out.append(t.data(), t.size());
-    } else if constexpr (std::is_same_v<Type, bytes>) {
-        write<serde_size_t>(out, t.size());
-        out.append(t.data(), t.size());
-    } else if constexpr (reflection::is_std_optional<Type>) {
-        if (t) {
-            write(out, true);
-            write(out, std::move(t.value()));
-        } else {
-            write(out, false);
-        }
-    } else if constexpr (
-      is_absl_node_hash_set<Type> || is_absl_btree_set<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: absl set size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& e : t) {
-            write(out, e);
-        }
-    } else if constexpr (
-      is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: absl map size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& v : t) {
-            write(out, v.first);
-            write(out, std::move(v.second));
-        }
-    } else if constexpr (is_std_unordered_map<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: std::unordered_map size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& v : t) {
-            write(out, v.first);
-            write(out, std::move(v.second));
-        }
-    } else if constexpr (is_fragmented_vector<Type>) {
-        if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
-            throw serde_exception(fmt_with_ctx(
-              ssx::sformat,
-              "serde: fragmented vector size {} exceeds serde_size_t",
-              t.size()));
-        }
-        write(out, static_cast<serde_size_t>(t.size()));
-        for (auto& el : t) {
-            write(out, std::move(el));
-        }
-    } else if constexpr (reflection::is_tristate<T>) {
-        if (t.is_disabled()) {
-            write<int8_t>(out, -1);
-        } else if (!t.has_value()) {
-            write<int8_t>(out, 0);
-        } else {
-            write<int8_t>(out, 1);
-            write(out, std::move(t.value()));
-        }
-    } else if constexpr (std::is_same_v<T, ss::net::inet_address>) {
-        iobuf address_bytes;
-
-        // NOLINTNEXTLINE
-        address_bytes.append((const char*)t.data(), t.size());
-
-        write(out, t.is_ipv4());
-        write(out, std::move(address_bytes));
-    } else if constexpr (is_chrono_duration<Type>) {
-        // We explicitly serialize it as ns to avoid any surprises like
-        // seastar updating underlying duration types without
-        // notice. See https://github.com/redpanda-data/redpanda/pull/5002
-        //
-        // Check for overflows/underflows.
-        // For ex: a millisecond and nanosecond use the same underlying
-        // type int64_t but converting from one to other can easily overflow,
-        // this is by design.
-        // Since we serialize with ns precision, there is a restriction of
-        // nanoseconds::max()'s equivalent on the duration to be serialized.
-        // On a typical platform which uses int64_t for 'rep', it roughly
-        // translates to ~292 years.
-        //
-        // If we detect an overflow, we will clamp it to maximum supported
-        // duration, which is nanosecond::max() and if there is an underflow,
-        // we clamp it to minimum supported duration which is nanosecond::min().
-        static_assert(
-          !std::is_floating_point_v<typename Type::rep>,
-          "Floating point duration conversions are prone to precision and "
-          "rounding issues.");
-        write<int64_t>(out, checked_duration_cast_to_nanoseconds(t));
-    }
 }
 
 template<typename T>
@@ -533,7 +626,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         auto const h = read_header<Type>(in, bytes_left_limit);
 
         if constexpr (is_checksum_envelope<Type>) {
-            auto const shared = in.share(in.bytes_left() - h._bytes_left_limit);
+            auto const shared = in.share_no_consume(
+              in.bytes_left() - h._bytes_left_limit);
             auto read_only_in = iobuf_const_parser{shared};
             auto crc = crc::crc32c{};
             read_only_in.consume(
@@ -635,6 +729,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
         t = str;
+    } else if constexpr (std::is_same_v<Type, uuid_t>) {
+        in.consume_to(uuid_t::length, t.mutable_uuid().begin());
     } else if constexpr (reflection::is_std_optional<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(

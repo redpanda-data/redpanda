@@ -8,7 +8,7 @@ v_cc_library(
     "utils/disk_log_builder.cc"
     "utils/log_gap_analysis.cc"
   DEPS
-    v::storage v::model_test_utils
+    v::storage v::model_test_utils v::features
 )
 
 rp_test(
@@ -20,7 +20,6 @@ rp_test(
     log_segment_reader_test.cc
     log_manager_test.cc
     offset_assignment_test.cc
-    storage_e2e_test.cc
     log_truncate_test.cc
     offset_index_utils_tests.cc
     compaction_index_format_tests.cc
@@ -33,9 +32,23 @@ rp_test(
     kvstore_test.cc
     backlog_controller_test.cc
     readers_cache_test.cc
+    concat_segment_reader_test.cc
+    offset_to_filepos_test.cc
+    offset_translator_state_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
   LABELS storage
   ARGS "-- -c 1"
+)
+
+
+rp_test(
+        UNIT_TEST
+        BINARY_NAME storage_e2e_single_thread
+        SOURCES
+        storage_e2e_test.cc
+        LIBRARIES v::seastar_testing_main v::storage_test_utils v::model_test_utils
+        LABELS storage
+        ARGS "-- -c 1"
 )
 
 # Putting this first, last, or in the middle of the other single thread tests
@@ -71,6 +84,7 @@ rp_test(
     snapshot_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
+  ARGS "-- -c 8"
 )
 
 # this test is only run on release builds because non-release builds use the

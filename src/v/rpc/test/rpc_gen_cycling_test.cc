@@ -9,7 +9,10 @@
 
 #include "model/timeout_clock.h"
 #include "random/generators.h"
+#include "rpc/backoff_policy.h"
+#include "rpc/connection_cache.h"
 #include "rpc/exceptions.h"
+#include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/test/cycling_service.h"
 #include "rpc/test/echo_service.h"
@@ -17,9 +20,11 @@
 #include "rpc/test/rpc_gen_types.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "rpc/types.h"
+#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/condition-variable.hh>
+#include <seastar/core/metrics_api.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/when_all.hh>
@@ -72,11 +77,11 @@ struct echo_impl final : echo::echo_service_base<Codec> {
           echo::echo_resp{.str = ssx::sformat("{}_suffix", req.str)});
     }
 
-    ss::future<echo::echo_resp>
-    sleep_1s(echo::echo_req&&, rpc::streaming_context&) final {
-        using namespace std::chrono_literals;
-        return ss::sleep(1s).then(
-          []() { return echo::echo_resp{.str = "Zzz..."}; });
+    ss::future<echo::sleep_resp>
+    sleep_for(echo::sleep_req&& req, rpc::streaming_context&) final {
+        return ss::sleep(std::chrono::seconds(req.secs)).then([]() {
+            return echo::sleep_resp{.str = "Zzz..."};
+        });
     }
 
     ss::future<echo::cnt_resp>
@@ -167,6 +172,44 @@ FIXTURE_TEST(echo_round_trip, rpc_integration_fixture) {
     auto ret = f.get();
     BOOST_REQUIRE(ret.has_value());
     BOOST_REQUIRE_EQUAL(ret.value().data.str, payload);
+}
+
+FIXTURE_TEST(echo_from_cache, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::connection_cache cache;
+
+    // Check that we can create connections from a cache, and moreover that we
+    // can run several clients targeted at the same server, if we provide
+    // multiple node IDs to the cache.
+    constexpr const size_t num_nodes_ids = 10;
+    const auto ccfg = client_config();
+    for (int i = 0; i < num_nodes_ids; ++i) {
+        const auto payload = random_generators::gen_alphanum_string(100);
+        const auto node_id = model::node_id(i);
+        cache
+          .emplace(
+            node_id,
+            ccfg,
+            rpc::make_exponential_backoff_policy<rpc::clock_type>(
+              std::chrono::milliseconds(1), std::chrono::milliseconds(1)))
+          .get();
+        auto reconnect_transport = cache.get(node_id);
+        auto transport_res = reconnect_transport
+                               ->get_connected(rpc::clock_type::now() + 5s)
+                               .get();
+        BOOST_REQUIRE(transport_res.has_value());
+        auto transport = transport_res.value();
+        echo::echo_client_protocol client(*transport);
+        auto cleanup = ss::defer([&transport] { transport->stop().get(); });
+        auto f = client.echo(
+          echo::echo_req{.str = payload},
+          rpc::client_opts(rpc::clock_type::now() + 100ms));
+        auto ret = f.get();
+        BOOST_CHECK(ret.has_value());
+        BOOST_CHECK_EQUAL(ret.value().data.str, payload);
+    }
 }
 
 FIXTURE_TEST(echo_round_trip_tls, rpc_integration_fixture) {
@@ -354,13 +397,79 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
 
     rpc::client<echo::echo_client_protocol> client(client_config());
     client.connect(model::no_timeout).get();
-    info("Calling echo method");
-    auto echo_resp = client.sleep_1s(
-      echo::echo_req{.str = "testing..."},
+    info("Calling sleep for.. 1s");
+    auto echo_resp = client.sleep_for(
+      echo::sleep_req{.secs = 1},
       rpc::client_opts(rpc::clock_type::now() + 100ms));
     BOOST_REQUIRE_EQUAL(
       echo_resp.get0().error(), rpc::errc::client_request_timeout);
     client.stop().get();
+}
+
+FIXTURE_TEST(timeout_test_cleanup_resources, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect(model::no_timeout).get();
+    using units_t = std::vector<ssx::semaphore_units>;
+    ::mutex lock;
+    units_t units;
+    units.push_back(std::move(lock.get_units().get()));
+
+    auto opts = rpc::client_opts(rpc::clock_type::now() + 1s);
+    opts.resource_units = ss::make_foreign(
+      ss::make_lw_shared(std::move(units)));
+
+    // Resources should now be owned by the client.
+    BOOST_REQUIRE(lock.try_get_units().has_value() == false);
+    auto echo_resp = client.sleep_for(
+      echo::sleep_req{.secs = 10}, std::move(opts));
+    BOOST_REQUIRE_EQUAL(
+      echo_resp.get0().error(), rpc::errc::client_request_timeout);
+    // Verify that the resources are released correctly after timeout.
+    BOOST_REQUIRE(lock.try_get_units().has_value());
+    client.stop().get();
+}
+
+FIXTURE_TEST(test_cleanup_on_timeout_before_sending, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect(model::no_timeout).get();
+    auto stop_client = ss::defer([&] { client.stop().get(); });
+
+    size_t num_reqs = 10;
+
+    // Dispatch several requests with zero timeout. Presumably, some of them
+    // will timeout before even sending a message to the server. Even in this
+    // case resource units must be returned before the request finishes.
+    std::vector<ss::future<>> requests;
+    for (size_t i = 0; i < num_reqs; ++i) {
+        auto lock = ss::make_lw_shared<::mutex>();
+
+        auto units = lock->try_get_units();
+        BOOST_REQUIRE(units);
+        std::vector<ssx::semaphore_units> units_vec;
+        units_vec.push_back(std::move(*units));
+        auto opts = rpc::client_opts(rpc::clock_type::now());
+        opts.resource_units = ss::make_foreign(
+          ss::make_lw_shared(std::move(units_vec)));
+
+        auto f = client.sleep_for(echo::sleep_req{.secs = 1}, std::move(opts))
+                   .then([lock, i](auto result) {
+                       info("finished request {}", i);
+                       BOOST_REQUIRE_EQUAL(
+                         result.error(), rpc::errc::client_request_timeout);
+                       BOOST_REQUIRE(lock->ready());
+                   });
+        requests.push_back(std::move(f));
+    }
+
+    ss::when_all_succeed(requests.begin(), requests.end()).get();
 }
 
 FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
@@ -384,7 +493,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
                   .echo(
                     echo::echo_req{.str = data},
                     rpc::client_opts(
-                      rpc::no_timeout,
+                      rpc::timeout_spec::none,
                       rpc::compression_type::zstd,
                       0 /*min bytes compress*/))
                   .get0();
@@ -442,14 +551,14 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
     auto stop = ss::defer([&t] { t.stop().get(); });
     auto client = echo::echo_client_protocol(t);
 
-    const auto check_missing = [&] {
+    const auto check_missing = [&](rpc::errc expected_errc) {
         auto f = t.send_typed<echo::echo_req, echo::echo_resp>(
           echo::echo_req{.str = "testing..."},
-          1234,
+          {"missing_method_test::missing", 1234},
           rpc::client_opts(rpc::no_timeout));
-        return f.then([&](auto ret) {
+        return f.then([&, expected_errc](auto ret) {
             BOOST_REQUIRE(ret.has_error());
-            BOOST_REQUIRE_EQUAL(ret.error(), rpc::errc::method_not_found);
+            BOOST_REQUIRE_EQUAL(ret.error(), expected_errc);
         });
     };
 
@@ -468,23 +577,34 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
      * missing method error can be handled in any situation and that the
      * connection remains in a healthy state.
      */
-    std::vector<std::function<ss::future<>()>> request_factory;
-    for (int i = 0; i < 200; i++) {
-        request_factory.emplace_back(check_missing);
-        request_factory.emplace_back(check_success);
-    }
-    std::shuffle(
-      request_factory.begin(),
-      request_factory.end(),
-      random_generators::internal::gen);
+    const auto verify_bad_method_errors = [&](rpc::errc expected_errc) {
+        std::vector<std::function<ss::future<>()>> request_factory;
+        for (int i = 0; i < 200; i++) {
+            request_factory.emplace_back(
+              [&, expected_errc] { return check_missing(expected_errc); });
+            request_factory.emplace_back(check_success);
+        }
+        std::shuffle(
+          request_factory.begin(),
+          request_factory.end(),
+          random_generators::internal::gen);
 
-    // dispatch the requests
-    std::vector<ss::future<>> requests;
-    for (const auto& factory : request_factory) {
-        requests.emplace_back(factory());
-    }
+        // dispatch the requests
+        std::vector<ss::future<>> requests;
+        for (const auto& factory : request_factory) {
+            requests.emplace_back(factory());
+        }
 
-    ss::when_all_succeed(requests.begin(), requests.end()).get();
+        ss::when_all_succeed(requests.begin(), requests.end()).get();
+    };
+    // If the server is configured to allow use of service_unavailable, while
+    // the server hasn't added all services, we should see a retriable error
+    // instead of method_not_found.
+    server().set_use_service_unavailable();
+    verify_bad_method_errors(rpc::errc::exponential_backoff);
+
+    server().set_all_services_added();
+    verify_bad_method_errors(rpc::errc::method_not_found);
 }
 
 FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
@@ -508,7 +628,7 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
     rpc::netbuf nb;
     nb.set_compression(rpc::compression_type::none);
     nb.set_correlation_id(10);
-    nb.set_service_method_id(echo::echo_service::echo_method_id);
+    nb.set_service_method(echo::echo_service::echo_method);
     reflection::adl<echo::echo_req>{}.to(
       nb.buffer(), echo::echo_req{.str = "testing..."});
     // will fail all the futures as server close the connection
@@ -550,7 +670,7 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     rpc::netbuf nb;
     nb.set_compression(rpc::compression_type::none);
     nb.set_correlation_id(10);
-    nb.set_service_method_id(echo::echo_service::echo_method_id);
+    nb.set_service_method(echo::echo_service::echo_method);
     auto bytes = random_generators::get_bytes();
     nb.buffer().append(bytes.c_str(), bytes.size());
 
@@ -596,7 +716,7 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
           echo::echo_req_adl_serde,
           echo::echo_resp_adl_serde>(
           echo::echo_req_adl_serde{.str = "testing..."},
-          echo::echo_service::echo_adl_serde_method_id,
+          echo::echo_service::echo_adl_serde_method,
           rpc::client_opts(rpc::no_timeout),
           rpc::transport_version::unsupported);
         return f.then([&](auto ret) {
@@ -654,19 +774,21 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
 
 class erroneous_protocol_exception : public std::exception {};
 
-class erroneous_protocol final : public net::server::protocol {
+class erroneous_protocol_server final : public net::server {
 public:
+    using net::server::server;
+
     template<std::derived_from<rpc::service> T, typename... Args>
     void register_service(Args&&... args) {
         _services.push_back(std::make_unique<T>(std::forward<Args>(args)...));
     }
 
-    const char* name() const final { return "redpanda erraneous proto"; };
+    std::string_view name() const final { return "redpanda erraneous proto"; };
 
-    ss::future<> apply(net::server::resources rs) final {
+    ss::future<> apply(ss::lw_shared_ptr<net::connection> conn) final {
         return ss::do_until(
-          [rs] { return rs.conn->input().eof() || rs.abort_requested(); },
-          [rs]() mutable {
+          [this, conn] { return conn->input().eof() || abort_requested(); },
+          [] {
               return ss::make_exception_future<>(
                 erroneous_protocol_exception());
           });
@@ -677,7 +799,7 @@ private:
 };
 
 class erroneous_service_fixture
-  : public rpc_fixture_swappable_proto<erroneous_protocol> {
+  : public rpc_fixture_swappable_proto<erroneous_protocol_server> {
 public:
     erroneous_service_fixture()
       : rpc_fixture_swappable_proto(redpanda_rpc_port) {}
@@ -974,8 +1096,8 @@ FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
     BOOST_REQUIRE(!f.get().has_error());
 
     /// Make a request serde::version<2> emmulating echo_req_serde_only
-    const auto echo_serde_only_method_id = echo::echo_service_base<
-      rpc::default_message_codec>::echo_serde_only_method_id;
+    const auto echo_serde_only_method
+      = echo::echo_service::echo_serde_only_method;
 
     /// Since the server is old, it will send responses in the v1 format, the
     /// client must expect this thats why the response type of `send_typed<>` is
@@ -984,7 +1106,7 @@ FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
     auto response_f
       = t.send_typed<echo_v2::echo_req_serde_only, echo::echo_resp_serde_only>(
         std::move(r),
-        echo_serde_only_method_id,
+        echo_serde_only_method,
         rpc::client_opts(rpc::no_timeout));
     auto response = response_f.get();
     BOOST_REQUIRE(!response.has_error());
@@ -1003,13 +1125,13 @@ FIXTURE_TEST(echo_evolve_from_older_client, rpc_integration_fixture) {
     auto old_client = echo::echo_client_protocol(t);
 
     /// Make a request with an version of the rpc, with the newer service
-    const auto echo_serde_only_method_id = echo_v2::echo_service_base<
-      rpc::default_message_codec>::echo_serde_only_method_id;
+    const auto echo_serde_only_method = echo_v2::echo_service_base<
+      rpc::default_message_codec>::echo_serde_only_method;
 
     auto f
       = t.send_typed<echo::echo_req_serde_only, echo_v2::echo_resp_serde_only>(
         echo::echo_req_serde_only{.str = "Hi_there"},
-        echo_serde_only_method_id,
+        echo_serde_only_method,
         rpc::client_opts(rpc::no_timeout));
     auto normal_response = f.get();
     BOOST_REQUIRE(!normal_response.has_error());
@@ -1027,4 +1149,216 @@ FIXTURE_TEST(echo_evolve_from_older_client, rpc_integration_fixture) {
     BOOST_CHECK_EQUAL(
       response.value().data.str,
       "Hi_v2_to_sso_v2_from_sso_v2_to_sso_v2_from_sso_v2");
+}
+
+class rpc_sharded_fixture : public rpc_sharded_integration_fixture {
+public:
+    static constexpr uint16_t redpanda_rpc_port = 32147;
+    rpc_sharded_fixture()
+      : rpc_sharded_integration_fixture(redpanda_rpc_port) {}
+};
+
+FIXTURE_TEST(rpc_add_service, rpc_sharded_fixture) {
+    configure_server();
+    start_server();
+    auto client = rpc::client<echo::echo_client_protocol>(client_config());
+    client.connect(model::no_timeout).get();
+    auto cleanup = ss::defer([&client] { client.stop().get(); });
+
+    const auto payload = random_generators::gen_alphanum_string(100);
+    const auto echo_result = [&] {
+        auto f = client.echo(
+          echo::echo_req{.str = payload}, rpc::client_opts(rpc::no_timeout));
+        return f.get();
+    };
+    BOOST_REQUIRE(!echo_result().has_value());
+
+    server()
+      .invoke_on_all([this](rpc::rpc_server& s) {
+          std::vector<std::unique_ptr<rpc::service>> service;
+          service.emplace_back(
+            std::make_unique<echo_impl<rpc::default_message_codec>>(_sg, _ssg));
+          s.add_services(std::move(service));
+      })
+      .get();
+    const auto res = echo_result();
+    BOOST_REQUIRE(res.has_value());
+    BOOST_CHECK_EQUAL(payload, res.value().data.str);
+}
+
+// Runs the given RPC-sending function, validating the successes and
+// failures, depending on whether the service has been registered.
+template<typename workload_t>
+static ss::future<> send_req_until_close(
+  ss::gate& rpc_g,
+  workload_t workload_fn,
+  ss::sstring service_name,
+  int& num_successes,
+  int& num_failures,
+  bool& service_start_support,
+  bool& service_full_support) {
+    while (!rpc_g.is_closed()) {
+        // Cache the full-support flag before sending anything out so we
+        // know up front whether to expect success.
+        bool full_support = service_full_support;
+        auto res = co_await workload_fn();
+        if (full_support) {
+            BOOST_CHECK_MESSAGE(
+              res.has_value(),
+              ssx::sformat(
+                "{} service was fully started; requests should not fail",
+                service_name));
+            ++num_successes;
+        } else if (res.has_value()) {
+            BOOST_CHECK_MESSAGE(
+              service_start_support,
+              ssx::sformat(
+                "{} request succeeded; service must have been started",
+                service_name));
+            ++num_successes;
+        } else {
+            ++num_failures;
+        }
+    }
+};
+
+// Test that exercises adding new services to the RPC server while there are
+// requests being processed.
+FIXTURE_TEST(rpc_mt_add_service, rpc_sharded_fixture) {
+    configure_server();
+    start_server();
+    // Disable client metrics, since Seastar doesn't like when two clients
+    // register the same metrics.
+    auto ccfg = client_config();
+    ccfg.disable_metrics = net::metrics_disabled::yes;
+    auto echo_client = rpc::client<echo::echo_client_protocol>(ccfg);
+    auto movistar_client = rpc::client<cycling::team_movistar_client_protocol>(
+      ccfg);
+    echo_client.connect(model::no_timeout).get();
+    movistar_client.connect(model::no_timeout).get();
+    ss::gate rpc_g;
+
+    // Starts the service while the workload is running, ensuring we see the
+    // expected success and errors at different points in service registration.
+    const auto start_service_and_wait =
+      [&]<typename workload_t, typename start_srv_t>(
+        workload_t workload_fn,
+        start_srv_t start_service_fn,
+        ss::sstring service_name,
+        std::optional<ss::future<>>& workload_fut,
+        int& num_successes,
+        int& num_failures,
+        bool& service_start_support,
+        bool& service_full_support) {
+          // Start our workload before we start the service.
+          workload_fut = send_req_until_close(
+            rpc_g,
+            std::move(workload_fn),
+            service_name,
+            num_successes,
+            num_failures,
+            service_start_support,
+            service_full_support);
+          rpc::rpclog.info("Started {}-ing", service_name);
+
+          // Verify that we're unable to proceed.
+          constexpr const auto num_reqs_to_wait = 10;
+          while (num_failures < num_reqs_to_wait) {
+              ss::sleep(1s).get();
+          }
+          BOOST_CHECK_EQUAL(0, num_successes);
+
+          rpc::rpclog.info("Starting {} service support", service_name);
+          service_start_support = true;
+          start_service_fn();
+          service_full_support = true;
+          rpc::rpclog.info("Started {} service support", service_name);
+
+          // Verify that we're able to proceed.
+          bool successes_after_start = num_successes;
+          while (num_successes < successes_after_start + num_reqs_to_wait) {
+              ss::sleep(1s).get();
+          }
+      };
+
+    // NOTE: these live for the duration of the test so our async workload can
+    // continue through to completion.
+    int echo_num_success = 0, echo_num_failures = 0, movistar_num_success = 0,
+        movistar_num_failures = 0;
+    bool echo_start_support = false, echo_full_support = false,
+         movistar_start_support = false, movistar_full_support = false;
+    std::optional<ss::future<>> echo_loop_fut;
+    std::optional<ss::future<>> movistar_loop_fut;
+    auto cleanup = ss::defer([&echo_client,
+                              &movistar_client,
+                              &rpc_g,
+                              &echo_loop_fut,
+                              &movistar_loop_fut] {
+        // Stop all workloads.
+        if (!rpc_g.is_closed()) {
+            rpc_g.close().get();
+        }
+        // Wait for the workloads to complete.
+        if (echo_loop_fut.has_value()) {
+            echo_loop_fut->get();
+        }
+        if (movistar_loop_fut.has_value()) {
+            movistar_loop_fut->get();
+        }
+        // Stop the clients.
+        echo_client.stop().get();
+        movistar_client.stop().get();
+    });
+
+    // Run through the echo service, ensuring we see the expected responses.
+    start_service_and_wait(
+      [&] {
+          const auto payload = random_generators::gen_alphanum_string(100);
+          return echo_client.echo(
+            echo::echo_req{.str = payload}, rpc::client_opts(rpc::no_timeout));
+      },
+      [this] {
+          server()
+            .invoke_on_all([this](rpc::rpc_server& s) {
+                std::vector<std::unique_ptr<rpc::service>> service;
+                service.emplace_back(
+                  std::make_unique<echo_impl<rpc::default_message_codec>>(
+                    _sg, _ssg));
+                s.add_services(std::move(service));
+            })
+            .get();
+      },
+      "echo",
+      echo_loop_fut,
+      echo_num_success,
+      echo_num_failures,
+      echo_start_support,
+      echo_full_support);
+
+    // Now run through the movistar service, ensuring we see the expected
+    // responses.
+    // NOTE: we are explicitly not stopping the echo client workload. Requests
+    // should continue to succeed while we add a new service.
+    start_service_and_wait(
+      [&movistar_client] {
+          return movistar_client.ibis_hakka(
+            cycling::san_francisco{}, rpc::client_opts(rpc::no_timeout));
+      },
+      [this] {
+          server()
+            .invoke_on_all([this](rpc::rpc_server& s) {
+                std::vector<std::unique_ptr<rpc::service>> service;
+                service.emplace_back(
+                  std::make_unique<movistar<rpc::default_message_codec>>(
+                    _sg, _ssg));
+                s.add_services(std::move(service));
+            })
+            .get();
+      },
+      "movistar",
+      movistar_loop_fut,
+      movistar_num_success,
+      movistar_num_failures,
+      movistar_start_support,
+      movistar_full_support);
 }

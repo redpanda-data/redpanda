@@ -9,6 +9,7 @@
 
 #include "raft/consensus_utils.h"
 
+#include "bytes/iostream.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/record.h"

@@ -42,14 +42,33 @@ class DisruptiveAction:
     The action can be reversible, it also stores the set of affected nodes and the last node
     the action was applied on.
     """
+
+    is_reversible = False
+
     def __init__(self, redpanda: RedpandaService, config: ActionConfig,
                  admin: Admin):
         self.admin = admin
         self.config = config
         self.redpanda = redpanda
+        self.nodes_for_action = set(self.redpanda.nodes)
         self.affected_nodes = set()
-        self.is_reversible = False
+        self.recovered_nodes = set()
         self.last_affected_node = None
+        # Node cycle signals that all nodes in cluster have been processed once.
+        # Since the nodes are selected randomly, it is possible that a node will
+        # be selected last in one cycle and first in the next cycle. This repeated
+        # action will cause a test failure in some cases. We avoid this by increasing
+        # the sleep duration for the iteration when node cycle is complete.
+        self.node_cycle_complete = False
+
+    def recover_node(self, node: ClusterNode):
+        """
+        A node on which the disruptive action had been performed is recovered/restored. This
+        happens for reversible operations such as killing redpanda, where recovery means starting
+        redpanda back up again.
+        """
+        self.recovered_nodes.add(node)
+        self.affected_nodes.remove(node)
 
     def max_affected_nodes_reached(self) -> bool:
         """
@@ -60,19 +79,16 @@ class DisruptiveAction:
 
     def target_node(self) -> Optional[ClusterNode]:
         """
-        Randomly selects the next node to apply the action on. A set of affected
-        nodes is maintained so that we do not apply the action on nodes which were
-        already targeted in previous invocations.
+        Selects the next node to process randomly from available nodes. If the set of available
+        nodes is empty, then we have processed all the nodes in current iteration, and we start
+        on the set of nodes which have already been processed once.
         """
-        available = set(self.redpanda.nodes) - self.affected_nodes
-        if available:
-            selected = random.choice(list(available))
-            names = {n.account.hostname for n in available}
-            self.redpanda.logger.info(
-                f'selected {selected.account.hostname} of {names} for operation'
-            )
-            return selected
-        return None
+        if not self.nodes_for_action:
+            self.nodes_for_action, self.recovered_nodes = self.recovered_nodes, self.nodes_for_action
+            self.node_cycle_complete = False
+        node = random.choice([n for n in self.nodes_for_action])
+        self.nodes_for_action.remove(node)
+        return node
 
     def do_action(self) -> ClusterNode:
         """
@@ -82,7 +98,11 @@ class DisruptiveAction:
 
     def action(self) -> Optional[ClusterNode]:
         if not self.max_affected_nodes_reached():
-            return self.do_action()
+            node = self.do_action()
+            if node and not self.nodes_for_action:
+                # We have processed all nodes in the current cycle.
+                self.node_cycle_complete = True
+            return node
         return None
 
     def do_reverse_action(self) -> ClusterNode:
@@ -101,11 +121,12 @@ class ProcessKill(DisruptiveAction):
     PROCESS_START_WAIT_SEC = 20
     PROCESS_START_WAIT_BACKOFF = 2
 
+    is_reversible = True
+
     def __init__(self, redpanda: RedpandaService, config: ActionConfig,
                  admin: Admin):
         super(ProcessKill, self).__init__(redpanda, config, admin)
         self.failure_injector = FailureInjector(self.redpanda)
-        self.is_reversible = True
 
     def max_affected_nodes_reached(self):
         return len(self.affected_nodes) >= self.config.max_affected_nodes
@@ -130,7 +151,7 @@ class ProcessKill(DisruptiveAction):
 
     def do_reverse_action(self):
         self._start_rp(node=self.last_affected_node)
-        self.affected_nodes.remove(self.last_affected_node)
+        self.recover_node(self.last_affected_node)
         self.redpanda.add_to_started_nodes(self.last_affected_node)
 
         last_affected_node, self.last_affected_node = self.last_affected_node, None
@@ -156,6 +177,7 @@ class ActionInjectorThread(Thread):
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
+        self.daemon = True
         self.disruptive_action = disruptive_action
         self.redpanda = redpanda
         self.config = config
@@ -175,14 +197,21 @@ class ActionInjectorThread(Thread):
         wait_until(all_nodes_started,
                    timeout_sec=self.config.cluster_start_lead_time_sec,
                    backoff_sec=2,
-                   err_msg=f'Cluster not ready to begin actions')
+                   err_msg='Cluster not ready to begin actions')
 
         self.redpanda.logger.info('cluster is ready, starting action loop')
 
         while not self._stop_requested.is_set():
             if self.disruptive_action.action():
                 self.action_triggered = True
-            time.sleep(self.config.time_between_actions())
+            sleep_interval = self.config.time_between_actions()
+
+            # If we have processed all nodes once, increase the sleep interval
+            # just for this iteration. This avoids the case where the last node
+            # in the previous cycle is restarted again in the next cycle.
+            if self.disruptive_action.node_cycle_complete:
+                sleep_interval *= 3
+            time.sleep(sleep_interval)
             if self.disruptive_action.reverse():
                 self.reverse_action_triggered = True
 
@@ -200,12 +229,12 @@ class ActionCtx:
         self.thread = ActionInjectorThread(config, redpanda, disruptive_action)
 
     def __enter__(self):
-        self.redpanda.logger.info(f'entering random failure ctx')
+        self.redpanda.logger.info('entering random failure ctx')
         self.thread.start()
         return self
 
     def __exit__(self, *args, **kwargs):
-        self.redpanda.logger.info(f'leaving random failure ctx')
+        self.redpanda.logger.info('leaving random failure ctx')
         self.thread.stop()
         self.thread.join()
 

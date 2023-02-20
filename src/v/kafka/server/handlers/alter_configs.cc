@@ -9,12 +9,12 @@
 
 #include "kafka/server/handlers/alter_configs.h"
 
+#include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_configs_response.h"
 #include "kafka/server/handlers/configs/config_utils.h"
-#include "kafka/server/handlers/details/data_policy.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -35,33 +35,6 @@
 #include <string_view>
 
 namespace kafka {
-template<typename T>
-void parse_and_set_optional(
-  cluster::property_update<std::optional<T>>& property_update,
-  const std::optional<ss::sstring>& value) {
-    if (!value) {
-        property_update.value = std::nullopt;
-    }
-
-    property_update.value = boost::lexical_cast<T>(*value);
-}
-
-template<typename T>
-void parse_and_set_tristate(
-  cluster::property_update<tristate<T>>& property_update,
-  const std::optional<ss::sstring>& value) {
-    if (!value) {
-        property_update.value = tristate<T>(std::nullopt);
-    }
-
-    auto parsed = boost::lexical_cast<int64_t>(*value);
-    if (parsed <= 0) {
-        property_update.value = tristate<T>{};
-    } else {
-        property_update.value = tristate<T>(std::make_optional<T>(parsed));
-    }
-}
-
 static void parse_and_set_shadow_indexing_mode(
   cluster::property_update<std::optional<model::shadow_indexing_mode>>&
     property_update,
@@ -79,15 +52,6 @@ static void parse_and_set_shadow_indexing_mode(
           .default_match(model::shadow_indexing_mode::disabled);
 }
 
-void check_data_policy(std::string_view property_name) {
-    if (
-      property_name == topic_property_data_policy_function_name
-      || property_name == topic_property_data_policy_script_name) {
-        throw v8_engine::data_policy_exeption(
-          "Alter config does not support data-policy");
-    }
-}
-
 checked<cluster::topic_properties_update, alter_configs_resource_response>
 create_topic_properties_update(alter_configs_resource& resource) {
     model::topic_namespace tp_ns(
@@ -98,7 +62,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
      * sent in the request, if given resource value isn't set in the request,
      * override for this value has to be removed. We override all defaults to
      * set, even if value for given property isn't set it will override
-     * configuration in topic table
+     * configuration in topic table, the only difference is the replication
+     * factor, if not set in the request explicitly it will not be overriden.
      */
     update.properties.cleanup_policy_bitflags.op
       = cluster::incremental_update_operation::set;
@@ -116,6 +81,8 @@ create_topic_properties_update(alter_configs_resource& resource) {
       = cluster::incremental_update_operation::set;
     update.properties.shadow_indexing.op
       = cluster::incremental_update_operation::set;
+    update.custom_properties.replication_factor.op
+      = cluster::incremental_update_operation::none;
     update.custom_properties.data_policy.op
       = cluster::incremental_update_operation::none;
 
@@ -123,32 +90,60 @@ create_topic_properties_update(alter_configs_resource& resource) {
         try {
             if (cfg.name == topic_property_cleanup_policy) {
                 parse_and_set_optional(
-                  update.properties.cleanup_policy_bitflags, cfg.value);
+                  update.properties.cleanup_policy_bitflags,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_compaction_strategy) {
                 parse_and_set_optional(
-                  update.properties.compaction_strategy, cfg.value);
+                  update.properties.compaction_strategy,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_compression) {
                 parse_and_set_optional(
-                  update.properties.compression, cfg.value);
+                  update.properties.compression,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_segment_size) {
                 parse_and_set_optional(
-                  update.properties.segment_size, cfg.value);
+                  update.properties.segment_size,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  segment_size_validator{});
                 continue;
             }
             if (cfg.name == topic_property_timestamp_type) {
                 parse_and_set_optional(
-                  update.properties.timestamp_type, cfg.value);
+                  update.properties.timestamp_type,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_retention_bytes) {
                 parse_and_set_tristate(
-                  update.properties.retention_bytes, cfg.value);
+                  update.properties.retention_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
+            if (cfg.name == topic_property_remote_delete) {
+                parse_and_set_bool(
+                  update.properties.remote_delete,
+                  cfg.value,
+                  kafka::config_resource_operation::set,
+                  storage::ntp_config::default_remote_delete);
+                continue;
+            }
+            if (cfg.name == topic_property_segment_ms) {
+                parse_and_set_tristate(
+                  update.properties.segment_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (cfg.name == topic_property_remote_write) {
@@ -173,7 +168,37 @@ create_topic_properties_update(alter_configs_resource& resource) {
             }
             if (cfg.name == topic_property_retention_duration) {
                 parse_and_set_tristate(
-                  update.properties.retention_duration, cfg.value);
+                  update.properties.retention_duration,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
+            if (cfg.name == topic_property_max_message_bytes) {
+                parse_and_set_optional(
+                  update.properties.batch_max_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_local_target_ms) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_ms,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_local_target_bytes) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_bytes,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
+                continue;
+            }
+            if (cfg.name == topic_property_replication_factor) {
+                parse_and_set_topic_replication_factor(
+                  update.custom_properties.replication_factor,
+                  cfg.value,
+                  kafka::config_resource_operation::set);
                 continue;
             }
             if (
@@ -184,8 +209,11 @@ create_topic_properties_update(alter_configs_resource& resource) {
               != std::end(allowlist_topic_noop_confs)) {
                 // Skip unsupported Kafka config
                 continue;
-            }
-            (check_data_policy(cfg.name));
+            };
+        } catch (const validation_error& e) {
+            return make_error_alter_config_resource_response<
+              alter_configs_resource_response>(
+              resource, error_code::invalid_config, e.what());
         } catch (const boost::bad_lexical_cast& e) {
             return make_error_alter_config_resource_response<
               alter_configs_resource_response>(
@@ -245,6 +273,7 @@ ss::future<response_ptr> alter_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     alter_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
 
     auto groupped = group_alter_config_resources(
       std::move(request.data.resources));

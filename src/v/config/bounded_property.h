@@ -9,6 +9,7 @@
 
 #pragma once
 
+#include "config/base_property.h"
 #include "config/property.h"
 
 namespace config {
@@ -68,6 +69,7 @@ struct numeric_bounds {
     std::optional<T> min = std::nullopt;
     std::optional<T> max = std::nullopt;
     std::optional<T> align = std::nullopt;
+    std::optional<odd_even_constraint> oddeven = std::nullopt;
 
     T clamp(T& original) {
         T result = original;
@@ -96,6 +98,14 @@ struct numeric_bounds {
         } else if (align.has_value() && value % align.value() != T{0}) {
             return fmt::format(
               "not aligned, must be aligned to nearest {}", align.value());
+        } else if (
+          oddeven.has_value() && oddeven.value() == odd_even_constraint::odd
+          && value % 2 == T{0}) {
+            return fmt::format("value must be odd");
+        } else if (
+          oddeven.has_value() && oddeven.value() == odd_even_constraint::even
+          && value % 2 == T{1}) {
+            return fmt::format("value must be even");
         }
         return std::nullopt;
     }

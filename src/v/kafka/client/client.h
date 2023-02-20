@@ -64,9 +64,21 @@ private:
     ssx::semaphore _lock{1, "k/client"};
 };
 
+namespace impl {
+
+constexpr auto default_external_mitigate = [](std::exception_ptr ex) {
+    return ss::make_exception_future(ex);
+};
+
+}
+
 class client {
 public:
-    explicit client(YAML::Node const& cfg);
+    using external_mitigate
+      = ss::noncopyable_function<ss::future<>(std::exception_ptr)>;
+    explicit client(
+      YAML::Node const& cfg,
+      external_mitigate mitigater = impl::default_external_mitigate);
 
     /// \brief Connect to all brokers.
     ss::future<> connect();
@@ -162,6 +174,9 @@ public:
     configuration& config() { return _config; }
 
 private:
+    ss::future<list_offsets_response>
+    do_list_offsets(model::topic_partition tp);
+
     /// \brief Connect and update metdata.
     ss::future<> do_connect(net::unresolved_address addr);
 
@@ -204,6 +219,9 @@ private:
       _consumers;
     /// \brief Wait for retries.
     ss::gate _gate;
+
+    ss::noncopyable_function<ss::future<>(std::exception_ptr)>
+      _external_mitigate;
 };
 
 } // namespace kafka::client

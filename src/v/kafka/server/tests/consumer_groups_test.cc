@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/controller_api.h"
-#include "cluster/feature_table.h"
+#include "features/feature_table.h"
 #include "kafka/client/client.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -50,7 +50,7 @@ struct consumer_offsets_fixture : public redpanda_thread_fixture {
         app.controller->get_feature_table()
           .local()
           .await_feature(
-            cluster::feature::consumer_offsets,
+            features::feature::consumer_offsets,
             app.controller->get_abort_source().local())
           .get();
 
@@ -105,4 +105,18 @@ FIXTURE_TEST(join_empty_group_static_member, consumer_offsets_fixture) {
                      && resp.data.member_id != unknown_member_id;
           });
     }).get();
+}
+
+SEASTAR_THREAD_TEST_CASE(consumer_group_decode) {
+    {
+        // snatched from a log message after a franz-go client joined
+        auto data = bytes_to_iobuf(
+          base64_to_bytes("AAEAAAADAAJ0MAACdDEAAnQyAAAACAAAAAAAAAAAAAAAAA=="));
+        const auto topics = group::decode_consumer_subscriptions(
+          std::move(data));
+        BOOST_REQUIRE(
+          topics
+          == absl::node_hash_set<model::topic>(
+            {model::topic("t0"), model::topic("t1"), model::topic("t2")}));
+    }
 }

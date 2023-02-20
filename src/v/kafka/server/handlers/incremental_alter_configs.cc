@@ -16,7 +16,6 @@
 #include "kafka/protocol/schemata/incremental_alter_configs_request.h"
 #include "kafka/protocol/schemata/incremental_alter_configs_response.h"
 #include "kafka/server//handlers/configs/config_utils.h"
-#include "kafka/server/handlers/details/data_policy.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -42,48 +41,6 @@ using resp_resource_t = incremental_alter_configs_resource_response;
  * We pass returned value as a paramter to allow template to be automatically
  * resolved.
  */
-template<typename T>
-void parse_and_set_optional(
-  cluster::property_update<std::optional<T>>& property,
-  const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
-    // remove property value
-    if (op == config_resource_operation::remove) {
-        property.op = cluster::incremental_update_operation::remove;
-        return;
-    }
-    // set property value
-    if (op == config_resource_operation::set) {
-        property.value = boost::lexical_cast<T>(*value);
-        property.op = cluster::incremental_update_operation::set;
-        return;
-    }
-}
-
-template<typename T>
-void parse_and_set_tristate(
-  cluster::property_update<tristate<T>>& property,
-  const std::optional<ss::sstring>& value,
-  config_resource_operation op) {
-    // remove property value
-    if (op == config_resource_operation::remove) {
-        property.op = cluster::incremental_update_operation::remove;
-        return;
-    }
-    // set property value
-    if (op == config_resource_operation::set) {
-        auto parsed = boost::lexical_cast<int64_t>(*value);
-        if (parsed <= 0) {
-            property.value = tristate<T>{};
-        } else {
-            property.value = tristate<T>(std::make_optional<T>(parsed));
-        }
-
-        property.op = cluster::incremental_update_operation::set;
-        return;
-    }
-}
-
 static void parse_and_set_shadow_indexing_mode(
   cluster::property_update<std::optional<model::shadow_indexing_mode>>& simode,
   const std::optional<ss::sstring>& value,
@@ -109,7 +66,6 @@ static void parse_and_set_shadow_indexing_mode(
         break;
     }
 }
-
 /**
  * valides the optional config
  */
@@ -171,8 +127,6 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
       model::kafka_namespace, model::topic(resource.resource_name));
     cluster::topic_properties_update update(tp_ns);
 
-    data_policy_parser dp_parser;
-
     for (auto& cfg : resource.configs) {
         // Validate int8_t is within range of config_resource_operation
         // before casting (otherwise casting is undefined behaviour)
@@ -210,7 +164,10 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
             }
             if (cfg.name == topic_property_segment_size) {
                 parse_and_set_optional(
-                  update.properties.segment_size, cfg.value, op);
+                  update.properties.segment_size,
+                  cfg.value,
+                  op,
+                  segment_size_validator{});
                 continue;
             }
             if (cfg.name == topic_property_timestamp_type) {
@@ -236,6 +193,18 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   model::shadow_indexing_mode::archival);
                 continue;
             }
+            if (cfg.name == topic_property_retention_local_target_bytes) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_bytes,
+                  cfg.value,
+                  op);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_local_target_ms) {
+                parse_and_set_tristate(
+                  update.properties.retention_local_target_ms, cfg.value, op);
+                continue;
+            }
             if (cfg.name == topic_property_remote_read) {
                 parse_and_set_shadow_indexing_mode(
                   update.properties.shadow_indexing,
@@ -244,18 +213,44 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
                   model::shadow_indexing_mode::fetch);
                 continue;
             }
+            if (cfg.name == topic_property_remote_delete) {
+                parse_and_set_bool(
+                  update.properties.remote_delete,
+                  cfg.value,
+                  op,
+                  // Topic deletion is enabled by default
+                  true);
+                continue;
+            }
+            if (cfg.name == topic_property_max_message_bytes) {
+                parse_and_set_optional(
+                  update.properties.batch_max_bytes, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_replication_factor) {
+                parse_and_set_topic_replication_factor(
+                  update.custom_properties.replication_factor, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_segment_ms) {
+                parse_and_set_tristate(
+                  update.properties.segment_ms, cfg.value, op);
+                continue;
+            }
             if (
               std::find(
                 std::begin(allowlist_topic_noop_confs),
                 std::end(allowlist_topic_noop_confs),
                 cfg.name)
               != std::end(allowlist_topic_noop_confs)) {
-                // Skip unusupported Kafka config
+                // Skip unsupported Kafka config
                 continue;
             }
-            if (update_data_policy_parser(dp_parser, cfg.name, cfg.value, op)) {
-                continue;
-            }
+
+        } catch (const validation_error& e) {
+            return make_error_alter_config_resource_response<
+              incremental_alter_configs_resource_response>(
+              resource, error_code::invalid_config, e.what());
         } catch (const boost::bad_lexical_cast& e) {
             return make_error_alter_config_resource_response<
               incremental_alter_configs_resource_response>(
@@ -263,36 +258,12 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
               error_code::invalid_config,
               fmt::format(
                 "unable to parse property {} value {}", cfg.name, cfg.value));
-        } catch (const v8_engine::data_policy_exeption& e) {
-            return make_error_alter_config_resource_response<
-              incremental_alter_configs_resource_response>(
-              resource,
-              error_code::invalid_config,
-              fmt::format(
-                "unable to parse property redpanda.data-policy.{} value {}, "
-                "error {}",
-                cfg.name,
-                cfg.value,
-                e.what()));
         }
         // Unsupported property, return error
         return make_error_alter_config_resource_response<resp_resource_t>(
           resource,
           error_code::invalid_config,
           fmt::format("invalid topic property: {}", cfg.name));
-    }
-    try {
-        update.custom_properties.data_policy.value = data_policy_from_parser(
-          dp_parser);
-        update.custom_properties.data_policy.op = dp_parser.op;
-    } catch (const v8_engine::data_policy_exeption& e) {
-        return make_error_alter_config_resource_response<
-          incremental_alter_configs_resource_response>(
-          resource,
-          error_code::invalid_config,
-          fmt::format(
-            "unable to parse property redpanda.data-policy, error {}",
-            e.what()));
     }
 
     return update;
@@ -318,6 +289,7 @@ inline std::string_view map_config_name(std::string_view input) {
       .match("log.cleanup.policy", "log_cleanup_policy")
       .match("log.message.timestamp.type", "log_message_timestamp_type")
       .match("log.compression.type", "log_compression_type")
+      .match("log.roll.ms", "log_segment_ms")
       .default_match(input);
 }
 
@@ -328,7 +300,7 @@ static ss::future<std::vector<resp_resource_t>> alter_broker_configuartion(
 
     // If central config is disabled, we cannot set broker properties
     if (!ctx.feature_table().local().is_active(
-          cluster::feature::central_config)) {
+          features::feature::central_config)) {
         co_return co_await unsupported_broker_configuration<
           req_resource_t,
           resp_resource_t>(
@@ -468,8 +440,7 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     incremental_alter_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    vlog(klog.trace, "Handling request {}", request);
-
+    log_request(ctx.header(), request);
     auto groupped = group_alter_config_resources(
       std::move(request.data.resources));
 
