@@ -47,6 +47,8 @@ public:
       const std::vector<model::broker_shard>& prev,
       const std::vector<model::broker_shard>& next);
 
+    ss::future<> apply_snapshot(const controller_snapshot&);
+
 private:
     struct probe {
         explicit probe(const partition_balancer_state&);
