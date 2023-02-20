@@ -44,6 +44,15 @@ func newDisableCommand(fs afero.Fs) *cobra.Command {
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
+			b, err := client.Broker(cmd.Context(), nodeID)
+			out.MaybeDie(err, "error retrieving broker status. The node %d is likely dead?: %v\n", nodeID, err)
+
+			if b.Maintenance == nil {
+				out.Die("maintenance mode not supported or upgrade in progress?")
+			} else if !b.Maintenance.Draining {
+				out.Exit("Maintenance mode is already disabled for node %d. Check the status with 'rpk cluster maintenance status'.", nodeID)
+			}
+
 			err = client.DisableMaintenanceMode(cmd.Context(), nodeID)
 			if he := (*admin.HTTPResponseError)(nil); errors.As(err, &he) {
 				if he.Response.StatusCode == 404 {
@@ -55,7 +64,8 @@ func newDisableCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			out.MaybeDie(err, "error disabling maintenance mode: %v", err)
-			fmt.Printf("Successfully disabled maintenance mode for node %d\n", nodeID)
+
+			fmt.Printf("Successfully disabled maintenance mode for node %d. Check the status with 'rpk cluster maintenance status'.\n", nodeID)
 		},
 	}
 	return cmd
