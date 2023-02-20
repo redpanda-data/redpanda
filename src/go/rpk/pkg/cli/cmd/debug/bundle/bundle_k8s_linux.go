@@ -222,15 +222,15 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, c
 					return requestAndSave(ctx, ps, fmt.Sprintf("admin/cluster_view_%v.json", aName), cl.ClusterView)
 				},
 				func() error {
-					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_metric.txt", aName), cl.PrometheusMetrics)
+					err := requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t0_metrics.txt", aName), cl.PrometheusMetrics)
 					if err != nil {
 						return err
 					}
 					select {
 					case <-time.After(metricsInterval):
-						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metric.txt", aName), cl.PrometheusMetrics)
+						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metrics.txt", aName), cl.PrometheusMetrics)
 					case <-ctx.Done():
-						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metric.txt", aName), cl.PrometheusMetrics)
+						return requestAndSave(ctx, ps, fmt.Sprintf("metrics/%v/t1_metrics.txt", aName), cl.PrometheusMetrics)
 					}
 				},
 				func() error {

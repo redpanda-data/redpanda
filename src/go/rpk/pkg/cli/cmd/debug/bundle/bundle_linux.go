@@ -35,7 +35,6 @@ import (
 	"github.com/beevik/ntp"
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	osutil "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -119,6 +118,8 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		timeout: bp.timeout,
 	}
 
+	addrs := bp.cfg.Rpk.AdminAPI.Addresses
+
 	steps := []step{
 		saveKafkaMetadata(ctx, ps, bp.cl),
 		saveDataDirStructure(ps, bp.cfg),
@@ -128,8 +129,8 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		saveResourceUsageData(ps, bp.cfg),
 		saveNTPDrift(ps),
 		saveSyslog(ps),
-		savePrometheusMetrics(ctx, ps, bp.admin),
-		savePublicMetrics(ctx, ps, bp.admin),
+		saveSingleAdminAPICalls(ctx, ps, bp.fs, bp.cfg, addrs, bp.metricsInterval),
+		saveClusterAdminAPICalls(ctx, ps, bp.fs, bp.cfg, addrs),
 		saveDNSData(ctx, ps),
 		saveDiskUsage(ctx, ps, bp.cfg),
 		saveLogs(ctx, ps, bp.logsSince, bp.logsUntil, bp.logsLimitBytes),
@@ -611,27 +612,6 @@ func saveSyslog(ps *stepParams) step {
 			return err
 		}
 		return writeFileToZip(ps, "syslog.txt", entries)
-	}
-}
-
-// Queries the given admin API address for prometheus metrics.
-func savePrometheusMetrics(ctx context.Context, ps *stepParams, admin *admin.AdminAPI) step {
-	return func() error {
-		raw, err := admin.PrometheusMetrics(ctx)
-		if err != nil {
-			return fmt.Errorf("unable to fetch metrics from the admin API: %w", err)
-		}
-		return writeFileToZip(ps, "prometheus-metrics.txt", raw)
-	}
-}
-
-func savePublicMetrics(ctx context.Context, ps *stepParams, admin *admin.AdminAPI) step {
-	return func() error {
-		raw, err := admin.PublicMetrics(ctx)
-		if err != nil {
-			return fmt.Errorf("unable to fetch public metrics from the admin API: %w", err)
-		}
-		return writeFileToZip(ps, "public-metrics.txt", raw)
 	}
 }
 

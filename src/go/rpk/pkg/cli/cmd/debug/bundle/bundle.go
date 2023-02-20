@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/docker/go-units"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
@@ -38,7 +37,6 @@ type bundleParams struct {
 	fs                      afero.Fs
 	cfg                     *config.Config
 	cl                      *kgo.Client
-	admin                   *admin.AdminAPI
 	logsSince               string
 	logsUntil               string
 	path                    string
@@ -92,15 +90,6 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			// We use NewHostClient because we want to talk to
-			// localhost, and some of out API requests require
-			// choosing the host to talk to. With params of
-			// rpk.admin_api preferring localhost first IF no
-			// rpk.admin_api is actually in the underlying file, we
-			// can always just pick the first host.
-			admin, err := admin.NewHostClient(fs, cfg, "0")
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
 			cl, err := kafka.NewFranzClient(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
@@ -114,7 +103,6 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 				fs:                      fs,
 				cfg:                     cfg,
 				cl:                      cl,
-				admin:                   admin,
 				logsSince:               logsSince,
 				logsUntil:               logsUntil,
 				path:                    path,
