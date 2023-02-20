@@ -534,7 +534,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self.start_producer(1, throughput=self.producer_throughput())
         self.start_consumer(1)
         self.await_startup(min_records=self.records_to_wait(), timeout_sec=180)
-        admin = Admin(self.redpanda)
+        admin = Admin(self.redpanda, retry_codes=[503, 504], retries_amount=10)
 
         to_decommission = random.choice(self.redpanda.nodes)
         node_id = self.redpanda.node_id(to_decommission)
