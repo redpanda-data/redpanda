@@ -157,7 +157,7 @@ class CloudRetentionTest(PreallocNodesTest):
         further uploads from taking place.
         """
         small_segment_size = 1024 * 1024
-        num_partitions = 5
+        num_partitions = 16
         si_settings = SISettings(log_segment_size=small_segment_size)
         self.redpanda.set_si_settings(si_settings)
         extra_rp_conf = dict(retention_local_target_bytes_default=self.
@@ -196,24 +196,57 @@ class CloudRetentionTest(PreallocNodesTest):
         topics = (TopicSpec(name=self.topic_name,
                             partition_count=num_partitions), )
 
-        def gced_all_segments():
-            s3_snapshot = S3Snapshot(topics,
-                                     self.redpanda.cloud_storage_client,
+        def uploaded_all_partitions():
+            s3_snapshot = S3Snapshot(topics, self.redpanda.s3_client,
                                      si_settings.cloud_storage_bucket,
                                      self.logger)
-            try:
-                manifest = s3_snapshot.manifest_for_ntp(self.topic_name, 0)
-            except:
-                return False
+            for partition in range(0, num_partitions):
+                size = s3_snapshot.cloud_log_size_for_ntp(
+                    self.topic_name, partition)
+                if size == 0:
+                    self.logger.info("Partition {} has size 0", partition)
+                    return False
 
-            # Wait for the manifest to have uploaded some offsets, but not have
-            # any segments, indicating we truncated.
-            if "last_offset" not in manifest or manifest["last_offset"] == 0:
-                return False
+            return True
 
-            return "segments" not in manifest
+        wait_until(uploaded_all_partitions,
+                   timeout_sec=60,
+                   backoff_sec=5,
+                   err_msg="Waiting for all parents to upload cloud data")
 
-        wait_until(gced_all_segments, timeout_sec=120, backoff_sec=5)
+        def gced_all_segments():
+            s3_snapshot = S3Snapshot(topics, self.redpanda.s3_client,
+                                     si_settings.cloud_storage_bucket,
+                                     self.logger)
+            for partition in range(0, num_partitions):
+                try:
+                    manifest = s3_snapshot.manifest_for_ntp(
+                        self.topic_name, partition)
+                except:
+                    self.logger.info(
+                        f"Partition {partition} has no uploaded manifest")
+                    return False
+
+                # Wait for the manifest to have uploaded some offsets, but not have
+                # any segments, indicating we truncated.
+                if "last_offset" not in manifest or manifest[
+                        "last_offset"] == 0:
+                    self.logger.info(
+                        f"Partition {partition} doesn't have last_offset")
+                    return False
+
+                if not "segments" not in manifest:
+                    self.logger.info(
+                        f"Partition {partition} still has segments")
+                    return False
+
+            return True
+
+        rpk.alter_topic_config(self.topic_name, "retention.bytes", "1")
+        wait_until(gced_all_segments,
+                   timeout_sec=120,
+                   backoff_sec=5,
+                   err_msg="Waiting for all cloud segments to be GC")
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        self.topic_name,
@@ -222,4 +255,3 @@ class CloudRetentionTest(PreallocNodesTest):
                                        custom_node=self.preallocated_nodes)
         producer.start(clean=False)
         producer.wait()
-
