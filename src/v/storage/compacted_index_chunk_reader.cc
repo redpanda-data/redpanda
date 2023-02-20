@@ -159,7 +159,7 @@ compacted_index_chunk_reader::load_footer() {
         footer.version = footer_v1.version;
 
         data_size = file_size - compacted_index::footer_v1::footer_size;
-    } else if (footer.version == compacted_index::footer::current_version) {
+    } else if (footer_v1.version == compacted_index::footer::current_version) {
         iobuf_parser parser(std::move(buf));
         footer = reflection::adl<storage::compacted_index::footer>{}.from(
           parser);
@@ -167,7 +167,7 @@ compacted_index_chunk_reader::load_footer() {
         data_size = file_size - compacted_index::footer::footer_size;
     } else {
         throw compacted_index::needs_rebuild_error{
-          fmt::format("incompatible index version: {}", footer.version)};
+          fmt::format("incompatible index version: {}", footer_v1.version)};
     }
 
     _footer = footer;

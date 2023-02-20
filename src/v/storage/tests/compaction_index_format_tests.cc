@@ -423,16 +423,20 @@ FIXTURE_TEST(footer_v1_compatibility, compacted_topic_fixture) {
     BOOST_CHECK_EQUAL(footer.version, footer_v1.version);
 }
 
-static iobuf substitute_index_for_v1(iobuf data) {
+static iobuf substitute_index_for_older_ver(iobuf data, int8_t version) {
     auto footer = reflection::adl<storage::compacted_index::footer>{}.from(
       data.share(
         data.size_bytes() - storage::compacted_index::footer::footer_size,
         storage::compacted_index::footer::footer_size));
+
+    // v1 and v0 footers have the same format
+    BOOST_REQUIRE(version == 0 || version == 1);
     auto footer_v1 = storage::index_footer_v1{
       .size = static_cast<uint32_t>(footer.size),
       .keys = static_cast<uint32_t>(footer.keys),
       .flags = footer.flags,
-      .crc = footer.crc};
+      .crc = footer.crc,
+      .version = version};
 
     auto ret = data
                  .share(
@@ -472,7 +476,8 @@ FIXTURE_TEST(v1_footers_compatibility, compacted_topic_fixture) {
         idx.close().get();
         auto idx_data = std::move(store).release_iobuf();
         verify_index_integrity(idx_data);
-        auto idx_data_v1 = substitute_index_for_v1(std::move(idx_data));
+        auto idx_data_v1 = substitute_index_for_older_ver(
+          std::move(idx_data), 1);
         auto footer = verify_index_integrity(idx_data_v1);
         BOOST_CHECK_EQUAL(footer.size, 0);
         BOOST_CHECK_EQUAL(footer.keys, 0);
@@ -491,12 +496,45 @@ FIXTURE_TEST(v1_footers_compatibility, compacted_topic_fixture) {
         idx.close().get();
         auto idx_data = std::move(store).release_iobuf();
         auto footer_before = verify_index_integrity(idx_data);
-        auto idx_data_v1 = substitute_index_for_v1(std::move(idx_data));
+        auto idx_data_v1 = substitute_index_for_older_ver(
+          std::move(idx_data), 1);
         auto footer_after = verify_index_integrity(idx_data_v1);
         BOOST_CHECK_EQUAL(footer_before.size, footer_after.size);
         BOOST_CHECK_EQUAL(footer_after.keys, 1);
         BOOST_CHECK(
           footer_after.flags == storage::compacted_index::footer_flags::none);
         BOOST_CHECK_EQUAL(footer_before.crc, footer_after.crc);
+    }
+}
+
+// test that indices with v0 footers are marked as "needs rebuild"
+FIXTURE_TEST(v0_footers_compatibility, compacted_topic_fixture) {
+    {
+        // empty index
+        tmpbuf_file::store_t store;
+        auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
+        idx.close().get();
+        auto idx_data = std::move(store).release_iobuf();
+        auto idx_data_v0 = substitute_index_for_older_ver(
+          std::move(idx_data), 0);
+        BOOST_CHECK_THROW(
+          verify_index_integrity(idx_data_v0),
+          storage::compacted_index::needs_rebuild_error);
+    }
+
+    {
+        // index with some keys
+        tmpbuf_file::store_t store;
+        auto idx = make_dummy_compacted_index(store, 1_KiB, resources);
+        const auto key = random_generators::get_bytes(1024);
+        auto bt = random_batch_type();
+        idx.index(bt, bytes(key), model::offset(42), 66).get();
+        idx.close().get();
+        auto idx_data = std::move(store).release_iobuf();
+        auto idx_data_v0 = substitute_index_for_older_ver(
+          std::move(idx_data), 0);
+        BOOST_CHECK_THROW(
+          verify_index_integrity(idx_data_v0),
+          storage::compacted_index::needs_rebuild_error);
     }
 }
