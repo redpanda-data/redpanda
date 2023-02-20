@@ -563,6 +563,8 @@ ss::future<> topic_updates_dispatcher::apply_snapshot(
       });
 
     co_await _partition_allocator.local().apply_snapshot(snap);
+
+    co_await _partition_balancer_state.local().apply_snapshot(snap);
 }
 
 } // namespace cluster
