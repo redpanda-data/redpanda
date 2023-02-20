@@ -98,13 +98,7 @@ void replicated_partition_probe::setup_internal_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "under_replicated_replicas",
           [this] {
-              auto metrics = _partition.raft()->get_follower_metrics();
-              return std::count_if(
-                metrics.cbegin(),
-                metrics.cend(),
-                [](const raft::follower_metrics& fm) {
-                    return fm.under_replicated;
-                });
+              return _partition.raft()->get_under_replicated().value_or(0);
           },
           sm::description("Number of under replicated replicas"),
           labels)

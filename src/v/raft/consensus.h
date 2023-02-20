@@ -146,6 +146,13 @@ public:
     std::optional<model::node_id> get_leader_id() const {
         return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;
     }
+
+    /**
+     * On leader, return the number of under replicated followers.  On
+     * followers, return nullopt
+     */
+    std::optional<uint8_t> get_under_replicated() const;
+
     /**
      * Sends a round of heartbeats to followers, when majority of followers
      * replied with success to either this of any following request all reads up
