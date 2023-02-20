@@ -3463,12 +3463,17 @@ void admin_server::register_cluster_routes() {
                 ret.all_nodes._set = true;
                 ret.nodes_down._set = true;
                 ret.leaderless_partitions._set = true;
+                ret.under_replicated_partitions._set = true;
 
                 ret.all_nodes = health_overview.all_nodes;
                 ret.nodes_down = health_overview.nodes_down;
 
                 for (auto& ntp : health_overview.leaderless_partitions) {
                     ret.leaderless_partitions.push(fmt::format(
+                      "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
+                }
+                for (auto& ntp : health_overview.under_replicated_partitions) {
+                    ret.under_replicated_partitions.push(fmt::format(
                       "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
                 }
                 if (health_overview.controller_id) {
