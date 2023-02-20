@@ -24,6 +24,8 @@ resource_settings = ResourceSettings(
 
 
 class ManyClientsTest(RedpandaTest):
+    PRODUCER_COUNT = 4000
+
     def __init__(self, *args, **kwargs):
         # We will send huge numbers of messages, so tune down the log verbosity
         # as this is just a "did we stay up?" test
@@ -42,6 +44,13 @@ class ManyClientsTest(RedpandaTest):
             # Same intention as above but utilizing node-wide throughput limit
             'kafka_throughput_limit_node_in_bps':
             104857600,  # 100MiB/s per node
+
+            # Set higher connection count limits than the redpanda default.
+            # Factor of 4: allow each client 3 connections (producer,consumer,admin), plus
+            # 1 connection to accomodate reconnects while a previous connection is
+            # still live.
+            'kafka_connections_max': self.PRODUCER_COUNT * 4,
+            'kafka_connections_max_per_ip': self.PRODUCER_COUNT * 4,
         }
         super().__init__(*args, **kwargs)
 
@@ -56,7 +65,6 @@ class ManyClientsTest(RedpandaTest):
         assert not self.debug_mode
 
         PARTITION_COUNT = 100
-        PRODUCER_COUNT = 4000
         PRODUCER_TIMEOUT_MS = 5000
         TOPIC_NAME = "manyclients"
         RECORDS_PER_PRODUCER = 1000
@@ -94,7 +102,7 @@ class ManyClientsTest(RedpandaTest):
         producer = ProducerSwarm(self.test_context,
                                  self.redpanda,
                                  TOPIC_NAME,
-                                 PRODUCER_COUNT,
+                                 self.PRODUCER_COUNT,
                                  RECORDS_PER_PRODUCER,
                                  timeout_ms=PRODUCER_TIMEOUT_MS)
         producer.start()
@@ -105,7 +113,7 @@ class ManyClientsTest(RedpandaTest):
         producer.wait()
 
         def complete():
-            expect = PRODUCER_COUNT * RECORDS_PER_PRODUCER
+            expect = self.PRODUCER_COUNT * RECORDS_PER_PRODUCER
             self.logger.info(
                 f"Message counts: {consumer_a.message_count} {consumer_b.message_count} {consumer_c.message_count} (vs {expect})"
             )
