@@ -226,14 +226,12 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
 
 class KgoVerifierWithSiTestLargeSegments(KgoVerifierWithSiTest):
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
     def test_si_without_timeboxed(self, cloud_storage_type):
         self.without_timeboxed()
 
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
     def test_si_with_timeboxed(self, cloud_storage_type):
         self.with_timeboxed()
 
@@ -242,13 +240,11 @@ class KgoVerifierWithSiTestSmallSegments(KgoVerifierWithSiTest):
     segment_size = 20 * 2**20
 
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
     def test_si_without_timeboxed(self, cloud_storage_type):
         self.without_timeboxed()
 
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
     def test_si_with_timeboxed(self, cloud_storage_type):
         self.with_timeboxed()

@@ -170,8 +170,7 @@ class CloudStorageCompactionTest(EndToEndTest):
                  "Cannot validate Kafka record batch. Missmatching CRC",
                  "batch has invalid CRC"
              ])
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
     def test_read_from_replica(self, cloud_storage_type):
         self.start_workload()
         self.start_consumer(num_nodes=2,
