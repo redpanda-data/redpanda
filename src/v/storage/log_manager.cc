@@ -141,22 +141,23 @@ log_manager::log_manager(
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
         if (_housekeeping_timer.cancel()) {
+            // rearm is behind the result of cancel, to ensure that no more
+            // than one trigger_housekeeping is in flight
             _housekeeping_timer.rearm(_jitter());
         }
     });
 }
 void log_manager::trigger_housekeeping() {
     ssx::background = ssx::spawn_with_gate_then(_open_gate, [this] {
-                          auto next_housekeeping = _jitter();
-                          return housekeeping().finally(
-                            [this, next_housekeeping] {
-                                // all of these *MUST* be in the finally
-                                if (_open_gate.is_closed()) {
-                                    return;
-                                }
-
-                                _housekeeping_timer.rearm(next_housekeeping);
-                            });
+                          return housekeeping().finally([this] {
+                              // all of these *MUST* be in the finally
+                              if (_open_gate.is_closed()) {
+                                  return;
+                              }
+                              // _jitter is queried in the same execution
+                              // context to fix an interleaving bug issue/8492
+                              _housekeeping_timer.rearm(_jitter());
+                          });
                       }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
     });
