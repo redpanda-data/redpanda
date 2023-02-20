@@ -557,6 +557,11 @@ ss::future<> topic_updates_dispatcher::apply_snapshot(
         return topics.apply_snapshot(offset, snap);
     });
 
+    co_await _partition_leaders_table.invoke_on_all(
+      [](partition_leaders_table& leaders) {
+          return leaders.update_with_estimates();
+      });
+
     co_await _partition_allocator.local().apply_snapshot(snap);
 }
 
