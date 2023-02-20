@@ -1656,7 +1656,7 @@ class RedpandaService(Service):
         # In case it's a big test, do not exhaustively log every object
         # or dump every manifest
         key_dump_limit = 10000
-        manifest_dump_limit = 10
+        manifest_dump_limit = 128
 
         self.logger.info(
             f"Gathering cloud storage diagnostics in bucket {self._si_settings.cloud_storage_bucket}"
