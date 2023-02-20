@@ -16,11 +16,12 @@ import (
 
 // Health overview data structure.
 type ClusterHealthOverview struct {
-	IsHealthy            bool     `json:"is_healthy"`
-	ControllerID         int      `json:"controller_id"`
-	AllNodes             []int    `json:"all_nodes"`
-	NodesDown            []int    `json:"nodes_down"`
-	LeaderlessPartitions []string `json:"leaderless_partitions"`
+	IsHealthy                 bool     `json:"is_healthy"`
+	ControllerID              int      `json:"controller_id"`
+	AllNodes                  []int    `json:"all_nodes"`
+	NodesDown                 []int    `json:"nodes_down"`
+	LeaderlessPartitions      []string `json:"leaderless_partitions"`
+	UnderReplicatedPartitions []string `json:"under_replicated_partitions"`
 }
 
 // PartitionBalancerStatus is the status of the partition auto balancer.

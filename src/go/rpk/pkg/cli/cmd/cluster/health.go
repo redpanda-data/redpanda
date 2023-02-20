@@ -92,10 +92,11 @@ following conditions are met:
 func printHealthOverview(hov *admin.ClusterHealthOverview) {
 	out.Section("CLUSTER HEALTH OVERVIEW")
 	overviewFormat := `Healthy:               %v
-Controller ID:         %v
-All nodes:             %v
-Nodes down:            %v
-Leaderless partitions: %v
+Controller ID:               %v
+All nodes:                   %v
+Nodes down:                  %v
+Leaderless partitions:       %v
+Under-replicated partitions: %v
 `
-	fmt.Printf(overviewFormat, hov.IsHealthy, hov.ControllerID, hov.AllNodes, hov.NodesDown, hov.LeaderlessPartitions)
+	fmt.Printf(overviewFormat, hov.IsHealthy, hov.ControllerID, hov.AllNodes, hov.NodesDown, hov.LeaderlessPartitions, hov.UnderReplicatedPartitions)
 }
