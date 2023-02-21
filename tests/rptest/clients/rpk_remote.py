@@ -71,6 +71,8 @@ class RpkRemoteTool:
         return self._execute(cmd, timeout=timeout)
 
     def _execute(self, cmd, timeout=30):
+        self._redpanda.logger.debug("Executing command: %s", cmd)
+
         return self._node.account.ssh_output(
             ' '.join(cmd),
             timeout_sec=timeout,
