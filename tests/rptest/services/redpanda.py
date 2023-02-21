@@ -278,6 +278,9 @@ class SISettings:
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
 
+    # The account to use with local Azurite testing
+    ABS_AZURITE_ACCOUNT = "devstoreaccount1"
+
     def __init__(self,
                  test_context,
                  *,
@@ -335,7 +338,7 @@ class SISettings:
             # These are the default Azurite (Azure emulator) storage account and shared key.
             # Both are readily available in the docs.
             self.cloud_storage_azure_shared_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='
-            self.cloud_storage_azure_storage_account = 'devstoreaccount1'
+            self.cloud_storage_azure_storage_account = self.ABS_AZURITE_ACCOUNT
 
             self._cloud_storage_azure_container = f'panda-container-{uuid.uuid1()}'
             self.cloud_storage_api_endpoint = f'{self.cloud_storage_azure_storage_account}.blob.localhost'
@@ -977,6 +980,43 @@ class RedpandaService(Service):
                    backoff_sec=self._startup_poll_interval(first_start),
                    err_msg="Cluster membership did not stabilize")
 
+    def setup_azurite_dns(self):
+        """
+        Azure API relies on <container>.something DNS.  Doing DNS configuration
+        with docker/podman is unstable, as it isn't consistent across operating
+        systems.  Instead do it more crudely but robustly, but editing /etc/hosts.
+        """
+        azurite_ip = socket.gethostbyname("azurite")
+        azurite_dns = f"{self._si_settings.cloud_storage_azure_storage_account}.blob.localhost"
+
+        def update_hosts_file(node_name, path):
+            ducktape_hosts = open(path, "r").read()
+            if azurite_dns not in ducktape_hosts:
+                ducktape_hosts += f"\n{azurite_ip}   {azurite_dns}\n"
+                self.logger.info(
+                    f"Adding Azurite entry to {path} for node {node_name}, new content:"
+                )
+                self.logger.info(ducktape_hosts)
+                with open(path, 'w') as f:
+                    f.write(ducktape_hosts)
+            else:
+                self.logger.debug(
+                    f"Azurite /etc/hosts entry already present on {node_name}:"
+                )
+                self.logger.debug(ducktape_hosts)
+
+        # Edit /etc/hosts on the node where ducktape is running
+        update_hosts_file("ducktape", "/etc/hosts")
+
+        def setup_node_dns(node):
+            tmpfile = f"/tmp/{node.name}_hosts"
+            node.account.copy_from(f"/etc/hosts", tmpfile)
+            update_hosts_file(node.name, tmpfile)
+            node.account.copy_to(tmpfile, f"/etc/hosts")
+
+        # Edit /etc/hosts on Redpanda nodes
+        self._for_nodes(self.nodes, setup_node_dns, parallel=True)
+
     def start(self,
               nodes=None,
               clean_nodes=True,
@@ -1004,6 +1044,9 @@ class RedpandaService(Service):
         first_start = self._start_time < 0
         if first_start:
             self._start_time = time.time()
+
+            if self._si_settings and self._si_settings.cloud_storage_type is CloudStorageType.ABS and self._si_settings.cloud_storage_azure_storage_account == SISettings.ABS_AZURITE_ACCOUNT:
+                self.setup_azurite_dns()
 
         self.logger.debug(
             self.who_am_i() +
