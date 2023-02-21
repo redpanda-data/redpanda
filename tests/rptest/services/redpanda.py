@@ -1819,8 +1819,10 @@ class RedpandaService(Service):
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
-            # List of regexes we will fail the test on if they appear in the log
-            match_terms = ["Segmentation fault", "[Aa]ssert"]
+            # List of regexes that will fail the test on if they appear in the log
+            match_terms = [
+                "Segmentation fault", "[Aa]ssert", "Exceptional future ignored"
+            ]
             if self._raise_on_errors:
                 match_terms.append("^ERROR")
             match_expr = " ".join(f"-e \"{t}\"" for t in match_terms)
