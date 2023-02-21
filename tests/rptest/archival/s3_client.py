@@ -169,11 +169,20 @@ class S3Client:
                     key_list = list(o.key for o in obj_batch)
 
                     try:
-                        local.client.delete_objects(
-                            Bucket=name,
-                            Delete={'Objects': [{
-                                'Key': k
-                            } for k in key_list]})
+                        # GCS does not support bulk delete operation through S3 complaint clients
+                        # https://cloud.google.com/storage/docs/migrating#methods-comparison
+                        if 'storage.googleapis.com' in self._endpoint:
+                            for k in key_list:
+                                local.client.delete_object(Bucket=name, Key=k)
+                        else:
+                            local.client.delete_objects(Bucket=name,
+                                                        Delete={
+                                                            'Objects':
+                                                            [{
+                                                                'Key': k
+                                                            }
+                                                             for k in key_list]
+                                                        })
                     except:
                         self.logger.exception(
                             f"empty_bucket: delete request failed for keys {key_list[0]}..{key_list[-1]}"
