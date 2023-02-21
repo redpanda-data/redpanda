@@ -214,7 +214,7 @@ class CloudRetentionTest(PreallocNodesTest):
                 size = s3_snapshot.cloud_log_size_for_ntp(
                     self.topic_name, partition)
                 if size == 0:
-                    self.logger.info("Partition {} has size 0", partition)
+                    self.logger.info(f"Partition {partition} has size 0")
                     return False
 
             return True
