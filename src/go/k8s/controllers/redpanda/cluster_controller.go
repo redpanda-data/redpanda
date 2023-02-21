@@ -66,6 +66,7 @@ type ClusterReconciler struct {
 	Scheme                    *runtime.Scheme
 	AdminAPIClientFactory     adminutils.AdminAPIClientFactory
 	DecommissionWaitInterval  time.Duration
+	MetricsTimeout            time.Duration
 	RestrictToRedpandaVersion string
 	allowPVCDeletion          bool
 }
@@ -206,7 +207,8 @@ func (r *ClusterReconciler) Reconcile(
 		configMapResource.GetNodeConfigHash,
 		r.AdminAPIClientFactory,
 		r.DecommissionWaitInterval,
-		log)
+		log,
+		r.MetricsTimeout)
 
 	toApply := []resources.Reconciler{
 		headlessSvc,
