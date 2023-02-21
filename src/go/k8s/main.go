@@ -18,6 +18,7 @@ import (
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -26,10 +27,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
-
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
 // +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
@@ -41,6 +38,11 @@ import (
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories/finalizers,verbs=get;create;update;patch;delete
+
+// addtional resources
+// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=gitrepositories,verbs=get;list;watch;create;update;patch;delete
+
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 const (
@@ -159,16 +161,16 @@ func main() {
 	//}
 
 	// Setup webhooks
-	if webhookEnabled {
-		setupLog.Info("Setup webhook")
-		if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
-			os.Exit(1)
-		}
-		hookServer := mgr.GetWebhookServer()
-		hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleDefaulter{Client: mgr.GetClient()}})
-		hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
-	}
+	//if webhookEnabled {
+	//	setupLog.Info("Setup webhook")
+	//	if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
+	//		setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
+	//		os.Exit(1)
+	//	}
+	//	hookServer := mgr.GetWebhookServer()
+	//	hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleDefaulter{Client: mgr.GetClient()}})
+	//	hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
+	//}
 
 	//if err = (&redpandacontrollers.ConsoleReconciler{
 	//	Client:                  mgr.GetClient(),
@@ -227,18 +229,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	if webhookEnabled {
-		hookServer := mgr.GetWebhookServer()
-		if err := mgr.AddReadyzCheck("webhook", hookServer.StartedChecker()); err != nil {
-			setupLog.Error(err, "unable to create ready check")
-			os.Exit(1)
-		}
-
-		if err := mgr.AddHealthzCheck("webhook", hookServer.StartedChecker()); err != nil {
-			setupLog.Error(err, "unable to create health check")
-			os.Exit(1)
-		}
-	}
+	//if webhookEnabled {
+	//	hookServer := mgr.GetWebhookServer()
+	//	if err := mgr.AddReadyzCheck("webhook", hookServer.StartedChecker()); err != nil {
+	//		setupLog.Error(err, "unable to create ready check")
+	//		os.Exit(1)
+	//	}
+	//
+	//	if err := mgr.AddHealthzCheck("webhook", hookServer.StartedChecker()); err != nil {
+	//		setupLog.Error(err, "unable to create health check")
+	//		os.Exit(1)
+	//	}
+	//}
 	setupLog.Info("Starting manager")
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
