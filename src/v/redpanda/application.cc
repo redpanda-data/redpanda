@@ -826,6 +826,8 @@ void application::configure_admin_server() {
       std::ref(_connection_cache),
       std::ref(node_status_table),
       std::ref(self_test_frontend),
+      std::ref(usage_manager),
+      _proxy.get(),
       _schema_registry.get(),
       std::ref(topic_recovery_service),
       std::ref(topic_recovery_status_frontend))
@@ -1476,6 +1478,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(quota_mgr),
         std::ref(snc_quota_mgr),
         std::ref(group_router),
+        std::ref(usage_manager),
         std::ref(shard_table),
         std::ref(partition_manager),
         std::ref(fetch_session_cache),

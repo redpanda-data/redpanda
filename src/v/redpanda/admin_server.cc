@@ -51,6 +51,7 @@
 #include "json/stringbuffer.h"
 #include "json/validator.h"
 #include "json/writer.h"
+#include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -58,6 +59,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "net/dns.h"
+#include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -124,6 +126,8 @@ admin_server::admin_server(
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<cluster::node_status_table>& node_status_table,
   ss::sharded<cluster::self_test_frontend>& self_test_frontend,
+  ss::sharded<kafka::usage_manager>& usage_manager,
+  pandaproxy::rest::api* http_proxy,
   pandaproxy::schema_registry::api* schema_registry,
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
@@ -140,6 +144,8 @@ admin_server::admin_server(
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
   , _node_status_table(node_status_table)
   , _self_test_frontend(self_test_frontend)
+  , _usage_manager(usage_manager)
+  , _http_proxy(http_proxy)
   , _schema_registry(schema_registry)
   , _topic_recovery_service(topic_recovery_svc)
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
@@ -214,6 +220,7 @@ void admin_server::configure_admin_routes() {
     register_hbadger_routes();
     register_transaction_routes();
     register_debug_routes();
+    register_usage_routes();
     register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
@@ -3437,6 +3444,8 @@ admin_server::cloud_storage_usage_handler(
           ss::httpd::reply::status_type::service_unavailable);
     }
 }
+
+void admin_server::register_usage_routes() {}
 
 void admin_server::register_debug_routes() {
     register_route<user>(
