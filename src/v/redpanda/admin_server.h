@@ -14,6 +14,7 @@
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
 #include "coproc/partition_manager.h"
+#include "kafka/server/fwd.h"
 #include "model/metadata.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
@@ -66,6 +67,7 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<cluster::node_status_table>&,
       ss::sharded<cluster::self_test_frontend>&,
+      ss::sharded<kafka::usage_manager>&,
       pandaproxy::rest::api*,
       pandaproxy::schema_registry::api*,
       ss::sharded<cloud_storage::topic_recovery_service>&,
@@ -287,6 +289,7 @@ private:
     void register_hbadger_routes();
     void register_transaction_routes();
     void register_debug_routes();
+    void register_usage_routes();
     void register_self_test_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
@@ -430,6 +433,7 @@ private:
     bool _ready{false};
     ss::sharded<cluster::node_status_table>& _node_status_table;
     ss::sharded<cluster::self_test_frontend>& _self_test_frontend;
+    ss::sharded<kafka::usage_manager>& _usage_manager;
     pandaproxy::rest::api* _http_proxy;
     pandaproxy::schema_registry::api* _schema_registry;
     ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;
