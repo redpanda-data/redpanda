@@ -157,9 +157,10 @@ class CloudRetentionTest(PreallocNodesTest):
         assert consumer.consumer_status.validator.valid_reads > \
             segment_size * num_partitions / msg_size
 
-    @skip_debug_mode
     @cluster(num_nodes=4)
-    def test_gc_entire_manifest(self):
+    @skip_debug_mode
+    @matrix(cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    def test_gc_entire_manifest(self, cloud_storage_type):
         """
         Regression test for #8945, where GCing all cloud segments could prevent
         further uploads from taking place.
@@ -178,21 +179,19 @@ class CloudRetentionTest(PreallocNodesTest):
         self.redpanda.add_extra_rp_conf(extra_rp_conf)
         self.redpanda.start()
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic(
-            topic=self.topic_name,
-            partitions=num_partitions,
-            replicas=3,
-            config={
-                "cleanup.policy": TopicSpec.CLEANUP_DELETE,
-                # Intentionally sabotage Redpanda to use lower
-                # retention than a single segment.
-                "retention.bytes": int(small_segment_size / 2),
-                "retention.local.target.bytes": 2 * small_segment_size,
-            })
+        rpk.create_topic(topic=self.topic_name,
+                         partitions=num_partitions,
+                         replicas=3,
+                         config={
+                             "cleanup.policy":
+                             TopicSpec.CLEANUP_DELETE,
+                             "retention.local.target.bytes":
+                             2 * small_segment_size,
+                         })
 
         # Write more data than we intend to retain.
         msg_size = 4 * 1024
-        msg_count = int(5 * 1024 * 1024 / msg_size)
+        msg_count = int(num_partitions * 1024 * 1024 / msg_size)
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        self.topic_name,
@@ -214,7 +213,7 @@ class CloudRetentionTest(PreallocNodesTest):
                 size = s3_snapshot.cloud_log_size_for_ntp(
                     self.topic_name, partition)
                 if size == 0:
-                    self.logger.info("Partition {} has size 0", partition)
+                    self.logger.info(f"Partition {partition} has size 0")
                     return False
 
             return True
