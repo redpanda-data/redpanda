@@ -191,6 +191,10 @@ func (r *StatefulSetResource) rollingUpdate(
 
 		adminURL.Path = "metrics"
 
+		params := url.Values{}
+		params.Add("name", "cluster_partition_under_replicated_replicas*")
+		adminURL.RawQuery = params.Encode()
+
 		if err = r.evaluateUnderReplicatedPartitions(ctx, &adminURL); err != nil {
 			return &RequeueAfterError{
 				RequeueAfter: RequeueDuration,
