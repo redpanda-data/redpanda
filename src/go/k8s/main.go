@@ -234,6 +234,7 @@ func main() {
 		Getters:                 getters,
 		Metrics:                 metricsH,
 		Storage:                 storage,
+		EventRecorder:           mgr.GetEventRecorderFor("HelmChartReconciler"),
 	}
 	if err = helmChart.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "HelmChart")
