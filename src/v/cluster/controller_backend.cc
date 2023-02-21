@@ -1714,6 +1714,12 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
     if (!partition) {
         co_return errc::partition_not_exists;
     }
+
+    // A move is already in progress, retry later.
+    if (_cross_shard_requests.contains(ntp)) {
+        co_return errc::waiting_for_reconfiguration_finish;
+    }
+
     auto gr = partition->group();
     auto init_rev = partition->get_ntp_config().get_revision();
 
