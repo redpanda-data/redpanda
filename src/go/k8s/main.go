@@ -11,6 +11,7 @@ package main
 import (
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -214,7 +215,8 @@ func main() {
 	//	os.Exit(1)
 	//}
 
-	storageAdvAddr = determineAdvStorageAddr(":9090", setupLog)
+	storageAddr := ":9090"
+	storageAdvAddr = determineAdvStorageAddr(storageAddr, setupLog)
 	storage := mustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, setupLog)
 
 	metricsH := helper.MustMakeMetrics(mgr)
@@ -265,6 +267,15 @@ func main() {
 	if err = helmRepository.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "HelmRepository")
 	}
+
+	go func() {
+		// Block until our controller manager is elected leader. We presume our
+		// entire process will terminate if we lose leadership, so we don't need
+		// to handle that.
+		<-mgr.Elected()
+
+		startFileServer(storage.BasePath, storageAddr, setupLog)
+	}()
 
 	// if err = (&redpandacontrollers.RedpandaReconciler{
 	// 	Client: mgr.GetClient(),
@@ -374,4 +385,15 @@ func determineAdvStorageAddr(storageAddr string, l logr.Logger) string {
 		}
 	}
 	return net.JoinHostPort(host, port)
+}
+
+func startFileServer(path string, address string, l logr.Logger) {
+	l.Info("starting file server")
+	fs := http.FileServer(http.Dir(path))
+	mux := http.NewServeMux()
+	mux.Handle("/", fs)
+	err := http.ListenAndServe(address, mux)
+	if err != nil {
+		l.Error(err, "file server error")
+	}
 }
