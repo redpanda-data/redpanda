@@ -12,6 +12,8 @@
 #include "serde/serde.h"
 #include "utils/fragmented_vector.h"
 
+#include <boost/test/data/monomorphic.hpp>
+#include <boost/test/data/test_case.hpp>
 #include <boost/test/unit_test.hpp>
 
 #include <initializer_list>
@@ -33,16 +35,17 @@ struct fragmented_vector_accessor {
         BOOST_REQUIRE(v._size <= v._capacity);
         BOOST_REQUIRE(v.size() < std::numeric_limits<size_t>::max() / 2);
         BOOST_REQUIRE(v._capacity < std::numeric_limits<size_t>::max() / 2);
+        BOOST_REQUIRE(v._root_end <= v._frags.size());
 
         size_t calc_size = 0, calc_cap = 0;
 
-        for (size_t i = 0; i < v._frags.size(); ++i) {
+        for (size_t i = 0; i < v._root_end; ++i) {
             auto& f = v._frags[i];
 
             calc_size += f.size();
             calc_cap += f.capacity();
 
-            if (i + 1 < v._frags.size()) {
+            if (i + 1 < v._root_end) {
                 if (f.size() < v.elems_per_frag) {
                     throw std::runtime_error(fmt::format(
                       "fragment {} is undersized ({} < {})",
@@ -63,6 +66,13 @@ struct fragmented_vector_accessor {
               "calculated capacity is wrong ({} != {})",
               calc_size,
               v._capacity));
+        }
+
+        for (auto i = v._root_end; i < v._frags.size(); ++i) {
+            if (!v._frags[i].empty()) {
+                throw std::runtime_error(
+                  fmt::format("unused fragments are not empty @frag={}", i));
+            }
         }
     }
 };
@@ -103,9 +113,17 @@ test_equal(std::vector<T>& truth, fragmented_vector<T, 1024>& other) {
     BOOST_REQUIRE_EQUAL(truth.back(), other.back());
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_test) {
+BOOST_DATA_TEST_CASE(
+  fragmented_vector_test,
+  boost::unit_test::data::make({-1, 0, 2500}),
+  reserve_mem) {
     std::vector<int64_t> truth;
-    fragmented_vector<int64_t, 1024> other;
+    auto other = [&]() -> fragmented_vector<int64_t, 1024> {
+        if (reserve_mem < 0) {
+            return {};
+        }
+        return {fragmented_vector_reserve, size_t(reserve_mem)};
+    }();
 
     for (int64_t i = 0; i < 2500; i++) {
         truth.push_back(i);
@@ -281,7 +299,10 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_sort) {
     BOOST_CHECK_EQUAL(v, expected);
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_vector_clear) {
+BOOST_DATA_TEST_CASE(
+  fragmented_vector_vector_clear,
+  boost::unit_test::data::make({false, true}),
+  release_mem) {
     auto v = make<int, 8>({});
 
     BOOST_CHECK_EQUAL(v->size(), 0);
@@ -292,7 +313,7 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_vector_clear) {
     v->push_back(1);
     BOOST_CHECK_EQUAL(v->size(), 2);
 
-    v->clear();
+    v->clear(release_mem);
     BOOST_CHECK_EQUAL(v->size(), 0);
 
     v = make<int, 8>({5, 5, 5, 5});
@@ -302,16 +323,27 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_vector_clear) {
     BOOST_CHECK_EQUAL(v->size(), 3);
 }
 
-BOOST_AUTO_TEST_CASE(fragmented_vector_vector_assign) {
+BOOST_DATA_TEST_CASE(
+  fragmented_vector_vector_assign,
+  boost::unit_test::data::make({false, true}),
+  use_assign) {
     std::vector vin0{1, 2, 3};
     std::vector vin1{4, 5};
 
     checker<int, 8> v;
     BOOST_CHECK_EQUAL(v, (make({})));
 
-    v.get() = std::vector{1};
+    if (use_assign) {
+        v.get() = std::vector{1};
+    } else {
+        v.get().copy_from(std::vector{1});
+    }
     BOOST_CHECK_EQUAL(v, (make({1})));
 
-    v.get() = std::vector{2, 3, 4};
+    if (use_assign) {
+        v.get() = std::vector{2, 3, 4};
+    } else {
+        v.get().copy_from(std::vector{2, 3, 4});
+    }
     BOOST_CHECK_EQUAL(v, (make({2, 3, 4})));
 }

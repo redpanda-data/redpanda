@@ -22,6 +22,9 @@ namespace test_details {
 struct fragmented_vector_accessor;
 }
 
+struct fragmented_vector_reserve_t {};
+constexpr auto fragmented_vector_reserve = fragmented_vector_reserve_t{};
+
 /**
  * A very very simple fragmented vector that provides random access like a
  * vector, but does not store its data in contiguous memory.
@@ -63,6 +66,14 @@ class fragmented_vector {
       "element count per fragment must be a power of 2");
     static_assert(elems_per_frag >= 1);
 
+    static constexpr size_t fragments_for_total_size(size_t num_elements) {
+        return (num_elements + elems_per_frag - 1) / elems_per_frag;
+    }
+
+    constexpr bool root_is_at_capacity() const {
+        return _root_end == _frags.size();
+    }
+
 public:
     using this_type = fragmented_vector<T, max_fragment_size>;
     using value_type = T;
@@ -82,25 +93,37 @@ public:
     fragmented_vector& operator=(fragmented_vector&&) noexcept = default;
     ~fragmented_vector() noexcept = default;
 
+    fragmented_vector(fragmented_vector_reserve_t, size_t reserve_size)
+      : _frags{fragments_for_total_size(reserve_size)} {
+        for (auto& f : _frags) {
+            auto to_reserve = std::min(reserve_size, elems_per_frag);
+            f.reserve(to_reserve);
+            reserve_size -= to_reserve;
+        }
+    }
+
     fragmented_vector copy() const noexcept { return *this; }
 
     void push_back(T elem) {
         if (_size == _capacity) {
-            std::vector<T> frag;
-            frag.reserve(elems_per_frag);
-            _frags.push_back(std::move(frag));
+            if (root_is_at_capacity()) {
+                std::vector<T> frag;
+                frag.reserve(elems_per_frag);
+                _frags.push_back(std::move(frag));
+            }
+            ++_root_end;
             _capacity += elems_per_frag;
         }
-        _frags.back().push_back(elem);
+        _frags[_root_end - 1].push_back(elem);
         ++_size;
     }
 
     void pop_back() {
         vassert(_size > 0, "Cannot pop from empty container");
-        _frags.back().pop_back();
+        _frags[_root_end - 1].pop_back();
         --_size;
-        if (_frags.back().empty()) {
-            _frags.pop_back();
+        if (_frags[_root_end - 1].empty()) {
+            --_root_end;
             _capacity -= elems_per_frag;
         }
     }
@@ -115,13 +138,15 @@ public:
         return const_cast<T&>(std::as_const(*this)[index]);
     }
 
-    const T& back() const { return _frags.back().back(); }
+    const T& back() const { return _frags[_root_end - 1].back(); }
     bool empty() const noexcept { return _size == 0; }
     size_t size() const noexcept { return _size; }
 
     void shrink_to_fit() {
         if (!_frags.empty()) {
-            _frags.back().shrink_to_fit();
+            _frags.resize(_root_end);
+            _frags.shrink_to_fit();
+            _frags[_root_end - 1].shrink_to_fit();
         }
     }
 
@@ -139,7 +164,7 @@ public:
     /**
      * Returns the (maximum) number of elements in each fragment of this vector.
      */
-    static size_t elements_per_fragment() { return elems_per_frag; }
+    constexpr static size_t elements_per_fragment() { return elems_per_frag; }
 
     /**
      * Assign from a std::vector.
@@ -154,6 +179,13 @@ public:
         return *this;
     }
 
+    fragmented_vector& copy_from(const std::vector<T>& src) {
+        clear(false);
+        for (auto& e : src) {
+            push_back(e);
+        }
+        return *this;
+    }
     /**
      * Remove all elements from the vector.
      *
@@ -162,11 +194,18 @@ public:
      * and iterator stability guarantees that std::vector provides
      * based on non-reallocation and capacity()).
      */
-    void clear() {
-        // do the swap dance to actually clear the memory held by the vector
-        std::vector<std::vector<T>>{}.swap(_frags);
+    void clear(bool release_mem = true) {
+        if (release_mem) {
+            // do the swap dance to actually clear the memory held by the vector
+            std::vector<std::vector<T>>{}.swap(_frags);
+        } else {
+            for (auto& f : _frags) {
+                f.clear();
+            }
+        }
         _size = 0;
         _capacity = 0;
+        _root_end = 0;
     }
 
     template<bool C>
@@ -265,6 +304,7 @@ private:
 
     size_t _size{0};
     size_t _capacity{0};
+    size_t _root_end{0};
     std::vector<std::vector<T>> _frags;
 };
 
