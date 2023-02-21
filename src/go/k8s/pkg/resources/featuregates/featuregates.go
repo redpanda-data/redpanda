@@ -23,6 +23,7 @@ var (
 	V22_1   = mustSemVer("v22.1.0")
 	V22_2_1 = mustSemVer("v22.2.1")
 	V22_3   = mustSemVer("v22.3.0")
+	V23_2   = mustSemVer("v23.2.0")
 )
 
 // ShadowIndex feature gate should be removed in 3 version starting
@@ -30,6 +31,12 @@ var (
 // TODO in future remove this if statement GH-2631
 func ShadowIndex(version string) bool {
 	return atLeastVersion(V21_11, version)
+}
+
+// MetricsQueryParamName feature gate changes the metrics `name` query param
+// Feature gate should be removed when v23.1 is deprecated.
+func MetricsQueryParamName(version string) bool {
+	return atLeastVersion(V23_2, version)
 }
 
 // CentralizedConfiguration feature gate should be removed when the operator
