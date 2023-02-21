@@ -60,6 +60,7 @@ func main() {
 		configuratorTag             string
 		configuratorImagePullPolicy string
 		decommissionWaitInterval    time.Duration
+		metricsTimeout              time.Duration
 		restrictToRedpandaVersion   string
 
 		// allowPVCDeletion controls the PVC deletion feature in the Cluster custom resource.
@@ -80,6 +81,7 @@ func main() {
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
 	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
 	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
+	flag.DurationVar(&metricsTimeout, "metrics-timeout", 8*time.Second, "Set the timeout for a checking metrics Admin API endpoint. If set to 0, then the 2 seconds default will be used")
 	flag.BoolVar(&redpandav1alpha1.AllowDownscalingInWebhook, "allow-downscaling", false, "Allow to reduce the number of replicas in existing clusters (alpha feature)")
 	flag.BoolVar(&allowPVCDeletion, "allow-pvc-deletion", false, "Allow the operator to delete PVCs for Pods assigned to failed or missing Nodes (alpha feature)")
 	flag.BoolVar(&redpandav1alpha1.AllowConsoleAnyNamespace, "allow-console-any-ns", false, "Allow to create Console in any namespace. Allowing this copies Redpanda SchemaRegistry TLS Secret to namespace (alpha feature)")
@@ -121,6 +123,7 @@ func main() {
 		Scheme:                    mgr.GetScheme(),
 		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
 		DecommissionWaitInterval:  decommissionWaitInterval,
+		MetricsTimeout:            metricsTimeout,
 		RestrictToRedpandaVersion: restrictToRedpandaVersion,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
