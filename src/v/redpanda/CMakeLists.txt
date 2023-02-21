@@ -11,6 +11,7 @@ set(swags
   transaction
   cluster
   debug
+  usage
   shadow_indexing
   redpanda_services_restart)
 
