@@ -192,7 +192,7 @@ class CloudRetentionTest(PreallocNodesTest):
 
         # Write more data than we intend to retain.
         msg_size = 4 * 1024
-        msg_count = int(5 * 1024 * 1024 / msg_size)
+        msg_count = int(num_partitions * 1024 * 1024 / msg_size)
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
                                        self.topic_name,
