@@ -59,6 +59,9 @@ error_outcome handle_client_transport_error(
               "Server disconnected: '{}', retrying HTTP request",
               err.what());
         }
+    } catch (const ss::gate_closed_exception&) {
+        vlog(logger.debug, "Gate closed");
+        throw;
     } catch (const ss::abort_requested_exception&) {
         vlog(logger.debug, "Abort requested");
         throw;
