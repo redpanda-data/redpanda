@@ -64,7 +64,13 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                     # gate_closed etc errors to our allow list.
                     # TODO: extend this to cover shutdown logging too, and
                     # clean up redpanda to not log so many errors on shutdown.
-                    self.redpanda.raise_on_bad_logs(allow_list=log_allow_list)
+                    try:
+                        self.redpanda.raise_on_bad_logs(
+                            allow_list=log_allow_list)
+                    except:
+                        self.redpanda.cloud_storage_diagnostics()
+                        raise
+
                 self.redpanda.trim_logs()
                 return r
 

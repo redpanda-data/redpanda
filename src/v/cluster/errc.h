@@ -91,8 +91,7 @@ struct errc_category final : public std::error_category {
         case errc::topic_already_exists:
             return "The topic has already been created";
         case errc::replication_error:
-            return "Controller was unable to replicate given state across "
-                   "cluster nodes";
+            return "Unable to replicate given state across cluster nodes";
         case errc::shutting_down:
             return "Application is shutting down";
         case errc::no_leader_controller:
