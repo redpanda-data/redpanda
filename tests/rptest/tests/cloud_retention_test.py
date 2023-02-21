@@ -178,17 +178,15 @@ class CloudRetentionTest(PreallocNodesTest):
         self.redpanda.add_extra_rp_conf(extra_rp_conf)
         self.redpanda.start()
         rpk = RpkTool(self.redpanda)
-        rpk.create_topic(
-            topic=self.topic_name,
-            partitions=num_partitions,
-            replicas=3,
-            config={
-                "cleanup.policy": TopicSpec.CLEANUP_DELETE,
-                # Intentionally sabotage Redpanda to use lower
-                # retention than a single segment.
-                "retention.bytes": int(small_segment_size / 2),
-                "retention.local.target.bytes": 2 * small_segment_size,
-            })
+        rpk.create_topic(topic=self.topic_name,
+                         partitions=num_partitions,
+                         replicas=3,
+                         config={
+                             "cleanup.policy":
+                             TopicSpec.CLEANUP_DELETE,
+                             "retention.local.target.bytes":
+                             2 * small_segment_size,
+                         })
 
         # Write more data than we intend to retain.
         msg_size = 4 * 1024
