@@ -136,8 +136,8 @@ public:
       model::offset lo,
       model::offset lco,
       model::offset insync,
-      const std::vector<segment_t>& segments,
-      const std::vector<segment_t>& replaced)
+      const fragmented_vector<segment_t>& segments,
+      const fragmented_vector<segment_t>& replaced)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))

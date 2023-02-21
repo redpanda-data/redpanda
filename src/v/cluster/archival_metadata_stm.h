@@ -179,10 +179,10 @@ private:
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
 
-    static std::vector<segment>
+    static fragmented_vector<segment>
     segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
-    static std::vector<segment> replaced_segments_from_manifest(
+    static fragmented_vector<segment> replaced_segments_from_manifest(
       const cloud_storage::partition_manifest& manifest);
 
     void apply_add_segment(const segment& segment);
