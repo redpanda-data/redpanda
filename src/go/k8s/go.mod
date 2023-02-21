@@ -9,6 +9,7 @@ require (
 	github.com/cloudhut/common v0.7.0
 	github.com/fluxcd/helm-controller v0.30.0
 	github.com/fluxcd/helm-controller/api v0.30.0
+	github.com/fluxcd/pkg/runtime v0.29.0
 	github.com/fluxcd/source-controller v0.35.1
 	github.com/fluxcd/source-controller/api v0.35.1
 	github.com/go-logr/logr v1.2.3
@@ -28,6 +29,7 @@ require (
 	github.com/twmb/franz-go/pkg/kadm v1.7.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
+	helm.sh/helm/v3 v3.11.1
 	k8s.io/api v0.26.1
 	k8s.io/apimachinery v0.26.1
 	k8s.io/client-go v0.26.1
@@ -144,7 +146,6 @@ require (
 	github.com/fluxcd/pkg/lockedfile v0.1.0 // indirect
 	github.com/fluxcd/pkg/masktoken v0.2.0 // indirect
 	github.com/fluxcd/pkg/oci v0.19.1 // indirect
-	github.com/fluxcd/pkg/runtime v0.29.0 // indirect
 	github.com/fluxcd/pkg/sourceignore v0.3.1 // indirect
 	github.com/fluxcd/pkg/ssh v0.7.1 // indirect
 	github.com/fluxcd/pkg/untar v0.2.0 // indirect
@@ -369,7 +370,6 @@ require (
 	gopkg.in/square/go-jose.v2 v2.6.0 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	helm.sh/helm/v3 v3.11.1 // indirect
 	k8s.io/apiextensions-apiserver v0.26.1 // indirect
 	k8s.io/apiserver v0.26.1 // indirect
 	k8s.io/cli-runtime v0.26.1 // indirect
