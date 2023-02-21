@@ -10,20 +10,23 @@ package main
 
 import (
 	"flag"
-	helper "github.com/fluxcd/pkg/runtime/controller"
-	"helm.sh/helm/v3/pkg/getter"
-	"helm.sh/helm/v3/pkg/registry"
 	"io"
-	"k8s.io/apimachinery/pkg/util/errors"
 	"os"
+	"path/filepath"
 	"time"
 
 	helmControllerAPIV2 "github.com/fluxcd/helm-controller/api/v2beta1"
 	helmControllerV2 "github.com/fluxcd/helm-controller/controllers"
+	helper "github.com/fluxcd/pkg/runtime/controller"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
+	"github.com/fluxcd/source-controller/controllers"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
+	"github.com/go-logr/logr"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
+	"helm.sh/helm/v3/pkg/getter"
+	"helm.sh/helm/v3/pkg/registry"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -201,6 +204,8 @@ func main() {
 	//	os.Exit(1)
 	//}
 
+	storage := mustInitStorage("", "", 60*time.Second, 2, setupLog)
+
 	metricsH := helper.MustMakeMetrics(mgr)
 
 	// TODO fill this in with options
@@ -228,6 +233,7 @@ func main() {
 		RegistryClientGenerator: clientGenerator,
 		Getters:                 getters,
 		Metrics:                 metricsH,
+		Storage:                 storage,
 	}
 	if err = helmChart.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "HelmChart")
@@ -240,6 +246,7 @@ func main() {
 		ControllerName: "redpanda-controller",
 		TTL:            15 * time.Minute,
 		Metrics:        metricsH,
+		Storage:        storage,
 	}
 	if err = helmRepository.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "HelmRepository")
@@ -314,4 +321,20 @@ func clientGenerator(isLogin bool) (*registry.Client, string, error) {
 		return nil, "", err
 	}
 	return rClient, "", nil
+}
+
+func mustInitStorage(path string, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) *controllers.Storage {
+	if path == "" {
+		p, _ := os.Getwd()
+		path = filepath.Join(p, "bin")
+		os.MkdirAll(path, 0o700)
+	}
+
+	storage, err := controllers.NewStorage(path, storageAdvAddr, artifactRetentionTTL, artifactRetentionRecords)
+	if err != nil {
+		l.Error(err, "unable to initialise storage")
+		os.Exit(1)
+	}
+
+	return storage
 }
