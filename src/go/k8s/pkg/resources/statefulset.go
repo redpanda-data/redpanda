@@ -103,6 +103,7 @@ type StatefulSetResource struct {
 	adminAPIClientFactory    adminutils.AdminAPIClientFactory
 	decommissionWaitInterval time.Duration
 	logger                   logr.Logger
+	metricsTimeout           time.Duration
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -123,8 +124,9 @@ func NewStatefulSet(
 	adminAPIClientFactory adminutils.AdminAPIClientFactory,
 	decommissionWaitInterval time.Duration,
 	logger logr.Logger,
+	metricsTimeout time.Duration,
 ) *StatefulSetResource {
-	return &StatefulSetResource{
+	ssr := &StatefulSetResource{
 		client,
 		scheme,
 		pandaCluster,
@@ -140,8 +142,13 @@ func NewStatefulSet(
 		adminAPIClientFactory,
 		decommissionWaitInterval,
 		logger.WithValues("Kind", statefulSetKind()),
+		defaultAdminAPITimeout,
 		nil,
 	}
+	if metricsTimeout != 0 {
+		ssr.metricsTimeout = metricsTimeout
+	}
+	return ssr
 }
 
 // Ensure will manage kubernetes v1.StatefulSet for redpanda.vectorized.io custom resource
