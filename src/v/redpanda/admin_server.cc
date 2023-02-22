@@ -1872,6 +1872,8 @@ void admin_server::register_features_routes() {
 
           res.cluster_version = version;
           res.original_cluster_version = ft.get_original_version();
+          res.node_earliest_version = ft.get_earliest_logical_version();
+          res.node_latest_version = ft.get_latest_logical_version();
           for (const auto& fs : ft.get_feature_state()) {
               ss::httpd::features_json::feature_state item;
               vlog(

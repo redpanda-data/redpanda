@@ -116,11 +116,19 @@
             "properties": {
                 "cluster_version": {
                     "type": "long",
-                    "description": "Logical version of cluster"
+                    "description": "Logical version of cluster: this should equal latest_node_version if the cluster is not currently being upgraded."
                 },
                 "original_cluster_version": {
                     "type": "long",
-                    "description": "Logical version at time of cluster creation"
+                    "description": "Logical version at time of cluster creation.  This should equal latest_node_version on a newly created cluster."
+                },
+                "node_earliest_version": {
+                    "type": "long",
+                    "description": "Earliest logical version supported by the node answering this request"
+                },
+                "node_latest_version": {
+                    "type": "long",
+                    "description": "Latest logical version supported by the node answering this request"
                 },
                 "features": {
                     "type": "array",
