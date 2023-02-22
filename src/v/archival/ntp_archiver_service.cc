@@ -546,11 +546,17 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         }
         auto errc = co_await builder.replicate();
         if (errc) {
+            if (errc == raft::errc::shutting_down) {
+                // During shutdown, act like we hit an abort source rather
+                // than trying to log+handle this like a write error.
+                throw ss::abort_requested_exception();
+            }
+
             vlog(
               _rtclog.error,
               "Can't replicate archival_metadata_stm configuration batch: "
               "{}",
-              errc);
+              errc.message());
             co_return cloud_storage::download_result::failed;
         }
     }
