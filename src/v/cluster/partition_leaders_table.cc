@@ -122,6 +122,10 @@ void partition_leaders_table::update_partition_leader(
         && !_topic_table.local().contains(model::topic_namespace_view(ntp));
 
     if (topic_removed && !is_controller) {
+        vlog(
+          clusterlog.trace,
+          "can't update leadership of the removed topic {}",
+          ntp);
         return;
     }
 
@@ -144,6 +148,13 @@ void partition_leaders_table::update_partition_leader(
         const bool revision_id_valid = revision_id >= model::revision_id{0};
         // skip update for partition with previous revision
         if (revision_id_valid && revision_id < it->second.partition_revision) {
+            vlog(
+              clusterlog.trace,
+              "skip update for partition {} with previous revision {} current "
+              "revision {}",
+              ntp,
+              revision_id,
+              it->second.partition_revision);
             return;
         }
         // reset the term for new ntp revision
@@ -153,6 +164,13 @@ void partition_leaders_table::update_partition_leader(
 
         // existing partition
         if (it->second.update_term > term) {
+            vlog(
+              clusterlog.trace,
+              "skip update for partition {} with previous term {} current term "
+              "{}",
+              ntp,
+              term,
+              it->second.update_term);
             // Do nothing if update term is older
             return;
         }
@@ -223,6 +241,27 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
 
           return leader;
       });
+}
+
+void partition_leaders_table::remove_leader(
+  const model::ntp& ntp, model::revision_id revision) {
+    auto it = _leaders.find(
+      leader_key_view{model::topic_namespace_view(ntp), ntp.tp.partition});
+    // ignore updates with old revision
+    if (it != _leaders.end() && it->second.partition_revision <= revision) {
+        vlog(
+          clusterlog.trace,
+          "removing {} with revision {} matched by revision {}",
+          ntp,
+          it->second.partition_revision,
+          revision);
+        _leaders.erase(it);
+    }
+}
+
+void partition_leaders_table::reset() {
+    vlog(clusterlog.trace, "resetting leaders");
+    _leaders.clear();
 }
 
 partition_leaders_table::leaders_info_t

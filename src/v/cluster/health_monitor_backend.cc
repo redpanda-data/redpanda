@@ -446,6 +446,7 @@ health_monitor_backend::maybe_refresh_cluster_health(
     // if current node is not the controller leader and we need a refresh we
     // refresh metadata cache
     if (need_refresh) {
+        vlog(clusterlog.trace, "refreshing cluster health");
         try {
             auto f = refresh_cluster_health_cache(refresh);
             auto err = co_await ss::with_timeout(deadline, std::move(f));
