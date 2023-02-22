@@ -1351,10 +1351,6 @@ topics_frontend::generate_reassignments(
         co_return errc::topic_not_exists;
     }
 
-    if (!tp_metadata.value().get().is_topic_replicable()) {
-        co_return errc::topic_operation_error;
-    }
-
     auto tp_replication_factor
       = tp_metadata.value().get().get_replication_factor();
 
