@@ -16,6 +16,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
+from rptest.util import expect_exception
 
 from ducktape.errors import TimeoutError as DucktapeTimeoutError
 from ducktape.utils.util import wait_until
@@ -498,3 +499,35 @@ class FeaturesNodeJoinTest(FeaturesTestBase):
         # active version.
         self._test_synthetic_versions(self.head_latest_logical_version + 1,
                                       self.head_latest_logical_version + 2)
+
+
+class FeaturesUpgradeAssertionTest(FeaturesTestBase):
+    @cluster(num_nodes=3,
+             log_allow_list="Attempted to upgrade from incompatible version")
+    def test_upgrade_assertion(self):
+        """
+        That if we try to upgrade to a version whose earliest_logical_version is ahead
+        of the pre-upgrade version, Redpanda refuses to start.
+        :return:
+        """
+
+        upgrade_node = self.redpanda.nodes[-1]
+        self.redpanda.stop_node(upgrade_node)
+
+        self.redpanda.set_environment({
+            "__REDPANDA_LATEST_LOGICAL_VERSION":
+            self.head_latest_logical_version + 2
+        })
+        self.redpanda.set_environment({
+            "__REDPANDA_EARLIEST_LOGICAL_VERSION":
+            self.head_latest_logical_version + 1
+        })
+
+        # Startup should fail with an incompatible version
+        with expect_exception(DucktapeTimeoutError, lambda _: True):
+            self.redpanda.start_node(upgrade_node)
+
+        # With the config set to override checks, start should succeed
+        self.redpanda.start_node(
+            upgrade_node,
+            override_cfg_params={'upgrade_override_checks': True})
