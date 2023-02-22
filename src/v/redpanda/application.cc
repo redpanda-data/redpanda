@@ -1166,7 +1166,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(controller->get_members_table()),
       std::ref(controller->get_topics_state()),
       std::ref(_connection_cache),
-      std::ref(controller->get_health_monitor()))
+      std::ref(controller->get_health_monitor()),
+      std::ref(feature_table))
       .get();
 
     if (archival_storage_enabled()) {

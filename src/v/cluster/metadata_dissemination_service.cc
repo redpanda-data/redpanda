@@ -53,7 +53,8 @@ metadata_dissemination_service::metadata_dissemination_service(
   ss::sharded<members_table>& members,
   ss::sharded<topic_table>& topics,
   ss::sharded<rpc::connection_cache>& clients,
-  ss::sharded<health_monitor_frontend>& health_monitor)
+  ss::sharded<health_monitor_frontend>& health_monitor,
+  ss::sharded<features::feature_table>& feature_table)
   : _raft_manager(raft_manager)
   , _partition_manager(partition_manager)
   , _leaders(leaders)
@@ -61,6 +62,7 @@ metadata_dissemination_service::metadata_dissemination_service(
   , _topics(topics)
   , _clients(clients)
   , _health_monitor(health_monitor)
+  , _feature_table(feature_table)
   , _self(make_self_broker(config::node()))
   , _dissemination_interval(
       config::shard_local_cfg().metadata_dissemination_interval_ms)
