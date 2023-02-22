@@ -139,7 +139,7 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
         self.redpanda.set_environment({
             '__REDPANDA_TEST_FEATURES':
             "ON",
-            '__REDPANDA_LOGICAL_VERSION':
+            '__REDPANDA_LATEST_LOGICAL_VERSION':
             f'{feature_alpha_version}'
         })
         self.redpanda.restart_nodes(self.redpanda.nodes)

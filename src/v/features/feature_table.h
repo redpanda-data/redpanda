@@ -333,6 +333,8 @@ public:
 
     static cluster::cluster_version get_latest_logical_version();
 
+    static cluster::cluster_version get_earliest_logical_version();
+
     feature_table();
 
     feature_state& get_state(feature f_id);
