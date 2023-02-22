@@ -2183,6 +2183,11 @@ class RedpandaService(Service):
                     self._extra_rp_conf))
             conf.update(self._extra_rp_conf)
 
+        if cur_ver != RedpandaInstaller.HEAD and cur_ver < (22, 2, 1):
+            # this configuration property was introduced in 22.2.1, ensure
+            # it doesn't appear in older configurations
+            conf.pop('cloud_storage_credentials_source', None)
+
         if self._security.enable_sasl:
             self.logger.debug("Enabling SASL in cluster configuration")
             conf.update(dict(enable_sasl=True))
