@@ -286,14 +286,6 @@ metadata_dissemination_service::dispatch_get_metadata_update(
 void metadata_dissemination_service::collect_pending_updates() {
     auto brokers = _members_table.local().node_ids();
     for (auto& ntp_leader : _requests) {
-        auto assignment = _topics.local().get_partition_assignment(
-          ntp_leader.ntp);
-
-        if (!assignment) {
-            // Partition was removed, skip dissemination
-            continue;
-        }
-
         for (auto& id : brokers) {
             if (id == _self.id()) {
                 continue;
