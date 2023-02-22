@@ -22,6 +22,7 @@
 #include "serde/serde.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 #include "vlog.h"
 
@@ -68,14 +69,13 @@ struct archival_metadata_stm::truncate_cmd {
 struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<0>, serde::compat_version<0>> {
-    std::vector<segment> segments;
+    fragmented_vector<segment> segments;
 };
 
-std::vector<archival_metadata_stm::segment>
+fragmented_vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
-    std::vector<segment> segments;
-    segments.reserve(manifest.size());
+    fragmented_vector<segment> segments;
     for (auto [key, meta] : manifest) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
