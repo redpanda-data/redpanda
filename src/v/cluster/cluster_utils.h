@@ -177,26 +177,28 @@ auto do_with_client_one_shot(
   rpc::transport_version v,
   Func&& f) {
     return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
-      .then(
-        [v, f = std::forward<Func>(f), connection_timeout, addr = std::move(addr)](
-          ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
-            auto transport = ss::make_lw_shared<rpc::transport>(
-              rpc::transport_configuration{
-                .server_addr = std::move(addr),
-                .credentials = std::move(cert),
-                .disable_metrics = net::metrics_disabled(true),
-                .version = v});
+      .then([v,
+             f = std::forward<Func>(f),
+             connection_timeout,
+             addr = std::move(addr)](
+              ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
+          auto transport = ss::make_lw_shared<rpc::transport>(
+            rpc::transport_configuration{
+              .server_addr = std::move(addr),
+              .credentials = std::move(cert),
+              .disable_metrics = net::metrics_disabled(true),
+              .version = v});
 
-            return transport->connect(connection_timeout)
-              .then([transport, f = std::forward<Func>(f)]() mutable {
-                  return ss::futurize_invoke(
-                    std::forward<Func>(f), Proto(*transport));
-              })
-              .finally([transport] {
-                  transport->shutdown();
-                  return transport->stop().finally([transport] {});
-              });
-        });
+          return transport->connect(connection_timeout)
+            .then([transport, f = std::forward<Func>(f)]() mutable {
+                return ss::futurize_invoke(
+                  std::forward<Func>(f), Proto(*transport));
+            })
+            .finally([transport] {
+                transport->shutdown();
+                return transport->stop().finally([transport] {});
+            });
+      });
 }
 
 /**
