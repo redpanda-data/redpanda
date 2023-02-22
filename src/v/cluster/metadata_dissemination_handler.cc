@@ -71,6 +71,7 @@ metadata_dissemination_handler::update_leadership_v2(
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
   std::vector<ntp_leader_revision> leaders) {
+    vlog(clusterlog.trace, "Received a metadata update");
     return _leaders
       .invoke_on_all(
         [leaders = std::move(leaders)](partition_leaders_table& pl) mutable {
