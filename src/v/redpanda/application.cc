@@ -1649,7 +1649,8 @@ void application::start_bootstrap_services() {
         feature_table
           .invoke_on_all([](features::feature_table& ft) {
               ft.bootstrap_active_version(
-                features::feature_table::get_earliest_logical_version());
+                features::feature_table::get_earliest_logical_version(),
+                features::feature_table::version_durability::ephemeral);
 
               // We do _not_ write a snapshot here: the persistent record of
               // feature table state is only set for the first time in

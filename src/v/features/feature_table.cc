@@ -232,10 +232,13 @@ void feature_state::notify_version(cluster_version v) {
     }
 }
 
-void feature_table::set_active_version(cluster_version v) {
+void feature_table::set_active_version(
+  cluster_version v, feature_table::version_durability durability) {
     _active_version = v;
 
-    if (_original_version == invalid_version) {
+    if (
+      durability == version_durability::durable
+      && _original_version == invalid_version) {
         // Rely on controller log replay to call us first with
         // the first version the cluster ever agreed upon.
         _original_version = v;
@@ -260,12 +263,14 @@ void feature_table::set_active_version(cluster_version v) {
  * see the bootstrap message's cluster version in the controller log.  That
  * is what this function does, as well as calling through to set_active_version.
  */
-void feature_table::bootstrap_active_version(cluster_version v) {
+void feature_table::bootstrap_active_version(
+  cluster_version v, feature_table::version_durability durability) {
     if (ss::this_shard_id() == ss::shard_id{0}) {
         vlog(
           featureslog.info, "Activating features from bootstrap version {}", v);
     }
-    set_active_version(v);
+
+    set_active_version(v, durability);
 
     for (auto& fs : _feature_state) {
         if (

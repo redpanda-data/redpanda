@@ -359,10 +359,25 @@ public:
 
     model::offset get_applied_offset() const { return _applied_offset; }
 
-    // application and bootstrap_backend may use this to fast-forward a
-    // feature table to the desired version synchronously, early in the
-    // lifetime of a node.
-    void bootstrap_active_version(cluster::cluster_version);
+    enum class version_durability : uint8_t {
+        // An ephemeral update, such as generated on first startup: this updates
+        // our active version but does not influence original_version
+        ephemeral = 0,
+
+        // A durable update, originating from a message in the controller log.
+        durable = 1,
+    };
+
+    /** application and bootstrap_backend may use this to fast-forward a
+     * feature table to the desired version synchronously, early in the
+     * lifetime of a node.
+     * @param ephemeral if true, this is a node-local in-memory fast-forward of
+     * the feature table on initial node start.  Do not initialize original
+     * version, that will come later when we get a true cluster version set.
+     */
+    void bootstrap_active_version(
+      cluster::cluster_version,
+      version_durability durability = version_durability::durable);
 
     // During upgrades from Redpanda <= 22.3 where the feature table snapshot
     // does not contain original_version, we infer it from a bootstrap event.
@@ -421,7 +436,9 @@ public:
 
 private:
     // Only for use by our friends feature backend & manager
-    void set_active_version(cluster::cluster_version);
+    void set_active_version(
+      cluster::cluster_version,
+      version_durability d = version_durability::durable);
     void apply_action(const cluster::feature_update_action& fua);
 
     // The controller log offset of last batch applied to this state machine
