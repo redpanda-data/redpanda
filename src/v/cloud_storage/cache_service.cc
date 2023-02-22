@@ -134,9 +134,11 @@ void cache::consume_cache_space(size_t sz) {
         // an ERROR log ensures detection if we hit this path in our integration
         // tests.
         vlog(
-          cst_log.error,
-          "Exceeded cache size limit!  {}/{}",
+          cst_log.warn,
+          "Exceeded cache size limit!  (size={} reserved={} pending={} max={})",
           _current_cache_size,
+          _reserved_cache_size,
+          _reservations_pending,
           _max_bytes());
     }
 }
@@ -765,7 +767,7 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
 
     try {
         auto units = co_await ss::get_units(_cleanup_sm, 1);
-        if (!may_reserve_space(bytes)) {
+        while (!may_reserve_space(bytes)) {
             // After taking lock, there still isn't space: means someone else
             // didn't take it and free space for us already, so we will do
             // the trim.
@@ -778,13 +780,6 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
                 // In this case, we log a warning and exceed the configured
                 // cache size limit, because the alternative would be to
                 // stall entirely.
-
-                // TODO: When we add fine-grained anti-thrashing, clean_up_cache
-                // may selectively refuse to remove segments that were promoted
-                // recently: when that happens, it becomes expected that we
-                // hit this path sometimes, and we should handle it by waiting
-                // a while then trying to trim again.
-
                 vlog(
                   cst_log.warn,
                   "Failed to trim cache enough to reserve {} bytes (size={} "
@@ -793,6 +788,38 @@ ss::future<> cache::do_reserve_space(size_t bytes) {
                   _current_cache_size,
                   _reserved_cache_size,
                   _reservations_pending);
+
+                // If there is a lot of free space on the disk, and we already
+                // tried our best to trim, then we may exceed the cache size
+                // limit. Approximate "a lot" of free disk space as 10x the size
+                // of what we're trying to promote.
+                if (_free_space > bytes * 10) {
+                    vlog(
+                      cst_log.info,
+                      "Intentionally exceeding cache size limit {},"
+                      "there are {} bytes of free space on the cache disk",
+                      _max_bytes(),
+                      _free_space);
+
+                    // Deduct the amount by which we're about to violate the
+                    // cache allowance, in order to avoid many reservations
+                    // all skipping the cache limit based on the same apparent
+                    // free bytes.  This counter will get reset to ground
+                    // truth the next time we get a disk status notification.
+                    _free_space -= bytes;
+                    break;
+                } else {
+                    // No allowance, and the disk does not have a lot of
+                    // slack free space: we must wait.
+                    vlog(
+                      cst_log.debug,
+                      "Could not reserve {} bytes, waiting",
+                      bytes);
+
+                    // No explicit sleep needed: we will proceed around the
+                    // loop into trim_throttled, and sleep waiting for the
+                    // throttle period to expire.
+                }
             }
         }
     } catch (...) {
@@ -816,6 +843,8 @@ void cache::notify_disk_status(
   [[maybe_unused]] uint64_t free_space,
   storage::disk_space_alert alert) {
     vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+
+    _free_space = free_space;
 
     bool block_puts = (alert == storage::disk_space_alert::degraded);
 

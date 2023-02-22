@@ -208,6 +208,13 @@ private:
     /// hint to clean_up_cache on how much extra space to try and free
     uint64_t _reservations_pending{0};
 
+    /// A _lazily updated_ record of physical space on the drive.  This is only
+    /// for use in corner cases when we e.g. cannot trim the cache far enough
+    /// and have to decide whether to block writes, or exceed our configured
+    /// limit.
+    /// (shard 0 only)
+    uint64_t _free_space{0};
+
     ssx::semaphore _cleanup_sm{1, "cloud/cache"};
     std::set<std::filesystem::path> _files_in_progress;
     cache_probe probe;
