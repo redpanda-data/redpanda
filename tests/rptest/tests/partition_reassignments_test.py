@@ -452,13 +452,13 @@ class PartitionReassignmentsTest(RedpandaTest):
         initial_assignments, all_node_idx, producers = self.initial_setup_steps(
             producer_config={
                 "topics": [self.topics[0].name, self.topics[1].name],
-                "throughput": 512
+                "throughput": 1024
             },
             # Set a low throttle to slowdown partition move enough that there is
             # something to cancel
             recovery_rate=10)
 
-        self.wait_producers(producers, num_messages=1000)
+        self.wait_producers(producers, num_messages=10000)
 
         reassignments_json = self.make_reassignments_for_cli(
             all_node_idx, initial_assignments)
@@ -468,17 +468,10 @@ class PartitionReassignmentsTest(RedpandaTest):
         check_execute_reassign_partitions(output, reassignments_json,
                                           self.logger)
 
-        try:
-            output = self.cancel_reassign_partitions(
-                reassignments=reassignments_json)
-            check_cancel_reassign_partitions(output, reassignments_json,
-                                             self.logger)
-        except subprocess.CalledProcessError as e:
-            self.logger.debug(f"Error {e.returncode}, output {e.output}")
-            if "no_reassignment_in_progress" in e.output:
-                pass
-            else:
-                raise
+        output = self.cancel_reassign_partitions(
+            reassignments=reassignments_json)
+        check_cancel_reassign_partitions(output, reassignments_json,
+                                         self.logger)
 
         output = self.verify_reassign_partitions(
             reassignments=reassignments_json, timeout_s=30)
