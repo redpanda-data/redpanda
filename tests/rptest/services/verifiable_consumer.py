@@ -187,6 +187,69 @@ class VerifiableConsumer(BackgroundThreadService):
         }
     }
 
+    class WorkerState:
+        def __init__(self, account) -> None:
+            self.account_str = str(account)
+            self.position_first = {}
+            self.position = {}
+            self.committed = {}
+
+        def record_position(self, tp: TopicPartition, min_offset, max_offset,
+                            logger, verify_offsets: bool):
+            # verify that the position never gets behind the current commit.
+            if tp in self.committed and self.committed[tp] > min_offset:
+                msg = "%s: Consumed position %d is behind the current "\
+                    "committed offset %d for partition %s" % \
+                    (self.account_str, min_offset, self.committed[tp], str(tp))
+                if self.verify_offsets:
+                    raise AssertionError(msg)
+                else:
+                    logger.warn(msg)
+
+            # verify that position is growing without gaps
+            if tp in self.position and self.position[tp] != min_offset:
+                # the consumer cannot generally guarantee that the position
+                # increases monotonically without gaps in the face of hard
+                # failures, so we only log a warning when this happens
+                logger.warn(
+                    "%s: Expected next consumed offset of %d for partition %s, "
+                    "but instead saw %d" %
+                    (self.account_str, self.position[tp], str(tp), min_offset))
+
+            self.position[tp] = max_offset + 1
+            if tp in self.position_first:
+                if min_offset <= self.position_first[tp]:
+                    logger.warn(
+                        f"{self.account_str}: Expected the beginning of the "
+                        f"consumed offset range (minOffset: {min_offset}) for "
+                        f"partition {str(tp)} to be greater than any other such "
+                        f"value from previous batches. The minimum so far is "
+                        f"{self.position_first[tp]}")
+                self.position_first[tp] = min(self.position_first[tp],
+                                              min_offset)
+            else:
+                self.position_first[tp] = min_offset
+
+        def record_committed(self, tp: TopicPartition, offset,
+                             verify_position: bool):
+            if verify_position:
+                assert self.position[tp] >= offset, \
+                    "%s: Committed offset %d for partition %s is ahead of the current position %d" % \
+                    (self.account_str, offset, str(tp), self.position[tp])
+            self.committed[tp] = offset
+
+        def current_position(self, tp):
+            if tp in self.position:
+                return self.position[tp]
+            else:
+                return None
+
+        def last_commit(self, tp):
+            if tp in self.committed:
+                return self.committed[tp]
+            else:
+                return None
+
     def __init__(self,
                  context,
                  num_nodes,
@@ -220,10 +283,15 @@ class VerifiableConsumer(BackgroundThreadService):
         self.last_consumed = None
 
         self.event_handlers = {}
-        self.global_position = {}
-        self.global_committed = {}
+        # global state is per worker, in order to handle scenarios when upon
+        # shutdown, when the first consumer is stopped, consumer group is
+        # rebalanced and other consumer begin receiving from its partitions
+        self.global_state = {}
 
     def _worker(self, idx, node):
+        state = VerifiableConsumer.WorkerState(node.account)
+        self.global_state[idx] = state
+
         with self.lock:
             if node not in self.event_handlers:
                 self.event_handlers[node] = ConsumerEventHandler(
@@ -264,10 +332,10 @@ class VerifiableConsumer(BackgroundThreadService):
                     elif name == "offsets_committed":
                         handler.handle_offsets_committed(
                             event, node, self.logger)
-                        self._update_global_committed(event)
+                        self._update_global_committed(event, state)
                     elif name == "records_consumed":
                         handler.handle_records_consumed(event, self.logger)
-                        self._update_global_position(event, node)
+                        self._update_global_position(event, state)
                     elif name == "record_data" and self.on_record_consumed:
                         self.on_record_consumed(event, node)
                     elif name == "partitions_revoked":
@@ -276,54 +344,35 @@ class VerifiableConsumer(BackgroundThreadService):
                         handler.handle_partitions_assigned(event)
                     elif name == "offsets_fetched":
                         handler.handle_offsets_fetched(event)
-                        self._update_global_committed_fetched(event)
+                        self._update_global_committed_fetched(event, state)
                     else:
                         self.logger.debug("%s: ignoring unknown event: %s" %
                                           (str(node.account), event))
 
-    def _update_global_position(self, consumed_event, node):
+    def _update_global_position(self, consumed_event, state: WorkerState):
         for consumed_partition in consumed_event["partitions"]:
             tp = TopicPartition(consumed_partition["topic"],
                                 consumed_partition["partition"])
-            if tp in self.global_committed:
-                # verify that the position never gets behind the current commit.
-                if self.global_committed[tp] > consumed_partition["minOffset"]:
-                    msg = "Consumed position %d is behind the current committed offset %d for partition %s" % \
-                          (consumed_partition["minOffset"], self.global_committed[tp], str(tp))
-                    if self.verify_offsets:
-                        raise AssertionError(msg)
-                    else:
-                        self.logger.warn(msg)
-
-            # the consumer cannot generally guarantee that the position increases monotonically
-            # without gaps in the face of hard failures, so we only log a warning when this happens
-            if tp in self.global_position and self.global_position[
-                    tp] != consumed_partition["minOffset"]:
-                self.logger.warn(
-                    "%s: Expected next consumed offset of %d for partition %s, but instead saw %d"
-                    % (str(node.account), self.global_position[tp], str(tp),
-                       consumed_partition["minOffset"]))
-
-            self.global_position[tp] = consumed_partition["maxOffset"] + 1
+            state.record_position(tp, consumed_partition["minOffset"],
+                                  consumed_partition["maxOffset"], self.logger,
+                                  self.verify_offsets)
             self.last_consumed = datetime.now()
 
-    def _update_global_committed(self, commit_event):
+    def _update_global_committed(self, commit_event, state: WorkerState):
         if commit_event["success"]:
             for offset_commit in commit_event["offsets"]:
                 tp = TopicPartition(offset_commit["topic"],
                                     offset_commit["partition"])
-                offset = offset_commit["offset"]
-                assert self.global_position[tp] >= offset, \
-                    "Committed offset %d for partition %s is ahead of the current position %d" % \
-                    (offset, str(tp), self.global_position[tp])
-                self.global_committed[tp] = offset
+                state.record_committed(tp,
+                                       offset_commit["offset"],
+                                       verify_position=True)
                 self.last_committed = datetime.now()
 
-    def _update_global_committed_fetched(self, fetch_offsets_ev):
+    def _update_global_committed_fetched(self, fetch_offsets_ev,
+                                         state: WorkerState):
         for offset in fetch_offsets_ev["offsets"]:
             tp = TopicPartition(offset["topic"], offset["partition"])
-            offset = offset["offset"]
-            self.global_committed[tp] = offset
+            state.record_committed(tp, offset["offset"], verify_position=False)
 
     def start_cmd(self, node):
         cmd = "java -cp /opt/redpanda-tests/java/e2e-verifiers/target/e2e-verifiers-1.0.jar"
@@ -408,10 +457,10 @@ class VerifiableConsumer(BackgroundThreadService):
 
     def current_position(self, tp):
         with self.lock:
-            if tp in self.global_position:
-                return self.global_position[tp]
-            else:
-                return None
+            current_positions = (s.current_position(tp)
+                                 for s in self.global_state.values())
+            return max((p for p in current_positions if p is not None),
+                       default=None)
 
     def owner(self, tp):
         with self.lock:
@@ -422,10 +471,10 @@ class VerifiableConsumer(BackgroundThreadService):
 
     def last_commit(self, tp):
         with self.lock:
-            if tp in self.global_committed:
-                return self.global_committed[tp]
-            else:
-                return None
+            last_commits = (s.last_commit(tp)
+                            for s in self.global_state.values())
+            return max((c for c in last_commits if c is not None),
+                       default=None)
 
     def total_consumed(self):
         with self.lock:
@@ -473,7 +522,9 @@ class VerifiableConsumer(BackgroundThreadService):
 
     def get_committed_offsets(self):
         with self.lock:
-            return self.global_committed.copy()
+            tps = set().union(s.committed.keys
+                              for s in self.global_state.values())
+            return dict({tp: self.last_committed(tp) for tp in tps})
 
     def get_last_consumed(self):
         with self.lock:
