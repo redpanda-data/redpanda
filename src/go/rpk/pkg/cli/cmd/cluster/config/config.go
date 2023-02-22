@@ -55,7 +55,7 @@ different redpanda version that does not recognize certain properties.`,
 		&adminURL,
 		config.FlagAdminHosts2,
 		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>")
+		"Comma-separated list of admin API addresses (<IP>:<port>)")
 
 	common.AddAdminAPITLSFlags(command,
 		&adminEnableTLS,
