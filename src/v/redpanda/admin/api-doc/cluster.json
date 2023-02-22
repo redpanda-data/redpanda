@@ -101,6 +101,13 @@
                         "type": "string"
                     },
                     "description": "list of partitions for which no leader is elected"
+                },
+                "under_replicated_partitions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "list of partitions where one or more replicas has not replicated all data"
                 }
             }
         },

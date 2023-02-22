@@ -26,6 +26,21 @@
             ]
         },
         {
+            "path": "/v1/partitions/local_summary",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Summarize the status of partitions with a replica on this node",
+                    "type": "partition_local_summary",
+                    "nickname": "get_partitions_local_summary",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/partitions/{namespace}/{topic}/{partition}",
             "operations": [
                 {
@@ -343,6 +358,24 @@
                 "leader": {
                     "type": "long",
                     "description": "Latest known leader (or -1 if unknown)"
+                }
+            }
+        },
+        "partitions_local_summary": {
+            "id": "partitions_local_summary",
+            "description": "Summarize status of partitions with a replica on this node",
+            "properties": {
+                "count": {
+                    "type": "long",
+                    "description": "Number of partitions with a replica on this node"
+                },
+                "leaderless": {
+                    "type": "long",
+                    "description": "Number of partitions with a replica on this node that report no known raft leader"
+                },
+                "under_replicated": {
+                    "type": "long",
+                    "description": "Number of partitions with leadership on this node, reporting one or more under-replicated followers"
                 }
             }
         },

@@ -3326,4 +3326,24 @@ consensus::timequery(storage::timequery_config cfg) {
     return _log.timequery(cfg);
 }
 
+std::optional<uint8_t> consensus::get_under_replicated() const {
+    if (!is_leader()) {
+        return std::nullopt;
+    }
+
+    uint8_t count = 0;
+    for (const auto& f : _fstats) {
+        auto f_metrics = build_follower_metrics(
+          f.first.id(),
+          _log.offsets(),
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            _jit.base_duration()),
+          f.second);
+        if (f_metrics.under_replicated) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
 } // namespace raft

@@ -176,6 +176,10 @@ public:
         return _raft->get_leader_id();
     }
 
+    std::optional<uint8_t> get_under_replicated() const {
+        return _raft->get_under_replicated();
+    }
+
     model::offset get_latest_configuration_offset() const {
         return _raft->get_latest_configuration_offset();
     }
