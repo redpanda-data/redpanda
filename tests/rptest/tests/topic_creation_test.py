@@ -107,7 +107,7 @@ class TopicRecreateTest(RedpandaTest):
             wait_until(topic_is_healthy, 30, 2)
             sleep(5)
 
-        swarm.stop_all()
+        swarm.stop()
         swarm.wait()
 
 
