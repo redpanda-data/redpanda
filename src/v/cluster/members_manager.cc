@@ -472,6 +472,7 @@ ss::future<result<join_node_reply>> members_manager::dispatch_join_to_remote(
       target.addr,
       _rpc_tls_config,
       _join_timeout,
+      rpc::transport_version::v2,
       [req = std::move(req), timeout = rpc::clock_type::now() + _join_timeout](
         controller_client_protocol c) mutable {
           return c.join_node(std::move(req), rpc::client_opts(timeout))

@@ -174,16 +174,18 @@ auto do_with_client_one_shot(
   net::unresolved_address addr,
   config::tls_config tls_config,
   rpc::clock_type::duration connection_timeout,
+  rpc::transport_version v,
   Func&& f) {
     return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
       .then(
-        [f = std::forward<Func>(f), connection_timeout, addr = std::move(addr)](
+        [v, f = std::forward<Func>(f), connection_timeout, addr = std::move(addr)](
           ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
             auto transport = ss::make_lw_shared<rpc::transport>(
               rpc::transport_configuration{
                 .server_addr = std::move(addr),
                 .credentials = std::move(cert),
-                .disable_metrics = net::metrics_disabled(true)});
+                .disable_metrics = net::metrics_disabled(true),
+                .version = v});
 
             return transport->connect(connection_timeout)
               .then([transport, f = std::forward<Func>(f)]() mutable {

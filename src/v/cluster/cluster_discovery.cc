@@ -147,6 +147,7 @@ ss::future<bool> cluster_discovery::dispatch_node_uuid_registration_to_seeds(
               s.addr,
               config::node().rpc_server_tls(),
               _join_timeout,
+              rpc::transport_version::v2,
               [&self, this](controller_client_protocol c) {
                   return c
                     .join_node(
@@ -217,6 +218,7 @@ cluster_discovery::request_cluster_bootstrap_info_single(
               addr,
               config::node().rpc_server_tls(),
               2s,
+              rpc::transport_version::v2,
               [](cluster_bootstrap_client_protocol c) {
                   return c
                     .cluster_bootstrap_info(
