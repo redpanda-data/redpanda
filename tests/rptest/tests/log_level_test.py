@@ -23,6 +23,25 @@ class LogLevelTest(RedpandaTest):
         # it will start.
         super().__init__(*args, log_level=self.initial_log_level, **kwargs)
 
+    @cluster(num_nodes=3, log_allow_list=["admin_server.cc.*assert"])
+    def test_get_loggers(self):
+        admin = Admin(self.redpanda)
+        node = self.redpanda.nodes[0]
+        loggers = admin.get_loggers(node)
+        # Check for some basic loggers.
+        expected_loggers = ["storage", "httpd", "kafka", "io"]
+        assert all([l in loggers for l in expected_loggers
+                    ]), "Expected at least {expected_loggers}: {loggers}"
+
+        # Any logger we get we should be able to set.
+        for logger in loggers:
+            with self.redpanda.monitor_log(node) as mon:
+                admin.set_log_level(logger, "info")
+                mon.wait_until(f"Set log level for {{{logger}}}: .* -> info",
+                               timeout_sec=5,
+                               backoff_sec=1,
+                               err_msg=f"Never saw message for {{{logger}}}")
+
     @cluster(num_nodes=3)
     def test_log_level_control(self):
         admin = Admin(self.redpanda)
