@@ -1948,6 +1948,23 @@ class RedpandaService(Service):
 
         self._stop_duration_seconds = time.time() - self._stop_time
 
+    def _set_trace_loggers_and_sleep(self, node, time_sec=10):
+        """
+        For debugging issues around stopping processes: set the log level to
+        trace on all loggers.
+        """
+        # These tend to be exceptionally chatty.
+        keep_existing = ['exception', 'io', 'seastar_memory']
+        try:
+            loggers = self._admin.get_loggers(node)
+            for logger in loggers:
+                if logger in keep_existing:
+                    continue
+                self._admin.set_log_level(logger, 'trace', time_sec)
+            time.sleep(time_sec)
+        except Exception as e:
+            self.logger.warn(f"Error setting trace loggers: {e}")
+
     def stop_node(self, node, timeout=None, forced=False):
         pids = self.pids(node)
         for pid in pids:
@@ -1966,8 +1983,12 @@ class RedpandaService(Service):
                 f"Redpanda node {node.account.hostname} failed to stop in {timeout} seconds"
             )
         except TimeoutError:
+            sleep_sec = 10
             self.logger.warn(
-                f"Timed out waiting for stop on {node.name}, status:")
+                f"Timed out waiting for stop on {node.name}, setting log_level to 'trace' and sleeping for {sleep_sec}s"
+            )
+            self._set_trace_loggers_and_sleep(node, time_sec=sleep_sec)
+            self.logger.warn(f"Node {node.name} status:")
             self._log_node_process_state(node)
             raise
 
