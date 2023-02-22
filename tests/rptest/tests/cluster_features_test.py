@@ -157,7 +157,7 @@ class FeaturesMultiNodeTest(FeaturesTestBase):
             '__REDPANDA_TEST_FEATURES':
             "ON",
             '__REDPANDA_EARLIEST_LOGICAL_VERSION':
-            f'{feature_alpha_version}',
+            f'{self.head_latest_logical_version}',
             '__REDPANDA_LATEST_LOGICAL_VERSION':
             f'{feature_alpha_version}'
         })
