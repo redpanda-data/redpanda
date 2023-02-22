@@ -287,6 +287,12 @@ class EndToEndTest(Test):
             else:
                 msg += "(There are also %d duplicate messages in the log - but that is an acceptable outcome)\n" % num_duplicates
 
+            consumer_consistency = self.consumer.verify_position_offsets_consistency(
+            )
+            if not consumer_consistency[0]:
+                success = False
+                msg += '\n'.join(consumer_consistency[1]) + '\n'
+
         # Collect all logs if validation fails
         if not success:
             self._collect_all_logs()
