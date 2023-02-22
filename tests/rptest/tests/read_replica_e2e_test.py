@@ -33,6 +33,16 @@ class BucketUsage(NamedTuple):
     keys: set[str]
 
 
+# These tests do not wait for data to be written by the origin cluster
+# before creating read replicas, so it is expected to see log errors
+# when the destination cluster can't find manifests.
+# See https://github.com/redpanda-data/redpanda/issues/8965
+READ_REPLICA_LOG_ALLOW_LIST = [
+    "Failed to download partition manifest",
+    "Failed to download manifest",
+]
+
+
 class TestReadReplicaService(EndToEndTest):
     log_segment_size = 1048576  # 5MB
     topic_name = "panda-topic"
@@ -182,7 +192,7 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return None
 
-    @cluster(num_nodes=7)
+    @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10],
             cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
     def test_writes_forbidden(self, partition_count: int,
@@ -219,7 +229,7 @@ class TestReadReplicaService(EndToEndTest):
             # count is permitted to increase.
             assert len(objects_after) >= len(objects_before)
 
-    @cluster(num_nodes=9)
+    @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10],
             min_records=[10000],
             cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
