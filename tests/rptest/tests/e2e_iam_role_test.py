@@ -1,4 +1,3 @@
-from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 
 from rptest.clients.types import TopicSpec
@@ -34,7 +33,6 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
         self.iam_server.wait()
         self.iam_server.clean()
 
-    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_write(self):
         self.start_producer()
@@ -109,7 +107,6 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
         self.iam_server.wait()
         self.iam_server.clean()
 
-    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_write(self):
         self.start_producer()
@@ -181,7 +178,6 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
         self.iam_server.wait()
         self.iam_server.clean()
 
-    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_short_lived_credentials(self):
         self.start_producer()
