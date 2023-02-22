@@ -224,6 +224,32 @@ FIXTURE_TEST(
         }
     }
 
+    {
+        test_log.info("Unknown topic");
+        model::topic topic_dne{"topic-dne"};
+        std::vector<model::node_id> new_replicas = {model::node_id{1}};
+        kafka::reassignable_partition new_partition{
+          .partition_index = pid0, .replicas = std::move(new_replicas)};
+        auto resp = alter_partition_reassignments(
+          client,
+          topic_dne,
+          std::vector<kafka::reassignable_partition>{new_partition});
+        BOOST_CHECK_EQUAL(resp.data.responses.size(), 1);
+        for (auto& tp_resp : resp.data.responses) {
+            BOOST_CHECK(tp_resp.name() == topic_dne());
+            BOOST_CHECK_EQUAL(tp_resp.partitions.size(), 1);
+            for (auto& p_resp : tp_resp.partitions) {
+                BOOST_CHECK_EQUAL(p_resp.partition_index(), pid0());
+                BOOST_CHECK_EQUAL(
+                  p_resp.error_code,
+                  kafka::error_code::unknown_topic_or_partition);
+                BOOST_CHECK(
+                  *p_resp.error_message
+                  == ss::sstring{"Topic or partition is undefined"});
+            }
+        }
+    }
+
     client.stop().then([&client] { client.shutdown(); }).get();
 }
 
