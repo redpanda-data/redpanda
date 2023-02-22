@@ -533,3 +533,34 @@ class VerifiableConsumer(BackgroundThreadService):
     def get_last_committed(self):
         with self.lock:
             return self.last_committed
+
+    def verify_position_offsets_consistency(self):
+        msg = []
+        with self.lock:
+            tps = set().union(s.position.keys
+                              for s in self.global_state.values())
+            for tp in tps:
+                # if there was more than 1 worker receiving messages from a tp,
+                # verify there is no gap and no overlap in position intervals
+                # between the workers
+                fail_pre = False
+                for idx, s in self.global_state.items():
+                    if not tp in s.position_first:
+                        msg.append(f"Start of consumed offset range "\
+                            f"not recorded for partiton {str(tp)}, worker "\
+                            f"{idx} {s.account_str}")
+                        fail_pre = True
+                if fail_pre:
+                    continue
+
+                ranges = [(s.position_first[tp], s.position[tp])
+                          for s in self.global_state.values()]
+                ranges.sort()
+                adj_pairs = (ranges[n:n + 2] for n in range(len(ranges) - 1))
+                if not all(pair[0][1] == pair[1][0] for pair in adj_pairs):
+                    msg.append(
+                        f"A gap in consumed offsets is detected in partition "
+                        f"{str(tp)}. List of consumed ranges per worker "
+                        f"(consumer instance): {ranges}")
+
+        return len(msg) != 0, msg
