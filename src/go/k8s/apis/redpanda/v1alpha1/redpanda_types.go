@@ -10,25 +10,41 @@
 package v1alpha1
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
+	"strings"
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+)
 
 // RedpandaSpec defines the desired state of Redpanda
 type RedpandaSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Redpanda. Edit redpanda_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// NameOverride is the override to give your redpanda release
+	NameOverride string `json:"nameOverride,omitempty"`
+	// NameOverride is the override to give your redpanda release
+	FullnameOverride string `json:"fullnameOverride,omitempty"`
+	// NameOverride is the override to give your redpanda release
+	ClusterDomain string `json:"clusterDomain,omitempty"`
+	// NameOverride is the override to give your redpanda release
+	CommonLabels []string `json:"commonLabels,omitempty"`
+	// NameOverride is the override to give your redpanda release
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+	// NameOverride is the override to give your redpanda release
+	Tolerations []string `json:"tolerations,omitempty"`
+
+	Image RedpandaImage `json:"image,omitempty"`
 }
 
 // RedpandaStatus defines the observed state of Redpanda
 type RedpandaStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// +optional
+	HelmRelease string `json:"helmRelease,omitempty"`
+
+	// +optional
+	UpgradeFailures int64 `json:"upgradeFailures,omitempty"`
+
+	// +optional
+	InstallFailures int64 `json:"installFailures,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -52,6 +68,26 @@ type RedpandaList struct {
 	Items           []Redpanda `json:"items"`
 }
 
+type RedpandaImage struct {
+	Repository string `json:"repository,omitempty"`
+	Tag        string `json:"tag,omitempty"`
+	PullPolicy string `json:"pullPolicy,omitempty"`
+}
+
 func init() {
 	SchemeBuilder.Register(&Redpanda{}, &RedpandaList{})
+}
+
+// GetHelmRelease returns the namespace and name of the HelmRelease.
+func (in RedpandaStatus) GetHelmRelease() (string, string) {
+	if in.HelmRelease == "" {
+		return "", ""
+	}
+	if split := strings.Split(in.HelmRelease, string(types.Separator)); len(split) > 1 {
+		return split[0], split[1]
+	}
+	return "", ""
+}
+func (in Redpanda) GetHelmReleaseName() string {
+	return strings.Join([]string{in.Namespace, in.Name}, "-")
 }

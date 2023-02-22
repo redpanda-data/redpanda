@@ -17,7 +17,7 @@ import (
 	"time"
 
 	helmControllerAPIV2 "github.com/fluxcd/helm-controller/api/v2beta1"
-	helmControllerV2 "github.com/fluxcd/helm-controller/controllers"
+	helmController "github.com/fluxcd/helm-controller/controllers"
 	"github.com/fluxcd/pkg/runtime/client"
 	helper "github.com/fluxcd/pkg/runtime/controller"
 	"github.com/fluxcd/pkg/runtime/logger"
@@ -26,7 +26,6 @@ import (
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
 	"github.com/go-logr/logr"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	flag "github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/registry"
@@ -38,6 +37,9 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
 )
 
 // +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
@@ -222,7 +224,7 @@ func main() {
 	metricsH := helper.MustMakeMetrics(mgr)
 
 	// TODO fill this in with options
-	helmOpts := helmControllerV2.HelmReleaseReconcilerOptions{
+	helmOpts := helmController.HelmReleaseReconcilerOptions{
 		MaxConcurrentReconciles:   1,                // "The number of concurrent HelmRelease reconciles."
 		DependencyRequeueInterval: 30 * time.Second, // The interval at which failing dependencies are reevaluated.
 		HTTPRetry:                 9,                // The maximum number of retries when failing to fetch artifacts over HTTP.
@@ -230,7 +232,7 @@ func main() {
 	}
 
 	// Helm Release Controller
-	helmRelease := helmControllerV2.HelmReleaseReconciler{
+	helmRelease := helmController.HelmReleaseReconciler{
 		Client:         mgr.GetClient(),
 		Config:         mgr.GetConfig(),
 		Scheme:         mgr.GetScheme(),
@@ -277,13 +279,14 @@ func main() {
 		startFileServer(storage.BasePath, storageAddr, setupLog)
 	}()
 
-	// if err = (&redpandacontrollers.RedpandaReconciler{
-	// 	Client: mgr.GetClient(),
-	// 	Scheme: mgr.GetScheme(),
-	// }).SetupWithManager(mgr, helmOpts); err != nil {
-	// 	setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
-	// 	os.Exit(1)
-	// }
+	if err = (&redpandacontrollers.RedpandaReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
+		os.Exit(1)
+	}
+
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {

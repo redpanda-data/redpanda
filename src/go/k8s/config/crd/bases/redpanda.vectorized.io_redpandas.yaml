@@ -36,13 +36,51 @@ spec:
           spec:
             description: RedpandaSpec defines the desired state of Redpanda
             properties:
-              foo:
-                description: Foo is an example field of Redpanda. Edit redpanda_types.go
-                  to remove/update
+              clusterDomain:
+                description: NameOverride is the override to give your redpanda release
                 type: string
+              commonLabels:
+                description: NameOverride is the override to give your redpanda release
+                items:
+                  type: string
+                type: array
+              fullnameOverride:
+                description: NameOverride is the override to give your redpanda release
+                type: string
+              image:
+                properties:
+                  pullPolicy:
+                    type: string
+                  repository:
+                    type: string
+                  tag:
+                    type: string
+                type: object
+              nameOverride:
+                description: NameOverride is the override to give your redpanda release
+                type: string
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: NameOverride is the override to give your redpanda release
+                type: object
+              tolerations:
+                description: NameOverride is the override to give your redpanda release
+                items:
+                  type: string
+                type: array
             type: object
           status:
             description: RedpandaStatus defines the observed state of Redpanda
+            properties:
+              helmRelease:
+                type: string
+              installFailures:
+                format: int64
+                type: integer
+              upgradeFailures:
+                format: int64
+                type: integer
             type: object
         type: object
     served: true
