@@ -163,4 +163,17 @@ function install_arroyo() {
   python3 -m pip install --force --no-cache-dir -e /opt/arroyo
 }
 
+function install_java_test_clients() {
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-verifier --define buildDir=/opt/kafka-verifier/
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/tx-verifier --define buildDir=/opt/tx-verifier
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+}
+
+function install_go_test_clients() {
+  cd /opt/redpanda-tests/go/sarama/produce_test
+  go mod tidy
+  go build
+}
+
 $@
