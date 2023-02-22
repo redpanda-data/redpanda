@@ -1334,7 +1334,7 @@ configuration::configuration()
       "configured Azure storage account (see "
       "'cloud_storage_azure_storage_account)'. Note that Redpanda expects this "
       "string to be Base64 encoded.",
-      {.needs_restart = needs_restart::yes,
+      {.needs_restart = needs_restart::no,
        .visibility = visibility::user,
        .secret = is_secret::yes},
       std::nullopt)

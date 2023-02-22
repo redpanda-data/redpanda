@@ -53,13 +53,49 @@ remote::remote(
         std::visit([](auto&& cfg) { return cfg.disable_metrics; }, conf))),
       remote_metrics_disabled(static_cast<bool>(std::visit(
         [](auto&& cfg) { return cfg.disable_public_metrics; }, conf))),
-      *_materialized) {
-    // If the credentials source is from config file, bypass the background op
-    // to refresh credentials periodically, and load pool with static
+      *_materialized)
+  , _azure_shared_key_binding(
+      config::shard_local_cfg().cloud_storage_azure_shared_key.bind()) {
+    // If the credentials source is from config file, bypass the background
+    // op to refresh credentials periodically, and load pool with static
     // credentials right now.
     if (_auth_refresh_bg_op.is_static_config()) {
         _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
     }
+
+    _azure_shared_key_binding.watch([this] {
+        auto current_config = _auth_refresh_bg_op.get_client_config();
+        if (!std::holds_alternative<cloud_storage_clients::abs_configuration>(
+              current_config)) {
+            vlog(
+              cst_log.warn,
+              "Attempt to set cloud_storage_azure_shared_key for cluster using "
+              "S3 detected");
+            return;
+        }
+
+        vlog(
+          cst_log.info,
+          "cloud_storage_azure_shared_key was updated. Refreshing "
+          "credentials.");
+
+        auto new_shared_key = _azure_shared_key_binding();
+        if (!new_shared_key) {
+            vlog(
+              cst_log.info,
+              "cloud_storage_azure_shared_key was unset. Will continue "
+              "using the previous value until restart.");
+
+            return;
+        }
+
+        auto& abs_config = std::get<cloud_storage_clients::abs_configuration>(
+          current_config);
+        abs_config.shared_key = cloud_roles::private_key_str{*new_shared_key};
+        _auth_refresh_bg_op.set_client_config(std::move(current_config));
+
+        _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
+    });
 }
 
 remote::remote(ss::sharded<configuration>& conf)
@@ -965,6 +1001,16 @@ void auth_refresh_bg_op::maybe_start_auth_refresh_op(
     if (ss::this_shard_id() == auth_refresh_shard_id) {
         do_start_auth_refresh_op(std::move(credentials_update_cb));
     }
+}
+
+cloud_storage_clients::client_configuration
+auth_refresh_bg_op::get_client_config() const {
+    return _client_conf;
+}
+
+void auth_refresh_bg_op::set_client_config(
+  cloud_storage_clients::client_configuration conf) {
+    _client_conf = std::move(conf);
 }
 
 void auth_refresh_bg_op::do_start_auth_refresh_op(
