@@ -11,7 +11,6 @@ import os
 import re
 import time
 
-from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 from rptest.utils.rpenv import sample_license
 from rptest.services.admin import Admin
@@ -49,7 +48,6 @@ class UpgradeToLicenseChecks(RedpandaTest):
             self.redpanda.nodes, (22, 1))
         super(UpgradeToLicenseChecks, self).setUp()
 
-    @ok_to_fail
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_basic_upgrade(self):
         # Modified environment variables apply to processes restarted from this point onwards
