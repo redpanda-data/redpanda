@@ -193,6 +193,7 @@ struct configuration final : public config_store {
     property<std::optional<bool>> kafka_enable_authorization;
     property<std::optional<std::vector<ss::sstring>>>
       kafka_mtls_principal_mapping_rules;
+    property<bool> kafka_enable_partition_reassignment;
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;
