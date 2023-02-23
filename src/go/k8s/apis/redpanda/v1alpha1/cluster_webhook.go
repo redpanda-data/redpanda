@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,14 +36,18 @@ const (
 	mb = 1024 * kb
 	gb = 1024 * mb
 
+	minimumReplicas = 3
+
+	// these constants can be removed after versions older that v22.3.1 are no longer supported
+	defaultTopicReplicationKey              = "redpanda.default_topic_replications"
+	transactionCoordinatorReplicationKey    = "redpanda.transaction_coordinator_replication"
+	idAllocatorReplicationKey               = "redpanda.id_allocator_replication"
 	defaultTopicReplicationNumber           = 3
 	transactionCoordinatorReplicationNumber = 3
 	idAllocatorReplicationNumber            = 3
-	minimumReplicas                         = 3
 
-	defaultTopicReplicationKey           = "redpanda.default_topic_replications"
-	transactionCoordinatorReplicationKey = "redpanda.transaction_coordinator_replication"
-	idAllocatorReplicationKey            = "redpanda.id_allocator_replication"
+	internalTopicReplicationFactorKey     = "redpanda.internal_topic_replication_factor"
+	defaultInternalTopicReplicationNumber = 3
 
 	noneAuthorizationMechanism         = "none"
 	saslAuthorizationMechanism         = "sasl"
@@ -146,10 +151,18 @@ func (r *Cluster) Default() {
 	}
 }
 
-var defaultAdditionalConfiguration = map[string]int{
-	defaultTopicReplicationKey:           defaultTopicReplicationNumber,
-	transactionCoordinatorReplicationKey: transactionCoordinatorReplicationNumber,
-	idAllocatorReplicationKey:            idAllocatorReplicationNumber,
+func (r *Cluster) getDefaultAdditionalConfiguration() map[string]int {
+	if featuregates.InternalTopicReplication(r.Spec.Version) {
+		return map[string]int{
+			internalTopicReplicationFactorKey: defaultInternalTopicReplicationNumber,
+		}
+	} else {
+		return map[string]int{
+			defaultTopicReplicationKey:           defaultTopicReplicationNumber,
+			transactionCoordinatorReplicationKey: transactionCoordinatorReplicationNumber,
+			idAllocatorReplicationKey:            idAllocatorReplicationNumber,
+		}
+	}
 }
 
 // setDefaultAdditionalConfiguration sets additional configuration fields based
@@ -160,7 +173,7 @@ func (r *Cluster) setDefaultAdditionalConfiguration() {
 			r.Spec.AdditionalConfiguration = make(map[string]string)
 		}
 
-		for k, v := range defaultAdditionalConfiguration {
+		for k, v := range r.getDefaultAdditionalConfiguration() {
 			_, ok := r.Spec.AdditionalConfiguration[k]
 			if !ok {
 				r.Spec.AdditionalConfiguration[k] = strconv.Itoa(v)
@@ -382,7 +395,6 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 		case noneAuthorizationMechanism:
 		case saslAuthorizationMechanism:
 		case mTLSIdentityAuthorizationMechanism:
-			break
 		default:
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("authenticationMethod"),
