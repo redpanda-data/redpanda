@@ -272,6 +272,38 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
           result.etag);
     }
 
+    bool leader_not_found = result.ec == tx_errc::leader_not_found
+                            || result.ec == tx_errc::shard_not_found
+                            || result.ec == tx_errc::partition_not_exists;
+
+    if (!leader_not_found) {
+        co_return result;
+    }
+
+    if (!is_find_leader_supported()) {
+        co_return result;
+    }
+
+    auto actual_leader = co_await find_leader(ntp, timeout);
+
+    if (!actual_leader || !actual_leader->leader_id) {
+        vlog(
+          txlog.trace,
+          "can't find up to date leader of {} stale leader:{}",
+          ntp,
+          leader);
+        co_return result;
+    }
+
+    co_await _leaders.invoke_on_all(
+      [actual_leader](partition_leaders_table& pl) mutable {
+          pl.update_partition_leader(
+            actual_leader->ntp,
+            actual_leader->revision,
+            actual_leader->term,
+            actual_leader->leader_id);
+      });
+
     co_return result;
 }
 
