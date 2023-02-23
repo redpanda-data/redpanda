@@ -1435,6 +1435,14 @@ class RedpandaService(Service):
         this function will not return until redpanda appears to have started
         successfully.
         """
+        self.logger.debug(
+            self.who_am_i() +
+            ": killing processes and attempting to clean up before starting")
+        try:
+            self.stop_node(node)
+        except Exception:
+            pass
+
         if clean_node:
             self.clean_node(node, preserve_current_install=True)
         else:
