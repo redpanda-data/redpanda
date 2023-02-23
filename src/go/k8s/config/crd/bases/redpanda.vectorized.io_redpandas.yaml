@@ -36,39 +36,58 @@ spec:
           spec:
             description: RedpandaSpec defines the desired state of Redpanda
             properties:
-              clusterDomain:
-                description: NameOverride is the override to give your redpanda release
+              chartVersion:
+                description: ChartVersion defines the helm chart version to use
                 type: string
-              commonLabels:
-                description: NameOverride is the override to give your redpanda release
-                items:
-                  type: string
-                type: array
-              fullnameOverride:
-                description: NameOverride is the override to give your redpanda release
-                type: string
-              image:
+              clusterSpec:
+                description: ClusterSpec defines the values to use in the cluster
                 properties:
-                  pullPolicy:
+                  clusterDomain:
+                    description: NameOverride is the override to give your redpanda
+                      release
                     type: string
-                  repository:
+                  commonLabels:
+                    description: NameOverride is the override to give your redpanda
+                      release
+                    items:
+                      type: string
+                    type: array
+                  fullnameOverride:
+                    description: NameOverride is the override to give your redpanda
+                      release
                     type: string
-                  tag:
+                  image:
+                    description: Image defines the container image to use for the
+                      redpanda cluster
+                    properties:
+                      pullPolicy:
+                        type: string
+                      repository:
+                        type: string
+                      tag:
+                        type: string
+                    type: object
+                  nameOverride:
+                    description: NameOverride is the override to give your redpanda
+                      release
                     type: string
+                  nodeSelector:
+                    additionalProperties:
+                      type: string
+                    description: NameOverride is the override to give your redpanda
+                      release
+                    type: object
+                  tolerations:
+                    description: NameOverride is the override to give your redpanda
+                      release
+                    items:
+                      type: string
+                    type: array
                 type: object
-              nameOverride:
-                description: NameOverride is the override to give your redpanda release
+              helmRepositoryName:
+                description: HelmRepositoryName defines the repository to use, defaults
+                  to redpanda if not defined
                 type: string
-              nodeSelector:
-                additionalProperties:
-                  type: string
-                description: NameOverride is the override to give your redpanda release
-                type: object
-              tolerations:
-                description: NameOverride is the override to give your redpanda release
-                items:
-                  type: string
-                type: array
             type: object
           status:
             description: RedpandaStatus defines the observed state of Redpanda

@@ -15,7 +15,7 @@ import (
 	"time"
 
 	helmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
-	"github.com/ghodss/yaml"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/hashicorp/go-retryablehttp"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -92,19 +92,23 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				rp.Status.HelmRelease = ""
-				if err := r.createHelmRelease(ctx, rp); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to create helmRelease")
+				if err = r.createHelmRelease(ctx, rp); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to create helmRelease: %s", err)
 				}
 				return ctrl.Result{}, nil
 			}
-			err = fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+			if !apierrors.IsAlreadyExists(err) {
+				err = fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+			}
 			return ctrl.Result{}, nil
 		}
 	} else {
 		// did not find helmRelease, then create it
 		if err := r.createHelmRelease(ctx, rp); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to create helmRelease")
+			return ctrl.Result{}, fmt.Errorf("failed to create helmRelease: %s", err)
 		}
+		hrName, _ := rp.Status.GetHelmRelease()
+		rp.Status.HelmRelease = hrName
 		return ctrl.Result{}, nil
 	}
 
@@ -115,7 +119,11 @@ func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Reque
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", req.NamespacedName)
 
-	if err := r.Delete(ctx, &rp); err != nil {
+	if err := r.deleteHelmRelease(ctx, rp); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.Client.Delete(ctx, &rp); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -131,7 +139,28 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp redpandav
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", rp.Name)
 
-	var hr helmv2beta1.HelmRelease
+	// create helm repository if needed
+	hRepository := &sourcev1.HelmRepository{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: rp.GetHelmRepositoryName()}, hRepository); err != nil {
+		if apierrors.IsNotFound(err) {
+			hRepository, err = r.createHelmRepositoryFromTemplate(rp)
+			if errCreate := r.Client.Create(ctx, hRepository); errCreate != nil {
+				return fmt.Errorf("error creating repository: %s", errCreate)
+			}
+			return nil
+		}
+		return fmt.Errorf("error getting helmRepository %s", err)
+	}
+
+	// create helm release
+	hRelease, err := r.createHelmReleaseFromTemplate(ctx, rp)
+	if err != nil {
+		return fmt.Errorf("could not create helm template: %s", err)
+	}
+
+	if err = r.Client.Create(ctx, hRelease); err != nil {
+		return fmt.Errorf("could not create helm release: %s", err)
+	}
 
 	return nil
 }
@@ -164,13 +193,15 @@ func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp redpandav
 	return nil
 }
 
-func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, rp redpandav1alpha1.Redpanda) *helmv2beta1.HelmRelease {
+func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, rp redpandav1alpha1.Redpanda) (*helmv2beta1.HelmRelease, error) {
+	log := ctrl.LoggerFrom(ctx)
+	log.WithValues("redpanda", rp.Name)
 
-	rpSpec := rp.Spec
-
-	vyaml, err := yaml.Marshal(rp.Spec)
-
-	v, err := yaml.YAMLToJSON(vyaml)
+	values, err := rp.GetValuesJson()
+	if err != nil {
+		return nil, fmt.Errorf("could not parse clusterSpec to json: %s", err)
+	}
+	log.Info(fmt.Sprintf("values file to use: %s", values))
 
 	return &helmv2beta1.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
@@ -178,8 +209,33 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 			Namespace: rp.Namespace,
 		},
 		Spec: helmv2beta1.HelmReleaseSpec{
-			Chart:  helmv2beta1.HelmChartTemplate{},
-			Values: &v,
+			Chart: helmv2beta1.HelmChartTemplate{
+				Spec: helmv2beta1.HelmChartTemplateSpec{
+					Chart:    "redpanda",
+					Version:  rp.Spec.ChartVersion,
+					Interval: &metav1.Duration{Duration: 1 * time.Minute},
+					SourceRef: helmv2beta1.CrossNamespaceObjectReference{
+						Kind:      "HelmRepository",
+						Name:      rp.GetHelmRepositoryName(),
+						Namespace: rp.Namespace,
+					},
+				},
+			},
+			Values:   values,
+			Interval: metav1.Duration{Duration: 5 * time.Minute},
 		},
-	}
+	}, nil
+}
+
+func (r *RedpandaReconciler) createHelmRepositoryFromTemplate(rp redpandav1alpha1.Redpanda) (*sourcev1.HelmRepository, error) {
+	return &sourcev1.HelmRepository{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rp.GetHelmRepositoryName(),
+			Namespace: rp.Namespace,
+		},
+		Spec: sourcev1.HelmRepositorySpec{
+			Interval: metav1.Duration{Duration: 5 * time.Minute},
+			URL:      "https://charts.redpanda.com/",
+		},
+	}, nil
 }
