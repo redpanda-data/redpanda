@@ -133,9 +133,6 @@ quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
 snc_quota_manager::snc_quota_manager()
   : _max_kafka_throttle_delay(
     config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
-  , _kafka_throughput_limit_cluster_bps{
-      config::shard_local_cfg().kafka_throughput_limit_cluster_in_bps.bind(),
-      config::shard_local_cfg().kafka_throughput_limit_cluster_out_bps.bind()}
   , _kafka_throughput_limit_node_bps{
       config::shard_local_cfg().kafka_throughput_limit_node_in_bps.bind(),
       config::shard_local_cfg().kafka_throughput_limit_node_out_bps.bind()}
@@ -158,10 +155,6 @@ snc_quota_manager::snc_quota_manager()
   , _probe(*this)
 {
     update_shard_quota_minimum();
-    _kafka_throughput_limit_cluster_bps.in.watch(
-      [this] { update_node_quota_default(); });
-    _kafka_throughput_limit_cluster_bps.eg.watch(
-      [this] { update_node_quota_default(); });
     _kafka_throughput_limit_node_bps.in.watch(
       [this] { update_node_quota_default(); });
     _kafka_throughput_limit_node_bps.eg.watch(
@@ -237,19 +230,6 @@ delay_t eval_delay(const bottomless_token_bucket& tb) noexcept {
     return delay_t(muldiv(-tb.tokens(), delay_t::period::den, tb.quota()));
 }
 
-std::optional<quota_t> optional_min(
-  const std::optional<quota_t> lhs, const std::optional<quota_t> rhs) {
-    if (lhs && rhs) {
-        return std::min(*lhs, *rhs);
-    } else if (lhs) {
-        return lhs;
-    } else if (rhs) {
-        return rhs;
-    } else {
-        return std::nullopt;
-    }
-}
-
 } // namespace
 
 ingress_egress_state<std::optional<quota_t>>
@@ -259,12 +239,8 @@ snc_quota_manager::calc_node_quota_default() const {
     // Ignore _shard_quota_minimum because it only applies when quotas
     // are adjusted during balancing
     const ingress_egress_state<std::optional<quota_t>> default_quota{
-      .in = optional_min(
-        _kafka_throughput_limit_node_bps.in(),
-        _kafka_throughput_limit_cluster_bps.in()),
-      .eg = optional_min(
-        _kafka_throughput_limit_node_bps.eg(),
-        _kafka_throughput_limit_cluster_bps.eg())};
+      .in = _kafka_throughput_limit_node_bps.in(),
+      .eg = _kafka_throughput_limit_node_bps.eg()};
     vlog(klog.trace, "qm - Default node TP quotas: {}", default_quota);
     return default_quota;
 }
