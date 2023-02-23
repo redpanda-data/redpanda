@@ -681,7 +681,10 @@ class UpgradeTransactionTest(RedpandaTest):
                 "enable_leader_balancer": False,
                 "enable_auto_rebalance_on_node_add": False,
             },
-            environment={"__REDPANDA_LATEST_LOGICAL_VERSION": 5})
+            environment={
+                "__REDPANDA_LATEST_LOGICAL_VERSION": 5,
+                "__REDPANDA_EARLIEST_LOGICAL_VERSION": 5
+            })
 
         self.redpanda.start()
 
@@ -710,7 +713,10 @@ class UpgradeTransactionTest(RedpandaTest):
 
         self.check_consume(topic_name, max_tx)
 
-        self.redpanda.set_environment({"__REDPANDA_LATEST_LOGICAL_VERSION": 6})
+        self.redpanda.set_environment({
+            "__REDPANDA_LATEST_LOGICAL_VERSION": 6,
+            "__REDPANDA_EARLIEST_LOGICAL_VERSION": 5
+        })
         for n in self.redpanda.nodes:
             self.redpanda.restart_nodes(n, stop_timeout=60)
 
