@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,14 +36,18 @@ const (
 	mb = 1024 * kb
 	gb = 1024 * mb
 
+	minimumReplicas = 3
+
+	// these constants can be removed after versions older that v22.3.1 are no longer supported
+	defaultTopicReplicationKey              = "redpanda.default_topic_replications"
+	transactionCoordinatorReplicationKey    = "redpanda.transaction_coordinator_replication"
+	idAllocatorReplicationKey               = "redpanda.id_allocator_replication"
 	defaultTopicReplicationNumber           = 3
 	transactionCoordinatorReplicationNumber = 3
 	idAllocatorReplicationNumber            = 3
-	minimumReplicas                         = 3
 
-	defaultTopicReplicationKey           = "redpanda.default_topic_replications"
-	transactionCoordinatorReplicationKey = "redpanda.transaction_coordinator_replication"
-	idAllocatorReplicationKey            = "redpanda.id_allocator_replication"
+	internalTopicReplicationFactorKey     = "redpanda.internal_topic_replication_factor"
+	defaultInternalTopicReplicationNumber = 3
 
 	noneAuthorizationMechanism         = "none"
 	saslAuthorizationMechanism         = "sasl"
@@ -146,10 +151,18 @@ func (r *Cluster) Default() {
 	}
 }
 
-var defaultAdditionalConfiguration = map[string]int{
-	defaultTopicReplicationKey:           defaultTopicReplicationNumber,
-	transactionCoordinatorReplicationKey: transactionCoordinatorReplicationNumber,
-	idAllocatorReplicationKey:            idAllocatorReplicationNumber,
+func (r *Cluster) getDefaultAdditionalConfiguration() map[string]int {
+	if featuregates.InternalTopicReplication(r.Spec.Version) {
+		return map[string]int{
+			internalTopicReplicationFactorKey: defaultInternalTopicReplicationNumber,
+		}
+	} else {
+		return map[string]int{
+			defaultTopicReplicationKey:           defaultTopicReplicationNumber,
+			transactionCoordinatorReplicationKey: transactionCoordinatorReplicationNumber,
+			idAllocatorReplicationKey:            idAllocatorReplicationNumber,
+		}
+	}
 }
 
 // setDefaultAdditionalConfiguration sets additional configuration fields based
@@ -160,7 +173,7 @@ func (r *Cluster) setDefaultAdditionalConfiguration() {
 			r.Spec.AdditionalConfiguration = make(map[string]string)
 		}
 
-		for k, v := range defaultAdditionalConfiguration {
+		for k, v := range r.getDefaultAdditionalConfiguration() {
 			_, ok := r.Spec.AdditionalConfiguration[k]
 			if !ok {
 				r.Spec.AdditionalConfiguration[k] = strconv.Itoa(v)
@@ -178,31 +191,7 @@ var _ webhook.Validator = &Cluster{}
 func (r *Cluster) ValidateCreate() error {
 	log.Info("validate create", "name", r.Name)
 
-	var allErrs field.ErrorList
-
-	allErrs = append(allErrs, r.validateScaling()...)
-
-	allErrs = append(allErrs, r.validateKafkaListeners()...)
-
-	allErrs = append(allErrs, r.validateAdminListeners()...)
-
-	allErrs = append(allErrs, r.validatePandaproxyListeners()...)
-
-	allErrs = append(allErrs, r.validateSchemaRegistryListener()...)
-
-	allErrs = append(allErrs, r.checkCollidingPorts()...)
-
-	allErrs = append(allErrs, r.validateRedpandaMemory()...)
-
-	allErrs = append(allErrs, r.validateRedpandaResources(redpandaResourceFields(r))...)
-
-	for _, rf := range sidecarResourceFields(r) {
-		allErrs = append(allErrs, r.validateResources(rf)...)
-	}
-
-	allErrs = append(allErrs, r.validateArchivalStorage()...)
-
-	allErrs = append(allErrs, r.validatePodDisruptionBudget()...)
+	allErrs := r.validateCommon()
 
 	if len(allErrs) == 0 {
 		return nil
@@ -217,35 +206,11 @@ func (r *Cluster) ValidateCreate() error {
 func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	log.Info("validate update", "name", r.Name)
 	oldCluster := old.(*Cluster)
-	var allErrs field.ErrorList
-
-	allErrs = append(allErrs, r.validateScaling()...)
+	allErrs := r.validateCommon()
 
 	allErrs = append(allErrs, r.validateDownscaling(oldCluster)...)
 
-	allErrs = append(allErrs, r.validateKafkaListeners()...)
-
-	allErrs = append(allErrs, r.validateAdminListeners()...)
-
-	allErrs = append(allErrs, r.validatePandaproxyListeners()...)
-
-	allErrs = append(allErrs, r.validateSchemaRegistryListener()...)
-
-	allErrs = append(allErrs, r.checkCollidingPorts()...)
-
-	allErrs = append(allErrs, r.validateRedpandaMemory()...)
-
 	allErrs = append(allErrs, r.validateRedpandaCoreChanges(oldCluster)...)
-
-	allErrs = append(allErrs, r.validateRedpandaResources(redpandaResourceFields(r))...)
-
-	for _, rf := range sidecarResourceFields(r) {
-		allErrs = append(allErrs, r.validateResources(rf)...)
-	}
-
-	allErrs = append(allErrs, r.validateArchivalStorage()...)
-
-	allErrs = append(allErrs, r.validatePodDisruptionBudget()...)
 
 	allErrs = append(allErrs, r.validateLicense(oldCluster)...)
 
@@ -256,6 +221,27 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	return apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name, allErrs)
+}
+
+func (r *Cluster) validateCommon() field.ErrorList {
+	var allErrs field.ErrorList
+	allErrs = append(allErrs, r.validateScaling()...)
+	allErrs = append(allErrs, r.validateKafkaListeners()...)
+	allErrs = append(allErrs, r.validateAdminListeners()...)
+	allErrs = append(allErrs, r.validatePandaproxyListeners()...)
+	allErrs = append(allErrs, r.validateSchemaRegistryListener()...)
+	allErrs = append(allErrs, r.checkCollidingPorts()...)
+	allErrs = append(allErrs, r.validateRedpandaMemory()...)
+	for _, rf := range sidecarResourceFields(r) {
+		allErrs = append(allErrs, r.validateResources(rf)...)
+	}
+	allErrs = append(allErrs, r.validateRedpandaResources(redpandaResourceFields(r))...)
+	allErrs = append(allErrs, r.validateArchivalStorage()...)
+	allErrs = append(allErrs, r.validatePodDisruptionBudget()...)
+	if featuregates.InternalTopicReplication(r.Spec.Version) {
+		allErrs = append(allErrs, r.validateAdditionalConfiguration()...)
+	}
+	return allErrs
 }
 
 func (r *Cluster) validateScaling() field.ErrorList {
@@ -382,7 +368,6 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 		case noneAuthorizationMechanism:
 		case saslAuthorizationMechanism:
 		case mTLSIdentityAuthorizationMechanism:
-			break
 		default:
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("authenticationMethod"),
@@ -937,11 +922,70 @@ func (r *Cluster) validatePodDisruptionBudget() field.ErrorList {
 	return allErrs
 }
 
+func (r *Cluster) validateAdditionalConfiguration() field.ErrorList {
+	var allErrs field.ErrorList
+	var idAllocatorReplication, transactionCoordinatorReplication, defaultTopicReplication int
+	internalTopicReplicationFactor := defaultInternalTopicReplicationNumber
+	minReplication := defaultInternalTopicReplicationNumber
+	if r.Spec.Replicas != nil && int(*r.Spec.Replicas) < defaultInternalTopicReplicationNumber {
+		minReplication = int(*r.Spec.Replicas)
+	}
+	for k, v := range r.Spec.AdditionalConfiguration {
+		var err error
+		switch k {
+		// Would be good to make these checks issue warnings for their fields being
+		// deprecated once controller-runtime supports adding warnings to the result.
+		// see https://github.com/kubernetes-sigs/controller-runtime/pull/2014
+		case idAllocatorReplicationKey:
+			idAllocatorReplication, err = strconv.Atoi(v)
+			if err != nil {
+				allErrs = append(allErrs, field.Invalid(
+					field.NewPath("spec").Child("additionalConfiguration").Child(k), v, "Must be an integer."))
+				break
+			}
+			if idAllocatorReplication > minReplication {
+				minReplication = idAllocatorReplication
+			}
+		case transactionCoordinatorReplicationKey:
+			transactionCoordinatorReplication, err = strconv.Atoi(v)
+			if err != nil {
+				allErrs = append(allErrs, field.Invalid(
+					field.NewPath("spec").Child("additionalConfiguration").Child(k), v, "Must be an integer."))
+				break
+			}
+			if transactionCoordinatorReplication > minReplication {
+				minReplication = transactionCoordinatorReplication
+			}
+		case defaultTopicReplicationKey:
+			defaultTopicReplication, err = strconv.Atoi(v)
+			if err != nil {
+				allErrs = append(allErrs, field.Invalid(
+					field.NewPath("spec").Child("additionalConfiguration").Child(k), v, "Must be an integer."))
+				break
+			}
+			if defaultTopicReplication > minReplication {
+				minReplication = defaultTopicReplication
+			}
+		case internalTopicReplicationFactorKey:
+			internalTopicReplicationFactor, err = strconv.Atoi(v)
+			if err != nil {
+				allErrs = append(allErrs, field.Invalid(
+					field.NewPath("spec").Child("additionalConfiguration").Child(k), v, "Must be an integer."))
+			}
+		}
+	}
+	if internalTopicReplicationFactor < minReplication {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec").Child("additionalConfiguration").Child(internalTopicReplicationFactorKey),
+			internalTopicReplicationFactor,
+			fmt.Sprintf("Cannot be reduced from %d", minReplication)))
+	}
+	return allErrs
+}
+
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateDelete() error {
-	log.Info("validate delete", "name", r.Name)
-
-	// TODO(user): fill in your validation logic upon object deletion.
+	// this is a stub to implement the interface. We do not validate on delete.
 	return nil
 }
 

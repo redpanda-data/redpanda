@@ -53,7 +53,7 @@ func TestDefault(t *testing.T) {
 			configAlreadyPresent:                true,
 		},
 	}
-	fields := []string{"redpanda.default_topic_replications", "redpanda.transaction_coordinator_replication", "redpanda.id_allocator_replication"}
+	fields := []string{"redpanda.internal_topic_replication_factor"}
 	for _, tt := range tests {
 		for _, field := range fields {
 			t.Run(tt.name, func(t *testing.T) {

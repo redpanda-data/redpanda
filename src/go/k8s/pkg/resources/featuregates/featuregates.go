@@ -39,6 +39,12 @@ func MetricsQueryParamName(version string) bool {
 	return atLeastVersion(V23_2, version)
 }
 
+// InternalTopicReplication feature gate should be removed when the operator
+// will no longer support versions less than v22.3.1
+func InternalTopicReplication(version string) bool {
+	return atLeastVersion(V22_3, version)
+}
+
 // CentralizedConfiguration feature gate should be removed when the operator
 // will no longer support 21.x or older versions
 func CentralizedConfiguration(version string) bool {
