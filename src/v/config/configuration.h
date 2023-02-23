@@ -366,10 +366,6 @@ struct configuration final : public config_store {
       controller_log_accummulation_rps_capacity_configuration_operations;
 
     // node and cluster throughput limiting
-    bounded_property<std::optional<int64_t>>
-      kafka_throughput_limit_cluster_in_bps;
-    bounded_property<std::optional<int64_t>>
-      kafka_throughput_limit_cluster_out_bps;
     bounded_property<std::optional<int64_t>> kafka_throughput_limit_node_in_bps;
     bounded_property<std::optional<int64_t>>
       kafka_throughput_limit_node_out_bps;
