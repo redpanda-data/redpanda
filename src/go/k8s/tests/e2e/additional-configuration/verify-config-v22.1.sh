@@ -3,9 +3,8 @@ echo "verify-config-v22.1.sh $*"
 retries=20
 until [ "$retries" -lt 0 ]; do
   PANDAPROXY_RETRIES=$1
-  CRASH_LOOP_LIMIT=$2
-  if [ -z "$CRASH_LOOP_LIMIT" ] && [ -z "$PANDAPROXY_RETRIES" ]; then
-    echo "requires two argument, pandaproxy retries count and crash loop limit"
+  if [ -z "$PANDAPROXY_RETRIES" ]; then
+    echo "requires one argument, pandaproxy retries count"
     exit 1
   fi
   echo "Fetching configuration from $NAMESPACE/additional-configuration-0"
