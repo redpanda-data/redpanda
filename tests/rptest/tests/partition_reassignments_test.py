@@ -19,6 +19,7 @@ from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityCon
 from rptest.services.verifiable_producer import VerifiableProducer
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -436,6 +437,23 @@ class PartitionReassignmentsTest(RedpandaTest):
             reassignments=reassignments_json, timeout_s=30)
         check_verify_reassign_partitions(output, reassignments_json,
                                          self.logger)
+
+    @cluster(num_nodes=4)
+    def test_disable_alter_reassignment_api(self):
+        # works
+        kcl = KCL(self.redpanda)
+        kcl.alter_partition_reassignments({})
+
+        # disable api
+        self.redpanda.set_cluster_config(
+            dict(kafka_enable_partition_reassignment=False))
+
+        # doesn't work
+        try:
+            kcl.alter_partition_reassignments({})
+            assert "alter partition reassignments should have failed"
+        except subprocess.CalledProcessError as e:
+            assert "AlterPartitionReassignment API is disabled. See" in e.output
 
 
 class PartitionReassignmentsACLsTest(RedpandaTest):

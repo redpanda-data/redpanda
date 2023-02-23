@@ -929,6 +929,12 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       std::nullopt,
       security::tls::validate_rules)
+  , kafka_enable_partition_reassignment(
+      *this,
+      "kafka_enable_partition_reassignment",
+      "Enable the Kafka partition reassignment API",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
   , controller_backend_housekeeping_interval_ms(
       *this,
       "controller_backend_housekeeping_interval_ms",

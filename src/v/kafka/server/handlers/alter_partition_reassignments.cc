@@ -200,6 +200,18 @@ ss::future<response_ptr> alter_partition_reassignments_handler::handle(
     log_request(ctx.header(), request);
     alter_partition_reassignments_response resp;
 
+    if (!config::shard_local_cfg().kafka_enable_partition_reassignment()) {
+        vlog(
+          klog.info,
+          "Rejected alter partition reassignment request: API is disabled. See "
+          "`kafka_enable_partition_reassignment` configuration option");
+        resp.data.error_code = error_code::invalid_replica_assignment;
+        resp.data.error_message
+          = "AlterPartitionReassignment API is disabled. See "
+            "`kafka_enable_partition_reassignment` configuration option.";
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
     if (!ctx.authorized(
           security::acl_operation::alter, security::default_cluster_name)) {
         vlog(
