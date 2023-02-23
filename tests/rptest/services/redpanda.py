@@ -279,8 +279,11 @@ class SISettings:
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
 
-    # The account to use with local Azurite testing
+    # The account and key to use with local Azurite testing.
+    # These are the default Azurite (Azure emulator) storage account and shared key.
+    # Both are readily available in the docs.
     ABS_AZURITE_ACCOUNT = "devstoreaccount1"
+    ABS_AZURITE_KEY = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
 
     def __init__(self,
                  test_context,
@@ -338,9 +341,7 @@ class SISettings:
             self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
         elif self.cloud_storage_type == CloudStorageType.ABS:
-            # These are the default Azurite (Azure emulator) storage account and shared key.
-            # Both are readily available in the docs.
-            self.cloud_storage_azure_shared_key = 'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=='
+            self.cloud_storage_azure_shared_key = self.ABS_AZURITE_KEY
             self.cloud_storage_azure_storage_account = self.ABS_AZURITE_ACCOUNT
 
             self._cloud_storage_azure_container = f'panda-container-{uuid.uuid1()}'

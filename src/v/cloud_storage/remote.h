@@ -82,6 +82,9 @@ public:
     void maybe_start_auth_refresh_op(
       cloud_roles::credentials_update_cb_t credentials_update_cb);
 
+    cloud_storage_clients::client_configuration get_client_config() const;
+    void set_client_config(cloud_storage_clients::client_configuration conf);
+
 private:
     void do_start_auth_refresh_op(
       cloud_roles::credentials_update_cb_t credentials_update_cb);
@@ -406,6 +409,8 @@ private:
     remote_probe _probe;
 
     intrusive_list<event_filter, &event_filter::_hook> _filters;
+
+    config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
 };
 
 } // namespace cloud_storage
