@@ -12,6 +12,7 @@ import tempfile
 from rptest.clients.types import TopicSpec
 import json
 from ducktape.utils.util import wait_until
+from typing import Optional
 
 
 class AuthenticationError(Exception):
@@ -252,7 +253,9 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
     def reassign_partitions(self,
                             reassignments: dict,
                             operation: str,
-                            write_reassignments_to_disk: bool = True):
+                            write_reassignments_to_disk: bool = True,
+                            msg_retry: Optional[str] = None,
+                            timeout_s: int = 10):
         assert "version" in reassignments
         assert reassignments["version"] == 1
         assert "partitions" in reassignments
@@ -274,38 +277,17 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         else:
             raise NotImplementedError(f"Unknown operation: {operation}")
 
-        return self._run("kafka-reassign-partitions.sh", args)
-
-    def execute_reassign_partitions(self, reassignments: dict):
-        output = self.reassign_partitions(reassignments=reassignments,
-                                          operation="execute")
-        return output.splitlines()
-
-    def verify_reassign_partitions(self, reassignments: dict, timeout_s: int):
         output = None
 
         def do_reassign_partitions():
             nonlocal output
-            output = self.reassign_partitions(
-                reassignments=reassignments,
-                operation="verify",
-                write_reassignments_to_disk=False)
-
-            # Retry the script if there is reassignment still in progress
-            return "is still in progress." not in output
+            output = self._run("kafka-reassign-partitions.sh", args)
+            return True if msg_retry is None else msg_retry not in output
 
         wait_until(do_reassign_partitions,
                    timeout_sec=timeout_s,
                    backoff_sec=1)
-
-        return output.splitlines()
-
-    def cancel_reassign_partitions(self, reassignments: dict):
-        output = self.reassign_partitions(reassignments=reassignments,
-                                          operation="cancel",
-                                          write_reassignments_to_disk=False)
-
-        return output.splitlines()
+        return output
 
     def describe_producers(self, topic, partition):
         expected_columns = [

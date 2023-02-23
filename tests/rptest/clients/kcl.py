@@ -14,6 +14,7 @@ import subprocess
 import time
 import itertools
 from typing import Optional
+from ducktape.utils.util import wait_until
 
 KclPartitionOffset = namedtuple(
     'KclPartitionOffset',
@@ -230,7 +231,8 @@ class KCL:
     def alter_partition_reassignments(self,
                                       topics: dict[str, dict[int, list[int]]],
                                       user_cred: Optional[dict[str,
-                                                               str]] = None):
+                                                               str]] = None,
+                                      timeout_s: int = 10):
         """
         :param topics: the key is a topic and the value is a dict that maps partition IDs
                        to new replica assignments
@@ -258,35 +260,54 @@ class KCL:
             reassignment_str += join_partitions
             cmd.append(reassignment_str)
 
-        lines = self._cmd(cmd).splitlines()
-        self._redpanda.logger.debug(lines)
-        ok_re = re.compile(
-            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +OK$")
         no_broker_re = re.compile(
             r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +BROKER_NOT_AVAILABLE.*$"
         )
         bad_rep_factor_re = re.compile(
             r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +INVALID_REPLICATION_FACTOR.*$"
         )
-        for l in lines:
-            l = l.strip()
-            self._redpanda.logger.debug(l)
+        unknown_tp_re = re.compile(
+            r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +UNKNOWN_TOPIC_OR_PARTITION:.*$"
+        )
 
-            m = no_broker_re.match(l)
-            # No broker available means the partition did not find any eligible allocation nodes.
-            # See the map from cluster errors to kafka errors in kafka::map_topic_error_code()
-            if m is not None:
-                raise RuntimeError('No eligible allocation nodes')
+        lines = None
 
-            m = bad_rep_factor_re.match(l)
-            # Invalid replication factor means the number of replicas for one (or more) partitions
-            # in a request does not match the replication factor for the topic.
-            if m is not None:
-                raise RuntimeError(
-                    'Number of replicas != topic replication factor')
+        def do_alter_partitions():
+            nonlocal lines
+            lines = self._cmd(cmd).splitlines()
 
-            m = ok_re.match(l)
-            assert m is not None
+            # Check for errors here instead of outside the KCL wrapper
+            # because test writers can use method params to account for their expectations
+            for l in lines:
+                l = l.strip()
+                self._redpanda.logger.debug(l)
+
+                m = no_broker_re.match(l)
+                # No broker available means the partition did not find any eligible allocation nodes.
+                # See the map from cluster errors to kafka errors in kafka::map_topic_error_code()
+                if m is not None:
+                    raise RuntimeError('No eligible allocation nodes')
+
+                # Invalid replication factor means the number of replicas for one (or more) partitions
+                # in a request does not match the replication factor for the topic.
+                m = bad_rep_factor_re.match(l)
+                if m is not None:
+                    raise RuntimeError(
+                        'Number of replicas != topic replication factor')
+
+                # RP may report that the topic does not exist, this can
+                # happen when the recieving broker has out-of-date metadata. So
+                # retry the request.
+                m = unknown_tp_re.match(l)
+                if m is not None:
+                    return False
+
+            return True
+
+        wait_until(do_alter_partitions,
+                   timeout_sec=timeout_s,
+                   backoff_sec=1,
+                   err_msg="Failed to alter partitions")
 
         return lines
 

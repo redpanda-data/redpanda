@@ -161,6 +161,23 @@ def check_cancel_reassign_partitions(lines: list[str], reassignments: dict,
         raise RuntimeError(f"Unexpected output: {lines}")
 
 
+def alter_partition_reassignments_with_kcl(
+        kcl: KCL,
+        topics: dict[str, dict[int, list[int]]],
+        user_cred: Optional[dict[str, str]] = None,
+        timeout_s: int = 10):
+    ok_re = re.compile(r"^(?P<topic>[a-z\-]+?) +(?P<partition>[0-9]+?) +OK$")
+
+    output = kcl.alter_partition_reassignments(topics,
+                                               user_cred=user_cred,
+                                               timeout_s=timeout_s)
+
+    for line in output:
+        assert ok_re.match(line.strip()) is not None
+
+    return output
+
+
 log_config = LoggingConfig('info',
                            logger_levels={
                                'kafka': 'trace',
@@ -265,6 +282,41 @@ class PartitionReassignmentsTest(RedpandaTest):
 
         return initial_assignments, all_node_idx, producers
 
+    def execute_reassign_partitions(self,
+                                    reassignments: dict,
+                                    timeout_s: int = 10):
+        kafka_tools = KafkaCliTools(self.redpanda)
+        return kafka_tools.reassign_partitions(
+            reassignments=reassignments,
+            operation="execute",
+            # RP may report that the topic does not exist, this can
+            # happen when the recieving broker has out-of-date metadata. So
+            # retry the request a few times.
+            msg_retry="Topic or partition is undefined",
+            timeout_s=timeout_s).splitlines()
+
+    def verify_reassign_partitions(self,
+                                   reassignments: dict,
+                                   msg_retry: Optional[str] = None,
+                                   timeout_s: int = 10):
+        kafka_tools = KafkaCliTools(self.redpanda)
+        return kafka_tools.reassign_partitions(
+            reassignments=reassignments,
+            operation="verify",
+            # Retry the script if there is a reassignment still in progress
+            msg_retry="is still in progress.",
+            timeout_s=timeout_s).splitlines()
+
+    def cancel_reassign_partitions(self,
+                                   reassignments: dict,
+                                   timeout_s: int = 10):
+        kafka_tools = KafkaCliTools(self.redpanda)
+        return kafka_tools.reassign_partitions(
+            reassignments=reassignments,
+            operation="cancel",
+            write_reassignments_to_disk=False,
+            timeout_s=timeout_s).splitlines()
+
     @cluster(num_nodes=6)
     def test_reassignments_kafka_cli(self):
         initial_assignments, all_node_idx, producers = self.initial_setup_steps(
@@ -278,13 +330,12 @@ class PartitionReassignmentsTest(RedpandaTest):
         reassignments_json = self.make_reassignments_for_cli(
             all_node_idx, initial_assignments)
 
-        kafka_tools = KafkaCliTools(self.redpanda)
-        output = kafka_tools.execute_reassign_partitions(
-            reassignments=reassignments_json)
+        output = self.execute_reassign_partitions(
+            reassignments=reassignments_json, timeout_s=30)
         check_execute_reassign_partitions(output, reassignments_json,
                                           self.logger)
 
-        output = kafka_tools.verify_reassign_partitions(
+        output = self.verify_reassign_partitions(
             reassignments=reassignments_json, timeout_s=180)
         check_verify_reassign_partitions(output, reassignments_json,
                                          self.logger)
@@ -318,7 +369,7 @@ class PartitionReassignmentsTest(RedpandaTest):
         self.logger.debug(
             f"Replacing replicas. New assignments: {reassignments}")
         kcl = KCL(self.redpanda)
-        kcl.alter_partition_reassignments(reassignments)
+        alter_partition_reassignments_with_kcl(kcl, reassignments)
 
         all_partition_idx = [p for p in range(self.PARTITION_COUNT)]
 
@@ -374,9 +425,11 @@ class PartitionReassignmentsTest(RedpandaTest):
             f"Even replica count by adding. Expect fail. New assignments: {reassignments}"
         )
 
+        kcl = KCL(self.redpanda)
+
         def try_even_replication_factor(topics):
             try:
-                kcl.alter_partition_reassignments(topics)
+                alter_partition_reassignments_with_kcl(kcl, topics)
                 raise Exception(
                     "Even replica count accepted but it should be rejected")
             except RuntimeError as ex:
@@ -415,14 +468,13 @@ class PartitionReassignmentsTest(RedpandaTest):
         reassignments_json = self.make_reassignments_for_cli(
             all_node_idx, initial_assignments)
 
-        kafka_tools = KafkaCliTools(self.redpanda)
-        output = kafka_tools.execute_reassign_partitions(
-            reassignments=reassignments_json)
+        output = self.execute_reassign_partitions(
+            reassignments=reassignments_json, timeout_s=30)
         check_execute_reassign_partitions(output, reassignments_json,
                                           self.logger)
 
         try:
-            output = kafka_tools.cancel_reassign_partitions(
+            output = self.cancel_reassign_partitions(
                 reassignments=reassignments_json)
             check_cancel_reassign_partitions(output, reassignments_json,
                                              self.logger)
@@ -433,7 +485,7 @@ class PartitionReassignmentsTest(RedpandaTest):
             else:
                 raise
 
-        output = kafka_tools.verify_reassign_partitions(
+        output = self.verify_reassign_partitions(
             reassignments=reassignments_json, timeout_s=30)
         check_verify_reassign_partitions(output, reassignments_json,
                                          self.logger)
@@ -493,15 +545,16 @@ class PartitionReassignmentsACLsTest(RedpandaTest):
         reassignments = {self.topic: {0: [1, 2, 3]}}
         self.logger.debug(f"New replica assignments: {reassignments}")
 
-        kcl = KCL(self.redpanda)
         user_cred = {
             "user": username,
             "passwd": self.password,
             "method": self.algorithm.lower().replace('-', '_')
         }
+        kcl = KCL(self.redpanda)
         try:
-            kcl.alter_partition_reassignments(reassignments,
-                                              user_cred=user_cred)
+            alter_partition_reassignments_with_kcl(kcl,
+                                                   reassignments,
+                                                   user_cred=user_cred)
             raise Exception(
                 f'AlterPartition with user {user_cred} passed. Expected fail.')
         except subprocess.CalledProcessError as e:
@@ -527,7 +580,9 @@ class PartitionReassignmentsACLsTest(RedpandaTest):
             "passwd": super_password,
             "method": super_algorithm.lower().replace('-', '_')
         }
-        kcl.alter_partition_reassignments(reassignments, user_cred=user_cred)
+        alter_partition_reassignments_with_kcl(kcl,
+                                               reassignments,
+                                               user_cred=user_cred)
 
         def reassignments_done():
             responses = kcl.list_partition_reassignments(tps_to_list,

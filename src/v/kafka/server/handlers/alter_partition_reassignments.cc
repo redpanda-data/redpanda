@@ -160,27 +160,46 @@ partitions_request_iterator validate_partitions(
           return unkown_broker_id_it == partition.replicas->end();
       });
 
+    // Check for undefined topic here instead of outside
+    // validate_partitions because there are only two places to store errors,
+    // the top level and reassignable_partition. The top level should be for
+    // errors that apply to all topics, not a single topic.
     valid_partitions_end = validate_replicas(
       begin,
       valid_partitions_end,
       std::back_inserter(invalid_partitions),
-      error_code::invalid_replication_factor,
-      "Number of replicas does not match the topic replication factor",
-      [&tp_metadata](const reassignable_partition& partition) {
-          if (!partition.replicas.has_value()) {
-              return true;
-          }
-
-          if (
-            !tp_metadata.has_value()
-            || !tp_metadata.value().is_topic_replicable()) {
-              return false;
-          }
-
-          auto tp_replication_factor
-            = tp_metadata.value().get_replication_factor();
-          return size_t(tp_replication_factor) == partition.replicas->size();
+      error_code::unknown_topic_or_partition,
+      "Topic or partition is undefined",
+      [&tp_metadata](const reassignable_partition&) {
+          return tp_metadata.has_value();
       });
+
+    // Check the replication factor when topic metadata is defined.
+    if (tp_metadata.has_value()) {
+        valid_partitions_end = validate_replicas(
+          begin,
+          valid_partitions_end,
+          std::back_inserter(invalid_partitions),
+          error_code::invalid_replication_factor,
+          "Number of replicas does not match the topic replication factor",
+          [&tp_metadata](const reassignable_partition& partition) {
+              if (!partition.replicas.has_value()) {
+                  return true;
+              }
+
+              auto tp_replication_factor
+                = tp_metadata.value().get_replication_factor();
+              vlog(
+                klog.debug,
+                "Checking replication factor: cfg {}, replication factor {}, "
+                "requested replicas {}",
+                tp_metadata.value().get_configuration(),
+                tp_replication_factor,
+                *partition.replicas);
+              return size_t(tp_replication_factor)
+                     == partition.replicas->size();
+          });
+    }
 
     // Store any invalid partitions in the response
     if (!invalid_partitions.empty()) {
