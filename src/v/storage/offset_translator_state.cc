@@ -27,6 +27,20 @@ int64_t offset_translator_state::delta(model::offset o) const {
 
     auto it = _last_offset2batch.lower_bound(o);
     if (it == _last_offset2batch.begin()) {
+        // We don't have enough information to calculate delta if we've ended up
+        // here (even if we have an entry with the key o in the
+        // _last_offset2batch map). The reason is that the first entry of the
+        // map doesn't represent a real non-data batch, but rather an
+        // amalgamation of all non-data batches prior to the start of the
+        // translation range that is needed to save the delta at the log start.
+        //
+        // One common way to get this error is when the client code tries to
+        // translate the end offset of an empty log (which is by convention
+        // prev(start_offset) if start_offset >= 0, and therefore lies outside
+        // the translation range). In this case the client code should detect
+        // that the offset range is empty and manually set the end of the
+        // translated range to prev(translated(start_offset)).
+
         throw std::runtime_error{fmt::format(
           "ntp {}: log offset {} is outside the translation range (starting at "
           "{})",
@@ -37,10 +51,20 @@ int64_t offset_translator_state::delta(model::offset o) const {
 
     auto delta = std::prev(it)->second.next_delta;
     if (it == _last_offset2batch.end() || o < it->second.base_offset) {
+        // This is the common case: offset o is the offset of a record in a data
+        // batch between non-data batches pointed to by iterators `it` and
+        // `std::prev(it)` (or, if `it` is the map end, o is beyond the last
+        // non-data batch in the log). Delta that we need is stored in the map
+        // element pointed to by `std::prev(it)`.
         return delta;
     } else {
         // The offset is inside the non-data batch, so the data offset stops
-        // increasing at the base offset.
+        // increasing at the base offset. This means that for all records in the
+        // gap, data offset is equal to the data offset of the *next* data
+        // record. A heuristic to recall this rule: suppose the record at log
+        // (redpanda) offset 0 is a config batch. Then its data (kafka) offset
+        // must be 0, the same as the data (kafka) offset of the data record at
+        // log (redpanda) offset 1.
         return delta + (o - it->second.base_offset);
     }
 }
