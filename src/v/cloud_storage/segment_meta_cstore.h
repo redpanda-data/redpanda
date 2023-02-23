@@ -171,7 +171,7 @@ public:
     /// index lookup operations.
     std::optional<hint_t> get_current_stream_pos() const { return _last_row; }
 
-    const_iterator at(size_t index) const {
+    const_iterator at_index(size_t index) const {
         if (index >= _size) {
             return end();
         }
@@ -184,7 +184,7 @@ public:
     ///
     /// The 'hint' has to correspond to any index lower or equal to
     /// 'index'. The 'hint' values has to be stored externally.
-    const_iterator at(size_t index, const hint_t& hint) const {
+    const_iterator at_index(size_t index, const hint_t& hint) const {
         if (index >= _size) {
             return end();
         }
@@ -263,7 +263,7 @@ public:
 
     void prefix_truncate_ix(uint32_t ix) {
         segment_meta_column_frame<value_t, delta_t> tmp(_delta_alg);
-        for (auto it = at(ix); it != end(); ++it) {
+        for (auto it = at_index(ix); it != end(); ++it) {
             tmp.append(*it);
         }
         _head = tmp._head;
@@ -330,7 +330,7 @@ private:
     template<class iter_t>
     static iter_list_t make_snapshot_at(iter_t begin, iter_t end, size_t ix) {
         iter_list_t snap;
-        auto intr = begin->at(ix);
+        auto intr = begin->at_index(ix);
         snap.push_back(std::move(intr));
         std::advance(begin, 1);
         for (auto it = begin; it != end; ++it) {
@@ -344,7 +344,7 @@ private:
     static iter_list_t
     make_snapshot_at(iter_t begin, iter_t end, size_t ix, const hint_t& row) {
         iter_list_t snap;
-        auto intr = begin->at(ix, row);
+        auto intr = begin->at_index(ix, row);
         snap.push_back(std::move(intr));
         std::advance(begin, 1);
         for (auto it = begin; it != end; ++it) {
@@ -553,7 +553,7 @@ public:
         return tx;
     }
 
-    const_iterator at(size_t index) const {
+    const_iterator at_index(size_t index) const {
         auto inner = index;
         for (auto it = _frames.begin(); it != _frames.end(); ++it) {
             if (it->size() <= inner) {
@@ -569,7 +569,7 @@ public:
     ///
     /// The 'hint' has to correspond to any index lower or equal to
     /// 'index'. The 'hint' values has to be stored externally.
-    const_iterator at(size_t index, const hint_t& hint) const {
+    const_iterator at_index(size_t index, const hint_t& hint) const {
         auto inner = index;
         for (auto it = _frames.begin(); it != _frames.end(); ++it) {
             if (it->size() <= inner) {
@@ -833,7 +833,7 @@ public:
     /// Upper/lower bound search operations
     const_iterator upper_bound(model::offset) const;
     const_iterator lower_bound(model::offset) const;
-    const_iterator at(size_t ix) const;
+    const_iterator at_index(size_t ix) const;
 
     void insert(const segment_meta&);
 

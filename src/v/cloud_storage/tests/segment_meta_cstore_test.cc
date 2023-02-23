@@ -381,7 +381,7 @@ void at_test_case(const int64_t num_elements, column_t& column) {
     std::shuffle(samples.begin(), samples.end(), g);
 
     for (auto [expected, index] : samples) {
-        auto it = column.at(index);
+        auto it = column.at_index(index);
         BOOST_REQUIRE(it != column.end());
         auto actual = *it;
         BOOST_REQUIRE_EQUAL(actual, expected);
@@ -517,8 +517,9 @@ void at_with_hint_test_case(const int64_t num_elements, column_t& column) {
             num_skips++;
             continue;
         }
-        auto it = h_it->pos.has_value() ? column.at(index, h_it->pos.value())
-                                        : column.at(index);
+        auto it = h_it->pos.has_value()
+                    ? column.at_index(index, h_it->pos.value())
+                    : column.at_index(index);
         BOOST_REQUIRE(it != column.end());
         auto actual = *it;
         BOOST_REQUIRE_EQUAL(actual, expected);
@@ -736,7 +737,7 @@ void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
     for (size_t i = 0; i < store.size(); i++) {
         BOOST_REQUIRE(store.contains(manifest[i].base_offset));
         BOOST_REQUIRE_EQUAL(*store.find(manifest[i].base_offset), manifest[i]);
-        BOOST_REQUIRE_EQUAL(*store.at(i), manifest[i]);
+        BOOST_REQUIRE_EQUAL(*store.at_index(i), manifest[i]);
     }
 }
 

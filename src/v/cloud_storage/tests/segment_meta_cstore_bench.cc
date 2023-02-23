@@ -144,7 +144,7 @@ void find_test(StoreT& store) {
 template<class StoreT>
 void at_test(StoreT& store) {
     perf_tests::start_measuring_time();
-    auto it = store.at(store.size() - 1);
+    auto it = store.at_index(store.size() - 1);
     perf_tests::do_not_optimize(it);
     perf_tests::stop_measuring_time();
 }
@@ -239,7 +239,7 @@ PERF_TEST(cstore_bench, xor_frame_at_with_index_4K) {
     }
     auto it = index.at(4000);
     perf_tests::start_measuring_time();
-    frame.at(4000, it);
+    frame.at_index(4000, it);
     perf_tests::stop_measuring_time();
 }
 
@@ -259,7 +259,7 @@ PERF_TEST(cstore_bench, xor_column_at_with_index_4K) {
     }
     auto it = index.at(4000);
     perf_tests::start_measuring_time();
-    column.at(4000, it);
+    column.at_index(4000, it);
     perf_tests::stop_measuring_time();
 }
 

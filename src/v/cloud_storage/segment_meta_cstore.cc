@@ -307,7 +307,8 @@ public:
     auto at_with_hint(
       const col_t& c, uint32_t ix, const std::optional<hint_vec_t>& h) const {
         vassert(h.has_value(), "Invalid access at index {}", ix);
-        return c.at(ix, std::get<static_cast<size_t>(col_index)>(h.value()));
+        return c.at_index(
+          ix, std::get<static_cast<size_t>(col_index)>(h.value()));
     }
 
     /// Materialize 'segment_meta' struct from column iterator
@@ -322,18 +323,18 @@ public:
         auto hint_it = _hints.lower_bound(bo);
         if (hint_it == _hints.end() || hint_it->second == std::nullopt) {
             return iterators_t(
-              _is_compacted.at(ix),
-              _size_bytes.at(ix),
+              _is_compacted.at_index(ix),
+              _size_bytes.at_index(ix),
               std::move(base_offset_iter),
-              _committed_offset.at(ix),
-              _base_timestamp.at(ix),
-              _max_timestamp.at(ix),
-              _delta_offset.at(ix),
-              _ntp_revision.at(ix),
-              _archiver_term.at(ix),
-              _segment_term.at(ix),
-              _delta_offset_end.at(ix),
-              _sname_format.at(ix));
+              _committed_offset.at_index(ix),
+              _base_timestamp.at_index(ix),
+              _max_timestamp.at_index(ix),
+              _delta_offset.at_index(ix),
+              _ntp_revision.at_index(ix),
+              _archiver_term.at_index(ix),
+              _segment_term.at_index(ix),
+              _delta_offset_end.at_index(ix),
+              _sname_format.at_index(ix));
         }
 
         auto hint = hint_it->second;
@@ -376,8 +377,8 @@ public:
     }
 
     /// Search by index
-    auto at(size_t ix) const {
-        auto it = _base_offset.at(ix);
+    auto at_index(size_t ix) const {
+        auto it = _base_offset.at_index(ix);
         return materialize(std::move(it));
     }
 
@@ -553,9 +554,9 @@ public:
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
-    at(size_t ix) const {
+    at_index(size_t ix) const {
         return std::make_unique<segment_meta_materializing_iterator::impl>(
-          _col.at(ix));
+          _col.at_index(ix));
     }
 
 private:
@@ -612,8 +613,9 @@ void segment_meta_cstore::prefix_truncate(model::offset new_start_offset) {
     return _impl->prefix_truncate(new_start_offset);
 }
 
-segment_meta_cstore::const_iterator segment_meta_cstore::at(size_t ix) const {
-    return const_iterator(_impl->at(ix));
+segment_meta_cstore::const_iterator
+segment_meta_cstore::at_index(size_t ix) const {
+    return const_iterator(_impl->at_index(ix));
 }
 
 } // namespace cloud_storage
