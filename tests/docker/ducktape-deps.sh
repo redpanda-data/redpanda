@@ -60,7 +60,7 @@ function install_kafka_tools() {
 
 function install_librdkafka() {
   mkdir /opt/librdkafka
-  curl -SL "https://github.com/edenhill/librdkafka/archive/v1.9.2.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
+  curl -SL "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.0.2.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
   cd /opt/librdkafka
   ./configure
   make -j$(nproc)
