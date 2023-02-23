@@ -250,15 +250,17 @@ private:
     struct cross_shard_move_request {
         cross_shard_move_request(model::revision_id, raft::group_configuration);
 
-        model::revision_id revision;
+        // Revision of the ntp directory on this node. This revision can change
+        // over the lifetime of the partition as it moves between nodes.
+        model::revision_id log_revision;
         raft::group_configuration initial_configuration;
         friend std::ostream& operator<<(
           std::ostream& o,
           const controller_backend::cross_shard_move_request& r) {
             fmt::print(
               o,
-              "{{revision: {}, configuration: {}}}",
-              r.revision,
+              "{{log revision: {}, configuration: {}}}",
+              r.log_revision,
               r.initial_configuration);
             return o;
         }
@@ -302,7 +304,14 @@ private:
     ss::future<std::error_code> create_partition(
       model::ntp,
       raft::group_id,
-      model::revision_id,
+      // revision of the ntp log directory on this node.
+      model::revision_id log_revision,
+      // revision of the command executing this create. A partition can be
+      // created based off an update that moved the partition to this
+      // node shard, in which case this is the revision derived from the
+      // offset of the update delta. This is used to update the shard
+      // table.
+      model::revision_id command_revision,
       std::vector<model::broker>);
     ss::future<> add_to_shard_table(
       model::ntp, raft::group_id, ss::shard_id, model::revision_id);
@@ -353,7 +362,7 @@ private:
       model::ntp, ss::shard_id, cross_shard_move_request);
 
     ss::future<std::error_code> create_partition_from_remote_shard(
-      model::ntp, ss::shard_id, partition_assignment);
+      model::ntp, model::revision_id, ss::shard_id, partition_assignment);
 
     bool can_finish_update(
       std::optional<model::node_id> current_leader,
