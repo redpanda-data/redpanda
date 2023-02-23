@@ -275,6 +275,12 @@ members_manager::apply_update(model::record_batch b) {
       cmd,
       [this, update_offset](decommission_node_cmd cmd) mutable {
           auto id = cmd.key;
+          vlog(
+            clusterlog.trace,
+            "applying decommission_node_cmd, offset: {}, node id: {}",
+            id,
+            update_offset);
+
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
@@ -290,6 +296,12 @@ members_manager::apply_update(model::record_batch b) {
       },
       [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
+          vlog(
+            clusterlog.trace,
+            "applying recommission_node_cmd, offset: {}, node id: {}",
+            id,
+            update_offset);
+
           // TODO: remove this part after we introduce simplified raft
           // configuration handling as this will be commands driven
           auto raft0_cfg = _raft0->config();
@@ -325,6 +337,14 @@ members_manager::apply_update(model::record_batch b) {
           // we do not have to dispatch this command to members table since this
           // command is only used by a backend to signal successfully finished
           // node reallocations
+
+          model::node_id id = cmd.key;
+          vlog(
+            clusterlog.trace,
+            "applying finish_reallocations_cmd, offset: {}, node id: {}",
+            id,
+            update_offset);
+
           return _update_queue
             .push_eventually(node_update{
               .id = cmd.key,
@@ -333,6 +353,14 @@ members_manager::apply_update(model::record_batch b) {
             .then([] { return make_error_code(errc::success); });
       },
       [this, update_offset](maintenance_mode_cmd cmd) {
+          vlog(
+            clusterlog.trace,
+            "applying maintenance_mode_cmd, offset: {}, node id: {}, enabled: "
+            "{}",
+            cmd.key,
+            update_offset,
+            cmd.value);
+
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, cmd](std::error_code error) {
                 auto f = ss::now();
