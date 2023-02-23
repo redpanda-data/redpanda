@@ -177,6 +177,7 @@ housekeeping_workflow::housekeeping_workflow(
 void housekeeping_workflow::register_job(housekeeping_job& job) {
     job.acquire();
     _pending.push_back(job);
+    _cvar.signal();
 }
 
 void housekeeping_workflow::deregister_job(housekeeping_job& job) {
