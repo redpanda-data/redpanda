@@ -19,7 +19,7 @@ func NewLicenseCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "license",
 		Args:  cobra.ExactArgs(0),
-		Short: "Manage cluster license.",
+		Short: "Manage cluster license",
 	}
 
 	common.AddAdminAPITLSFlags(cmd,

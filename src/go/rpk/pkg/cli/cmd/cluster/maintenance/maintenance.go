@@ -54,7 +54,7 @@ Currently leadership is not transferred for partitions with one replica.
 		&adminURL,
 		config.FlagAdminHosts2,
 		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>")
+		"Comma-separated list of admin API addresses (<IP>:<port>)")
 
 	common.AddAdminAPITLSFlags(cmd,
 		&adminEnableTLS,

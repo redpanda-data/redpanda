@@ -246,9 +246,12 @@ func (e *S3EndpointError) Error() string {
 
 const bundleHelpText = `'rpk debug bundle' collects environment data that can help debug and diagnose
 issues with a redpanda cluster, a broker, or the machine it's running on. It
-then bundles the collected data into a zip file.
+then bundles the collected data into a ZIP file, called a diagnostics bundle.
 
-The following are the data sources that are bundled in the compressed file:
+The files and directories in the diagnostics bundle differ depending on the 
+environment in which Redpanda is running:
+
+COMMON FILES
 
  - Kafka metadata: Broker configs, topic configs, start/committed/end offsets,
    groups, group commits.
@@ -271,18 +274,23 @@ The following are the data sources that are bundled in the compressed file:
  - Clock drift: The ntp clock delta (using pool.ntp.org as a reference) & round
    trip time.
 
- - Kernel logs: The kernel logs ring buffer (syslog).
+ - Admin API calls: Cluster and broker configurations, cluster health data, and 
+   license key information.
 
- - Broker metrics: The local broker's Prometheus metrics, fetched through its
-   admin API.
+ - Broker metrics: The broker's Prometheus metrics, fetched through its
+   admin API (/metrics and /public_metrics).
+
+BARE-METAL
+
+ - Kernel logs: The kernel logs ring buffer (syslog).
 
  - DNS: The DNS info as reported by 'dig', using the hosts in
    /etc/resolv.conf.
 
  - Disk usage: The disk usage for the data directory, as output by 'du'.
 
- - redpanda logs: The redpanda logs written to journald. If --logs-since or
-   --logs-until are passed, then only the logs within the resulting time frame
+ - redpanda logs: The node's redpanda logs written to journald. If --logs-since 
+   or --logs-until are passed, then only the logs within the resulting time frame
    will be included.
 
  - Socket info: The active sockets data output by 'ss'.
@@ -297,4 +305,17 @@ The following are the data sources that are bundled in the compressed file:
 
  - dmidecode: The DMI table contents. Only included if this command is run
    as root.
+
+KUBERNETES
+
+ - Kubernetes Resources: Kubernetes manifests for all resources in the given 
+   Kubernetes namespace (via --namespace).
+
+ - redpanda logs: Logs of each Pod in the the given Kubernetes namespace. If 
+   --logs-since is passed, only the logs within the given timeframe are 
+   included.
+
+
+If you have an upload URL from the Redpanda support team, provide it in the 
+--upload-url flag to upload your diagnostics bundle to Redpanda.
 `

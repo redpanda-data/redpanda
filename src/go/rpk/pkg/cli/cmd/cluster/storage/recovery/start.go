@@ -105,9 +105,9 @@ recovery process until it's finished.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&topicNamePattern, "topic-name-pattern", ".*", "A regex pattern to match topic names against. Only topics whose names match this pattern will be restored. If not passed, all topics will be restored.")
-	cmd.Flags().BoolVarP(&wait, "wait", "w", false, "Wait until auto-restore is complete.")
-	cmd.Flags().DurationVar(&pollingInterval, "polling-interval", 5*time.Second, "The interval in-between each status check (format: \"300ms\", \"1.5s\", \"1m45s\", etc). Ignored if --wait is not passed.")
+	cmd.Flags().StringVar(&topicNamePattern, "topic-name-pattern", ".*", "A regex pattern that restores any matching topics")
+	cmd.Flags().BoolVarP(&wait, "wait", "w", false, "Wait until auto-restore is complete")
+	cmd.Flags().DurationVar(&pollingInterval, "polling-interval", 5*time.Second, "The status check interval (e.g. '30s', '1.5m'); ignored if --wait is not used")
 
 	return cmd
 }
