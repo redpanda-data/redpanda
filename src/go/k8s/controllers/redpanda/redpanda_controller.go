@@ -15,6 +15,7 @@ import (
 	"time"
 
 	helmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
+	"github.com/fluxcd/pkg/runtime/predicates"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	"github.com/hashicorp/go-retryablehttp"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -22,8 +23,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
@@ -44,11 +49,19 @@ type RedpandaReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *RedpandaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&redpandav1alpha1.Redpanda{}).
+		For(&redpandav1alpha1.Redpanda{}, builder.WithPredicates(
+			predicate.Or(predicate.GenerationChangedPredicate{},
+				predicates.ReconcileRequestedPredicate{}),
+		)).
+		Watches(
+			&source.Kind{Type: &helmv2beta1.HelmRelease{}},
+			&handler.EnqueueRequestForObject{},
+		).
 		Complete(r)
 }
 
 func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	start := time.Now()
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", req.NamespacedName)
 
@@ -74,10 +87,25 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return r.reconcileDelete(ctx, req, rp)
 	}
 
-	return r.reconcile(ctx, req, rp)
+	rp, result, err := r.reconcile(ctx, req, rp)
+
+	// Update status after reconciliation.
+	if updateStatusErr := r.patchRedpandaStatus(ctx, &rp); updateStatusErr != nil {
+		log.Error(updateStatusErr, "unable to update status after reconciliation")
+		return ctrl.Result{Requeue: true}, updateStatusErr
+	}
+
+	// Log reconciliation duration
+	durationMsg := fmt.Sprintf("reconcilation finished in %s", time.Now().Sub(start).String())
+	if result.RequeueAfter > 0 {
+		durationMsg = fmt.Sprintf("%s, next run in %s", durationMsg, result.RequeueAfter.String())
+	}
+	log.Info(durationMsg)
+
+	return result, err
 }
 
-func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp redpandav1alpha1.Redpanda) (ctrl.Result, error) {
+func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp redpandav1alpha1.Redpanda) (redpandav1alpha1.Redpanda, ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", req.NamespacedName)
 
@@ -87,32 +115,36 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 	// if it does not, then create
 	// if we are set for deletion, then delete
 	if rp.Status.HelmRelease != "" {
-		hrNS, hrName := rp.Status.GetHelmRelease()
-		err := r.Client.Get(ctx, types.NamespacedName{Namespace: hrNS, Name: hrName}, &hr)
+		hrName := rp.Status.GetHelmRelease()
+		err := r.Client.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: hrName}, &hr)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				rp.Status.HelmRelease = ""
 				if err = r.createHelmRelease(ctx, rp); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to create helmRelease: %s", err)
+					if !apierrors.IsAlreadyExists(err) {
+						return rp, ctrl.Result{}, fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+					}
+					rp.Status.HelmRelease = rp.GetHelmReleaseName()
+					return rp, ctrl.Result{}, nil
 				}
-				return ctrl.Result{}, nil
 			}
-			if !apierrors.IsAlreadyExists(err) {
-				err = fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
-			}
-			return ctrl.Result{}, nil
+			return rp, ctrl.Result{}, fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
 		}
+		// ok found the release, let's just move on
 	} else {
 		// did not find helmRelease, then create it
 		if err := r.createHelmRelease(ctx, rp); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to create helmRelease: %s", err)
+			// could be we never updated the status and it already exists, continue and ignore error for now
+			// TODO revise this logic: should we error out, or should we just continue and ignore
+			if !apierrors.IsAlreadyExists(err) {
+				err = fmt.Errorf("failed to create HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+			}
 		}
-		hrName, _ := rp.Status.GetHelmRelease()
-		rp.Status.HelmRelease = hrName
-		return ctrl.Result{}, nil
 	}
 
-	return ctrl.Result{}, nil
+	rp.Status.HelmRelease = rp.GetHelmReleaseName()
+
+	return rp, ctrl.Result{}, nil
 }
 
 func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Request, rp redpandav1alpha1.Redpanda) (ctrl.Result, error) {
@@ -120,10 +152,6 @@ func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Reque
 	log.WithValues("redpanda", req.NamespacedName)
 
 	if err := r.deleteHelmRelease(ctx, rp); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if err := r.Client.Delete(ctx, &rp); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -147,7 +175,6 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp redpandav
 			if errCreate := r.Client.Create(ctx, hRepository); errCreate != nil {
 				return fmt.Errorf("error creating repository: %s", errCreate)
 			}
-			return nil
 		}
 		return fmt.Errorf("error getting helmRepository %s", err)
 	}
@@ -155,7 +182,7 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp redpandav
 	// create helm release
 	hRelease, err := r.createHelmReleaseFromTemplate(ctx, rp)
 	if err != nil {
-		return fmt.Errorf("could not create helm template: %s", err)
+		return fmt.Errorf("could not create helm release template: %s", err)
 	}
 
 	if err = r.Client.Create(ctx, hRelease); err != nil {
@@ -174,19 +201,17 @@ func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp redpandav
 	}
 
 	var hr helmv2beta1.HelmRelease
-	hrNS, hrName := rp.Status.GetHelmRelease()
-	err := r.Client.Get(ctx, types.NamespacedName{Namespace: hrNS, Name: hrName}, &hr)
+	hrName := rp.Status.GetHelmRelease()
+	err := r.Client.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: hrName}, &hr)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			rp.Status.HelmRelease = ""
 			return nil
 		}
-		err = fmt.Errorf("failed to delete HelmRelease '%s': %w", rp.Status.HelmRelease, err)
-		return err
+		return fmt.Errorf("failed to delete HelmRelease '%s': %w", rp.Status.HelmRelease, err)
 	}
 	if err = r.Client.Delete(ctx, &hr); err != nil {
-		err = fmt.Errorf("failed to delete HelmRelease '%s': %w", rp.Status.HelmRelease, err)
-		return err
+		return fmt.Errorf("failed to delete HelmRelease '%s': %w", rp.Status.HelmRelease, err)
 	}
 
 	rp.Status.HelmRelease = ""
@@ -238,4 +263,13 @@ func (r *RedpandaReconciler) createHelmRepositoryFromTemplate(rp redpandav1alpha
 			URL:      "https://charts.redpanda.com/",
 		},
 	}, nil
+}
+
+func (r *RedpandaReconciler) patchRedpandaStatus(ctx context.Context, rp *redpandav1alpha1.Redpanda) error {
+	key := client.ObjectKeyFromObject(rp)
+	latest := &redpandav1alpha1.Redpanda{}
+	if err := r.Client.Get(ctx, key, latest); err != nil {
+		return err
+	}
+	return r.Client.Status().Patch(ctx, rp, client.MergeFrom(latest))
 }

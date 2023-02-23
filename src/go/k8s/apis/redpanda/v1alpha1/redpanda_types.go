@@ -12,12 +12,11 @@ package v1alpha1
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
-
+	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/ghodss/yaml"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 // RedpandaClusterSpec defines the desired state of Redpanda Cluster
@@ -40,6 +39,7 @@ type RedpandaClusterSpec struct {
 
 // RedpandaSpec defines the desired state of Redpanda
 type RedpandaSpec struct {
+
 	// ChartVersion defines the helm chart version to use
 	ChartVersion string `json:"chartVersion,omitempty"`
 	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
@@ -50,10 +50,24 @@ type RedpandaSpec struct {
 
 // RedpandaStatus defines the observed state of Redpanda
 type RedpandaStatus struct {
+	// Conditions holds the conditions for the HelmRelease.
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// LastAppliedRevision is the revision of the last successfully applied source.
+	// +optional
+	LastAppliedRevision string `json:"lastAppliedRevision,omitempty"`
+
+	// LastAttemptedRevision is the revision of the last reconciliation attempt.
+	// +optional
+	LastAttemptedRevision string `json:"lastAttemptedRevision,omitempty"`
+
 	// +optional
 	HelmRelease string `json:"helmRelease,omitempty"`
+
 	// +optional
 	UpgradeFailures int64 `json:"upgradeFailures,omitempty"`
+
 	// +optional
 	InstallFailures int64 `json:"installFailures,omitempty"`
 }
@@ -90,14 +104,8 @@ func init() {
 }
 
 // GetHelmRelease returns the namespace and name of the HelmRelease.
-func (in *RedpandaStatus) GetHelmRelease() (string, string) {
-	if in.HelmRelease == "" {
-		return "", ""
-	}
-	if split := strings.Split(in.HelmRelease, string(types.Separator)); len(split) > 1 {
-		return split[0], split[1]
-	}
-	return "", ""
+func (in *RedpandaStatus) GetHelmRelease() string {
+	return in.HelmRelease
 }
 func (in *Redpanda) GetHelmReleaseName() string {
 	return in.Name
@@ -120,4 +128,22 @@ func (in *Redpanda) GetValuesJson() (*apiextensionsv1.JSON, error) {
 	json.Unmarshal(vyaml, &values)
 
 	return &values, nil
+}
+
+// RedpandaReady registers a successful reconciliation of the given HelmRelease.
+func RedpandaReady(rp Redpanda) Redpanda {
+	newCondition := metav1.Condition{
+		Type:    meta.ReadyCondition,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Redpanda Cluster Deployed",
+		Message: "Redpanda reconciliation succeeded",
+	}
+	apimeta.SetStatusCondition(rp.GetConditions(), newCondition)
+	rp.Status.LastAppliedRevision = rp.Status.LastAttemptedRevision
+	return rp
+}
+
+// GetConditions returns the status conditions of the object.
+func (in *Redpanda) GetConditions() *[]metav1.Condition {
+	return &in.Status.Conditions
 }
