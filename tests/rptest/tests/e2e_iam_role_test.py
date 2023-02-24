@@ -1,4 +1,3 @@
-from ducktape.mark import ok_to_fail
 from rptest.services.cluster import cluster
 
 from rptest.clients.types import TopicSpec
@@ -15,14 +14,14 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
         if not extra_rp_conf:
             extra_rp_conf = {}
 
-        extra_rp_conf[
-            'cloud_storage_credentials_source'] = 'aws_instance_metadata'
         super().__init__(test_context,
                          extra_rp_conf,
                          environment={
                              'RP_SI_CREDS_API_HOST': self.iam_server.hostname,
                              'RP_SI_CREDS_API_PORT': self.iam_server.port,
                          })
+        self.redpanda.add_extra_rp_conf(
+            {'cloud_storage_credentials_source': 'aws_instance_metadata'})
 
     def setUp(self):
         self.iam_server.start()
@@ -34,7 +33,6 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
         self.iam_server.wait()
         self.iam_server.clean()
 
-    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_write(self):
         self.start_producer()
@@ -81,7 +79,6 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
         if not extra_rp_conf:
             extra_rp_conf = {}
 
-        extra_rp_conf['cloud_storage_credentials_source'] = 'sts'
         self.token_path = '/tmp/token_file'
         self.role = 'tomato'
         self.token = 'token-tomato'
@@ -94,6 +91,8 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
                              'AWS_ROLE_ARN': self.role,
                              'AWS_WEB_IDENTITY_TOKEN_FILE': self.token_path,
                          })
+        self.redpanda.add_extra_rp_conf(
+            {'cloud_storage_credentials_source': 'sts'})
 
         for node in self.redpanda.nodes:
             node.account.create_file(self.token_path, self.token)
@@ -108,7 +107,6 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
         self.iam_server.wait()
         self.iam_server.clean()
 
-    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_write(self):
         self.start_producer()
@@ -152,7 +150,6 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
         if not extra_rp_conf:
             extra_rp_conf = {}
 
-        extra_rp_conf['cloud_storage_credentials_source'] = 'sts'
         self.token_path = '/tmp/token_file'
         self.role = 'tomato'
         self.token = 'token-tomato'
@@ -165,6 +162,8 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
                              'AWS_ROLE_ARN': self.role,
                              'AWS_WEB_IDENTITY_TOKEN_FILE': self.token_path,
                          })
+        self.redpanda.add_extra_rp_conf(
+            {'cloud_storage_credentials_source': 'sts'})
 
         for node in self.redpanda.nodes:
             node.account.create_file(self.token_path, self.token)
@@ -179,7 +178,6 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
         self.iam_server.wait()
         self.iam_server.clean()
 
-    @ok_to_fail
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_short_lived_credentials(self):
         self.start_producer()
