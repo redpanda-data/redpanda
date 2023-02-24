@@ -87,7 +87,11 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
 
     readers.pop_back();
     const auto target_node_id = req.target_node_id;
-    auto d = async_serialize_roundtrip_rpc(std::move(req)).get0();
+
+    iobuf buf;
+    serde::write_async(buf, std::move(req)).get();
+    iobuf_parser p(std::move(buf));
+    auto d = serde::read_async<raft::append_entries_request>(p).get();
 
     BOOST_REQUIRE_EQUAL(
       d.node_id, raft::vnode(model::node_id(1), model::revision_id(10)));
@@ -137,17 +141,11 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
         req.heartbeats[i].target_node_id = raft::vnode(
           model::node_id(0), model::revision_id(i));
     }
+
     iobuf buf;
-    reflection::async_adl<raft::heartbeat_request>{}
-      .to(buf, std::move(req))
-      .get();
-    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
-    compression::stream_zstd codec;
-    buf = codec.compress(std::move(buf));
-    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
-    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
-    auto res
-      = reflection::async_adl<raft::heartbeat_request>{}.from(parser).get0();
+    serde::write_async(buf, std::move(req)).get();
+    auto res = serde::from_iobuf<raft::heartbeat_request>(std::move(buf));
+
     for (int64_t i = 0; i < one_k; ++i) {
         BOOST_REQUIRE_EQUAL(res.heartbeats[i].meta.group, raft::group_id(i));
         BOOST_REQUIRE_EQUAL(
@@ -184,17 +182,10 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
         req.heartbeats[i].meta.prev_log_term = model::term_id(-i - 100);
         req.heartbeats[i].meta.last_visible_index = model::offset(-i - 100);
     }
+
     iobuf buf;
-    reflection::async_adl<raft::heartbeat_request>{}
-      .to(buf, std::move(req))
-      .get();
-    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
-    compression::stream_zstd codec;
-    buf = codec.compress(std::move(buf));
-    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
-    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
-    auto res
-      = reflection::async_adl<raft::heartbeat_request>{}.from(parser).get0();
+    serde::write_async(buf, std::move(req)).get();
+    auto res = serde::from_iobuf<raft::heartbeat_request>(std::move(buf));
     for (auto& hb : res.heartbeats) {
         BOOST_REQUIRE_EQUAL(hb.meta.commit_index, model::offset{});
         BOOST_REQUIRE_EQUAL(hb.meta.term, model::term_id{-1});
@@ -236,17 +227,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
     for (const auto& m : reply.meta) {
         expected.emplace(m.group, m);
     }
-    iobuf buf;
-    reflection::async_adl<raft::heartbeat_reply>{}
-      .to(buf, std::move(reply))
-      .get();
-    BOOST_TEST_MESSAGE("Pre compression. Buffer size: " << buf);
-    compression::stream_zstd codec;
-    buf = codec.compress(std::move(buf));
-    BOOST_TEST_MESSAGE("Post compression. Buffer size: " << buf);
-    auto parser = iobuf_parser(codec.uncompress(std::move(buf)));
-    auto result
-      = reflection::async_adl<raft::heartbeat_reply>{}.from(parser).get0();
+    auto buf = serde::to_iobuf(reply);
+    auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
 
     for (size_t i = 0; i < result.meta.size(); ++i) {
         auto gr = result.meta[i].group;
@@ -284,14 +266,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_negatives) {
       .last_term_base_offset = model::offset(-1),
       .result = raft::append_entries_reply::status::success});
 
-    iobuf buf;
-    reflection::async_adl<raft::heartbeat_reply>{}
-      .to(buf, std::move(reply))
-      .get();
-
-    auto parser = iobuf_parser(std::move(buf));
-    auto result
-      = reflection::async_adl<raft::heartbeat_reply>{}.from(parser).get0();
+    auto buf = serde::to_iobuf(reply);
+    auto result = serde::from_iobuf<raft::heartbeat_reply>(std::move(buf));
     BOOST_REQUIRE_EQUAL(result.meta[0].last_flushed_log_index, model::offset{});
     BOOST_REQUIRE_EQUAL(result.meta[0].last_dirty_log_index, model::offset{});
     BOOST_REQUIRE_EQUAL(result.meta[0].last_term_base_offset, model::offset{});
