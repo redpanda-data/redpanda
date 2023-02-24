@@ -9,7 +9,7 @@ type RedpandaClusterSpec struct {
 	// NameOverride is the override to give your redpanda release
 	NameOverride string `json:"nameOverride,omitempty"`
 	// FullnameOverride is the override to give your redpanda release
-	FullnameOverride string `json:"fullnameOverride,omitempty"`
+	FullnameOverride string `json:"fullNameOverride,omitempty"`
 	// ClusterDomain is the override to give your redpanda release
 	ClusterDomain string `json:"clusterDomain,omitempty"`
 	// CommonLabels is the override to give your redpanda release

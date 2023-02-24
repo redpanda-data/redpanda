@@ -138,7 +138,7 @@ spec:
                     required:
                     - enabled
                     type: object
-                  fullnameOverride:
+                  fullNameOverride:
                     description: FullnameOverride is the override to give your redpanda
                       release
                     type: string
