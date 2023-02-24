@@ -1104,29 +1104,6 @@ adl<cluster::join_node_request>::from(iobuf_parser& in) {
       logical_version, cluster::invalid_version, node_uuid, node};
 }
 
-void adl<cluster::configuration_update_request>::to(
-  iobuf& out, cluster::configuration_update_request&& r) {
-    serialize(out, r.node, r.target_node);
-}
-
-cluster::configuration_update_request
-adl<cluster::configuration_update_request>::from(iobuf_parser& in) {
-    auto broker = adl<model::broker>().from(in);
-    auto target_id = adl<model::node_id>().from(in);
-    return cluster::configuration_update_request(broker, target_id);
-}
-
-void adl<cluster::configuration_update_reply>::to(
-  iobuf& out, cluster::configuration_update_reply&& r) {
-    serialize(out, r.success);
-}
-
-cluster::configuration_update_reply
-adl<cluster::configuration_update_reply>::from(iobuf_parser& in) {
-    auto success = adl<bool>().from(in);
-    return cluster::configuration_update_reply(success);
-}
-
 void adl<cluster::topic_result>::to(iobuf& out, cluster::topic_result&& t) {
     reflection::serialize(out, std::move(t.tp_ns), t.ec);
 }
@@ -1872,49 +1849,6 @@ adl<cluster::feature_update_cmd_data>::from(iobuf_parser& in) {
     auto logical_version = adl<cluster::cluster_version>{}.from(in);
     auto actions = adl<std::vector<cluster::feature_update_action>>{}.from(in);
     return {.logical_version = logical_version, .actions = std::move(actions)};
-}
-
-void adl<cluster::feature_barrier_request>::to(
-  iobuf& out, cluster::feature_barrier_request&& r) {
-    reflection::serialize(out, r.current_version, r.tag, r.peer, r.entered);
-}
-
-cluster::feature_barrier_request
-adl<cluster::feature_barrier_request>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::feature_barrier_request::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::feature_barrier_request::current_version);
-
-    auto tag = adl<cluster::feature_barrier_tag>{}.from(parser);
-    auto peer = adl<model::node_id>{}.from(parser);
-    auto entered = adl<bool>{}.from(parser);
-
-    return cluster::feature_barrier_request{
-      .tag = std::move(tag), .peer = peer, .entered = entered};
-}
-
-void adl<cluster::feature_barrier_response>::to(
-  iobuf& out, cluster::feature_barrier_response&& r) {
-    reflection::serialize(out, r.current_version, r.entered, r.complete);
-}
-
-cluster::feature_barrier_response
-adl<cluster::feature_barrier_response>::from(iobuf_parser& parser) {
-    auto version = adl<uint8_t>{}.from(parser);
-    vassert(
-      version == cluster::feature_barrier_response::current_version,
-      "Unexpected version: {} (expected {})",
-      version,
-      cluster::feature_barrier_response::current_version);
-
-    auto entered = adl<bool>{}.from(parser);
-    auto complete = adl<bool>{}.from(parser);
-
-    return cluster::feature_barrier_response{
-      .entered = entered, .complete = complete};
 }
 
 void adl<cluster::set_maintenance_mode_request>::to(

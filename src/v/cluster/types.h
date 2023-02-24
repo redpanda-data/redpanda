@@ -1106,6 +1106,7 @@ struct configuration_update_request
       configuration_update_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     configuration_update_request() noexcept = default;
     explicit configuration_update_request(model::broker b, model::node_id tid)
       : node(std::move(b))
@@ -1129,6 +1130,7 @@ struct configuration_update_reply
       configuration_update_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     configuration_update_reply() noexcept = default;
     explicit configuration_update_reply(bool success)
       : success(success) {}
@@ -2620,6 +2622,7 @@ struct config_status_request
       config_status_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     config_status status;
 
     friend std::ostream&
@@ -2637,6 +2640,7 @@ struct config_status_reply
       config_status_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     errc error;
 
     friend std::ostream& operator<<(std::ostream&, const config_status_reply&);
@@ -2653,6 +2657,7 @@ struct feature_action_request
       feature_action_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     feature_update_action action;
 
     friend bool
@@ -2670,6 +2675,7 @@ struct feature_action_response
       feature_action_response,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     errc error;
 
     friend bool
@@ -2690,6 +2696,7 @@ struct feature_barrier_request
       feature_barrier_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t current_version = 1;
     feature_barrier_tag tag; // Each cooperative barrier must use a unique tag
     model::node_id peer;
@@ -2710,6 +2717,7 @@ struct feature_barrier_response
       feature_barrier_response,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t current_version = 1;
     bool entered;  // Has the respondent entered?
     bool complete; // Has the respondent exited?
@@ -2768,6 +2776,7 @@ struct config_update_request final
       config_update_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     std::vector<cluster_property_kv> upsert;
     std::vector<ss::sstring> remove;
 
@@ -2786,6 +2795,7 @@ struct config_update_reply
       config_update_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     errc error;
     cluster::config_version latest_version{config_version_unset};
 
@@ -3218,18 +3228,6 @@ struct adl<cluster::join_node_reply> {
 };
 
 template<>
-struct adl<cluster::configuration_update_request> {
-    void to(iobuf&, cluster::configuration_update_request&&);
-    cluster::configuration_update_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::configuration_update_reply> {
-    void to(iobuf&, cluster::configuration_update_reply&&);
-    cluster::configuration_update_reply from(iobuf_parser&);
-};
-
-template<>
 struct adl<cluster::topic_result> {
     void to(iobuf&, cluster::topic_result&&);
     cluster::topic_result from(iobuf_parser&);
@@ -3365,18 +3363,6 @@ template<>
 struct adl<cluster::feature_update_cmd_data> {
     void to(iobuf&, cluster::feature_update_cmd_data&&);
     cluster::feature_update_cmd_data from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::feature_barrier_request> {
-    void to(iobuf&, cluster::feature_barrier_request&&);
-    cluster::feature_barrier_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::feature_barrier_response> {
-    void to(iobuf&, cluster::feature_barrier_response&&);
-    cluster::feature_barrier_response from(iobuf_parser&);
 };
 
 template<>
@@ -3737,30 +3723,6 @@ struct adl<cluster::init_tm_tx_reply> {
 };
 
 template<>
-struct adl<cluster::config_update_request> {
-    void to(iobuf& out, cluster::config_update_request&& r) {
-        serialize(out, r.upsert, r.remove);
-    }
-    cluster::config_update_request from(iobuf_parser& in) {
-        auto upsert = adl<std::vector<cluster::cluster_property_kv>>{}.from(in);
-        auto remove = adl<std::vector<ss::sstring>>{}.from(in);
-        return {.upsert = upsert, .remove = remove};
-    }
-};
-
-template<>
-struct adl<cluster::config_update_reply> {
-    void to(iobuf& out, cluster::config_update_reply&& r) {
-        serialize(out, r.error, r.latest_version);
-    }
-    cluster::config_update_reply from(iobuf_parser& in) {
-        auto error = adl<cluster::errc>{}.from(in);
-        auto latest_version = adl<cluster::config_version>{}.from(in);
-        return {.error = error, .latest_version = latest_version};
-    }
-};
-
-template<>
 struct adl<cluster::hello_request> {
     void to(iobuf& out, cluster::hello_request&& r) {
         serialize(out, r.peer, r.start_time);
@@ -3776,28 +3738,6 @@ template<>
 struct adl<cluster::hello_reply> {
     void to(iobuf& out, cluster::hello_reply&& r) { serialize(out, r.error); }
     cluster::hello_reply from(iobuf_parser& in) {
-        auto error = adl<cluster::errc>{}.from(in);
-        return {.error = error};
-    }
-};
-
-template<>
-struct adl<cluster::config_status_request> {
-    void to(iobuf& out, cluster::config_status_request&& r) {
-        serialize(out, r.status);
-    }
-    cluster::config_status_request from(iobuf_parser& in) {
-        auto status = adl<cluster::config_status>{}.from(in);
-        return {.status = status};
-    }
-};
-
-template<>
-struct adl<cluster::config_status_reply> {
-    void to(iobuf& out, cluster::config_status_reply&& r) {
-        serialize(out, r.error);
-    }
-    cluster::config_status_reply from(iobuf_parser& in) {
         auto error = adl<cluster::errc>{}.from(in);
         return {.error = error};
     }
@@ -3999,28 +3939,6 @@ struct adl<cluster::finish_reallocation_reply> {
         serialize(out, r.error);
     }
     cluster::finish_reallocation_reply from(iobuf_parser& in) {
-        auto error = adl<cluster::errc>{}.from(in);
-        return {.error = error};
-    }
-};
-
-template<>
-struct adl<cluster::feature_action_request> {
-    void to(iobuf& out, cluster::feature_action_request&& r) {
-        serialize(out, std::move(r.action));
-    }
-    cluster::feature_action_request from(iobuf_parser& in) {
-        auto action = adl<cluster::feature_update_action>{}.from(in);
-        return {.action = std::move(action)};
-    }
-};
-
-template<>
-struct adl<cluster::feature_action_response> {
-    void to(iobuf& out, cluster::feature_action_response&& r) {
-        serialize(out, r.error);
-    }
-    cluster::feature_action_response from(iobuf_parser& in) {
         auto error = adl<cluster::errc>{}.from(in);
         return {.error = error};
     }

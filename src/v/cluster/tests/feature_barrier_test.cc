@@ -357,10 +357,9 @@ SEASTAR_THREAD_TEST_CASE(test_barrier_encoding) {
       .entered = true};
     auto req2 = req;
 
-    iobuf req_io = reflection::to_iobuf(std::move(req2));
-    iobuf_parser req_parser(std::move(req_io));
-    auto req_decoded = reflection::adl<feature_barrier_request>{}.from(
-      req_parser);
+    iobuf req_io = serde::to_iobuf(std::move(req2));
+    auto req_decoded = serde::from_iobuf<feature_barrier_request>(
+      std::move(req_io));
     BOOST_REQUIRE_EQUAL(req.tag, req_decoded.tag);
     BOOST_REQUIRE_EQUAL(req.peer, req_decoded.peer);
     BOOST_REQUIRE_EQUAL(req.entered, req_decoded.entered);
@@ -368,10 +367,9 @@ SEASTAR_THREAD_TEST_CASE(test_barrier_encoding) {
     const feature_barrier_response resp{.entered = true, .complete = true};
     auto orig_resp = resp;
 
-    iobuf resp_io = reflection::to_iobuf(std::move(orig_resp));
-    iobuf_parser resp_parser(std::move(resp_io));
-    auto resp_decoded = reflection::adl<feature_barrier_response>{}.from(
-      resp_parser);
+    iobuf resp_io = serde::to_iobuf(std::move(orig_resp));
+    auto resp_decoded = serde::from_iobuf<feature_barrier_response>(
+      std::move(resp_io));
     BOOST_REQUIRE_EQUAL(resp.entered, resp_decoded.entered);
     BOOST_REQUIRE_EQUAL(resp.complete, resp_decoded.complete);
 }
