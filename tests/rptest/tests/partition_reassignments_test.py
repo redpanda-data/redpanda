@@ -307,15 +307,10 @@ class PartitionReassignmentsTest(RedpandaTest):
             msg_retry="is still in progress.",
             timeout_s=timeout_s).splitlines()
 
-    def cancel_reassign_partitions(self,
-                                   reassignments: dict,
-                                   timeout_s: int = 10):
+    def cancel_reassign_partitions(self, reassignments: dict):
         kafka_tools = KafkaCliTools(self.redpanda)
         return kafka_tools.reassign_partitions(
-            reassignments=reassignments,
-            operation="cancel",
-            write_reassignments_to_disk=False,
-            timeout_s=timeout_s).splitlines()
+            reassignments=reassignments, operation="cancel").splitlines()
 
     @cluster(num_nodes=6)
     def test_reassignments_kafka_cli(self):
