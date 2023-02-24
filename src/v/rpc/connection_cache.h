@@ -143,7 +143,7 @@ private:
     std::optional<connection_cache_label> _label;
     mutex _mutex; // to add/remove nodes
     underlying _cache;
-    transport_version _default_transport_version{transport_version::v1};
+    transport_version _default_transport_version{transport_version::v2};
 };
 inline ss::shard_id connection_cache::shard_for(
   model::node_id self,

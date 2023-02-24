@@ -194,17 +194,26 @@ enum class transport_version : uint8_t {
      * the first version used by rpc simple protocol. at this version level
      * clients and servers (1) assume adl encoding, (2) ignore the version when
      * handling a request, and (3) always respond with version 0.
+     *
+     * Since Redpanda 23.2, we no longer speak this format
      */
     v0 = 0,
 
     /*
      * starting with version v1 clients and servers no longer ignore the
-     * version. v1 indicates adl encoding and v2 indicates serde encoding.
+     * version. v1 indicates adl encoding.
+     *
+     * Since Redpanda 23.2, we no longer speak this format
      */
     v1 = 1,
+
+    /**
+     * v2 is exactly like v1, but using serde instead of ADL for serialization
+     */
     v2 = 2,
 
     max_supported = v2,
+    min_supported = v2,
 
     /*
      * unsupported is a convenience name used in tests to construct a message
@@ -466,7 +475,7 @@ struct transport_configuration {
     uint32_t max_queued_bytes = std::numeric_limits<uint32_t>::max();
     ss::shared_ptr<ss::tls::certificate_credentials> credentials;
     net::metrics_disabled disable_metrics = net::metrics_disabled::no;
-    transport_version version{transport_version::v1};
+    transport_version version{transport_version::v2};
 };
 
 std::ostream& operator<<(std::ostream&, const status&);

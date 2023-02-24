@@ -85,7 +85,9 @@ struct compat_binary {
     // factory for serde
     template<typename T>
     static compat_binary serde(T v) {
-        return {"serde", serde::to_iobuf(std::move(v))};
+        iobuf s_data;
+        serde::write_async(s_data, std::move(v)).get();
+        return {"serde", std::move(s_data)};
     }
 
     // factory for serde and adl

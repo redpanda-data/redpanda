@@ -531,27 +531,12 @@ SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
 }
 
 template<typename T>
-void serde_roundtrip_test(const T original) {
+void roundtrip_test(const T original) {
     auto serde_in = original;
     auto serde_out = serde::to_iobuf(std::move(serde_in));
     auto from_serde = serde::from_iobuf<T>(std::move(serde_out));
 
     BOOST_REQUIRE(original == from_serde);
-}
-
-template<typename T>
-void adl_roundtrip_test(const T original) {
-    auto adl_in = original;
-    auto adl_out = reflection::to_iobuf(std::move(adl_in));
-    auto from_adl = reflection::from_iobuf<T>(std::move(adl_out));
-
-    BOOST_REQUIRE(original == from_adl);
-}
-
-template<typename T>
-void roundtrip_test(const T original) {
-    serde_roundtrip_test(original);
-    adl_roundtrip_test(original);
 }
 
 template<typename T>
@@ -919,9 +904,9 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         roundtrip_test(p_as);
     }
-    { serde_roundtrip_test(random_remote_topic_properties()); }
+    { roundtrip_test(random_remote_topic_properties()); }
     { roundtrip_test(old_random_topic_properties()); }
-    { serde_roundtrip_test(random_topic_properties()); }
+    { roundtrip_test(random_topic_properties()); }
     {
         roundtrip_test(
           random_property_update(random_generators::gen_alphanum_string(10)));
@@ -952,7 +937,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(updates);
     }
     { roundtrip_test(old_random_topic_configuration()); }
-    { serde_roundtrip_test(random_topic_configuration()); }
+    { roundtrip_test(random_topic_configuration()); }
     { roundtrip_test(random_create_partitions_configuration()); }
     {
         cluster::topic_configuration_assignment cfg;
@@ -966,7 +951,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         cfg.cfg = random_topic_configuration();
         cfg.assignments = random_partition_assignments();
 
-        serde_roundtrip_test(cfg);
+        roundtrip_test(cfg);
     }
     {
         cluster::create_partitions_configuration_assignment cfg;
@@ -1252,7 +1237,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
             random_generators::get_int(0, 100)),
           random_generators::get_int<uint16_t>(0, 16000),
           random_generators::random_choice(families)};
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
         // adl roundtrip doesn't work because family is not serialized
     }
     { roundtrip_test(model::random_broker_endpoint()); }
@@ -1374,14 +1359,14 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           tests::random_named_int<cluster::cluster_version>(),
           node_uuid,
           model::random_broker()};
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
     }
     {
         cluster::join_node_reply data{
           tests::random_bool(),
           tests::random_named_int<model::node_id>(),
         };
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
     }
     {
         std::vector<model::broker_shard> new_replica_set;
@@ -1683,7 +1668,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // use a non-default value here for serde test. tests that use adl need
         // to keep the default value because thsi field isn't seiralized in adl.
         data.storage_space_alert = storage::disk_space_alert::degraded;
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
     }
     {
         cluster::partition_status data{
@@ -1739,7 +1724,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // try serde with non-default error code. adl doesn't encode error so
         // this is a serde only test.
         data.error = cluster::errc::error_collecting_health_report;
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
     }
     {
         std::vector<model::node_id> nodes;
@@ -1832,7 +1817,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // adl encoding for topic_configuration doesn't encode/decode to exact
         // equality, but also already existed prior to serde support being added
         // so only testing the serde case.
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
     }
     {
         auto data = random_partition_metadata();
@@ -1866,7 +1851,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         // adl serialization doesn't preserve equality for topic_configuration.
         // serde serialization does and was added after support for adl so adl
         // semantics are preserved.
-        serde_roundtrip_test(data);
+        roundtrip_test(data);
     }
     {
         raft::transfer_leadership_request data{
@@ -1943,24 +1928,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               std::move(serde_out));
 
             BOOST_REQUIRE(orig == from_serde);
-        }
-        {
-            raft::install_snapshot_request adl_in{
-              .target_node_id = orig.target_node_id,
-              .term = orig.term,
-              .group = orig.group,
-              .node_id = orig.node_id,
-              .last_included_index = orig.last_included_index,
-              .file_offset = orig.file_offset,
-              .chunk = orig.chunk.copy(),
-              .done = orig.done,
-            };
-            auto adl_out = reflection::to_iobuf(std::move(adl_in));
-            auto from_adl
-              = reflection::from_iobuf<raft::install_snapshot_request>(
-                std::move(adl_out));
-
-            BOOST_REQUIRE(orig == from_adl);
         }
     }
     {
@@ -2046,22 +2013,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
               std::move(serde_out));
             BOOST_REQUIRE(data == from_serde);
         }
-
-        // the adl test needs to force async to avoid the automatic reflection
-        // version of the encoder.
-        {
-            auto adl_in = data;
-            iobuf adl_out;
-            reflection::async_adl<raft::heartbeat_request>{}
-              .to(adl_out, std::move(adl_in))
-              .get();
-            iobuf_parser in(std::move(adl_out));
-            auto from_adl = reflection::async_adl<raft::heartbeat_request>{}
-                              .from(in)
-                              .get0();
-
-            BOOST_REQUIRE(data == from_adl);
-        }
     }
     {
         raft::heartbeat_reply data;
@@ -2101,22 +2052,7 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
 
         std::sort(data.meta.begin(), data.meta.end(), sorter_fn{});
 
-        serde_roundtrip_test(data);
-
-        // the adl test needs to force async to avoid the automatic reflection
-        // version of the encoder.
-        {
-            auto adl_in = data;
-            iobuf adl_out;
-            reflection::async_adl<raft::heartbeat_reply>{}
-              .to(adl_out, std::move(adl_in))
-              .get();
-            iobuf_parser in(std::move(adl_out));
-            auto from_adl
-              = reflection::async_adl<raft::heartbeat_reply>{}.from(in).get0();
-
-            BOOST_REQUIRE(data == from_adl);
-        }
+        roundtrip_test(data);
     }
     {
         raft::protocol_metadata data{

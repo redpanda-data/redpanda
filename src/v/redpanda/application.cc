@@ -1840,17 +1840,6 @@ void application::start_runtime_services(
     ssx::background = feature_table.invoke_on_all(
       [this](features::feature_table& ft) {
           return ft.await_feature_then(
-            features::feature::rpc_v2_by_default, [this] {
-                if (ss::this_shard_id() == 0) {
-                    vlog(_log.debug, "Activating RPC protocol v2");
-                }
-                _connection_cache.local().set_default_transport_version(
-                  rpc::transport_version::v2);
-            });
-      });
-    ssx::background = feature_table.invoke_on_all(
-      [this](features::feature_table& ft) {
-          return ft.await_feature_then(
             features::feature::rpc_transport_unknown_errc, [this] {
                 if (ss::this_shard_id() == 0) {
                     vlog(

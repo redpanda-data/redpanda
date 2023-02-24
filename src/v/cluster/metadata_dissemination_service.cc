@@ -275,9 +275,7 @@ metadata_dissemination_service::dispatch_get_metadata_update(
       address,
       _rpc_tls_config,
       _dissemination_interval,
-      _feature_table.local().is_active(features::feature::rpc_v2_by_default)
-        ? rpc::transport_version::v2
-        : rpc::transport_version::v1,
+      rpc::transport_version::v2,
       [this](metadata_dissemination_rpc_client_protocol c) {
           return c
             .get_leadership(
