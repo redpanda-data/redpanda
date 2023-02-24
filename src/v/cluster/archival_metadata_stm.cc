@@ -714,6 +714,13 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         meta.ntp_revision = segment.ntp_revision_deprecated;
     }
     _manifest->add(segment.name, meta);
+    vlog(
+      _logger.debug,
+      "Add segment command applied with {}, new start offset: {}, new last "
+      "offset: {}",
+      segment.name,
+      get_start_offset(),
+      get_last_offset());
 
     if (meta.committed_offset > get_last_offset()) {
         if (meta.base_offset > model::next_offset(get_last_offset())) {
@@ -747,6 +754,12 @@ void archival_metadata_stm::apply_cleanup_metadata() {
     }
     _manifest->delete_replaced_segments();
     _manifest->truncate();
+    vlog(
+      _logger.debug,
+      "Cleanup metadata command applied, new start offset: {}, new last "
+      "offset: {}",
+      get_start_offset(),
+      get_last_offset());
 }
 
 void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
