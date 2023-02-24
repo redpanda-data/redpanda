@@ -9,6 +9,7 @@ require (
 	github.com/cloudhut/common v0.7.0
 	github.com/fluxcd/helm-controller v0.30.0
 	github.com/fluxcd/helm-controller/api v0.30.0
+	github.com/fluxcd/pkg/apis/meta v0.19.0
 	github.com/fluxcd/pkg/runtime v0.29.0
 	github.com/fluxcd/source-controller v0.35.1
 	github.com/fluxcd/source-controller/api v0.35.1
@@ -143,7 +144,6 @@ require (
 	github.com/fluxcd/pkg/apis/acl v0.1.0 // indirect
 	github.com/fluxcd/pkg/apis/event v0.4.0 // indirect
 	github.com/fluxcd/pkg/apis/kustomize v0.8.0 // indirect
-	github.com/fluxcd/pkg/apis/meta v0.19.0 // indirect
 	github.com/fluxcd/pkg/git v0.10.0 // indirect
 	github.com/fluxcd/pkg/git/gogit v0.7.1 // indirect
 	github.com/fluxcd/pkg/lockedfile v0.1.0 // indirect

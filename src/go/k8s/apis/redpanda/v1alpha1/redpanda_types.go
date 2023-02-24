@@ -28,24 +28,6 @@ type ChartRef struct {
 	HelmRepositoryName string `json:"helmRepositoryName,omitempty"`
 }
 
-// RedpandaClusterSpec defines the desired state of Redpanda Cluster
-type RedpandaClusterSpec struct {
-	// NameOverride is the override to give your redpanda release
-	NameOverride string `json:"nameOverride,omitempty"`
-	// NameOverride is the override to give your redpanda release
-	FullnameOverride string `json:"fullnameOverride,omitempty"`
-	// NameOverride is the override to give your redpanda release
-	ClusterDomain string `json:"clusterDomain,omitempty"`
-	// NameOverride is the override to give your redpanda release
-	CommonLabels []string `json:"commonLabels,omitempty"`
-	// NameOverride is the override to give your redpanda release
-	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
-	// NameOverride is the override to give your redpanda release
-	Tolerations []string `json:"tolerations,omitempty"`
-	// Image defines the container image to use for the redpanda cluster
-	Image *RedpandaImage `json:"image,omitempty"`
-}
-
 // RedpandaSpec defines the desired state of Redpanda
 type RedpandaSpec struct {
 	// ChartRef defines chart details including repository
@@ -101,12 +83,6 @@ type RedpandaList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Redpanda `json:"items"`
-}
-
-type RedpandaImage struct {
-	Repository string `json:"repository,omitempty"`
-	Tag        string `json:"tag,omitempty"`
-	PullPolicy string `json:"pullPolicy,omitempty"`
 }
 
 func init() {

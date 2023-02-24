@@ -56,18 +56,90 @@ spec:
               clusterSpec:
                 description: ClusterSpec defines the values to use in the cluster
                 properties:
+                  auth:
+                    description: Auth
+                    properties:
+                      sasl:
+                        description: Sasl
+                        properties:
+                          enabled:
+                            type: boolean
+                          mechanism:
+                            type: string
+                          secretRef:
+                            type: string
+                          users:
+                            items:
+                              description: UsersItems
+                              properties:
+                                mechanism:
+                                  type: string
+                                name:
+                                  type: string
+                                password:
+                                  type: string
+                              type: object
+                            type: array
+                        required:
+                        - enabled
+                        type: object
+                    required:
+                    - sasl
+                    type: object
                   clusterDomain:
-                    description: NameOverride is the override to give your redpanda
+                    description: ClusterDomain is the override to give your redpanda
                       release
                     type: string
                   commonLabels:
-                    description: NameOverride is the override to give your redpanda
-                      release
-                    items:
+                    additionalProperties:
                       type: string
-                    type: array
+                    description: CommonLabels is the override to give your redpanda
+                      release
+                    type: object
+                  config:
+                    description: Config
+                    properties:
+                      cluster:
+                        description: RawMessage is a raw encoded JSON value. It implements
+                          Marshaler and Unmarshaler and can be used to delay JSON
+                          decoding or precompute a JSON encoding.
+                        format: byte
+                        type: string
+                      node:
+                        description: RawMessage is a raw encoded JSON value. It implements
+                          Marshaler and Unmarshaler and can be used to delay JSON
+                          decoding or precompute a JSON encoding.
+                        format: byte
+                        type: string
+                      tunable:
+                        description: RawMessage is a raw encoded JSON value. It implements
+                          Marshaler and Unmarshaler and can be used to delay JSON
+                          decoding or precompute a JSON encoding.
+                        format: byte
+                        type: string
+                    type: object
+                  console:
+                    type: object
+                  external:
+                    description: External
+                    properties:
+                      addresses:
+                        description: RawMessage is a raw encoded JSON value. It implements
+                          Marshaler and Unmarshaler and can be used to delay JSON
+                          decoding or precompute a JSON encoding.
+                        format: byte
+                        type: string
+                      domain:
+                        type: string
+                      enabled:
+                        type: boolean
+                      type:
+                        type: string
+                    required:
+                    - enabled
+                    type: object
                   fullnameOverride:
-                    description: NameOverride is the override to give your redpanda
+                    description: FullnameOverride is the override to give your redpanda
                       release
                     type: string
                   image:
@@ -81,6 +153,215 @@ spec:
                       tag:
                         type: string
                     type: object
+                  license_key:
+                    type: string
+                  license_secret_ref:
+                    description: LicenseSecretRef
+                    properties:
+                      secret_key:
+                        type: string
+                      secret_name:
+                        type: string
+                    type: object
+                  listeners:
+                    description: Listeners
+                    properties:
+                      admin:
+                        description: Admin
+                        properties:
+                          external:
+                            description: External
+                            properties:
+                              addresses:
+                                description: RawMessage is a raw encoded JSON value.
+                                  It implements Marshaler and Unmarshaler and can
+                                  be used to delay JSON decoding or precompute a JSON
+                                  encoding.
+                                format: byte
+                                type: string
+                              domain:
+                                type: string
+                              enabled:
+                                type: boolean
+                              type:
+                                type: string
+                            required:
+                            - enabled
+                            type: object
+                          port:
+                            type: integer
+                          tls:
+                            description: Tls
+                            properties:
+                              certs:
+                                description: Certs
+                                type: object
+                              enabled:
+                                type: boolean
+                            required:
+                            - enabled
+                            type: object
+                        required:
+                        - external
+                        - port
+                        - tls
+                        type: object
+                      http:
+                        description: Http
+                        properties:
+                          enabled:
+                            type: boolean
+                          external:
+                            description: External
+                            properties:
+                              addresses:
+                                description: RawMessage is a raw encoded JSON value.
+                                  It implements Marshaler and Unmarshaler and can
+                                  be used to delay JSON decoding or precompute a JSON
+                                  encoding.
+                                format: byte
+                                type: string
+                              domain:
+                                type: string
+                              enabled:
+                                type: boolean
+                              type:
+                                type: string
+                            required:
+                            - enabled
+                            type: object
+                          kafkaEndpoint:
+                            type: string
+                          port:
+                            type: integer
+                          tls:
+                            description: Tls
+                            properties:
+                              certs:
+                                description: Certs
+                                type: object
+                              enabled:
+                                type: boolean
+                            required:
+                            - enabled
+                            type: object
+                        required:
+                        - enabled
+                        - external
+                        - kafkaEndpoint
+                        - port
+                        - tls
+                        type: object
+                      kafka:
+                        description: Kafka
+                        properties:
+                          external:
+                            description: External
+                            properties:
+                              addresses:
+                                description: RawMessage is a raw encoded JSON value.
+                                  It implements Marshaler and Unmarshaler and can
+                                  be used to delay JSON decoding or precompute a JSON
+                                  encoding.
+                                format: byte
+                                type: string
+                              domain:
+                                type: string
+                              enabled:
+                                type: boolean
+                              type:
+                                type: string
+                            required:
+                            - enabled
+                            type: object
+                          port:
+                            type: integer
+                          tls:
+                            description: Tls
+                            properties:
+                              certs:
+                                description: Certs
+                                type: object
+                              enabled:
+                                type: boolean
+                            required:
+                            - enabled
+                            type: object
+                        required:
+                        - external
+                        - port
+                        - tls
+                        type: object
+                      rpc:
+                        description: Rpc
+                        properties:
+                          port:
+                            type: integer
+                          tls:
+                            description: Tls
+                            properties:
+                              certs:
+                                description: Certs
+                                type: object
+                              enabled:
+                                type: boolean
+                            required:
+                            - enabled
+                            type: object
+                        required:
+                        - port
+                        - tls
+                        type: object
+                      schemaRegistry:
+                        description: SchemaRegistry
+                        properties:
+                          enabled:
+                            type: boolean
+                          external:
+                            description: External
+                            properties:
+                              addresses:
+                                description: RawMessage is a raw encoded JSON value.
+                                  It implements Marshaler and Unmarshaler and can
+                                  be used to delay JSON decoding or precompute a JSON
+                                  encoding.
+                                format: byte
+                                type: string
+                              domain:
+                                type: string
+                              enabled:
+                                type: boolean
+                              type:
+                                type: string
+                            required:
+                            - enabled
+                            type: object
+                          kafkaEndpoint:
+                            type: string
+                          port:
+                            type: integer
+                          tls:
+                            description: Tls
+                            properties:
+                              certs:
+                                description: Certs
+                                type: object
+                              enabled:
+                                type: boolean
+                            required:
+                            - enabled
+                            type: object
+                        required:
+                        - enabled
+                        - external
+                        - kafkaEndpoint
+                        - port
+                        - tls
+                        type: object
+                    type: object
+                  logging:
+                    description: Logging
+                    type: object
                   nameOverride:
                     description: NameOverride is the override to give your redpanda
                       release
@@ -88,15 +369,385 @@ spec:
                   nodeSelector:
                     additionalProperties:
                       type: string
-                    description: NameOverride is the override to give your redpanda
+                    description: NodeSelector is the override to give your redpanda
                       release
                     type: object
+                  post_install_job:
+                    description: PostInstallJob
+                    properties:
+                      enabled:
+                        type: boolean
+                      resources:
+                        description: Resources
+                        properties:
+                          limits:
+                            description: Limits
+                            properties:
+                              cpu:
+                                type: integer
+                              memory:
+                                type: string
+                            type: object
+                          requests:
+                            description: Requests
+                            properties:
+                              cpu:
+                                type: integer
+                              memory:
+                                type: string
+                            type: object
+                        type: object
+                    required:
+                    - enabled
+                    type: object
+                  post_upgrade_job:
+                    description: PostUpgradeJob
+                    properties:
+                      enabled:
+                        type: boolean
+                      extraEnv:
+                        description: RawMessage is a raw encoded JSON value. It implements
+                          Marshaler and Unmarshaler and can be used to delay JSON
+                          decoding or precompute a JSON encoding.
+                        format: byte
+                        type: string
+                      extraEnvFrom:
+                        description: RawMessage is a raw encoded JSON value. It implements
+                          Marshaler and Unmarshaler and can be used to delay JSON
+                          decoding or precompute a JSON encoding.
+                        format: byte
+                        type: string
+                      resources:
+                        description: Resources
+                        properties:
+                          limits:
+                            description: Limits
+                            properties:
+                              cpu:
+                                type: integer
+                              memory:
+                                type: string
+                            type: object
+                          requests:
+                            description: Requests
+                            properties:
+                              cpu:
+                                type: integer
+                              memory:
+                                type: string
+                            type: object
+                        type: object
+                    required:
+                    - enabled
+                    type: object
+                  rackAwareness:
+                    description: RackAwareness
+                    properties:
+                      enabled:
+                        type: boolean
+                      nodeAnnotation:
+                        type: string
+                    required:
+                    - enabled
+                    - nodeAnnotation
+                    type: object
+                  resources:
+                    description: Resources
+                    properties:
+                      limits:
+                        description: Limits
+                        properties:
+                          cpu:
+                            type: integer
+                          memory:
+                            type: string
+                        type: object
+                      requests:
+                        description: Requests
+                        properties:
+                          cpu:
+                            type: integer
+                          memory:
+                            type: string
+                        type: object
+                    type: object
+                  statefulset:
+                    description: Statefulset
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      budget:
+                        description: Budget
+                        properties:
+                          maxUnavailable:
+                            type: integer
+                        required:
+                        - maxUnavailable
+                        type: object
+                      initContainer:
+                        type: string
+                      livenessProbe:
+                        description: LivenessProbe
+                        properties:
+                          failureThreshold:
+                            type: integer
+                          initialDelaySeconds:
+                            type: integer
+                          periodSeconds:
+                            type: integer
+                        required:
+                        - failureThreshold
+                        - initialDelaySeconds
+                        - periodSeconds
+                        type: object
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      podAffinity:
+                        description: RawMessage is a raw encoded JSON value. It implements
+                          Marshaler and Unmarshaler and can be used to delay JSON
+                          decoding or precompute a JSON encoding.
+                        format: byte
+                        type: string
+                      podAntiAffinity:
+                        description: PodAntiAffinity
+                        properties:
+                          custom:
+                            description: RawMessage is a raw encoded JSON value. It
+                              implements Marshaler and Unmarshaler and can be used
+                              to delay JSON decoding or precompute a JSON encoding.
+                            format: byte
+                            type: string
+                          topologyKey:
+                            type: string
+                          type:
+                            type: string
+                          weight:
+                            type: integer
+                        required:
+                        - topologyKey
+                        - type
+                        - weight
+                        type: object
+                      priorityClassName:
+                        type: string
+                      readinessProbe:
+                        description: ReadinessProbe
+                        properties:
+                          failureThreshold:
+                            type: integer
+                          initialDelaySeconds:
+                            type: integer
+                          periodSeconds:
+                            type: integer
+                        required:
+                        - failureThreshold
+                        - initialDelaySeconds
+                        - periodSeconds
+                        type: object
+                      replicas:
+                        type: integer
+                      securityContext:
+                        description: SecurityContext
+                        properties:
+                          fsGroup:
+                            type: integer
+                          runAsUser:
+                            type: integer
+                        required:
+                        - fsGroup
+                        - runAsUser
+                        type: object
+                      skipChown:
+                        type: boolean
+                      startupProbe:
+                        description: StartupProbe
+                        properties:
+                          failureThreshold:
+                            type: integer
+                          initialDelaySeconds:
+                            type: integer
+                          periodSeconds:
+                            type: integer
+                        required:
+                        - failureThreshold
+                        - initialDelaySeconds
+                        - periodSeconds
+                        type: object
+                      tolerations:
+                        items:
+                          type: string
+                        type: array
+                      topologySpreadConstraints:
+                        description: TopologySpreadConstraints
+                        properties:
+                          maxSkew:
+                            type: integer
+                          topologyKey:
+                            type: string
+                          whenUnsatisfiable:
+                            type: string
+                        required:
+                        - maxSkew
+                        - topologyKey
+                        - whenUnsatisfiable
+                        type: object
+                      updateStrategy:
+                        description: UpdateStrategy
+                        properties:
+                          type:
+                            type: string
+                        required:
+                        - type
+                        type: object
+                    type: object
+                  storage:
+                    description: Storage
+                    properties:
+                      hostPath:
+                        type: string
+                      persistentVolume:
+                        description: PersistentVolume
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          enabled:
+                            type: boolean
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          size:
+                            type: string
+                          storageClass:
+                            type: string
+                        required:
+                        - annotations
+                        - enabled
+                        - labels
+                        - size
+                        - storageClass
+                        type: object
+                      tieredConfig:
+                        description: TieredConfig
+                        properties:
+                          cloud_storage_api_endpoint:
+                            type: string
+                          cloud_storage_api_endpoint_port:
+                            type: integer
+                          cloud_storage_bucket:
+                            type: string
+                          cloud_storage_cache_check_interval:
+                            type: integer
+                          cloud_storage_cache_directory:
+                            type: string
+                          cloud_storage_cache_size:
+                            type: integer
+                          cloud_storage_credentials_source:
+                            type: string
+                          cloud_storage_disable_tls:
+                            type: boolean
+                          cloud_storage_enable_remote_read:
+                            type: boolean
+                          cloud_storage_enable_remote_write:
+                            type: boolean
+                          cloud_storage_initial_backoff_ms:
+                            type: integer
+                          cloud_storage_manifest_upload_timeout_ms:
+                            type: integer
+                          cloud_storage_max_connection_idle_time_ms:
+                            type: integer
+                          cloud_storage_max_connections:
+                            type: integer
+                          cloud_storage_reconciliation_interval_ms:
+                            type: integer
+                          cloud_storage_region:
+                            type: string
+                          cloud_storage_segment_max_upload_interval_sec:
+                            type: integer
+                          cloud_storage_segment_upload_timeout_ms:
+                            type: integer
+                          cloud_storage_trust_file:
+                            type: string
+                          cloud_storage_upload_ctrl_d_coeff:
+                            type: integer
+                          cloud_storage_upload_ctrl_max_shares:
+                            type: integer
+                          cloud_storage_upload_ctrl_min_shares:
+                            type: integer
+                          cloud_storage_upload_ctrl_p_coeff:
+                            type: integer
+                          cloud_storage_upload_ctrl_update_interval_ms:
+                            type: integer
+                        required:
+                        - cloud_storage_bucket
+                        - cloud_storage_region
+                        type: object
+                      tieredStorageHostPath:
+                        type: string
+                      tieredStoragePersistentVolume:
+                        description: TieredStoragePersistentVolume
+                        properties:
+                          annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          enabled:
+                            type: boolean
+                          labels:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          storageClass:
+                            type: string
+                        required:
+                        - annotations
+                        - enabled
+                        - labels
+                        - storageClass
+                        type: object
+                    required:
+                    - hostPath
+                    - persistentVolume
+                    type: object
+                  tls:
+                    description: Tls
+                    properties:
+                      certs:
+                        description: Certs
+                        type: object
+                      enabled:
+                        type: boolean
+                    required:
+                    - enabled
+                    type: object
                   tolerations:
-                    description: NameOverride is the override to give your redpanda
+                    description: Tolerations is the override to give your redpanda
                       release
                     items:
                       type: string
                     type: array
+                  tuning:
+                    description: Tuning
+                    properties:
+                      ballast_file_path:
+                        type: string
+                      ballast_file_size:
+                        type: string
+                      tune_aio_events:
+                        type: boolean
+                      tune_ballast_file:
+                        type: boolean
+                      tune_clocksource:
+                        type: boolean
+                      well_known_io:
+                        type: string
+                    type: object
                 type: object
               helmRepositoryName:
                 description: HelmRepositoryName defines the repository to use, defaults
