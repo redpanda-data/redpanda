@@ -172,6 +172,14 @@ ss::future<> remote_segment::stop() {
     _stopped = true;
 }
 
+size_t remote_segment::estimate_memory_use() const {
+    size_t result = sizeof(remote_segment);
+    if (_index) {
+        result += _index->estimate_memory_use();
+    }
+    return result;
+}
+
 ss::future<storage::segment_reader_handle>
 remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
     vlog(_ctxlog.debug, "remote segment file input stream at {}", pos);

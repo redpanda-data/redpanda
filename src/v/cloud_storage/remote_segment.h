@@ -88,6 +88,8 @@ public:
 
     ss::future<> stop();
 
+    size_t estimate_memory_use() const;
+
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
     ss::future<storage::segment_reader_handle>

@@ -14,12 +14,18 @@
 #include "cloud_storage/remote_partition.h"
 #include "cloud_storage/remote_segment.h"
 #include "config/configuration.h"
+#include "resource_mgmt/available_memory.h"
 #include "ssx/future-util.h"
 #include "vlog.h"
+
+#include <seastar/core/memory.hh>
+#include <seastar/core/scheduling.hh>
+#include <seastar/core/with_scheduling_group.hh>
 
 #include <absl/container/btree_map.h>
 
 #include <chrono>
+#include <variant>
 
 namespace cloud_storage {
 
@@ -27,6 +33,9 @@ using namespace std::chrono_literals;
 
 static constexpr ss::lowres_clock::duration stm_jitter_duration = 10s;
 static constexpr ss::lowres_clock::duration stm_max_idle_time = 60s;
+static constexpr size_t min_reclaim_memory_request = 512_KiB;
+static constexpr float eviction_background_priority = 100;
+static constexpr float eviction_foreground_priority = 1000;
 
 // If no reader limit is set, permit the per-shard partition count limit,
 // multiplied by this factor (i.e. each partition gets this many readers
@@ -38,7 +47,7 @@ static constexpr uint32_t default_reader_factor = 1;
 // on average).
 static constexpr uint32_t default_segment_factor = 2;
 
-materialized_segments::materialized_segments()
+materialized_segments::materialized_segments(ss::scheduling_group sg)
   : _stm_jitter(stm_jitter_duration)
   , _max_partitions_per_shard(
       config::shard_local_cfg().topic_partitions_per_shard.bind())
@@ -48,13 +57,73 @@ materialized_segments::materialized_segments()
       config::shard_local_cfg()
         .cloud_storage_max_materialized_segments_per_shard.bind())
   , _reader_units(max_readers(), "cst_reader")
-  , _segment_units(max_segments(), "cst_segment") {
+  , _segment_units(max_segments(), "cst_segment")
+  , _reclaimer(
+      [this](ss::memory::reclaimer::request r) { return reclaim(r); },
+      ss::memory::reclaimer_scope::async)
+  , _eviction_sg(sg) {
     _max_readers_per_shard.watch(
       [this]() { _reader_units.set_capacity(max_readers()); });
     _max_segments_per_shard.watch(
       [this]() { _segment_units.set_capacity(max_segments()); });
     _max_partitions_per_shard.watch(
       [this]() { _reader_units.set_capacity(max_readers()); });
+}
+
+ss::memory::reclaiming_result
+materialized_segments::reclaim(ss::memory::reclaimer::request req) {
+    vlog(
+      cst_log.info,
+      "Memory reclamer request. {} bytes requested.",
+      req.bytes_to_reclaim);
+    try {
+        auto am = resources::available_memory::local().available();
+        if (am > 64_MiB) {
+            return ss::memory::reclaiming_result::reclaimed_nothing;
+        }
+        auto to_reclaim = std::max(
+          req.bytes_to_reclaim, min_reclaim_memory_request);
+
+        auto before = reclaimable_memory();
+
+        // Estimate number of segments/readers that should be evicted
+        if (before.num_segments) {
+            auto segments_to_reclaim
+              = to_reclaim
+                / (before.segments_memory_use_estimate / before.num_segments);
+
+            vlog(
+              cst_log.info,
+              "Going to reclaim {} segments to free up to {} bytes",
+              segments_to_reclaim,
+              to_reclaim);
+
+            trim_segments(segments_to_reclaim);
+        }
+
+        if (before.num_readers) {
+            auto readers_to_reclaim
+              = to_reclaim
+                / (before.readers_memory_use_estimate / before.num_readers);
+
+            vlog(
+              cst_log.info,
+              "Going to reclaim readers to free up to {} bytes",
+              readers_to_reclaim,
+              to_reclaim);
+
+            trim_readers(readers_to_reclaim);
+        }
+
+        if (_eviction_pending.size() > 0) {
+            _eviction_sg.set_shares(eviction_foreground_priority);
+            return ss::memory::reclaiming_result::reclaimed_something;
+        }
+    } catch (const std::bad_alloc&) {
+        // The method can be called in low memory state. Since it allocates
+        // memory we can expect some bad_alloc exceptions to be thrown.
+    }
+    return ss::memory::reclaiming_result::reclaimed_nothing;
 }
 
 ss::future<> materialized_segments::stop() {
@@ -82,7 +151,10 @@ ss::future<> materialized_segments::stop() {
 ss::future<> materialized_segments::start() {
     // Fiber that consumes from _eviction_list and calls stop
     // on items before destroying them
-    ssx::spawn_with_gate(_gate, [this] { return run_eviction_loop(); });
+    ssx::spawn_with_gate(_gate, [this] {
+        return ss::with_scheduling_group(
+          _eviction_sg, [this] { return run_eviction_loop(); });
+    });
 
     // Timer to invoke TTL eviction of segments
     _stm_timer.set_callback([this] {
@@ -91,7 +163,7 @@ ss::future<> materialized_segments::start() {
     });
     _stm_timer.rearm(_stm_jitter());
 
-    return ss::now();
+    co_return;
 }
 
 size_t materialized_segments::max_readers() const {
@@ -123,6 +195,29 @@ void materialized_segments::evict_segment(
     _cvar.signal();
 }
 
+static size_t reader_memory_use_upper_bound() {
+    // We can't measure memory consumption by the buffer directly but
+    // we can estimate it by using readahead count and read buffer size.
+    // ss::input_stream doesn't consume that much memory all the time, only
+    // if it's actively used.
+    return config::shard_local_cfg().storage_read_buffer_size()
+           + config::shard_local_cfg().storage_read_readahead_count();
+}
+
+materialized_segments::reclaimable_memory_t
+materialized_segments::reclaimable_memory() const {
+    reclaimable_memory_t result{};
+    const auto reader_size_bytes = reader_memory_use_upper_bound();
+
+    for (const auto& es : _materialized) {
+        result.segments_memory_use_estimate += es.reclaimable_memory();
+        result.num_segments += 1;
+    }
+    result.readers_memory_use_estimate += reader_size_bytes * current_readers();
+    result.num_readers = current_readers();
+    return result;
+}
+
 ss::future<> materialized_segments::flush_evicted() {
     if (_eviction_pending.empty() && _eviction_in_flight.empty()) {
         // Fast path, avoid waking up the eviction loop if there is no work.
@@ -149,6 +244,12 @@ ss::future<> materialized_segments::run_eviction_loop() {
               [](auto&& rs) { return rs->stop(); },
               _eviction_in_flight.front());
             _eviction_in_flight.pop_front();
+        }
+        if (_eviction_pending.empty()) {
+            // If there was a low memory situation the priority of the
+            // eviction loop might have been bumped. We need to decrease
+            // it back to normal when all evicted entities are processed.
+            _eviction_sg.set_shares(eviction_background_priority);
         }
     }
 }
@@ -295,7 +396,7 @@ void materialized_segments::trim_segments(std::optional<size_t> target_free) {
 
         p->offload_segment(offset);
     }
-} // namespace cloud_storage
+}
 
 /**
  * Inner part of trim_segments, that decides whether a segment can be

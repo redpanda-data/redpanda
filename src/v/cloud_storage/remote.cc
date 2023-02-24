@@ -44,10 +44,12 @@ using namespace std::chrono_literals;
 remote::remote(
   connection_limit limit,
   const cloud_storage_clients::client_configuration& conf,
-  model::cloud_credentials_source cloud_credentials_source)
+  model::cloud_credentials_source cloud_credentials_source,
+  ss::scheduling_group tiered_storage_bg_eviction)
   : _pool(limit(), conf)
   , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source}
-  , _materialized(std::make_unique<materialized_segments>())
+  , _materialized(
+      std::make_unique<materialized_segments>(tiered_storage_bg_eviction))
   , _probe(
       remote_metrics_disabled(static_cast<bool>(
         std::visit([](auto&& cfg) { return cfg.disable_metrics; }, conf))),
@@ -102,7 +104,8 @@ remote::remote(ss::sharded<configuration>& conf)
   : remote(
     conf.local().connection_limit,
     conf.local().client_config,
-    conf.local().cloud_credentials_source) {}
+    conf.local().cloud_credentials_source,
+    conf.local().materialized_segments_eviction_sg) {}
 
 remote::~remote() {
     // This is declared in the .cc to avoid header trying to

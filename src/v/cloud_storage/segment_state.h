@@ -74,6 +74,9 @@ struct materialized_segment_state {
     /// Units belonging to `materialized_segments`, for managing how many
     /// segments may be concurrently materialized shard-wide
     ssx::semaphore_units _units;
+
+    /// Calculate amount of memory that can be freed by evicting this segment
+    size_t reclaimable_memory() const;
 };
 
 } // namespace cloud_storage

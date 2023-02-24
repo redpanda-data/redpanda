@@ -205,6 +205,8 @@ public:
       , _cnt(cnt)
       , _delta(delta) {}
 
+    size_t size_bytes() const { return _data.size_bytes(); }
+
     using row_t = std::array<TVal, row_width>;
 
     /// Encode single row
@@ -693,6 +695,10 @@ public:
         _initial = _delta.decode(_initial, row);
         _pos++;
         return true;
+    }
+
+    size_t size_bytes() const {
+        return _data.bytes_consumed() + _data.bytes_left();
     }
 
 private:

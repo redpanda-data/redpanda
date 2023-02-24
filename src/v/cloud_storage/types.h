@@ -20,6 +20,7 @@
 #include "utils/named_type.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -93,6 +94,9 @@ struct configuration {
     cloud_storage_clients::bucket_name bucket_name;
 
     model::cloud_credentials_source cloud_credentials_source;
+
+    /// Scheduling group of the background eviction process
+    ss::scheduling_group materialized_segments_eviction_sg;
 
     friend std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 

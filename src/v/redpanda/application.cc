@@ -1053,9 +1053,13 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         auto stop_config = ss::defer(
           [&cloud_configs] { cloud_configs.stop().get(); });
         cloud_configs
-          .invoke_on_all([](cloud_storage::configuration& c) {
+          .invoke_on_all([this](cloud_storage::configuration& c) {
               return cloud_storage::configuration::get_config().then(
-                [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
+                [this, &c](cloud_storage::configuration cfg) {
+                    c = std::move(cfg);
+                    c.materialized_segments_eviction_sg
+                      = _scheduling_groups.tiered_storage_bg_eviction();
+                });
           })
           .get();
         construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
