@@ -365,8 +365,8 @@ private:
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
-    ss::future<ss::json::json_return_type>
-    initiate_topic_scan_and_recovery(std::unique_ptr<ss::httpd::request> req);
+    ss::future<std::unique_ptr<ss::reply>> initiate_topic_scan_and_recovery(
+      std::unique_ptr<ss::request>, std::unique_ptr<ss::reply>);
     ss::future<ss::json::json_return_type>
     query_automated_recovery(std::unique_ptr<ss::httpd::request> req);
 
