@@ -287,7 +287,8 @@ public:
         _value = rhs._value;
         _parent = rhs._parent;
         _on_change = rhs._on_change;
-        if (_parent && this != &rhs) {
+        _hook.unlink();
+        if (_parent) {
             _parent->_bindings.push_back(*this);
         }
         return *this;
