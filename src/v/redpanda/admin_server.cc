@@ -91,6 +91,7 @@
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
+#include <seastar/util/log.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -932,6 +933,23 @@ void admin_server::register_config_routes() {
           json::Writer<json::StringBuffer> writer(buf);
           config::node().to_json(writer, config::redact_secrets::yes);
 
+          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          return "";
+      });
+
+    register_route_raw<superuser>(
+      ss::httpd::config_json::get_loggers, [](ss::const_req, ss::reply& reply) {
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
+          writer.StartArray();
+          for (const auto& name :
+               ss::global_logger_registry().get_all_logger_names()) {
+              writer.StartObject();
+              writer.Key("name");
+              writer.String(name);
+              writer.EndObject();
+          }
+          writer.EndArray();
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
       });
