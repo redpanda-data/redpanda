@@ -66,23 +66,30 @@ class ThroughputLimitsSnc(RedpandaTest):
         QUOTA_SHARD_MIN_RATIO = "kafka_quota_balancer_min_shard_throughput_ratio"
         QUOTA_SHARD_MIN_BPS = "kafka_quota_balancer_min_shard_throughput_bps"
 
+    def binexp_random(self, min: int, max: int):
+        min_exp = min.bit_length() - 1
+        max_exp = max.bit_length() - 1
+        return math.floor(2**(self.rnd.random() * (max_exp - min_exp) +
+                              min_exp))
+
     def get_config_parameter_random_value(self, prop: ConfigProp):
         if prop in [
                 self.ConfigProp.QUOTA_NODE_MAX_IN,
                 self.ConfigProp.QUOTA_NODE_MAX_EG
         ]:
             r = self.rnd.randrange(4)
+            min = 128  # practical minimum
             if r == 0:
                 return None
             if r == 1:
-                return 128  # practical minimum
-            return math.floor(2**(self.rnd.random() * 35 + 5))  # up to 1 TB/s
+                return min
+            return self.binexp_random(min, 2**40)  # up to 1 TB/s
 
         if prop == self.ConfigProp.QUOTA_SHARD_MIN_BPS:
             r = self.rnd.randrange(3)
             if r == 0:
                 return 0
-            return math.floor(2**(self.rnd.random() * 30))  # up to 1 GB/s
+            return self.binexp_random(0, 2**30)  # up to 1 GB/s
 
         if prop == self.ConfigProp.QUOTA_SHARD_MIN_RATIO:
             r = self.rnd.randrange(3)
@@ -96,21 +103,23 @@ class ThroughputLimitsSnc(RedpandaTest):
             r = self.rnd.randrange(3)
             if r == 0:
                 return 0
-            return math.floor(2**(self.rnd.random() * 25))  # up to ~1 year
+            return self.binexp_random(0, 2**25)  # up to ~1 year
 
         if prop == self.ConfigProp.BAL_WINDOW_MS:
             r = self.rnd.randrange(4)
+            min = 1
+            max = 2147483647
             if r == 0:
-                return 1
+                return min
             if r == 1:
-                return 2147483647
-            return math.floor(2**(self.rnd.random() * 31))
+                return max
+            return self.binexp_random(min, max)
 
         if prop == self.ConfigProp.BAL_PERIOD_MS:
             r = self.rnd.randrange(3)
             if r == 0:
                 return 0
-            return math.floor(2**(self.rnd.random() * 22))  # up to ~1.5 months
+            return self.binexp_random(0, 2**22)  # up to ~1.5 months
 
         raise Exception(f"Unsupported ConfigProp: {prop}")
 
