@@ -84,8 +84,10 @@ void metadata_dissemination_service::disseminate_leadership(
   std::optional<model::node_id> leader_id) {
     vlog(
       clusterlog.trace,
-      "Dissemination request for {}, leader {}",
+      "Dissemination request for {}, revision {}, term {}, leader {}",
       ntp,
+      revision,
+      term,
       leader_id.value());
 
     _requests.emplace_back(std::move(ntp), term, leader_id, revision);
@@ -179,6 +181,7 @@ ss::future<> metadata_dissemination_service::apply_leadership_notification(
     return ss::with_gate(
       _bg, [this, ntp = std::move(ntp), lid, revision, term]() mutable {
           // update partition leaders
+          vlog(clusterlog.trace, "updating {} leadership locally", ntp);
           auto f = _leaders.invoke_on_all(
             [ntp, lid, revision, term](partition_leaders_table& leaders) {
                 leaders.update_partition_leader(ntp, revision, term, lid);
@@ -253,6 +256,7 @@ ss::future<> metadata_dissemination_service::process_get_update_reply(
         return ss::make_ready_future<>();
     }
     // Update all NTP leaders
+    vlog(clusterlog.trace, "updating leadership from get_metadata");
     return _leaders
       .invoke_on_all([reply = std::move(reply_result.value())](
                        partition_leaders_table& leaders) mutable {
@@ -320,12 +324,15 @@ void metadata_dissemination_service::cleanup_finished_updates() {
     auto brokers = _members_table.local().node_ids();
     for (auto& [node_id, meta] : _pending_updates) {
         auto it = std::find(brokers.begin(), brokers.end(), node_id);
-        if (meta.finished || it == brokers.end()) {
+        if (meta.finished) {
+            vlog(clusterlog.trace, "node {} update finished", node_id);
+            _to_remove.push_back(node_id);
+        } else if (it == brokers.end()) {
+            vlog(clusterlog.trace, "node {} isn't found", node_id);
             _to_remove.push_back(node_id);
         }
     }
     for (auto id : _to_remove) {
-        vlog(clusterlog.trace, "node {} update finished", id);
         _pending_updates.erase(id);
     }
 }
@@ -336,6 +343,7 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
      * information. If report would contain stale data they will be ignored by
      * term check in partition leaders table
      */
+    vlog(clusterlog.trace, "disseminating leadership info");
     return _health_monitor.local()
       .get_cluster_health(
         cluster_report_filter{},
@@ -370,6 +378,7 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
 
 ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
   cluster_health_report report) {
+    vlog(clusterlog.trace, "updating leadership from health report");
     for (const auto& node_report : report.node_reports) {
         co_await _leaders.invoke_on_all(
           [&node_report](partition_leaders_table& leaders) {
@@ -463,6 +472,10 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
       })
       .then([target_id, &meta](result<update_leadership_reply> r) {
           if (r) {
+              vlog(
+                clusterlog.trace,
+                "Got ack to metadata update from {}",
+                target_id);
               meta.finished = true;
               return;
           }
