@@ -12,7 +12,7 @@ kind: Cluster
 metadata:
   name: up-img
 spec:
-  version: "v22.2.8"
+  version: "v22.2.10"
   cloudStorage:
     enabled: true
     accessKey: XXX
