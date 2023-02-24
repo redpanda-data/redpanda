@@ -29,10 +29,7 @@ struct retry_params {
 
 class refresh_credentials {
 public:
-    enum class client_tls_enabled : bool {
-        yes = true,
-        no = false,
-    };
+    using client_tls_enabled = ss::bool_class<struct client_tls_enabled_t>;
 
     class impl {
     public:
