@@ -28,6 +28,7 @@
 #include <limits>
 
 using namespace cloud_storage;
+static ss::logger test("test-logger-s");
 
 using delta_xor_alg = details::delta_xor;
 using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg>;
@@ -432,24 +433,42 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_delta_small) {
 template<class column_t>
 void prefix_truncate_test_case(const int64_t num_elements, column_t& column) {
     size_t total_size = 0;
-    std::vector<int64_t> samples;
+    struct sample_t {
+        int64_t sample;
+        int64_t index;
+    };
+    std::vector<sample_t> samples;
     int64_t value = 0;
     for (int64_t i = 0; i < num_elements; i++) {
         value += random_generators::get_int(1, 100);
         column.append(value);
         if (samples.empty() || random_generators::get_int(10) == 0) {
-            samples.push_back(value);
+            vlog(test.info, "Add sample {} at {}", value, i);
+            samples.push_back(sample_t{
+              .sample = value,
+              .index = i,
+            });
         }
         total_size++;
     }
     BOOST_REQUIRE_EQUAL(total_size, column.size());
 
+    int64_t num_truncated = 0;
     for (auto value : samples) {
-        column.prefix_truncate(value);
+        auto delta = value.index - num_truncated;
+        vlog(
+          test.info,
+          "Truncating at {}, sample {}, {}",
+          delta,
+          value.sample,
+          value.index);
+        column.prefix_truncate_ix(delta);
+        num_truncated += delta;
         auto it = column.begin();
         BOOST_REQUIRE(it != column.end());
         auto actual = *it;
-        BOOST_REQUIRE_EQUAL(actual, value);
+        vlog(test.info, "Found value {}", actual);
+        BOOST_REQUIRE_EQUAL(actual, value.sample);
     }
 }
 
@@ -611,8 +630,6 @@ std::vector<segment_meta> generate_metadata(size_t sz) {
     }
     return manifest;
 }
-
-static ss::logger test("test-logger-s");
 
 void test_compression_ratio() {
     segment_meta_cstore store;

@@ -250,20 +250,11 @@ public:
 
     bool contains(value_t value) const { return find(value) != end(); }
 
-    void prefix_truncate(value_t new_start) {
+    /// Prefix truncate the frame. Index ix_exclusive is a new
+    /// start of the frame.
+    void prefix_truncate_ix(uint32_t ix_exclusive) {
         segment_meta_column_frame<value_t, delta_t> tmp(_delta_alg);
-        for (auto it = find(new_start); it != end(); ++it) {
-            tmp.append(*it);
-        }
-        _head = tmp._head;
-        _tail = std::move(tmp._tail);
-        _size = tmp._size;
-        _last_row = tmp._last_row;
-    }
-
-    void prefix_truncate_ix(uint32_t ix) {
-        segment_meta_column_frame<value_t, delta_t> tmp(_delta_alg);
-        for (auto it = at_index(ix); it != end(); ++it) {
+        for (auto it = at_index(ix_exclusive); it != end(); ++it) {
             tmp.append(*it);
         }
         _head = tmp._head;
@@ -628,32 +619,15 @@ public:
 
     bool contains(value_t value) const { return find(value) != end(); }
 
-    /// Prefix truncate the column
-    ///
-    /// \param new_start is value from which the column should start
-    /// \note the method can only be used for monotonic sequences
-    void prefix_truncate(value_t new_start) {
-        auto st = _frames.begin();
+    /// Prefix truncate column. Value at the position 'ix_exclusive' will
+    /// become a new start of the column.
+    void prefix_truncate_ix(uint32_t ix_exclusive) {
         for (auto it = _frames.begin(); it != _frames.end(); it++) {
-            if (it->last_value() < new_start) {
-                st = it;
+            if (it->size() <= ix_exclusive) {
+                ix_exclusive -= it->size();
             } else {
-                it->prefix_truncate(new_start);
-                break;
-            }
-        }
-        _frames.erase(_frames.begin(), st);
-    }
-
-    void prefix_truncate_ix(uint32_t ix) {
-        for (auto it = _frames.begin(); it != _frames.end(); it++) {
-            if (it->size() <= ix) {
-                ix -= it->size();
-            } else {
-                it->prefix_truncate_ix(ix);
-                std::list<frame_t> frames;
-                frames.splice(frames.end(), _frames, it, _frames.end());
-                std::swap(frames, _frames);
+                it->prefix_truncate_ix(ix_exclusive);
+                _frames.erase(_frames.begin(), it);
                 break;
             }
         }
@@ -839,6 +813,8 @@ public:
 
     std::pair<size_t, size_t> inflated_actual_size() const;
 
+    /// Removes all values up to the offset. The provided offset is
+    /// a new start offset.
     void prefix_truncate(model::offset);
 
 private:
