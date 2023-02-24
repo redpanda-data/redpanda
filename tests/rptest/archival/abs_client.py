@@ -72,15 +72,20 @@ class ABSClient:
         blob_service = BlobServiceClient.from_connection_string(self.conn_str)
         blob_service.delete_container(name)
 
-    def empty_bucket(self, name: str, parallel=False):
-        # TODO: implement `parallel` as/when we start running any scale tests
-        # on Azure
+    def empty_bucket(self, name: str, parallel=True):
         container_client = ContainerClient.from_connection_string(
             self.conn_str, container_name=name)
         blob_names_generator = container_client.list_blob_names()
 
-        for blob in blob_names_generator:
-            container_client.delete_blob(blob)
+        def chunks(generator):
+            it = iter(generator)
+            # 'delete_blobs' can only handle batches
+            # of up to 256 elements
+            while (batch := list(islice(it, 256))):
+                yield batch
+
+        for chunk in chunks(blob_names_generator):
+            container_client.delete_blobs(*chunk)
 
     def delete_object(self, bucket: str, key: str, verify=False):
         blob_client = BlobClient.from_connection_string(self.conn_str,
