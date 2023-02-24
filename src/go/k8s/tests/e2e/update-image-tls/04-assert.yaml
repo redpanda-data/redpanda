@@ -55,6 +55,30 @@ collectors:
 
 ---
 
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+commands:
+  - command: kubectl -n $NAMESPACE exec -ti up-img-0 -- rpk cluster maintenance status
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-1 -- rpk cluster maintenance status
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-2 -- rpk cluster maintenance status
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-0 -- rpk cluster config status
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-1 -- rpk cluster config status
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-2 -- rpk cluster config status
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-0 -- rpk redpanda admin brokers list
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-1 -- rpk redpanda admin brokers list
+    namespaced: true
+  - command: kubectl -n $NAMESPACE exec -ti up-img-2 -- rpk redpanda admin brokers list
+    namespaced: true
+
+---
+
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
