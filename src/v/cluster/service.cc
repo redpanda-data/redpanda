@@ -68,7 +68,7 @@ service::service(
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context& context) {
-    auto jnr = join_node_request(invalid_version, req.node);
+    auto jnr = join_node_request(invalid_version, invalid_version, req.node);
     return join_node(std::move(jnr), context).then([](join_node_reply r) {
         return join_reply{r.success};
     });
@@ -87,13 +87,20 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
         expect_version = features::feature_table::get_latest_logical_version();
     }
 
-    if (req.logical_version < expect_version) {
+    if (
+      (req.earliest_logical_version != cluster::invalid_version
+       && req.earliest_logical_version > expect_version)
+      || (req.latest_logical_version != cluster::invalid_version && req.latest_logical_version < expect_version)) {
+        // Our active version is outside the range of versions the
+        // joining node is compatible with.
         vlog(
           clusterlog.warn,
-          "Rejecting join request from node {}, logical version {} < {}",
+          "Rejecting join request from incompatible node {}, our version {} vs "
+          "their {}-{}",
           req.node,
-          req.logical_version,
-          expect_version);
+          expect_version,
+          req.earliest_logical_version,
+          req.latest_logical_version);
         return ss::make_ready_future<join_node_reply>(
           join_node_reply{false, model::node_id{-1}});
     }

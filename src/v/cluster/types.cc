@@ -1083,7 +1083,7 @@ cluster::join_request adl<cluster::join_request>::from(iobuf_parser& in) {
 void adl<cluster::join_node_request>::to(
   iobuf& out, cluster::join_node_request&& r) {
     adl<uint8_t>().to(out, r.current_version);
-    adl<cluster::cluster_version>().to(out, r.logical_version);
+    adl<cluster::cluster_version>().to(out, r.latest_logical_version);
     adl<std::vector<uint8_t>>().to(out, r.node_uuid);
     adl<model::broker>().to(out, std::move(r.node));
 }
@@ -1100,7 +1100,8 @@ adl<cluster::join_node_request>::from(iobuf_parser& in) {
     auto node_uuid = adl<std::vector<uint8_t>>().from(in);
     auto node = adl<model::broker>().from(in);
 
-    return cluster::join_node_request{logical_version, node_uuid, node};
+    return cluster::join_node_request{
+      logical_version, cluster::invalid_version, node_uuid, node};
 }
 
 void adl<cluster::configuration_update_request>::to(

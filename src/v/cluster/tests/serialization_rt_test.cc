@@ -1371,16 +1371,17 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         }
         cluster::join_node_request data{
           tests::random_named_int<cluster::cluster_version>(),
+          tests::random_named_int<cluster::cluster_version>(),
           node_uuid,
           model::random_broker()};
-        roundtrip_test(data);
+        serde_roundtrip_test(data);
     }
     {
         cluster::join_node_reply data{
           tests::random_bool(),
           tests::random_named_int<model::node_id>(),
         };
-        roundtrip_test(data);
+        serde_roundtrip_test(data);
     }
     {
         std::vector<model::broker_shard> new_replica_set;
