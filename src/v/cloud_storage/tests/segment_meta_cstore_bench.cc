@@ -126,7 +126,7 @@ void append_tx_test(StoreT& store, int test_scale) {
     perf_tests::start_measuring_time();
     auto tx = store.append_tx(tail);
     if (tx) {
-        tx->commit();
+        std::move(*tx).commit();
     } else {
         assert(false);
     }

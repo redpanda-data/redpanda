@@ -60,7 +60,7 @@ namespace details {
 template<class T>
 void commit_one(T&& tx) {
     if (tx.has_value()) {
-        tx->commit();
+        std::move(*tx).commit();
     }
 }
 

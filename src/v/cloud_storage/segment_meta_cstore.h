@@ -140,7 +140,7 @@ public:
         void add(const std::array<value_t, buffer_depth>& row) {
             inner.add(row);
         }
-        void commit() noexcept { self._tail->tx_commit(std::move(inner)); }
+        void commit() && noexcept { self._tail->tx_commit(std::move(inner)); }
     };
 
     // Transactional append operation
@@ -503,9 +503,9 @@ public:
             std::get<frame_list_t>(inner).push_back(std::move(frame));
         }
 
-        void commit() noexcept {
+        void commit() && noexcept {
             if (std::holds_alternative<frame_tx_t>(inner)) {
-                std::get<frame_tx_t>(inner).commit();
+                std::move(std::get<frame_tx_t>(inner)).commit();
             } else {
                 self._frames.splice(
                   self._frames.end(), std::get<frame_list_t>(inner));

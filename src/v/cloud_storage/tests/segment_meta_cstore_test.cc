@@ -81,7 +81,7 @@ void append_tx_test_case(const int64_t num_elements, column_t& column) {
         ix += random_generators::get_int(1, 100);
         auto tx = column.append_tx(ix);
         if (tx) {
-            tx->commit();
+            std::move(*tx).commit();
         }
         total_size++;
         BOOST_REQUIRE_EQUAL(ix, column.last_value());
