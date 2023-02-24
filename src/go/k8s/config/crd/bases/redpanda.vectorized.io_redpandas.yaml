@@ -36,6 +36,20 @@ spec:
           spec:
             description: RedpandaSpec defines the desired state of Redpanda
             properties:
+              chartRef:
+                description: ChartRef defines chart details including repository
+                properties:
+                  chartName:
+                    description: ChartName is the chart to use
+                    type: string
+                  chartVersion:
+                    description: ChartVersion defines the helm chart version to use
+                    type: string
+                  helmRepositoryName:
+                    description: HelmRepositoryName defines the repository to use,
+                      defaults to redpanda if not defined
+                    type: string
+                type: object
               chartVersion:
                 description: ChartVersion defines the helm chart version to use
                 type: string
@@ -88,12 +102,14 @@ spec:
                 description: HelmRepositoryName defines the repository to use, defaults
                   to redpanda if not defined
                 type: string
+            required:
+            - chartRef
             type: object
           status:
             description: RedpandaStatus defines the observed state of Redpanda
             properties:
               conditions:
-                description: Conditions holds the conditions for the HelmRelease.
+                description: Conditions holds the conditions for the Redpanda.
                 items:
                   description: "Condition contains details for one aspect of the current
                     state of this API Resource. --- This struct is intended for direct

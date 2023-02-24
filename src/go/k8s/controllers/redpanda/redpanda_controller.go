@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
 // RedpandaReconciler reconciles a Redpanda object
@@ -49,7 +49,7 @@ type RedpandaReconciler struct {
 // SetupWithManager sets up the controller with the Manager.
 func (r *RedpandaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&redpandav1alpha1.Redpanda{}, builder.WithPredicates(
+		For(&v1alpha1.Redpanda{}, builder.WithPredicates(
 			predicate.Or(predicate.GenerationChangedPredicate{},
 				predicates.ReconcileRequestedPredicate{}),
 		)).
@@ -67,7 +67,7 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
 
-	var rp redpandav1alpha1.Redpanda
+	var rp v1alpha1.Redpanda
 	if err := r.Get(ctx, req.NamespacedName, &rp); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
@@ -105,7 +105,7 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return result, err
 }
 
-func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp redpandav1alpha1.Redpanda) (redpandav1alpha1.Redpanda, ctrl.Result, error) {
+func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp v1alpha1.Redpanda) (v1alpha1.Redpanda, ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", req.NamespacedName)
 
@@ -144,10 +144,10 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 
 	rp.Status.HelmRelease = rp.GetHelmReleaseName()
 
-	return rp, ctrl.Result{}, nil
+	return v1alpha1.RedpandaReady(rp), ctrl.Result{}, nil
 }
 
-func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Request, rp redpandav1alpha1.Redpanda) (ctrl.Result, error) {
+func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Request, rp v1alpha1.Redpanda) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", req.NamespacedName)
 
@@ -163,7 +163,7 @@ func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp redpandav1alpha1.Redpanda) error {
+func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", rp.Name)
 
@@ -192,7 +192,7 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp redpandav
 	return nil
 }
 
-func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp redpandav1alpha1.Redpanda) error {
+func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", rp.Name)
 
@@ -218,7 +218,7 @@ func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp redpandav
 	return nil
 }
 
-func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, rp redpandav1alpha1.Redpanda) (*helmv2beta1.HelmRelease, error) {
+func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, rp v1alpha1.Redpanda) (*helmv2beta1.HelmRelease, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", rp.Name)
 
@@ -252,7 +252,7 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 	}, nil
 }
 
-func (r *RedpandaReconciler) createHelmRepositoryFromTemplate(rp redpandav1alpha1.Redpanda) (*sourcev1.HelmRepository, error) {
+func (r *RedpandaReconciler) createHelmRepositoryFromTemplate(rp v1alpha1.Redpanda) (*sourcev1.HelmRepository, error) {
 	return &sourcev1.HelmRepository{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rp.GetHelmRepositoryName(),
@@ -265,9 +265,9 @@ func (r *RedpandaReconciler) createHelmRepositoryFromTemplate(rp redpandav1alpha
 	}, nil
 }
 
-func (r *RedpandaReconciler) patchRedpandaStatus(ctx context.Context, rp *redpandav1alpha1.Redpanda) error {
+func (r *RedpandaReconciler) patchRedpandaStatus(ctx context.Context, rp *v1alpha1.Redpanda) error {
 	key := client.ObjectKeyFromObject(rp)
-	latest := &redpandav1alpha1.Redpanda{}
+	latest := &v1alpha1.Redpanda{}
 	if err := r.Client.Get(ctx, key, latest); err != nil {
 		return err
 	}

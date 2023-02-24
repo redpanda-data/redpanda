@@ -12,12 +12,21 @@ package v1alpha1
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/fluxcd/pkg/apis/meta"
-	"github.com/ghodss/yaml"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+type ChartRef struct {
+	// ChartName is the chart to use
+	ChartName string `json:"chartName,omitempty"`
+	// ChartVersion defines the helm chart version to use
+	ChartVersion string `json:"chartVersion,omitempty"`
+	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
+	HelmRepositoryName string `json:"helmRepositoryName,omitempty"`
+}
 
 // RedpandaClusterSpec defines the desired state of Redpanda Cluster
 type RedpandaClusterSpec struct {
@@ -34,12 +43,13 @@ type RedpandaClusterSpec struct {
 	// NameOverride is the override to give your redpanda release
 	Tolerations []string `json:"tolerations,omitempty"`
 	// Image defines the container image to use for the redpanda cluster
-	Image RedpandaImage `json:"image,omitempty"`
+	Image *RedpandaImage `json:"image,omitempty"`
 }
 
 // RedpandaSpec defines the desired state of Redpanda
 type RedpandaSpec struct {
-
+	// ChartRef defines chart details including repository
+	ChartRef ChartRef `json:"chartRef"`
 	// ChartVersion defines the helm chart version to use
 	ChartVersion string `json:"chartVersion,omitempty"`
 	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
@@ -50,7 +60,7 @@ type RedpandaSpec struct {
 
 // RedpandaStatus defines the observed state of Redpanda
 type RedpandaStatus struct {
-	// Conditions holds the conditions for the HelmRelease.
+	// Conditions holds the conditions for the Redpanda.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
@@ -120,14 +130,13 @@ func (in *Redpanda) GetHelmRepositoryName() string {
 }
 
 func (in *Redpanda) GetValuesJson() (*apiextensionsv1.JSON, error) {
-	vyaml, err := yaml.Marshal(in.Spec.ClusterSpec)
+	vyaml, err := json.Marshal(in.Spec.ClusterSpec)
 	if err != nil {
 		return nil, fmt.Errorf("could not convert spec to yaml: %s", err)
 	}
-	values := apiextensionsv1.JSON{Raw: []byte{}}
-	json.Unmarshal(vyaml, &values)
+	values := &apiextensionsv1.JSON{Raw: vyaml}
 
-	return &values, nil
+	return values, nil
 }
 
 // RedpandaReady registers a successful reconciliation of the given HelmRelease.
@@ -135,7 +144,7 @@ func RedpandaReady(rp Redpanda) Redpanda {
 	newCondition := metav1.Condition{
 		Type:    meta.ReadyCondition,
 		Status:  metav1.ConditionTrue,
-		Reason:  "Redpanda Cluster Deployed",
+		Reason:  "RedpandaClusterDeployed",
 		Message: "Redpanda reconciliation succeeded",
 	}
 	apimeta.SetStatusCondition(rp.GetConditions(), newCondition)
