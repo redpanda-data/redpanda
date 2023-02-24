@@ -281,7 +281,7 @@ public:
     iobuf copy() const { return _data.copy(); }
 
     /// Share the underlying iobuf
-    iobuf share() { return _data.share(0, _data.size_bytes()); }
+    iobuf share() const { return _data.share(0, _data.size_bytes()); }
 
     /// Return number of rows stored in the underlying iobuf instance
     uint32_t get_row_count() const noexcept { return _cnt; }
@@ -715,7 +715,7 @@ private:
 
     TVal _initial;
     TVal _last;
-    iobuf _data;
+    mutable iobuf _data;
     uint32_t _cnt;
     DeltaStep _delta;
 };

@@ -276,7 +276,7 @@ private:
     }
 
     std::array<value_t, buffer_depth> _head{};
-    mutable std::optional<encoder_t> _tail{std::nullopt};
+    std::optional<encoder_t> _tail{std::nullopt};
     const delta_t _delta_alg;
     size_t _size{0};
     std::optional<hint_t> _last_row;
