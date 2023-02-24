@@ -132,6 +132,38 @@ class column_store {
     using hint_map_t
       = absl::btree_map<int64_t, std::optional<hint_vec_t>, greater>;
 
+    auto columns() {
+        return std::tie(
+          _is_compacted,
+          _size_bytes,
+          _base_offset,
+          _committed_offset,
+          _base_timestamp,
+          _max_timestamp,
+          _delta_offset,
+          _ntp_revision,
+          _archiver_term,
+          _segment_term,
+          _delta_offset_end,
+          _sname_format);
+    }
+
+    auto columns() const {
+        return std::tie(
+          _is_compacted,
+          _size_bytes,
+          _base_offset,
+          _committed_offset,
+          _base_timestamp,
+          _max_timestamp,
+          _delta_offset,
+          _ntp_revision,
+          _archiver_term,
+          _segment_term,
+          _delta_offset_end,
+          _sname_format);
+    }
+
 public:
     using iterators_t = std::tuple<
       gauge_col_t::const_iterator,
@@ -271,36 +303,14 @@ public:
     auto begin() const {
         // Individual iterators can be accessed using
         // segment_meta_ix values as tuple indexes.
-        return iterators_t(
-          _is_compacted.begin(),
-          _size_bytes.begin(),
-          _base_offset.begin(),
-          _committed_offset.begin(),
-          _base_timestamp.begin(),
-          _max_timestamp.begin(),
-          _delta_offset.begin(),
-          _ntp_revision.begin(),
-          _archiver_term.begin(),
-          _segment_term.begin(),
-          _delta_offset_end.begin(),
-          _sname_format.begin());
+        return std::apply(
+          [](auto&&... col) { return iterators_t(col.begin()...); }, columns());
     }
 
     /// Return iterator to the first element after the end of the sequence
     auto end() const {
-        return iterators_t(
-          _is_compacted.end(),
-          _size_bytes.end(),
-          _base_offset.end(),
-          _committed_offset.end(),
-          _base_timestamp.end(),
-          _max_timestamp.end(),
-          _delta_offset.end(),
-          _ntp_revision.end(),
-          _archiver_term.end(),
-          _segment_term.end(),
-          _delta_offset_end.end(),
-          _sname_format.end());
+        return std::apply(
+          [](auto&&... col) { return iterators_t(col.end()...); }, columns());
     }
 
     template<segment_meta_ix col_index, class col_t>
@@ -388,18 +398,9 @@ public:
             return;
         }
         auto ix = lb.index();
-        _base_offset.prefix_truncate_ix(ix);
-        _is_compacted.prefix_truncate_ix(ix);
-        _size_bytes.prefix_truncate_ix(ix);
-        _committed_offset.prefix_truncate_ix(ix);
-        _base_timestamp.prefix_truncate_ix(ix);
-        _max_timestamp.prefix_truncate_ix(ix);
-        _delta_offset.prefix_truncate_ix(ix);
-        _ntp_revision.prefix_truncate_ix(ix);
-        _archiver_term.prefix_truncate_ix(ix);
-        _segment_term.prefix_truncate_ix(ix);
-        _delta_offset_end.prefix_truncate_ix(ix);
-        _sname_format.prefix_truncate_ix(ix);
+        std::apply(
+          [ix](auto&&... col) { (col.prefix_truncate_ix(ix), ...); },
+          columns());
         // We need to remove hints that belong to the first frame.
         // This frame was truncated and therefore the hints that
         // belong to it are no longer valid.
@@ -416,15 +417,8 @@ public:
     /// by the actual size that takes compression into account.
     std::pair<size_t, size_t> inflated_actual_size() const {
         auto inflated_size = _base_offset.size() * sizeof(segment_meta);
-        auto actual_size = _is_compacted.mem_use() + _size_bytes.mem_use()
-                           + _base_offset.mem_use()
-                           + _committed_offset.mem_use()
-                           + _base_timestamp.mem_use()
-                           + _max_timestamp.mem_use() + _delta_offset.mem_use()
-                           + _ntp_revision.mem_use() + _archiver_term.mem_use()
-                           + _segment_term.mem_use()
-                           + _delta_offset_end.mem_use()
-                           + _sname_format.mem_use();
+        auto actual_size = std::apply(
+          [](auto&&... col) { return (col.mem_use() + ...); }, columns());
         auto index_size = static_cast<size_t>(
           _hints.size() * sizeof(hint_map_t::value_type)
           * 1.4); // The size of the _hints is an estimate based on absl docs
