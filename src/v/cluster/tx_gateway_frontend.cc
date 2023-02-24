@@ -236,42 +236,109 @@ ss::future<> tx_gateway_frontend::stop() {
       [] { vlog(txlog.debug, "Tx coordinator is stopped"); });
 }
 
-ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
-    auto has_topic = ss::make_ready_future<bool>(true);
+ss::future<std::optional<model::node_id>>
+tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
+    auto timeout = config::shard_local_cfg().wait_for_leader_timeout_ms();
 
-    if (!_metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
-        has_topic = try_create_tx_topic();
+    if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
+        vlog(
+          txlog.info,
+          "tx coordinator topic {} isn't found",
+          model::tx_manager_nt);
+        if (!co_await try_create_tx_topic()) {
+            co_return std::nullopt;
+        }
+        try {
+            co_return co_await _metadata_cache.local().get_leader(
+              model::tx_manager_ntp, ss::lowres_clock::now() + timeout);
+        } catch (...) {
+            vlog(
+              txlog.warn,
+              "can't find the leader of tx coordinator topic {}; error {}",
+              model::tx_manager_ntp,
+              std::current_exception());
+            co_return std::nullopt;
+        }
     }
 
-    auto timeout = ss::lowres_clock::now()
-                   + config::shard_local_cfg().wait_for_leader_timeout_ms();
+    auto leader = _leaders.local().get_leader(model::tx_manager_ntp);
+    if (!leader) {
+        vlog(
+          txlog.trace,
+          "tx coordinator topic {} is leaderless",
+          model::tx_manager_ntp);
+        co_return std::nullopt;
+    }
 
-    return has_topic.then([this, timeout](bool does_topic_exist) {
-        if (!does_topic_exist) {
-            return ss::make_ready_future<std::optional<model::node_id>>(
-              std::nullopt);
-        }
+    if (!_rm_partition_frontend.local().is_find_leader_supported()) {
+        co_return leader;
+    }
 
-        auto md = _metadata_cache.local().contains(model::tx_manager_nt);
-        if (!md) {
-            return ss::make_ready_future<std::optional<model::node_id>>(
-              std::nullopt);
+    try {
+        auto reply = co_await _rm_partition_frontend.local().is_leader(
+          leader.value(), model::tx_manager_ntp, timeout);
+        if (reply.ec == tx_errc::none) {
+            // we got a confirmation that leader is still the leader
+            co_return leader;
         }
-        return _metadata_cache.local()
-          .get_leader(model::tx_manager_ntp, timeout)
-          .then([](model::node_id leader) {
-              return std::optional<model::node_id>(leader);
-          })
-          .handle_exception([](std::exception_ptr e) {
-              vlog(
-                txlog.warn,
-                "can't find find a leader of tx manager's topic {}",
-                e);
-              return ss::make_ready_future<std::optional<model::node_id>>(
-                std::nullopt);
-          });
-    });
+    } catch (...) {
+        vlog(
+          txlog.trace,
+          "got error {} while checking leadership of tx coorinator on {}",
+          std::current_exception(),
+          leader.value());
+        // can't confirm leadership, trusting the cache
+        co_return leader;
+    }
+
+    auto actual_leader = co_await _rm_partition_frontend.local().find_leader(
+      model::tx_manager_ntp, timeout);
+
+    if (!actual_leader || !actual_leader->leader_id) {
+        vlog(
+          txlog.trace,
+          "can't find up to date leader of tx coordinator topic {} stale "
+          "leader:{}",
+          model::tx_manager_ntp,
+          leader.value());
+        co_return leader;
+    }
+
+    if (leader == actual_leader->leader_id) {
+        // leadership jumped from leader and then back again
+        co_return leader;
+    }
+
+    vlog(
+      txlog.info,
+      "tx coordinator topic {} metadata are stale; leader:{} up-to-date "
+      "leader:{}",
+      model::tx_manager_ntp,
+      leader.value(),
+      actual_leader->leader_id.value());
+
+    co_await _leaders.invoke_on_all(
+      [actual_leader](partition_leaders_table& pl) mutable {
+          pl.update_partition_leader(
+            actual_leader->ntp,
+            actual_leader->revision,
+            actual_leader->term,
+            actual_leader->leader_id);
+      });
+
+    leader = _leaders.local().get_leader(model::tx_manager_ntp);
+    if (!leader || leader != actual_leader->leader_id) {
+        vlog(
+          txlog.warn,
+          "can't update tx coordinator topic {} metadata term:{} leader:{} "
+          "revision:{}",
+          model::tx_manager_ntp,
+          actual_leader->term,
+          actual_leader->leader_id,
+          actual_leader->revision);
+    }
+
+    co_return leader;
 }
 
 ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
@@ -1342,7 +1409,8 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
             bool expected_ec = br.ec == tx_errc::leader_not_found
                                || br.ec == tx_errc::shard_not_found
                                || br.ec == tx_errc::stale
-                               || br.ec == tx_errc::timeout;
+                               || br.ec == tx_errc::timeout
+                               || br.ec == tx_errc::partition_not_exists;
             should_abort = should_abort
                            || (br.ec != tx_errc::none && !expected_ec);
             should_retry = should_retry || expected_ec;
@@ -3139,14 +3207,17 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
       .then([](std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected exactly one result");
           if (res[0].ec == cluster::errc::topic_already_exists) {
+              vlog(
+                clusterlog.info,
+                "tx coordinator topic {} already exist",
+                model::tx_manager_nt);
               return true;
           }
           if (res[0].ec != cluster::errc::success) {
               vlog(
                 clusterlog.warn,
-                "can not create {}/{} topic - error: {}",
-                model::kafka_internal_namespace,
-                model::tx_manager_topic,
+                "creation of tx coordinator topic {} failed with error: {}",
+                model::tx_manager_nt,
                 cluster::make_error_code(res[0].ec).message());
               return false;
           }
@@ -3154,10 +3225,9 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
       })
       .handle_exception([](std::exception_ptr e) {
           vlog(
-            txlog.warn,
-            "can not create {}/{} topic - error: {}",
-            model::kafka_internal_namespace,
-            model::tx_manager_topic,
+            clusterlog.warn,
+            "creation of tx coordinator topic {} failed with error: {}",
+            model::tx_manager_nt,
             e);
           return false;
       });

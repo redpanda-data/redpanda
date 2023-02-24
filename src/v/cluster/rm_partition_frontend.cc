@@ -37,6 +37,7 @@ rm_partition_frontend::rm_partition_frontend(
   ss::sharded<cluster::metadata_cache>& metadata_cache,
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<features::feature_table>& feature_table,
   cluster::controller* controller)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
@@ -44,11 +45,18 @@ rm_partition_frontend::rm_partition_frontend(
   , _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
   , _leaders(leaders)
+  , _feature_table(feature_table)
   , _controller(controller)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
       config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value()) {
+}
+
+ss::future<> rm_partition_frontend::stop() {
+    _as.request_abort();
+    return _gate.close().then(
+      [] { vlog(txlog.debug, "rm_partition_frontend is stopped"); });
 }
 
 bool rm_partition_frontend::is_leader_of(const model::ntp& ntp) const {
@@ -60,6 +68,143 @@ bool rm_partition_frontend::is_leader_of(const model::ntp& ntp) const {
     return leader == _self;
 }
 
+ss::future<is_leader_reply> rm_partition_frontend::is_leader(
+  model::node_id node, model::ntp ntp, model::timeout_clock::duration timeout) {
+    auto self = _controller->self();
+    if (self == node) {
+        return is_leader_locally(ntp);
+    }
+
+    vlog(
+      txlog.trace,
+      "dispatching name:is_leader, ntp:{} from:{}, to:{}",
+      ntp,
+      self,
+      node);
+
+    return _connection_cache.local()
+      .with_node_client<cluster::tx_gateway_client_protocol>(
+        _controller->self(),
+        ss::this_shard_id(),
+        node,
+        timeout,
+        [ntp, timeout](tx_gateway_client_protocol cp) {
+            return cp.is_leader(
+              is_leader_request{ntp},
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<is_leader_reply>)
+      .then([ntp, node](result<is_leader_reply> r) {
+          if (r.has_error()) {
+              vlog(
+                txlog.warn,
+                "got error {} on sending name:is_leader ntp:{} to {}",
+                r.error(),
+                ntp,
+                node);
+              return is_leader_reply{tx_errc::timeout};
+          }
+
+          auto result = r.value();
+          vlog(
+            txlog.trace,
+            "received name:is_leader from {}, ntp:{}, ec:{}",
+            node,
+            ntp,
+            result.ec);
+          return result;
+      });
+}
+
+ss::future<std::optional<cluster::ntp_leader_revision>>
+rm_partition_frontend::find_leader(
+  model::ntp ntp, model::timeout_clock::duration timeout) {
+    auto outcome = ss::make_lw_shared<
+      available_promise<std::optional<cluster::ntp_leader_revision>>>();
+    ssx::spawn_with_gate(_gate, [this, ntp, outcome, timeout] {
+        return find_leader(ntp, timeout, outcome).finally([outcome]() {
+            if (!outcome->available()) {
+                outcome->set_value(std::nullopt);
+            }
+        });
+    });
+    return outcome->get_future();
+}
+
+ss::future<> rm_partition_frontend::find_leader(
+  model::ntp ntp,
+  model::timeout_clock::duration timeout,
+  ss::lw_shared_ptr<
+    available_promise<std::optional<cluster::ntp_leader_revision>>> outcome) {
+    auto& members_table = _controller->get_members_table();
+    auto node_ids = members_table.local().node_ids();
+
+    std::vector<ss::future<is_leader_reply>> inflight;
+    inflight.reserve(node_ids.size());
+    for (auto node_id : node_ids) {
+        inflight.push_back(
+          is_leader(node_id, ntp, timeout)
+            .then([outcome, node_id, ntp](is_leader_reply reply) {
+                if (reply.ec == tx_errc::none) {
+                    if (!outcome->available()) {
+                        outcome->set_value(cluster::ntp_leader_revision{
+                          ntp, reply.term, node_id, reply.revision});
+                    }
+                }
+                return reply;
+            }));
+    }
+    co_await when_all_succeed(inflight.begin(), inflight.end());
+}
+
+ss::future<is_leader_reply>
+rm_partition_frontend::is_leader_locally(model::ntp ntp) {
+    vlog(txlog.trace, "processing name:is_leader, ntp:{}", ntp);
+
+    auto shard = _shard_table.local().shard_for(ntp);
+
+    if (!shard) {
+        vlog(
+          txlog.trace,
+          "sending name:is_leader, ntp:{}, ec:shard_not_found",
+          ntp);
+        return ss::make_ready_future<is_leader_reply>(
+          is_leader_reply{tx_errc::shard_not_found});
+    }
+
+    return _partition_manager
+      .invoke_on(
+        *shard,
+        _ssg,
+        [ntp](cluster::partition_manager& mgr) mutable {
+            auto partition = mgr.get(ntp);
+            if (!partition) {
+                return ss::make_ready_future<is_leader_reply>(
+                  is_leader_reply{tx_errc::partition_not_found});
+            }
+
+            auto c = partition->raft();
+
+            if (!c->is_leader()) {
+                return ss::make_ready_future<is_leader_reply>(
+                  is_leader_reply{tx_errc::leader_not_found});
+            }
+
+            return ss::make_ready_future<is_leader_reply>(is_leader_reply{
+              tx_errc::none, c->term(), c->config().revision_id()});
+        })
+      .then([ntp](is_leader_reply reply) {
+          vlog(
+            txlog.trace,
+            "sending name:is_leader, ntp:{}, ec:{}, term:{}, revision_id:{}",
+            ntp,
+            reply.ec,
+            reply.term,
+            reply.revision);
+          return reply;
+      });
+}
+
 ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
   model::ntp ntp,
   model::producer_identity pid,
@@ -68,112 +213,42 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
   model::timeout_clock::duration timeout) {
     auto nt = model::topic_namespace_view(ntp.ns, ntp.tp.topic);
 
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
-
-    auto has_metadata = _metadata_cache.local().contains(nt, ntp.tp.partition);
-    while (!aborted && !has_metadata && 0 < retries--) {
-        vlog(
-          txlog.trace,
-          "waiting for {} to fill metadata cache, retries left: {}",
-          ntp,
-          retries);
-        aborted = !co_await sleep_abortable(delay_ms, _as);
-        has_metadata = _metadata_cache.local().contains(nt, ntp.tp.partition);
-    }
-    if (!has_metadata) {
+    if (!_metadata_cache.local().contains(nt, ntp.tp.partition)) {
         vlog(txlog.warn, "can't find {} in the metadata cache", ntp);
         co_return begin_tx_reply{ntp, tx_errc::partition_not_exists};
     }
 
-    retries = _metadata_dissemination_retries;
-    aborted = false;
     auto leader_opt = _leaders.local().get_leader(ntp);
-    while (!aborted && !leader_opt && 0 < retries--) {
-        vlog(
-          txlog.trace,
-          "waiting for {} to fill leaders cache, retries left: {}",
-          ntp,
-          retries);
-        aborted = !co_await sleep_abortable(delay_ms, _as);
-        leader_opt = _leaders.local().get_leader(ntp);
+    if (!leader_opt) {
+        vlog(txlog.warn, "{} is leaderless", ntp);
+        co_return begin_tx_reply{ntp, tx_errc::leader_not_found};
     }
 
-    retries = _metadata_dissemination_retries;
-    delay_ms = _metadata_dissemination_retry_delay_ms;
-    aborted = false;
-    std::optional<std::string> error;
-    while (!aborted && 0 < retries--) {
-        if (!leader_opt) {
-            error = vformat(
-              fmt::runtime("can't find {} in the leaders cache"), ntp);
-            vlog(
-              txlog.trace,
-              "can't find {} in the leaders cache, retries left: {}",
-              ntp,
-              retries);
-            aborted = !co_await sleep_abortable(delay_ms, _as);
-            leader_opt = _leaders.local().get_leader(ntp);
-            continue;
-        }
+    auto leader = leader_opt.value();
+    auto _self = _controller->self();
 
-        auto leader = leader_opt.value();
-        auto _self = _controller->self();
-
-        begin_tx_reply result;
-        if (leader == _self) {
-            vlog(
-              txlog.trace,
-              "executing name:begin_tx, ntp:{}, pid:{}, tx_seq:{} timeout:{} "
-              "locally",
-              ntp,
-              pid,
-              tx_seq,
-              transaction_timeout_ms);
-            result = co_await begin_tx_locally(
-              ntp, pid, tx_seq, transaction_timeout_ms);
-            vlog(
-              txlog.trace,
-              "received name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag: "
-              "{} locally",
-              ntp,
-              pid,
-              tx_seq,
-              result.ec,
-              result.etag);
-            if (
-              result.ec == tx_errc::leader_not_found
-              || result.ec == tx_errc::shard_not_found) {
-                error = vformat(
-                  fmt::runtime("local execution of begin_tx pid:{} tx_seq:{} "
-                               "failed with {}"),
-                  pid,
-                  tx_seq,
-                  result.ec);
-                vlog(
-                  txlog.trace,
-                  "local execution of begin_tx pid:{} tx_seq:{} failed with "
-                  "{}, retries left: {}",
-                  pid,
-                  tx_seq,
-                  result.ec,
-                  retries);
-                aborted = !co_await sleep_abortable(delay_ms, _as);
-                leader_opt = _leaders.local().get_leader(ntp);
-                continue;
-            }
-            if (result.ec != tx_errc::none) {
-                vlog(
-                  txlog.warn,
-                  "local execution of begin_tx pid:{} tx_seq:{} failed with {}",
-                  pid,
-                  tx_seq,
-                  result.ec);
-            }
-            co_return result;
-        }
-
+    begin_tx_reply result;
+    if (leader == _self) {
+        vlog(
+          txlog.trace,
+          "executing name:begin_tx, ntp:{}, pid:{}, tx_seq:{} timeout:{} "
+          "locally",
+          ntp,
+          pid,
+          tx_seq,
+          transaction_timeout_ms);
+        result = co_await begin_tx_locally(
+          ntp, pid, tx_seq, transaction_timeout_ms);
+        vlog(
+          txlog.trace,
+          "received name:begin_tx, ntp:{}, pid:{}, tx_seq:{}, ec:{}, etag: "
+          "{} locally",
+          ntp,
+          pid,
+          tx_seq,
+          result.ec,
+          result.etag);
+    } else {
         vlog(
           txlog.trace,
           "dispatching name:begin_tx, ntp:{}, pid:{}, tx_seq:{} timeout:{}, "
@@ -195,38 +270,41 @@ ss::future<begin_tx_reply> rm_partition_frontend::begin_tx(
           tx_seq,
           result.ec,
           result.etag);
-        if (result.ec == tx_errc::leader_not_found) {
-            error = vformat(
-              fmt::runtime(
-                "remote execution of begin_tx({},...) on {} failed with 'not a "
-                "leader'"),
-              ntp,
-              leader);
-            vlog(
-              txlog.trace,
-              "remote execution of begin_tx({},...) on {} failed with 'not a "
-              "leader', retries left: {}",
-              ntp,
-              leader,
-              retries);
-            aborted = !co_await sleep_abortable(delay_ms, _as);
-            leader_opt = _leaders.local().get_leader(ntp);
-            continue;
-        }
-        if (result.ec != tx_errc::none) {
-            vlog(
-              txlog.warn,
-              "remote execution of begin_tx({},...) on {} failed with {}",
-              ntp,
-              leader,
-              result.ec);
-        }
+    }
+
+    bool leader_not_found = result.ec == tx_errc::leader_not_found
+                            || result.ec == tx_errc::shard_not_found
+                            || result.ec == tx_errc::partition_not_exists;
+
+    if (!leader_not_found) {
         co_return result;
     }
-    if (error) {
-        vlog(txlog.warn, "{}", error.value());
+
+    if (!is_find_leader_supported()) {
+        co_return result;
     }
-    co_return begin_tx_reply{ntp, tx_errc::leader_not_found};
+
+    auto actual_leader = co_await find_leader(ntp, timeout);
+
+    if (!actual_leader || !actual_leader->leader_id) {
+        vlog(
+          txlog.trace,
+          "can't find up to date leader of {} stale leader:{}",
+          ntp,
+          leader);
+        co_return result;
+    }
+
+    co_await _leaders.invoke_on_all(
+      [actual_leader](partition_leaders_table& pl) mutable {
+          pl.update_partition_leader(
+            actual_leader->ntp,
+            actual_leader->revision,
+            actual_leader->term,
+            actual_leader->leader_id);
+      });
+
+    co_return result;
 }
 
 ss::future<begin_tx_reply> rm_partition_frontend::dispatch_begin_tx(

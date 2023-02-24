@@ -45,6 +45,9 @@ public:
     ss::future<try_abort_reply>
     try_abort(try_abort_request&&, rpc::streaming_context&) override;
 
+    ss::future<is_leader_reply>
+    is_leader(is_leader_request&&, rpc::streaming_context&) override;
+
     ss::future<begin_tx_reply>
     begin_tx(begin_tx_request&&, rpc::streaming_context&) override;
 

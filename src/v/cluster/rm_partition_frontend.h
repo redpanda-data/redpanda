@@ -12,10 +12,13 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "cluster/metadata_dissemination_types.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
+#include "utils/available_promise.h"
 
 #include <seastar/core/abort_source.hh>
 
@@ -30,8 +33,17 @@ public:
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
+      ss::sharded<features::feature_table>&,
       cluster::controller*);
 
+    bool is_find_leader_supported() {
+        return _feature_table.local().is_active(features::feature::find_leader);
+    }
+
+    ss::future<std::optional<cluster::ntp_leader_revision>>
+      find_leader(model::ntp, model::timeout_clock::duration);
+    ss::future<is_leader_reply>
+      is_leader(model::node_id, model::ntp, model::timeout_clock::duration);
     ss::future<begin_tx_reply> begin_tx(
       model::ntp,
       model::producer_identity,
@@ -55,25 +67,30 @@ public:
       model::producer_identity,
       model::tx_seq,
       model::timeout_clock::duration);
-    ss::future<> stop() {
-        _as.request_abort();
-        return ss::make_ready_future<>();
-    }
+    ss::future<> stop();
 
 private:
     ss::abort_source _as;
+    ss::gate _gate;
     ss::smp_service_group _ssg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_leaders_table>& _leaders;
+    ss::sharded<features::feature_table>& _feature_table;
     cluster::controller* _controller;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
 
     bool is_leader_of(const model::ntp&) const;
 
+    ss::future<is_leader_reply> is_leader_locally(model::ntp);
+    ss::future<> find_leader(
+      model::ntp,
+      model::timeout_clock::duration,
+      ss::lw_shared_ptr<
+        available_promise<std::optional<cluster::ntp_leader_revision>>>);
     ss::future<begin_tx_reply> dispatch_begin_tx(
       model::node_id,
       model::ntp,
