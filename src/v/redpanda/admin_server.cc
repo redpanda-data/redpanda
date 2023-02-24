@@ -3437,10 +3437,10 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
     co_return ss::json::json_return_type(ss::json::json_void());
 }
 
-ss::future<std::unique_ptr<ss::http::reply>>
+ss::future<std::unique_ptr<ss::httpd::reply>>
 admin_server::unsafe_reset_metadata(
-  std::unique_ptr<ss::http::request> request,
-  std::unique_ptr<ss::http::reply> reply) {
+  std::unique_ptr<ss::httpd::request> request,
+  std::unique_ptr<ss::httpd::reply> reply) {
     reply->set_content_type("json");
 
     auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
@@ -3485,7 +3485,7 @@ admin_server::unsafe_reset_metadata(
         throw ss::httpd::server_error_exception(err.what());
     }
 
-    reply->set_status(ss::http::reply::status_type::ok);
+    reply->set_status(ss::httpd::reply::status_type::ok);
     co_return reply;
 }
 
