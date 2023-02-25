@@ -272,11 +272,8 @@ inline void iobuf::reserve_memory(size_t reservation) {
 }
 
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
-    if (unlikely(!size)) {
-        return;
-    }
     oncore_debug_verify(_verify_shard);
-    if (size == 0) {
+    if (unlikely(size == 0)) {
         return;
     }
     if (likely(size <= available_bytes())) {
