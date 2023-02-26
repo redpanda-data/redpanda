@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "admin/admin_server.h"
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
 #include "cluster/config_manager.h"
@@ -35,7 +36,6 @@
 #include "pandaproxy/schema_registry/configuration.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
-#include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/scheduling_groups_probe.h"

@@ -9,6 +9,7 @@
 
 #include "redpanda/application.h"
 
+#include "admin/admin_server.h"
 #include "archival/fwd.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/upload_controller.h"
@@ -76,7 +77,6 @@
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
 #include "raft/service.h"
-#include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
 #include "ssx/thread_worker.h"
 #include "storage/backlog_controller.h"
