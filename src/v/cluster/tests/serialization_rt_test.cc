@@ -191,7 +191,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
 SEASTAR_THREAD_TEST_CASE(config_invariants_test) {
     auto invariants = cluster::configuration_invariants(model::node_id(12), 64);
 
-    auto res = serialize_roundtrip_rpc(std::move(invariants));
+    auto res = serialize_roundtrip_rpc_adl(std::move(invariants));
     BOOST_REQUIRE_EQUAL(res.core_count, 64);
     BOOST_REQUIRE_EQUAL(res.node_id, model::node_id(12));
     BOOST_REQUIRE_EQUAL(res.version, 0);
@@ -406,42 +406,6 @@ struct partition_status_v1 {
     model::revision_id revision_id;
 };
 
-SEASTAR_THREAD_TEST_CASE(partition_status_serialization_backward_compat_test) {
-    partition_status_v0 status_v0{
-      .id = model::partition_id(10),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-    };
-
-    auto original_v0 = status_v0;
-    auto buf = reflection::to_iobuf(std::move(status_v0));
-    auto result = reflection::from_iobuf<cluster::partition_status>(
-      std::move(buf));
-
-    BOOST_REQUIRE_EQUAL(result.id, original_v0.id);
-    BOOST_REQUIRE_EQUAL(result.term, original_v0.term);
-    BOOST_REQUIRE_EQUAL(result.leader_id, original_v0.leader_id);
-    BOOST_REQUIRE_EQUAL(result.revision_id, model::revision_id{});
-    BOOST_REQUIRE_EQUAL(result.size_bytes, 0);
-
-    partition_status_v1 status_v1{
-      .id = model::partition_id(10),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-      .revision_id = model::revision_id(1024),
-    };
-
-    auto original_v1 = status_v1;
-    buf = reflection::to_iobuf(std::move(status_v1));
-    result = reflection::from_iobuf<cluster::partition_status>(std::move(buf));
-
-    BOOST_REQUIRE_EQUAL(result.id, original_v1.id);
-    BOOST_REQUIRE_EQUAL(result.term, original_v1.term);
-    BOOST_REQUIRE_EQUAL(result.leader_id, original_v1.leader_id);
-    BOOST_REQUIRE_EQUAL(result.revision_id, model::revision_id{1024});
-    BOOST_REQUIRE_EQUAL(result.size_bytes, 0);
-}
-
 namespace reflection {
 template<>
 struct adl<partition_status_v0> {
@@ -491,44 +455,6 @@ struct adl<partition_status_v1> {
     }
 };
 } // namespace reflection
-
-SEASTAR_THREAD_TEST_CASE(partition_status_serialization_old_version) {
-    std::vector<cluster::partition_status> statuses;
-    statuses.push_back(cluster::partition_status{
-      .id = model::partition_id(0),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-      .revision_id = model::revision_id{},
-      .size_bytes = 0,
-    });
-    statuses.push_back(cluster::partition_status{
-      .id = model::partition_id(1),
-      .term = model::term_id(256),
-      .leader_id = model::node_id(123),
-      .revision_id = model::revision_id{},
-      .size_bytes = 0,
-    });
-
-    auto original = statuses;
-    auto buf = reflection::to_iobuf(std::move(statuses));
-    auto result_v0 = reflection::from_iobuf<std::vector<partition_status_v0>>(
-      std::move(buf));
-    for (auto i = 0; i < original.size(); ++i) {
-        BOOST_CHECK(result_v0[i].id == original[i].id);
-        BOOST_CHECK(result_v0[i].term == original[i].term);
-        BOOST_CHECK(result_v0[i].leader_id == original[i].leader_id);
-    }
-
-    statuses = original;
-    buf = reflection::to_iobuf(std::move(statuses));
-    auto result_v1 = reflection::from_iobuf<std::vector<partition_status_v1>>(
-      std::move(buf));
-    for (auto i = 0; i < original.size(); ++i) {
-        BOOST_CHECK(result_v1[i].id == original[i].id);
-        BOOST_CHECK(result_v1[i].term == original[i].term);
-        BOOST_CHECK(result_v1[i].leader_id == original[i].leader_id);
-    }
-}
 
 template<typename T>
 void roundtrip_test(const T original) {

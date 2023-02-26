@@ -43,12 +43,12 @@ struct compat_check<cluster::update_leadership_request> {
 
     static std::vector<compat_binary>
     to_binary(cluster::update_leadership_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void
     check(cluster::update_leadership_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -79,24 +79,24 @@ struct compat_check<cluster::update_leadership_request_v2> {
 
     static std::vector<compat_binary>
     to_binary(cluster::update_leadership_request_v2 obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void
     check(cluster::update_leadership_request_v2 obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
 /*
  * cluster::update_leadership_reply
  */
-EMPTY_COMPAT_CHECK(cluster::update_leadership_reply);
+EMPTY_COMPAT_CHECK_SERDE_ONLY(cluster::update_leadership_reply);
 
 /*
  * cluster::get_leadership_request
  */
-EMPTY_COMPAT_CHECK(cluster::get_leadership_request);
+EMPTY_COMPAT_CHECK_SERDE_ONLY(cluster::get_leadership_request);
 
 /*
  * cluster::get_leadership_reply
@@ -118,10 +118,10 @@ struct compat_check<cluster::get_leadership_reply> {
     }
     static std::vector<compat_binary>
     to_binary(cluster::get_leadership_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
     static void check(cluster::get_leadership_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
