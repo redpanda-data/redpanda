@@ -130,9 +130,15 @@ public:
     void append(ss::temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
     void append(iobuf);
-    /// appends all fragments from given buffer directly to current buffer
-    /// fragments list
+
+    /*
+     * appends all fragments from the iobuf parameter. be careful when appending
+     * fragments from a shared iobuf. sharing in a zero-copy operation and iobuf
+     * does not perform copy-on-write. therefore changes will be visible to all
+     * iobufs that share the backing fragments.
+     */
     void append_fragments(iobuf);
+
     /// \brief trims the back, and appends direct.
     void append_take_ownership(fragment*);
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
