@@ -25,21 +25,10 @@ foreach(swag ${swags})
   list(APPEND swag_files ${${swag}_swagger_files})
 endforeach()
 
-# Client facing utilities
-v_cc_library(
-  NAME clientutil
-  SRCS
-    cluster_config_schema_util.cc
-    ${cluster_config_swagger_files}
-  DEPS
-    v::config
-)
-
 v_cc_library(
   NAME application
   SRCS
     ${swag_files}
-    cluster_config_schema_util.cc
     admin_server.cc
     cli_parser.cc
     application.cc
