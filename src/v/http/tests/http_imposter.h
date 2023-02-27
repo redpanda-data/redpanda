@@ -53,7 +53,7 @@ public:
 
     /// Starting point for URL registration fluent API
     /// Example usage:
-    /// when().when("/foo")
+    /// when("/foo")
     ///     .with_method(POST)
     ///     .then_return("bar");
     http_test_utils::registered_urls& when() { return _urls; }
@@ -113,6 +113,8 @@ public:
       http_test_utils::response canned_response,
       ss::lowres_clock::duration duration);
 
+    net::unresolved_address address() const { return _address; }
+
 private:
     struct request_masking {
         http_test_utils::response canned_response;
@@ -137,4 +139,6 @@ private:
     absl::flat_hash_map<size_t, http_test_utils::response> _fail_responses;
     ss::sstring _id;
     std::optional<request_masking> _masking_active;
+
+    net::unresolved_address _address;
 };
