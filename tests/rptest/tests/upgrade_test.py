@@ -144,6 +144,8 @@ class UpgradeBackToBackTest(PreallocNodesTest):
     CONSUMER_GROUP_READERS = 4
     topics = (TopicSpec(partition_count=3, replication_factor=3), )
 
+    oldest_version = (21, 11)
+
     def __init__(self, test_context):
         if self.debug_mode:
             self.MSG_SIZE = 10
@@ -156,10 +158,8 @@ class UpgradeBackToBackTest(PreallocNodesTest):
                                                     num_brokers=3,
                                                     node_prealloc_count=1)
         self.installer = self.redpanda._installer
-        self.intermediate_version = self.installer.highest_from_prior_feature_version(
-            RedpandaInstaller.HEAD)
-        self.initial_version = self.installer.highest_from_prior_feature_version(
-            self.intermediate_version)
+        self.versions = []
+        self.current_version = None
 
         self._producer = KgoVerifierProducer(test_context, self.redpanda,
                                              self.topic, self.MSG_SIZE,
@@ -188,23 +188,52 @@ class UpgradeBackToBackTest(PreallocNodesTest):
             self._seq_consumer, self._rand_consumer, self._cg_consumer
         ]
 
+    def load_versions(self, single_upgrade: bool):
+        # Special case: just one upgrade
+        if single_upgrade:
+            self.versions = [
+                self.installer.highest_from_prior_feature_version(
+                    RedpandaInstaller.HEAD), RedpandaInstaller.HEAD
+            ]
+            return
+
+        # General case: traverse all the feature branches from a fixed oldest tested version
+        k = 0
+        v = RedpandaInstaller.HEAD
+        versions = [v]
+        while (v[0], v[1]) != self.oldest_version:
+            k += 1
+
+            v = self.installer.highest_from_prior_feature_version(v)
+            versions.insert(0, v)
+
+            # Protect against infinite loop if something is wrong with our version finding
+            if k > 100:
+                raise RuntimeError(
+                    f"Failed to hit expected oldest version, v={v}")
+
+        self.versions = versions
+
+    def install_next(self):
+        v = self.versions.pop(0)
+        self.logger.info(f"Installing version {v}...")
+        self.installer.install(self.redpanda.nodes, v)
+        self.current_version = v
+
     def setUp(self):
-        self.installer.install(self.redpanda.nodes, self.initial_version)
-        super(UpgradeBackToBackTest, self).setUp()
+        pass
 
     @cluster(num_nodes=4, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     @parametrize(single_upgrade=True)
     @parametrize(single_upgrade=False)
     def test_upgrade_with_all_workloads(self, single_upgrade):
-        if single_upgrade:
-            # If the test should exercise workloads with just a single upgrade,
-            # start at the intermediate version -- this test will just test a
-            # rolling restart followed by a rolling upgrade.
-            self.initial_version = self.intermediate_version
-            self.installer.install(self.redpanda.nodes, self.initial_version)
-            self.redpanda.restart_nodes(self.redpanda.nodes,
-                                        start_timeout=90,
-                                        stop_timeout=90)
+        self.load_versions(single_upgrade)
+
+        # Install initial version + start up
+        self.install_next()
+        # Start redpanda and create topic
+        super().setUp()
+
         self._producer.start(clean=False)
         self._producer.wait_for_offset_map()
         wrote_at_least = self._producer.produce_status.acked
@@ -215,46 +244,97 @@ class UpgradeBackToBackTest(PreallocNodesTest):
             self._producer.wait()
             assert self._producer.produce_status.acked == self.PRODUCE_COUNT
 
-        produce_during_upgrade = self.initial_version >= (22, 1, 0)
-        if produce_during_upgrade:
-            # Give ample time to restart, given the running workload.
-            self.installer.install(self.redpanda.nodes,
-                                   self.intermediate_version)
-            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                                start_timeout=90,
-                                                stop_timeout=90)
-        else:
-            # If there's no maintenance mode, write workloads during the
-            # restart may be affected, so stop our writes up front.
-            stop_producer()
-            self.installer.install(self.redpanda.nodes,
-                                   self.intermediate_version)
-            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                                start_timeout=90,
-                                                stop_timeout=90,
-                                                use_maintenance_mode=False)
+        admin = Admin(self.redpanda)
 
-            # When upgrading from versions that don't support maintenance mode
-            # (v21.11 and below), there is a migration of the consumer offsets
-            # topic to be mindful of.
-            rpk = RpkTool(self.redpanda)
+        def logical_version_stable(old_logical_version):
+            """Assuming all nodes have been updated to a particular version,
+            check that the cluster's active version has advanced to match the
+            logical version of the node we are talking to.
+            """
+            for node in self.redpanda.nodes:
+                features = admin.get_features(node=node)
 
-            def _consumer_offsets_present():
-                try:
-                    rpk.describe_topic("__consumer_offsets")
-                except Exception as e:
-                    if "Topic not found" in str(e):
+                if 'node_latest_version' in features:
+                    # Only Redpanda >= v23.2 has this field
+                    if features['cluster_version'] != features[
+                            'node_latest_version']:
+                        # The cluster logical version has not yet updated
                         return False
-                return True
+                else:
+                    # Older feature API just tells us the cluster version, we compare
+                    # it to the logical version pre-upgrade
+                    if features['cluster_version'] < old_logical_version:
+                        return False
 
-            wait_until(_consumer_offsets_present,
-                       timeout_sec=90,
-                       backoff_sec=3)
+                if any(f['state'] == 'preparing'
+                       for f in features['features']):
+                    # One or more features is still in preparing state.
+                    return False
 
-        self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                            start_timeout=90,
-                                            stop_timeout=90)
+            return True
+
+        # We may start from a version that doesn't even have a logical version, such
+        # as v21.11.x
+        old_logical_version = -1
+
+        while len(self.versions) != 0:
+            self.install_next()
+
+            # Skip producing during upgrade when upgrading to 22.1.x, because this is where
+            # the consumer offsets migration happens.
+            produce_during_upgrade = self.current_version[0:2] != (22, 1)
+            self.logger.info(
+                f"Installed {self.current_version}, doing rolling upgraded (produce during={produce_during_upgrade})"
+            )
+
+            if produce_during_upgrade:
+                # Give ample time to restart, given the running workload.
+                self.installer.install(self.redpanda.nodes,
+                                       self.current_version)
+                self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                                    start_timeout=90,
+                                                    stop_timeout=90)
+
+                # Wait for cluster version to stabilize
+            else:
+                # Upgrading from a pre-22.x Redpanda, so it does not have maintenance
+                # mode, and must go through migration of consumer offsets.
+                stop_producer()
+                self.installer.install(self.redpanda.nodes,
+                                       self.current_version)
+                self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
+                                                    start_timeout=90,
+                                                    stop_timeout=90,
+                                                    use_maintenance_mode=False)
+
+                # When upgrading from versions that don't support maintenance mode
+                # (v21.11 and below), there is a migration of the consumer offsets
+                # topic to be mindful of.
+                rpk = RpkTool(self.redpanda)
+
+                def _consumer_offsets_present():
+                    try:
+                        rpk.describe_topic("__consumer_offsets")
+                    except Exception as e:
+                        if "Topic not found" in str(e):
+                            return False
+                    return True
+
+                wait_until(_consumer_offsets_present,
+                           timeout_sec=90,
+                           backoff_sec=3)
+                self._producer.start(clean=False)
+
+            # After doing a rolling restart with the new version, let the cluster's
+            # logical version and associated feature flag state stabilize.  This avoids
+            # upgrading "too fast" such that the cluster thinks we skipped a version.
+            self.redpanda.wait_until(
+                lambda: logical_version_stable(old_logical_version),
+                timeout_sec=30,
+                backoff_sec=1)
+
+            # For use next time around the loop
+            old_logical_version = admin.get_features()['cluster_version']
 
         for consumer in self._consumers:
             consumer.wait()
