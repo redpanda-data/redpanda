@@ -612,7 +612,7 @@ struct install_snapshot_reply
     //  as the value for byte_offset in the next request (most importantly,
     //  when a follower reboots, it returns 0 here and the leader starts at
     //  offset 0 in the next request).
-    uint64_t bytes_stored;
+    uint64_t bytes_stored = 0;
     // indicates if the request was successfull
     bool success = false;
 

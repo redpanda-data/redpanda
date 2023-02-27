@@ -700,6 +700,10 @@ private:
     voter_priority _target_priority = voter_priority::max();
     std::optional<voter_priority> _node_priority_override;
 
+    // used to track currently installed snapshot
+    model::offset _received_snapshot_index;
+    size_t _received_snapshot_bytes = 0;
+
     /**
      * We keep an idex of the most recent entry replicated with quorum
      * consistency level to make sure that all requests replicated with quorum

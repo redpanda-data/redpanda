@@ -2044,10 +2044,9 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
 
 ss::future<install_snapshot_reply>
 consensus::do_install_snapshot(install_snapshot_request r) {
-    vlog(_ctxlog.trace, "Install snapshot request: {}", r);
+    vlog(_ctxlog.trace, "received install_snapshot request: {}", r);
 
-    install_snapshot_reply reply{
-      .term = _term, .bytes_stored = r.chunk.size_bytes(), .success = false};
+    install_snapshot_reply reply{.term = _term, .success = false};
     reply.target_node_id = r.node_id;
     reply.node_id = _self;
 
@@ -2082,11 +2081,24 @@ consensus::do_install_snapshot(install_snapshot_request r) {
 
         auto w = co_await _snapshot_mgr.start_snapshot();
         _snapshot_writer.emplace(std::move(w));
+        _received_snapshot_index = r.last_included_index;
+        _received_snapshot_bytes = 0;
+    }
+
+    if (
+      r.last_included_index != _received_snapshot_index
+      || r.file_offset != _received_snapshot_bytes) {
+        // Out of order request? Ignore and answer with success=false.
+        co_return reply;
     }
 
     // Write data into snapshot file at given offset (§7.3)
+    size_t chunk_size = r.chunk.size_bytes();
     co_await write_iobuf_to_output_stream(
       std::move(r.chunk), _snapshot_writer->output());
+
+    _received_snapshot_bytes += chunk_size;
+    reply.bytes_stored = _received_snapshot_bytes;
 
     // Reply and wait for more data chunks if done is false (§7.4)
     if (!is_done) {
