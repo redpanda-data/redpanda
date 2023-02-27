@@ -23,6 +23,7 @@ rp_test(
     categorization_tests.cc
     fetch_credentials_tests.cc
     credential_tests.cc
+    env_override_tests.cc
     DEFINITIONS BOOST_TEST_DYN_LINK
     LIBRARIES
     v::seastar_testing_main

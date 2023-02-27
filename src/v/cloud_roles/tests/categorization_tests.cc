@@ -10,7 +10,6 @@
 
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_roles/refresh_credentials.h"
-#include "config/node_config.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -31,7 +30,7 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
           [](auto) { return ss::now(); },
           region);
         BOOST_REQUIRE_EQUAL(
-          "gcp_refresh_impl{host:169.254.169.254, port:80}",
+          "gcp_refresh_impl{address:{host: 169.254.169.254, port: 80}}",
           ssx::sformat("{}", rc));
     }
 
@@ -43,7 +42,7 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
           [](auto) { return ss::now(); },
           region);
         BOOST_REQUIRE_EQUAL(
-          "aws_refresh_impl{host:169.254.169.254, port:80}",
+          "aws_refresh_impl{address:{host: 169.254.169.254, port: 80}}",
           ssx::sformat("{}", rc));
     }
 
@@ -58,7 +57,7 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
           [](auto) { return ss::now(); },
           region);
         BOOST_REQUIRE_EQUAL(
-          "aws_sts_refresh_impl{host:sts.amazonaws.com, port:443}",
+          "aws_sts_refresh_impl{address:{host: sts.amazonaws.com, port: 443}}",
           ssx::sformat("{}", rc));
     }
 
