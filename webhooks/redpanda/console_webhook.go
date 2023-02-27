@@ -41,6 +41,10 @@ func (v *ConsoleValidator) Handle(
 		return admission.Errored(http.StatusBadRequest, err)
 	}
 
+	if console.DeletionTimestamp != nil {
+		return admission.Allowed("")
+	}
+
 	if !console.IsAllowedNamespace() {
 		return admission.Denied(fmt.Sprintf("cluster %s/%s is in different namespace", console.Spec.ClusterRef.Namespace, console.Spec.ClusterRef.Name))
 	}
