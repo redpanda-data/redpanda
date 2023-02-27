@@ -30,8 +30,9 @@ class MockIamRolesServer(HttpServer):
         self.port = port
         self.stop_timeout_sec = stop_timeout_sec
         self.requests = []
-        self.url = f'http://{self.nodes[0].account.hostname}:{self.port}'
         self.hostname = self.nodes[0].account.hostname
+        self.address = f'{self.hostname}:{self.port}'
+        self.url = f'http://{self.address}'
         self.remote_script_path = None
         self.mock_target = mock_target
 
