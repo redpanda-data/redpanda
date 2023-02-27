@@ -435,6 +435,23 @@ uint64_t partition_manifest::compute_cloud_log_size() const {
       });
 }
 
+uint64_t partition_manifest::cloud_log_size() const {
+    return _cloud_log_size_bytes;
+}
+
+void partition_manifest::subtract_from_cloud_log_size(size_t to_subtract) {
+    if (to_subtract > _cloud_log_size_bytes) {
+        vlog(
+          cst_log.warn,
+          "Invalid attempt to subtract from cloud log size of {}. Setting it "
+          "to 0 to prevent underflow",
+          _ntp);
+        _cloud_log_size_bytes = 0;
+    } else {
+        _cloud_log_size_bytes -= to_subtract;
+    }
+}
+
 bool partition_manifest::contains(const partition_manifest::key& key) const {
     return _segments.contains(key);
 }
@@ -456,18 +473,22 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         if (it == _segments.begin()) {
             return false;
         }
-        it = std::prev(it);
-        if (it->second.committed_offset < new_start_offset) {
-            auto n = std::next(it);
-            if (n == _segments.end()) {
-                // The whole offset range is supposed to be truncated
-                _start_offset = new_start_offset;
-            } else {
-                _start_offset = n->second.base_offset;
-            }
-        } else {
-            _start_offset = it->second.base_offset;
+
+        auto new_head_segment = std::prev(it);
+        if (new_head_segment->second.committed_offset < new_start_offset) {
+            new_head_segment = std::next(new_head_segment);
         }
+
+        if (new_head_segment == _segments.end()) {
+            _start_offset = new_start_offset;
+        } else {
+            _start_offset = new_head_segment->second.base_offset;
+        }
+
+        for (auto iter = _segments.begin(); iter != new_head_segment; ++iter) {
+            subtract_from_cloud_log_size(iter->second.size_bytes);
+        }
+
         return true;
     }
     return false;
@@ -491,8 +512,10 @@ size_t partition_manifest::replaced_segments_count() const {
     return _replaced.size();
 }
 
-void partition_manifest::move_aligned_offset_range(
+size_t partition_manifest::move_aligned_offset_range(
   model::offset begin_inclusive, model::offset end_inclusive) {
+    size_t total_replaced_size = 0;
+
     auto it = _segments.lower_bound(begin_inclusive);
     while (it != _segments.end()
            // The segment is considered replaced only if all its
@@ -500,8 +523,11 @@ void partition_manifest::move_aligned_offset_range(
            && it->second.base_offset >= begin_inclusive
            && it->second.committed_offset <= end_inclusive) {
         _replaced.push_back(lw_segment_meta::convert(it->second));
+        total_replaced_size += it->second.size_bytes;
         it = _segments.erase(it);
     }
+
+    return total_replaced_size;
 }
 
 bool partition_manifest::add(
@@ -511,7 +537,8 @@ bool partition_manifest::add(
         // to the manifest or if all data was removed previously.
         _start_offset = meta.base_offset;
     }
-    move_aligned_offset_range(meta.base_offset, meta.committed_offset);
+    const auto total_replaced_size = move_aligned_offset_range(
+      meta.base_offset, meta.committed_offset);
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
@@ -521,6 +548,10 @@ bool partition_manifest::add(
         _last_uploaded_compacted_offset = std::max(
           meta.committed_offset, _last_uploaded_compacted_offset);
     }
+
+    subtract_from_cloud_log_size(total_replaced_size);
+    _cloud_log_size_bytes += meta.size_bytes;
+
     return ok;
 }
 
@@ -790,6 +821,8 @@ struct partition_manifest_handler
                 _last_uploaded_compacted_offset = model::offset(u);
             } else if ("insync_offset" == _manifest_key) {
                 _insync_offset = model::offset(u);
+            } else if ("cloud_log_size_bytes" == _manifest_key) {
+                _cloud_log_size_bytes = u;
             } else {
                 return false;
             }
@@ -1013,9 +1046,12 @@ struct partition_manifest_handler
     std::optional<int32_t> _partition_id;
     std::optional<model::initial_revision_id> _revision_id;
     std::optional<model::offset> _last_offset;
+
+    // optional manifest fields
     std::optional<model::offset> _start_offset;
     std::optional<model::offset> _last_uploaded_compacted_offset;
     std::optional<model::offset> _insync_offset;
+    std::optional<size_t> _cloud_log_size_bytes;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -1167,6 +1203,12 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
     if (handler._replaced) {
         _replaced = std::move(*handler._replaced);
     }
+
+    if (handler._cloud_log_size_bytes) {
+        _cloud_log_size_bytes = handler._cloud_log_size_bytes.value();
+    } else {
+        _cloud_log_size_bytes = compute_cloud_log_size();
+    }
 }
 
 // This object is supposed to track state of the asynchronous
@@ -1271,6 +1313,8 @@ void partition_manifest::serialize_begin(
         w.Key("last_uploaded_compacted_offset");
         w.Int64(_last_uploaded_compacted_offset());
     }
+    w.Key("cloud_log_size_bytes");
+    w.Uint64(_cloud_log_size_bytes);
     cursor->prologue_done = true;
 }
 
