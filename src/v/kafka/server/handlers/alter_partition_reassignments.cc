@@ -31,7 +31,12 @@
 #include <vector>
 
 namespace kafka {
-
+namespace {
+struct alter_op_context {
+    request_context rctx;
+    alter_partition_reassignments_request request;
+    alter_partition_reassignments_response response;
+};
 using partitions_request_iterator
   = std::vector<reassignable_partition>::iterator;
 
@@ -83,7 +88,8 @@ partitions_request_iterator validate_partitions(
   std::back_insert_iterator<Container> resp_it,
   reassignable_topic_response topic_response,
   std::vector<model::node_id> alive_nodes,
-  std::optional<cluster::topic_metadata> tp_metadata) {
+  std::optional<std::reference_wrapper<const cluster::topic_metadata>>
+    tp_metadata) {
     // An undefined replicas vector is not an error, see "Replicas" in the
     // AlterPartitionReassignmentsRequest schemata. Therefore checks for
     // replicas.has_value are necessary.
@@ -188,12 +194,12 @@ partitions_request_iterator validate_partitions(
               }
 
               auto tp_replication_factor
-                = tp_metadata.value().get_replication_factor();
+                = tp_metadata.value().get().get_replication_factor();
               vlog(
                 klog.debug,
                 "Checking replication factor: cfg {}, replication factor {}, "
                 "requested replicas {}",
-                tp_metadata.value().get_configuration(),
+                tp_metadata.value().get().get_configuration(),
                 tp_replication_factor,
                 *partition.replicas);
               return size_t(tp_replication_factor)
@@ -211,133 +217,161 @@ partitions_request_iterator validate_partitions(
     return valid_partitions_end;
 }
 
+ss::future<std::vector<model::node_id>>
+collect_alive_nodes(request_context& ctx) {
+    std::vector<model::node_id> alive_nodes;
+    auto alive_brokers_md = co_await ctx.metadata_cache().alive_nodes();
+    alive_nodes.reserve(alive_brokers_md.size());
+    for (const auto& node_md : alive_brokers_md) {
+        alive_nodes.push_back(node_md.broker.id());
+    }
+
+    co_return alive_nodes;
+}
+
+ss::future<std::error_code> handle_partition(
+  model::ntp ntp, alter_op_context& octx, reassignable_partition partition) {
+    if (partition.replicas.has_value()) {
+        vlog(
+          klog.debug,
+          "Request to reassign partitions: ntp {}, replicas {}",
+          ntp,
+          *partition.replicas);
+
+        return octx.rctx.topics_frontend().move_partition_replicas(
+          ntp,
+          std::move(*partition.replicas),
+          model::timeout_clock::now() + octx.request.data.timeout_ms);
+
+    } else {
+        // Otherwise we cancel the pending request
+        vlog(klog.debug, "Request to cancel pending request: ntp {}", ntp);
+        return octx.rctx.topics_frontend().cancel_moving_partition_replicas(
+          ntp, model::timeout_clock::now() + octx.request.data.timeout_ms);
+    }
+}
+
+reassignable_partition_response
+map_errc_to_response(const model::ntp& ntp, std::error_code ec) {
+    reassignable_partition_response response{
+      .partition_index = ntp.tp.partition};
+
+    if (ec) {
+        vlog(
+          klog.info,
+          "Failed to handle partition {} operation. Error: {}",
+          ntp,
+          ec);
+
+        if (ec.category() == cluster::error_category()) {
+            response.error_code = map_topic_error_code(
+              static_cast<cluster::errc>(ec.value()));
+            response.error_message = std::make_optional<ss::sstring>(
+              error_code_to_str(response.error_code));
+
+        } else {
+            response.error_code = kafka::error_code::unknown_server_error;
+        }
+    }
+
+    return response;
+}
+
+ss::future<reassignable_topic_response> do_handle_topic(
+  reassignable_topic topic,
+  std::vector<model::node_id> alive_nodes,
+  alter_op_context& octx) {
+    reassignable_topic_response topic_response{.name = topic.name};
+    topic_response.partitions.reserve(topic.partitions.size());
+    auto tp_metadata_ref = octx.rctx.metadata_cache().get_topic_metadata_ref(
+      model::topic_namespace_view{model::kafka_namespace, topic.name});
+
+    auto valid_partitions_end = validate_partitions(
+      topic.partitions.begin(),
+      topic.partitions.end(),
+      std::back_inserter(octx.response.data.responses),
+      topic_response,
+      std::move(alive_nodes),
+      tp_metadata_ref);
+
+    return ssx::async_transform(
+             topic.partitions.begin(),
+             valid_partitions_end,
+             [&octx,
+              topic_name = topic.name](reassignable_partition partition) {
+                 model::ntp ntp{
+                   model::kafka_namespace,
+                   topic_name,
+                   partition.partition_index};
+                 return handle_partition(ntp, octx, std::move(partition))
+                   .then([ntp](std::error_code ec) {
+                       return map_errc_to_response(ntp, ec);
+                   });
+             })
+      .then([topic_response = std::move(topic_response)](
+              std::vector<reassignable_partition_response> r) mutable {
+          std::move(
+            r.begin(), r.end(), std::back_inserter(topic_response.partitions));
+          return std::move(topic_response);
+      });
+}
+static ss::future<response_ptr> do_handle(alter_op_context& octx) {
+    if (!config::shard_local_cfg().kafka_enable_partition_reassignment()) {
+        vlog(
+          klog.info,
+          "Rejected alter partition reassignment request: API is disabled. See "
+          "`kafka_enable_partition_reassignment` configuration option");
+        octx.response.data.error_code = error_code::invalid_replica_assignment;
+        octx.response.data.error_message
+          = "AlterPartitionReassignment API is disabled. See "
+            "`kafka_enable_partition_reassignment` configuration option.";
+        return octx.rctx.respond(std::move(octx.response));
+    }
+
+    if (!octx.rctx.authorized(
+          security::acl_operation::alter, security::default_cluster_name)) {
+        vlog(
+          klog.debug,
+          "Failed cluster authorization. Requires ALTER permissions on the "
+          "cluster.");
+        octx.response.data.error_code
+          = error_code::cluster_authorization_failed;
+        octx.response.data.error_message = ss::sstring{
+          error_code_to_str(error_code::cluster_authorization_failed)};
+        return octx.rctx.respond(std::move(octx.response));
+    }
+
+    return collect_alive_nodes(octx.rctx)
+      .then([&octx](std::vector<model::node_id> alive_nodes) {
+          return ssx::parallel_transform(
+            octx.request.data.topics.begin(),
+            octx.request.data.topics.end(),
+            [&octx, alive_nodes = std::move(alive_nodes)](
+              reassignable_topic topic) mutable {
+                return do_handle_topic(topic, alive_nodes, octx);
+            });
+      })
+      .then([&octx](std::vector<reassignable_topic_response> topic_responses) {
+          for (auto& t : topic_responses) {
+              if (!t.partitions.empty()) {
+                  octx.response.data.responses.push_back(t);
+              }
+          }
+          return octx.rctx.respond(std::move(octx.response));
+      });
+}
+
+} // namespace
+
 template<>
 ss::future<response_ptr> alter_partition_reassignments_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     alter_partition_reassignments_request request;
     request.decode(ctx.reader(), ctx.header().version);
     log_request(ctx.header(), request);
-    alter_partition_reassignments_response resp;
-
-    if (!config::shard_local_cfg().kafka_enable_partition_reassignment()) {
-        vlog(
-          klog.info,
-          "Rejected alter partition reassignment request: API is disabled. See "
-          "`kafka_enable_partition_reassignment` configuration option");
-        resp.data.error_code = error_code::invalid_replica_assignment;
-        resp.data.error_message
-          = "AlterPartitionReassignment API is disabled. See "
-            "`kafka_enable_partition_reassignment` configuration option.";
-        co_return co_await ctx.respond(std::move(resp));
-    }
-
-    if (!ctx.authorized(
-          security::acl_operation::alter, security::default_cluster_name)) {
-        vlog(
-          klog.debug,
-          "Failed cluster authorization. Requires ALTER permissions on the "
-          "cluster.");
-        resp.data.error_code = error_code::cluster_authorization_failed;
-        resp.data.error_message = ss::sstring{
-          error_code_to_str(error_code::cluster_authorization_failed)};
-        co_return co_await ctx.respond(std::move(resp));
-    }
-
-    resp.data.responses.reserve(request.data.topics.size());
-    std::vector<model::node_id> alive_nodes;
-    auto alive_brokers_md = co_await ctx.metadata_cache().alive_nodes();
-    for (const auto& node_md : alive_brokers_md) {
-        alive_nodes.push_back(node_md.broker.id());
-    }
-
-    for (auto& topic : request.data.topics) {
-        reassignable_topic_response topic_response{.name = topic.name};
-        auto tp_metadata = ctx.metadata_cache().get_topic_metadata(
-          model::topic_namespace{model::kafka_namespace, topic.name});
-
-        auto valid_partitions_end = validate_partitions(
-          topic.partitions.begin(),
-          topic.partitions.end(),
-          std::back_inserter(resp.data.responses),
-          topic_response,
-          alive_nodes,
-          tp_metadata);
-
-        for (auto it = topic.partitions.begin(); it != valid_partitions_end;
-             ++it) {
-            const reassignable_partition& partition{*it};
-            model::ntp ntp{
-              model::kafka_namespace, topic.name, partition.partition_index};
-
-            if (partition.replicas.has_value()) {
-                vlog(
-                  klog.debug,
-                  "Request to reassign partitions: ntp {}, replicas {}",
-                  ntp,
-                  *partition.replicas);
-
-                auto errc
-                  = co_await ctx.topics_frontend().move_partition_replicas(
-                    ntp,
-                    std::move(*partition.replicas),
-                    model::timeout_clock::now() + request.data.timeout_ms);
-
-                if (!errc) {
-                    topic_response.partitions.push_back(
-                      reassignable_partition_response{
-                        .partition_index = partition.partition_index});
-                } else {
-                    auto clerr = static_cast<cluster::errc>(errc.value());
-                    vlog(
-                      klog.debug,
-                      "Failed to move partition replicas: ntp {}, ec {}",
-                      ntp,
-                      clerr);
-                    auto kerr = map_topic_error_code(clerr);
-                    topic_response.partitions.push_back(
-                      reassignable_partition_response{
-                        .partition_index = partition.partition_index,
-                        .error_code = kerr,
-                        .error_message = ss::sstring{error_code_to_str(kerr)}});
-                }
-
-            } else {
-                // Otherwise we cancel the pending request
-                vlog(
-                  klog.debug, "Request to cancel pending request: ntp {}", ntp);
-                auto errc = co_await ctx.topics_frontend()
-                              .cancel_moving_partition_replicas(
-                                ntp,
-                                model::timeout_clock::now()
-                                  + request.data.timeout_ms);
-                if (!errc) {
-                    topic_response.partitions.push_back(
-                      reassignable_partition_response{
-                        .partition_index = partition.partition_index});
-                } else {
-                    auto clerr = static_cast<cluster::errc>(errc.value());
-                    vlog(
-                      klog.debug,
-                      "Failed to cancel pending request: ntp {}, ec {}",
-                      ntp,
-                      clerr);
-                    auto kerr = map_topic_error_code(clerr);
-                    topic_response.partitions.push_back(
-                      reassignable_partition_response{
-                        .partition_index = partition.partition_index,
-                        .error_code = kerr,
-                        .error_message = ss::sstring{error_code_to_str(kerr)}});
-                }
-            }
-        }
-
-        // Insert into the response if there were valid partitions
-        if (std::distance(topic.partitions.begin(), valid_partitions_end) > 0) {
-            resp.data.responses.emplace_back(std::move(topic_response));
-        }
-    }
-
-    co_return co_await ctx.respond(std::move(resp));
+    return ss::do_with(
+      alter_op_context{.rctx = std::move(ctx), .request = std::move(request)},
+      [](alter_op_context& octx) { return do_handle(octx); });
 }
 
 } // namespace kafka
