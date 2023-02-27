@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cisco-open/k8s-objectmatcher/patch"
+	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/prometheus/common/expfmt"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
@@ -218,7 +218,7 @@ func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPo
 		ignoreExistingVolumes(newVolumes),
 	}
 
-	patchResult, err := patch.NewPatchMaker(patch.NewAnnotator(redpandaAnnotatorKey), &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(pod, artificialPod, opts...)
+	patchResult, err := patch.DefaultPatchMaker.Calculate(pod, artificialPod, opts...)
 	if err != nil {
 		return err
 	}
@@ -329,7 +329,7 @@ func (r *StatefulSetResource) shouldUpdate(
 		utils.IgnoreAnnotation(patch.LastAppliedConfig),
 		utils.IgnoreAnnotation(CentralizedConfigurationHashAnnotationKey),
 	}
-	patchResult, err := patch.NewPatchMaker(patch.NewAnnotator(redpandaAnnotatorKey), &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(current, modified, opts...)
+	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {
 		return false, err
 	}
@@ -563,11 +563,7 @@ func (r *StatefulSetResource) evaluateUnderReplicatedPartitions(
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			r.logger.Error(err, "error closing connection to Redpanda admin API")
-		}
-	}()
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("getting broker metrics (%s): %w", adminURL.String(), errRedpandaNotReady)
