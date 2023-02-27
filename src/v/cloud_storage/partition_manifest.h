@@ -286,12 +286,6 @@ public:
                && _replaced == other._replaced;
     }
 
-    /// Remove segment record from manifest
-    ///
-    /// \param name is a segment name
-    /// \return true on success, false on failure (no such segment)
-    bool delete_permanently(const key& name);
-
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;
     };

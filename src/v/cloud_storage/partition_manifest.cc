@@ -1436,16 +1436,6 @@ void partition_manifest::serialize_end(serialization_cursor_ptr cursor) const {
     cursor->epilogue_done = true;
 }
 
-bool partition_manifest::delete_permanently(
-  const partition_manifest::key& key) {
-    auto it = _segments.find(key);
-    if (it != _segments.end()) {
-        _segments.erase(it);
-        return true;
-    }
-    return false;
-}
-
 partition_manifest::const_iterator
 partition_manifest::segment_containing(model::offset o) const {
     if (o > _last_offset || _segments.empty()) {
