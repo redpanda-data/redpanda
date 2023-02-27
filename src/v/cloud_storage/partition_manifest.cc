@@ -421,7 +421,7 @@ size_t partition_manifest::segments_metadata_bytes() const {
     return _mem_tracker->consumption();
 }
 
-uint64_t partition_manifest::cloud_log_size() const {
+uint64_t partition_manifest::compute_cloud_log_size() const {
     auto start_iter = find(_start_offset);
 
     // No addresable segments

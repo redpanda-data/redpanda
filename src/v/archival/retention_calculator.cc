@@ -65,7 +65,7 @@ std::optional<retention_calculator> retention_calculator::factory(
     if (ntp_config.retention_bytes()) {
         auto total_retention_bytes = ntp_config.retention_bytes();
 
-        auto cloud_log_size = manifest.cloud_log_size();
+        auto cloud_log_size = manifest.compute_cloud_log_size();
         if (cloud_log_size > *total_retention_bytes) {
             auto overshot_by = cloud_log_size - *total_retention_bytes;
             strats.push_back(
