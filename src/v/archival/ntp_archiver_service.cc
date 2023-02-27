@@ -403,6 +403,8 @@ ss::future<> ntp_archiver::upload_until_term_change() {
 
         update_probe();
 
+        co_await maybe_upload_manifest();
+
         // Drop _uploads_active lock: we are not considered active while
         // sleeping for backoff at the end of the loop.
         units.return_all();
@@ -606,10 +608,6 @@ model::initial_revision_id ntp_archiver::get_revision_id() const {
     return _rev;
 }
 
-const ss::lowres_clock::time_point ntp_archiver::get_last_upload_time() const {
-    return _last_upload_time;
-}
-
 ss::future<
   std::pair<cloud_storage::partition_manifest, cloud_storage::download_result>>
 ntp_archiver::download_manifest() {
@@ -643,6 +641,50 @@ ntp_archiver::download_manifest() {
     }
 
     co_return std::make_pair(tmp, result);
+}
+
+ss::future<> ntp_archiver::maybe_upload_manifest() {
+    if (
+      _parent.archival_meta_stm()->get_dirty()
+      == cluster::archival_metadata_stm::state_dirty::clean) {
+        vlog(_rtclog.trace, "Manifest is clean, skipping upload");
+        co_return;
+    }
+
+    auto upload_insync_offset
+      = _parent.archival_meta_stm()->get_insync_offset();
+    vlog(
+      _rtclog.debug,
+      "Uploading partition manifest, insync_offset={}",
+      upload_insync_offset);
+
+    auto result = co_await upload_manifest();
+    if (result == cloud_storage::upload_result::success) {
+        _last_manifest_upload_time = ss::lowres_clock::now();
+        auto deadline = ss::lowres_clock::now()
+                        + config::shard_local_cfg()
+                            .cloud_storage_metadata_sync_timeout_ms.value();
+        auto errc = co_await _parent.archival_meta_stm()->mark_clean(
+          deadline, upload_insync_offset, _as);
+        if (errc == raft::errc::shutting_down) {
+            throw ss::abort_requested_exception();
+        } else if (errc) {
+            vlog(
+              _rtclog.warn,
+              "Failed to replicate clean message for archival_metadata_stm: {}",
+              errc.message());
+        } else {
+            vlog(
+              _rtclog.trace,
+              "Marked archival_metadata_stm clean at offset {}",
+              upload_insync_offset);
+        }
+    } else {
+        // It is not necessary to retry: we are called from within the main
+        // upload_until_term_change loop, and will get another chance to
+        // upload the manifest eventually from there.
+        vlog(_rtclog.warn, "Failed to upload partition manifest: {}", result);
+    }
 }
 
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
@@ -1130,21 +1172,10 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 
     auto total_successful_uploads = non_compacted_result.num_succeeded
                                     + compacted_result.num_succeeded;
-    if (total_successful_uploads != 0) {
-        vlog(
-          _rtclog.debug,
-          "total successful uploads: {}, re-uploading manifest file",
-          total_successful_uploads);
-        if (auto res = co_await upload_manifest();
-            res != cloud_storage::upload_result::success) {
-            vlog(
-              _rtclog.warn,
-              "manifest upload to {} failed",
-              manifest().get_manifest_path());
-        }
-
-        _last_upload_time = ss::lowres_clock::now();
-    }
+    vlog(
+      _rtclog.trace,
+      "Segment uploads complete: {} successful uploads",
+      total_successful_uploads);
 
     co_return batch_result{
       .non_compacted_upload_result = non_compacted_result,

@@ -87,9 +87,6 @@ public:
     /// Get revision id
     model::initial_revision_id get_revision_id() const;
 
-    /// Get timestamp
-    const ss::lowres_clock::time_point get_last_upload_time() const;
-
     /// Download manifest from pre-defined S3 locatnewion
     ///
     /// \return future that returns true if the manifest was found in S3
@@ -343,6 +340,10 @@ private:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
+    /// Upload manifest if it is dirty.  Proceed without raising on issues,
+    /// in the expectation that we will be called again in the main upload loop.
+    ss::future<> maybe_upload_manifest();
+
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest(
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
@@ -419,7 +420,9 @@ private:
     config::binding<size_t> _max_segments_pending_deletion;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
-    ss::lowres_clock::time_point _last_upload_time;
+
+    // When we last wrote the partition manifest to object storage
+    ss::lowres_clock::time_point _last_manifest_upload_time;
 
     // Used during leadership transfer: instructs the archiver to
     // not proceed with uploads, even if it has leadership.
