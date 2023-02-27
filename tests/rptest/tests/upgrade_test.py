@@ -43,7 +43,8 @@ from rptest.services.redpanda_installer import InstallOptions, RedpandaInstaller
 
 class UpgradeFromSpecificVersion(RedpandaTest):
     """
-    Basic test that upgrading software works as expected.
+    Basic test that upgrading software works as expected, upgrading from the last
+    feature version to the HEAD version.
     """
     def __init__(self, test_context):
         super(UpgradeFromSpecificVersion,
@@ -51,9 +52,10 @@ class UpgradeFromSpecificVersion(RedpandaTest):
         self.installer = self.redpanda._installer
 
     def setUp(self):
-        # NOTE: `rpk redpanda admin brokers list` requires versions v22.1.x and
-        # above.
-        self.installer.install(self.redpanda.nodes, (22, 1, 3))
+        self.old_version = self.redpanda._installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
+        self.old_version_str = f"v{self.old_version[0]}.{self.old_version[1]}.{self.old_version[2]}"
+        self.installer.install(self.redpanda.nodes, self.old_version)
         super(UpgradeFromSpecificVersion, self).setUp()
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -61,27 +63,27 @@ class UpgradeFromSpecificVersion(RedpandaTest):
         first_node = self.redpanda.nodes[0]
 
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Upgrade one node to the head version.
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 2)
-        assert "v22.1.3" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Rollback the partial upgrade and ensure we go back to the original
         # state.
-        self.installer.install([first_node], (22, 1, 3))
+        self.installer.install([first_node], self.old_version)
         self.redpanda.restart_nodes([first_node])
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" in unique_versions, unique_versions
+        assert self.old_version_str in unique_versions, unique_versions
 
         # Only once we upgrade the rest of the nodes do we converge on the new
         # version.
         self.installer.install([first_node], RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes(self.redpanda.nodes)
         unique_versions = wait_for_num_versions(self.redpanda, 1)
-        assert "v22.1.3" not in unique_versions, unique_versions
+        assert self.old_version_str not in unique_versions, unique_versions
 
 
 class UpgradeFromPriorFeatureVersionTest(RedpandaTest):
@@ -278,16 +280,19 @@ class UpgradeWithWorkloadTest(EndToEndTest):
     """
     def setUp(self):
         super(UpgradeWithWorkloadTest, self).setUp()
-        # Start at a version that supports rolling restarts.
-        self.initial_version = (22, 1, 3)
 
         # Use a relatively low throughput to give the restarted node a chance
         # to catch up. If the node is particularly slow compared to the others
         # (e.g. a locally-built debug binary), catching up can take a while.
         self.producer_msgs_per_sec = 10
-        install_opts = InstallOptions(version=self.initial_version)
-        self.start_redpanda(num_nodes=3, install_opts=install_opts)
+
+        # Start the prior feature version, we will upgrade to latest.
+        self.start_redpanda(
+            num_nodes=3,
+            install_opts=InstallOptions(install_previous_version=True))
         self.installer = self.redpanda._installer
+        self.initial_version = self.installer.highest_from_prior_feature_version(
+            RedpandaInstaller.HEAD)
 
         # Start running a workload.
         spec = TopicSpec(name="topic", partition_count=2, replication_factor=3)
