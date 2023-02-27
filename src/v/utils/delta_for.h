@@ -114,6 +114,17 @@ struct delta_delta {
 
 } // namespace details
 
+/// Position in the delta_for encoded data stream
+template<class T>
+struct deltafor_stream_pos_t {
+    /// Initial value for the next row
+    T initial;
+    /// Offset of the next row
+    uint32_t offset;
+    /// Number of rows before the next row
+    uint32_t num_rows;
+};
+
 /** \brief Delta-FOR encoder
  *
  * The algorithm uses differential encoding followed by the
@@ -205,6 +216,20 @@ public:
       , _cnt(cnt)
       , _delta(delta) {}
 
+    // This c-tor creates shallow copy of the encoder.
+    //
+    // The underlying iobuf is shared which makes the operation
+    // relatively lightweiht. The signature is different from
+    // copy c-tor on purpose. The 'other' object is modified
+    // and not just copied. If the c-tor throws the 'other' is
+    // not affected.
+    explicit deltafor_encoder(deltafor_encoder* other)
+      : _initial(other->_initial)
+      , _last(other->_last)
+      , _data(other->_data.share(0, other->_data.size_bytes()))
+      , _cnt(other->_cnt)
+      , _delta(other->_delta) {}
+
     using row_t = std::array<TVal, row_width>;
 
     /// Encode single row
@@ -217,11 +242,46 @@ public:
         _cnt++;
     }
 
+    /// Return ppsition inside the stream
+    deltafor_stream_pos_t<TVal> get_position() const {
+        return {
+          .initial = _last,
+          .offset = uint32_t(_data.size_bytes()),
+          .num_rows = _cnt,
+        };
+    }
+
+    // State of the transaction
+    // The state can be used to append multiple rows
+    // and then commit or rollback.
+    struct tx_state {
+        using self_t = deltafor_encoder<TVal, DeltaStep>;
+        self_t uncommitted;
+
+        void add(const row_t& row) { uncommitted.add(row); }
+    };
+
+    // Create tx-state object and start transaction
+    //
+    // Only one transaction at a time is supported but this
+    // is not enforced. Abandoning tx_state object is ok (this
+    // is equivalent for aborting the transaction).
+    tx_state tx_start() { return tx_state{deltafor_encoder{this}}; }
+
+    // Commit changes done to tx_state.
+    // This peration does not throw.
+    void tx_commit(tx_state tx) noexcept {
+        _last = tx.uncommitted._last;
+        _data = std::move(tx.uncommitted._data);
+        _cnt = tx.uncommitted._cnt;
+        _delta = tx.uncommitted._delta;
+    }
+
     /// Copy the underlying iobuf
     iobuf copy() const { return _data.copy(); }
 
     /// Share the underlying iobuf
-    iobuf share() { return _data.share(0, _data.size_bytes()); }
+    iobuf share() const { return _data.share(0, _data.size_bytes()); }
 
     /// Return number of rows stored in the underlying iobuf instance
     uint32_t get_row_count() const noexcept { return _cnt; }
@@ -231,6 +291,8 @@ public:
 
     /// Get last value used to create the encoder
     TVal get_last_value() const noexcept { return _last; }
+
+    size_t mem_use() const { return _data.size_bytes(); }
 
 private:
     template<typename T>
@@ -653,7 +715,7 @@ private:
 
     TVal _initial;
     TVal _last;
-    iobuf _data;
+    mutable iobuf _data;
     uint32_t _cnt;
     DeltaStep _delta;
 };
@@ -693,6 +755,13 @@ public:
         _initial = _delta.decode(_initial, row);
         _pos++;
         return true;
+    }
+
+    /// Skip rows
+    void skip(const deltafor_stream_pos_t<TVal>& st) {
+        _data.skip(st.offset);
+        _initial = st.initial;
+        _pos = st.num_rows;
     }
 
 private:

@@ -24,6 +24,7 @@ v_cc_library(
     recovery_request.cc
     topic_recovery_service.cc
     recovery_utils.cc
+    segment_meta_cstore.cc
   DEPS
     Seastar::seastar
     v::bytes

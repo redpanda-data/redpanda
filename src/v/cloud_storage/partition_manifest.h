@@ -212,9 +212,9 @@ public:
     /// Return iterator to the begining(end) of the segments list
     const_iterator begin() const;
     const_iterator end() const;
-    const_reverse_iterator rbegin() const;
-    const_reverse_iterator rend() const;
+    std::optional<segment_meta> last_segment() const;
     size_t size() const;
+    bool empty() const;
 
     // Return the tracked amount of memory associated with the segments in this
     // manifest, or 0 if the memory is not being tracked.
