@@ -8,7 +8,6 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "bytes/iobuf.h"
 #include "cloud_roles/logger.h"
 #include "cloud_roles/refresh_credentials.h"
 #include "cloud_roles/tests/test_definitions.h"
@@ -19,6 +18,7 @@
 #include "test_utils/tee_log.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/util/defer.hh>
 
 #include <fmt/chrono.h>
 
@@ -30,39 +30,33 @@ uint16_t unit_test_httpd_port_number() { return 4444; }
 /// Helps test the credential fetch operation by triggering abort after a single
 /// credential is fetched.
 struct one_shot_fetch {
-    one_shot_fetch(
-      std::optional<cloud_roles::credentials>& credentials,
-      ss::abort_source& as)
-      : credentials(credentials)
-      , as(as) {}
+    explicit one_shot_fetch(
+      std::optional<cloud_roles::credentials>& credentials)
+      : credentials(credentials) {}
     std::optional<cloud_roles::credentials>& credentials;
-    ss::abort_source& as;
 
     ss::future<> operator()(cloud_roles::credentials c) {
         credentials.emplace(std::move(c));
-        as.request_abort();
         return ss::now();
     }
 };
 
 /// Helper to assert refresh calls, aborts after two fetches.
 struct two_fetches {
-    two_fetches(
-      std::optional<cloud_roles::credentials>& credentials,
-      ss::abort_source& as)
-      : credentials(credentials)
-      , as(as) {}
+    using counter = ss::shared_ptr<uint8_t>;
 
-    uint8_t count{};
+    explicit two_fetches(std::optional<cloud_roles::credentials>& credentials)
+      : credentials(credentials)
+      , count{ss::make_shared<uint8_t>(0)} {}
+
     std::optional<cloud_roles::credentials>& credentials;
-    ss::abort_source& as;
+    counter count;
+
+    counter get_counter() { return count; }
 
     ss::future<> operator()(cloud_roles::credentials c) {
-        ++count;
+        (*count)++;
         credentials.emplace(std::move(c));
-        if (count == 2) {
-            as.request_abort();
-        }
         return ss::now();
     }
 };
@@ -76,21 +70,23 @@ FIXTURE_TEST(test_get_oauth_token, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    one_shot_fetch s(c, as);
+    one_shot_fetch s(c);
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::gcp_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       address());
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&c] {
+        return c.has_value();
+    }).get();
 
     BOOST_REQUIRE_EQUAL(
       "a-token",
@@ -106,20 +102,24 @@ FIXTURE_TEST(test_token_refresh_on_expiry, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    two_fetches s(c, as);
+    two_fetches s(c);
+    auto count = s.get_counter();
+
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::gcp_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       address());
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    tests::cooperative_spin_wait_with_timeout(30s, [count] {
+        return *count >= 2;
+    }).get();
 
     BOOST_REQUIRE_EQUAL(
       "a-token",
@@ -141,21 +141,23 @@ FIXTURE_TEST(test_aws_credentials, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    one_shot_fetch s(c, as);
+    one_shot_fetch s(c);
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::aws_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       address());
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&c] {
+        return c.has_value();
+    }).get();
 
     auto aws_creds = std::get<cloud_roles::aws_credentials>(c.value());
     BOOST_REQUIRE_EQUAL("my-key", aws_creds.access_key_id());
@@ -196,21 +198,24 @@ FIXTURE_TEST(test_short_lived_aws_credentials, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    two_fetches s(c, as);
+    two_fetches s(c);
+    auto count = s.get_counter();
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::aws_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       address());
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    tests::cooperative_spin_wait_with_timeout(30s, [count] {
+        return *count >= 2;
+    }).get();
 
     auto aws_creds = std::get<cloud_roles::aws_credentials>(c.value());
     BOOST_REQUIRE_EQUAL("my-key", aws_creds.access_key_id());
@@ -234,10 +239,9 @@ FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    one_shot_fetch s(c, as);
+    one_shot_fetch s(c);
 
     auto token_f = ss::open_file_dma(
                      "test_sts_creds_f",
@@ -248,14 +252,17 @@ FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::sts,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       address());
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&c] {
+        return c.has_value();
+    }).get();
 
     token_f.close().get0();
     ss::remove_file("test_sts_creds_f").get0();
@@ -297,10 +304,10 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    two_fetches s(c, as);
+    two_fetches s(c);
+    auto count = s.get_counter();
 
     auto token_f = ss::open_file_dma(
                      "test_short_sts_f",
@@ -311,14 +318,17 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::sts,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       address());
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
+
+    tests::cooperative_spin_wait_with_timeout(30s, [count] {
+        return *count >= 2;
+    }).get();
 
     token_f.close().get0();
     ss::remove_file("test_short_sts_f").get0();
@@ -342,23 +352,23 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    one_shot_fetch s(c, as);
+    one_shot_fetch s(c);
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::aws_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       address());
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
 
-    BOOST_REQUIRE(has_call(cloud_role_tests::aws_role_query_url));
+    tests::cooperative_spin_wait_with_timeout(10s, [this] {
+        return has_call(cloud_role_tests::aws_role_query_url);
+    }).get();
 
     // Assert that the error response body is logged
     BOOST_REQUIRE(wrapper.string().find("not found") != std::string::npos);
@@ -372,14 +382,12 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
     tee_wrapper wrapper;
     cloud_roles::clrl_log.set_ostream(wrapper.stream);
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    one_shot_fetch s(c, as);
+    one_shot_fetch s(c);
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::aws_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
@@ -389,6 +397,7 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
       .cloud_storage_roles_operation_timeout_ms.set_value(
         std::chrono::milliseconds{100ms});
     refresh.start();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
 
     tests::cooperative_spin_wait_with_timeout(5s, [&wrapper] {
         return wrapper.string().find(
@@ -396,7 +405,6 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
                  "period): timedout")
                != std::string::npos;
     }).get();
-    gate.close().get();
 }
 
 FIXTURE_TEST(test_handle_bad_response, http_imposter_fixture) {
@@ -411,27 +419,29 @@ FIXTURE_TEST(test_handle_bad_response, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    one_shot_fetch s(c, as);
+    one_shot_fetch s(c);
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::aws_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
-    gate.close().get();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
 
-    auto log = wrapper.string();
+    tests::cooperative_spin_wait_with_timeout(10s, [&wrapper] {
+        return wrapper.string().find("retrying after cool-off")
+               != wrapper.string().npos;
+    }).get();
+
     BOOST_REQUIRE(
-      log.find("failed during IAM credentials refresh: Can't parse the request")
-      != log.npos);
-    BOOST_REQUIRE(log.find("retrying after cool-off") != log.npos);
+      wrapper.string().find(
+        "failed during IAM credentials refresh: Can't parse the request")
+      != wrapper.string().npos);
 }
 
 FIXTURE_TEST(test_intermittent_error, http_imposter_fixture) {
@@ -460,28 +470,25 @@ FIXTURE_TEST(test_intermittent_error, http_imposter_fixture) {
     listen();
 
     ss::abort_source as;
-    ss::gate gate;
     std::optional<cloud_roles::credentials> c;
 
-    two_fetches s(c, as);
+    two_fetches s(c);
 
     auto refresh = cloud_roles::make_refresh_credentials(
       model::cloud_credentials_source::aws_instance_metadata,
-      gate,
       as,
       s,
       cloud_roles::aws_region_name{""},
       net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
 
     refresh.start();
+    auto deferred = ss::defer([&refresh] { refresh.stop().get(); });
 
-    tests::cooperative_spin_wait_with_timeout(10s, [&c]() {
+    tests::cooperative_spin_wait_with_timeout(30s, [&c]() {
         return c.has_value()
                && std::holds_alternative<cloud_roles::aws_credentials>(
                  c.value());
     }).get();
-
-    gate.close().get();
 
     auto log = wrapper.string();
 

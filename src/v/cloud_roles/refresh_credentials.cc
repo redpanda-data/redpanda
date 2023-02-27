@@ -41,12 +41,10 @@ constexpr std::chrono::milliseconds max_retry_interval_ms{300000};
 
 refresh_credentials::refresh_credentials(
   std::unique_ptr<impl> impl,
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update,
   aws_region_name region)
   : _impl(std::move(impl))
-  , _gate(gate)
   , _as(as)
   , _credentials_update(std::move(creds_update))
   , _region{std::move(region)} {}
@@ -62,6 +60,12 @@ ss::future<> refresh_credentials::do_start() {
       [this] {
           return fetch_and_update_credentials()
             .handle_exception_type([](const ss::sleep_aborted& ex) {
+                vlog(
+                  clrl_log.info,
+                  "stopping refresh_credentials loop: {}",
+                  ex.what());
+            })
+            .handle_exception_type([](const ss::gate_closed_exception& ex) {
                 vlog(
                   clrl_log.info,
                   "stopping refresh_credentials loop: {}",
@@ -163,6 +167,8 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
     // 2. sleep until we are close to expiry of credentials
     // 3. sleep in case of retryable failure for a short duration
 
+    gate_guard g{_gate};
+
     co_await sleep_until_expiry();
 
     vlog(clrl_log.debug, "fetching credentials");
@@ -201,6 +207,13 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
           vlog(clrl_log.info, "fetched credentials {}", creds);
           return _credentials_update(std::move(creds));
       });
+}
+
+ss::future<> refresh_credentials::stop() {
+    if (!_as.abort_requested()) {
+        _as.request_abort();
+    }
+    co_await _gate.close();
 }
 
 std::chrono::milliseconds
@@ -348,7 +361,6 @@ ss::future<> refresh_credentials::impl::init_tls_certs() {
 
 refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
   aws_region_name region,
@@ -364,7 +376,6 @@ refresh_credentials make_refresh_credentials(
           fmt::format, "cannot generate refresh with static credentials"));
     case model::cloud_credentials_source::aws_instance_metadata:
         return make_refresh_credentials<aws_refresh_impl>(
-          gate,
           as,
           std::move(creds_update_cb),
           std::move(region),
@@ -372,7 +383,6 @@ refresh_credentials make_refresh_credentials(
           retry_params);
     case model::cloud_credentials_source::sts:
         return make_refresh_credentials<aws_sts_refresh_impl>(
-          gate,
           as,
           std::move(creds_update_cb),
           std::move(region),
@@ -380,7 +390,6 @@ refresh_credentials make_refresh_credentials(
           retry_params);
     case model::cloud_credentials_source::gcp_instance_metadata:
         return make_refresh_credentials<gcp_refresh_impl>(
-          gate,
           as,
           std::move(creds_update_cb),
           std::move(region),

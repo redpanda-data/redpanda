@@ -19,13 +19,11 @@
 inline ss::logger test_log("test"); // NOLINT
 
 BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
-    ss::gate gate;
     ss::abort_source as;
     cloud_roles::aws_region_name region{"atlantis"};
     {
         auto rc = cloud_roles::make_refresh_credentials(
           model::cloud_credentials_source::gcp_instance_metadata,
-          gate,
           as,
           [](auto) { return ss::now(); },
           region);
@@ -37,7 +35,6 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
     {
         auto rc = cloud_roles::make_refresh_credentials(
           model::cloud_credentials_source::aws_instance_metadata,
-          gate,
           as,
           [](auto) { return ss::now(); },
           region);
@@ -52,7 +49,6 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
 
         auto rc = cloud_roles::make_refresh_credentials(
           model::cloud_credentials_source::sts,
-          gate,
           as,
           [](auto) { return ss::now(); },
           region);
@@ -64,7 +60,6 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
     BOOST_REQUIRE_THROW(
       cloud_roles::make_refresh_credentials(
         model::cloud_credentials_source::config_file,
-        gate,
         as,
         [](auto) { return ss::now(); },
         region),

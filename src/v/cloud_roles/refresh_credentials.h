@@ -123,7 +123,6 @@ public:
 
     refresh_credentials(
       std::unique_ptr<impl> impl,
-      ss::gate& gate,
       ss::abort_source& as,
       credentials_update_cb_t creds_update,
       aws_region_name region);
@@ -135,6 +134,8 @@ public:
     ss::future<api_response> fetch_credentials() {
         return _impl->fetch_credentials();
     }
+
+    ss::future<> stop();
 
 private:
     ss::future<> do_start();
@@ -154,7 +155,7 @@ private:
 
 private:
     std::unique_ptr<impl> _impl;
-    ss::gate& _gate;
+    ss::gate _gate;
     ss::abort_source& _as;
     credentials_update_cb_t _credentials_update;
     aws_region_name _region;
@@ -168,7 +169,6 @@ static constexpr retry_params default_retry_params{
 
 template<typename CredentialsProvider>
 refresh_credentials make_refresh_credentials(
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
   aws_region_name region,
@@ -182,14 +182,13 @@ refresh_credentials make_refresh_credentials(
       as,
       retry_params);
     return refresh_credentials{
-      std::move(impl), gate, as, std::move(creds_update_cb), std::move(region)};
+      std::move(impl), as, std::move(creds_update_cb), std::move(region)};
 }
 
 /// Builds a refresh_credentials object based on the credentials source set in
 /// configuration.
 refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
   aws_region_name region,

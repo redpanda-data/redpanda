@@ -85,6 +85,8 @@ public:
     cloud_storage_clients::client_configuration get_client_config() const;
     void set_client_config(cloud_storage_clients::client_configuration conf);
 
+    ss::future<> stop();
+
 private:
     void do_start_auth_refresh_op(
       cloud_roles::credentials_update_cb_t credentials_update_cb);
