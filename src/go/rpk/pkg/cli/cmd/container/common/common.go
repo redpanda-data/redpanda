@@ -52,10 +52,6 @@ type NodeState struct {
 	ContainerID   string
 }
 
-func HostAddr(port uint) string {
-	return net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
-}
-
 func ListenAddresses(ip string, internalPort, externalPort uint) string {
 	return fmt.Sprintf(
 		"internal://%s,external://%s",
