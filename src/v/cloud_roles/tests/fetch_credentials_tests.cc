@@ -87,7 +87,7 @@ FIXTURE_TEST(test_get_oauth_token, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     refresh.start();
     gate.close().get();
@@ -116,7 +116,7 @@ FIXTURE_TEST(test_token_refresh_on_expiry, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     refresh.start();
     gate.close().get();
@@ -152,7 +152,7 @@ FIXTURE_TEST(test_aws_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     refresh.start();
     gate.close().get();
@@ -207,7 +207,7 @@ FIXTURE_TEST(test_short_lived_aws_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     refresh.start();
     gate.close().get();
@@ -252,7 +252,7 @@ FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     refresh.start();
     gate.close().get();
@@ -315,7 +315,7 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     refresh.start();
     gate.close().get();
@@ -353,7 +353,7 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     refresh.start();
     gate.close().get();
@@ -383,7 +383,7 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
       as,
       s,
       cloud_roles::aws_region_name{""},
-      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+      address());
 
     config::shard_local_cfg()
       .cloud_storage_roles_operation_timeout_ms.set_value(

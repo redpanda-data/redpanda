@@ -36,13 +36,12 @@ struct gcp_response_schema {
 };
 
 gcp_refresh_impl::gcp_refresh_impl(
-  ss::sstring api_host,
-  uint16_t api_port,
+  net::unresolved_address address,
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-    std::move(api_host), api_port, std::move(region), as, retry_params) {}
+    std::move(address), std::move(region), as, retry_params) {}
 
 ss::future<api_response> gcp_refresh_impl::fetch_credentials() {
     http::client::request_header oauth_req;
@@ -80,8 +79,7 @@ api_response_parse_result gcp_refresh_impl::parse_response(iobuf response) {
 }
 
 std::ostream& gcp_refresh_impl::print(std::ostream& os) const {
-    fmt::print(
-      os, "gcp_refresh_impl{{host:{}, port:{}}}", api_host(), api_port());
+    fmt::print(os, "gcp_refresh_impl{{address:{}}}", address());
     return os;
 }
 

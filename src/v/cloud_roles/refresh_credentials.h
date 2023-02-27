@@ -34,8 +34,7 @@ public:
     class impl {
     public:
         impl(
-          ss::sstring api_host,
-          uint16_t api_port,
+          net::unresolved_address address,
           aws_region_name region,
           ss::abort_source& as,
           retry_params retry_params);
@@ -97,9 +96,7 @@ public:
 
         uint8_t retries() const { return _retries; }
 
-        const ss::sstring& api_host() const { return _api_host; }
-
-        uint16_t api_port() const { return _api_port; }
+        const net::unresolved_address& address() const { return _address; }
 
         aws_region_name region() const { return _region; }
 
@@ -108,13 +105,10 @@ public:
         /// Subsequent clients which are created will reuse the certs.
         ss::future<> init_tls_certs();
 
-        /// The hostname to query for credentials. Can be overridden using env
-        /// variable `RP_SI_CREDS_API_HOST`
-        ss::sstring _api_host;
+        /// The address to query for credentials. Can be overridden using env
+        /// variable `RP_SI_CREDS_API_ADDRESS`
+        net::unresolved_address _address;
 
-        /// The port to query for credentials. Can be overridden using env
-        /// variable `RP_SI_CREDS_API_PORT`
-        uint16_t _api_port;
         aws_region_name _region;
         uint8_t _retries{0};
 
@@ -183,7 +177,10 @@ refresh_credentials make_refresh_credentials(
     auto host = endpoint ? endpoint->host() : CredentialsProvider::default_host;
     auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
     auto impl = std::make_unique<CredentialsProvider>(
-      host.data(), port, region, as, retry_params);
+      net::unresolved_address{{host.data(), host.size()}, port},
+      region,
+      as,
+      retry_params);
     return refresh_credentials{
       std::move(impl), gate, as, std::move(creds_update_cb), std::move(region)};
 }

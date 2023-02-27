@@ -88,13 +88,12 @@ static boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf) {
 }
 
 aws_sts_refresh_impl::aws_sts_refresh_impl(
-  seastar::sstring api_host,
-  uint16_t api_port,
+  net::unresolved_address address,
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-    std::move(api_host), api_port, std::move(region), as, retry_params)
+    std::move(address), std::move(region), as, retry_params)
   , _role{load_from_env(aws_injected_env_vars::role_arn)}
   , _token_file_path{load_from_env(aws_injected_env_vars::token_file_path)} {}
 
@@ -120,7 +119,7 @@ ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
     assume_req.set(boost::beast::http::field::content_type, content_type);
     assume_req.set(
       boost::beast::http::field::host,
-      fmt::format("{}:{}", api_host(), api_port()));
+      fmt::format("{}:{}", address().host(), address().port()));
     assume_req.set(
       boost::beast::http::field::user_agent, "redpanda.vectorized.io");
 
@@ -138,7 +137,7 @@ ss::future<api_response> aws_sts_refresh_impl::fetch_credentials() {
     // STS requires a TLS enabled client by default, but in test mode where we
     // use the http imposter, we need to use a simple client.
     auto tls_enabled = refresh_credentials::client_tls_enabled::yes;
-    if (api_port() != default_port) {
+    if (address().port() != default_port) {
         tls_enabled = refresh_credentials::client_tls_enabled::no;
     }
 
@@ -194,8 +193,7 @@ api_response_parse_result aws_sts_refresh_impl::parse_response(iobuf resp) {
 }
 
 std::ostream& aws_sts_refresh_impl::print(std::ostream& os) const {
-    fmt::print(
-      os, "aws_sts_refresh_impl{{host:{}, port:{}}}", api_host(), api_port());
+    fmt::print(os, "aws_sts_refresh_impl{{address:{}}}", address());
     return os;
 }
 

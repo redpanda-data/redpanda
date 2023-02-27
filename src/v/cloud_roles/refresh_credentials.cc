@@ -17,21 +17,21 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "net/tls.h"
+#include "utils/gate_guard.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 
+#include <charconv>
 #include <exception>
 
 namespace cloud_roles {
 
-/// These environment variables can be used to override the default hostname and
-/// port for fetching temporary credentials for testing.
-struct override_api_endpoint_env_vars {
-    static constexpr std::string_view host = "RP_SI_CREDS_API_HOST";
-    static constexpr std::string_view port = "RP_SI_CREDS_API_PORT";
-};
+/// This environment variable can be used to override the default hostname and
+/// port for fetching temporary credentials for testing, in the format host:port
+static constexpr std::string_view override_address = "RP_SI_CREDS_API_ADDRESS";
 
 /// Multiplier to derive sleep duration from expiry time. Leaves 0.1 * expiry
 /// seconds as buffer to make API calls. For default expiry of 1 hour, this
@@ -91,44 +91,69 @@ load_and_validate_env_var(std::string_view env_var) {
     return std::nullopt;
 }
 
+static net::unresolved_address parse_address(std::string_view maybe_address) {
+    auto separator = maybe_address.find(':');
+    if (
+      separator == std::string_view::npos || separator == 0
+      || separator == maybe_address.size() - 1) {
+        throw std::invalid_argument{fmt_with_ctx(
+          fmt::format,
+          "address override environment variable expected format: 'host:port', "
+          "found: {}",
+          maybe_address)};
+    }
+
+    auto host_view = maybe_address.substr(0, separator);
+    auto port_view = maybe_address.substr(separator + 1);
+
+    try {
+        uint16_t port;
+        auto result = std::from_chars(
+          port_view.data(), port_view.data() + port_view.size(), port);
+
+        if (result.ec != std::errc{}) {
+            throw std::invalid_argument{fmt_with_ctx(
+              fmt::format,
+              "failed to convert {} to port (uint16_t)",
+              port_view)};
+        }
+
+        if (result.ptr != port_view.data() + port_view.size()) {
+            throw std::invalid_argument{fmt_with_ctx(
+              fmt::format,
+              "failed to convert {} to port (uint16_t)",
+              port_view)};
+        }
+
+        return net::unresolved_address{
+          {host_view.data(), host_view.size()}, port};
+    } catch (const std::exception& ex) {
+        throw std::invalid_argument{fmt_with_ctx(
+          fmt::format,
+          "failed to convert port {} to port (uint16_t): {}",
+          port_view,
+          ex.what())};
+    }
+}
+
 refresh_credentials::impl::impl(
-  ss::sstring api_host,
-  uint16_t api_port,
+  net::unresolved_address address,
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
-  : _api_host{std::move(api_host)}
-  , _api_port{api_port}
+  : _address{std::move(address)}
   , _region{std::move(region)}
   , _as{as}
   , _retry_params{retry_params} {
-    if (auto host_override = load_and_validate_env_var(
-          override_api_endpoint_env_vars::host);
-        host_override) {
+    if (auto address_override = load_and_validate_env_var(override_address);
+        address_override) {
+        auto address = parse_address(address_override.value());
         vlog(
           clrl_log.debug,
-          "api_host overridden from {} to {}",
-          _api_host,
-          *host_override);
-        _api_host = {*host_override};
-    }
-    if (auto port_override = load_and_validate_env_var(
-          override_api_endpoint_env_vars::port);
-        port_override) {
-        try {
-            auto override_port = std::stoi(*port_override);
-            vlog(
-              clrl_log.debug,
-              "api_port overridden from {} to {}",
-              _api_port,
-              override_port);
-            _api_port = override_port;
-        } catch (...) {
-            vlog(
-              clrl_log.error,
-              "failed to convert port value {} from string to uint16_t",
-              *port_override);
-        }
+          "api address overridden from {} to {}",
+          _address,
+          address);
+        _address = address;
     }
 }
 
@@ -278,17 +303,17 @@ refresh_credentials::impl::make_api_client(client_tls_enabled enable_tls) {
 
         co_return http::client{
           net::base_transport::configuration{
-            .server_addr = net::unresolved_address{api_host(), api_port()},
+            .server_addr = _address,
             .credentials = _tls_certs,
             // TODO (abhijat) toggle metrics
             .disable_metrics = net::metrics_disabled::yes,
-            .tls_sni_hostname = api_host()},
+            .tls_sni_hostname = _address.host()},
           _as};
     }
 
     co_return http::client{
       net::base_transport::configuration{
-        .server_addr = net::unresolved_address{_api_host, _api_port},
+        .server_addr = _address,
         .credentials = {},
         .disable_metrics = net::metrics_disabled::yes,
         .tls_sni_hostname = std::nullopt},
