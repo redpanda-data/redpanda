@@ -76,6 +76,17 @@ ss::future<api_response> static do_request(
     }
 }
 
+static ss::future<>
+log_error_response(http::client::response_stream_ref stream) {
+    auto buf = co_await drain_response_stream(stream);
+    iobuf_parser p{std::move(buf)};
+    auto response_string = p.read_string(p.bytes_left());
+    vlog(
+      clrl_log.error,
+      "failed during IAM credentials refresh: {}",
+      response_string);
+}
+
 static ss::future<api_response> make_get_request(
   http::client& client,
   http::client::request_header req,
@@ -85,11 +96,13 @@ static ss::future<api_response> make_get_request(
     auto response_stream = co_await client.request(std::move(req), tout);
     auto status = co_await get_status(response_stream);
     if (is_retryable(status)) {
+        co_await log_error_response(response_stream);
         co_return make_retryable_error(
           fmt::format("http request failed:{}", status));
     }
 
     if (status != boost::beast::http::status::ok) {
+        co_await log_error_response(response_stream);
         co_return make_abort_error(
           fmt::format("http request failed:{}", status));
     }
@@ -135,11 +148,13 @@ static ss::future<api_response> make_post_request(
     auto response = co_await client.request(std::move(req), stream, tout);
     auto status = co_await get_status(response);
     if (is_retryable(status)) {
+        co_await log_error_response(response);
         co_return make_retryable_error(
           fmt::format("http request failed:{}", status));
     }
 
     if (status != boost::beast::http::status::ok) {
+        co_await log_error_response(response);
         co_return make_abort_error(
           fmt::format("http request failed:{}", status));
     }
