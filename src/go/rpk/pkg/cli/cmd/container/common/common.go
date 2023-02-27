@@ -126,6 +126,9 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	if err != nil {
 		return nil, err
 	}
+	if containerJSON.NetworkSettings == nil || containerJSON.ContainerJSONBase == nil {
+		return nil, fmt.Errorf("unable to inspect the container %v, please make sure you have Docker installed and running", Name(nodeID))
+	}
 	var ipAddress string
 	network, exists := containerJSON.NetworkSettings.Networks[redpandaNetwork]
 	if exists {

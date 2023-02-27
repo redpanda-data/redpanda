@@ -491,6 +491,45 @@ Please check your internet connection and try again.`,
 			},
 			expectedErrMsg: `Some weird error`,
 		},
+		{
+			name:  "fail if container inspect fails to retrieve data when there is a cluster running",
+			nodes: 3,
+			client: func(st *testing.T) (common.Client, error) {
+				return &common.MockClient{
+					// We already have a cluster running
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+							{
+								ID: "b",
+								Labels: map[string]string{
+									"node-id": "1",
+								},
+							},
+							{
+								ID: "c",
+								Labels: map[string]string{
+									"node-id": "2",
+								},
+							},
+						}, nil
+					},
+					// But we return an empty container when inspecting.
+					MockContainerInspect: func(_ context.Context, _ string) (types.ContainerJSON, error) {
+						return types.ContainerJSON{}, nil
+					},
+				}, nil
+			},
+			expectedErrMsg: "unable to inspect the container rp-node-0, please make sure you have Docker installed and running",
+		},
 	}
 
 	for _, tt := range tests {
