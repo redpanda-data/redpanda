@@ -54,6 +54,8 @@ public:
       add_segments(std::vector<cloud_storage::segment_meta>);
     /// Add cleanup_metadata command to the batch
     command_batch_builder& cleanup_metadata();
+    /// Add mark_clean command to the batch
+    command_batch_builder& mark_clean(model::offset);
     /// Add truncate command to the batch
     command_batch_builder& truncate(model::offset start_rp_offset);
     /// Replicate the configuration batch
@@ -108,6 +110,12 @@ public:
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
+    /// Declare that the manifest is clean as of a particular insync_offset:
+    /// the insync offset should have been captured before starting the upload,
+    /// as the offset at end of upload might have changed.
+    ss::future<std::error_code>
+    mark_clean(ss::lowres_clock::time_point, model::offset, ss::abort_source&);
+
     /// A set of archived segments. NOTE: manifest can be out-of-date if this
     /// node is not leader; or if the STM hasn't yet performed sync; or if the
     /// node has lost leadership. But it will contain segments successfully
@@ -139,6 +147,16 @@ public:
 
     /// Acquire the lock that prevents modification of the manifest.
     auto acquire_manifest_lock() { return _manifest_lock.get_units(); }
+
+    enum class state_dirty : uint8_t { dirty, clean };
+
+    // If state_dirty::dirty is returned the manifest should be uploaded
+    // to object store at the next opportunity.
+    state_dirty get_dirty() const;
+
+    // Users of the stm need to know insync offset in order to pass
+    // the proper value to mark_clean
+    model::offset get_insync_offset() const { return _insync_offset; }
 
 private:
     bool cleanup_needed() const;
@@ -175,6 +193,7 @@ private:
     struct truncate_cmd;
     struct update_start_offset_cmd;
     struct cleanup_metadata_cmd;
+    struct mark_clean_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -188,6 +207,7 @@ private:
     void apply_add_segment(const segment& segment);
     void apply_truncate(const start_offset& so);
     void apply_cleanup_metadata();
+    void apply_mark_clean(model::offset);
     void apply_update_start_offset(const start_offset& so);
 
 private:
@@ -197,6 +217,13 @@ private:
     mutex _manifest_lock;
 
     ss::shared_ptr<cloud_storage::partition_manifest> _manifest;
+
+    // The offset of the last mark_clean_cmd applied: if the manifest is
+    // clean, this will equal _insync_offset.
+    model::offset _last_clean_at;
+
+    // The offset of the last record that modified this stm
+    model::offset _last_dirty_at;
 
     cloud_storage::remote& _cloud_storage_api;
     features::feature_table& _feature_table;

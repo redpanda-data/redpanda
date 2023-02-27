@@ -82,9 +82,15 @@ struct archival_metadata_stm::cleanup_metadata_cmd {
     static constexpr cmd_key key{3};
 };
 
+struct archival_metadata_stm::mark_clean_cmd {
+    static constexpr cmd_key key{4};
+
+    using value = model::offset;
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<1>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<2>, serde::compat_version<0>> {
     /// List of segments
     fragmented_vector<segment> segments;
     /// List of replaced segments
@@ -101,6 +107,9 @@ struct archival_metadata_stm::snapshot
     /// Last uploaded offset belonging to a compacted segment. If set to
     /// default, the next upload attempt will align this with start of manifest.
     model::offset last_uploaded_compacted_offset;
+    /// If dirty, then upload to the remote object store is necessary since the
+    /// last changes to this local state machine.
+    state_dirty dirty{state_dirty::clean};
 };
 
 inline archival_metadata_stm::segment
@@ -147,6 +156,14 @@ command_batch_builder& command_batch_builder::cleanup_metadata() {
       archival_metadata_stm::cleanup_metadata_cmd::key);
     iobuf empty_body;
     _builder.add_raw_kv(std::move(key_buf), std::move(empty_body));
+    return *this;
+}
+
+command_batch_builder&
+command_batch_builder::mark_clean(model::offset clean_at) {
+    iobuf key_buf = serde::to_iobuf(archival_metadata_stm::mark_clean_cmd::key);
+    iobuf val_buf = serde::to_iobuf(clean_at);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
     return *this;
 }
 
@@ -226,6 +243,10 @@ archival_metadata_stm::replaced_segments_from_manifest(
     return segments;
 }
 
+/**
+ * Create a snapshot based off some clean state we obtained out of band, for
+ * example during topic recovery.
+ */
 ss::future<> archival_metadata_stm::make_snapshot(
   const storage::ntp_config& ntp_cfg,
   const cloud_storage::partition_manifest& m,
@@ -238,8 +259,8 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .replaced = std::move(replaced),
       .start_offset = m.get_start_offset().value_or(model::offset{}),
       .last_offset = m.get_last_offset(),
-      .last_uploaded_compacted_offset
-      = m.get_last_uploaded_compacted_offset()});
+      .last_uploaded_compacted_offset = m.get_last_uploaded_compacted_offset(),
+      .dirty = state_dirty::clean});
 
     auto snapshot = stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
@@ -397,6 +418,15 @@ bool archival_metadata_stm::cleanup_needed() const {
     return has_replaced_segments || has_trailing_segments;
 }
 
+ss::future<std::error_code> archival_metadata_stm::mark_clean(
+  ss::lowres_clock::time_point deadline,
+  model::offset clean_offset,
+  ss::abort_source& as) {
+    auto builder = batch_start(deadline, as);
+    builder.mark_clean(clean_offset);
+    co_return co_await builder.replicate();
+}
+
 ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
@@ -514,8 +544,14 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         co_return;
     }
 
-    b.for_each_record([this](model::record&& r) {
+    b.for_each_record([this, base_offset = b.base_offset()](model::record&& r) {
         auto key = serde::from_iobuf<cmd_key>(r.release_key());
+
+        if (key != mark_clean_cmd::key) {
+            // All keys other than mark clean make the manifest dirty
+            _last_dirty_at = base_offset + model::offset{r.offset_delta()};
+        }
+
         switch (key) {
         case add_segment_cmd::key:
             apply_add_segment(
@@ -535,6 +571,10 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
             break;
         case cleanup_metadata_cmd::key:
             apply_cleanup_metadata();
+            break;
+        case mark_clean_cmd::key:
+            apply_mark_clean(
+              serde::from_iobuf<mark_clean_cmd::value>(r.release_value()));
             break;
         };
     });
@@ -652,6 +692,11 @@ ss::future<> archival_metadata_stm::apply_snapshot(
 
     _last_snapshot_offset = header.offset;
     _insync_offset = header.offset;
+    if (snap.dirty == state_dirty::dirty) {
+        _last_clean_at = model::offset{0};
+    } else {
+        _last_clean_at = _insync_offset;
+    }
     co_return;
 }
 
@@ -664,7 +709,8 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       .start_offset = _manifest->get_start_offset().value_or(model::offset()),
       .last_offset = _manifest->get_last_offset(),
       .last_uploaded_compacted_offset
-      = _manifest->get_last_uploaded_compacted_offset()});
+      = _manifest->get_last_uploaded_compacted_offset(),
+      .dirty = get_dirty()});
 
     vlog(
       _logger.debug,
@@ -762,6 +808,17 @@ void archival_metadata_stm::apply_cleanup_metadata() {
       get_last_offset());
 }
 
+void archival_metadata_stm::apply_mark_clean(model::offset clean_offset) {
+    _last_clean_at = clean_offset;
+    vlog(
+      _logger.debug,
+      "Mark clean ({}) command applied, new start offset: {}, new last "
+      "offset: {}",
+      clean_offset,
+      get_start_offset(),
+      get_last_offset());
+}
+
 void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
     vlog(
       _logger.debug,
@@ -815,6 +872,16 @@ model::offset archival_metadata_stm::get_start_offset() const {
 
 model::offset archival_metadata_stm::get_last_offset() const {
     return _manifest->get_last_offset();
+}
+
+archival_metadata_stm::state_dirty archival_metadata_stm::get_dirty() const {
+    // We are clean if we have written at least one clean record and that
+    // clean record referred to an offset >= the last record that dirtied
+    // the stm.
+    return _last_clean_at >= model::offset{0}
+               && _last_clean_at >= _last_dirty_at
+             ? state_dirty::clean
+             : state_dirty::dirty;
 }
 
 } // namespace cluster

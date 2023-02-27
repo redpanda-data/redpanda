@@ -136,6 +136,14 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       .committed_offset = model::offset(99),
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1)});
+
+    // State machine is initially dirty: this is a cue to upload a manifest
+    // when a partition is created, even if we haven't uploaded any segments
+    // yet.
+    BOOST_REQUIRE(
+      archival_stm->get_dirty()
+      == cluster::archival_metadata_stm::state_dirty::dirty);
+
     // Replicate add_segment_cmd command that adds segment with offset 0
     archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
@@ -144,6 +152,24 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
     BOOST_REQUIRE(
       archival_stm->manifest().begin()->second.committed_offset
       == model::offset(99));
+
+    // Adding segments should have marked the stm dirty
+    BOOST_REQUIRE(
+      archival_stm->get_dirty()
+      == cluster::archival_metadata_stm::state_dirty::dirty);
+
+    // Mark the manifest clean (emulate an uploader completing an upload of the
+    // manifest to object storage)
+    ss::abort_source never_abort;
+    archival_stm
+      ->mark_clean(
+        ss::lowres_clock::now() + 10s,
+        archival_stm->get_insync_offset(),
+        never_abort)
+      .get();
+    BOOST_REQUIRE(
+      archival_stm->get_dirty()
+      == cluster::archival_metadata_stm::state_dirty::clean);
 }
 
 FIXTURE_TEST(
@@ -282,6 +308,12 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     BOOST_REQUIRE_EQUAL(archival_stm.get_start_offset(), model::offset{100});
     BOOST_REQUIRE(archival_stm.manifest() == m);
     check_snapshot_size(archival_stm, ntp_cfg);
+
+    // A snapshot constructed with make_snapshot is always clean
+    BOOST_REQUIRE(
+      archival_stm.get_dirty()
+      == cluster::archival_metadata_stm::state_dirty::clean);
+
     archival_stm.stop().get();
 }
 
