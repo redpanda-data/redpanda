@@ -108,7 +108,8 @@ CHAOS_LOG_ALLOW_LIST = [
 # Log errors emitted by refresh credentials system when cloud storage is enabled with IAM roles
 # without a corresponding mock service set up to return credentials
 IAM_ROLES_API_CALL_ALLOW_LIST = [
-    re.compile(r'cloud_roles - .*api request failed')
+    re.compile(r'cloud_roles - .*api request failed'),
+    re.compile(r'cloud_roles - .*failed during IAM credentials refresh:'),
 ]
 
 # Log errors are used in node_operation_fuzzy_test and partition_movement_test
