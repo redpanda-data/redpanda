@@ -23,7 +23,7 @@ class LogLevelTest(RedpandaTest):
         # it will start.
         super().__init__(*args, log_level=self.initial_log_level, **kwargs)
 
-    @cluster(num_nodes=3, log_allow_list=["admin_server.cc.*assert"])
+    @cluster(num_nodes=3)
     def test_get_loggers(self):
         admin = Admin(self.redpanda)
         node = self.redpanda.nodes[0]
@@ -35,6 +35,10 @@ class LogLevelTest(RedpandaTest):
 
         # Any logger we get we should be able to set.
         for logger in loggers:
+            # Skip to avoid bad log lines.
+            if logger == "assert":
+                continue
+
             with self.redpanda.monitor_log(node) as mon:
                 admin.set_log_level(logger, "info")
                 mon.wait_until(f"Set log level for {{{logger}}}: .* -> info",
