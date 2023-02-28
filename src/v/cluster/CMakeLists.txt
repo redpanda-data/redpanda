@@ -74,7 +74,6 @@ v_cc_library(
     service.cc
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
-    metadata_dissemination_utils.cc
     types.cc
     notification_latch.cc
     topic_table.cc

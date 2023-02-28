@@ -17,7 +17,6 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
 #include "cluster/metadata_dissemination_types.h"
-#include "cluster/metadata_dissemination_utils.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
@@ -294,19 +293,11 @@ void metadata_dissemination_service::collect_pending_updates() {
             // Partition was removed, skip dissemination
             continue;
         }
-        auto non_overlapping = calculate_non_overlapping_nodes(
-          *assignment, brokers);
 
-        /**
-         * remove current node from non overlapping list, current node may be
-         * included into non overlapping node when new metadata set is used to
-         * calculate non overlapping nodes but partition replica still exists on
-         * current node (it is being moved)
-         */
-        std::erase_if(non_overlapping, [this](model::node_id n) {
-            return n == _self.id();
-        });
-        for (auto& id : non_overlapping) {
+        for (auto& id : brokers) {
+            if (id == _self.id()) {
+                continue;
+            }
             if (!_pending_updates.contains(id)) {
                 _pending_updates.emplace(
                   id, update_retry_meta{std::vector<ntp_leader_revision>{}});
