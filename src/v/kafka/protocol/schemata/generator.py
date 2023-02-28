@@ -309,6 +309,25 @@ path_type_map = {
             }
         }
     },
+    "DeleteRecordsRequestData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "Offset": ("model::offset", "int64"),
+            }
+        },
+        "TimeoutMs": ("std::chrono::milliseconds", "int32")
+    },
+    "DeleteRecordsResponseData": {
+        "ThrottleTimeMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "LowWatermark": ("model::offset", "int64"),
+                "ErrorCode": ("kafka::error_code", "int16")
+            }
+        }
+    },
     "AlterPartitionReassignmentsRequestData": {
         "TimeoutMs": ("std::chrono::milliseconds", "int32"),
         "Topics": {
@@ -555,6 +574,10 @@ STRUCT_TYPES = [
     "DescribeTransactionState",
     "TopicData",
     "ListTransactionState",
+    "DeleteRecordsTopic",
+    "DeleteRecordsPartition",
+    "DeleteRecordsTopicResult",
+    "DeleteRecordsPartitionResult",
 ]
 
 # a list of struct types which are ineligible to have default-generated
