@@ -3623,11 +3623,13 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
     co_return ss::json::json_return_type(ss::json::json_void());
 }
 
-ss::future<ss::json::json_return_type>
+ss::future<std::unique_ptr<ss::reply>>
 admin_server::initiate_topic_scan_and_recovery(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::request> request, std::unique_ptr<ss::reply> reply) {
+    reply->set_content_type("json");
+
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw co_await redirect_to_leader(*request, model::controller_ntp);
     }
 
     if (!_topic_recovery_service.local_is_initialized()) {
@@ -3637,7 +3639,7 @@ admin_server::initiate_topic_scan_and_recovery(
 
     auto result = co_await _topic_recovery_service.invoke_on(
       cloud_storage::topic_recovery_service::shard_id,
-      [&req](auto& svc) { return svc.start_recovery(*req); });
+      [&request](auto& svc) { return svc.start_recovery(*request); });
 
     if (result.status_code != ss::reply::status_type::accepted) {
         throw ss::httpd::base_exception{result.message, result.status_code};
@@ -3645,7 +3647,9 @@ admin_server::initiate_topic_scan_and_recovery(
 
     auto payload = ss::httpd::shadow_indexing_json::init_recovery_result{};
     payload.status = result.message;
-    co_return ss::json::json_return_type{payload};
+
+    reply->set_status(result.status_code, payload.to_json());
+    co_return reply;
 }
 
 static ss::httpd::shadow_indexing_json::topic_recovery_status
@@ -3731,11 +3735,14 @@ void admin_server::register_shadow_indexing_routes() {
           return sync_local_state_handler(std::move(req));
       });
 
+    request_handler_fn recovery_handler = [this](auto req, auto reply) {
+        return initiate_topic_scan_and_recovery(
+          std::move(req), std::move(reply));
+    };
+
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::initiate_topic_scan_and_recovery,
-      [this](auto req) {
-          return initiate_topic_scan_and_recovery(std::move(req));
-      });
+      std::move(recovery_handler));
 
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::query_automated_recovery,

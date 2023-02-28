@@ -222,6 +222,49 @@ private:
         path.set(_server._routes, handler_f);
     }
 
+    using request_handler_fn
+      = ss::noncopyable_function<ss::future<std::unique_ptr<ss::reply>>(
+        std::unique_ptr<ss::request>, std::unique_ptr<ss::reply>)>;
+
+    /**
+     * Handler implementation to allow control over the reply. Accepts a handler
+     * function which takes as parameters both the http request and the reply.
+     * The supplied function can set the reply status code and content.
+     */
+    template<auth_level required_auth>
+    struct handler_impl final : public ss::httpd::handler_base {
+        handler_impl(admin_server& server, request_handler_fn handler)
+          : _server{server}
+          , _handler{std::move(handler)} {}
+
+        ss::future<std::unique_ptr<ss::httpd::reply>> handle(
+          [[maybe_unused]] const ss::sstring& path,
+          std::unique_ptr<ss::request> request,
+          std::unique_ptr<ss::reply> reply) override {
+            auto auth_state = _server.apply_auth<required_auth>(*request);
+            _server.log_request(*request, auth_state);
+
+            const auto url = request->get_url();
+            return ss::futurize_invoke(
+                     _handler, std::move(request), std::move(reply))
+              .handle_exception(
+                _server.exception_intercepter<
+                  decltype(_handler(std::move(request), std::move(reply))
+                             .get0())>(url, auth_state));
+        }
+
+        admin_server& _server;
+        request_handler_fn _handler;
+    };
+
+    template<auth_level required_auth>
+    void register_route(
+      ss::httpd::path_description const& path, request_handler_fn handler) {
+        path.set(
+          _server._routes,
+          new handler_impl<required_auth>{*this, std::move(handler)});
+    }
+
     void log_request(
       const ss::httpd::request& req,
       const request_auth_result& auth_state) const;
@@ -322,8 +365,8 @@ private:
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>
       sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
-    ss::future<ss::json::json_return_type>
-    initiate_topic_scan_and_recovery(std::unique_ptr<ss::httpd::request> req);
+    ss::future<std::unique_ptr<ss::reply>> initiate_topic_scan_and_recovery(
+      std::unique_ptr<ss::request>, std::unique_ptr<ss::reply>);
     ss::future<ss::json::json_return_type>
     query_automated_recovery(std::unique_ptr<ss::httpd::request> req);
 
