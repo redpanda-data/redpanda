@@ -29,9 +29,9 @@ Checking at least one of the checkboxes is REQUIRED if this PR is not a backport
 - [ ] none - not a bug fix
 - [ ] none - issue does not exist in previous branches
 - [ ] none - papercut/not impactful enough to backport
+- [ ] v23.1.x
 - [ ] v22.3.x
 - [ ] v22.2.x
-- [ ] v22.1.x
 
 ## Ecosystem
 
