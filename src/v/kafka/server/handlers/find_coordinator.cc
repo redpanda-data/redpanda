@@ -72,34 +72,27 @@ ss::future<response_ptr> find_coordinator_handler::handle(
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);
 
-    if (request.data.key_type == coordinator_type::group) {
-        if (!ctx.authorized(
-              security::acl_operation::describe, group_id(request.data.key))) {
-            return ctx.respond(find_coordinator_response(
-              error_code::group_authorization_failed));
-        }
-    } else if (request.data.key_type == coordinator_type::transaction) {
-        if (!ctx.authorized(
-              security::acl_operation::describe,
-              transactional_id(request.data.key))) {
-            return ctx.respond(find_coordinator_response(
-              error_code::transactional_id_authorization_failed));
-        }
-    }
-
     if (request.data.key_type == coordinator_type::transaction) {
         if (!ctx.are_transactions_enabled()) {
             return ctx.respond(
               find_coordinator_response(error_code::unsupported_version));
         }
 
+        transactional_id tx_id(request.data.key);
+
+        if (!ctx.authorized(security::acl_operation::describe, tx_id)) {
+            return ctx.respond(find_coordinator_response(
+              error_code::transactional_id_authorization_failed));
+        }
+
         return ss::do_with(
           std::move(ctx),
-          [request = std::move(request)](request_context& ctx) mutable {
-              return ctx.tx_gateway_frontend().get_tx_broker().then(
-                [&ctx](std::optional<model::node_id> tx_id) {
-                    if (tx_id) {
-                        return handle_leader(ctx, *tx_id);
+          [request = std::move(request),
+           tx_id = std::move(tx_id)](request_context& ctx) mutable {
+              return ctx.tx_gateway_frontend().find_coordinator(tx_id).then(
+                [&ctx](std::optional<model::node_id> leader) {
+                    if (leader) {
+                        return handle_leader(ctx, *leader);
                     }
                     return ctx.respond(find_coordinator_response(
                       error_code::coordinator_not_available));
@@ -107,10 +100,15 @@ ss::future<response_ptr> find_coordinator_handler::handle(
           });
     }
 
-    // other types include txn coordinators which are unsupported
     if (request.data.key_type != coordinator_type::group) {
         return ctx.respond(
           find_coordinator_response(error_code::unsupported_version));
+    }
+
+    if (!ctx.authorized(
+          security::acl_operation::describe, group_id(request.data.key))) {
+        return ctx.respond(
+          find_coordinator_response(error_code::group_authorization_failed));
     }
 
     return ss::do_with(
