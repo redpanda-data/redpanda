@@ -16,6 +16,7 @@
 #include "cluster/persisted_stm.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -92,7 +93,7 @@ private:
     struct truncate_cmd;
     struct snapshot;
 
-    static std::vector<segment>
+    static fragmented_vector<segment>
     segments_from_manifest(const cloud_storage::partition_manifest& manifest);
 
     void apply_add_segment(const segment& segment);
