@@ -166,7 +166,7 @@ class SIAdminApiTest(RedpandaTest):
     def test_topic_recovery_on_leader(self):
         response = self.admin.initiate_topic_scan_and_recovery(
             node=self._get_non_controller_node())
-        assert response.status_code == requests.status_codes.codes['ok']
+        assert response.status_code == requests.status_codes.codes['accepted']
         assert response.json() == {'status': 'recovery started'}
 
     @cluster(num_nodes=3)

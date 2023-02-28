@@ -962,7 +962,8 @@ class AdminApiBasedRestore(FastCheck):
     def _assert_status(self):
         def wait_for_status():
             r = self.admin.get_topic_recovery_status()
-            assert r.status_code == requests.status_codes.codes['ok']
+            assert r.status_code == requests.status_codes.codes[
+                'ok'], f'request status code: {response.status_code}'
             response = r.json()
             self.logger.debug(f'response {response}')
             if isinstance(response, dict):
@@ -982,7 +983,7 @@ class AdminApiBasedRestore(FastCheck):
         payload = {'retention_ms': 500000}
         response = self.admin.initiate_topic_scan_and_recovery(payload=payload)
         assert response.status_code == requests.status_codes.codes[
-            'ok'], f'request status code: {response.status_code}'
+            'accepted'], f'request status code: {response.status_code}'
         self._assert_duplicate_request_is_rejected()
         self._assert_status()
 
