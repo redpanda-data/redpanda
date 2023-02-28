@@ -2,7 +2,6 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: additional-configuration
-  namespace: default
 status:
   replicas: 1
   restarting: false
@@ -15,4 +14,3 @@ collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda
   tail: -1
-  namespace: default
