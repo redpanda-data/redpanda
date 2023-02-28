@@ -80,7 +80,7 @@ kind: Cluster
 metadata:
   name: up-img
 status:
-  version: "v22.1.10"
+  version: "v22.1.11"
   readyReplicas: 3
   replicas: 3
   upgrading: false
