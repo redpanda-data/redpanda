@@ -20,6 +20,9 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
 
+# See https://github.com/redpanda-data/redpanda/issues/8406
+V22_3_X_RESTART_LOG_ALLOW_LIST = ["Unexpected error: rpc::error::unknown"]
+
 
 class RandomNodeOperationsTest(EndToEndTest):
 
@@ -47,7 +50,8 @@ class RandomNodeOperationsTest(EndToEndTest):
 
     @skip_debug_mode
     @cluster(num_nodes=7,
-             log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
+             log_allow_list=CHAOS_LOG_ALLOW_LIST +
+             PREV_VERSION_LOG_ALLOW_LIST + V22_3_X_RESTART_LOG_ALLOW_LIST)
     @matrix(enable_failures=[False, True])
     def test_node_operations(
         self,
