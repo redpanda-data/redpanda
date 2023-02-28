@@ -14,6 +14,7 @@ from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettin
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.utils.si_utils import S3Snapshot
 from rptest.util import (
     segments_count,
     produce_until_segments,
@@ -145,25 +146,25 @@ class ArchivalTest(RedpandaTest):
                         replication_factor=3), )
 
     def __init__(self, test_context):
-        si_settings = SISettings(test_context,
-                                 cloud_storage_max_connections=5,
-                                 log_segment_size=self.log_segment_size)
-        self.s3_bucket_name = si_settings.cloud_storage_bucket
+        self.si_settings = SISettings(test_context,
+                                      cloud_storage_max_connections=5,
+                                      log_segment_size=self.log_segment_size)
+        self.s3_bucket_name = self.si_settings.cloud_storage_bucket
 
         extra_rp_conf = dict(
             log_compaction_interval_ms=self.log_compaction_interval_ms,
             log_segment_size=self.log_segment_size)
 
         if test_context.function_name == "test_timeboxed_uploads":
-            si_settings.log_segment_size = 1024 * 1024 * 1024
+            self.si_settings.log_segment_size = 1024 * 1024 * 1024
             extra_rp_conf.update(
                 cloud_storage_segment_max_upload_interval_sec=1)
 
         super(ArchivalTest, self).__init__(test_context=test_context,
                                            extra_rp_conf=extra_rp_conf,
-                                           si_settings=si_settings)
+                                           si_settings=self.si_settings)
 
-        self._s3_port = si_settings.cloud_storage_api_endpoint_port
+        self._s3_port = self.si_settings.cloud_storage_api_endpoint_port
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
@@ -194,6 +195,7 @@ class ArchivalTest(RedpandaTest):
     @parametrize(cloud_storage_type=CloudStorageType.S3)
     def test_isolate(self, cloud_storage_type):
         """Verify that our isolate/rejoin facilities actually work"""
+
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
             self.kafka_tools.produce(self.topic, 10000, 1024)
             time.sleep(10)  # can't busy wait here
@@ -201,16 +203,55 @@ class ArchivalTest(RedpandaTest):
             # Topic manifest can be present in the bucket because topic is created before
             # firewall is blocked. No segments or partition manifest should be present.
             topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
-            objects = self.cloud_storage_client.list_objects(
-                self.s3_bucket_name)
-            keys = [x.key for x in objects]
 
-            assert len(keys) < 2, \
-                f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys}"
+            bucket_content = S3Snapshot(self.topics,
+                                        self.redpanda.cloud_storage_client,
+                                        self.s3_bucket_name,
+                                        self.redpanda.logger)
 
-            if len(keys) == 1:
-                assert topic_manifest_id == keys[0], \
-                    f"Bucket should be empty or contain only {topic_manifest_id}, but contains {keys[0]}"
+            # Any partition manifests must contain no segments
+            for ntp, manifest in bucket_content.partition_manifests.items():
+                assert not manifest.get(
+                    'segment', []), f"Segments found in a manifest {ntp}"
+
+            # No segments must have been uploaded
+            assert bucket_content.segment_objects == 0, "Data segments found"
+
+            # All objects must belong to the topic we created (make sure we aren't searching on the wrong topic)
+            if bucket_content.ignored_objects > 0:
+                raise RuntimeError(f"Unexpected objects in bucket")
+
+        # Firewall is unblocked, segment uploads should proceed
+        def data_uploaded():
+            bucket_content = S3Snapshot(self.topics,
+                                        self.redpanda.cloud_storage_client,
+                                        self.s3_bucket_name,
+                                        self.redpanda.logger)
+            has_segments = bucket_content.segment_objects > 0
+
+            if not has_segments:
+                self.logger.info(
+                    f"No segments yet, objects are: {bucket_content.objects}")
+                return False
+
+            has_segments_in_manifest = any(
+                len(m.get('segments', [])) > 0
+                for m in bucket_content.partition_manifests.values())
+            if not has_segments_in_manifest:
+                self.logger.info("No segments in any manifests yet")
+
+            if bucket_content.ignored_objects > 0:
+                # Our topic filter should have matched everything in the bucket.
+                self.logger.info(
+                    f"Ignored {bucket_content.ignored_objects} objects")
+
+            return has_segments and has_segments_in_manifest and not bucket_content.ignored_objects
+
+        self.redpanda.wait_until(
+            data_uploaded,
+            timeout_sec=90,
+            backoff_sec=5,
+            err_msg="Data not uploaded after firewall unblocked")
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
     @parametrize(cloud_storage_type=CloudStorageType.ABS)
