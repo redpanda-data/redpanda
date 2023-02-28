@@ -11,7 +11,7 @@ import os
 from typing import Sequence
 
 from ducktape.tests.test import Test
-from rptest.services.redpanda import RedpandaService
+from rptest.services.redpanda import RedpandaService, CloudStorageType
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.default import DefaultClient
 from rptest.util import Scale
@@ -90,6 +90,10 @@ class RedpandaTest(Test):
         developer environments (e.g. laptops) but apply stricter checks in CI.
         """
         return os.environ.get('CI', None) != 'false'
+
+    @property
+    def azure_blob_storage(self):
+        return self.si_settings.cloud_storage_type == CloudStorageType.ABS
 
     @property
     def cloud_storage_client(self):
