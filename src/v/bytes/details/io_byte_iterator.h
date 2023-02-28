@@ -38,6 +38,10 @@ public:
             _frag_index = _frag->get();
             // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
             _frag_index_end = _frag->get() + _frag->size();
+            // handle an empty fragment
+            if (_frag_index == _frag_index_end) {
+                next_fragment();
+            }
         } else {
             _frag_index = nullptr;
             _frag_index_end = nullptr;
@@ -73,14 +77,21 @@ public:
 
 private:
     void next_fragment() {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        if (++_frag != _frag_end) {
-            _frag_index = _frag->get();
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            _frag_index_end = _frag->get() + _frag->size();
-        } else {
+        while (true) {
+            ++_frag;
+            if (_frag != _frag_end) {
+                _frag_index = _frag->get();
+                // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+                _frag_index_end = _frag->get() + _frag->size();
+                // handle an empty fragment
+                if (_frag_index == _frag_index_end) {
+                    continue;
+                }
+                return;
+            }
             _frag_index = nullptr;
             _frag_index_end = nullptr;
+            return;
         }
     }
 
