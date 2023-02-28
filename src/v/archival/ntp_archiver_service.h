@@ -454,6 +454,11 @@ private:
     // NTP level adjacent segment merging job
     std::unique_ptr<housekeeping_job> _local_segment_merger;
     config::binding<bool> _segment_merging_enabled;
+
+    // If this duration has elapsed since _last_manifest_upload_time,
+    // then upload at the next opportunity.
+    config::binding<std::optional<std::chrono::seconds>>
+      _manifest_upload_interval;
 };
 
 } // namespace archival

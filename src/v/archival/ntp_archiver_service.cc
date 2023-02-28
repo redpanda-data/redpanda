@@ -95,7 +95,10 @@ ntp_archiver::ntp_archiver(
   , _local_segment_merger(
       maybe_make_adjacent_segment_merger(*this, _rtclog, parent.log().config()))
   , _segment_merging_enabled(
-      config::shard_local_cfg().cloud_storage_enable_segment_merging.bind()) {
+      config::shard_local_cfg().cloud_storage_enable_segment_merging.bind())
+  , _manifest_upload_interval(
+      config::shard_local_cfg()
+        .cloud_storage_manifest_max_upload_interval_sec.bind()) {
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
