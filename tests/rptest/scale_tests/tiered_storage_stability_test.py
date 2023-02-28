@@ -17,6 +17,7 @@ from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+import time
 
 
 class TieredStorageWithLoadTest(PreallocNodesTest):
@@ -118,6 +119,12 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
         self.rpk.alter_topic_config(self.topic_name, 'segment.bytes',
                                     512 * 1024 * 1024)
 
+    def get_node(self, idx: int):
+        node = self.redpanda.nodes[idx]
+        node_id = self.redpanda.node_id(node)
+        node_str = f"{node.account.hostname} (node_id: {node_id})"
+        return node, node_id, node_str
+
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_restarts(self):
         # Generate a realistic number of segments per partition.
@@ -147,19 +154,25 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
                                                 start_timeout=600,
                                                 stop_timeout=600)
 
-            node = self.redpanda.nodes[0]
-            node_id = self.redpanda.node_id(node)
-            node_str = f"{node.account.hostname} (node_id: {node_id})"
-            # Stop a node, wait for enough time for movement to occur, then
-            # proceed.
 
             # Hard stop, then restart.
+            node, node_id, node_str = self.get_node(0)
             self.logger.info(f"Hard stopping and restarting node {node_str}")
             self.redpanda.stop_node(node, forced=True)
             self.redpanda.start_node(node, timeout=600)
             wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
 
+            # Stop a node, wait for enough time for movement to occur, then
+            # restart.
+            node, node_id, node_str = self.get_node(1)
+            self.logger.info(f"Hard stopping node {node_str}")
+            self.redpanda.stop_node(node, forced=True)
+            time.sleep(60)
+            self.logger.info(f"Restarting node {node_str}")
+            self.redpanda.start_node(node, timeout=600)
+            wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
             # Block traffic to/from one node.
+            node, node_id, node_str = self.get_node(0)
             self.logger.info("Isolating node {node_str}")
             with FailureInjector(self.redpanda) as fi:
                 fi.inject_failure(
