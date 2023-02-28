@@ -367,8 +367,11 @@ class S3Snapshot:
         self.expected_topics = expected_topics
         self.path_matcher = PathMatcher(self.expected_topics)
         self.objects = self.client.list_objects(self.bucket)
+        self.segment_objects = 0
+        self.ignored_objects = 0
+
         self.partition_manifests = {}
-        for o in self.objects:
+        for o in self.client.list_objects(self.bucket):
             if self.path_matcher.is_partition_manifest(o):
                 manifest_path = parse_s3_manifest_path(o.key)
                 data = self.client.get_object_data(self.bucket, o.key)
@@ -377,6 +380,12 @@ class S3Snapshot:
                     f'registered partition manifest for {manifest_path.ntp}: '
                     f'{pprint.pformat(self.partition_manifests[manifest_path.ntp], indent=2)}'
                 )
+            elif self.path_matcher.is_segment(o):
+                self.segment_objects += 1
+            elif self.path_matcher.is_topic_manifest(o):
+                pass
+            else:
+                self.ignored_objects += 1
 
     def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
         """
