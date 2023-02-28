@@ -25,28 +25,6 @@ If this PR is a backport, link to the original with `Backport of PR`, e.g.
 - [ ] v22.3.x
 - [ ] v22.2.x
 
-## Ecosystem
-
-<!--
-
-Content in this section is OPTIONAL.
-
-Describe, in plain language, how this PR affects an end-user. Explain
-topic flags, configuration flags, command line flags, deprecation
-policies, etc. that are added or modified. Don't ship user breaking
-changes. Ask the @redpanda-data/product team if you need help with user
-visible changes.
-
--->
-
-- [ ] needs ansible update
-- [ ] needs terraform update
-- [ ] needs rpk update
-- [ ] needs redpanda console updates
-- [ ] needs cloud team sync / control plane
-- [ ] needs helm chart update
-- [ ] needs k8s operator update
-
 ## Release Notes
 
 <!--
