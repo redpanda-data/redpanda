@@ -33,7 +33,7 @@ Checking at least one of the checkboxes is REQUIRED if this PR is not a backport
 - [ ] v22.2.x
 - [ ] v22.1.x
 
-## UX Changes
+## Ecosystem
 
 <!--
 
@@ -46,6 +46,14 @@ changes. Ask the @redpanda-data/product team if you need help with user
 visible changes.
 
 -->
+
+- [ ] needs ansible update
+- [ ] needs terraform update
+- [ ] needs rpk update
+- [ ] needs redpanda console updates
+- [ ] needs cloud team sync / control plane
+- [ ] needs helm chart update
+- [ ] needs k8s operator update
 
 ## Release Notes
 
