@@ -26,6 +26,7 @@
 #include "serde/serde.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 #include "vlog.h"
 
@@ -85,9 +86,9 @@ struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<1>, serde::compat_version<0>> {
     /// List of segments
-    std::vector<segment> segments;
+    fragmented_vector<segment> segments;
     /// List of replaced segments
-    std::vector<segment> replaced;
+    fragmented_vector<segment> replaced;
     /// Start offset (might be different from the base offset of the first
     /// segment). Default value means that the snapshot was old and didn't
     /// have start_offset. In this case we need to set it to compute it from
@@ -186,12 +187,10 @@ command_batch_builder archival_metadata_stm::batch_start(
     return {*this, deadline, as};
 }
 
-std::vector<archival_metadata_stm::segment>
+fragmented_vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
-    std::vector<segment> segments;
-    segments.reserve(manifest.size());
-
+    fragmented_vector<segment> segments;
     for (auto [key, meta] : manifest) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
@@ -212,12 +211,11 @@ archival_metadata_stm::segments_from_manifest(
     return segments;
 }
 
-std::vector<archival_metadata_stm::segment>
+fragmented_vector<archival_metadata_stm::segment>
 archival_metadata_stm::replaced_segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
     auto replaced = manifest.replaced_segments();
-    std::vector<segment> segments;
-    segments.reserve(replaced.size());
+    fragmented_vector<segment> segments;
     for (auto meta : replaced) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
