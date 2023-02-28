@@ -30,11 +30,8 @@ endif
 all: manager
 
 # Run tests
-ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
-test: generate vet manifests
-	mkdir -p ${ENVTEST_ASSETS_DIR}
-	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test --race -v ./... -coverprofile cover.out
+test: generate vet manifests envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test --race -v ./... -coverprofile cover.out
 
 # Build manager binary
 manager: generate vet
