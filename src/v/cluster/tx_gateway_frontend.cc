@@ -508,14 +508,6 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
 
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
 
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
-    while (!aborted && !shard && 0 < retries--) {
-        aborted = !co_await sleep_abortable(delay_ms, _as);
-        shard = _shard_table.local().shard_for(model::tx_manager_ntp);
-    }
-
     if (!shard) {
         vlog(
           txlog.trace,
