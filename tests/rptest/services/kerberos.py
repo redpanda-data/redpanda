@@ -31,6 +31,7 @@ KDC_CONF_PATH = "/etc/krb5kdc/kdc.conf"
 KRB5_CONF_TMPL = """
 [libdefaults]
 	default_realm = {realm}
+	dns_canonicalize_hostname = false
 
 [realms]
 	{realm} = {{
