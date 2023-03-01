@@ -15,6 +15,7 @@
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
+#include "cluster/scheduling/leader_balancer_random.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
@@ -281,6 +282,29 @@ bool leader_balancer::should_stop_balance() const {
     return !_enabled() || _as.local().abort_requested();
 }
 
+static bool validate_indexes(
+  const leader_balancer_types::group_id_to_topic_revision_t& group_to_topic,
+  const leader_balancer_types::index_type& index) {
+    // Ensure every group in the shard index has a
+    // topic mapping in the group_to_topic index.
+    // It's an implicit assumption of the even_topic_distributon_constraint
+    // that this is the case.
+    for (const auto& broker_shard : index) {
+        for (const auto& group_p : broker_shard.second) {
+            auto topic_id_opt = group_to_topic.find(group_p.first);
+            if (topic_id_opt == group_to_topic.end()) {
+                vlog(
+                  clusterlog.warn,
+                  "no topic mapping in group_to_topic index for group: {}",
+                  group_p.first);
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 ss::future<ss::stop_iteration> leader_balancer::balance() {
     if (should_stop_balance()) {
         co_return ss::stop_iteration::yes;
@@ -359,7 +383,19 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         _need_controller_refresh = false;
     }
 
-    greedy_balanced_shards strategy(build_index(), muted_nodes());
+    auto index = build_index();
+    auto group_id_to_topic = build_group_id_to_topic_rev();
+
+    if (!validate_indexes(group_id_to_topic, index)) {
+        vlog(clusterlog.warn, "Leadership balancer tick: invalid indexes.");
+        co_return ss::stop_iteration::no;
+    }
+
+    leader_balancer_types::random_hill_climbing_strategy strategy{
+      std::move(index),
+      std::move(group_id_to_topic),
+      leader_balancer_types::muted_index{muted_nodes(), {}}};
+
     auto cores = strategy.stats();
 
     if (clusterlog.is_enabled(ss::log_level::trace)) {
