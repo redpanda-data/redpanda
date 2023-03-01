@@ -309,6 +309,10 @@ public:
         }
     }
 
+    ss::sharded<features::feature_table>& feature_table() const {
+        return _feature_table;
+    }
+
 private:
     ss::future<std::optional<storage::timequery_result>>
       cloud_storage_timequery(storage::timequery_config);

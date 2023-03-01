@@ -56,6 +56,7 @@ enum class feature : std::uint64_t {
     rpc_transport_unknown_errc = 1ULL << 21U,
     membership_change_controller_cmds = 1ULL << 22U,
     controller_snapshots = 1ULL << 23U,
+    cloud_storage_manifest_format_v2 = 1ULL << 24U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 62U,
@@ -252,6 +253,12 @@ constexpr static std::array feature_schema{
     "controller_snapshots",
     feature::controller_snapshots,
     feature_spec::available_policy::explicit_only,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{10},
+    "cloud_storage_manifest_format_v2",
+    feature::cloud_storage_manifest_format_v2,
+    feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 
   // For testing, a feature that does not auto-activate

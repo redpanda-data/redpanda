@@ -98,7 +98,8 @@ ntp_archiver::ntp_archiver(
       config::shard_local_cfg().cloud_storage_enable_segment_merging.bind())
   , _manifest_upload_interval(
       config::shard_local_cfg()
-        .cloud_storage_manifest_max_upload_interval_sec.bind()) {
+        .cloud_storage_manifest_max_upload_interval_sec.bind())
+  , _feature_table(parent.feature_table()) {
     _start_term = _parent.term();
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
@@ -780,6 +781,16 @@ ss::future<> ntp_archiver::maybe_flush_manifest_clean_offset() {
 
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    if (!_feature_table.local().is_active(
+          features::feature::cloud_storage_manifest_format_v2)) {
+        vlog(
+          archival_log.info,
+          "Skipping manifest upload until all nodes in the cluster have been "
+          "upgraded.");
+
+        co_return cloud_storage::upload_result::cancelled;
+    }
+
     gate_guard guard{_gate};
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(

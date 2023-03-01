@@ -492,6 +492,8 @@ private:
     config::binding<std::optional<std::chrono::seconds>>
       _manifest_upload_interval;
 
+    ss::sharded<features::feature_table>& _feature_table;
+
     friend class archival_fixture;
 };
 
