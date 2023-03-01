@@ -181,6 +181,7 @@ class StatusThread(threading.Thread):
 
     def __init__(self, parent: Service, node, status_cls, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.daemon = True
 
         self._parent = parent
         self._node = node

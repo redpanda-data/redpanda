@@ -317,7 +317,7 @@ class NoDataCase(BaseCase):
 
 
 class EmptySegmentsCase(BaseCase):
-    """Restore topic that has segments in S3, but segments have only non-data 
+    """Restore topic that has segments in S3, but segments have only non-data
     batches (raft configuration, raft configuration).
     """
 
