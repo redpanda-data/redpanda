@@ -841,6 +841,10 @@ class RedpandaService(Service):
         self._extra_rp_conf = self._si_settings.update_rp_conf(
             self._extra_rp_conf)
 
+    @property
+    def si_settings(self):
+        return self._si_settings
+
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 

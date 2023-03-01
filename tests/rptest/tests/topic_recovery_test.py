@@ -33,7 +33,7 @@ from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
 from rptest.utils.si_utils import (
-    EMPTY_SEGMENT_SIZE, MISSING_DATA_ERRORS, NTP, TRANSIENT_ERRORS,
+    EMPTY_SEGMENT_SIZE, MISSING_DATA_ERRORS, NTPR, TRANSIENT_ERRORS,
     PathMatcher, S3Snapshot, SegmentReader, default_log_segment_size,
     gen_manifest_path, get_expected_ntp_restored_size,
     get_on_disk_size_per_ntp, is_close_size, parse_s3_manifest_path,
@@ -153,8 +153,10 @@ class BaseCase:
         for topic in self.topics:
             for partition in self._rpk.describe_topic(topic.name):
                 hw = partition.high_watermark
-                ntp = NTP(ns='kafka', topic=topic.name, partition=partition.id)
-                rev = revisions[ntp]
+                ntp = NTPR(ns='kafka',
+                           topic=topic.name,
+                           partition=partition.id,
+                           revision=revisions[ntp])
                 partition_uri = gen_manifest_path(ntp, rev)
                 data = self._s3.get_object_data(self._bucket, partition_uri)
                 obj = json.loads(data)
