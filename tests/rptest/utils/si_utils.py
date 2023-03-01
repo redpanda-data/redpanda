@@ -1,14 +1,10 @@
 import collections
 import json
 import pprint
-import random
 import struct
 from collections import defaultdict, namedtuple
 from typing import Sequence, Optional
-
-import confluent_kafka as ck
 import xxhash
-from ducktape.utils.util import wait_until
 
 from rptest.archival.s3_client import S3ObjectMetadata, S3Client
 from rptest.clients.types import TopicSpec
@@ -331,62 +327,6 @@ class PathMatcher:
 
     def path_matches_any_topic(self, path: str) -> bool:
         return any(t in path for t in self.topic_names)
-
-
-class Producer:
-    def __init__(self, brokers, name, logger, timeout_sec: float = 60.0):
-        self.keys = []
-        self.cur_offset = 0
-        self.brokers = brokers
-        self.logger = logger
-        self.num_aborted = 0
-        self.name = name
-        self.timeout_sec = timeout_sec
-        self.reconnect()
-
-    def reconnect(self):
-        def init():
-            try:
-                self.producer = ck.Producer({
-                    'bootstrap.servers': self.brokers,
-                    'transactional.id': self.name,
-                    'transaction.timeout.ms': 5000,
-                })
-                self.producer.init_transactions(self.timeout_sec)
-                return True
-            except ck.cimpl.KafkaException as e:
-                kafka_error = e.args[0]
-                if kafka_error.code() == ck.cimpl.KafkaError.NOT_COORDINATOR:
-                    return False
-                raise
-
-        wait_until(init, timeout_sec=10, backoff_sec=1)
-
-    def produce(self, topic):
-        """produce some messages inside a transaction with increasing keys
-        and random values. Then randomly commit/abort the transaction."""
-
-        n_msgs = random.randint(50, 100)
-        keys = []
-
-        self.producer.begin_transaction()
-        for _ in range(n_msgs):
-            val = ''.join(
-                map(chr, (random.randint(0, 256)
-                          for _ in range(random.randint(100, 1000)))))
-            self.producer.produce(topic, val, str(self.cur_offset))
-            keys.append(str(self.cur_offset).encode('utf8'))
-            self.cur_offset += 1
-
-        self.logger.info(f"writing {len(keys)} msgs: {keys[0]}-{keys[-1]}...")
-        self.producer.flush()
-        if random.random() < 0.1:
-            self.producer.abort_transaction()
-            self.num_aborted += 1
-            self.logger.info("aborted txn")
-        else:
-            self.producer.commit_transaction()
-            self.keys.extend(keys)
 
 
 class S3Snapshot:
