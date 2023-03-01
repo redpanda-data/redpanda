@@ -487,6 +487,7 @@ class RpkTool:
                 partition=None,
                 fetch_max_bytes=None,
                 quiet=False,
+                format=None,
                 timeout=None):
         cmd = ["consume", topic]
         if group is not None:
@@ -498,11 +499,13 @@ class RpkTool:
         if fetch_max_bytes is not None:
             cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
         if offset is not None:
-            cmd += ["-o", f"{n}"]
+            cmd += ["-o", f"{offset}"]
         if partition is not None:
             cmd += ["-p", f"{partition}"]
         if quiet:
             cmd += ["-f", "_\\n"]
+        elif format is not None:
+            cmd += ["-f", format]
 
         return self._run_topic(cmd, timeout=timeout)
 

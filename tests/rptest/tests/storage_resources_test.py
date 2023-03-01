@@ -176,7 +176,7 @@ class StorageResourceRestartTest(RedpandaTest):
             rpk.consume(self.topic,
                         partition=p.id,
                         n=1,
-                        offset=p.high_watermark,
+                        offset=p.high_watermark - 1,
                         quiet=True)
 
     def _sum_metrics(self, metric_name):
