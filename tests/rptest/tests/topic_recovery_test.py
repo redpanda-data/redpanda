@@ -705,12 +705,13 @@ class FastCheck(BaseCase):
 
 
 class SizeBasedRetention(BaseCase):
-    """Restore the topic using the size base retention policy.
-    The initial topic is created with default retention policy (which is time based).
-    The recovered topic is created with size based retention policy.
-    The test generates 20MB of data per ntp, than after the restart it recovers
-    the topic with size limit set to 10MB per ntp.
-    The verification takes into account individual segment size. The recovery process
+    """
+    Restore the topic using the size base retention policy.
+        The initial topic is created with default retention policy (which is time based).
+        The recovered topic is created with size based retention policy.
+        The test generates 20MB of data per ntp, than after the restart it recovers
+        the topic with size limit set to 10MB per ntp.
+        The verification takes into account individual segment size. The recovery process
     should restore at not more than 10MB but not less than 10MB - oldest segment size."""
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
                  rpk_producer_maker, topics):
@@ -997,6 +998,25 @@ class AdminApiBasedRestore(FastCheck):
             assert not item.key.startswith('recovery_state/kafka')
 
 
+def get_node_partition_sizes(redpanda):
+    """
+    Fetch the on-disk size of all partitions on all nodes
+
+    :return: map of topic->partition->node->size
+    """
+    storage = redpanda.storage(sizes=True)
+
+    result = {}
+    for topic in storage.ns["kafka"].topics.keys():
+        for node_partition in storage.partitions("kafka", topic):
+            partition_size = sum(s.size if s.size else 0
+                                 for s in node_partition.segments.values())
+            result[topic][node_partition.num][
+                node_partition.node.name] = partition_size
+
+    return result
+
+
 class TopicRecoveryTest(RedpandaTest):
     def __init__(self,
                  test_context: TestContext,
@@ -1154,6 +1174,10 @@ class TopicRecoveryTest(RedpandaTest):
     def _wait_for_data_in_s3(self,
                              expected_topics,
                              timeout=datetime.timedelta(minutes=1)):
+
+        # For each topic/partition, wait for local storage to be truncated according
+        # to retention policy.
+
         deltas = deque(maxlen=6)
         total_partitions = sum([t.partition_count for t in expected_topics])
         tolerance = default_log_segment_size * total_partitions
@@ -1163,7 +1187,8 @@ class TopicRecoveryTest(RedpandaTest):
             manifests = []
             topic_manifests = []
             segments = []
-            assert self.cloud_storage_client
+
+            # Enumerate all S3 objects, store lists of the manifests & segments
             lst = self.cloud_storage_client.list_objects(self.s3_bucket)
             for obj in lst:
                 self.logger.debug(f'checking S3 object: {obj.key}')
@@ -1173,6 +1198,7 @@ class TopicRecoveryTest(RedpandaTest):
                     topic_manifests.append(obj)
                 elif path_matcher.is_segment(obj):
                     segments.append(obj)
+
             if len(expected_topics) != len(topic_manifests):
                 self.logger.info(
                     f"can't find enough topic_manifest.json objects, "

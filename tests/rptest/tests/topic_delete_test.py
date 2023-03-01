@@ -221,8 +221,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         for i in range(0, self.partition_count):
             wait_for_local_storage_truncate(self.redpanda,
                                             topic_name,
-                                            i,
-                                            local_retention,
+                                            partition_idx=i,
+                                            target_bytes=local_retention,
                                             timeout_sec=30,
                                             nodes=nodes)
 

@@ -15,7 +15,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.util import (
     produce_until_segments,
-    wait_for_segments_removal,
+    wait_for_local_storage_truncate,
     firewall_blocked,
 )
 
@@ -31,7 +31,7 @@ CONNECTION_ERROR_LOGS = [
 
 class ShadowIndexingFirewallTest(RedpandaTest):
     log_segment_size = 1048576  # 1MB
-    retention_bytes = 1024  # 1 KB
+    retention_bytes = log_segment_size  # 1 segment
 
     s3_topic_name = "panda-topic"
     topics = (TopicSpec(name=s3_topic_name,
@@ -65,10 +65,9 @@ class ShadowIndexingFirewallTest(RedpandaTest):
             TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
             self.retention_bytes)
 
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=self.s3_topic_name,
-                                  partition_idx=0,
-                                  count=4)
+        wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                        topic=self.s3_topic_name,
+                                        target_bytes=self.retention_bytes)
         """Disconnect redpanda from S3 and try to read starting with offset 0"""
         with firewall_blocked(self.redpanda.nodes, self._s3_port):
             try:

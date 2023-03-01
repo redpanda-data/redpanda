@@ -12,14 +12,13 @@ from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL
-from rptest.clients.rpk import RpkTool
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.util import (
     produce_until_segments,
-    wait_for_segments_removal,
+    wait_for_local_storage_truncate,
 )
 
 
@@ -28,6 +27,7 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
     Check offset for leader epoch handling
     """
     segment_size = 1 * (2 << 20)
+    local_retention = segment_size * 2
 
     def _produce(self, topic, msg_cnt):
         rpk = RpkTool(self.redpanda)
@@ -54,12 +54,12 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
             try:
                 rpk.alter_topic_config(
                     topic, TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES,
-                    OffsetForLeaderEpochArchivalTest.segment_size)
+                    OffsetForLeaderEpochArchivalTest.local_retention)
 
                 cfgs = rpk.describe_topic_configs(topic)
                 retention = int(
                     cfgs[TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_BYTES][0])
-                return retention == OffsetForLeaderEpochArchivalTest.segment_size
+                return retention == OffsetForLeaderEpochArchivalTest.local_retention
             except:
                 return False
 
@@ -99,10 +99,9 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
 
         self._alter_topic_retention_with_retry(topic.name)
 
-        wait_for_segments_removal(redpanda=self.redpanda,
-                                  topic=topic.name,
-                                  partition_idx=0,
-                                  count=7)
+        wait_for_local_storage_truncate(self.redpanda,
+                                        topic.name,
+                                        target_bytes=self.local_retention)
         kcl = KCL(self.redpanda)
 
         for epoch, offset in epoch_offsets.items():

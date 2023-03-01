@@ -333,8 +333,8 @@ class EndToEndTopicRecovery(RedpandaTest):
                                "1024")
         wait_for_local_storage_truncate(self.redpanda,
                                         self.topic,
-                                        0,
-                                        int(msg_size * msg_count * 0.5),
+                                        target_bytes=int(msg_size * msg_count *
+                                                         0.5),
                                         timeout_sec=30)
         validate()
 

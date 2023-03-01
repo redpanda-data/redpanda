@@ -20,7 +20,8 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk_remote import RpkRemoteTool
-from rptest.util import (wait_until, segments_count, wait_for_segments_removal)
+from rptest.util import (wait_until, segments_count,
+                         wait_for_local_storage_truncate)
 
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
@@ -37,9 +38,8 @@ from rptest.utils.mode_checks import skip_debug_mode
 
 
 class BaseTimeQuery:
-    def _create_and_produce(self, cluster, cloud_storage,
-                            local_retain_segments, base_ts, record_size,
-                            msg_count):
+    def _create_and_produce(self, cluster, cloud_storage, local_retention,
+                            base_ts, record_size, msg_count):
         topic = TopicSpec(name="tqtopic",
                           partition_count=1,
                           replication_factor=3)
@@ -47,12 +47,9 @@ class BaseTimeQuery:
 
         if cloud_storage:
             for k, v in {
-                    'redpanda.remote.read':
-                    True,
-                    'redpanda.remote.write':
-                    True,
-                    'retention.local.target.bytes':
-                    self.log_segment_size * local_retain_segments
+                    'redpanda.remote.read': True,
+                    'redpanda.remote.write': True,
+                    'retention.local.target.bytes': local_retention
             }.items():
                 self.client().alter_topic_config(topic.name, k, v)
 
@@ -94,15 +91,14 @@ class BaseTimeQuery:
         return topic, timestamps
 
     def _test_timequery(self, cluster, cloud_storage: bool, batch_cache: bool):
-        local_retain_segments = 4
         total_segments = 12
         record_size = 1024
         base_ts = 1664453149000
         msg_count = (self.log_segment_size * total_segments) // record_size
+        local_retention = self.log_segment_size * 4
         topic, timestamps = self._create_and_produce(cluster, cloud_storage,
-                                                     local_retain_segments,
-                                                     base_ts, record_size,
-                                                     msg_count)
+                                                     local_retention, base_ts,
+                                                     record_size, msg_count)
         for k, v in timestamps.items():
             self.logger.debug(f"  Offset {k} -> Timestamp {v}")
 
@@ -115,10 +111,9 @@ class BaseTimeQuery:
             # If using cloud storage, we must wait for some segments
             # to fall out of local storage, to ensure we are really
             # hitting the cloud storage read path when querying.
-            wait_for_segments_removal(redpanda=cluster,
-                                      topic=topic.name,
-                                      partition_idx=0,
-                                      count=local_retain_segments)
+            wait_for_local_storage_truncate(redpanda=cluster,
+                                            topic=topic.name,
+                                            target_bytes=local_retention)
 
         # Identify partition leader for use in our metrics checks
         leader_node = cluster.get_node(
@@ -147,8 +142,7 @@ class BaseTimeQuery:
         # For when using cloud storage, we expectr offsets ahead
         # of this to still hit raft for their timequeries.  This is approximate,
         # but fine as long as the test cases don't tread too near the gap.
-        local_start_offset = msg_count - (
-            (local_retain_segments * self.log_segment_size) / record_size)
+        local_start_offset = msg_count - ((local_retention) / record_size)
 
         is_redpanda = isinstance(cluster, RedpandaService)
 
@@ -270,15 +264,14 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         self.log_segment_size = int(self.log_segment_size / 32)
         total_segments = 32 * 12
         self.set_up_cluster(cloud_storage=True, batch_cache=False)
-        local_retain_segments = 4
+        local_retention = self.log_segment_size * 4
         record_size = 1024
         base_ts = 1664453149000
         msg_count = (self.log_segment_size * total_segments) // record_size
 
         topic, timestamps = self._create_and_produce(self.redpanda, True,
-                                                     local_retain_segments,
-                                                     base_ts, record_size,
-                                                     msg_count)
+                                                     local_retention, base_ts,
+                                                     record_size, msg_count)
 
         # While waiting for local GC to occur, run several concurrent
         # timequeries all across the keyspace at once.
@@ -309,10 +302,9 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             try:
                 # Evaluate the futures with list().
                 executor.map(query_slices, range(num_threads))
-                wait_for_segments_removal(redpanda=self.redpanda,
-                                          topic=topic.name,
-                                          partition_idx=0,
-                                          count=local_retain_segments)
+                wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                                topic=topic.name,
+                                                target_bytes=local_retention)
             finally:
                 should_stop.set()
         assert not any([e > 0 for e in errors])
