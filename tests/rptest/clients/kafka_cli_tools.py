@@ -13,6 +13,7 @@ from rptest.clients.types import TopicSpec
 import json
 from ducktape.utils.util import wait_until
 from typing import Optional
+import os
 
 
 class AuthenticationError(Exception):
@@ -253,19 +254,13 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
     def reassign_partitions(self,
                             reassignments: dict,
                             operation: str,
-                            write_reassignments_to_disk: bool = True,
                             msg_retry: Optional[str] = None,
                             timeout_s: int = 10):
         assert "version" in reassignments
         assert reassignments["version"] == 1
         assert "partitions" in reassignments
 
-        json_filename = "reassignments.json"
-        if write_reassignments_to_disk:
-            with open(json_filename, "w") as outfile:
-                json.dump(reassignments, outfile)
-
-        args = ["--reassignment-json-file", json_filename]
+        args = []
         if operation == "execute":
             args.append("--execute")
         elif operation == "verify":
@@ -277,16 +272,25 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         else:
             raise NotImplementedError(f"Unknown operation: {operation}")
 
+        json_file = tempfile.NamedTemporaryFile(mode="w", delete=False)
         output = None
+        try:
+            json.dump(reassignments, json_file)
+            json_file.close()
 
-        def do_reassign_partitions():
-            nonlocal output
-            output = self._run("kafka-reassign-partitions.sh", args)
-            return True if msg_retry is None else msg_retry not in output
+            args = args + ["--reassignment-json-file", json_file.name]
 
-        wait_until(do_reassign_partitions,
-                   timeout_sec=timeout_s,
-                   backoff_sec=1)
+            def do_reassign_partitions():
+                nonlocal output
+                output = self._run("kafka-reassign-partitions.sh", args)
+                return True if msg_retry is None else msg_retry not in output
+
+            wait_until(do_reassign_partitions,
+                       timeout_sec=timeout_s,
+                       backoff_sec=1)
+        finally:
+            os.remove(json_file.name)
+
         return output
 
     def describe_producers(self, topic, partition):
