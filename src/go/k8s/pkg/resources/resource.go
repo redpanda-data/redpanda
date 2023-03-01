@@ -14,7 +14,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/banzaicloud/k8s-objectmatcher/patch"
+	"github.com/cisco-open/k8s-objectmatcher/patch"
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +49,8 @@ const (
 	scramPasswordLength = 16
 
 	separator = "-"
+
+	redpandaAnnotatorKey = "redpanda.com/last-applied"
 )
 
 // NamedServicePort allows to pass name ports, e.g., to service resources
@@ -94,8 +96,9 @@ func CreateIfNotExists(
 	// we need to store the GVK before it enters client methods because client
 	// wipes GVK. That's a bug in apimachinery, but I don't think it will be
 	// fixed any time soon.
+	annotator := patch.NewAnnotator(redpandaAnnotatorKey)
 	gvk := obj.GetObjectKind().GroupVersionKind()
-	if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); err != nil {
+	if err := annotator.SetLastAppliedAnnotation(obj); err != nil {
 		return false, fmt.Errorf("unable to add last applied annotation to %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
 	// this is needed because we cannot pass obj into get as the client methods
@@ -142,7 +145,8 @@ func Update(
 		utils.IgnoreAnnotation(patch.LastAppliedConfig),
 		utils.IgnoreAnnotation(LastAppliedConfigurationAnnotationKey),
 	}
-	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
+	annotator := patch.NewAnnotator(redpandaAnnotatorKey)
+	patchResult, err := patch.NewPatchMaker(annotator, &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(current, modified, opts...)
 	if err != nil {
 		return false, err
 	}
@@ -150,7 +154,7 @@ func Update(
 		// need to set current version first otherwise the request would get rejected
 		logger.Info(fmt.Sprintf("Resource %s (%s) changed, updating. Diff: %v",
 			modified.GetName(), modified.GetObjectKind().GroupVersionKind().Kind, string(patchResult.Patch)))
-		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
+		if err := annotator.SetLastAppliedAnnotation(modified); err != nil {
 			return false, err
 		}
 

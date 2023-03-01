@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/banzaicloud/k8s-objectmatcher/patch"
+	"github.com/cisco-open/k8s-objectmatcher/patch"
 	"github.com/prometheus/common/expfmt"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
@@ -218,7 +218,7 @@ func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPo
 		ignoreExistingVolumes(newVolumes),
 	}
 
-	patchResult, err := patch.DefaultPatchMaker.Calculate(pod, artificialPod, opts...)
+	patchResult, err := patch.NewPatchMaker(patch.NewAnnotator(redpandaAnnotatorKey), &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(pod, artificialPod, opts...)
 	if err != nil {
 		return err
 	}
@@ -329,7 +329,7 @@ func (r *StatefulSetResource) shouldUpdate(
 		utils.IgnoreAnnotation(patch.LastAppliedConfig),
 		utils.IgnoreAnnotation(CentralizedConfigurationHashAnnotationKey),
 	}
-	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
+	patchResult, err := patch.NewPatchMaker(patch.NewAnnotator(redpandaAnnotatorKey), &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(current, modified, opts...)
 	if err != nil {
 		return false, err
 	}
