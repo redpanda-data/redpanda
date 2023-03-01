@@ -279,6 +279,15 @@ class TestRunner():
             env["ASAN_SYMBOLIZER_PATH"] = llvm_symbolizer
         logger.info(f"Using llvm-symbolizer: {llvm_symbolizer}")
 
+        # setup lsan suppressions
+        src_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                               "..")
+        lsan_suppressions = os.path.join(src_dir, "lsan_suppressions.txt")
+        assert os.path.isfile(
+            lsan_suppressions
+        ), f"cannot find lsan suppressions at {lsan_suppressions}"
+        env["LSAN_OPTIONS"] = f"suppressions={lsan_suppressions}"
+
         # We only capture stderr because that's where backtraces go
         p = subprocess.Popen(cmd,
                              env=env,
