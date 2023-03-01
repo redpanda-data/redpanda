@@ -92,12 +92,12 @@ prepare-dockerfile:
 # Build the docker image
 docker-build: prepare-dockerfile
 	echo "~~~ Building operator image :docker:"
-	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile.out -t ${OPERATOR_IMG_LATEST} ../
+	docker buildx build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager --load -f Dockerfile.out -t ${OPERATOR_IMG_LATEST} ../
 
 # Build the docker image
 docker-build-configurator: prepare-dockerfile
 	echo "~~~ Building configurator image :docker:"
-	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile.out -t ${CONFIGURATOR_IMG_LATEST} ../
+	docker buildx build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator --load -f Dockerfile.out -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
 push-to-kind: kind-create certmanager-install
