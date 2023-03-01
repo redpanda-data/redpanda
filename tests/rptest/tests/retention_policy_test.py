@@ -22,7 +22,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_local_storage_truncate, segments_count,
                          expect_exception)
-from rptest.utils.si_utils import S3Snapshot
+from rptest.utils.si_utils import BucketView
 
 
 def bytes_for_segments(want_segments, segment_size):
@@ -396,9 +396,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                             bytes_to_produce=total_bytes)
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3Snapshot([topic],
-                                     self.redpanda.cloud_storage_client,
-                                     self.s3_bucket_name, self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=[topic])
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(topic.name, 0)
             self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
             return cloud_log_size
@@ -461,9 +459,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                             bytes_to_produce=total_bytes)
 
         def cloud_log_segment_count() -> int:
-            s3_snapshot = S3Snapshot([topic],
-                                     self.redpanda.cloud_storage_client,
-                                     self.s3_bucket_name, self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=[topic])
             count = s3_snapshot.cloud_log_segment_count_for_ntp(topic.name, 0)
             self.logger.debug(
                 f"Current count of segments in manifest is: {count}")
@@ -542,9 +538,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                             bytes_to_produce=total_bytes)
 
         def ntp_in_manifest() -> int:
-            s3_snapshot = S3Snapshot([topic],
-                                     self.redpanda.cloud_storage_client,
-                                     self.s3_bucket_name, self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=[topic])
             return s3_snapshot.is_ntp_in_manifest(topic.name, 0)
 
         # Sleep for 4 cloud_storage_housekeeping_interval_ms, then assert ntp does
@@ -565,9 +559,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         wait_until(lambda: ntp_in_manifest(), timeout_sec=10)
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3Snapshot([topic],
-                                     self.redpanda.cloud_storage_client,
-                                     self.s3_bucket_name, self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=[topic])
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(topic.name, 0)
             self.logger.debug(f"Current cloud log size is: {cloud_log_size}")
             return cloud_log_size

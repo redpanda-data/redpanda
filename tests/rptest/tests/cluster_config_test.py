@@ -28,7 +28,7 @@ from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_A
 from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_http_error, expect_exception, produce_until_segments
-from rptest.utils.si_utils import S3Snapshot
+from rptest.utils.si_utils import BucketView
 
 BOOTSTRAP_CONFIG = {
     # A non-default value for checking bootstrap import works
@@ -1435,15 +1435,8 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
         self.kafka_cli = KafkaCliTools(self.redpanda)
 
     def get_cloud_log_size(self):
-        s3_snapshot = S3Snapshot(self.topics,
-                                 self.redpanda.cloud_storage_client,
-                                 self.si_settings.cloud_storage_bucket,
-                                 self.logger)
-
-        if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
-            return 0
-        else:
-            return s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
+        return s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
 
     def wait_for_cloud_uploads(self, initial_count: int, delta: int):
         def segment_uploaded():

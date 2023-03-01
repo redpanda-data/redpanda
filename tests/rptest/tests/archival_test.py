@@ -14,7 +14,7 @@ from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettin
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.utils.si_utils import S3Snapshot
+from rptest.utils.si_utils import BucketView
 from rptest.util import (
     segments_count,
     produce_until_segments,
@@ -202,17 +202,12 @@ class ArchivalTest(RedpandaTest):
 
             # Topic manifest can be present in the bucket because topic is created before
             # firewall is blocked. No segments or partition manifest should be present.
-            topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
-
-            bucket_content = S3Snapshot(self.topics,
-                                        self.redpanda.cloud_storage_client,
-                                        self.s3_bucket_name,
-                                        self.redpanda.logger)
+            bucket_content = BucketView(self.redpanda, topics=self.topics)
 
             # Any partition manifests must contain no segments
             for ntp, manifest in bucket_content.partition_manifests.items():
                 assert not manifest.get(
-                    'segment', []), f"Segments found in a manifest {ntp}"
+                    'segments', []), f"Segments found in a manifest {ntp}"
 
             # No segments must have been uploaded
             assert bucket_content.segment_objects == 0, "Data segments found"
@@ -223,15 +218,11 @@ class ArchivalTest(RedpandaTest):
 
         # Firewall is unblocked, segment uploads should proceed
         def data_uploaded():
-            bucket_content = S3Snapshot(self.topics,
-                                        self.redpanda.cloud_storage_client,
-                                        self.s3_bucket_name,
-                                        self.redpanda.logger)
+            bucket_content = BucketView(self.redpanda, topics=self.topics)
             has_segments = bucket_content.segment_objects > 0
 
             if not has_segments:
-                self.logger.info(
-                    f"No segments yet, objects are: {bucket_content.objects}")
+                self.logger.info(f"No segments yet")
                 return False
 
             has_segments_in_manifest = any(
@@ -409,7 +400,7 @@ class ArchivalTest(RedpandaTest):
                 manifest = self._download_partition_manifest(ntp)
                 self.logger.info(f"downloaded manifest {manifest}")
                 segments = []
-                for _, segment in manifest['segments'].items():
+                for _, segment in manifest.get('segments', {}).items():
                     segments.append(segment)
 
                 segments = sorted(segments, key=lambda s: s['base_offset'])

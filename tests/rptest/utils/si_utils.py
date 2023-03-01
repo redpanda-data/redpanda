@@ -116,8 +116,8 @@ def parse_s3_segment_path(path) -> SegmentPathComponents:
     partition = int(part_rev[0])
     revision = int(part_rev[1])
     fname = items[4]
-    ntp = NTP(ns=ns, topic=topic, partition=partition)
-    return SegmentPathComponents(ntp=ntp, revision=revision, name=fname)
+    ntpr = NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
+    return SegmentPathComponents(ntpr=ntpr, name=fname)
 
 
 def _parse_checksum_entry(path, value, ignore_rev):
@@ -343,7 +343,7 @@ def is_close_size(actual_size, expected_size):
 class PathMatcher:
     def __init__(self, expected_topics: Optional[Sequence[TopicSpec]] = None):
         self.expected_topics = expected_topics
-        if expected_topics is not None:
+        if self.expected_topics is not None:
             self.topic_names = {t.name for t in self.expected_topics}
             self.topic_manifest_paths = {
                 f'/{t}/topic_manifest.json'
@@ -379,7 +379,7 @@ class PathMatcher:
             return False
         else:
             if self.topic_names is not None:
-                return parsed.ntp.topic in self.topic_names
+                return parsed.ntpr.topic in self.topic_names
             else:
                 return True
 
@@ -458,7 +458,7 @@ class BucketView:
         return self._state.ignored_objects
 
     @property
-    def partition_manifests(self) -> int:
+    def partition_manifests(self) -> dict[NTP, dict]:
         self._ensure_listing()
         return self._state.partition_manifests
 
