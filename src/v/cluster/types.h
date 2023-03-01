@@ -43,6 +43,9 @@
 namespace cluster {
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 
+using transfer_leadership_request = raft::transfer_leadership_request;
+using transfer_leadership_reply = raft::transfer_leadership_reply;
+
 // A cluster version is a logical protocol version describing the content
 // of the raft0 on disk structures, and available features.  These are
 // passed over the network via the health_manager, and persisted in
@@ -1020,27 +1023,39 @@ struct join_reply
 ///   in future.
 struct join_node_request
   : serde::
-      envelope<join_node_request, serde::version<0>, serde::compat_version<0>> {
+      envelope<join_node_request, serde::version<1>, serde::compat_version<0>> {
     join_node_request() noexcept = default;
 
     explicit join_node_request(
-      cluster_version lv, std::vector<uint8_t> nuuid, model::broker b)
-      : logical_version(lv)
+      cluster_version lv,
+      cluster_version ev,
+      std::vector<uint8_t> nuuid,
+      model::broker b)
+      : latest_logical_version(lv)
       , node_uuid(nuuid)
-      , node(std::move(b)) {}
+      , node(std::move(b))
+      , earliest_logical_version(ev) {}
 
-    explicit join_node_request(cluster_version lv, model::broker b)
-      : logical_version(lv)
-      , node(std::move(b)) {}
+    explicit join_node_request(
+      cluster_version lv, cluster_version ev, model::broker b)
+      : latest_logical_version(lv)
+      , node(std::move(b))
+      , earliest_logical_version(ev) {}
 
     static constexpr int8_t current_version = 1;
-    cluster_version logical_version;
+
+    // The highest version that the joining node supports
+    cluster_version latest_logical_version{cluster::invalid_version};
 
     // node_uuid may be empty: this is for future use implementing auto
     // selection of node_id.  Convert to a more convenient type later:
     // the vector is just to reserve the on-disk layout.
     std::vector<uint8_t> node_uuid;
     model::broker node;
+
+    // The lowest version that the joining node supports, it will already
+    // have its feature table initialized to this version.
+    cluster_version earliest_logical_version{cluster::invalid_version};
 
     friend bool operator==(const join_node_request&, const join_node_request&)
       = default;
@@ -1049,14 +1064,18 @@ struct join_node_request
     operator<<(std::ostream& o, const join_node_request& r) {
         fmt::print(
           o,
-          "logical_version {} node_uuid {} node {}",
-          r.logical_version,
+          "logical_version {}-{} node_uuid {} node {}",
+          r.earliest_logical_version,
+          r.latest_logical_version,
           r.node_uuid,
           r.node);
         return o;
     }
 
-    auto serde_fields() { return std::tie(logical_version, node_uuid, node); }
+    auto serde_fields() {
+        return std::tie(
+          latest_logical_version, node_uuid, node, earliest_logical_version);
+    }
 };
 
 struct join_node_reply

@@ -13,7 +13,6 @@ require (
 	github.com/fluxcd/pkg/runtime v0.29.0
 	github.com/fluxcd/source-controller v0.35.1
 	github.com/fluxcd/source-controller/api v0.35.1
-	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v1.2.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-retryablehttp v0.7.2
@@ -23,8 +22,8 @@ require (
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.26.0
 	github.com/prometheus/client_golang v1.14.0
-	github.com/prometheus/common v0.39.0
-	github.com/redpanda-data/console/backend v0.0.0-20230217162714-d51d17a1fb3f
+	github.com/prometheus/common v0.40.0
+	github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524
 	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230104182309-7698d02c437e
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1

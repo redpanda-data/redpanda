@@ -9,6 +9,7 @@
 
 import functools
 
+from rptest.services.redpanda import RedpandaService
 from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
 
@@ -22,6 +23,19 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
     because they may raise errors that we would like to expose
     as test failures.
     """
+    def all_redpandas(test):
+        """
+        Most tests have a single RedpandaService at self.redpanda, but
+        it is legal to create multiple instances, e.g. for read replica tests.
+        
+        We find all replicas by traversing ducktape's internal service registry.
+        """
+        yield test.redpanda
+
+        for svc in test.test_context.services:
+            if isinstance(svc, RedpandaService) and svc is not test.redpanda:
+                yield svc
+
     def cluster_use_metadata_adder(f):
         Mark.mark(f, ClusterUseMetadata(**kwargs))
 
@@ -38,16 +52,18 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                     # We failed so early there isn't even a RedpandaService instantiated
                     raise
 
-                self.redpanda.logger.exception(
-                    "Test failed, doing failure checks...")
+                for redpanda in all_redpandas(self):
+                    redpanda.logger.exception(
+                        f"Test failed, doing failure checks on {redpanda.who_am_i()}..."
+                    )
 
-                # Disabled to avoid addr2line hangs
-                # (https://github.com/redpanda-data/redpanda/issues/5004)
-                # self.redpanda.decode_backtraces()
+                    # Disabled to avoid addr2line hangs
+                    # (https://github.com/redpanda-data/redpanda/issues/5004)
+                    # self.redpanda.decode_backtraces()
 
-                self.redpanda.cloud_storage_diagnostics()
+                    redpanda.cloud_storage_diagnostics()
 
-                self.redpanda.raise_on_crash()
+                    redpanda.raise_on_crash()
 
                 raise
             else:
@@ -56,16 +72,26 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                     # in a skipped test
                     return r
 
-                self.redpanda.logger.info("Test passed, doing log checks...")
-                if check_allowed_error_logs:
-                    # Only do log inspections on tests that are otherwise
-                    # successful.  This executes *before* the end-of-test
-                    # shutdown, thereby avoiding having to add the various
-                    # gate_closed etc errors to our allow list.
-                    # TODO: extend this to cover shutdown logging too, and
-                    # clean up redpanda to not log so many errors on shutdown.
-                    self.redpanda.raise_on_bad_logs(allow_list=log_allow_list)
-                self.redpanda.trim_logs()
+                for redpanda in all_redpandas(self):
+                    redpanda.logger.info(
+                        f"Test passed, doing log checks on {redpanda.who_am_i()}..."
+                    )
+                    if check_allowed_error_logs:
+                        # Only do log inspections on tests that are otherwise
+                        # successful.  This executes *before* the end-of-test
+                        # shutdown, thereby avoiding having to add the various
+                        # gate_closed etc errors to our allow list.
+                        # TODO: extend this to cover shutdown logging too, and
+                        # clean up redpanda to not log so many errors on shutdown.
+                        try:
+                            redpanda.raise_on_bad_logs(
+                                allow_list=log_allow_list)
+                        except:
+                            redpanda.cloud_storage_diagnostics()
+                            raise
+
+                    redpanda.trim_logs()
+
                 return r
 
         # Propagate ducktape markers (e.g. parameterize) to our function

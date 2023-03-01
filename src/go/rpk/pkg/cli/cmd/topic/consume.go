@@ -751,7 +751,7 @@ Percent encoding prints record fields, fetch partition fields, or extra values:
     %T    topic length
     %k    key
     %K    key length
-    %v    topic
+    %v    value
     %V    value length
     %h    begin the header specification
     %H    number of headers

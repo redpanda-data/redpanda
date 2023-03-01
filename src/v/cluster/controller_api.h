@@ -76,6 +76,8 @@ public:
       get_node_decommission_progress(
         model::node_id, model::timeout_clock::time_point);
 
+    std::optional<ss::shard_id> shard_for(const raft::group_id& group) const;
+
 private:
     ss::future<result<bool>> are_ntps_ready(
       absl::node_hash_map<model::node_id, std::vector<model::ntp>>,

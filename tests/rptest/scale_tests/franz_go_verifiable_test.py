@@ -10,6 +10,7 @@
 import os
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import parametrize
 
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -20,7 +21,7 @@ from rptest.services.kgo_verifier_services import (
     KgoVerifierRandomConsumer,
     KgoVerifierConsumerGroupConsumer,
 )
-from rptest.services.redpanda import SISettings, RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.utils.mode_checks import skip_debug_mode
 
@@ -225,11 +226,13 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
 
 class KgoVerifierWithSiTestLargeSegments(KgoVerifierWithSiTest):
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    def test_si_without_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
+    def test_si_without_timeboxed(self, cloud_storage_type):
         self.without_timeboxed()
 
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    def test_si_with_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
+    def test_si_with_timeboxed(self, cloud_storage_type):
         self.with_timeboxed()
 
 
@@ -237,9 +240,11 @@ class KgoVerifierWithSiTestSmallSegments(KgoVerifierWithSiTest):
     segment_size = 20 * 2**20
 
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    def test_si_without_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
+    def test_si_without_timeboxed(self, cloud_storage_type):
         self.without_timeboxed()
 
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    def test_si_with_timeboxed(self):
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
+    def test_si_with_timeboxed(self, cloud_storage_type):
         self.with_timeboxed()

@@ -26,6 +26,20 @@
     }
   }
 },
+"/v1/loggers": {
+  "get": {
+    "summary": "List all logger names",
+    "operationId": "get_loggers",
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "List of registered loggers. Each logger has its own configurable log_level and dictates how verbose logs are within their corresponding subsystems."
+      }
+    }
+  }
+},
 "/v1/config/log_level/{name}": {
   "put": {
     "summary": "Set log level",

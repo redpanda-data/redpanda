@@ -151,7 +151,7 @@ void segment_collector::align_end_offset_to_manifest(
             // segment_end is in a gap in the manifest.
             if (segment_end >= _manifest.get_start_offset().value()) {
                 vlog(
-                  archival_log.info,
+                  archival_log.debug,
                   "Segment collect for ntp {}: collection ended at "
                   "gap in manifest: {}",
                   _manifest.get_ntp(),
@@ -321,7 +321,7 @@ segment_collector::make_upload_candidate(
   ss::lowres_clock::duration segment_lock_duration) {
     if (_segments.empty()) {
         vlog(
-          archival_log.info,
+          archival_log.debug,
           "No segments to reupload for {}",
           _manifest.get_ntp());
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
@@ -368,7 +368,7 @@ segment_collector::make_upload_candidate(
     auto starting_offset = head_seek.offset;
     if (starting_offset != _begin_inclusive) {
         vlog(
-          archival_log.info,
+          archival_log.debug,
           "adjusting begin offset of upload candidate from {} to {}",
           starting_offset,
           _begin_inclusive);
@@ -378,7 +378,7 @@ segment_collector::make_upload_candidate(
     auto final_offset = tail_seek.offset;
     if (final_offset != _end_inclusive) {
         vlog(
-          archival_log.info,
+          archival_log.debug,
           "adjusting end offset of upload candidate from {} to {}",
           final_offset,
           _end_inclusive);

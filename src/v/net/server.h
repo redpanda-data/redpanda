@@ -149,6 +149,8 @@ private:
     ss::future<> accept(listener&);
     ss::future<ss::stop_iteration>
       accept_finish(ss::sstring, ss::future<ss::accept_result>);
+    void
+    print_exceptional_future(ss::future<>, const char*, ss::socket_address);
     ss::future<>
       apply_proto(ss::lw_shared_ptr<net::connection>, conn_quota::units);
     void setup_metrics();

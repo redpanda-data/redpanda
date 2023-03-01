@@ -26,6 +26,7 @@
 #include "serde/serde.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 #include "vlog.h"
 
@@ -85,9 +86,9 @@ struct archival_metadata_stm::snapshot
   : public serde::
       envelope<snapshot, serde::version<1>, serde::compat_version<0>> {
     /// List of segments
-    std::vector<segment> segments;
+    fragmented_vector<segment> segments;
     /// List of replaced segments
-    std::vector<segment> replaced;
+    fragmented_vector<segment> replaced;
     /// Start offset (might be different from the base offset of the first
     /// segment). Default value means that the snapshot was old and didn't
     /// have start_offset. In this case we need to set it to compute it from
@@ -186,12 +187,10 @@ command_batch_builder archival_metadata_stm::batch_start(
     return {*this, deadline, as};
 }
 
-std::vector<archival_metadata_stm::segment>
+fragmented_vector<archival_metadata_stm::segment>
 archival_metadata_stm::segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
-    std::vector<segment> segments;
-    segments.reserve(manifest.size());
-
+    fragmented_vector<segment> segments;
     for (auto [key, meta] : manifest) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
@@ -212,12 +211,11 @@ archival_metadata_stm::segments_from_manifest(
     return segments;
 }
 
-std::vector<archival_metadata_stm::segment>
+fragmented_vector<archival_metadata_stm::segment>
 archival_metadata_stm::replaced_segments_from_manifest(
   const cloud_storage::partition_manifest& manifest) {
     auto replaced = manifest.replaced_segments();
-    std::vector<segment> segments;
-    segments.reserve(replaced.size());
+    fragmented_vector<segment> segments;
     for (auto meta : replaced) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = manifest.get_revision_id();
@@ -683,6 +681,7 @@ model::offset archival_metadata_stm::max_collectible_offset() {
     // From Redpanda 22.3 up, the ntp_config's impression of whether archival
     // is enabled is authoritative.
     bool collect_all = !_raft->log_config().is_archival_enabled();
+    bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
 
     // In earlier versions, we should assume every topic is archival enabled
     // if the global cloud_storage_enable_remote_write is true.
@@ -692,9 +691,12 @@ model::offset archival_metadata_stm::max_collectible_offset() {
         collect_all = false;
     }
 
-    if (collect_all) {
+    if (collect_all || is_read_replica) {
         // The archival is disabled but the state machine still exists so we
         // shouldn't stop eviction from happening.
+        // In read-replicas the state machine exists and stores segments from
+        // the remote manifest. Since nothing is uploaded there is no need to
+        // interact with local retention.
         return model::offset::max();
     }
     auto lo = get_last_offset();
@@ -712,6 +714,13 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
         meta.ntp_revision = segment.ntp_revision_deprecated;
     }
     _manifest->add(segment.name, meta);
+    vlog(
+      _logger.debug,
+      "Add segment command applied with {}, new start offset: {}, new last "
+      "offset: {}",
+      segment.name,
+      get_start_offset(),
+      get_last_offset());
 
     if (meta.committed_offset > get_last_offset()) {
         if (meta.base_offset > model::next_offset(get_last_offset())) {
@@ -745,6 +754,12 @@ void archival_metadata_stm::apply_cleanup_metadata() {
     }
     _manifest->delete_replaced_segments();
     _manifest->truncate();
+    vlog(
+      _logger.debug,
+      "Cleanup metadata command applied, new start offset: {}, new last "
+      "offset: {}",
+      get_start_offset(),
+      get_last_offset());
 }
 
 void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
@@ -755,7 +770,7 @@ void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
       so.start_offset);
     if (!_manifest->advance_start_offset(so.start_offset)) {
         vlog(
-          _logger.warn,
+          _logger.error,
           "Can't truncate manifest up to offset {}, offset out of range",
           so.start_offset);
     } else {

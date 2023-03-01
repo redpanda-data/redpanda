@@ -182,7 +182,10 @@ public:
 
     constexpr operator R() { // NOLINT
         if (!result) {
-            throw std::runtime_error("Fell off the end of a string-switch");
+            throw std::runtime_error(
+              std::string(
+                "Fell off the end of a string-switch while matching: ")
+              + std::string(view));
         }
         return std::move(*result);
     }

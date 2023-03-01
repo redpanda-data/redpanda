@@ -60,7 +60,7 @@ function install_kafka_tools() {
 
 function install_librdkafka() {
   mkdir /opt/librdkafka
-  curl -SL "https://github.com/edenhill/librdkafka/archive/v1.9.2.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
+  curl -SL "https://github.com/confluentinc/librdkafka/archive/refs/tags/v2.0.2.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka
   cd /opt/librdkafka
   ./configure
   make -j$(nproc)
@@ -142,7 +142,7 @@ function install_kcl() {
 function install_kgo_verifier() {
   git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git
   cd /opt/kgo-verifier
-  git reset --hard 358e8dd99247d68a8f1c77ceb0f91f20c757bc64
+  git reset --hard 53d4c21aa86e179aa4b79aeee592e4687d08b569
   go mod tidy
   make
 }
@@ -159,6 +159,24 @@ function install_kafka_streams_examples() {
   cd /opt/kafka-streams-examples
   git reset --hard 913d08c8351c74ee454b79f8e0c1f48ca9b562a5
   mvn -DskipTests=true clean package
+}
+
+function install_arroyo() {
+  git -C /opt clone -b 2.5.0 --depth=1 https://github.com/getsentry/arroyo.git
+  cd /opt/arroyo
+  make install
+  python3 -m pip install --force --no-cache-dir -e /opt/arroyo
+}
+
+function install_java_test_clients() {
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/verifiers --define buildDir=/opt/verifiers
+}
+
+function install_go_test_clients() {
+  cd /opt/redpanda-tests/go/sarama/produce_test
+  go mod tidy
+  go build
 }
 
 $@

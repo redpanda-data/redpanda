@@ -18,13 +18,17 @@ import yaml
 from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.clients.rpk_remote import RpkRemoteTool
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST
+from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST
+from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.util import expect_http_error, expect_exception
+from rptest.util import expect_http_error, expect_exception, produce_until_segments
+from rptest.utils.si_utils import S3Snapshot
 
 BOOTSTRAP_CONFIG = {
     # A non-default value for checking bootstrap import works
@@ -1409,3 +1413,125 @@ class ClusterConfigNoKafkaTest(RedpandaTest):
                       password=password,
                       sasl_mechanism="SCRAM-SHA-256")
         rpk.create_topic("testtopic")
+
+
+class ClusterConfigAzureSharedKey(RedpandaTest):
+    segment_size = 1024 * 1024
+    topics = (TopicSpec(
+        partition_count=1,
+        replication_factor=3,
+    ), )
+
+    def __init__(self, test_context):
+        self.si_settings = SISettings(
+            test_context,
+            log_segment_size=self.segment_size,
+            cloud_storage_segment_max_upload_interval_sec=1)
+        super().__init__(test_context,
+                         log_level="trace",
+                         si_settings=self.si_settings,
+                         extra_rp_conf={})
+
+        self.kafka_cli = KafkaCliTools(self.redpanda)
+
+    def get_cloud_log_size(self):
+        s3_snapshot = S3Snapshot(self.topics,
+                                 self.redpanda.cloud_storage_client,
+                                 self.si_settings.cloud_storage_bucket,
+                                 self.logger)
+
+        if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
+            return 0
+        else:
+            return s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
+
+    def wait_for_cloud_uploads(self, initial_count: int, delta: int):
+        def segment_uploaded():
+            return self.get_cloud_segment_count() >= initial_count + delta
+
+        wait_until(lambda: segment_uploaded(initial_count, delta),
+                   timeout_sec=30,
+                   backoff_sec=5,
+                   err_msg="Segments were not uploaded")
+
+    def produce_records(self, records: int, record_size: int):
+        self.kafka_cli.produce(self.topic, records, record_size)
+
+    @cluster(num_nodes=3,
+             log_allow_list=[
+                 r"abs - .* Received .* AuthorizationFailure error response"
+             ])
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    def test_live_shared_key_change(self, cloud_storage_type):
+        """
+        This test ensures that 'cloud_storage_azure_shared_key' can
+        be safely updated without a full restart of the cluster.
+
+        The test performs the following steps:
+        1. Begin with a key in-place
+        2. Validate uploads work
+        3. Replace the key with a bogus one
+        4. Validate uploads are failing 
+        5. Set the key back to the initial value
+        6. Validate uploads work again
+        7. Try to unset the key
+        8. Validate that this is not allowed
+        """
+
+        initial_cloud_log_size = self.get_cloud_log_size()
+        self.produce_records(10, 1024)
+        wait_until(lambda: self.get_cloud_log_size() >= initial_cloud_log_size
+                   + 10 * 1024,
+                   timeout_sec=30,
+                   backoff_sec=5,
+                   err_msg="Data was not uploaded to cloud")
+
+        topic_leader_node = self.redpanda.partitions(self.topic)[0].leader
+        metric_check = MetricCheck(
+            self.logger,
+            self.redpanda,
+            topic_leader_node, [
+                "vectorized_cloud_storage_successful_uploads_total",
+                "vectorized_cloud_storage_failed_uploads_total"
+            ],
+            reduce=sum)
+
+        def check_uploads_failing():
+            return metric_check.evaluate([
+                ("vectorized_cloud_storage_successful_uploads_total",
+                 lambda a, b: b == a),
+                ("vectorized_cloud_storage_failed_uploads_total",
+                 lambda a, b: b > a)
+            ])
+
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_azure_shared_key":
+                "notakey02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+            },
+            expect_restart=False)
+
+        self.produce_records(10, 1024)
+        wait_until(check_uploads_failing,
+                   timeout_sec=30,
+                   backoff_sec=5,
+                   err_msg="Uploads did not fail")
+
+        self.redpanda.set_cluster_config(
+            {
+                "cloud_storage_azure_shared_key":
+                self.si_settings.cloud_storage_azure_shared_key
+            },
+            expect_restart=False)
+
+        initial_cloud_log_size = self.get_cloud_log_size()
+        self.produce_records(10, 1024)
+        wait_until(lambda: self.get_cloud_log_size() >= initial_cloud_log_size
+                   + 10 * 1024,
+                   timeout_sec=30,
+                   backoff_sec=5,
+                   err_msg="Data was not uploaded to cloud")
+
+        with expect_http_error(400):
+            self.redpanda.set_cluster_config(
+                {"cloud_storage_azure_shared_key": None}, expect_restart=False)

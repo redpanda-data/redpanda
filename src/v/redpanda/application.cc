@@ -56,6 +56,7 @@
 #include "coproc/api.h"
 #include "coproc/partition_manager.h"
 #include "features/feature_table_snapshot.h"
+#include "features/fwd.h"
 #include "features/migrators.h"
 #include "kafka/client/configuration.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -90,6 +91,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/memory.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/seastar.hh>
@@ -100,6 +102,7 @@
 #include <seastar/net/tls.hh>
 #include <seastar/util/conversions.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/log.hh>
 
 #include <sys/resource.h>
 #include <sys/utsname.h>
@@ -378,6 +381,25 @@ void application::initialize(
   std::optional<YAML::Node> schema_reg_cfg,
   std::optional<YAML::Node> schema_reg_client_cfg,
   std::optional<scheduling_groups> groups) {
+    // Set up the abort_on_oom value based on the associated cluster config
+    // property, and watch for changes.
+    _abort_on_oom
+      = config::shard_local_cfg().memory_abort_on_alloc_failure.bind();
+
+    auto oom_config_watch = [this]() {
+        const bool value = (*_abort_on_oom)();
+        vlog(
+          _log.info,
+          "Setting abort_on_allocation_failure (abort on OOM): {}",
+          value);
+        ss::memory::set_abort_on_allocation_failure(value);
+    };
+
+    // execute the callback to apply the initial value
+    oom_config_watch();
+
+    _abort_on_oom->watch(oom_config_watch);
+
     /*
      * allocate per-core zstd decompression workspace and per-core
      * async_stream_zstd workspaces. it can be several megabytes in size, so do
@@ -1165,7 +1187,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(controller->get_members_table()),
       std::ref(controller->get_topics_state()),
       std::ref(_connection_cache),
-      std::ref(controller->get_health_monitor()))
+      std::ref(controller->get_health_monitor()),
+      std::ref(feature_table))
       .get();
 
     if (archival_storage_enabled()) {
@@ -1615,6 +1638,52 @@ void application::start_bootstrap_services() {
           })
           .get();
     }
+
+    // If the feature table is blank, and we have not yet joined a cluster,
+    // then assume we are about to join a cluster or form a new one, and
+    // fast-forward the feature table before we do any network operations:
+    // this way features like rpc_v2_by_default will be present before the
+    // first network I/O we do.
+    //
+    // Absence of a cluster_uuid is not evidence of not having joined a cluster,
+    // because we might have joined via an earlier version of redpanda, and
+    // just upgraded to a version that stores cluster and node UUIDs.  We must
+    // also check for an controller log state on disk.
+    //
+    // Ordering: bootstrap_backend writes a feature table snapshot _before_
+    // persisting the cluster UUID to kvstore, so if restart in the middle,
+    // we will hit this path again: this is important to avoid ever starting
+    // network requests before we have reached a defined cluster version.
+
+    auto controller_log_exists = storage.local()
+                                   .kvs()
+                                   .get(
+                                     storage::kvstore::key_space::consensus,
+                                     raft::details::serialize_group_key(
+                                       raft::group_id{0},
+                                       raft::metadata_key::config_map))
+                                   .has_value();
+
+    if (
+      feature_table.local().get_active_version() == cluster::invalid_version
+      && !storage.local().get_cluster_uuid().has_value()
+      && !controller_log_exists) {
+        feature_table
+          .invoke_on_all([](features::feature_table& ft) {
+              ft.bootstrap_active_version(
+                features::feature_table::get_earliest_logical_version(),
+                features::feature_table::version_durability::ephemeral);
+
+              // We do _not_ write a snapshot here: the persistent record of
+              // feature table state is only set for the first time in
+              // bootstrap_backend (or feature_backend).  This is important,
+              // so that someone who starts a too-new Redpanda that can't join
+              // their cluster can easily stop it and run an older version,
+              // before we've committed any version info to disk.
+          })
+          .get0();
+    }
+
     static const bytes invariants_key("configuration_invariants");
     auto configured_node_id = config::node().node_id();
     if (auto invariants_buf = storage.local().kvs().get(
@@ -1883,7 +1952,8 @@ void application::start_runtime_services(
             std::ref(controller->get_feature_manager()),
             std::ref(controller->get_feature_table()),
             std::ref(controller->get_health_monitor()),
-            std::ref(_connection_cache)));
+            std::ref(_connection_cache),
+            std::ref(controller->get_partition_manager())));
 
           runtime_services.push_back(
             std::make_unique<cluster::metadata_dissemination_handler>(

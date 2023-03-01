@@ -146,6 +146,13 @@ public:
     std::optional<model::node_id> get_leader_id() const {
         return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;
     }
+
+    /**
+     * On leader, return the number of under replicated followers.  On
+     * followers, return nullopt
+     */
+    std::optional<uint8_t> get_under_replicated() const;
+
     /**
      * Sends a round of heartbeats to followers, when majority of followers
      * replied with success to either this of any following request all reads up
@@ -308,12 +315,6 @@ public:
     ss::future<std::error_code> prepare_transfer_leadership(vnode);
     ss::future<std::error_code>
       do_transfer_leadership(std::optional<model::node_id>);
-    /**
-     * requests leadership to be transferred to the current node. It sends
-     * transer leadership request to the current leader.
-     */
-    ss::future<std::error_code>
-      request_leadership(model::timeout_clock::time_point);
 
     ss::future<> remove_persistent_state();
 

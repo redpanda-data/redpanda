@@ -54,10 +54,6 @@ type NodeState struct {
 	ContainerID   string
 }
 
-func HostAddr(port uint) string {
-	return net.JoinHostPort("127.0.0.1", fmt.Sprint(port))
-}
-
 func ListenAddresses(ip string, internalPort, externalPort uint) string {
 	return fmt.Sprintf(
 		"internal://%s,external://%s",
@@ -129,6 +125,9 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	containerJSON, err := c.ContainerInspect(ctx, Name(nodeID))
 	if err != nil {
 		return nil, err
+	}
+	if containerJSON.NetworkSettings == nil || containerJSON.ContainerJSONBase == nil {
+		return nil, fmt.Errorf("unable to inspect the container %v, please make sure you have Docker installed and running", Name(nodeID))
 	}
 	var ipAddress string
 	network, exists := containerJSON.NetworkSettings.Networks[redpandaNetwork]

@@ -75,7 +75,7 @@ following conditions are met:
 		&adminURL,
 		config.FlagAdminHosts2,
 		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>")
+		"Comma-separated list of admin API addresses (<IP>:<port>)")
 
 	common.AddAdminAPITLSFlags(cmd,
 		&adminEnableTLS,
@@ -92,10 +92,11 @@ following conditions are met:
 func printHealthOverview(hov *admin.ClusterHealthOverview) {
 	out.Section("CLUSTER HEALTH OVERVIEW")
 	overviewFormat := `Healthy:               %v
-Controller ID:         %v
-All nodes:             %v
-Nodes down:            %v
-Leaderless partitions: %v
+Controller ID:               %v
+All nodes:                   %v
+Nodes down:                  %v
+Leaderless partitions:       %v
+Under-replicated partitions: %v
 `
-	fmt.Printf(overviewFormat, hov.IsHealthy, hov.ControllerID, hov.AllNodes, hov.NodesDown, hov.LeaderlessPartitions)
+	fmt.Printf(overviewFormat, hov.IsHealthy, hov.ControllerID, hov.AllNodes, hov.NodesDown, hov.LeaderlessPartitions, hov.UnderReplicatedPartitions)
 }

@@ -472,6 +472,7 @@ ss::future<result<join_node_reply>> members_manager::dispatch_join_to_remote(
       target.addr,
       _rpc_tls_config,
       _join_timeout,
+      rpc::transport_version::v2,
       [req = std::move(req), timeout = rpc::clock_type::now() + _join_timeout](
         controller_client_protocol c) mutable {
           return c.join_node(std::move(req), rpc::client_opts(timeout))
@@ -488,6 +489,8 @@ void members_manager::join_raft0() {
                             std::move(join_node_request{
                               features::feature_table::
                                 get_latest_logical_version(),
+                              features::feature_table::
+                                get_earliest_logical_version(),
                               _storage.local().node_uuid()().to_vector(),
                               _self}))
                      .then([this](result<join_node_reply> r) {
@@ -734,10 +737,11 @@ members_manager::handle_join_request(join_node_request const req) {
     }
     vlog(
       clusterlog.info,
-      "Processing node '{} ({})' join request (version {})",
+      "Processing node '{} ({})' join request (version {}-{})",
       req.node.id(),
       node_uuid_str,
-      req.logical_version);
+      req.earliest_logical_version,
+      req.latest_logical_version);
 
     if (!_raft0->is_elected_leader()) {
         vlog(clusterlog.debug, "Not the leader; dispatching to leader node");

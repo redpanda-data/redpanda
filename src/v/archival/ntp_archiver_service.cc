@@ -56,7 +56,7 @@ static std::unique_ptr<adjacent_segment_merger>
 maybe_make_adjacent_segment_merger(
   ntp_archiver& self, retry_chain_logger& log, const storage::ntp_config& cfg) {
     std::unique_ptr<adjacent_segment_merger> result = nullptr;
-    if (cfg.is_archival_enabled()) {
+    if (cfg.is_archival_enabled() && !cfg.is_compacted()) {
         result = std::make_unique<adjacent_segment_merger>(self, log, true);
         result->set_enabled(config::shard_local_cfg()
                               .cloud_storage_enable_segment_merging.value());
@@ -102,9 +102,13 @@ ntp_archiver::ntp_archiver(
         _bucket_override = _parent.get_read_replica_bucket();
     }
 
-    _segment_merging_enabled.watch([this] {
-        _local_segment_merger->set_enabled(_segment_merging_enabled());
-    });
+    if (
+      parent.log().config().is_archival_enabled()
+      && !parent.log().config().is_compacted()) {
+        _segment_merging_enabled.watch([this] {
+            _local_segment_merger->set_enabled(_segment_merging_enabled());
+        });
+    }
 
     vlog(
       archival_log.debug,
@@ -144,7 +148,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
     }
 
     while (!_as.abort_requested()) {
-        if (!_parent.is_elected_leader() || _paused) {
+        if (!_parent.is_leader() || _paused) {
             bool shutdown = false;
             try {
                 vlog(
@@ -165,7 +169,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
         }
 
         _start_term = _parent.term();
-        if (!can_update_archival_metadata()) {
+        if (!may_begin_uploads()) {
             continue;
         }
         vlog(_rtclog.debug, "upload loop starting in term {}", _start_term);
@@ -197,7 +201,7 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
     }
 
     while (!_as.abort_requested()) {
-        if (!_parent.is_elected_leader() || _paused) {
+        if (!_parent.is_leader() || _paused) {
             bool shutdown = false;
             try {
                 vlog(
@@ -323,12 +327,17 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
-    while (can_update_archival_metadata()) {
+    while (may_begin_uploads()) {
         // Hold sempahore units to enable other code to know that we are in
         // the process of doing uploads + wait for us to drop out if they
         // e.g. set _paused.
-        vassert(!_paused, "can_update_archival_metadata must ensure !_paused");
+        vassert(!_paused, "may_begin_uploads must ensure !_paused");
         auto units = co_await ss::get_units(_uploads_active, 1);
+        vlog(
+          _rtclog.trace,
+          "upload_until_term_change: got units (current {}), paused={}",
+          _uploads_active.current(),
+          _paused);
 
         // Bump up archival STM's state to make sure that it's not lagging
         // behind too far. If the STM is lagging behind we will have to read a
@@ -388,7 +397,7 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             _next_housekeeping = _housekeeping_jitter();
         }
 
-        if (!can_update_archival_metadata()) {
+        if (!may_begin_uploads()) {
             break;
         }
 
@@ -397,6 +406,10 @@ ss::future<> ntp_archiver::upload_until_term_change() {
         // Drop _uploads_active lock: we are not considered active while
         // sleeping for backoff at the end of the loop.
         units.return_all();
+        vlog(
+          _rtclog.trace,
+          "upload_until_term_change: released units (current {})",
+          _uploads_active.current());
 
         if (non_compacted_upload_result.num_succeeded == 0) {
             // The backoff algorithm here is used to prevent high CPU
@@ -520,9 +533,8 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         auto builder = _parent.archival_meta_stm()->batch_start(deadline, _as);
         builder.add_segments(std::move(mdiff));
         if (
-          new_start_offset.has_value()
-          && old_start_offset.value_or(model::offset())
-               != new_start_offset.value()) {
+          new_start_offset.has_value() && old_start_offset.has_value()
+          && old_start_offset.value() != new_start_offset.value()) {
             builder.truncate(new_start_offset.value());
             needs_cleanup = true;
         }
@@ -534,11 +546,17 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         }
         auto errc = co_await builder.replicate();
         if (errc) {
+            if (errc == raft::errc::shutting_down) {
+                // During shutdown, act like we hit an abort source rather
+                // than trying to log+handle this like a write error.
+                throw ss::abort_requested_exception();
+            }
+
             vlog(
               _rtclog.error,
               "Can't replicate archival_metadata_stm configuration batch: "
               "{}",
-              errc);
+              errc.message());
             co_return cloud_storage::download_result::failed;
         }
     }
@@ -561,9 +579,12 @@ void ntp_archiver::update_probe() {
 }
 
 bool ntp_archiver::can_update_archival_metadata() const {
-    return !_as.abort_requested() && !_gate.is_closed()
-           && _parent.is_elected_leader() && _parent.term() == _start_term
-           && !_paused;
+    return !_as.abort_requested() && !_gate.is_closed() && _parent.is_leader()
+           && _parent.term() == _start_term;
+}
+
+bool ntp_archiver::may_begin_uploads() const {
+    return can_update_archival_metadata() && !_paused;
 }
 
 ss::future<> ntp_archiver::stop() {
@@ -708,7 +729,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
 
 std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
     auto original_term = _parent.term();
-    auto lost_leadership = !_parent.is_elected_leader()
+    auto lost_leadership = !_parent.is_leader()
                            || _parent.term() != original_term;
     if (unlikely(lost_leadership)) {
         return fmt::format(
@@ -716,7 +737,7 @@ std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
           "current leadership status: {}, "
           "current term: {}, "
           "original term: {}",
-          _parent.is_elected_leader(),
+          _parent.is_leader(),
           _parent.term(),
           original_term);
     } else {
@@ -878,10 +899,16 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
     // The manifest's last offset contains dirty_offset of the
     // latest uploaded segment but '_policy' requires offset that
     // belongs to the next offset or the gap. No need to do this
-    // if there is no segments.
-    auto start_upload_offset = manifest().size() ? manifest().get_last_offset()
-                                                     + model::offset(1)
-                                                 : model::offset(0);
+    // if we haven't uploaded anything.
+    //
+    // When there are no segments but there is a non-zero 'last_offset', all
+    // cloud segments have been removed for retention. In that case, we still
+    // need to take into accout 'last_offset'.
+    auto last_offset = manifest().get_last_offset();
+    auto start_upload_offset = manifest().size() == 0
+                                   && last_offset == model::offset(0)
+                                 ? model::offset(0)
+                                 : last_offset + model::offset(1);
 
     auto compacted_segments_upload_start = model::next_offset(
       manifest().get_last_uploaded_compacted_offset());
@@ -938,7 +965,7 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
             _probe->upload_lag(ctx.last_offset - ctx.start_offset);
         }
 
-        while (uploads_remaining > 0 && can_update_archival_metadata()) {
+        while (uploads_remaining > 0 && may_begin_uploads()) {
             auto should_stop = co_await ctx.schedule_single_upload(*this);
             if (should_stop == ss::stop_iteration::yes) {
                 break;
@@ -1273,29 +1300,33 @@ std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
 
 ss::future<> ntp_archiver::housekeeping() {
     try {
-        if (can_update_archival_metadata()) {
+        if (may_begin_uploads()) {
             // Acquire mutex to prevent concurrency between
             // external housekeeping jobs from upload_housekeeping_service
             // and retention/GC
             auto units = co_await ss::get_units(_mutex, 1, _as);
-            co_await apply_retention();
-            co_await garbage_collect();
-            co_await upload_manifest();
+            const auto retention_updated_manifest = co_await apply_retention();
+            const auto gc_updated_manifest = co_await garbage_collect();
+            if (retention_updated_manifest || gc_updated_manifest) {
+                co_await upload_manifest();
+            }
         }
     } catch (std::exception& e) {
         vlog(_rtclog.warn, "Error occured during housekeeping", e.what());
     }
 }
 
-ss::future<> ntp_archiver::apply_retention() {
-    if (!can_update_archival_metadata()) {
-        co_return;
+ss::future<ntp_archiver::manifest_updated> ntp_archiver::apply_retention() {
+    manifest_updated updated = manifest_updated::no;
+
+    if (!may_begin_uploads()) {
+        co_return updated;
     }
 
     auto retention_calculator = retention_calculator::factory(
       manifest(), _parent.get_ntp_config());
     if (!retention_calculator) {
-        co_return;
+        co_return updated;
     }
 
     auto next_start_offset = retention_calculator->next_start_offset();
@@ -1311,7 +1342,9 @@ ss::future<> ntp_archiver::apply_retention() {
         auto deadline = ss::lowres_clock::now() + sync_timeout;
         auto error = co_await _parent.archival_meta_stm()->truncate(
           *next_start_offset, deadline, _as);
-        if (error != cluster::errc::success) {
+        if (error == cluster::errc::success) {
+            updated = manifest_updated::yes;
+        } else {
             vlog(
               _rtclog.warn,
               "Failed to update archival metadata STM start offest according "
@@ -1324,14 +1357,18 @@ ss::future<> ntp_archiver::apply_retention() {
           "{} Retention policies are already met.",
           retention_calculator->strategy_name());
     }
+
+    co_return updated;
 }
 
 // Garbage collection can be improved as follows:
 // * issue #6843: delete via DeleteObjects S3 api instead of deleting individual
 // segments
-ss::future<> ntp_archiver::garbage_collect() {
-    if (!can_update_archival_metadata()) {
-        co_return;
+ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
+    manifest_updated updated = manifest_updated::no;
+
+    if (!may_begin_uploads()) {
+        co_return updated;
     }
 
     const auto to_remove
@@ -1382,7 +1419,9 @@ ss::future<> ntp_archiver::garbage_collect() {
         auto error = co_await _parent.archival_meta_stm()->cleanup_metadata(
           deadline, _as);
 
-        if (error != cluster::errc::success) {
+        if (error == cluster::errc::success) {
+            updated = manifest_updated::yes;
+        } else {
             vlog(
               _rtclog.info,
               "Failed to clean up metadata after garbage collection: {}",
@@ -1398,6 +1437,8 @@ ss::future<> ntp_archiver::garbage_collect() {
     _probe->segments_deleted(static_cast<int64_t>(successful_deletes));
     vlog(
       _rtclog.debug, "Deleted {} segments from the cloud", successful_deletes);
+
+    co_return updated;
 }
 
 ss::future<cloud_storage::upload_result>
@@ -1444,7 +1485,7 @@ ntp_archiver::get_housekeeping_jobs() {
 
 ss::future<std::optional<upload_candidate_with_locks>>
 ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
-    if (!can_update_archival_metadata()) {
+    if (!may_begin_uploads()) {
         co_return std::nullopt;
     }
     auto run = scanner(_parent.start_offset(), manifest());
@@ -1500,7 +1541,7 @@ ss::future<bool> ntp_archiver::upload(
 ss::future<bool> ntp_archiver::do_upload_local(
   upload_candidate_with_locks upload_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
-    if (!can_update_archival_metadata()) {
+    if (!may_begin_uploads()) {
         co_return false;
     }
     auto [upload, locks] = std::move(upload_locks);
@@ -1607,6 +1648,10 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
 
     try {
         co_await ss::get_units(_uploads_active, 1, timeout);
+        vlog(
+          _rtclog.trace,
+          "prepare_transfer_leadership: got units (current {})",
+          _uploads_active.current());
         co_return true;
     } catch (const ss::semaphore_timed_out&) {
         // In this situation, it is possible that the old leader (this node)
@@ -1614,14 +1659,18 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
         // the next manifest written by the new leader will not refer to
         // this object.
         //
-        // This is not a correctness issue, but consumes some disk space, and
-        // these objects may also be left behind when the topic is later
+        // This is not a correctness issue, but consumes some disk space,
+        // and these objects may also be left behind when the topic is later
         // deleted.
         co_return false;
     }
 }
 
 void ntp_archiver::complete_transfer_leadership() {
+    vlog(
+      _rtclog.trace,
+      "complete_transfer_leadership: current units (current {})",
+      _uploads_active.current());
     _paused = false;
     _leader_cond.signal();
 }

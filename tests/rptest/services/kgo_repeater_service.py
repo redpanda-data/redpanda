@@ -15,7 +15,6 @@ from contextlib import contextmanager
 from collections import defaultdict
 
 from ducktape.services.service import Service
-from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.tests.test import TestContext
 
@@ -34,6 +33,7 @@ class KgoRepeaterService(Service):
                  redpanda: RedpandaService,
                  *,
                  nodes: Optional[list[ClusterNode]] = None,
+                 num_nodes: Optional[int] = None,
                  topic: str,
                  msg_size: Optional[int],
                  workers: int,
@@ -43,9 +43,16 @@ class KgoRepeaterService(Service):
                  mb_per_worker: Optional[int] = None,
                  use_transactions: bool = False,
                  transaction_abort_rate: Optional[float] = None,
+                 rate_limit_bps: Optional[int] = None,
                  msgs_per_transaction: Optional[int] = None):
-        # num_nodes=0 because we're asking it to not allocate any for us
-        super().__init__(context, num_nodes=0 if nodes else 1)
+        """
+        :param rate_limit_bps: Total rate for all nodes: each node will get an equal share.
+        """
+        if num_nodes is None and nodes is None:
+            # Default: run a single node
+            num_nodes = 1
+
+        super().__init__(context, num_nodes=0 if nodes else num_nodes)
 
         if nodes is not None:
             assert len(nodes) > 0
@@ -56,6 +63,9 @@ class KgoRepeaterService(Service):
         self.msg_size = msg_size
         self.workers = workers
         self.group_name = group_name
+
+        self.rate_limit_bps_per_node = rate_limit_bps // len(
+            self.nodes) if rate_limit_bps else None
 
         # Note: using a port that happens to already be in test environment
         # firewall rules from other use cases.  If changing this, update
@@ -100,6 +110,9 @@ class KgoRepeaterService(Service):
 
         if self.max_buffered_records is not None:
             cmd += f" -max-buffered-records={self.max_buffered_records}"
+
+        if self.rate_limit_bps_per_node is not None:
+            cmd += f" -rate-limit-bps={self.rate_limit_bps_per_node}"
 
         if self.use_transactions:
             cmd += f" -use-transactions"
@@ -164,7 +177,14 @@ class KgoRepeaterService(Service):
 
         def group_ready():
             rpk = RpkTool(self.redpanda)
-            group = rpk.group_describe(self.group_name, summary=True)
+            try:
+                group = rpk.group_describe(self.group_name, summary=True)
+            except Exception as e:
+                self.logger.debug(
+                    f"group_ready: {self.group_name} got exception from describe: {e}"
+                )
+                return False
+
             if group is None:
                 self.logger.debug(
                     f"group_ready: {self.group_name} got None from describe")
@@ -185,8 +205,20 @@ class KgoRepeaterService(Service):
         self.logger.debug(f"Waiting for group {self.group_name} to be ready")
         t1 = time.time()
         try:
-            wait_until(group_ready, timeout_sec=120, backoff_sec=10)
+            self.redpanda.wait_until(group_ready,
+                                     timeout_sec=120,
+                                     backoff_sec=10)
         except:
+            # On failure, dump stacks on all workers in case there is an apparent client bug to investigate
+            for node in self.nodes:
+                try:
+                    r = requests.get(self._remote_url(node, "print_stack"))
+                    r.raise_for_status()
+                except Exception as e:
+                    # Just log exceptions: we want to proceed with rest of teardown
+                    self.logger.warn(
+                        f"Failed to print stack on {node.name}: {e}")
+
             # On failure, inspect the group to identify which workers
             # specifically were absent.  This information helps to
             # go inspect the remote kgo-repeater logs to see if the
@@ -255,7 +287,7 @@ class KgoRepeaterService(Service):
         # the system isn't at peak throughput (e.g. when it's just warming up)
         timeout_sec = max(timeout_sec, 60)
 
-        wait_until(check, timeout_sec=timeout_sec, backoff_sec=1)
+        self.redpanda.wait_until(check, timeout_sec=timeout_sec, backoff_sec=1)
 
 
 @contextmanager

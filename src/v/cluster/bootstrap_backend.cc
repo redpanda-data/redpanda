@@ -165,7 +165,7 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
               });
         } else if (
           _feature_table.local().get_original_version()
-          == cluster::invalid_version) {
+          < cmd.value.founding_version) {
             // Special case for systems pre-dating the original_version field:
             // they may have loaded a snapshot that doesn't contain an original
             // version, so must populate it from updates.

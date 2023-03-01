@@ -229,6 +229,8 @@ private:
     scheduling_groups_probe _scheduling_groups_probe;
     ss::logger _log;
 
+    std::optional<config::binding<bool>> _abort_on_oom;
+
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::rpc_server> _rpc;

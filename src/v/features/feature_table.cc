@@ -106,13 +106,27 @@ std::string_view to_string_view(feature_state::state s) {
 // versions mapped to redpanda release versions:
 //  22.1.1 -> 3  (22.1.5 was version 4)
 //  22.2.1 -> 5  (22.2.6 later proceeds to version 6)
-//  22.3.1 -> 7
+//  22.3.1 -> 7  (22.3.6 later proceeds to verison 8)
+//  23.1.1 -> 9
+//  23.2.1 -> 10
 //
 // Although some previous stable branches have included feature version
 // bumps, this is _not_ the intended usage, as stable branches are
 // meant to be safely downgradable within the branch, and new features
 // imply that new data formats may be written.
-static constexpr cluster_version latest_version = cluster_version{9};
+static constexpr cluster_version latest_version = cluster_version{10};
+
+// The earliest version we can upgrade from.  This is the version that
+// a freshly initialized node will start at: e.g. a 23.1 Redpanda joining
+// a cluster of 22.3.6 peers would do this:
+// - Start up blank, initialize feature table to version 7
+// - Send join request advertising version range 7-9
+// - 22.3.x peer accepts join request because version range 7-9 includes its
+//   active version (7).
+// - The new 23.1 node advances feature table to version 8 when it joins and
+//   sees controller log replay.
+// - Eventually once all nodes are 23.1, all nodes advance active version to 9
+static constexpr cluster_version earliest_version = cluster_version{7};
 
 feature_table::feature_table() {
     // Intentionally undocumented environment variable, only for use
@@ -153,20 +167,44 @@ cluster_version feature_table::get_latest_logical_version() {
     if (latest_version_cache == invalid_version) {
         latest_version_cache = latest_version;
 
-        auto override = std::getenv("__REDPANDA_LOGICAL_VERSION");
+        auto override = std::getenv("__REDPANDA_LATEST_LOGICAL_VERSION");
         if (override != nullptr) {
             try {
                 latest_version_cache = cluster_version{std::stoi(override)};
             } catch (...) {
                 vlog(
                   featureslog.error,
-                  "Invalid logical version override '{}'",
+                  "Invalid latest logical version override '{}'",
                   override);
             }
         }
     }
 
     return latest_version_cache;
+}
+
+cluster_version feature_table::get_earliest_logical_version() {
+    // Avoid getenv on every call by keeping a shard-local cache
+    // of the version after applying any environment override.
+    static thread_local cluster_version earliest_version_cache{invalid_version};
+
+    if (earliest_version_cache == invalid_version) {
+        earliest_version_cache = earliest_version;
+
+        auto override = std::getenv("__REDPANDA_EARLIEST_LOGICAL_VERSION");
+        if (override != nullptr) {
+            try {
+                earliest_version_cache = cluster_version{std::stoi(override)};
+            } catch (...) {
+                vlog(
+                  featureslog.error,
+                  "Invalid earliest logical version override '{}'",
+                  override);
+            }
+        }
+    }
+
+    return earliest_version_cache;
 }
 
 void feature_state::transition_active() { _state = state::active; }
@@ -195,10 +233,13 @@ void feature_state::notify_version(cluster_version v) {
     }
 }
 
-void feature_table::set_active_version(cluster_version v) {
+void feature_table::set_active_version(
+  cluster_version v, feature_table::version_durability durability) {
     _active_version = v;
 
-    if (_original_version == invalid_version) {
+    if (
+      durability == version_durability::durable
+      && _original_version == invalid_version) {
         // Rely on controller log replay to call us first with
         // the first version the cluster ever agreed upon.
         _original_version = v;
@@ -223,12 +264,14 @@ void feature_table::set_active_version(cluster_version v) {
  * see the bootstrap message's cluster version in the controller log.  That
  * is what this function does, as well as calling through to set_active_version.
  */
-void feature_table::bootstrap_active_version(cluster_version v) {
+void feature_table::bootstrap_active_version(
+  cluster_version v, feature_table::version_durability durability) {
     if (ss::this_shard_id() == ss::shard_id{0}) {
         vlog(
           featureslog.info, "Activating features from bootstrap version {}", v);
     }
-    set_active_version(v);
+
+    set_active_version(v, durability);
 
     for (auto& fs : _feature_state) {
         if (

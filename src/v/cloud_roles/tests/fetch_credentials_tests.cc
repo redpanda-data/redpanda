@@ -16,6 +16,7 @@
 #include "http/tests/http_imposter.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
+#include "test_utils/tee_log.h"
 
 #include <seastar/core/file.hh>
 
@@ -330,6 +331,9 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
 }
 
 FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
+    tee_wrapper wrapper;
+    cloud_roles::clrl_log.set_ostream(wrapper.stream);
+
     fail_request_if(
       [](const auto&) { return true; },
       http_test_utils::response{
@@ -355,6 +359,9 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
     gate.close().get();
 
     BOOST_REQUIRE(has_call(cloud_role_tests::aws_role_query_url));
+
+    // Assert that the error response body is logged
+    BOOST_REQUIRE(wrapper.string().find("not found") != std::string::npos);
 }
 
 FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
@@ -362,8 +369,8 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
     // refresh operation will attempt to retry. In order not to expose the retry
     // counter or make similar changes to the class just for testing, this test
     // scans the log for the message emitted when a ss::timed_out_error is seen.
-    std::stringstream ss;
-    cloud_roles::clrl_log.set_ostream(ss);
+    tee_wrapper wrapper;
+    cloud_roles::clrl_log.set_ostream(wrapper.stream);
     ss::abort_source as;
     ss::gate gate;
     std::optional<cloud_roles::credentials> c;
@@ -383,10 +390,105 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
         std::chrono::milliseconds{100ms});
     refresh.start();
 
-    tests::cooperative_spin_wait_with_timeout(5s, [&ss] {
-        return ss.str().find("api request failed (retrying after cool-off "
-                             "period): timedout")
+    tests::cooperative_spin_wait_with_timeout(5s, [&wrapper] {
+        return wrapper.string().find(
+                 "api request failed (retrying after cool-off "
+                 "period): timedout")
                != std::string::npos;
     }).get();
     gate.close().get();
+}
+
+FIXTURE_TEST(test_handle_bad_response, http_imposter_fixture) {
+    tee_wrapper wrapper;
+    cloud_roles::clrl_log.set_ostream(wrapper.stream);
+
+    fail_request_if(
+      [](const auto&) { return true; },
+      http_test_utils::response{
+        "{broken response", ss::httpd::reply::status_type::ok});
+
+    listen();
+
+    ss::abort_source as;
+    ss::gate gate;
+    std::optional<cloud_roles::credentials> c;
+
+    one_shot_fetch s(c, as);
+
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::aws_instance_metadata,
+      gate,
+      as,
+      s,
+      cloud_roles::aws_region_name{""},
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+
+    refresh.start();
+    gate.close().get();
+
+    auto log = wrapper.string();
+    BOOST_REQUIRE(
+      log.find("failed during IAM credentials refresh: Can't parse the request")
+      != log.npos);
+    BOOST_REQUIRE(log.find("retrying after cool-off") != log.npos);
+}
+
+FIXTURE_TEST(test_intermittent_error, http_imposter_fixture) {
+    // This test makes one failing request to API endpoint followed by one
+    // successful request. The refresh credentials object should retry after the
+    // first failure.
+
+    tee_wrapper wrapper;
+    cloud_roles::clrl_log.set_ostream(wrapper.stream);
+
+    when()
+      .request(cloud_role_tests::aws_role_query_url)
+      .then_reply_with(cloud_role_tests::aws_role);
+
+    when()
+      .request(cloud_role_tests::aws_creds_url)
+      .then_reply_with(cloud_role_tests::aws_creds);
+
+    // Fail the first request and pass all subsequent requests.
+    auto idx = 0;
+    fail_request_if(
+      [&idx](const auto&) { return idx++ == 0; },
+      http_test_utils::response{
+        "failed!", ss::httpd::reply::status_type::internal_server_error});
+
+    listen();
+
+    ss::abort_source as;
+    ss::gate gate;
+    std::optional<cloud_roles::credentials> c;
+
+    two_fetches s(c, as);
+
+    auto refresh = cloud_roles::make_refresh_credentials(
+      model::cloud_credentials_source::aws_instance_metadata,
+      gate,
+      as,
+      s,
+      cloud_roles::aws_region_name{""},
+      net::unresolved_address{httpd_host_name.data(), httpd_port_number()});
+
+    refresh.start();
+
+    tests::cooperative_spin_wait_with_timeout(10s, [&c]() {
+        return c.has_value()
+               && std::holds_alternative<cloud_roles::aws_credentials>(
+                 c.value());
+    }).get();
+
+    gate.close().get();
+
+    auto log = wrapper.string();
+
+    BOOST_REQUIRE(
+      log.find("failed during IAM credentials refresh: failed!") != log.npos);
+    BOOST_REQUIRE(log.find("retrying after cool-off") != log.npos);
+
+    auto aws_creds = std::get<cloud_roles::aws_credentials>(c.value());
+    BOOST_REQUIRE_EQUAL(aws_creds.access_key_id, "my-key");
 }

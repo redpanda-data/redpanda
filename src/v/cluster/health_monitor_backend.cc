@@ -446,6 +446,7 @@ health_monitor_backend::maybe_refresh_cluster_health(
     // if current node is not the controller leader and we need a refresh we
     // refresh metadata cache
     if (need_refresh) {
+        vlog(clusterlog.trace, "refreshing cluster health");
         try {
             auto f = refresh_cluster_health_cache(refresh);
             auto err = co_await ss::with_timeout(deadline, std::move(f));
@@ -640,6 +641,7 @@ struct ntp_report {
     model::ntp ntp;
     ntp_leader leader;
     size_t size_bytes;
+    std::optional<uint8_t> under_replicated_replicas;
 };
 
 partition_status to_partition_status(const ntp_report& ntpr) {
@@ -649,7 +651,7 @@ partition_status to_partition_status(const ntp_report& ntpr) {
       .leader_id = ntpr.leader.leader_id,
       .revision_id = ntpr.leader.revision_id,
       .size_bytes = ntpr.size_bytes,
-    };
+      .under_replicated_replicas = ntpr.under_replicated_replicas};
 }
 
 std::vector<ntp_report> collect_shard_local_reports(
@@ -671,6 +673,7 @@ std::vector<ntp_report> collect_shard_local_reports(
                   .revision_id = p.second->get_revision_id(),
                 },
                 .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
+                .under_replicated_replicas = p.second->get_under_replicated(),
               };
           });
     } else {
@@ -684,6 +687,7 @@ std::vector<ntp_report> collect_shard_local_reports(
                   .revision_id = partition->get_revision_id(),
                 },
                 .size_bytes = partition->size_bytes(),
+                .under_replicated_replicas = partition->get_under_replicated(),
                 });
             }
         }
@@ -773,12 +777,27 @@ health_monitor_backend::get_cluster_health_overview(
             ret.nodes_down.push_back(id);
         }
     }
+
+    // The size of the health status must be bounded: if all partitions
+    // on a system with 50k partitions are under-replicated, it is not helpful
+    // to try and cram all 50k NTPs into a vector here.
+    size_t max_partitions_report = 128;
+
     absl::node_hash_set<model::ntp> leaderless;
+    absl::node_hash_set<model::ntp> under_replicated;
+
     for (const auto& [_, report] : _reports) {
         for (const auto& [tp_ns, partitions] : report.topics) {
             for (const auto& partition : partitions) {
-                if (!partition.leader_id.has_value()) {
+                if (
+                  !partition.leader_id.has_value()
+                  && leaderless.size() < max_partitions_report) {
                     leaderless.emplace(tp_ns.ns, tp_ns.tp, partition.id);
+                }
+                if (
+                  partition.under_replicated_replicas.value_or(0) > 0
+                  && under_replicated.size() < max_partitions_report) {
+                    under_replicated.emplace(tp_ns.ns, tp_ns.tp, partition.id);
                 }
             }
         }
@@ -788,9 +807,17 @@ health_monitor_backend::get_cluster_health_overview(
       leaderless.begin(),
       leaderless.end(),
       std::back_inserter(ret.leaderless_partitions));
+
+    ret.under_replicated_partitions.reserve(under_replicated.size());
+    std::move(
+      under_replicated.begin(),
+      under_replicated.end(),
+      std::back_inserter(ret.under_replicated_partitions));
+
     ret.controller_id = _raft0->get_leader_id();
 
     ret.is_healthy = ret.nodes_down.empty() && ret.leaderless_partitions.empty()
+                     && ret.under_replicated_partitions.empty()
                      && ret.controller_id && !ec;
 
     co_return ret;

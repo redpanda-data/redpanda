@@ -16,6 +16,9 @@
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/types.h"
+#include "ssx/sformat.h"
+
+#include <seastar/core/sstring.hh>
 
 #include <optional>
 
@@ -23,20 +26,22 @@ namespace cluster {
 
 namespace {
 
-hard_constraint_evaluator
+hard_constraint
 distinct_from(const absl::flat_hash_set<model::node_id>& nodes) {
-    class impl : public hard_constraint_evaluator::impl {
+    class impl : public hard_constraint::impl {
     public:
         explicit impl(const absl::flat_hash_set<model::node_id>& nodes)
           : _nodes(nodes) {}
 
-        bool evaluate(const allocation_node& node) const final {
-            return !_nodes.contains(node.id());
+        hard_constraint_evaluator
+        make_evaluator(const replicas_t&) const final {
+            return [this](const allocation_node& node) {
+                return !_nodes.contains(node.id());
+            };
         }
 
-        void print(std::ostream& o) const final {
-            fmt::print(
-              o,
+        ss::sstring name() const final {
+            return ssx::sformat(
               "distinct from nodes: {}",
               std::vector(_nodes.begin(), _nodes.end()));
         }
@@ -45,7 +50,7 @@ distinct_from(const absl::flat_hash_set<model::node_id>& nodes) {
         const absl::flat_hash_set<model::node_id>& _nodes;
     };
 
-    return hard_constraint_evaluator(std::make_unique<impl>(nodes));
+    return hard_constraint(std::make_unique<impl>(nodes));
 }
 
 } // namespace
@@ -211,28 +216,27 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
 
     // Add constraint on least disk usage
     allocation_constraints.soft_constraints.push_back(
-      ss::make_lw_shared<soft_constraint_evaluator>(
+      ss::make_lw_shared<soft_constraint>(
         least_disk_filled(max_disk_usage_ratio, rrs.node_disk_reports)));
 
     // Add constraint on partition max_disk_usage_ratio overfill
     size_t upper_bound_for_partition_size = partition_size
                                             + _config.segment_fallocation_step;
     allocation_constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(
-        disk_not_overflowed_by_partition(
-          max_disk_usage_ratio,
-          upper_bound_for_partition_size,
-          rrs.node_disk_reports)));
+      ss::make_lw_shared<hard_constraint>(disk_not_overflowed_by_partition(
+        max_disk_usage_ratio,
+        upper_bound_for_partition_size,
+        rrs.node_disk_reports)));
 
     // Add constraint on unavailable nodes
     allocation_constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(
+      ss::make_lw_shared<hard_constraint>(
         distinct_from(rrs.timed_out_unavailable_nodes)));
 
     // Add constraint on decommissioning nodes
     if (!rrs.decommissioning_nodes.empty()) {
         allocation_constraints.hard_constraints.push_back(
-          ss::make_lw_shared<hard_constraint_evaluator>(
+          ss::make_lw_shared<hard_constraint>(
             distinct_from(rrs.decommissioning_nodes)));
     }
 

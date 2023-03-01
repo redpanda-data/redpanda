@@ -11,6 +11,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <stdexcept>
+
 BOOST_AUTO_TEST_CASE(string_switch_match_one) {
     BOOST_REQUIRE_EQUAL(
       int8_t(42),
@@ -50,4 +52,20 @@ BOOST_AUTO_TEST_CASE(string_switch_match_all_max) {
           "hello",
           42)
         .default_match(-66));
+}
+
+BOOST_AUTO_TEST_CASE(string_switch_no_match) {
+    BOOST_CHECK_EXCEPTION(
+      string_switch<int8_t>("ccc").match("a", 0).match("b", 1).
+      operator int8_t(),
+      std::runtime_error,
+      [](const std::runtime_error& e) {
+          // check that the error string includes the string we were searching
+          // for as a weak hint to where the error occurred
+          if (!std::string(e.what()).ends_with("ccc")) {
+              BOOST_TEST_FAIL(
+                "Expected error message to end with ccc but was: " << e.what());
+          };
+          return true;
+      });
 }

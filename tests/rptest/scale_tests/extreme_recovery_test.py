@@ -2,12 +2,13 @@ from logging import Logger
 from time import time
 from typing import Callable, Sequence
 
-from ducktape.mark import ignore
+from ducktape.mark import ignore, parametrize
 from ducktape.tests.test import TestContext
 from rptest.archival.s3_client import S3Client
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
+from rptest.services.redpanda import CloudStorageType
 from rptest.services.cluster import cluster
 from rptest.services.franz_go_verifiable_services import \
     FranzGoVerifiableProducer, \
@@ -170,7 +171,8 @@ class ExtremeRecoveryTest(TopicRecoveryTest):
         super(ExtremeRecoveryTest, self).tearDown()
 
     @cluster(num_nodes=8, log_allow_list=TRANSIENT_ERRORS)
-    def test_recovery_scale(self):
+    @parametrize(cloud_storage_type=CloudStorageType.AUTO)
+    def test_recovery_scale(self, cloud_storage_type):
         # This test requires dedicated system resources
         assert self.redpanda.dedicated_nodes
 

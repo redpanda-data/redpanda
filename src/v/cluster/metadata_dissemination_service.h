@@ -15,6 +15,7 @@
 #include "cluster/health_monitor_types.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "config/tls_config.h"
+#include "features/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/unresolved_address.h"
@@ -79,7 +80,8 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<topic_table>&,
       ss::sharded<rpc::connection_cache>&,
-      ss::sharded<health_monitor_frontend>&);
+      ss::sharded<health_monitor_frontend>&,
+      ss::sharded<features::feature_table>&);
 
     void disseminate_leadership(
       model::ntp,
@@ -147,6 +149,7 @@ private:
     ss::sharded<topic_table>& _topics;
     ss::sharded<rpc::connection_cache>& _clients;
     ss::sharded<health_monitor_frontend>& _health_monitor;
+    ss::sharded<features::feature_table>& _feature_table;
     model::broker _self;
     std::chrono::milliseconds _dissemination_interval;
     config::tls_config _rpc_tls_config;

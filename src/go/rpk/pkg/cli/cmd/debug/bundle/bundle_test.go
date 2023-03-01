@@ -200,3 +200,132 @@ func TestParseJournalTime(t *testing.T) {
 		})
 	}
 }
+
+func TestSortControllerLogDir(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		in   []fileSize
+		exp  []fileSize
+	}{
+		{
+			name: "already sorted",
+			in: []fileSize{
+				{"/tmp/1-1-v1.log", 111},
+				{"/tmp/1-2-v1.log", 111},
+				{"/tmp/2-1-v1.log", 111},
+				{"/tmp/3-2-v1.log", 111},
+			},
+			exp: []fileSize{
+				{"/tmp/1-1-v1.log", 111},
+				{"/tmp/1-2-v1.log", 111},
+				{"/tmp/2-1-v1.log", 111},
+				{"/tmp/3-2-v1.log", 111},
+			},
+		}, {
+			name: "sort correctly",
+			in: []fileSize{
+				{"/tmp/12-1-v1.log", 111},
+				{"/tmp/1-21-v1.log", 111},
+				{"/tmp/23-1-v1.log", 111},
+				{"/tmp/2-31-v1.log", 111},
+				{"/tmp/5000-31-v1.log", 111},
+			},
+			exp: []fileSize{
+				{"/tmp/1-21-v1.log", 111},
+				{"/tmp/2-31-v1.log", 111},
+				{"/tmp/12-1-v1.log", 111},
+				{"/tmp/23-1-v1.log", 111},
+				{"/tmp/5000-31-v1.log", 111},
+			},
+		}, {
+			name: "bad names are sorted alphabetically",
+			in: []fileSize{
+				{"/tmp/what.log", 111},
+				{"/tmp/how?", 111},
+				{"/tmp/seems-legit.log", 111},
+			},
+			exp: []fileSize{
+				{"/tmp/how?", 111},
+				{"/tmp/seems-legit.log", 111},
+				{"/tmp/what.log", 111},
+			},
+		}, {
+			name: "corrupted names sorted at the top",
+			in: []fileSize{
+				{"/tmp/A", 111},
+				{"/tmp/12-1-v1.log", 111},
+				{"/tmp/B.log", 111},
+				{"/tmp/2-31-v1.log", 111},
+				{"/tmp/seems-legit.log", 111},
+				{"/tmp/1-21-v1.log", 111},
+				{"/tmp/5000-31-v1.log", 111},
+				{"/tmp/23-1-v1.log", 111},
+			},
+			exp: []fileSize{
+				{"/tmp/A", 111},
+				{"/tmp/B.log", 111},
+				{"/tmp/seems-legit.log", 111},
+				{"/tmp/1-21-v1.log", 111},
+				{"/tmp/2-31-v1.log", 111},
+				{"/tmp/12-1-v1.log", 111},
+				{"/tmp/23-1-v1.log", 111},
+				{"/tmp/5000-31-v1.log", 111},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			sortControllerLogDir(test.in)
+			require.Equal(t, test.exp, test.in)
+		})
+	}
+}
+
+func TestSliceControllerDir(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		in    []fileSize
+		limit int64
+		exp   []fileSize
+	}{
+		{
+			name: "simple slice",
+			in: []fileSize{
+				{"/tmp/1-1-v1.log", 1},
+				{"/tmp/2-1-v1.log", 1},
+				{"/tmp/3-1-v1.log", 1},
+				{"/tmp/4-1-v1.log", 1},
+				{"/tmp/5-1-v1.log", 1},
+				{"/tmp/6-1-v1.log", 1},
+			},
+			limit: 4,
+			exp: []fileSize{
+				{"/tmp/1-1-v1.log", 1},
+				{"/tmp/2-1-v1.log", 1},
+				{"/tmp/6-1-v1.log", 1}, // we don't preserve the order, but it's fine since we don't need the logs to be sorted to debug them.
+				{"/tmp/5-1-v1.log", 1},
+			},
+		}, {
+			name: "big file in head",
+			in: []fileSize{
+				{"/tmp/1-1-v1.log", 10000},
+				{"/tmp/2-1-v1.log", 1},
+				{"/tmp/3-1-v1.log", 1},
+				{"/tmp/4-1-v1.log", 1},
+				{"/tmp/5-1-v1.log", 1},
+				{"/tmp/6-1-v1.log", 1},
+			},
+			limit: 4,
+			exp: []fileSize{
+				{"/tmp/6-1-v1.log", 1},
+				{"/tmp/5-1-v1.log", 1},
+				{"/tmp/4-1-v1.log", 1},
+				{"/tmp/3-1-v1.log", 1},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			slice := sliceControllerDir(test.in, test.limit)
+			require.Equal(t, test.exp, slice)
+		})
+	}
+}

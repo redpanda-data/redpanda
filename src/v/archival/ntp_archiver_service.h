@@ -131,18 +131,20 @@ public:
     ss::future<std::optional<cloud_storage::partition_manifest>>
     maybe_truncate_manifest();
 
+    using manifest_updated = ss::bool_class<struct manifest_updated_tag>;
+
     /// \brief Perform housekeeping operations.
     ss::future<> housekeeping();
 
     /// \brief Advance the start offest for the remote partition
     /// according to the retention policy specified by the partition
     /// configuration. This function does *not* delete any data.
-    ss::future<> apply_retention();
+    ss::future<manifest_updated> apply_retention();
 
     /// \brief Remove segments that are no longer queriable by:
     /// segments that are below the current start offset and segments
     /// that have been replaced with their compacted equivalent.
-    ss::future<> garbage_collect();
+    ss::future<manifest_updated> garbage_collect();
 
     virtual ~ntp_archiver() = default;
 
@@ -381,6 +383,11 @@ private:
     /// This means that the replica is a leader, the term did not
     /// change and the archiver is not stopping.
     bool can_update_archival_metadata() const;
+
+    /// Return true if it is permitted to start new uploads: this
+    /// requires can_update_archival_metadata, plus that we are
+    /// not paused.
+    bool may_begin_uploads() const;
 
     /// Helper to generate a segment path from candidate
     remote_segment_path

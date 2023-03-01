@@ -6,9 +6,10 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
+from ducktape.mark import parametrize
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool, RpkException
@@ -50,7 +51,9 @@ class ShadowIndexingFirewallTest(RedpandaTest):
         self.rpk = RpkTool(self.redpanda)
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    def test_consume_from_blocked_s3(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def test_consume_from_blocked_s3(self, cloud_storage_type):
         produce_until_segments(redpanda=self.redpanda,
                                topic=self.s3_topic_name,
                                partition_idx=0,

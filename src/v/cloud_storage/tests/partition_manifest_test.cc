@@ -800,7 +800,7 @@ SEASTAR_THREAD_TEST_CASE(test_no_closing_bracket_meta) {
       std::runtime_error,
       [](std::runtime_error ex) {
           return std::string(ex.what()).find(
-                   "Failed to parse topic manifest "
+                   "Failed to parse partition manifest "
                    "{\"b0000000/meta///-2147483648_-9223372036854775808/"
                    "manifest.json\"}: Missing a comma or '}' after an object "
                    "member. at offset 325")
@@ -1518,7 +1518,7 @@ void scan_ts_segments_general(partition_manifest const& m) {
 
     // After range: should get null
     reference_check_timequery(
-      m, model::timestamp{m.rbegin()->second.max_timestamp() + 1});
+      m, model::timestamp{m.last_segment()->max_timestamp() + 1});
 }
 /**
  * For a timequery() result, assert it is non-null and equal to the expected
@@ -1554,7 +1554,7 @@ void scan_ts_segments(partition_manifest const& m) {
 
     // After range: should get null
     BOOST_REQUIRE(
-      m.timequery(model::timestamp{m.rbegin()->second.max_timestamp() + 1})
+      m.timequery(model::timestamp{m.last_segment()->max_timestamp() + 1})
       == std::nullopt);
 
     // Also compare all results with reference implementation.
@@ -1774,7 +1774,7 @@ SEASTAR_THREAD_TEST_CASE(test_timequery_out_of_order) {
 
     // After range: should get null
     BOOST_REQUIRE(
-      m.timequery(model::timestamp{m.rbegin()->second.max_timestamp() + 1})
+      m.timequery(model::timestamp{m.last_segment()->max_timestamp() + 1})
       == std::nullopt);
 }
 

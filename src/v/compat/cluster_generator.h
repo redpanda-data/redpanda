@@ -308,6 +308,7 @@ struct instance_generator<cluster::join_node_request> {
     static cluster::join_node_request random() {
         return cluster::join_node_request{
           tests::random_named_int<cluster::cluster_version>(),
+          tests::random_named_int<cluster::cluster_version>(),
           tests::random_vector(
             [] { return random_generators::get_int<uint8_t>(); }),
           model::random_broker()};

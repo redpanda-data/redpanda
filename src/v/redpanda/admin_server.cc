@@ -91,6 +91,7 @@
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
+#include <seastar/util/log.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -932,6 +933,23 @@ void admin_server::register_config_routes() {
           json::Writer<json::StringBuffer> writer(buf);
           config::node().to_json(writer, config::redact_secrets::yes);
 
+          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          return "";
+      });
+
+    register_route_raw<superuser>(
+      ss::httpd::config_json::get_loggers, [](ss::const_req, ss::reply& reply) {
+          json::StringBuffer buf;
+          json::Writer<json::StringBuffer> writer(buf);
+          writer.StartArray();
+          for (const auto& name :
+               ss::global_logger_registry().get_all_logger_names()) {
+              writer.StartObject();
+              writer.Key("name");
+              writer.String(name);
+              writer.EndObject();
+          }
+          writer.EndArray();
           reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
           return "";
       });
@@ -1872,6 +1890,8 @@ void admin_server::register_features_routes() {
 
           res.cluster_version = version;
           res.original_cluster_version = ft.get_original_version();
+          res.node_earliest_version = ft.get_earliest_logical_version();
+          res.node_latest_version = ft.get_latest_logical_version();
           for (const auto& fs : ft.get_feature_state()) {
               ss::httpd::features_json::feature_state item;
               vlog(
@@ -2650,6 +2670,49 @@ void admin_server::register_partition_routes() {
                     partitions.push_back(std::move(s));
                 }
                 return ss::json::json_return_type(std::move(partitions));
+            });
+      });
+
+    register_route<user>(
+      ss::httpd::partition_json::get_partitions_local_summary,
+      [this](std::unique_ptr<ss::httpd::request>) {
+          // This type mirrors partitions_local_summary, but satisfies
+          // the seastar map_reduce requirement of being nothrow move
+          // constructible.
+          struct summary_t {
+              uint64_t count{0};
+              uint64_t leaderless{0};
+              uint64_t under_replicated{0};
+          };
+
+          return _partition_manager
+            .map_reduce0(
+              [](auto& pm) {
+                  summary_t s;
+                  for (const auto& it : pm.partitions()) {
+                      s.count += 1;
+                      if (it.second->get_leader_id() == std::nullopt) {
+                          s.leaderless += 1;
+                      }
+                      if (it.second->get_under_replicated() == std::nullopt) {
+                          s.under_replicated += 1;
+                      }
+                  }
+                  return s;
+              },
+              summary_t{},
+              [](summary_t acc, summary_t update) {
+                  acc.count += update.count;
+                  acc.leaderless += update.leaderless;
+                  acc.under_replicated += update.under_replicated;
+                  return acc;
+              })
+            .then([](summary_t summary) {
+                ss::httpd::partition_json::partitions_local_summary result;
+                result.count = summary.count;
+                result.leaderless = summary.leaderless;
+                result.under_replicated = summary.under_replicated;
+                return ss::json::json_return_type(std::move(result));
             });
       });
 
@@ -3463,12 +3526,17 @@ void admin_server::register_cluster_routes() {
                 ret.all_nodes._set = true;
                 ret.nodes_down._set = true;
                 ret.leaderless_partitions._set = true;
+                ret.under_replicated_partitions._set = true;
 
                 ret.all_nodes = health_overview.all_nodes;
                 ret.nodes_down = health_overview.nodes_down;
 
                 for (auto& ntp : health_overview.leaderless_partitions) {
                     ret.leaderless_partitions.push(fmt::format(
+                      "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
+                }
+                for (auto& ntp : health_overview.under_replicated_partitions) {
+                    ret.under_replicated_partitions.push(fmt::format(
                       "{}/{}/{}", ntp.ns(), ntp.tp.topic(), ntp.tp.partition));
                 }
                 if (health_overview.controller_id) {
@@ -3555,11 +3623,13 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
     co_return ss::json::json_return_type(ss::json::json_void());
 }
 
-ss::future<ss::json::json_return_type>
+ss::future<std::unique_ptr<ss::reply>>
 admin_server::initiate_topic_scan_and_recovery(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::request> request, std::unique_ptr<ss::reply> reply) {
+    reply->set_content_type("json");
+
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::controller_ntp);
+        throw co_await redirect_to_leader(*request, model::controller_ntp);
     }
 
     if (!_topic_recovery_service.local_is_initialized()) {
@@ -3569,7 +3639,7 @@ admin_server::initiate_topic_scan_and_recovery(
 
     auto result = co_await _topic_recovery_service.invoke_on(
       cloud_storage::topic_recovery_service::shard_id,
-      [&req](auto& svc) { return svc.start_recovery(*req); });
+      [&request](auto& svc) { return svc.start_recovery(*request); });
 
     if (result.status_code != ss::reply::status_type::accepted) {
         throw ss::httpd::base_exception{result.message, result.status_code};
@@ -3577,7 +3647,9 @@ admin_server::initiate_topic_scan_and_recovery(
 
     auto payload = ss::httpd::shadow_indexing_json::init_recovery_result{};
     payload.status = result.message;
-    co_return ss::json::json_return_type{payload};
+
+    reply->set_status(result.status_code, payload.to_json());
+    co_return reply;
 }
 
 static ss::httpd::shadow_indexing_json::topic_recovery_status
@@ -3663,11 +3735,14 @@ void admin_server::register_shadow_indexing_routes() {
           return sync_local_state_handler(std::move(req));
       });
 
+    request_handler_fn recovery_handler = [this](auto req, auto reply) {
+        return initiate_topic_scan_and_recovery(
+          std::move(req), std::move(reply));
+    };
+
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::initiate_topic_scan_and_recovery,
-      [this](auto req) {
-          return initiate_topic_scan_and_recovery(std::move(req));
-      });
+      std::move(recovery_handler));
 
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::query_automated_recovery,

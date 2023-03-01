@@ -7,22 +7,22 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from functools import partial
 import json
-import socket
+import os
 import time
 
-import ducktape.errors
-from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.cluster.remoteaccount import RemoteCommandError, RemoteAccountSSHConfig
+from ducktape.cluster.windows_remoteaccount import WindowsRemoteAccount
 from ducktape.errors import TimeoutError
-from ducktape.mark import parametrize
+from ducktape.mark import env, ok_to_fail, parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError, KRB5_CONF_PATH, render_krb5_config
+from rptest.services.kerberos import KrbKdc, KrbClient, RedpandaKerberosNode, AuthenticationError, KRB5_CONF_PATH, render_krb5_config, ActiveDirectoryKdc
 from rptest.services.redpanda import LoggingConfig, RedpandaService, SecurityConfig
+from rptest.utils.rpenv import IsCIOrNotEmpty
 
 LOG_CONFIG = LoggingConfig('info',
                            logger_levels={
@@ -45,10 +45,16 @@ class RedpandaKerberosTestBase(Test):
             sasl_mechanisms=["SCRAM", "GSSAPI"],
             keytab_file=f"{RedpandaService.PERSISTENT_ROOT}/redpanda.keytab",
             krb5_conf_path=KRB5_CONF_PATH,
+            kdc=None,
+            realm=REALM,
             **kwargs):
         super(RedpandaKerberosTestBase, self).__init__(test_context, **kwargs)
 
-        self.kdc = KrbKdc(test_context, realm=REALM)
+        num_brokers = num_nodes - 1
+        if not kdc:
+            kdc = KrbKdc(test_context, realm=realm)
+            num_brokers = num_nodes - 2
+        self.kdc = kdc
 
         security = SecurityConfig()
         security.enable_sasl = True
@@ -56,10 +62,10 @@ class RedpandaKerberosTestBase(Test):
 
         self.redpanda = RedpandaKerberosNode(test_context,
                                              kdc=self.kdc,
-                                             realm=REALM,
+                                             realm=realm,
                                              keytab_file=keytab_file,
                                              krb5_conf_path=krb5_conf_path,
-                                             num_brokers=num_nodes - 2,
+                                             num_brokers=num_brokers,
                                              log_config=LOG_CONFIG,
                                              security=security,
                                              **kwargs)
@@ -324,3 +330,46 @@ class RedpandaKerberosConfigTest(RedpandaKerberosTestBase):
         wait_until(has_metadata, 5)
 
         wait_until(lambda: log_has_default_realm(REALM), 5)
+
+
+class RedpandaKerberosExternalActiveDirectoryTest(RedpandaKerberosTestBase):
+    def __init__(self, test_context, **kwargs):
+        ip = os.environ.get("ACTIVE_DIRECTORY_IP")
+        realm = os.environ.get("ACTIVE_DIRECTORY_REALM")
+        ssh_username = os.environ.get("ACTIVE_DIRECTORY_SSH_USER")
+        ssh_password = os.environ.get("ACTIVE_DIRECTORY_SSH_PASSWORD")
+        keytab_password = os.environ.get("ACTIVE_DIRECTORY_KEYTAB_PASSWORD")
+        upn_user = os.environ.get("ACTIVE_DIRECTORY_UPN_USER")
+        spn_user = os.environ.get("ACTIVE_DIRECTORY_SPN_USER")
+
+        ssh_config = RemoteAccountSSHConfig(host=ip,
+                                            hostname=ip,
+                                            user=ssh_username,
+                                            password=ssh_password)
+        wra = WindowsRemoteAccount(ssh_config=ssh_config,
+                                   externally_routable_ip=ip)
+        kdc = ActiveDirectoryKdc(logger=test_context.logger,
+                                 remote_account=wra,
+                                 realm=realm,
+                                 keytab_password=keytab_password,
+                                 upn_user=upn_user,
+                                 spn_user=spn_user)
+        super(RedpandaKerberosExternalActiveDirectoryTest,
+              self).__init__(test_context,
+                             num_nodes=2,
+                             kdc=kdc,
+                             realm=realm,
+                             **kwargs)
+
+    def setUp(self):
+        super(RedpandaKerberosExternalActiveDirectoryTest, self).setUp()
+
+    @env(ACTIVE_DIRECTORY_REALM=IsCIOrNotEmpty())
+    @ok_to_fail  # Not all CI builders have access to an ADDS - let's find out which ones.
+    @cluster(num_nodes=2)
+    def test_metadata(self):
+        principal = f"client/localhost"
+        self.client.add_primary(primary=principal)
+        metadata = self.client.metadata(principal)
+        self.logger.info(f"metadata: {metadata}")
+        assert len(metadata['brokers']) == 1

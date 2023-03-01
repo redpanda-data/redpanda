@@ -55,7 +55,7 @@ struct node_state
 
 struct partition_status
   : serde::
-      envelope<partition_status, serde::version<0>, serde::compat_version<0>> {
+      envelope<partition_status, serde::version<1>, serde::compat_version<0>> {
     /**
      * We increase a version here 'backward' since incorrect assertion would
      * cause older redpanda versions to crash.
@@ -79,9 +79,16 @@ struct partition_status
     std::optional<model::node_id> leader_id;
     model::revision_id revision_id;
     size_t size_bytes;
+    std::optional<uint8_t> under_replicated_replicas;
 
     auto serde_fields() {
-        return std::tie(id, term, leader_id, revision_id, size_bytes);
+        return std::tie(
+          id,
+          term,
+          leader_id,
+          revision_id,
+          size_bytes,
+          under_replicated_replicas);
     }
 
     friend std::ostream& operator<<(std::ostream&, const partition_status&);
@@ -200,6 +207,7 @@ struct cluster_health_overview {
     std::vector<model::node_id> all_nodes;
     std::vector<model::node_id> nodes_down;
     std::vector<model::ntp> leaderless_partitions;
+    std::vector<model::ntp> under_replicated_partitions;
 };
 
 using include_partitions_info = ss::bool_class<struct include_partitions_tag>;

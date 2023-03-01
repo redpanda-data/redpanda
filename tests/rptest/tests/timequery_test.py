@@ -244,6 +244,9 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                 cloud_storage_enable_remote_write=True,
             )
             self.redpanda.set_si_settings(si_settings)
+        else:
+            self.redpanda.add_extra_rp_conf(
+                {'log_segment_size': self.log_segment_size})
 
         self.redpanda.start()
 
@@ -313,6 +316,42 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
             finally:
                 should_stop.set()
         assert not any([e > 0 for e in errors])
+
+    @cluster(num_nodes=4)
+    def test_timequery_below_start_offset(self):
+        """
+        Run a timequery for an offset that falls below the start offset
+        of the local log and ensure that -1 (i.e. not found) is returned.
+        """
+        total_segments = 3
+        self.set_up_cluster(cloud_storage=False, batch_cache=False)
+        local_retain_segments = 1
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+
+        topic, timestamps = self._create_and_produce(self.redpanda, False,
+                                                     local_retain_segments,
+                                                     base_ts, record_size,
+                                                     msg_count)
+
+        self.client().alter_topic_config(
+            topic.name, 'retention.bytes',
+            self.log_segment_size * local_retain_segments)
+
+        rpk = RpkTool(self.redpanda)
+
+        def start_offset_advanced():
+            return next(rpk.describe_topic(topic.name)).start_offset > 0
+
+        wait_until(start_offset_advanced,
+                   timeout_sec=60,
+                   backoff_sec=5,
+                   err_msg="Start offset did not advance")
+
+        kcat = KafkaCat(self.redpanda)
+        offset = kcat.query_offset(topic.name, 0, base_ts)
+        assert offset == -1
 
 
 class TimeQueryKafkaTest(Test, BaseTimeQuery):

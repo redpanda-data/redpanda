@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/docker/go-units"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
@@ -38,7 +37,6 @@ type bundleParams struct {
 	fs                      afero.Fs
 	cfg                     *config.Config
 	cl                      *kgo.Client
-	admin                   *admin.AdminAPI
 	logsSince               string
 	logsUntil               string
 	path                    string
@@ -92,15 +90,6 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
-			// We use NewHostClient because we want to talk to
-			// localhost, and some of out API requests require
-			// choosing the host to talk to. With params of
-			// rpk.admin_api preferring localhost first IF no
-			// rpk.admin_api is actually in the underlying file, we
-			// can always just pick the first host.
-			admin, err := admin.NewHostClient(fs, cfg, "0")
-			out.MaybeDie(err, "unable to initialize admin client: %v", err)
-
 			cl, err := kafka.NewFranzClient(fs, p, cfg)
 			out.MaybeDie(err, "unable to initialize kafka client: %v", err)
 			defer cl.Close()
@@ -114,7 +103,6 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 				fs:                      fs,
 				cfg:                     cfg,
 				cl:                      cl,
-				admin:                   admin,
 				logsSince:               logsSince,
 				logsUntil:               logsUntil,
 				path:                    path,
@@ -258,9 +246,12 @@ func (e *S3EndpointError) Error() string {
 
 const bundleHelpText = `'rpk debug bundle' collects environment data that can help debug and diagnose
 issues with a redpanda cluster, a broker, or the machine it's running on. It
-then bundles the collected data into a zip file.
+then bundles the collected data into a ZIP file, called a diagnostics bundle.
 
-The following are the data sources that are bundled in the compressed file:
+The files and directories in the diagnostics bundle differ depending on the 
+environment in which Redpanda is running:
+
+COMMON FILES
 
  - Kafka metadata: Broker configs, topic configs, start/committed/end offsets,
    groups, group commits.
@@ -283,18 +274,23 @@ The following are the data sources that are bundled in the compressed file:
  - Clock drift: The ntp clock delta (using pool.ntp.org as a reference) & round
    trip time.
 
- - Kernel logs: The kernel logs ring buffer (syslog).
+ - Admin API calls: Cluster and broker configurations, cluster health data, and 
+   license key information.
 
- - Broker metrics: The local broker's Prometheus metrics, fetched through its
-   admin API.
+ - Broker metrics: The broker's Prometheus metrics, fetched through its
+   admin API (/metrics and /public_metrics).
+
+BARE-METAL
+
+ - Kernel logs: The kernel logs ring buffer (syslog).
 
  - DNS: The DNS info as reported by 'dig', using the hosts in
    /etc/resolv.conf.
 
  - Disk usage: The disk usage for the data directory, as output by 'du'.
 
- - redpanda logs: The redpanda logs written to journald. If --logs-since or
-   --logs-until are passed, then only the logs within the resulting time frame
+ - redpanda logs: The node's redpanda logs written to journald. If --logs-since 
+   or --logs-until are passed, then only the logs within the resulting time frame
    will be included.
 
  - Socket info: The active sockets data output by 'ss'.
@@ -309,4 +305,17 @@ The following are the data sources that are bundled in the compressed file:
 
  - dmidecode: The DMI table contents. Only included if this command is run
    as root.
+
+KUBERNETES
+
+ - Kubernetes Resources: Kubernetes manifests for all resources in the given 
+   Kubernetes namespace (via --namespace).
+
+ - redpanda logs: Logs of each Pod in the the given Kubernetes namespace. If 
+   --logs-since is passed, only the logs within the given timeframe are 
+   included.
+
+
+If you have an upload URL from the Redpanda support team, provide it in the 
+--upload-url flag to upload your diagnostics bundle to Redpanda.
 `

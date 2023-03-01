@@ -415,8 +415,7 @@ make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
         for (auto& cas : ca_cfg.custom_assignments) {
             allocation_constraints constraints;
             constraints.hard_constraints.push_back(
-              ss::make_lw_shared<hard_constraint_evaluator>(
-                on_nodes(cas.replicas)));
+              ss::make_lw_shared<hard_constraint>(on_nodes(cas.replicas)));
 
             req.partitions.emplace_back(
               cas.id, cas.replicas.size(), std::move(constraints));
@@ -1139,25 +1138,22 @@ partition_constraints topics_frontend::get_partition_constraints(
 
     // Add constraint on least disk usage
     allocation_constraints.soft_constraints.push_back(
-      ss::make_lw_shared<soft_constraint_evaluator>(
+      ss::make_lw_shared<soft_constraint>(
         least_disk_filled(max_disk_usage_ratio, info.node_disk_reports)));
 
     auto partition_size_it = info.ntp_sizes.find(id);
     if (partition_size_it == info.ntp_sizes.end()) {
-        return partition_constraints(
-          id, new_replication_factor, std::move(allocation_constraints));
+        return {id, new_replication_factor, std::move(allocation_constraints)};
     }
 
     // Add constraint on partition max_disk_usage_ratio overfill
     allocation_constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(
-        disk_not_overflowed_by_partition(
-          max_disk_usage_ratio,
-          partition_size_it->second,
-          info.node_disk_reports)));
+      ss::make_lw_shared<hard_constraint>(disk_not_overflowed_by_partition(
+        max_disk_usage_ratio,
+        partition_size_it->second,
+        info.node_disk_reports)));
 
-    return partition_constraints(
-      id, new_replication_factor, std::move(allocation_constraints));
+    return {id, new_replication_factor, std::move(allocation_constraints)};
 }
 
 ss::future<std::error_code> topics_frontend::increase_replication_factor(
@@ -1336,7 +1332,7 @@ allocation_request make_allocation_request(
     req.partitions.reserve(1);
     allocation_constraints constraints;
     constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint_evaluator>(on_nodes(new_replicas)));
+      ss::make_lw_shared<hard_constraint>(on_nodes(new_replicas)));
     req.partitions.emplace_back(
       ntp.tp.partition, tp_replication_factor, std::move(constraints));
     return req;
@@ -1349,10 +1345,6 @@ topics_frontend::generate_reassignments(
       model::topic_namespace{ntp.ns, ntp.tp.topic});
     if (!tp_metadata.has_value()) {
         co_return errc::topic_not_exists;
-    }
-
-    if (!tp_metadata.value().get().is_topic_replicable()) {
-        co_return errc::topic_operation_error;
     }
 
     auto tp_replication_factor

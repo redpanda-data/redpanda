@@ -16,6 +16,8 @@
 #include "model/fundamental.h"
 #include "vassert.h"
 
+#include <seastar/util/noncopyable_function.hh>
+
 #include <absl/container/node_hash_set.h>
 
 namespace cluster {
@@ -29,78 +31,80 @@ class allocation_state;
  * https://github.com/Netflix/Fenzo/blob/master/fenzo-core/src/main/java/com/netflix/fenzo/VMTaskFitnessCalculator.java
  *
  */
+using replicas_t = std::vector<model::broker_shard>;
+using hard_constraint_evaluator
+  = ss::noncopyable_function<bool(const allocation_node&)>;
 
-class hard_constraint_evaluator final {
+using soft_constraint_evaluator
+  = ss::noncopyable_function<uint64_t(const allocation_node&)>;
+
+class hard_constraint {
 public:
     struct impl {
-        virtual bool evaluate(const allocation_node&) const = 0;
-        virtual void print(std::ostream&) const = 0;
+        virtual hard_constraint_evaluator
+        make_evaluator(const replicas_t& current_replicas) const = 0;
+
+        virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
     };
 
-    explicit hard_constraint_evaluator(std::unique_ptr<impl> impl) noexcept
+    explicit hard_constraint(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {}
 
-    hard_constraint_evaluator(hard_constraint_evaluator&&) noexcept = default;
-    hard_constraint_evaluator(const hard_constraint_evaluator&) = delete;
+    hard_constraint(hard_constraint&&) noexcept = default;
+    hard_constraint(const hard_constraint&) = delete;
 
-    hard_constraint_evaluator&
-    operator=(hard_constraint_evaluator&&) noexcept = default;
-    hard_constraint_evaluator&
-    operator=(const hard_constraint_evaluator&) noexcept = delete;
+    hard_constraint& operator=(hard_constraint&&) noexcept = default;
+    hard_constraint& operator=(const hard_constraint&) noexcept = delete;
 
-    ~hard_constraint_evaluator() noexcept = default;
+    ~hard_constraint() noexcept = default;
 
-    bool evaluate(const allocation_node& node) const {
-        return _impl->evaluate(node);
+    hard_constraint_evaluator
+    make_evaluator(const replicas_t& current_replicas) const {
+        return _impl->make_evaluator(current_replicas);
     }
+
+    ss::sstring name() const { return _impl->name(); }
 
 private:
-    friend std::ostream&
-    operator<<(std::ostream& o, const hard_constraint_evaluator& e) {
-        e._impl->print(o);
+    friend std::ostream& operator<<(std::ostream& o, const hard_constraint& c) {
+        fmt::print("hard constraint: [{}]", c.name());
         return o;
     }
-
     std::unique_ptr<impl> _impl;
 };
 
-class soft_constraint_evaluator final {
+class soft_constraint final {
 public:
     static constexpr uint64_t max_score = 10'000'000;
     struct impl {
-        virtual uint64_t score(const allocation_node&) const = 0;
-        virtual void print(std::ostream&) const = 0;
+        virtual soft_constraint_evaluator
+        make_evaluator(const replicas_t& current_replicas) const = 0;
+        virtual ss::sstring name() const = 0;
         virtual ~impl() = default;
     };
 
-    explicit soft_constraint_evaluator(std::unique_ptr<impl> impl) noexcept
+    explicit soft_constraint(std::unique_ptr<impl> impl) noexcept
       : _impl(std::move(impl)) {}
 
-    soft_constraint_evaluator(soft_constraint_evaluator&&) noexcept = default;
-    soft_constraint_evaluator(const soft_constraint_evaluator&) = delete;
+    soft_constraint(soft_constraint&&) noexcept = default;
+    soft_constraint(const soft_constraint&) = delete;
 
-    soft_constraint_evaluator&
-    operator=(soft_constraint_evaluator&&) noexcept = default;
-    soft_constraint_evaluator&
-    operator=(const soft_constraint_evaluator&) noexcept = delete;
+    soft_constraint& operator=(soft_constraint&&) noexcept = default;
+    soft_constraint& operator=(const soft_constraint&) noexcept = delete;
 
-    ~soft_constraint_evaluator() noexcept = default;
+    ~soft_constraint() noexcept = default;
 
-    uint64_t score(const allocation_node& node) const {
-        auto ret = _impl->score(node);
-        vassert(
-          ret <= max_score,
-          "Score returned from soft constraint evaluator must be in range of "
-          "[0, 10'000'000]. Returned score: {}",
-          ret);
-        return ret;
+    soft_constraint_evaluator
+    make_evaluator(const replicas_t& current_replicas) const {
+        return _impl->make_evaluator(current_replicas);
     };
 
+    ss::sstring name() const { return _impl->name(); }
+
 private:
-    friend std::ostream&
-    operator<<(std::ostream& o, const soft_constraint_evaluator& e) {
-        e._impl->print(o);
+    friend std::ostream& operator<<(std::ostream& o, const soft_constraint& c) {
+        fmt::print("soft constraint: [{}]", c.name());
         return o;
     }
 
@@ -114,11 +118,11 @@ private:
  */
 struct allocation_constraints {
     // we store pointers in here to make allocation constraints copyable
-    using soft_constraint_ev_ptr = ss::lw_shared_ptr<soft_constraint_evaluator>;
-    using hard_constraint_ev_ptr = ss::lw_shared_ptr<hard_constraint_evaluator>;
+    using soft_constraint_ptr = ss::lw_shared_ptr<soft_constraint>;
+    using hard_constraint_ptr = ss::lw_shared_ptr<hard_constraint>;
 
-    std::vector<soft_constraint_ev_ptr> soft_constraints;
-    std::vector<hard_constraint_ev_ptr> hard_constraints;
+    std::vector<soft_constraint_ptr> soft_constraints;
+    std::vector<hard_constraint_ptr> hard_constraints;
 
     void add(allocation_constraints);
     friend std::ostream&

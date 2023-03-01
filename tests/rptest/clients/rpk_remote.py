@@ -35,11 +35,9 @@ class RpkRemoteTool:
     def debug_bundle(self, output_file):
         # Run the bundle command.  It outputs into pwd, so switch to working dir first
         return self._execute([
-            self._rpk_binary(),
-            'debug',
-            'bundle',
-            "--output",
-            output_file,
+            self._rpk_binary(), 'debug', 'bundle', "--output", output_file,
+            "--api-urls",
+            self._redpanda.admin_endpoints()
         ])
 
     def cluster_config_force_reset(self, property_name):
@@ -73,6 +71,8 @@ class RpkRemoteTool:
         return self._execute(cmd, timeout=timeout)
 
     def _execute(self, cmd, timeout=30):
+        self._redpanda.logger.debug("Executing command: %s", cmd)
+
         return self._node.account.ssh_output(
             ' '.join(cmd),
             timeout_sec=timeout,

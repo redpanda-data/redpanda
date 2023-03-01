@@ -2802,32 +2802,6 @@ consensus::transfer_leadership(transfer_leadership_request req) {
     }
 }
 
-ss::future<std::error_code>
-consensus::request_leadership(model::timeout_clock::time_point timeout) {
-    if (is_elected_leader()) {
-        co_return errc::success;
-    }
-
-    if (!_leader_id) {
-        co_return errc::not_leader;
-    }
-
-    if (!config().is_voter(_self)) {
-        co_return errc::not_voter;
-    }
-
-    auto result = co_await _client_protocol.transfer_leadership(
-      _leader_id->id(),
-      transfer_leadership_request{.group = _group, .target = _self.id()},
-      rpc::client_opts(timeout));
-
-    if (result) {
-        co_return result.value().result;
-    }
-
-    co_return result.error();
-}
-
 /**
  * After we have accepted the request to transfer leadership, carry out
  * preparatory phase before we actually send a timeout_now to the new
@@ -3350,6 +3324,26 @@ size_t consensus::get_follower_count() const {
 ss::future<std::optional<storage::timequery_result>>
 consensus::timequery(storage::timequery_config cfg) {
     return _log.timequery(cfg);
+}
+
+std::optional<uint8_t> consensus::get_under_replicated() const {
+    if (!is_leader()) {
+        return std::nullopt;
+    }
+
+    uint8_t count = 0;
+    for (const auto& f : _fstats) {
+        auto f_metrics = build_follower_metrics(
+          f.first.id(),
+          _log.offsets(),
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+            _jit.base_duration()),
+          f.second);
+        if (f_metrics.under_replicated) {
+            count += 1;
+        }
+    }
+    return count;
 }
 
 } // namespace raft

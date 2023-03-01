@@ -177,6 +177,7 @@ housekeeping_workflow::housekeeping_workflow(
 void housekeeping_workflow::register_job(housekeeping_job& job) {
     job.acquire();
     _pending.push_back(job);
+    _cvar.signal();
 }
 
 void housekeeping_workflow::deregister_job(housekeeping_job& job) {
@@ -287,6 +288,14 @@ ss::future<> housekeeping_workflow::run_jobs_bg() {
         // backlog size reaches zero. After that the status changes to idle and
         // backlog size to the total number of housekeeping jobs.
         co_await _cvar.wait([this] { return jobs_available(); });
+        // There is a scheduling event between the predicate (jobs_available())
+        // returning true and the ss::condition_variable::wait method returning,
+        // meaning that upon the return from this method, there is no guarantee
+        // that the predicate is still true. This issue was seen in
+        // https://github.com/redpanda-data/redpanda/issues/8964.
+        if (!jobs_available()) {
+            continue;
+        }
         if (_as.abort_requested()) {
             co_return;
         }

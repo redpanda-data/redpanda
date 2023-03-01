@@ -14,7 +14,7 @@ import requests
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
-from ducktape.mark import matrix
+from ducktape.mark import ignore, matrix
 
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.types import TopicSpec
@@ -28,7 +28,7 @@ from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, SISettings
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, SISettings
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
@@ -809,9 +809,14 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                                             stop_timeout=90)
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
-    @matrix(num_to_upgrade=[0, 2])
+    # Redpandas before v23.1 did not have support for ABS.
+    # TODO(vlad): This @ignore can be removed once v23.1 becomes
+    # the "previous version".
+    @ignore(num_to_upgrade=2, cloud_storage_type=CloudStorageType.ABS)
+    @matrix(num_to_upgrade=[0, 2],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
-    def test_shadow_indexing(self, num_to_upgrade):
+    def test_shadow_indexing(self, num_to_upgrade, cloud_storage_type):
         """
         Test interaction between the shadow indexing and the partition movement.
         Partition movement generate partitions with different revision-ids and the
@@ -852,13 +857,25 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
                             min_records=records)
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
-    @matrix(num_to_upgrade=[0, 2])
+    # Redpandas before v23.1 did not have support for ABS.
+    # TODO(vlad): This @ignore can be removed once v23.1 becomes
+    # the "previous version".
+    @ignore(num_to_upgrade=2, cloud_storage_type=CloudStorageType.ABS)
+    @matrix(num_to_upgrade=[0, 2],
+            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
-    def test_cross_shard(self, num_to_upgrade):
+    def test_cross_shard(self, num_to_upgrade, cloud_storage_type):
         """
         Test interaction between the shadow indexing and the partition movement.
         Move partitions with SI enabled between shards.
         """
+
+        # Redpandas before v23.1 did not have support for ABS.
+        # TODO(vlad): This check can be removed once v23.1 becomes
+        # the "previous version".
+        if num_to_upgrade > 0 and cloud_storage_type == CloudStorageType.ABS:
+            return
+
         throughput, records, moves, partitions = self._get_scale_params()
 
         test_mixed_versions = num_to_upgrade > 0

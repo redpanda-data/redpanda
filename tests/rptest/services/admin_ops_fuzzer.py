@@ -11,6 +11,7 @@ import json
 import random
 import re
 import string
+import requests
 from threading import Event, Condition
 import threading
 import time
@@ -134,13 +135,17 @@ class DeleteTopicOperation(Operation):
         # since metadata in Redpanda and Kafka are eventually consistent
         # we must check all the nodes before proceeding
         for n in ctx.redpanda.started_nodes():
-            partitions = ctx.admin().get_partitions(node=n)
-            for p in partitions:
-                if p['topic'] == self.topic:
-                    ctx.redpanda.logger.info(
-                        f"found deleted topic {self.topic} on node {n.account.hostname}"
-                    )
-                    return False
+            # we will check does topic_table contain any info about our topic and partition 0. If not we can assume that topic was deleted
+            try:
+                info = ctx.admin().get_partitions(node=n,
+                                                  topic=self.topic,
+                                                  partition=0)
+                ctx.redpanda.logger.info(
+                    f"found deleted topic {self.topic} on node {n.account.hostname}"
+                )
+                return False
+            except requests.exceptions.HTTPError as e:
+                assert e.response.status_code == 404
 
         return True
 

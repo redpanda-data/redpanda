@@ -193,6 +193,7 @@ struct configuration final : public config_store {
     property<std::optional<bool>> kafka_enable_authorization;
     property<std::optional<std::vector<ss::sstring>>>
       kafka_mtls_principal_mapping_rules;
+    property<bool> kafka_enable_partition_reassignment;
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
     property<std::chrono::milliseconds> node_management_operation_timeout_ms;
@@ -335,6 +336,10 @@ struct configuration final : public config_store {
     bounded_property<size_t> storage_space_alert_free_threshold_bytes;
     bounded_property<size_t> storage_min_free_bytes;
     property<bool> storage_strict_data_init;
+
+    // memory related settings
+    property<bool> memory_abort_on_alloc_failure;
+
     // metrics reporter
     property<bool> enable_metrics_reporter;
     property<std::chrono::milliseconds> metrics_reporter_tick_interval;
@@ -366,10 +371,6 @@ struct configuration final : public config_store {
       controller_log_accummulation_rps_capacity_configuration_operations;
 
     // node and cluster throughput limiting
-    bounded_property<std::optional<int64_t>>
-      kafka_throughput_limit_cluster_in_bps;
-    bounded_property<std::optional<int64_t>>
-      kafka_throughput_limit_cluster_out_bps;
     bounded_property<std::optional<int64_t>> kafka_throughput_limit_node_in_bps;
     bounded_property<std::optional<int64_t>>
       kafka_throughput_limit_node_out_bps;

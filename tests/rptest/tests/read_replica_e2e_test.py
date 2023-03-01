@@ -33,6 +33,16 @@ class BucketUsage(NamedTuple):
     keys: set[str]
 
 
+# These tests do not wait for data to be written by the origin cluster
+# before creating read replicas, so it is expected to see log errors
+# when the destination cluster can't find manifests.
+# See https://github.com/redpanda-data/redpanda/issues/8965
+READ_REPLICA_LOG_ALLOW_LIST = [
+    "Failed to download partition manifest",
+    "Failed to download manifest",
+]
+
+
 class TestReadReplicaService(EndToEndTest):
     log_segment_size = 1048576  # 5MB
     topic_name = "panda-topic"
@@ -56,7 +66,8 @@ class TestReadReplicaService(EndToEndTest):
             cloud_storage_max_connections=5,
             log_segment_size=TestReadReplicaService.log_segment_size,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-            cloud_storage_segment_max_upload_interval_sec=5)
+            cloud_storage_segment_max_upload_interval_sec=5,
+            cloud_storage_housekeeping_interval_ms=10)
         self.second_cluster = None
 
     def start_second_cluster(self) -> None:
@@ -74,6 +85,20 @@ class TestReadReplicaService(EndToEndTest):
             self.si_settings.cloud_storage_bucket,
         }
         rpk_second_cluster.create_topic(self.topic_name, config=conf)
+
+        def has_leader():
+            partitions = list(
+                rpk_second_cluster.describe_topic(self.topic_name,
+                                                  tolerant=True))
+            for part in partitions:
+                if part.leader == -1:
+                    return False
+            return True
+
+        wait_until(has_leader,
+                   timeout_sec=60,
+                   backoff_sec=10,
+                   err_msg="No leader in read-replica")
 
     def start_consumer(self) -> None:
         # important side effect for superclass; we will use the replica
@@ -131,11 +156,8 @@ class TestReadReplicaService(EndToEndTest):
                             str(self.producer.last_acked_offsets))
             self.producer.stop()
 
-        # Make original topic upload data to S3
-        rpk = RpkTool(self.redpanda)
-        rpk.alter_topic_config(spec.name, 'redpanda.remote.write', 'true')
-
         self.start_second_cluster()
+
         # wait until the read replica topic creation succeeds
         wait_until(
             self.create_read_replica_topic_success,
@@ -170,7 +192,7 @@ class TestReadReplicaService(EndToEndTest):
         else:
             return None
 
-    @cluster(num_nodes=7)
+    @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10],
             cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
     def test_writes_forbidden(self, partition_count: int,
@@ -207,7 +229,7 @@ class TestReadReplicaService(EndToEndTest):
             # count is permitted to increase.
             assert len(objects_after) >= len(objects_before)
 
-    @cluster(num_nodes=9)
+    @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10],
             min_records=[10000],
             cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])

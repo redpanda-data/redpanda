@@ -130,9 +130,15 @@ public:
     void append(ss::temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
     void append(iobuf);
-    /// appends all fragments from given buffer directly to current buffer
-    /// fragments list
+
+    /*
+     * appends all fragments from the iobuf parameter. be careful when appending
+     * fragments from a shared iobuf. sharing in a zero-copy operation and iobuf
+     * does not perform copy-on-write. therefore changes will be visible to all
+     * iobufs that share the backing fragments.
+     */
     void append_fragments(iobuf);
+
     /// \brief trims the back, and appends direct.
     void append_take_ownership(fragment*);
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
@@ -199,7 +205,7 @@ inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
 inline bool iobuf::operator!=(std::string_view o) const {
     return !(*this == o);
 }
-inline bool iobuf::empty() const { return _frags.empty(); }
+inline bool iobuf::empty() const { return _size == 0; }
 inline size_t iobuf::size_bytes() const { return _size; }
 
 inline size_t iobuf::available_bytes() const {
@@ -272,11 +278,8 @@ inline void iobuf::reserve_memory(size_t reservation) {
 }
 
 [[gnu::always_inline]] void inline iobuf::append(const char* ptr, size_t size) {
-    if (unlikely(!size)) {
-        return;
-    }
     oncore_debug_verify(_verify_shard);
-    if (size == 0) {
+    if (unlikely(size == 0)) {
         return;
     }
     if (likely(size <= available_bytes())) {

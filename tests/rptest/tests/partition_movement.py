@@ -132,8 +132,20 @@ class PartitionMovementMixin():
     def _wait_post_cancel(self, topic, partition, prev_assignments,
                           new_assignment, timeout_sec):
         admin = Admin(self.redpanda)
+
+        def cancel_finished():
+            results = []
+            for n in self.redpanda._started:
+                info = admin.get_partitions(topic, partition, node=n)
+                results.append(info["status"] == "done")
+
+            return all(results)
+
+        wait_until(cancel_finished, timeout_sec=timeout_sec, backoff_sec=1)
+
         result_configuration = admin.wait_stable_configuration(
             topic=topic, partition=partition, timeout_s=timeout_sec)
+
         movement_cancelled = self._equal_assignments(
             result_configuration.replicas, prev_assignments)
 

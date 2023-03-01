@@ -155,11 +155,6 @@ public:
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target);
 
-    ss::future<std::error_code>
-    request_leadership(model::timeout_clock::time_point timeout) {
-        return _raft->request_leadership(timeout);
-    }
-
     ss::future<std::error_code> update_replica_set(
       std::vector<raft::broker_revision> brokers,
       model::revision_id new_revision_id) {
@@ -179,6 +174,10 @@ public:
 
     std::optional<model::node_id> get_leader_id() const {
         return _raft->get_leader_id();
+    }
+
+    std::optional<uint8_t> get_under_replicated() const {
+        return _raft->get_under_replicated();
     }
 
     model::offset get_latest_configuration_offset() const {

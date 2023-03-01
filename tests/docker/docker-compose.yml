@@ -30,7 +30,6 @@ services:
     - redpanda-test
   azurite:
     container_name: azurite
-    hostname: devstoreaccount1.blob.localhost
     restart: always
     ports:
     - 10000:10000

@@ -451,10 +451,20 @@ class Admin:
     def put_license(self, license):
         return self._request("PUT", "features/license", data=license)
 
+    def get_loggers(self, node):
+        """
+        Get the names of all loggers.
+        """
+        return [
+            l["name"]
+            for l in self._request("GET", "loggers", node=node).json()
+        ]
+
     def set_log_level(self, name, level, expires=None):
         """
         Set broker log level
         """
+        name = name.replace("/", "%2F")
         for node in self.redpanda.nodes:
             path = f"config/log_level/{name}?level={level}"
             if expires:

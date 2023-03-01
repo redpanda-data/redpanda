@@ -86,12 +86,14 @@ std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
 std::ostream& operator<<(std::ostream& o, const partition_status& ps) {
     fmt::print(
       o,
-      "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}}}",
+      "{{id: {}, term: {}, leader_id: {}, revision_id: {}, size_bytes: {}, "
+      "under_replicated: {}}}",
       ps.id,
       ps.term,
       ps.leader_id,
       ps.revision_id,
-      ps.size_bytes);
+      ps.size_bytes,
+      ps.under_replicated_replicas);
     return o;
 }
 

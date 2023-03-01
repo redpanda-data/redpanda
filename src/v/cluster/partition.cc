@@ -522,10 +522,17 @@ ss::future<> partition::update_configuration(topic_properties properties) {
     bool new_archival = new_ntp_config.shadow_indexing_mode
                         && model::is_archival_enabled(
                           new_ntp_config.shadow_indexing_mode.value());
+
+    bool new_compaction_status
+      = new_ntp_config.cleanup_policy_bitflags.has_value()
+        && (new_ntp_config.cleanup_policy_bitflags.value()
+            & model::cleanup_policy_bitflags::compaction)
+             == model::cleanup_policy_bitflags::compaction;
     if (
       old_ntp_config.is_archival_enabled() != new_archival
       || old_ntp_config.is_read_replica_mode_enabled()
-           != new_ntp_config.read_replica) {
+           != new_ntp_config.read_replica
+      || old_ntp_config.is_compacted() != new_compaction_status) {
         cloud_storage_changed = true;
     }
 
@@ -683,6 +690,11 @@ partition::transfer_leadership(std::optional<model::node_id> target) {
     if (_archiver && archival_timeout.has_value()) {
         complete_archiver.emplace(
           [a = _archiver.get()]() { a->complete_transfer_leadership(); });
+        vlog(
+          clusterlog.debug,
+          "transfer_leadership[{}]: entering archiver prepare",
+          ntp());
+
         bool archiver_clean = co_await _archiver->prepare_transfer_leadership(
           archival_timeout.value());
         if (!archiver_clean) {
@@ -696,7 +708,14 @@ partition::transfer_leadership(std::optional<model::node_id> target) {
               "Timed out waiting for {} uploads to complete before "
               "transferring leadership: proceeding anyway",
               ntp());
+        } else {
+            vlog(
+              clusterlog.debug,
+              "transfer_leadership[{}]: archiver prepare complete",
+              ntp());
         }
+    } else {
+        vlog(clusterlog.trace, "transfer_leadership[{}]: no archiver", ntp());
     }
 
     co_return co_await _raft->do_transfer_leadership(target);

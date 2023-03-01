@@ -15,6 +15,7 @@ from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
 from requests.exceptions import HTTPError
 
+from rptest.utils.mode_checks import skip_debug_mode
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.clients.offline_log_viewer import OfflineLogViewer
@@ -270,12 +271,15 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
+    @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(
         num_nodes=3,
         log_allow_list=[
             'exception while executing partition operation: {type: deletion'
         ])
-    def topic_delete_unavailable_test(self):
+    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    def topic_delete_unavailable_test(self, cloud_storage_type):
         """
         Test deleting while the S3 backend is unavailable: we should see
         that local deletion proceeds, and remote deletion eventually

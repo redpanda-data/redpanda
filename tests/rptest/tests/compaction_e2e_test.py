@@ -31,11 +31,13 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
               self).__init__(test_context=test_context,
                              extra_rp_conf=extra_rp_conf)
 
-    def topic_segments(self):
-        storage = self.redpanda.node_storage(self.redpanda.nodes[0])
-        topic_partitions = storage.partitions("kafka", self.topic)
-
-        return [len(p.segments) for p in topic_partitions]
+    def topic_segments(self) -> list[list[int]]:
+        partitions = []
+        for node in self.redpanda.nodes:
+            storage = self.redpanda.node_storage(node)
+            topic_partitions = storage.partitions("kafka", self.topic)
+            partitions.append([len(p.segments) for p in topic_partitions])
+        return partitions
 
     @cluster(num_nodes=4)
     @matrix(
@@ -96,12 +98,15 @@ class CompactionE2EIdempotencyTest(RedpandaTest):
         rpk.cluster_config_set("log_compaction_interval_ms", str(3600 * 1000))
 
         def segment_number_matches(predicate):
-            segments_per_partition = self.topic_segments()
+            segments_per_partition_per_node = self.topic_segments()
             self.logger.debug(
-                f"Topic {self.topic} segments per partition: {segments_per_partition}"
-            )
+                f"Topic {self.topic} {segments_per_partition_per_node=}")
 
-            return all([predicate(n) for n in segments_per_partition])
+            for node in segments_per_partition_per_node:
+                for partition in node:
+                    if not predicate(partition):
+                        return False
+            return True
 
         timeout_sec = 300
         self.logger.info(

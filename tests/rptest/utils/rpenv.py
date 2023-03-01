@@ -23,3 +23,19 @@ def sample_license():
         assert is_ci == "false"
         return None
     return license
+
+
+class IsCIOrNotEmpty:
+    """
+    Comparison with this object is true if the environemnt is CI, or if the
+    other value is not empty.
+
+    Useful as a markup on a test that must run in CI or when the env is present:
+
+    @env(REQUIRED_ENV=IsCIOrNotEmpty())
+    """
+    def __init__(self):
+        self.is_ci = os.environ.get('CI', 'false') != 'false'
+
+    def __eq__(self, other: str) -> bool:
+        return bool(other) or self.is_ci

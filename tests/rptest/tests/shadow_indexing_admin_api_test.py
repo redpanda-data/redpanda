@@ -23,6 +23,7 @@ from rptest.util import (
     produce_until_segments,
     wait_for_segments_removal,
 )
+from random import choice
 
 # Log errors expected when connectivity between redpanda and the S3
 # backend is disrupted
@@ -120,10 +121,10 @@ class SIAdminApiTest(RedpandaTest):
                                                 segment_to_remove, True)
 
         self.logger.info("trying to sync remote partition")
-        for node in self.redpanda.nodes:
-            validation_result = self.admin.si_sync_local_state(
-                self.topic, 0, node)
-            self.logger.info(f"sync result {validation_result}")
+
+        node = choice(self.redpanda.nodes)
+        validation_result = self.admin.si_sync_local_state(self.topic, 0, node)
+        self.logger.info(f"sync result {validation_result}")
 
         def start_offset_not_zero():
             for partition in rpk.describe_topic(self.topic):
@@ -165,7 +166,7 @@ class SIAdminApiTest(RedpandaTest):
     def test_topic_recovery_on_leader(self):
         response = self.admin.initiate_topic_scan_and_recovery(
             node=self._get_non_controller_node())
-        assert response.status_code == requests.status_codes.codes['ok']
+        assert response.status_code == requests.status_codes.codes['accepted']
         assert response.json() == {'status': 'recovery started'}
 
     @cluster(num_nodes=3)
