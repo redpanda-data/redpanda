@@ -104,12 +104,14 @@ metrics_reporter::metrics_reporter(
   ss::sharded<topic_table>& topic_table,
   ss::sharded<health_monitor_frontend>& health_monitor,
   ss::sharded<config_frontend>& config_frontend,
+  ss::sharded<features::feature_table>& feature_table,
   ss::sharded<ss::abort_source>& as)
   : _raft0(std::move(raft0))
   , _members_table(members_table)
   , _topics(topic_table)
   , _health_monitor(health_monitor)
   , _config_frontend(config_frontend)
+  , _feature_table(feature_table)
   , _as(as)
   , _logger(logger, "metrics-reporter") {}
 
@@ -210,6 +212,7 @@ metrics_reporter::build_metrics_snapshot() {
         auto& metrics = it->second;
 
         metrics.version = report.local_state.redpanda_version;
+        metrics.logical_version = report.local_state.logical_version;
         metrics.disks.reserve(report.local_state.disks.size());
         std::transform(
           report.local_state.disks.begin(),
@@ -241,6 +244,11 @@ metrics_reporter::build_metrics_snapshot() {
     for (auto& [_, m] : metrics_map) {
         snapshot.nodes.push_back(std::move(m));
     }
+
+    snapshot.active_logical_version
+      = _feature_table.local().get_active_version();
+    snapshot.original_logical_version
+      = _feature_table.local().get_original_version();
 
     snapshot.has_kafka_gssapi = absl::c_any_of(
       config::shard_local_cfg().sasl_mechanisms(),
@@ -451,6 +459,12 @@ void rjson_serialize(
     w.Key("partition_count");
     w.Int(snapshot.partition_count);
 
+    w.Key("active_logical_version");
+    w.Int(snapshot.active_logical_version);
+
+    w.Key("original_logical_version");
+    w.Int(snapshot.original_logical_version);
+
     w.Key("nodes");
     w.StartArray();
     for (const auto& m : snapshot.nodes) {
@@ -483,6 +497,8 @@ void rjson_serialize(
     w.Uint(nm.cpu_count);
     w.Key("version");
     w.String(nm.version);
+    w.Key("logical_version");
+    w.Int(nm.logical_version);
     w.Key("uptime_ms");
     w.Uint64(nm.uptime_ms);
     w.Key("is_alive");
