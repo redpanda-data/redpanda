@@ -405,6 +405,8 @@ func (m *MockAdminAPI) DisableMaintenanceMode(_ context.Context, _ int) error {
 
 func (m *MockAdminAPI) GetHealthOverview(_ context.Context) (admin.ClusterHealthOverview, error) {
 	m.Log.WithName("GetHealthOverview").Info("called")
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
 	return admin.ClusterHealthOverview{
 		IsHealthy: m.clusterHealth,
 	}, nil
