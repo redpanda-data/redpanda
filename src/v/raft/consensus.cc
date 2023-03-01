@@ -2043,7 +2043,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
 }
 
 ss::future<install_snapshot_reply>
-consensus::do_install_snapshot(install_snapshot_request&& r) {
+consensus::do_install_snapshot(install_snapshot_request r) {
     vlog(_ctxlog.trace, "Install snapshot request: {}", r);
 
     install_snapshot_reply reply{
@@ -2052,13 +2052,13 @@ consensus::do_install_snapshot(install_snapshot_request&& r) {
     reply.node_id = _self;
 
     if (unlikely(is_request_target_node_invalid("install_snapshot", r))) {
-        return ss::make_ready_future<install_snapshot_reply>(reply);
+        co_return reply;
     }
 
     bool is_done = r.done;
     // Raft paper: Reply immediately if term < currentTerm (§7.1)
     if (r.term < _term) {
-        return ss::make_ready_future<install_snapshot_reply>(reply);
+        co_return reply;
     }
 
     // no need to trigger timeout
@@ -2069,42 +2069,33 @@ consensus::do_install_snapshot(install_snapshot_request&& r) {
         _term = r.term;
         _voted_for = {};
         do_step_down("install_snapshot_term_greater");
-        return do_install_snapshot(std::move(r));
+        co_return co_await do_install_snapshot(std::move(r));
     }
 
-    auto f = ss::now();
     // Create new snapshot file if first chunk (offset is 0) (§7.2)
     if (r.file_offset == 0) {
         // discard old chunks, previous snaphost wasn't finished
         if (_snapshot_writer) {
-            f = _snapshot_writer->close().then(
-              [this] { return _snapshot_mgr.remove_partial_snapshots(); });
+            co_await _snapshot_writer->close();
+            co_await _snapshot_mgr.remove_partial_snapshots();
         }
-        f = f.then([this] {
-            return _snapshot_mgr.start_snapshot().then(
-              [this](storage::snapshot_writer w) {
-                  _snapshot_writer.emplace(std::move(w));
-              });
-        });
+
+        auto w = co_await _snapshot_mgr.start_snapshot();
+        _snapshot_writer.emplace(std::move(w));
     }
 
     // Write data into snapshot file at given offset (§7.3)
-    f = f.then([this, chunk = std::move(r.chunk)]() mutable {
-        return write_iobuf_to_output_stream(
-          std::move(chunk), _snapshot_writer->output());
-    });
+    co_await write_iobuf_to_output_stream(
+      std::move(r.chunk), _snapshot_writer->output());
 
     // Reply and wait for more data chunks if done is false (§7.4)
     if (!is_done) {
-        return f.then([reply]() mutable {
-            reply.success = true;
-            return reply;
-        });
+        reply.success = true;
+        co_return reply;
     }
+
     // Last chunk, finish storing snapshot
-    return f.then([this, r = std::move(r), reply]() mutable {
-        return finish_snapshot(std::move(r), reply);
-    });
+    co_return co_await finish_snapshot(std::move(r), reply);
 }
 
 ss::future<install_snapshot_reply> consensus::finish_snapshot(
