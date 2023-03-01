@@ -145,6 +145,9 @@ private:
       partition_allocation_domain,
       const std::vector<model::broker_shard>&);
 
+    allocation_constraints
+    default_constraints(const partition_allocation_domain);
+
     std::unique_ptr<allocation_state> _state;
     allocation_strategy _allocation_strategy;
     ss::sharded<members_table>& _members;
