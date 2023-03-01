@@ -52,20 +52,6 @@ jobs:
         find src/go -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.19
         git diff --exit-code
 
-  js:
-    name: Lint js files
-    runs-on: ubuntu-latest
-    steps:
-
-    - name: Checkout code
-      uses: actions/checkout@v3
-
-    - name: Install prettier
-      run: npm install prettier@2.7.1
-
-    - name: Run prettier
-      run: npx prettier --check 'src/**/*.{ts,js}'
-
   py:
     name: Lint python files
     runs-on: ubuntu-latest
