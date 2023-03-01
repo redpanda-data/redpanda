@@ -31,7 +31,6 @@ please keep this up to date with every new library use.
 | lksctp-tools    | LGPL v2.1                          |
 | lz4             | BSD 2                              |
 | nettle          | LGPL v3                            |
-| nodejs          | MIT                                |
 | protobuf        | Apache License 2                   |
 | rapidjson       | MIT                                |
 | sasl2           | https://github.com/cyrusimap/cyrus-sasl/blob/master/COPYING |
@@ -123,30 +122,4 @@ please keep this up to date with every new library use.
 | k8s.io/utils                              | Apache License 2          |
 | sigs.k8s.io/controller-runtime            | Apache License 2          |
 
-# Javascript deps _used_ in production (exclude all test dependencies)
-
-## src/js/package.json
-| software                             | license          |
-| :----------                          | :------------:   |
-| @types/mocha                         | MIT              |
-| @types/node                          | MIT              |
-| chokidar                             | MIT              |
-| fast-crc32c                          | MIT              |
-| js-yaml                              | MIT              |
-| mocha                                | MIT              |
-| prettier                             | MIT              |
-| rewire                               | MIT              |
-| ts-loader                            | MIT              |
-| ts-node                              | MIT              |
-| typescript                           | Apache-2.0       |
-| webpack                              | MIT              |
-| winston                              | MIT              |
-| xxhash                               | BSD              |
-
-## tools/ts-generator/package.json
-| software                             | license          |
-| :----------                          | :------------:   |
-| @types/node                          | MIT              |
-| fast-crc32c                          | MIT              |
-| xxhash                               | BSD              |
 
