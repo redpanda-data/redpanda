@@ -93,6 +93,7 @@ func init() {
 func (in *RedpandaStatus) GetHelmRelease() string {
 	return in.HelmRelease
 }
+
 func (in *Redpanda) GetHelmReleaseName() string {
 	return in.Name
 }
