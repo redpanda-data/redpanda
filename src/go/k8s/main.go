@@ -29,6 +29,7 @@ import (
 	flag "github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/getter"
 	"helm.sh/helm/v3/pkg/registry"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -37,9 +38,14 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
 // +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
@@ -133,11 +139,6 @@ func main() {
 	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
 	flag.StringVar(&redpandav1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
 
-	//opts := zap.Options{
-	//	Development: true,
-	//}
-	//opts.BindFlags(flag.CommandLine)
-	//
 	logOptions.BindFlags(flag.CommandLine)
 	clientOptions.BindFlags(flag.CommandLine)
 	kubeConfigOpts.BindFlags(flag.CommandLine)
@@ -159,65 +160,65 @@ func main() {
 		os.Exit(1)
 	}
 
-	//configurator := resources.ConfiguratorSettings{
-	//	ConfiguratorBaseImage: configuratorBaseImage,
-	//	ConfiguratorTag:       configuratorTag,
-	//	ImagePullPolicy:       corev1.PullPolicy(configuratorImagePullPolicy),
-	//}
+	configurator := resources.ConfiguratorSettings{
+		ConfiguratorBaseImage: configuratorBaseImage,
+		ConfiguratorTag:       configuratorTag,
+		ImagePullPolicy:       corev1.PullPolicy(configuratorImagePullPolicy),
+	}
 
-	//if err = (&redpandacontrollers.ClusterReconciler{
-	//	Client:                    mgr.GetClient(),
-	//	Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
-	//	Scheme:                    mgr.GetScheme(),
-	//	AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
-	//	DecommissionWaitInterval:  decommissionWaitInterval,
-	//	RestrictToRedpandaVersion: restrictToRedpandaVersion,
-	//}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
-	//	setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
-	//	os.Exit(1)
-	//}
+	if err = (&redpandacontrollers.ClusterReconciler{
+		Client:                    mgr.GetClient(),
+		Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Scheme:                    mgr.GetScheme(),
+		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
+		DecommissionWaitInterval:  decommissionWaitInterval,
+		RestrictToRedpandaVersion: restrictToRedpandaVersion,
+	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
+		os.Exit(1)
+	}
 
-	//if err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
-	//	Client:                    mgr.GetClient(),
-	//	Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
-	//	Scheme:                    mgr.GetScheme(),
-	//	AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
-	//	RestrictToRedpandaVersion: restrictToRedpandaVersion,
-	//}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
-	//	setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
-	//	os.Exit(1)
-	//}
-	//
-	//if err = redpandacontrollers.NewClusterMetricsController(mgr.GetClient()).
-	//	SetupWithManager(mgr); err != nil {
-	//	setupLog.Error(err, "Unable to create controller", "controller", "ClustersMetrics")
-	//	os.Exit(1)
-	//}
+	if err = (&redpandacontrollers.ClusterConfigurationDriftReconciler{
+		Client:                    mgr.GetClient(),
+		Log:                       ctrl.Log.WithName("controllers").WithName("redpanda").WithName("ClusterConfigurationDrift"),
+		Scheme:                    mgr.GetScheme(),
+		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
+		RestrictToRedpandaVersion: restrictToRedpandaVersion,
+	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
+		os.Exit(1)
+	}
+
+	if err = redpandacontrollers.NewClusterMetricsController(mgr.GetClient()).
+		SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "ClustersMetrics")
+		os.Exit(1)
+	}
 
 	// Setup webhooks
-	//if webhookEnabled {
-	//	setupLog.Info("Setup webhook")
-	//	if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
-	//		setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
-	//		os.Exit(1)
-	//	}
-	//	hookServer := mgr.GetWebhookServer()
-	//	hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleDefaulter{Client: mgr.GetClient()}})
-	//	hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
-	//}
+	if webhookEnabled {
+		setupLog.Info("Setup webhook")
+		if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
+			os.Exit(1)
+		}
+		hookServer := mgr.GetWebhookServer()
+		hookServer.Register("/mutate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleDefaulter{Client: mgr.GetClient()}})
+		hookServer.Register("/validate-redpanda-vectorized-io-v1alpha1-console", &webhook.Admission{Handler: &redpandawebhooks.ConsoleValidator{Client: mgr.GetClient()}})
+	}
 
-	//if err = (&redpandacontrollers.ConsoleReconciler{
-	//	Client:                  mgr.GetClient(),
-	//	Scheme:                  mgr.GetScheme(),
-	//	Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
-	//	AdminAPIClientFactory:   adminutils.NewInternalAdminAPI,
-	//	Store:                   consolepkg.NewStore(mgr.GetClient(), mgr.GetScheme()),
-	//	EventRecorder:           mgr.GetEventRecorderFor("Console"),
-	//	KafkaAdminClientFactory: consolepkg.NewKafkaAdmin,
-	//}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
-	//	setupLog.Error(err, "unable to create controller", "controller", "Console")
-	//	os.Exit(1)
-	//}
+	if err = (&redpandacontrollers.ConsoleReconciler{
+		Client:                  mgr.GetClient(),
+		Scheme:                  mgr.GetScheme(),
+		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+		AdminAPIClientFactory:   adminutils.NewInternalAdminAPI,
+		Store:                   consolepkg.NewStore(mgr.GetClient(), mgr.GetScheme()),
+		EventRecorder:           mgr.GetEventRecorderFor("Console"),
+		KafkaAdminClientFactory: consolepkg.NewKafkaAdmin,
+	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Console")
+		os.Exit(1)
+	}
 
 	storageAddr := ":9090"
 	storageAdvAddr = determineAdvStorageAddr(storageAddr, setupLog)
@@ -302,18 +303,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	//if webhookEnabled {
-	//	hookServer := mgr.GetWebhookServer()
-	//	if err := mgr.AddReadyzCheck("webhook", hookServer.StartedChecker()); err != nil {
-	//		setupLog.Error(err, "unable to create ready check")
-	//		os.Exit(1)
-	//	}
-	//
-	//	if err := mgr.AddHealthzCheck("webhook", hookServer.StartedChecker()); err != nil {
-	//		setupLog.Error(err, "unable to create health check")
-	//		os.Exit(1)
-	//	}
-	//}
+	if webhookEnabled {
+		hookServer := mgr.GetWebhookServer()
+		if err := mgr.AddReadyzCheck("webhook", hookServer.StartedChecker()); err != nil {
+			setupLog.Error(err, "unable to create ready check")
+			os.Exit(1)
+		}
+
+		if err := mgr.AddHealthzCheck("webhook", hookServer.StartedChecker()); err != nil {
+			setupLog.Error(err, "unable to create health check")
+			os.Exit(1)
+		}
+	}
 	setupLog.Info("Starting manager")
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
