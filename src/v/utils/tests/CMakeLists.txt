@@ -16,6 +16,7 @@ rp_test(
     delta_for_test.cc
     token_bucket_test.cc
     uuid_test.cc
+    seastar_histogram_test.cc
   LIBRARIES v::seastar_testing_main v::utils v::bytes
   ARGS "-- -c 1"
   LABELS utils
