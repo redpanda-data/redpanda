@@ -10,9 +10,10 @@ testDirs:
 kindConfig: ./kind.yaml
 kindNodeCache: false
 commands:
+  - command: "mkdir -p tests/_e2e_artifacts"
   - command: "kubectl taint nodes -l node-role.kubernetes.io/master= node-role.kubernetes.io/master:NoSchedule-"
     ignoreFailure: true
-  - command: "./hack/install-cert-manager.sh"
+  - command: "./hack/install-cert-manager.sh tests/_e2e_artifacts"
     background: true
     ignoreFailure: true
   - command: "kubectl create -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/e23ff77fceba6a5d9f190f5d1a123c87701dc964/bundle.yaml"
@@ -21,8 +22,6 @@ commands:
   - command: "sh -c 'until kustomize build config/e2e-tests | kubectl apply -f -; do sleep 0.5; done'"
     background: true
   - command: "./hack/wait-for-webhook-ready.sh"
-  - command: "mkdir -p tests/_e2e_artifacts"
-    background: true
 artifactsDir: tests/_e2e_artifacts
 timeout: 600
 reportFormat: xml
