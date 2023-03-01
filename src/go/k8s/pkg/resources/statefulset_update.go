@@ -563,7 +563,11 @@ func (r *StatefulSetResource) evaluateUnderReplicatedPartitions(
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			r.logger.Error(err, "error closing connection to Redpanda admin API")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("getting broker metrics (%s): %w", adminURL.String(), errRedpandaNotReady)
