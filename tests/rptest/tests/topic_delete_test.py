@@ -231,6 +231,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             self.si_settings.cloud_storage_bucket, topic=topic_name)
         assert sum(1 for _ in objects) > 0
 
+    @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=3)
     def topic_delete_installed_snapshots_test(self):
         """
@@ -356,6 +357,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         return empty
 
+    @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=3)
     @matrix(disable_delete=[False, True],
             cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
@@ -408,6 +410,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # catch the case where there are segments in S3 not reflected in the
         # manifest.
 
+    @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=4)
     @parametrize(cloud_storage_type=CloudStorageType.ABS)
     @parametrize(cloud_storage_type=CloudStorageType.S3)
