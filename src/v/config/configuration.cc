@@ -188,7 +188,7 @@ configuration::configuration()
       "Maximum number of partitions which may be allocated to one shard (CPU "
       "core)",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      7000,
+      1000,
       {
         .min = 16,    // Forbid absurdly small values that would prevent most
                       // practical workloads from running
@@ -196,7 +196,8 @@ configuration::configuration()
                       // systems will most likely hit issues far before reaching
                       // this.  This property is principally intended to be
                       // tuned downward from the default, not upward.
-      })
+      },
+      legacy_default<uint32_t>(7000, legacy_version{9}))
   , topic_partitions_reserve_shard0(
       *this,
       "topic_partitions_reserve_shard0",
