@@ -104,8 +104,7 @@ type TLS struct {
 }
 
 // Certs
-type Certs struct {
-}
+type Certs struct{}
 
 // External
 type External struct {
@@ -116,8 +115,7 @@ type External struct {
 }
 
 // Logging
-type Logging struct {
-}
+type Logging struct{}
 
 // Resources
 type Resources struct {
