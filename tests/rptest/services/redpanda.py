@@ -304,10 +304,17 @@ class SISettings:
                  cloud_storage_disable_tls: bool = True,
                  cloud_storage_segment_max_upload_interval_sec: Optional[
                      int] = None,
+                 cloud_storage_manifest_max_upload_interval_sec: Optional[
+                     int] = None,
                  cloud_storage_readreplica_manifest_sync_timeout_ms: Optional[
                      int] = None,
                  bypass_bucket_creation: bool = False,
-                 cloud_storage_housekeeping_interval_ms: Optional[int] = None):
+                 cloud_storage_housekeeping_interval_ms: Optional[int] = None,
+                 fast_uploads=False):
+        """
+        :param fast_uploads: if true, set low upload intervals to help tests run
+                             quickly when they wait for uploads to complete.
+        """
 
         self.cloud_storage_type = CloudStorageType.AUTO
         if hasattr(test_context, 'injected_args') \
@@ -362,10 +369,15 @@ class SISettings:
         self.cloud_storage_max_connections = cloud_storage_max_connections
         self.cloud_storage_disable_tls = cloud_storage_disable_tls
         self.cloud_storage_segment_max_upload_interval_sec = cloud_storage_segment_max_upload_interval_sec
+        self.cloud_storage_manifest_max_upload_interval_sec = cloud_storage_manifest_max_upload_interval_sec
         self.cloud_storage_readreplica_manifest_sync_timeout_ms = cloud_storage_readreplica_manifest_sync_timeout_ms
         self.endpoint_url = f'http://{self.cloud_storage_api_endpoint}:{self.cloud_storage_api_endpoint_port}'
         self.bypass_bucket_creation = bypass_bucket_creation
         self.cloud_storage_housekeeping_interval_ms = cloud_storage_housekeeping_interval_ms
+
+        if fast_uploads:
+            self.cloud_storage_segment_max_upload_interval_sec = 10
+            self.cloud_storage_manifest_max_upload_interval_sec = 1
 
     def load_context(self, logger, test_context):
         if self.cloud_storage_type == CloudStorageType.S3:
@@ -495,6 +507,9 @@ class SISettings:
         if self.cloud_storage_segment_max_upload_interval_sec:
             conf[
                 'cloud_storage_segment_max_upload_interval_sec'] = self.cloud_storage_segment_max_upload_interval_sec
+        if self.cloud_storage_manifest_max_upload_interval_sec:
+            conf[
+                'cloud_storage_manifest_max_upload_interval_sec'] = self.cloud_storage_manifest_max_upload_interval_sec
         if self.cloud_storage_housekeeping_interval_ms:
             conf[
                 'cloud_storage_housekeeping_interval_ms'] = self.cloud_storage_housekeeping_interval_ms

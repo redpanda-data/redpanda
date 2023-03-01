@@ -55,7 +55,8 @@ class TestReadReplicaService(EndToEndTest):
                 cloud_storage_max_connections=5,
                 log_segment_size=TestReadReplicaService.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-                cloud_storage_segment_max_upload_interval_sec=5))
+                cloud_storage_segment_max_upload_interval_sec=5,
+                fast_uploads=True))
 
         # Read reaplica shouldn't have it's own bucket.
         # We're adding 'none' as a bucket name without creating
