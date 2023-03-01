@@ -404,9 +404,30 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             break;
         }
 
-        update_probe();
+        auto clean_offset = co_await maybe_upload_manifest();
+        if (clean_offset.has_value()) {
+            auto deadline = ss::lowres_clock::now()
+                            + config::shard_local_cfg()
+                                .cloud_storage_metadata_sync_timeout_ms.value();
+            auto errc = co_await _parent.archival_meta_stm()->mark_clean(
+              deadline, clean_offset.value(), _as);
+            if (errc == raft::errc::shutting_down) {
+                throw ss::abort_requested_exception();
+            } else if (errc) {
+                vlog(
+                  _rtclog.warn,
+                  "Failed to replicate clean message for "
+                  "archival_metadata_stm: {}",
+                  errc.message());
+            } else {
+                vlog(
+                  _rtclog.trace,
+                  "Marked archival_metadata_stm clean at offset {}",
+                  clean_offset.value());
+            }
+        }
 
-        co_await maybe_upload_manifest();
+        update_probe();
 
         // Drop _uploads_active lock: we are not considered active while
         // sleeping for backoff at the end of the loop.
@@ -646,12 +667,22 @@ ntp_archiver::download_manifest() {
     co_return std::make_pair(tmp, result);
 }
 
-ss::future<> ntp_archiver::maybe_upload_manifest() {
+ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
     if (
       _parent.archival_meta_stm()->get_dirty()
       == cluster::archival_metadata_stm::state_dirty::clean) {
         vlog(_rtclog.trace, "Manifest is clean, skipping upload");
-        co_return;
+        co_return std::nullopt;
+    }
+
+    // Do not upload if interval has not elapsed.  The upload loop will call
+    // us again periodically and we will eventually upload when we pass the
+    // interval.
+    if (
+      _manifest_upload_interval().has_value()
+      && ss::lowres_clock::now() - _last_manifest_upload_time
+           < _manifest_upload_interval().value()) {
+        co_return std::nullopt;
     }
 
     auto upload_insync_offset
@@ -664,29 +695,13 @@ ss::future<> ntp_archiver::maybe_upload_manifest() {
     auto result = co_await upload_manifest();
     if (result == cloud_storage::upload_result::success) {
         _last_manifest_upload_time = ss::lowres_clock::now();
-        auto deadline = ss::lowres_clock::now()
-                        + config::shard_local_cfg()
-                            .cloud_storage_metadata_sync_timeout_ms.value();
-        auto errc = co_await _parent.archival_meta_stm()->mark_clean(
-          deadline, upload_insync_offset, _as);
-        if (errc == raft::errc::shutting_down) {
-            throw ss::abort_requested_exception();
-        } else if (errc) {
-            vlog(
-              _rtclog.warn,
-              "Failed to replicate clean message for archival_metadata_stm: {}",
-              errc.message());
-        } else {
-            vlog(
-              _rtclog.trace,
-              "Marked archival_metadata_stm clean at offset {}",
-              upload_insync_offset);
-        }
+        co_return upload_insync_offset;
     } else {
         // It is not necessary to retry: we are called from within the main
         // upload_until_term_change loop, and will get another chance to
         // upload the manifest eventually from there.
         vlog(_rtclog.warn, "Failed to upload partition manifest: {}", result);
+        co_return std::nullopt;
     }
 }
 
@@ -1048,7 +1063,9 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
 }
 
 ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
-  std::vector<scheduled_upload> scheduled, segment_upload_kind segment_kind) {
+  std::vector<scheduled_upload> scheduled,
+  segment_upload_kind segment_kind,
+  bool inline_manifest) {
     ntp_archiver::upload_group_result total{};
     std::vector<ss::future<cloud_storage::upload_result>> flist;
     std::vector<size_t> ixupload;
@@ -1065,7 +1082,18 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           segment_kind);
         co_return total;
     }
-    auto results = co_await ss::when_all_succeed(begin(flist), end(flist));
+
+    auto [segment_results, manifest_clean_offset]
+      = co_await ss::when_all_succeed(
+        ss::when_all_succeed(begin(flist), end(flist)),
+        [this, inline_manifest]() {
+            if (inline_manifest) {
+                return maybe_upload_manifest();
+            } else {
+                return ss::make_ready_future<std::optional<model::offset>>(
+                  std::nullopt);
+            }
+        });
 
     if (!can_update_archival_metadata()) {
         // We exit early even if we have successfully uploaded some segments to
@@ -1075,19 +1103,19 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
     }
 
     absl::flat_hash_map<cloud_storage::upload_result, size_t> upload_results;
-    for (auto result : results) {
+    for (auto result : segment_results) {
         ++upload_results[result];
     }
 
     total.num_succeeded = upload_results[cloud_storage::upload_result::success];
     total.num_cancelled
       = upload_results[cloud_storage::upload_result::cancelled];
-    total.num_failed = results.size()
+    total.num_failed = segment_results.size()
                        - (total.num_succeeded + total.num_cancelled);
 
     std::vector<cloud_storage::segment_meta> mdiff;
-    for (size_t i = 0; i < results.size(); i++) {
-        if (results[i] != cloud_storage::upload_result::success) {
+    for (size_t i = 0; i < segment_results.size(); i++) {
+        if (segment_results[i] != cloud_storage::upload_result::success) {
             break;
         }
         const auto& upload = scheduled[ixupload[i]];
@@ -1119,8 +1147,9 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           _ntp.path());
         auto deadline = ss::lowres_clock::now()
                         + _conf->manifest_upload_timeout;
+
         auto error = co_await _parent.archival_meta_stm()->add_segments(
-          mdiff, deadline, _as);
+          mdiff, manifest_clean_offset, deadline, _as);
         if (
           error != cluster::errc::success
           && error != cluster::errc::not_leader) {
@@ -1166,12 +1195,26 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
           return s.upload_kind == segment_upload_kind::non_compacted;
       });
 
+    // Inline manifest upload in regular non-compacted uploads
+    // if any were scheduled.
+    bool inline_manifest_in_non_compacted_uploads = false;
+    for (const auto& i : non_compacted_uploads) {
+        if (i.result) {
+            inline_manifest_in_non_compacted_uploads = true;
+            break;
+        }
+    }
+
     auto [non_compacted_result, compacted_result]
       = co_await ss::when_all_succeed(
         wait_uploads(
-          std::move(non_compacted_uploads), segment_upload_kind::non_compacted),
+          std::move(non_compacted_uploads),
+          segment_upload_kind::non_compacted,
+          inline_manifest_in_non_compacted_uploads),
         wait_uploads(
-          std::move(compacted_uploads), segment_upload_kind::compacted));
+          std::move(compacted_uploads),
+          segment_upload_kind::compacted,
+          !inline_manifest_in_non_compacted_uploads));
 
     auto total_successful_uploads = non_compacted_result.num_succeeded
                                     + compacted_result.num_succeeded;
@@ -1640,7 +1683,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
 
     auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout;
     auto error = co_await _parent.archival_meta_stm()->add_segments(
-      {meta}, deadline);
+      {meta}, std::nullopt, deadline);
     if (error != cluster::errc::success && error != cluster::errc::not_leader) {
         vlog(
           _rtclog.warn,

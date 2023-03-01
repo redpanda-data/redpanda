@@ -145,7 +145,8 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       == cluster::archival_metadata_stm::state_dirty::dirty);
 
     // Replicate add_segment_cmd command that adds segment with offset 0
-    archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
+    archival_stm->add_segments(m, std::nullopt, ss::lowres_clock::now() + 10s)
+      .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
     BOOST_REQUIRE(
       archival_stm->manifest().begin()->second.base_offset == model::offset(0));
@@ -184,7 +185,8 @@ FIXTURE_TEST(
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1),
     });
-    archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
+    archival_stm->add_segments(m, std::nullopt, ss::lowres_clock::now() + 10s)
+      .get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 1);
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_last_uploaded_compacted_offset(),
@@ -208,7 +210,8 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1)});
     // Replicate add_segment_cmd command that adds segment with offset 0
-    archival_stm->add_segments(m1, ss::lowres_clock::now() + 10s).get();
+    archival_stm->add_segments(m1, std::nullopt, ss::lowres_clock::now() + 10s)
+      .get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
@@ -220,7 +223,8 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1)});
-    archival_stm->add_segments(m2, ss::lowres_clock::now() + 10s).get();
+    archival_stm->add_segments(m2, std::nullopt, ss::lowres_clock::now() + 10s)
+      .get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
     BOOST_REQUIRE(archival_stm->manifest().replaced_segments().size() == 1);
@@ -351,7 +355,8 @@ FIXTURE_TEST(
         pm.add(name, s);
     }
     pm.advance_insync_offset(model::offset{4});
-    archival_stm->add_segments(m, ss::lowres_clock::now() + 10s).get();
+    archival_stm->add_segments(m, std::nullopt, ss::lowres_clock::now() + 10s)
+      .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 4);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
     BOOST_REQUIRE(archival_stm->manifest() == pm);

@@ -91,6 +91,7 @@ public:
     /// wait until it is applied to the STM.
     ss::future<std::error_code> add_segments(
       std::vector<cloud_storage::segment_meta>,
+      std::optional<model::offset> clean_offset,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
@@ -163,6 +164,7 @@ private:
 
     ss::future<std::error_code> do_add_segments(
       std::vector<cloud_storage::segment_meta>,
+      std::optional<model::offset> clean_offset,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 

@@ -103,6 +103,7 @@ public:
         auto operator<=>(const upload_group_result&) const = default;
     };
 
+    // The result of a group of parallel uploads
     struct batch_result {
         upload_group_result non_compacted_upload_result;
         upload_group_result compacted_upload_result;
@@ -319,7 +320,8 @@ private:
     /// the upload.
     ss::future<ntp_archiver::upload_group_result> wait_uploads(
       std::vector<scheduled_upload> scheduled,
-      segment_upload_kind segment_kind);
+      segment_upload_kind segment_kind,
+      bool inline_manifest);
 
     /// Upload individual segment to S3.
     ///
@@ -342,7 +344,7 @@ private:
 
     /// Upload manifest if it is dirty.  Proceed without raising on issues,
     /// in the expectation that we will be called again in the main upload loop.
-    ss::future<> maybe_upload_manifest();
+    ss::future<std::optional<model::offset>> maybe_upload_manifest();
 
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest(

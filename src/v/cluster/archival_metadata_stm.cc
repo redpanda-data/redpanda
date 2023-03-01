@@ -468,18 +468,21 @@ ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
 
 ss::future<std::error_code> archival_metadata_stm::add_segments(
   std::vector<cloud_storage::segment_meta> segments,
+  std::optional<model::offset> clean_offset,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     auto now = ss::lowres_clock::now();
     auto timeout = now < deadline ? deadline - now : 0ms;
     return _lock.with(
-      timeout, [this, s = std::move(segments), deadline, as]() mutable {
-          return do_add_segments(std::move(s), deadline, as);
+      timeout,
+      [this, s = std::move(segments), clean_offset, deadline, as]() mutable {
+          return do_add_segments(std::move(s), clean_offset, deadline, as);
       });
 }
 
 ss::future<std::error_code> archival_metadata_stm::do_add_segments(
   std::vector<cloud_storage::segment_meta> add_segments,
+  std::optional<model::offset> clean_offset,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     {
@@ -507,6 +510,13 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
         }
         auto record_val = add_segment_cmd::value{segment_from_meta(meta)};
         iobuf val_buf = serde::to_iobuf(std::move(record_val));
+        b.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    }
+
+    if (clean_offset.has_value()) {
+        iobuf key_buf = serde::to_iobuf(
+          archival_metadata_stm::mark_clean_cmd::key);
+        iobuf val_buf = serde::to_iobuf(clean_offset.value());
         b.add_raw_kv(std::move(key_buf), std::move(val_buf));
     }
 
