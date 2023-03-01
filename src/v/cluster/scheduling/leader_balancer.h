@@ -120,6 +120,8 @@ private:
     void trigger_balance();
     ss::future<ss::stop_iteration> balance();
 
+    bool should_stop_balance() const;
+
     // On/off switch: when off, leader balancer tick will run
     // but do nothing
     config::binding<bool> _enabled;
