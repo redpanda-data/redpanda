@@ -104,7 +104,10 @@ class PartitionMovementMixin():
         return result
 
     def _wait_post_move(self, topic, partition, assignments, timeout_sec):
-        admin = Admin(self.redpanda)
+        # We need to add retries, becasue of eventual consistency. Metadata will be updated but it can take some time.
+        admin = Admin(self.redpanda,
+                      retry_codes=[404, 503, 504],
+                      retries_amount=10)
 
         def status_done():
             results = []
