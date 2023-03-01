@@ -36,6 +36,29 @@ class binding;
 template<typename T>
 class mock_property;
 
+/**
+ * An alternative default that only applies to clusters created before a
+ * particular logical version.
+ *
+ * This enables changing defaults for new clusters without disrupting
+ * existing clusters.
+ *
+ * **Be aware** that this only works for properties that are read _after_
+ * the bootstrap phase of startup.
+ */
+template<class T>
+class legacy_default {
+public:
+    legacy_default() = delete;
+
+    legacy_default(T v, legacy_version ov)
+      : value(std::move(v))
+      , max_original_version(ov) {}
+
+    T value;
+    legacy_version max_original_version;
+};
+
 template<class T>
 class property : public base_property {
 public:
@@ -48,10 +71,12 @@ public:
       std::string_view desc,
       base_property::metadata meta = {},
       T def = T{},
-      property::validator validator = property::noop_validator)
+      property::validator validator = property::noop_validator,
+      std::optional<legacy_default<T>> ld = std::nullopt)
       : base_property(conf, name, desc, meta)
       , _value(def)
       , _default(std::move(def))
+      , _legacy_default(std::move(ld))
       , _validator(std::move(validator)) {}
 
     /**
@@ -178,28 +203,48 @@ public:
         }
     }
 
+    void notify_original_version(legacy_version ov) override {
+        if (!_legacy_default.has_value()) {
+            // Most properties have no legacy default, and ignore this.
+            return;
+        }
+
+        if (ov < _legacy_default.value().max_original_version) {
+            _default = _legacy_default.value().value;
+            // In case someone already made a binding to us early in startup
+            notify_watchers(_default);
+        }
+    }
+
+    constexpr static auto noop_validator = [](const auto&) {
+        return std::nullopt;
+    };
+
 protected:
+    void notify_watchers(const T& new_value) {
+        std::exception_ptr ex;
+        for (auto& binding : _bindings) {
+            try {
+                binding.update(new_value);
+            } catch (...) {
+                // In case there are multiple bindings:
+                // if one of them throws an exception from an on_change
+                // callback, proceed to update all bindings' values before
+                // re-raising the last exception we saw.  This avoids
+                // a situation where bindings could disagree about
+                // the property's value.
+                ex = std::current_exception();
+            }
+        }
+
+        if (ex) {
+            rethrow_exception(ex);
+        }
+    }
+
     bool update_value(T&& new_value) {
         if (new_value != _value) {
-            std::exception_ptr ex;
-            for (auto& binding : _bindings) {
-                try {
-                    binding.update(new_value);
-                } catch (...) {
-                    // In case there are multiple bindings:
-                    // if one of them throws an exception from an on_change
-                    // callback, proceed to update all bindings' values before
-                    // re-raising the last exception we saw.  This avoids
-                    // a situation where bindings could disagree about
-                    // the property's value.
-                    ex = std::current_exception();
-                }
-            }
-
-            if (ex) {
-                rethrow_exception(ex);
-            }
-
+            notify_watchers(new_value);
             _value = std::move(new_value);
 
             return true;
@@ -209,13 +254,14 @@ protected:
     }
 
     T _value;
-    const T _default;
+    T _default;
+
+    // An alternative default that applies if the cluster's original logical
+    // version is <= the defined version
+    const std::optional<legacy_default<T>> _legacy_default;
 
 private:
     validator _validator;
-    constexpr static auto noop_validator = [](const auto&) {
-        return std::nullopt;
-    };
 
     friend class binding<T>;
     friend class mock_property<T>;

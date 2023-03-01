@@ -120,7 +120,8 @@ public:
       std::string_view desc,
       base_property::metadata meta,
       T def,
-      numeric_bounds<I> bounds)
+      numeric_bounds<I> bounds,
+      std::optional<legacy_default<T>> legacy = std::nullopt)
       : property<T>(
         conf,
         name,
@@ -141,7 +142,8 @@ public:
             } else {
                 return _bounds.validate(new_value);
             }
-        })
+        },
+        legacy)
       , _bounds(bounds)
       , _example(generate_example()) {}
 
