@@ -1,11 +1,11 @@
 module github.com/redpanda-data/redpanda/src/go/k8s
 
-go 1.19
+go 1.20
 
 require (
 	github.com/Masterminds/semver/v3 v3.1.1
 	github.com/Masterminds/sprig/v3 v3.2.2
-	github.com/banzaicloud/k8s-objectmatcher v1.7.0
+	github.com/cisco-open/k8s-objectmatcher v1.9.0
 	github.com/cloudhut/common v0.7.0
 	github.com/go-logr/logr v1.2.3
 	github.com/hashicorp/go-multierror v1.1.1
@@ -33,7 +33,7 @@ require (
 require (
 	cloud.google.com/go/compute v1.18.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
-	emperror.dev/errors v0.8.0 // indirect
+	emperror.dev/errors v0.8.1 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
 	github.com/Azure/go-autorest/autorest v0.11.18 // indirect
 	github.com/Azure/go-autorest/autorest/adal v0.9.22 // indirect
