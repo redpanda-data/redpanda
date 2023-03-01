@@ -707,11 +707,11 @@ class FastCheck(BaseCase):
 class SizeBasedRetention(BaseCase):
     """
     Restore the topic using the size base retention policy.
-        The initial topic is created with default retention policy (which is time based).
-        The recovered topic is created with size based retention policy.
-        The test generates 20MB of data per ntp, than after the restart it recovers
-        the topic with size limit set to 10MB per ntp.
-        The verification takes into account individual segment size. The recovery process
+    The initial topic is created with default retention policy (which is time based).
+    The recovered topic is created with size based retention policy.
+    The test generates 20MB of data per ntp, than after the restart it recovers
+    the topic with size limit set to 10MB per ntp.
+    The verification takes into account individual segment size. The recovery process
     should restore at not more than 10MB but not less than 10MB - oldest segment size."""
     def __init__(self, s3_client, kafka_tools, rpk_client, s3_bucket, logger,
                  rpk_producer_maker, topics):
