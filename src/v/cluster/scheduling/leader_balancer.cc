@@ -27,6 +27,7 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timer.hh>
 
@@ -276,8 +277,12 @@ void leader_balancer::trigger_balance() {
     });
 }
 
+bool leader_balancer::should_stop_balance() const {
+    return !_enabled() || _as.local().abort_requested();
+}
+
 ss::future<ss::stop_iteration> leader_balancer::balance() {
-    if (!_enabled()) {
+    if (should_stop_balance()) {
         co_return ss::stop_iteration::yes;
     }
 
@@ -354,18 +359,6 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         _need_controller_refresh = false;
     }
 
-    if (_as.local().abort_requested()) {
-        co_return ss::stop_iteration::yes;
-    }
-
-    /*
-     * For simplicity the current implementation rebuilds the index on each
-     * rebalancing tick. Testing shows that this takes up to a couple
-     * hundred microseconds for up to 1000s of raft groups. This can be
-     * optimized later by attempting to minimize the number of rebuilds
-     * (e.g. on average little should change between ticks) and bounding the
-     * search for leader moves.
-     */
     greedy_balanced_shards strategy(build_index(), muted_nodes());
     auto cores = strategy.stats();
 
@@ -390,14 +383,19 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_return ss::stop_iteration::yes;
     }
 
-    if (
-      _in_flight_changes.size() >= _transfer_limit_per_shard() * cores.size()) {
+    size_t allowed_change_cnt = 0;
+    size_t max_inflight_changes = _transfer_limit_per_shard() * cores.size();
+    if (_in_flight_changes.size() < max_inflight_changes) {
+        allowed_change_cnt = max_inflight_changes - _in_flight_changes.size();
+    }
+
+    if (allowed_change_cnt == 0) {
         vlog(
           clusterlog.debug,
           "Leadership balancer tick: number of in flight changes is at max "
           "allowable. Current in flight {}. Max allowable {}.",
           _in_flight_changes.size(),
-          _transfer_limit_per_shard() * cores.size());
+          max_inflight_changes);
 
         _throttled = true;
 
@@ -424,60 +422,71 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_return ss::stop_iteration::yes;
     }
 
-    auto error = strategy.error();
-    auto transfer = strategy.find_movement(muted_groups());
-    if (!transfer) {
-        vlog(
-          clusterlog.debug,
-          "No leadership balance improvements found with total delta {}, "
-          "number of muted groups {}",
-          error,
-          _muted.size());
-        if (!_timer.armed()) {
-            _timer.arm(_idle_timeout());
+    for (size_t i = 0; i < allowed_change_cnt; i++) {
+        if (should_stop_balance()) {
+            co_return ss::stop_iteration::yes;
         }
-        _probe.leader_transfer_no_improvement();
-        co_return ss::stop_iteration::yes;
-    }
 
-    _in_flight_changes[transfer->group] = {
-      *transfer, clock_type::now() + _mute_timeout()};
-    check_register_leadership_change_notification();
+        auto transfer = strategy.find_movement(muted_groups());
+        if (!transfer) {
+            vlog(
+              clusterlog.debug,
+              "No leadership balance improvements found with total delta {}, "
+              "number of muted groups {}",
+              strategy.error(),
+              _muted.size());
+            if (!_timer.armed()) {
+                _timer.arm(_idle_timeout());
+            }
+            _probe.leader_transfer_no_improvement();
+            co_return ss::stop_iteration::yes;
+        }
 
-    auto success = co_await do_transfer(*transfer);
-    if (!success) {
-        vlog(
-          clusterlog.info,
-          "Error transferring leadership group {} from {} to {}",
-          transfer->group,
-          transfer->from,
-          transfer->to);
+        _in_flight_changes[transfer->group] = {
+          *transfer, clock_type::now() + _mute_timeout()};
+        check_register_leadership_change_notification();
 
-        _in_flight_changes.erase(transfer->group);
-        check_unregister_leadership_change_notification();
+        auto success = co_await do_transfer(*transfer);
+        if (!success) {
+            vlog(
+              clusterlog.info,
+              "Error transferring leadership group {} from {} to {}",
+              transfer->group,
+              transfer->from,
+              transfer->to);
+
+            _in_flight_changes.erase(transfer->group);
+            check_unregister_leadership_change_notification();
+
+            /*
+             * a common scenario is that a node loses all its leadership (e.g.
+             * restarts) and then it is recognized as having lots of extra
+             * capacity (which it does). but the balancer doesn't consider node
+             * health when making decisions. so when we fail transfer we inject
+             * a short delay to avoid spinning on sending transfer requests to a
+             * failed node. of course failure can happen for other reasons, so
+             * don't delay a lot.
+             */
+            _probe.leader_transfer_error();
+            co_await ss::sleep_abortable(5s, _as.local());
+            co_return ss::stop_iteration::no;
+
+        } else {
+            _probe.leader_transfer_succeeded();
+            strategy.apply_movement(*transfer);
+        }
 
         /*
-         * a common scenario is that a node loses all its leadership (e.g.
-         * restarts) and then it is recognized as having lots of extra capacity
-         * (which it does). but the balancer doesn't consider node health when
-         * making decisions. so when we fail transfer we inject a short delay
-         * to avoid spinning on sending transfer requests to a failed node. of
-         * course failure can happen for other reasons, so don't delay a lot.
+         * if leadership moved, or it timed out we'll mute the group for a while
+         * and continue to avoid any thrashing. notice that we don't check for
+         * movement to the exact shard we requested. this is because we want to
+         * avoid thrashing (we'll still mute the group), but also because we may
+         * have simply been racing with organic leadership movement.
          */
-        _probe.leader_transfer_error();
-        co_await ss::sleep_abortable(5s, _as.local());
+        _muted.try_emplace(
+          transfer->group, clock_type::now() + _mute_timeout());
     }
 
-    _probe.leader_transfer_succeeded();
-
-    /*
-     * if leadership moved, or it timed out we'll mute the group for a while and
-     * continue to avoid any thrashing. notice that we don't check for movement
-     * to the exact shard we requested. this is because we want to avoid
-     * thrashing (we'll still mute the group), but also because we may have
-     * simply been racing with organic leadership movement.
-     */
-    _muted.try_emplace(transfer->group, clock_type::now() + _mute_timeout());
     co_return ss::stop_iteration::no;
 }
 
