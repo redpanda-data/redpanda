@@ -149,54 +149,68 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
                        backoff_sec=1.0)
 
             # Run a rolling restart.
-            self.logger.info(f"Rolling restarting nodes")
-            self.redpanda.rolling_restart_nodes(self.redpanda.nodes,
-                                                start_timeout=600,
-                                                stop_timeout=600)
-
+            self.stage_rolling_restart()
 
             # Hard stop, then restart.
-            node, node_id, node_str = self.get_node(0)
-            self.logger.info(f"Hard stopping and restarting node {node_str}")
-            self.redpanda.stop_node(node, forced=True)
-            self.redpanda.start_node(node, timeout=600)
-            wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+            self.stage_hard_stop_start()
 
             # Stop a node, wait for enough time for movement to occur, then
             # restart.
-            node, node_id, node_str = self.get_node(1)
-            self.logger.info(f"Hard stopping node {node_str}")
-            self.redpanda.stop_node(node, forced=True)
-            time.sleep(60)
-            self.logger.info(f"Restarting node {node_str}")
-            self.redpanda.start_node(node, timeout=600)
-            wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
-            # Block traffic to/from one node.
-            node, node_id, node_str = self.get_node(0)
-            self.logger.info("Isolating node {node_str}")
-            with FailureInjector(self.redpanda) as fi:
-                fi.inject_failure(
-                    FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
-                try:
-                    wait_until(lambda: False, timeout_sec=120, backoff_sec=1)
-                except:
-                    pass
+            self.stage_stop_wait_start()
 
-            try:
-                wait_until(lambda: False, timeout_sec=120, backoff_sec=1)
-            except:
-                pass
-            wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+            # Block traffic to/from one node.
+            self.stage_block_node_traffic()
 
             # Decommission.
-            self.logger.info("Decommissioning node {node_str}")
-            admin = self.redpanda._admin
-            admin.decommission_broker(node_id)
-            waiter = NodeDecommissionWaiter(self.redpanda, node_id,
-                                            self.logger)
-            waiter.wait_for_removal()
-            self.redpanda.stop_node(node)
+            self.stage_decommission()
         finally:
             producer.stop()
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
+
+    # Stages for the "test_restarts"
+
+    def stage_rolling_restart(self):
+        self.logger.info(f"Rolling restarting nodes")
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes, start_timeout=600, stop_timeout=600)
+
+    def stage_hard_stop_start(self):
+        node, node_id, node_str = self.get_node(0)
+        self.logger.info(f"Hard stopping and restarting node {node_str}")
+        self.redpanda.stop_node(node, forced=True)
+        self.redpanda.start_node(node, timeout=600)
+        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+
+    def stage_block_node_traffic(self):
+        node, node_id, node_str = self.get_node(0)
+        self.logger.info("Isolating node {node_str}")
+        with FailureInjector(self.redpanda) as fi:
+            fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
+            try:
+                wait_until(lambda: False, timeout_sec=120, backoff_sec=1)
+            except:
+                pass
+
+        try:
+            wait_until(lambda: False, timeout_sec=120, backoff_sec=1)
+        except:
+            pass
+        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+
+    def stage_stop_wait_start(self):
+        node, node_id, node_str = self.get_node(1)
+        self.logger.info(f"Hard stopping node {node_str}")
+        self.redpanda.stop_node(node, forced=True)
+        time.sleep(60)
+        self.logger.info(f"Restarting node {node_str}")
+        self.redpanda.start_node(node, timeout=600)
+        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+
+    def stage_decommission(self):
+        node, node_id, node_str = self.get_node(0)
+        self.logger.info(f"Decommissioning node {node_str}")
+        admin = self.redpanda._admin
+        admin.decommission_broker(node_id)
+        waiter = NodeDecommissionWaiter(self.redpanda, node_id, self.logger)
+        waiter.wait_for_removal()
+        self.redpanda.stop_node(node)
