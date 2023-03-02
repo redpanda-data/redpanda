@@ -19,6 +19,7 @@ import numpy
 from rptest.services.cluster import cluster
 from rptest.clients.rpk import RpkTool, RpkException
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.redpanda import ResourceSettings, RESTART_LOG_ALLOW_LIST, SISettings, LoggingConfig, MetricsEndpoint
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierSeqConsumer, KgoVerifierRandomConsumer
@@ -453,26 +454,6 @@ class ManyPartitionsTest(PreallocNodesTest):
         else:
             return min(workers, 4)
 
-    def nodes_report_cloud_segments(self, target_segments):
-        """
-        Returns true if the nodes in the cluster collectively report having
-        above the given number of segments.
-
-        NOTE: we're explicitly not checking the manifest via cloud client
-        because we expect the number of items in our bucket to be quite large,
-        and for associated ListObjects calls to take a long time.
-        """
-        try:
-            num_segments = self.redpanda.metric_sum(
-                "redpanda_cloud_storage_segments",
-                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
-            self.logger.info(
-                f"Cluster metrics report {num_segments} / {target_segments} cloud segments"
-            )
-        except:
-            return False
-        return num_segments >= target_segments
-
     def setUp(self):
         # defer redpanda startup to the test, it might want to tweak
         # ResourceSettings based on its parameters.
@@ -634,8 +615,8 @@ class ManyPartitionsTest(PreallocNodesTest):
                     msg_count,
                     custom_node=[self.preallocated_nodes[0]])
                 producer.start()
-                wait_until(lambda: self.nodes_report_cloud_segments(
-                    target_cloud_segments),
+                wait_until(lambda: nodes_report_cloud_segments(
+                    self.redpanda, target_cloud_segments),
                            timeout_sec=expect_runtime,
                            backoff_sec=5)
             finally:
