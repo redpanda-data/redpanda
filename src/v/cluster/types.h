@@ -3219,6 +3219,28 @@ enum class cloud_storage_mode : uint8_t {
 };
 
 std::ostream& operator<<(std::ostream&, const cloud_storage_mode&);
+
+struct partition_cloud_storage_status {
+    cloud_storage_mode mode;
+
+    std::optional<std::chrono::milliseconds> since_last_manifest_upload;
+    std::optional<std::chrono::milliseconds> since_last_segment_upload;
+    std::optional<std::chrono::milliseconds> since_last_manifest_sync;
+
+    size_t total_log_size_bytes{0};
+    size_t cloud_log_size_bytes{0};
+    size_t local_log_size_bytes{0};
+
+    size_t cloud_log_segment_count{0};
+    size_t local_log_segment_count{0};
+
+    std::optional<kafka::offset> cloud_log_start_offset;
+    std::optional<kafka::offset> local_log_last_offset;
+
+    std::optional<kafka::offset> cloud_log_last_offset;
+    std::optional<kafka::offset> local_log_start_offset;
+};
+
 } // namespace cluster
 namespace std {
 template<>
