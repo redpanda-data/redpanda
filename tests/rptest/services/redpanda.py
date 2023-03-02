@@ -1963,8 +1963,8 @@ class RedpandaService(Service):
         For debugging issues around stopping processes: set the log level to
         trace on all loggers.
         """
-        # These tend to be exceptionally chatty.
-        keep_existing = ['exception', 'io', 'seastar_memory']
+        # These tend to be exceptionally chatty, or don't provide much value.
+        keep_existing = ['exception', 'io', 'seastar_memory', 'assert']
         try:
             loggers = self._admin.get_loggers(node)
             for logger in loggers:
