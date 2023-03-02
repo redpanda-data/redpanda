@@ -120,6 +120,16 @@ struct allocation_constraints {
     std::vector<soft_constraint_ptr> soft_constraints;
     std::vector<hard_constraint_ptr> hard_constraints;
 
+    void add(soft_constraint c) {
+        return soft_constraints.push_back(
+          ss::make_lw_shared<soft_constraint>(std::move(c)));
+    }
+
+    void add(hard_constraint c) {
+        return hard_constraints.push_back(
+          ss::make_lw_shared<hard_constraint>(std::move(c)));
+    }
+
     void add(allocation_constraints);
     friend std::ostream&
     operator<<(std::ostream&, const allocation_constraints&);
