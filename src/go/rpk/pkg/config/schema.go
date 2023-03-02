@@ -193,7 +193,6 @@ type RpkConfig struct {
 	KafkaAPI                 RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
 	AdminAPI                 RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
 	AdditionalStartFlags     []string    `yaml:"additional_start_flags,omitempty"  json:"additional_start_flags"`
-	EnableUsageStats         bool        `yaml:"enable_usage_stats,omitempty" json:"enable_usage_stats"`
 	TuneNetwork              bool        `yaml:"tune_network,omitempty" json:"tune_network"`
 	TuneDiskScheduler        bool        `yaml:"tune_disk_scheduler,omitempty" json:"tune_disk_scheduler"`
 	TuneNomerges             bool        `yaml:"tune_disk_nomerges,omitempty" json:"tune_disk_nomerges"`

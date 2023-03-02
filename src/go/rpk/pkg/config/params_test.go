@@ -256,8 +256,7 @@ func TestRedpandaSampleFile(t *testing.T) {
 			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{
-			CoredumpDir:      "/var/lib/redpanda/coredump",
-			EnableUsageStats: true,
+			CoredumpDir: "/var/lib/redpanda/coredump",
 		},
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
@@ -297,7 +296,6 @@ func TestRedpandaSampleFile(t *testing.T) {
           port: 9644
     developer_mode: true
 rpk:
-    enable_usage_stats: true
     coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}

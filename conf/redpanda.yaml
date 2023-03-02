@@ -59,9 +59,6 @@ rpk:
     # The path to the client certificate key (PEM)
     #key_file: ""
 
-  # Enables sending environment and resource usage data to Vectorized.
-  enable_usage_stats: true
-
   # Available tuners
   tune_network: false
   tune_disk_scheduler: false

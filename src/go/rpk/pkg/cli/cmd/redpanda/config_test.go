@@ -342,11 +342,11 @@ rpk:
           port: 9644
     developer_mode: true
 rpk:
-    enable_usage_stats: true
     tune_network: true
     tune_disk_scheduler: true
+    tune_cpu: true
 `,
-			args: []string{"rpk.enable_usage_stats", "true"},
+			args: []string{"rpk.tune_cpu", "true"},
 		},
 	} {
 		fs := afero.NewMemMapFs()
