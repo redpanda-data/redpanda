@@ -4,7 +4,6 @@ v_cc_library(
   SRCS
     segment_reader.cc
     log_manager.cc
-    mem_log_impl.cc
     disk_log_impl.cc
     disk_log_appender.cc
     parser.cc
