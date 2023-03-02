@@ -884,14 +884,25 @@ model::offset archival_metadata_stm::get_last_offset() const {
     return _manifest->get_last_offset();
 }
 
-archival_metadata_stm::state_dirty archival_metadata_stm::get_dirty() const {
+/**
+ * Dirty means "an upload to object store is required".
+ * @param projected_clean
+ * @return
+ */
+archival_metadata_stm::state_dirty archival_metadata_stm::get_dirty(
+  std::optional<model::offset> projected_clean) const {
     // We are clean if we have written at least one clean record and that
     // clean record referred to an offset >= the last record that dirtied
     // the stm.
-    return _last_clean_at >= model::offset{0}
-               && _last_clean_at >= _last_dirty_at
-             ? state_dirty::clean
-             : state_dirty::dirty;
+    if (projected_clean.has_value()) {
+        return projected_clean.value() >= _last_dirty_at ? state_dirty::clean
+                                                         : state_dirty::dirty;
+    } else {
+        return _last_clean_at >= model::offset{0}
+                   && _last_clean_at >= _last_dirty_at
+                 ? state_dirty::clean
+                 : state_dirty::dirty;
+    }
 }
 
 } // namespace cluster

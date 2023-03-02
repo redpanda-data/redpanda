@@ -153,11 +153,14 @@ public:
 
     // If state_dirty::dirty is returned the manifest should be uploaded
     // to object store at the next opportunity.
-    state_dirty get_dirty() const;
+    state_dirty get_dirty(
+      std::optional<model::offset> projected_clean = std::nullopt) const;
 
     // Users of the stm need to know insync offset in order to pass
     // the proper value to mark_clean
     model::offset get_insync_offset() const { return _insync_offset; }
+
+    model::offset get_last_clean_at() const { return _last_clean_at; };
 
 private:
     bool cleanup_needed() const;

@@ -404,27 +404,11 @@ ss::future<> ntp_archiver::upload_until_term_change() {
             break;
         }
 
-        auto clean_offset = co_await maybe_upload_manifest();
-        if (clean_offset.has_value()) {
-            auto deadline = ss::lowres_clock::now()
-                            + config::shard_local_cfg()
-                                .cloud_storage_metadata_sync_timeout_ms.value();
-            auto errc = co_await _parent.archival_meta_stm()->mark_clean(
-              deadline, clean_offset.value(), _as);
-            if (errc == raft::errc::shutting_down) {
-                throw ss::abort_requested_exception();
-            } else if (errc) {
-                vlog(
-                  _rtclog.warn,
-                  "Failed to replicate clean message for "
-                  "archival_metadata_stm: {}",
-                  errc.message());
-            } else {
-                vlog(
-                  _rtclog.trace,
-                  "Marked archival_metadata_stm clean at offset {}",
-                  clean_offset.value());
-            }
+        // This is the fallback path for uploading manifest if it didn't happen
+        // inline with segment uploads: this path will be taken on e.g. restarts
+        // or unclean leadership changes.
+        if (co_await maybe_upload_manifest()) {
+            co_await maybe_flush_manifest_clean_offset();
         }
 
         update_probe();
@@ -667,11 +651,59 @@ ntp_archiver::download_manifest() {
     co_return std::make_pair(tmp, result);
 }
 
+/**
+ * Partition manifests are written somewhat lazily with respect to segment
+ * uploads.  They are only uploaded if the stm is marked dirty by a write since
+ * the last uploaded version, and if the time elapsed since last upload is
+ * greater than the manifest upload interval.
+ *
+ * There are three cases for uploading the manifest:
+ *
+ * ### 1. High throughput partition
+ *
+ * If the stm is dirty while we are uploading segments, we may upload
+ * the manifest concurrently with segment uploads, and mark_clean the stm
+ * in the same batch as we add the uploaded segments to the stm, but the clean
+ * offset is the offset _before_ this round of uploads.  The stm is left in a
+ * dirty state, but that is okay: we will soon do more rounds of segment
+ * uploads, and after manifest_upload_interval has elapsed, we will inline a
+ * manifest upload in another round of segment uploads.
+ *
+ * In those mode we do zero extra stm I/Os for the marking the manifest clean,
+ * and zero sequential waits for manifest uploads between segment uploads.
+ *
+ * ### 2. Low throughput partition
+ *
+ * If the stm is clean while we are uploading segments, then we may
+ * upload the manifest sequentially _after_ we are done with segment uploads.
+ * The _projected_manifest_clean_at is set to the offset reflected in the
+ * uploaded manifest, but we do not write a mark_clean to the stm yet, to
+ * avoid generating an additional write to the raft log.  We are in a
+ * "projected clean" state where we will not do more manifest uploads
+ * ourselves, but if we crashed or did an unsafe leader transfer, then
+ * on restart the stm would look dirty and the manifest would be re-uploaded.
+ *
+ * In this mode we incur some sequential delay from uploading the manifest
+ * sequentially with respect to segment uploads, but that is okay because
+ * the upload loop is not saturated (that would hit case 1 above).  We only
+ * rarely write extra mark_clean batches to the stm, in the case of a graceful
+ * leadership transfer.
+ *
+ * ### 3. Fallback
+ *
+ * In cases where we have not run through a happy path (e.g. I/O errors,
+ * unclean restarts, unclean leadership transfers), if the stm is dirty
+ * then we will do an upload + mark_clean in the main upload loop, even
+ * if we did not upload any segments.
+ */
 ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
     if (
-      _parent.archival_meta_stm()->get_dirty()
+      _parent.archival_meta_stm()->get_dirty(_projected_manifest_clean_at)
       == cluster::archival_metadata_stm::state_dirty::clean) {
-        vlog(_rtclog.trace, "Manifest is clean, skipping upload");
+        vlog(
+          _rtclog.debug,
+          "Manifest is clean{}, skipping upload",
+          _projected_manifest_clean_at.has_value() ? " (projected)" : "");
         co_return std::nullopt;
     }
 
@@ -695,6 +727,8 @@ ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
     auto result = co_await upload_manifest();
     if (result == cloud_storage::upload_result::success) {
         _last_manifest_upload_time = ss::lowres_clock::now();
+        _projected_manifest_clean_at = upload_insync_offset;
+
         co_return upload_insync_offset;
     } else {
         // It is not necessary to retry: we are called from within the main
@@ -702,6 +736,34 @@ ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
         // upload the manifest eventually from there.
         vlog(_rtclog.warn, "Failed to upload partition manifest: {}", result);
         co_return std::nullopt;
+    }
+}
+
+ss::future<> ntp_archiver::maybe_flush_manifest_clean_offset() {
+    if (!_projected_manifest_clean_at.has_value()) {
+        co_return;
+    }
+
+    auto clean_offset = _projected_manifest_clean_at.value();
+    auto deadline = ss::lowres_clock::now()
+                    + config::shard_local_cfg()
+                        .cloud_storage_metadata_sync_timeout_ms.value();
+    auto errc = co_await _parent.archival_meta_stm()->mark_clean(
+      deadline, clean_offset, _as);
+    if (errc == raft::errc::shutting_down) {
+        throw ss::abort_requested_exception();
+    } else if (errc) {
+        vlog(
+          _rtclog.warn,
+          "Failed to replicate clean message for "
+          "archival_metadata_stm: {}",
+          errc.message());
+    } else {
+        vlog(
+          _rtclog.trace,
+          "Marked archival_metadata_stm clean at offset {}",
+          clean_offset);
+        _projected_manifest_clean_at.reset();
     }
 }
 
@@ -1083,6 +1145,10 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
         co_return total;
     }
 
+    auto stm_was_clean = _parent.archival_meta_stm()->get_dirty(
+                           _projected_manifest_clean_at)
+                         == cluster::archival_metadata_stm::state_dirty::clean;
+
     auto [segment_results, manifest_clean_offset]
       = co_await ss::when_all_succeed(
         ss::when_all_succeed(begin(flist), end(flist)),
@@ -1145,8 +1211,17 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           _parent.archival_meta_stm(),
           "Archival metadata STM is not created for {} archiver",
           _ntp.path());
+
         auto deadline = ss::lowres_clock::now()
                         + _conf->manifest_upload_timeout;
+
+        if (
+          _projected_manifest_clean_at
+          > _parent.archival_meta_stm()->get_last_clean_at()) {
+            // If we have a projected clean offset, take this opportunity to
+            // persist that to the stm.
+            manifest_clean_offset = _projected_manifest_clean_at;
+        }
 
         auto error = co_await _parent.archival_meta_stm()->add_segments(
           mdiff, manifest_clean_offset, deadline, _as);
@@ -1157,6 +1232,9 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
               _rtclog.warn,
               "archival metadata STM update failed: {}",
               error.message());
+        } else {
+            // We have flushed projected clean offset if it was set
+            _projected_manifest_clean_at.reset();
         }
 
         vlog(
@@ -1164,6 +1242,17 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           "successfully uploaded {} segments (failed {} uploads)",
           total.num_succeeded,
           total.num_failed);
+
+        if (inline_manifest && stm_was_clean) {
+            // This is the path for uploading manifests for infrequent*
+            // segment uploads: we transitioned from clean to dirty, and the
+            // manifest upload interval has expired.
+            //
+            // * infrequent means we're uploading a segment less often than the
+            //   manifest upload interval, so can afford to upload manifest
+            //   immediately after each segment upload.
+            co_await maybe_upload_manifest();
+        }
     }
 
     co_return total;
@@ -1729,7 +1818,6 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
           _rtclog.trace,
           "prepare_transfer_leadership: got units (current {})",
           _uploads_active.current());
-        co_return true;
     } catch (const ss::semaphore_timed_out&) {
         // In this situation, it is possible that the old leader (this node)
         // will leave an orphan object behind in object storage, because
@@ -1741,6 +1829,15 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
         // deleted.
         co_return false;
     }
+
+    // Attempt to flush our clean offset, to avoid the new leader redundantly
+    // uploading a copy of the manifest based on a stale clean offset in
+    // the stm.  This is an optimization: if it fails then the leader transfer
+    // will still proceed smoothly, there just may be an extra manifest upload
+    // on the new leader.
+    co_await maybe_flush_manifest_clean_offset();
+
+    co_return true;
 }
 
 void ntp_archiver::complete_transfer_leadership() {

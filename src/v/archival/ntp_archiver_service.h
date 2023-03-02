@@ -346,6 +346,10 @@ private:
     /// in the expectation that we will be called again in the main upload loop.
     ss::future<std::optional<model::offset>> maybe_upload_manifest();
 
+    /// If we have a projected manifest clean offset, then flush it to
+    /// the persistent stm clean offset.
+    ss::future<> maybe_flush_manifest_clean_offset();
+
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest(
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
@@ -456,6 +460,14 @@ private:
     // NTP level adjacent segment merging job
     std::unique_ptr<housekeeping_job> _local_segment_merger;
     config::binding<bool> _segment_merging_enabled;
+
+    // The archival metadata stm has its own clean/dirty mechanism, but it
+    // is expensive to persistently mark it clean after each segment upload,
+    // if the uploads are infrequent enough to exceed manifest_upload_interval.
+    // As long as leadership remains stable, we may use an in-memory clean
+    // offset to track that we have uploaded manifest for a particular offset,
+    // without persisting this clean offset to the stm.
+    std::optional<model::offset> _projected_manifest_clean_at;
 
     // If this duration has elapsed since _last_manifest_upload_time,
     // then upload at the next opportunity.
