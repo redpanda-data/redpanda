@@ -604,11 +604,15 @@ ss::future<> remote_partition::stop() {
     // segments are being stopped.
     decltype(_segments) segments_to_stop;
     segments_to_stop.swap(_segments);
-    for (auto& [offset, segment] : segments_to_stop) {
-        vlog(
-          _ctxlog.debug, "remote partition stop {}", segment->base_rp_offset());
-        co_await segment->stop();
-    }
+    co_await ss::max_concurrent_for_each(
+      segments_to_stop, 200, [this](auto& iter) {
+          auto& [offset, segment] = iter;
+          vlog(
+            _ctxlog.debug,
+            "remote partition stop {}",
+            segment->base_rp_offset());
+          return segment->stop();
+      });
 
     // We may have some segment or reader objects enqueued for stop in
     // the shared eviction queue: must flush it, or they can outlive
