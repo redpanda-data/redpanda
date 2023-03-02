@@ -998,25 +998,6 @@ class AdminApiBasedRestore(FastCheck):
             assert not item.key.startswith('recovery_state/kafka')
 
 
-def get_node_partition_sizes(redpanda):
-    """
-    Fetch the on-disk size of all partitions on all nodes
-
-    :return: map of topic->partition->node->size
-    """
-    storage = redpanda.storage(sizes=True)
-
-    result = {}
-    for topic in storage.ns["kafka"].topics.keys():
-        for node_partition in storage.partitions("kafka", topic):
-            partition_size = sum(s.size if s.size else 0
-                                 for s in node_partition.segments.values())
-            result[topic][node_partition.num][
-                node_partition.node.name] = partition_size
-
-    return result
-
-
 class TopicRecoveryTest(RedpandaTest):
     def __init__(self,
                  test_context: TestContext,
