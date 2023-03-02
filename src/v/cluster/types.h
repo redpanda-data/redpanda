@@ -3210,6 +3210,15 @@ constexpr auto common = partition_allocation_domain(0);
 constexpr auto consumer_offsets = partition_allocation_domain(-1);
 } // namespace partition_allocation_domains
 
+enum class cloud_storage_mode : uint8_t {
+    disabled = 0,
+    write_only = 1,
+    read_only = 2,
+    full = 3,
+    read_replica = 4
+};
+
+std::ostream& operator<<(std::ostream&, const cloud_storage_mode&);
 } // namespace cluster
 namespace std {
 template<>
