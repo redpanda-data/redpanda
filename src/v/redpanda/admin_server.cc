@@ -4020,6 +4020,87 @@ ss::future<ss::json::json_return_type> admin_server::query_automated_recovery(
     co_return ret;
 }
 
+static ss::httpd::shadow_indexing_json::partition_cloud_storage_status
+map_status_to_json(cluster::partition_cloud_storage_status status) {
+    ss::httpd::shadow_indexing_json::partition_cloud_storage_status json;
+
+    json.cloud_storage_mode = fmt::format("{}", status.mode);
+
+    if (status.since_last_manifest_upload) {
+        json.ms_since_last_manifest_upload
+          = status.since_last_manifest_upload->count();
+    }
+    if (status.since_last_segment_upload) {
+        json.ms_since_last_segment_upload
+          = status.since_last_segment_upload->count();
+    }
+    if (status.since_last_manifest_sync) {
+        json.ms_since_last_manifest_sync
+          = status.since_last_manifest_sync->count();
+    }
+
+    json.total_log_size_bytes = status.total_log_size_bytes;
+    json.cloud_log_size_bytes = status.cloud_log_size_bytes;
+    json.local_log_size_bytes = status.local_log_size_bytes;
+    json.cloud_log_segment_count = status.cloud_log_segment_count;
+    json.local_log_segment_count = status.local_log_segment_count;
+
+    if (status.cloud_log_start_offset) {
+        json.cloud_log_start_offset = status.cloud_log_start_offset.value()();
+    }
+    if (status.cloud_log_last_offset) {
+        json.cloud_log_last_offset = status.cloud_log_last_offset.value()();
+    }
+    if (status.local_log_start_offset) {
+        json.local_log_start_offset = status.local_log_start_offset.value()();
+    }
+    if (status.local_log_last_offset) {
+        json.local_log_last_offset = status.local_log_last_offset.value()();
+    }
+
+    return json;
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_partition_cloud_storage_status(
+  std::unique_ptr<ss::httpd::request> req) {
+    const model::ntp ntp = parse_ntp_from_request(
+      req->param, model::kafka_namespace);
+
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, ntp);
+    }
+
+    const auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "{} could not be found on the node. Perhaps it has been moved "
+          "during the redirect.",
+          ntp));
+    }
+
+    auto status = co_await _partition_manager.invoke_on(
+      *shard,
+      [&ntp](const auto& pm)
+        -> std::optional<cluster::partition_cloud_storage_status> {
+          const auto& partitions = pm.partitions();
+          auto partition_iter = partitions.find(ntp);
+
+          if (partition_iter == partitions.end()) {
+              return std::nullopt;
+          }
+
+          return partition_iter->second->get_cloud_storage_status();
+      });
+
+    if (!status) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("{} could not be found on shard {}.", ntp, *shard));
+    }
+
+    co_return map_status_to_json(*status);
+}
+
 void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
@@ -4039,6 +4120,12 @@ void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::query_automated_recovery,
       [this](auto req) { return query_automated_recovery(std::move(req)); });
+
+    register_route<user>(
+      ss::httpd::shadow_indexing_json::get_partition_cloud_storage_status,
+      [this](auto req) {
+          return get_partition_cloud_storage_status(std::move(req));
+      });
 }
 
 constexpr std::string_view to_string_view(service_kind kind) {
