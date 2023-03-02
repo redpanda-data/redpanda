@@ -20,7 +20,7 @@ from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoi
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer)
 from rptest.utils.mode_checks import skip_debug_mode
-from rptest.utils.si_utils import S3Snapshot
+from rptest.utils.si_utils import BucketView
 from rptest.services.action_injector import ActionConfig, random_process_kills
 
 
@@ -120,10 +120,7 @@ class CloudRetentionTest(PreallocNodesTest):
                             partition_count=num_partitions), )
 
         def first_segment_missing():
-            s3_snapshot = S3Snapshot(topics,
-                                     self.redpanda.cloud_storage_client,
-                                     si_settings.cloud_storage_bucket,
-                                     self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=topics)
             try:
                 manifest = s3_snapshot.manifest_for_ntp(self.topic_name, 0)
             except:
@@ -205,10 +202,7 @@ class CloudRetentionTest(PreallocNodesTest):
                             partition_count=num_partitions), )
 
         def uploaded_all_partitions():
-            s3_snapshot = S3Snapshot(topics,
-                                     self.redpanda.cloud_storage_client,
-                                     si_settings.cloud_storage_bucket,
-                                     self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=topics)
             for partition in range(0, num_partitions):
                 size = s3_snapshot.cloud_log_size_for_ntp(
                     self.topic_name, partition)
@@ -224,10 +218,7 @@ class CloudRetentionTest(PreallocNodesTest):
                    err_msg="Waiting for all parents to upload cloud data")
 
         def gced_all_segments():
-            s3_snapshot = S3Snapshot(topics,
-                                     self.redpanda.cloud_storage_client,
-                                     si_settings.cloud_storage_bucket,
-                                     self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=topics)
             for partition in range(0, num_partitions):
                 try:
                     manifest = s3_snapshot.manifest_for_ntp(
@@ -311,9 +302,7 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
         producer.start()
 
         def cloud_log_size() -> int:
-            s3_snapshot = S3Snapshot(self.topics,
-                                     self.redpanda.cloud_storage_client,
-                                     self.s3_bucket_name, self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=self.topics)
             if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
                 self.logger.debug(f"No manifest present yet")
                 return 0

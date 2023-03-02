@@ -6,7 +6,7 @@ from rptest.services.cluster import cluster
 from rptest.services.redpanda import CloudStorageType, SISettings, RedpandaService, LoggingConfig
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until_segments, wait_for_removal_of_n_segments
-from rptest.utils.si_utils import S3Snapshot
+from rptest.utils.si_utils import BucketView
 from ducktape.utils.util import wait_until
 from ducktape.mark import parametrize
 
@@ -95,11 +95,9 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
                                        original_snapshot=original_snapshot)
 
         def compacted_segments_uploaded():
-            manifest = S3Snapshot(self.topics,
-                                  self.redpanda.cloud_storage_client,
-                                  self.si_settings.cloud_storage_bucket,
-                                  self.logger).manifest_for_ntp(self.topic,
-                                                                partition=0)
+            manifest = BucketView(self.redpanda, topics=self.topics) \
+                                  .manifest_for_ntp(self.topic,
+                                                    partition=0)
             return any(meta['is_compacted']
                        for meta in manifest['segments'].values())
 
@@ -108,10 +106,7 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
                    backoff_sec=2,
                    err_msg=lambda: f"Compacted segments not uploaded")
 
-        s3_snapshot = S3Snapshot(self.topics,
-                                 self.redpanda.cloud_storage_client,
-                                 self.si_settings.cloud_storage_bucket,
-                                 self.logger)
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
                                                                   partition=0,
                                                                   n=1)

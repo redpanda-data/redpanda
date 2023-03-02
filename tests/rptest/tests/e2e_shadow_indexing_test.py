@@ -29,7 +29,7 @@ from rptest.util import (
     produce_until_segments,
     wait_for_removal_of_n_segments,
 )
-from rptest.utils.si_utils import nodes_report_cloud_segments, S3Snapshot
+from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView
 from rptest.utils.mode_checks import skip_debug_mode
 
 
@@ -211,9 +211,7 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
-        s3_snapshot = S3Snapshot(self.topics,
-                                 self.redpanda.cloud_storage_client,
-                                 self.s3_bucket_name, self.logger)
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
                                                                   partition=0,
                                                                   n=1)
@@ -247,9 +245,7 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.start_consumer(verify_offsets=False)
         self.run_consumer_validation(enable_compaction=True)
 
-        s3_snapshot = S3Snapshot(self.topics,
-                                 self.redpanda.cloud_storage_client,
-                                 self.s3_bucket_name, self.logger)
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
                                                                   partition=0,
                                                                   n=1)
@@ -350,9 +346,7 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
 
         # Wait for there to be some segments.
         def manifest_has_segments():
-            s3_snapshot = S3Snapshot(self.topics,
-                                     self.redpanda.cloud_storage_client,
-                                     self.s3_bucket_name, self.logger)
+            s3_snapshot = BucketView(self.redpanda, topics=self.topics)
             manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name,
                                                     0)
             return "segments" in manifest
@@ -361,9 +355,7 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
 
         # Give ample time for would-be segment deletions to occur.
         time.sleep(5)
-        s3_snapshot = S3Snapshot(self.topics,
-                                 self.redpanda.cloud_storage_client,
-                                 self.s3_bucket_name, self.logger)
+        s3_snapshot = BucketView(self.redpanda, topics=self.topics)
         manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name, 0)
         assert "0-1-v1.log" in manifest["segments"], manifest
 
