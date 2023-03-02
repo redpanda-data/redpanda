@@ -17,6 +17,7 @@
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/core/thread.hh>
 
 #include <chrono>
 
@@ -50,4 +51,35 @@ requires ss::ApplyReturns<Predicate, bool> ||
           });
       }));
 }
+
+// When a test expects that any background fibers should complete promptly,
+// and wants to send a barrier through all the inter-CPU queues to ensure
+// that earlier-submitted tasks have reached their destination cores already.
+//
+// This is useful in tests that know they have put the system into a state where
+// it will get to a known state once all the non-i/o-blocking tasks in flight
+// have completed, such as background release of quota units.
+//
+// **Be aware** that there are assumptions to using this:
+// A) That your test code is using the same default scheduling group that
+//    this routine will run within.
+// B) That debug mode scheduling randomization in seastar does not re-order
+//    things so dramatically that our messages can go between every core and
+//    back before a future that was already ready on some shard gets run.
+// C) You are calling from a seastar thread (.get() is used)
+// D) Tasks that have exhausted their scheduling quota and been suspended
+//    can still be running after this returns.
+inline void flush_tasks() {
+    // Ensure anything in inter-CPU queues before we entered the function
+    // has drained: this is an all-to-all to cover the full mesh of queues
+    // between cores.
+    ss::smp::invoke_on_all([]() {
+        return ss::smp::invoke_on_all([]() { return ss::yield(); });
+    }).get();
+
+    // Yield to anything that ended up runnable on the current core as a result
+    // of the above flush.
+    ss::thread::yield();
+}
+
 }; // namespace tests

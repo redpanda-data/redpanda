@@ -260,7 +260,7 @@ void conn_quota_fixture::test_borrows(
     // Now that all units are released, we should find that reclaim
     // flag is switched off everywhere.
     vlog(logger.debug, "Checking reclaim status");
-    ss::thread::yield(); // give the backgrounded part of reclaim_to a chance
+    tests::flush_tasks(); // Let background reclaim advancer
     cooperative_spin_wait_with_timeout(5s, [core_count, this]() {
         bool any_in_reclaim = false;
 
@@ -375,9 +375,7 @@ FIXTURE_TEST(test_decrease_limit, conn_quota_fixture) {
     drop_shard_units();
 
     // Drain futures for background cross-core releases
-    for (uint32_t i = 0; i < initial_limit; ++i) {
-        ss::thread::yield();
-    }
+    tests::flush_tasks();
 
     vlog(logger.debug, "Taking 1st unit");
     auto u = take_units(addr1, 1);
