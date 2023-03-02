@@ -3,6 +3,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME s3_single_thread
   SOURCES
+    backend_detection_test.cc
     s3_client_test.cc
     xml_sax_parser_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
