@@ -4,4 +4,4 @@ metadata:
   name: update-image-cluster-and-node-port
 spec:
   image: "vectorized/redpanda"
-  version: "v22.3.4"
+  version: "v22.3.13"

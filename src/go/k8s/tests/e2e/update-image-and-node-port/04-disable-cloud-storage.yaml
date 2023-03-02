@@ -1,7 +1,0 @@
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
-metadata:
-  name: update-image-cluster-and-node-port
-spec:
-  cloudStorage:
-    enabled: false
