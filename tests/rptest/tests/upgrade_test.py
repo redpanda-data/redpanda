@@ -170,8 +170,7 @@ class UpgradeBackToBackTest(PreallocNodesTest):
             self.redpanda,
             self.topic,
             self.MSG_SIZE,
-            nodes=self.preallocated_nodes,
-            debug_logs=True)
+            nodes=self.preallocated_nodes)
         self._rand_consumer = KgoVerifierRandomConsumer(
             test_context, self.redpanda, self.topic, self.MSG_SIZE,
             self.RANDOM_READ_COUNT, self.RANDOM_READ_PARALLEL,
