@@ -329,4 +329,33 @@ struct convert<std::unordered_map<typename T::key_type, T>> {
     }
 };
 
+template<>
+struct convert<model::cloud_storage_backend> {
+    using type = model::cloud_storage_backend;
+
+    static constexpr auto acceptable_values = std::to_array(
+      {"aws", "google", "azure", "minio", "unknown"});
+
+    static Node encode(const type& rhs) { return Node(fmt::format("{}", rhs)); }
+
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (
+          std::find(acceptable_values.begin(), acceptable_values.end(), value)
+          == acceptable_values.end()) {
+            return false;
+        }
+
+        rhs = string_switch<type>(std::string_view{value})
+                .match("aws", model::cloud_storage_backend::aws)
+                .match("google", model::cloud_storage_backend::google)
+                .match("minio", model::cloud_storage_backend::minio)
+                .match("azure", model::cloud_storage_backend::azure)
+                .match("unknown", model::cloud_storage_backend::unknown);
+
+        return true;
+    }
+};
+
 } // namespace YAML
