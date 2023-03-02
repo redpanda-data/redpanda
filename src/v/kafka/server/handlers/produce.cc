@@ -84,9 +84,11 @@ struct produce_ctx {
     produce_ctx(
       request_context&& rctx,
       produce_request&& request,
+      produce_response&& response,
       ss::smp_service_group ssg)
       : rctx(std::move(rctx))
       , request(std::move(request))
+      , response(std::move(response))
       , ssg(ssg) {}
 };
 
@@ -542,6 +544,27 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           ctx.respond(request.make_full_disk_response()));
     }
 
+    // Account for special internal topic bytes for usage
+    produce_response resp;
+    for (const auto& topic : request.data.topics) {
+        const bool bytes_to_exclude = std::find(
+                                        usage_excluded_topics.cbegin(),
+                                        usage_excluded_topics.cend(),
+                                        topic.name())
+                                      != usage_excluded_topics.cend();
+        if (bytes_to_exclude) {
+            for (const auto& part : topic.partitions) {
+                if (part.records) {
+                    const auto& records = part.records;
+                    if (records->adapter.batch) {
+                        resp.internal_topic_bytes
+                          += records->adapter.batch->size_bytes();
+                    }
+                }
+            }
+        }
+    }
+
     // determine if the request has transactional / idempotent batches
     for (auto& topic : request.data.topics) {
         for (auto& part : topic.partitions) {
@@ -599,7 +622,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     ss::promise<> dispatched_promise;
     auto dispatched_f = dispatched_promise.get_future();
     auto produced_f = ss::do_with(
-      produce_ctx(std::move(ctx), std::move(request), ssg),
+      produce_ctx(std::move(ctx), std::move(request), std::move(resp), ssg),
       [dispatched_promise = std::move(dispatched_promise)](
         produce_ctx& octx) mutable {
           // dispatch produce requests for each topic
