@@ -17,6 +17,8 @@
 #include "ssx/future-util.h"
 #include "vlog.h"
 
+#include <seastar/core/loop.hh>
+
 #include <absl/container/btree_map.h>
 
 #include <chrono>
@@ -144,12 +146,12 @@ ss::future<> materialized_segments::run_eviction_loop() {
     while (true) {
         co_await _cvar.wait([this] { return !_eviction_pending.empty(); });
         _eviction_in_flight = std::exchange(_eviction_pending, {});
-        while (!_eviction_in_flight.empty()) {
-            co_await std::visit(
-              [](auto&& rs) { return rs->stop(); },
-              _eviction_in_flight.front());
-            _eviction_in_flight.pop_front();
-        }
+        co_await ss::max_concurrent_for_each(
+          _eviction_in_flight, 1024, [](auto&& rs_variant) {
+              return std::visit(
+                [](auto&& rs) { return rs->stop(); }, rs_variant);
+          });
+        _eviction_in_flight.clear();
     }
 }
 

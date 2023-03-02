@@ -19,7 +19,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.action_injector import random_process_kills, ActionConfig
 from rptest.services.cluster import cluster
-from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
 from rptest.services.redpanda import SISettings
 from rptest.tests.end_to_end import EndToEndTest
@@ -29,7 +29,7 @@ from rptest.util import (
     produce_until_segments,
     wait_for_removal_of_n_segments,
 )
-from rptest.utils.si_utils import S3Snapshot
+from rptest.utils.si_utils import nodes_report_cloud_segments, S3Snapshot
 from rptest.utils.mode_checks import skip_debug_mode
 
 
@@ -357,6 +357,74 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
                                  self.s3_bucket_name, self.logger)
         manifest = s3_snapshot.manifest_for_ntp(self.infinite_topic_name, 0)
         assert "0-1-v1.log" in manifest["segments"], manifest
+
+
+class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
+    small_segment_size = 4096
+    topic_name = f"{EndToEndShadowIndexingBase.s3_topic_name}"
+    topics = (TopicSpec(name=topic_name,
+                        partition_count=128,
+                        replication_factor=1,
+                        redpanda_remote_write=True,
+                        redpanda_remote_read=True,
+                        retention_bytes=-1,
+                        retention_ms=-1,
+                        segment_bytes=small_segment_size), )
+
+    def __init__(self, test_context):
+        self.num_brokers = 1
+        si_settings = SISettings(
+            log_segment_size=self.small_segment_size,
+            cloud_storage_cache_size=20 * 2**30,
+            cloud_storage_segment_max_upload_interval_sec=1)
+        super().__init__(test_context,
+                         node_prealloc_count=1,
+                         extra_rp_conf={
+                             'log_segment_size_min': 1024,
+                         },
+                         si_settings=si_settings)
+        self.kafka_tools = KafkaCliTools(self.redpanda)
+
+    def setUp(self):
+        self.redpanda.start()
+        for topic in self.topics:
+            self.kafka_tools.create_topic(topic)
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(self.topic,
+                               TopicSpec.PROPERTY_RETENTION_LOCAL_TARGET_MS,
+                               '1000')
+
+    @skip_debug_mode
+    @cluster(num_nodes=2)
+    def test_many_partitions_shutdown(self):
+        """
+        Test that reproduces a slow shutdown when many partitions each with
+        many hydrated segments get shut down.
+        """
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic,
+                                       msg_size=1024,
+                                       msg_count=1000 * 1000,
+                                       custom_node=self.preallocated_nodes)
+        producer.start()
+        try:
+            wait_until(
+                lambda: nodes_report_cloud_segments(self.redpanda, 128 * 200),
+                timeout_sec=120,
+                backoff_sec=3)
+        finally:
+            producer.stop()
+            producer.wait()
+
+        seq_consumer = KgoVerifierSeqConsumer(self.test_context,
+                                              self.redpanda,
+                                              self.topic,
+                                              0,
+                                              nodes=self.preallocated_nodes)
+        seq_consumer.start(clean=False)
+        seq_consumer.wait()
+        self.redpanda.stop_node(self.redpanda.nodes[0])
 
 
 class ShadowIndexingWhileBusyTest(PreallocNodesTest):
