@@ -1018,6 +1018,23 @@ std::ostream& operator<<(std::ostream& o, reconfiguration_state update) {
     }
     __builtin_unreachable();
 }
+
+std::ostream& operator<<(std::ostream& o, const cloud_storage_mode& mode) {
+    switch (mode) {
+    case cloud_storage_mode::disabled:
+        return o << "disabled";
+    case cloud_storage_mode::write_only:
+        return o << "write_only";
+    case cloud_storage_mode::read_only:
+        return o << "read_only";
+    case cloud_storage_mode::full:
+        return o << "full";
+    case cloud_storage_mode::read_replica:
+        return o << "read_replica";
+    }
+    __builtin_unreachable();
+}
+
 } // namespace cluster
 
 namespace reflection {

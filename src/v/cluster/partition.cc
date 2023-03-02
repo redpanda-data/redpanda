@@ -152,6 +152,27 @@ ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
     return _cloud_storage_partition->aborted_transactions(offsets);
 }
 
+cluster::cloud_storage_mode partition::get_cloud_storage_mode() const {
+    const auto& cfg = _raft->log_config();
+
+    if (cfg.is_read_replica_mode_enabled()) {
+        return cluster::cloud_storage_mode::read_replica;
+    }
+    if (cfg.is_tiered_storage()) {
+        return cluster::cloud_storage_mode::full;
+    }
+    if (cfg.is_tiered_storage()) {
+        return cluster::cloud_storage_mode::full;
+    }
+    if (cfg.is_archival_enabled()) {
+        return cluster::cloud_storage_mode::write_only;
+    }
+    if (cfg.is_remote_fetch_enabled()) {
+        return cluster::cloud_storage_mode::read_only;
+    }
+
+    return cluster::cloud_storage_mode::disabled;
+}
 bool partition::is_remote_fetch_enabled() const {
     const auto& cfg = _raft->log_config();
     if (_feature_table.local().is_active(features::feature::cloud_retention)) {

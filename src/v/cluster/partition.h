@@ -250,6 +250,8 @@ public:
         return _read_replica_bucket.value();
     }
 
+    cloud_storage_mode get_cloud_storage_mode() const;
+
     /// Return true if shadow indexing is enabled for the partition
     bool is_remote_fetch_enabled() const;
 
