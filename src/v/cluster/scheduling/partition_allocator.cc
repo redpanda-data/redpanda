@@ -55,25 +55,17 @@ allocation_constraints partition_allocator::default_constraints(
   const partition_allocation_domain domain) {
     allocation_constraints req;
 
-    req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(distinct_nodes()));
-
-    req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(not_fully_allocated()));
-
-    req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(is_active()));
+    req.add(distinct_nodes());
+    req.add(not_fully_allocated());
+    req.add(is_active());
 
     if (domain == partition_allocation_domains::common) {
-        req.soft_constraints.push_back(
-          ss::make_lw_shared<soft_constraint>(least_allocated()));
+        req.add(least_allocated());
     } else {
-        req.soft_constraints.push_back(ss::make_lw_shared<soft_constraint>(
-          least_allocated_in_domain(domain)));
+        req.add(least_allocated_in_domain(domain));
     }
     if (_enable_rack_awareness()) {
-        req.soft_constraints.push_back(ss::make_lw_shared<soft_constraint>(
-          distinct_rack_preferred(*_state)));
+        req.add(distinct_rack_preferred(*_state));
     }
     return req;
 }
@@ -366,8 +358,7 @@ result<allocation_units> partition_allocator::reassign_decommissioned_replicas(
     });
 
     auto req = default_constraints(domain);
-    req.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(distinct_from(current_replicas)));
+    req.add(distinct_from(current_replicas));
 
     auto replicas = do_reallocate_partition(
       partition_constraints(current_assignment.id, replication_factor),
