@@ -10,6 +10,9 @@ package main
 
 import (
 	"flag"
+	"log"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"time"
 
@@ -53,8 +56,9 @@ func main() {
 	var (
 		clusterDomain               string
 		metricsAddr                 string
-		enableLeaderElection        bool
 		probeAddr                   string
+		pprofAddr                   string
+		enableLeaderElection        bool
 		webhookEnabled              bool
 		configuratorBaseImage       string
 		configuratorTag             string
@@ -68,10 +72,12 @@ func main() {
 		// does not exist, or has the NoExecute taint. This is intended to support the rancher.io/local-path
 		// storage driver.
 		allowPVCDeletion bool
+		debug            bool
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&pprofAddr, "pprof-bind-address", ":8082", "The address the metric endpoint binds to.")
 	flag.StringVar(&clusterDomain, "cluster-domain", "cluster.local", "Set the Kubernetes local domain (Kubelet's --cluster-domain)")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -87,6 +93,7 @@ func main() {
 	flag.BoolVar(&redpandav1alpha1.AllowConsoleAnyNamespace, "allow-console-any-ns", false, "Allow to create Console in any namespace. Allowing this copies Redpanda SchemaRegistry TLS Secret to namespace (alpha feature)")
 	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
 	flag.StringVar(&redpandav1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
+	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
 
 	opts := zap.Options{
 		Development: true,
@@ -97,6 +104,23 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if debug {
+		go func() {
+			pprofMux := http.NewServeMux()
+			pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
+			pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+			pprofMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+			pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+			pprofMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+			pprofServer := &http.Server{
+				Addr:              pprofAddr,
+				Handler:           pprofMux,
+				ReadHeaderTimeout: 3 * time.Second,
+			}
+			log.Fatal(pprofServer.ListenAndServe())
+		}()
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,

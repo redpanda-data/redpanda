@@ -110,18 +110,20 @@ func TestStringSliceProperties(t *testing.T) {
 		configuration.GlobalConfigurationModeMixed,
 	}
 	for i, mode := range tests {
-		t.Run(fmt.Sprintf("test property slices %d", i), func(t *testing.T) {
-			t.Parallel()
+		func(m configuration.GlobalConfigurationMode) bool {
+			return t.Run(fmt.Sprintf("test property slices %d", i), func(t *testing.T) {
+				t.Parallel()
 
-			config := configuration.GlobalConfiguration{Mode: mode}
-			assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "a"))
-			assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "b"))
-			assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "c"))
-			assert.Equal(t, []string{"a", "b", "c"}, config.GetAdditionalRedpandaProperty("superusers"))
+				config := configuration.GlobalConfiguration{Mode: m}
+				assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "a"))
+				assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "b"))
+				assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "c"))
+				assert.Equal(t, []string{"a", "b", "c"}, config.GetAdditionalRedpandaProperty("superusers"))
 
-			config.SetAdditionalRedpandaProperty("superusers", "nonslice")
-			assert.Error(t, config.AppendToAdditionalRedpandaProperty("superusers", "value"))
-		})
+				config.SetAdditionalRedpandaProperty("superusers", "nonslice")
+				assert.Error(t, config.AppendToAdditionalRedpandaProperty("superusers", "value"))
+			})
+		}(mode)
 	}
 }
 
