@@ -379,6 +379,8 @@ private:
       std::unique_ptr<ss::request>, std::unique_ptr<ss::reply>);
     ss::future<ss::json::json_return_type>
     query_automated_recovery(std::unique_ptr<ss::httpd::request> req);
+    ss::future<ss::json::json_return_type>
+    get_partition_cloud_storage_status(std::unique_ptr<ss::httpd::request> req);
 
     /// Self test routes
     ss::future<ss::json::json_return_type>
