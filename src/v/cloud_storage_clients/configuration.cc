@@ -11,6 +11,7 @@
 #include "cloud_storage_clients/configuration.h"
 
 #include "cloud_storage_clients/logger.h"
+#include "config/configuration.h"
 #include "net/tls.h"
 
 namespace {
@@ -168,6 +169,47 @@ std::ostream& operator<<(std::ostream& o, const abs_configuration& c) {
            .count()
       << "}";
     return o;
+}
+
+model::cloud_storage_backend infer_backend_from_configuration(
+  const client_configuration& client_config,
+  model::cloud_credentials_source cloud_storage_credentials_source) {
+    if (auto v = config::shard_local_cfg().cloud_storage_backend.value();
+        v != model::cloud_storage_backend::unknown) {
+        return v;
+    }
+
+    if (std::holds_alternative<abs_configuration>(client_config)) {
+        return model::cloud_storage_backend::azure;
+    }
+
+    if (
+      cloud_storage_credentials_source
+      != model::cloud_credentials_source::config_file) {
+        switch (cloud_storage_credentials_source) {
+        case model::cloud_credentials_source::aws_instance_metadata:
+            [[fallthrough]];
+        case model::cloud_credentials_source::sts:
+            return model::cloud_storage_backend::aws;
+        case model::cloud_credentials_source::gcp_instance_metadata:
+            return model::cloud_storage_backend::google;
+        case model::cloud_credentials_source::config_file:
+            __builtin_unreachable();
+            break;
+        }
+    }
+
+    auto& s3_config = std::get<s3_configuration>(client_config);
+    const auto& uri = s3_config.uri;
+    if (uri().find("google") != uri().npos) {
+        return model::cloud_storage_backend::google;
+    }
+
+    if (uri().find("minio") != uri().npos) {
+        return model::cloud_storage_backend::minio;
+    }
+
+    return model::cloud_storage_backend::unknown;
 }
 
 } // namespace cloud_storage_clients
