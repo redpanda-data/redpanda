@@ -42,7 +42,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		"config",
 		"",
 		"rpk config file, if not set the file will be searched for"+
-			" in the default locations",
+			" in $PWD or /etc/redpanda/redpanda.yaml",
 	)
 
 	cmd.PersistentFlags().StringSliceVar(

@@ -103,7 +103,7 @@ func TestModeCommand(t *testing.T) {
 			exp: fillRpkConfig(configPath, config.ModeProd),
 		},
 		{
-			name: "mode should work if --config isn't passed, but the file is in /etc/redpanda/redpanda.yaml",
+			name: "mode should work if --config isn't passed, but the file is in $PWD or /etc/redpanda/redpanda.yaml",
 			args: []string{"prod"},
 			before: func(fs afero.Fs) (string, error) {
 				bs, err := yaml.Marshal(fillRpkConfig(configPath, config.ModeDev))

@@ -119,7 +119,7 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 		&configFile,
 		config.FlagConfig,
 		"",
-		"Redpanda config file, if not set the file will be searched for in the default locations.",
+		"Redpanda config file, if not set the file will be searched for in $PWD or /etc/redpanda/redpanda.yaml.",
 	)
 	command.Flags().StringVar(&outTuneScriptFile,
 		"output-script",
