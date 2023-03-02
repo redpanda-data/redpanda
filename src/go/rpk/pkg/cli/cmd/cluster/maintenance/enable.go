@@ -50,6 +50,15 @@ node exists that is already in maintenance mode then an error will be returned.
 			client, err := admin.NewClient(fs, cfg)
 			out.MaybeDie(err, "unable to initialize admin client: %v", err)
 
+			b, err := client.Broker(cmd.Context(), nodeID)
+			out.MaybeDie(err, "error retrieving broker status. The node %d is likely dead?: %v", nodeID, err)
+
+			if b.Maintenance == nil {
+				out.Die("maintenance mode not supported or upgrade in progress?")
+			} else if b.Maintenance.Draining {
+				out.Exit("Maintenance mode is already enabled for node %d. Check the status with 'rpk cluster maintenance status'.", nodeID)
+			}
+
 			err = client.EnableMaintenanceMode(cmd.Context(), nodeID)
 			var he *admin.HTTPResponseError
 			if errors.As(err, &he) {
@@ -67,13 +76,13 @@ node exists that is already in maintenance mode then an error will be returned.
 			}
 
 			out.MaybeDie(err, "error enabling maintenance mode for node %d: %v", nodeID, err)
-			fmt.Printf("Successfully enabled maintenance mode for node %d\n", nodeID)
 
 			if !wait {
+				fmt.Printf("Successfully enabled maintenance mode for node %d. Check the partition draining status with 'rpk cluster maintenance status'.\n", nodeID)
 				return
 			}
 
-			fmt.Println("Waiting for node to drain...")
+			fmt.Printf("Successfully enabled maintenance mode for node %d. Waiting for node to drain...\n", nodeID)
 
 			var table *out.TabWriter
 			retries := 3
@@ -91,7 +100,7 @@ node exists that is already in maintenance mode then an error will be returned.
 				}
 				if err != nil {
 					if retries <= 0 {
-						out.Die("Error retrieving broker status: %v", err)
+						out.Die("Error retrieving broker status while watching the progress: %v", err)
 					}
 					retries--
 					time.Sleep(time.Second * 2)
@@ -104,6 +113,7 @@ node exists that is already in maintenance mode then an error will be returned.
 				addBrokerMaintenanceReport(table, b)
 				table.Flush()
 				if b.Maintenance.Draining && b.Maintenance.Finished {
+					fmt.Printf("\nAll partitions on node %d have drained.\n", nodeID)
 					return
 				}
 				time.Sleep(time.Second * 2)
