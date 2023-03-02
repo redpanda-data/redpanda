@@ -707,6 +707,23 @@ ss::future<response_ptr> op_context::send_response() && {
     final_response.data.error_code = response.data.error_code;
     final_response.data.session_id = response.data.session_id;
 
+    /// Account for special internal topic bytes for usage
+    for (const auto& topic : response.data.topics) {
+        const bool bytes_to_exclude = std::find(
+                                        usage_excluded_topics.cbegin(),
+                                        usage_excluded_topics.cend(),
+                                        topic.name)
+                                      != usage_excluded_topics.cend();
+        if (bytes_to_exclude) {
+            for (const auto& part : topic.partitions) {
+                if (part.records) {
+                    final_response.internal_topic_bytes
+                      += part.records->size_bytes();
+                }
+            }
+        }
+    }
+
     for (auto it = response.begin(true); it != response.end(); ++it) {
         if (it->is_new_topic) {
             final_response.data.topics.emplace_back(
