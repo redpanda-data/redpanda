@@ -751,7 +751,7 @@ class Admin:
         """
         Start maintenanceing on 'node', sending the request to 'dst_node'.
         """
-        id = self.redpanda.idx(node)
+        id = self.redpanda.node_id(node)
         url = f"brokers/{id}/maintenance"
         self.redpanda.logger.info(
             f"Starting maintenance on node {node.name}/{id}")
@@ -761,7 +761,7 @@ class Admin:
         """
         Stop maintenanceing on 'node', sending the request to 'dst_node'.
         """
-        id = self.redpanda.idx(node)
+        id = self.redpanda.node_id(node)
         url = f"brokers/{id}/maintenance"
         self.redpanda.logger.info(
             f"Stopping maintenance on node {node.name}/{id}")
@@ -771,7 +771,7 @@ class Admin:
         """
         Get maintenance status of a node.
         """
-        id = self.redpanda.idx(node)
+        id = self.redpanda.node_id(node)
         self.redpanda.logger.info(
             f"Getting maintenance status on node {node.name}/{id}")
         return self._request("get", "maintenance", node=node).json()
@@ -780,7 +780,7 @@ class Admin:
         """
         Reset info for leaders on node
         """
-        id = self.redpanda.idx(node)
+        id = self.redpanda.node_id(node)
         self.redpanda.logger.info(f"Reset leaders info on {node.name}/{id}")
         url = "debug/reset_leaders"
         return self._request("post", url, node=node)
@@ -789,7 +789,7 @@ class Admin:
         """
         Get info for leaders on node
         """
-        id = self.redpanda.idx(node)
+        id = self.redpanda.node_id(node)
         self.redpanda.logger.info(f"Get leaders info on {node.name}/{id}")
         url = "debug/partition_leaders_table"
         return self._request("get", url, node=node).json()
