@@ -1,3 +1,11 @@
+# Copyright 2023 Redpanda Data, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
 import collections
 import json
 import pprint
@@ -8,7 +16,7 @@ import xxhash
 
 from rptest.archival.s3_client import ObjectMetadata, S3Client
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
+from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
 
 EMPTY_SEGMENT_SIZE = 4096
 
@@ -290,6 +298,27 @@ def get_expected_ntp_restored_size(nodes_segments_report: dict[str,
                 expected_restored_sizes[ntp] += segments_sizes_per_ntp[ntp][
                     segment]
     return expected_restored_sizes
+
+
+def nodes_report_cloud_segments(redpanda, target_segments):
+    """
+    Returns true if the nodes in the cluster collectively report having
+    above the given number of segments.
+
+    NOTE: we're explicitly not checking the manifest via cloud client
+    because we expect the number of items in our bucket to be quite large,
+    and for associated ListObjects calls to take a long time.
+    """
+    try:
+        num_segments = redpanda.metric_sum(
+            "redpanda_cloud_storage_segments",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        redpanda.logger.info(
+            f"Cluster metrics report {num_segments} / {target_segments} cloud segments"
+        )
+    except:
+        return False
+    return num_segments >= target_segments
 
 
 def is_close_size(actual_size, expected_size):
