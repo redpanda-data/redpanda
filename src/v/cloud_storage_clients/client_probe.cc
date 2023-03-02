@@ -214,7 +214,7 @@ void client_probe::setup_public_metrics(
           labels)
           .aggregate({sm::shard_label}),
         sm::make_counter(
-          "dowload_backoff",
+          "download_backoff",
           [this] { return _total_download_slowdowns; },
           sm::description("Total number of download requests that backed off"),
           labels)
