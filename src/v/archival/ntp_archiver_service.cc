@@ -590,6 +590,8 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
             co_return cloud_storage::download_result::failed;
         }
     }
+
+    _last_sync_time = ss::lowres_clock::now();
     co_return cloud_storage::download_result::success;
 }
 
@@ -634,6 +636,11 @@ const model::ntp& ntp_archiver::get_ntp() const { return _ntp; }
 
 model::initial_revision_id ntp_archiver::get_revision_id() const {
     return _rev;
+}
+
+std::optional<ss::lowres_clock::time_point>
+ntp_archiver::get_last_sync_time() const {
+    return _last_sync_time;
 }
 
 ss::future<

@@ -100,6 +100,10 @@ public:
         return _last_segment_upload_time;
     }
 
+    /// Get the timestamp of the last successful manifest sync.
+    /// Returns nullopt if not in read replica mode
+    std::optional<ss::lowres_clock::time_point> get_last_sync_time() const;
+
     /// Download manifest from pre-defined S3 locatnewion
     ///
     /// \return future that returns true if the manifest was found in S3
@@ -471,6 +475,10 @@ private:
 
     // When we last wrote a segment
     ss::lowres_clock::time_point _last_segment_upload_time;
+    ss::lowres_clock::time_point _last_upload_time;
+
+    // When we last synced the manifest of the read replica
+    std::optional<ss::lowres_clock::time_point> _last_sync_time;
 
     // Used during leadership transfer: instructs the archiver to
     // not proceed with uploads, even if it has leadership.
