@@ -153,6 +153,12 @@ public:
         return o;
     }
 
+    void notify_original_version(legacy_version ov) {
+        for (const auto& [name, property] : _properties) {
+            property->notify_original_version(ov);
+        }
+    }
+
     virtual ~config_store() noexcept = default;
 
 private:

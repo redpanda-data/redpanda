@@ -14,6 +14,7 @@
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 #include "seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/util/bool_class.hh>
 
@@ -55,6 +56,10 @@ enum class odd_even_constraint {
     even,
     odd,
 };
+
+// This is equivalent to cluster::cluster_version, but defined here to
+// avoid a dependency between config/ and cluster/
+using legacy_version = named_type<int64_t, struct legacy_version_tag>;
 
 std::string_view to_string_view(visibility v);
 
@@ -125,6 +130,12 @@ public:
     virtual std::optional<validation_error> validate(YAML::Node) const = 0;
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
+
+    /**
+     * Notify the property of the cluster's original logical version, in case
+     * it has alternative defaults for old clusters.
+     */
+    virtual void notify_original_version(legacy_version) = 0;
 
 private:
     friend std::ostream& operator<<(std::ostream&, const base_property&);
