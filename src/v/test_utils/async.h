@@ -66,6 +66,9 @@ requires ss::ApplyReturns<Predicate, bool> ||
 // B) That debug mode scheduling randomization in seastar does not re-order
 //    things so dramatically that our messages can go between every core and
 //    back before a future that was already ready on some shard gets run.
+// C) You are calling from a seastar thread (.get() is used)
+// D) Tasks that have exhausted their scheduling quota and been suspended
+//    can still be running after this returns.
 inline void flush_tasks() {
     // Ensure anything in inter-CPU queues before we entered the function
     // has drained: this is an all-to-all to cover the full mesh of queues
