@@ -441,6 +441,8 @@ consteval std::string_view property_type_name() {
     } else if constexpr (std::
                            is_same_v<type, model::cloud_credentials_source>) {
         return "string";
+    } else if constexpr (std::is_same_v<type, model::cloud_storage_backend>) {
+        return "string";
     } else {
         static_assert(dependent_false<T>::value, "Type name not defined");
     }

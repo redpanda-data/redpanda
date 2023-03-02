@@ -1320,6 +1320,20 @@ configuration::configuration()
       "waiting.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       5s)
+  , cloud_storage_backend(
+      *this,
+      "cloud_storage_backend",
+      "Optional cloud storage backend variant used to select API capabilities. "
+      "If not supplied, will be inferred from other configuration parameters.",
+      {.needs_restart = needs_restart::yes,
+       .example = "aws",
+       .visibility = visibility::user},
+      model::cloud_storage_backend::unknown,
+      {model::cloud_storage_backend::aws,
+       model::cloud_storage_backend::google,
+       model::cloud_storage_backend::azure,
+       model::cloud_storage_backend::minio,
+       model::cloud_storage_backend::unknown})
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
