@@ -756,9 +756,7 @@ class ManyPartitionsTest(PreallocNodesTest):
         # ensure we read enough to download a few segments per partition.
         max_msgs = None
         if scale.tiered_storage_enabled:
-            # FIXME: use an even larger workload
-            # https://github.com/redpanda-data/redpanda/issues/8822
-            max_msgs = 10 * scale.partition_limit
+            max_msgs = 50 * scale.partition_limit
 
         seq_consumer = KgoVerifierSeqConsumer(
             self.test_context,
