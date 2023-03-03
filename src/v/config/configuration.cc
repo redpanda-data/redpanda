@@ -1330,7 +1330,7 @@ configuration::configuration()
        .visibility = visibility::user},
       model::cloud_storage_backend::unknown,
       {model::cloud_storage_backend::aws,
-       model::cloud_storage_backend::google,
+       model::cloud_storage_backend::google_s3_compat,
        model::cloud_storage_backend::azure,
        model::cloud_storage_backend::minio,
        model::cloud_storage_backend::unknown})

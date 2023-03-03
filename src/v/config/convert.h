@@ -349,7 +349,9 @@ struct convert<model::cloud_storage_backend> {
 
         rhs = string_switch<type>(std::string_view{value})
                 .match("aws", model::cloud_storage_backend::aws)
-                .match("google", model::cloud_storage_backend::google)
+                .match(
+                  "google_s3_compat",
+                  model::cloud_storage_backend::google_s3_compat)
                 .match("minio", model::cloud_storage_backend::minio)
                 .match("azure", model::cloud_storage_backend::azure)
                 .match("unknown", model::cloud_storage_backend::unknown);

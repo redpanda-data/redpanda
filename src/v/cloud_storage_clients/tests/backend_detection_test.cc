@@ -18,7 +18,8 @@ BOOST_AUTO_TEST_CASE(test_backend_from_url) {
     cfg.uri = cloud_storage_clients::access_point_uri{"storage.googleapis.com"};
     auto inferred = cloud_storage_clients::infer_backend_from_configuration(
       cfg, model::cloud_credentials_source::config_file);
-    BOOST_REQUIRE_EQUAL(inferred, model::cloud_storage_backend::google);
+    BOOST_REQUIRE_EQUAL(
+      inferred, model::cloud_storage_backend::google_s3_compat);
 
     cfg.uri = cloud_storage_clients::access_point_uri{"minio-s3"};
     inferred = cloud_storage_clients::infer_backend_from_configuration(
@@ -38,7 +39,8 @@ BOOST_AUTO_TEST_CASE(test_backend_from_cred_src) {
 
     inferred = cloud_storage_clients::infer_backend_from_configuration(
       cfg, model::cloud_credentials_source::gcp_instance_metadata);
-    BOOST_REQUIRE_EQUAL(inferred, model::cloud_storage_backend::google);
+    BOOST_REQUIRE_EQUAL(
+      inferred, model::cloud_storage_backend::google_s3_compat);
 
     inferred = cloud_storage_clients::infer_backend_from_configuration(
       cfg, model::cloud_credentials_source::config_file);
@@ -54,9 +56,11 @@ BOOST_AUTO_TEST_CASE(test_backend_when_using_azure) {
 
 BOOST_AUTO_TEST_CASE(test_backend_override) {
     config::shard_local_cfg().cloud_storage_backend.set_value(
-      model::cloud_storage_backend{model::cloud_storage_backend::google});
+      model::cloud_storage_backend{
+        model::cloud_storage_backend::google_s3_compat});
     auto cfg = cloud_storage_clients::abs_configuration{};
     auto inferred = cloud_storage_clients::infer_backend_from_configuration(
       cfg, model::cloud_credentials_source::aws_instance_metadata);
-    BOOST_REQUIRE_EQUAL(inferred, model::cloud_storage_backend::google);
+    BOOST_REQUIRE_EQUAL(
+      inferred, model::cloud_storage_backend::google_s3_compat);
 }
