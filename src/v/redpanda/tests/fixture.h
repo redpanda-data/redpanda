@@ -184,6 +184,29 @@ public:
         get_archival_config(),
         get_cloud_config(port)) {}
 
+    struct init_cloud_storage_no_archiver_tag {};
+
+    // Start redpanda with shadow indexing enabled, but do not enable
+    // tiered storage by default: this enables constructing topics without
+    // the upload code, to later set it up manually in a test.
+    explicit redpanda_thread_fixture(
+      init_cloud_storage_no_archiver_tag,
+      std::optional<uint16_t> port = std::nullopt)
+      : redpanda_thread_fixture(
+        model::node_id(1),
+        9092,
+        33145,
+        8082,
+        8081,
+        43189,
+        {},
+        ssx::sformat("test.dir_{}", time(0)),
+        std::nullopt,
+        true,
+        get_s3_config(port),
+        get_archival_config(),
+        std::nullopt) {}
+
     ~redpanda_thread_fixture() {
         shutdown();
         if (remove_on_shutdown) {
