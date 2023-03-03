@@ -192,7 +192,7 @@ model::cloud_storage_backend infer_backend_from_configuration(
         case model::cloud_credentials_source::sts:
             return model::cloud_storage_backend::aws;
         case model::cloud_credentials_source::gcp_instance_metadata:
-            return model::cloud_storage_backend::google;
+            return model::cloud_storage_backend::google_s3_compat;
         case model::cloud_credentials_source::config_file:
             __builtin_unreachable();
             break;
@@ -202,7 +202,7 @@ model::cloud_storage_backend infer_backend_from_configuration(
     auto& s3_config = std::get<s3_configuration>(client_config);
     const auto& uri = s3_config.uri;
     if (uri().find("google") != uri().npos) {
-        return model::cloud_storage_backend::google;
+        return model::cloud_storage_backend::google_s3_compat;
     }
 
     if (uri().find("minio") != uri().npos) {
