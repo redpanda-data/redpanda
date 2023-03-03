@@ -398,15 +398,18 @@ public:
             return;
         }
         auto ix = lb.index();
-        std::apply(
-          [ix](auto&&... col) { (col.prefix_truncate_ix(ix), ...); },
-          columns());
         // We need to remove hints that belong to the first frame.
         // This frame was truncated and therefore the hints that
         // belong to it are no longer valid.
         const auto& frame = _base_offset.get_frame_by_element_index(ix).get();
         auto frame_max_offset = frame.last_value();
         auto it = _hints.upper_bound(frame_max_offset.value_or(bo));
+
+        // Truncate columns
+        std::apply(
+          [ix](auto&&... col) { (col.prefix_truncate_ix(ix), ...); },
+          columns());
+
         // The elements are ordered by base offset from large to small
         // so the hints that belong to removed and truncated frames are
         // at the end.
