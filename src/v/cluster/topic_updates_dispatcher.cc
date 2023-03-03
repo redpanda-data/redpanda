@@ -543,4 +543,14 @@ void topic_updates_dispatcher::update_allocations(
       shards, max_group_id, domain);
 }
 
+ss::future<>
+topic_updates_dispatcher::fill_snapshot(controller_snapshot&) const {
+    return ss::now();
+}
+
+ss::future<> topic_updates_dispatcher::apply_snapshot(
+  model::offset, const controller_snapshot&) {
+    return ss::now();
+}
+
 } // namespace cluster

@@ -58,6 +58,8 @@ public:
       ss::sharded<partition_balancer_state>&);
 
     ss::future<std::error_code> apply_update(model::record_batch);
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
     static constexpr auto commands = make_commands_list<
       create_topic_cmd,

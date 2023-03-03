@@ -62,7 +62,14 @@ controller_stm::maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) {
     }
 
     controller_snapshot data;
-    // TODO: fill snapshot
+    ss::future<> fill_fut = ss::now();
+    auto call_stm_fill = [&fill_fut, &data](auto& stm) {
+        fill_fut = fill_fut.then(
+          [&data, &stm] { return stm.fill_snapshot(data); });
+    };
+    std::apply(
+      [call_stm_fill](auto&&... stms) { (call_stm_fill(stms), ...); }, _state);
+    co_await std::move(fill_fut);
 
     vlog(
       clusterlog.info,
@@ -92,9 +99,34 @@ ss::future<> controller_stm::apply_snapshot(
 
     auto snap_buf_parser = iobuf_parser{
       co_await read_iobuf_exactly(reader.input(), size)};
-    co_await serde::read_async<controller_snapshot>(snap_buf_parser);
+    auto snapshot = co_await serde::read_async<controller_snapshot>(
+      snap_buf_parser);
 
-    vassert(false, "not implemented");
+    try {
+        co_await std::get<bootstrap_backend&>(_state).apply_snapshot(
+          offset, snapshot);
+        // apply features early so that we have a fresh feature table when
+        // applying the rest of the snapshot.
+        co_await std::get<feature_backend&>(_state).apply_snapshot(
+          offset, snapshot);
+        // apply members early so that we have rpc clients to all cluster nodes.
+        co_await std::get<members_manager&>(_state).apply_snapshot(
+          offset, snapshot);
+
+        // apply everything else in no particular order.
+        co_await ss::when_all(
+          std::get<config_manager&>(_state).apply_snapshot(offset, snapshot),
+          std::get<topic_updates_dispatcher&>(_state).apply_snapshot(
+            offset, snapshot),
+          std::get<security_manager&>(_state).apply_snapshot(offset, snapshot));
+    } catch (...) {
+        vassert(
+          false,
+          "Failed to apply snapshot: {}. State inconsistency possible, "
+          "aborting. Snapshot path: {}",
+          std::current_exception(),
+          _raft->get_snapshot_path());
+    }
 }
 
 } // namespace cluster

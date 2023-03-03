@@ -162,6 +162,9 @@ public:
     // Whether the given batch applies to this raft::mux_state_machine.
     bool is_batch_applicable(const model::record_batch& b) const;
 
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
+
     // This API is backed by the seastar::queue. It can not be called
     // concurrently from multiple fibers.
     ss::future<std::vector<node_update>> get_node_updates();

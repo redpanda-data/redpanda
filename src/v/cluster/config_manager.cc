@@ -904,4 +904,13 @@ config_manager::status_map config_manager::get_projected_status() const {
     return r;
 }
 
+ss::future<> config_manager::fill_snapshot(controller_snapshot&) const {
+    return ss::now();
+}
+
+ss::future<>
+config_manager::apply_snapshot(model::offset, const controller_snapshot&) {
+    return ss::now();
+}
+
 } // namespace cluster

@@ -53,6 +53,9 @@ public:
                == model::record_batch_type::cluster_bootstrap_cmd;
     }
 
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
+
 private:
     ss::future<std::error_code> apply(bootstrap_cluster_cmd);
 

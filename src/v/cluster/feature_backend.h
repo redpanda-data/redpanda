@@ -38,6 +38,8 @@ public:
       , _storage(storage) {}
 
     ss::future<std::error_code> apply_update(model::record_batch);
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
     bool has_snapshot();
     ss::future<> save_snapshot();
