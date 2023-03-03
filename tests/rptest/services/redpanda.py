@@ -1824,9 +1824,16 @@ class RedpandaService(Service):
             self.logger.info(
                 f"Scanning node {node.account.hostname} log for errors...")
 
-            match_errors = "-e ^ERROR" if self._raise_on_errors else ""
+            # List of regexes that will fail the test on if they appear in the log
+            match_terms = [
+                "Segmentation fault", "[Aa]ssert", "Exceptional future ignored"
+            ]
+            if self._raise_on_errors:
+                match_terms.append("^ERROR")
+            match_expr = " ".join(f"-e \"{t}\"" for t in match_terms)
+
             for line in node.account.ssh_capture(
-                    f"grep {match_errors} -e Segmentation\ fault -e [Aa]ssert {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+                    f"grep {match_expr} {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
             ):
                 line = line.strip()
 
