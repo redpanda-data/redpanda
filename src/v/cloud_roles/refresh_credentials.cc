@@ -17,21 +17,21 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "net/tls.h"
+#include "utils/gate_guard.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 
+#include <charconv>
 #include <exception>
 
 namespace cloud_roles {
 
-/// These environment variables can be used to override the default hostname and
-/// port for fetching temporary credentials for testing.
-struct override_api_endpoint_env_vars {
-    static constexpr std::string_view host = "RP_SI_CREDS_API_HOST";
-    static constexpr std::string_view port = "RP_SI_CREDS_API_PORT";
-};
+/// This environment variable can be used to override the default hostname and
+/// port for fetching temporary credentials for testing, in the format host:port
+static constexpr std::string_view override_address = "RP_SI_CREDS_API_ADDRESS";
 
 /// Multiplier to derive sleep duration from expiry time. Leaves 0.1 * expiry
 /// seconds as buffer to make API calls. For default expiry of 1 hour, this
@@ -41,12 +41,10 @@ constexpr std::chrono::milliseconds max_retry_interval_ms{300000};
 
 refresh_credentials::refresh_credentials(
   std::unique_ptr<impl> impl,
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update,
   aws_region_name region)
   : _impl(std::move(impl))
-  , _gate(gate)
   , _as(as)
   , _credentials_update(std::move(creds_update))
   , _region{std::move(region)} {}
@@ -62,6 +60,12 @@ ss::future<> refresh_credentials::do_start() {
       [this] {
           return fetch_and_update_credentials()
             .handle_exception_type([](const ss::sleep_aborted& ex) {
+                vlog(
+                  clrl_log.info,
+                  "stopping refresh_credentials loop: {}",
+                  ex.what());
+            })
+            .handle_exception_type([](const ss::gate_closed_exception& ex) {
                 vlog(
                   clrl_log.info,
                   "stopping refresh_credentials loop: {}",
@@ -91,44 +95,69 @@ load_and_validate_env_var(std::string_view env_var) {
     return std::nullopt;
 }
 
+static net::unresolved_address parse_address(std::string_view maybe_address) {
+    auto separator = maybe_address.find(':');
+    if (
+      separator == std::string_view::npos || separator == 0
+      || separator == maybe_address.size() - 1) {
+        throw std::invalid_argument{fmt_with_ctx(
+          fmt::format,
+          "address override environment variable expected format: 'host:port', "
+          "found: {}",
+          maybe_address)};
+    }
+
+    auto host_view = maybe_address.substr(0, separator);
+    auto port_view = maybe_address.substr(separator + 1);
+
+    try {
+        uint16_t port;
+        auto result = std::from_chars(
+          port_view.data(), port_view.data() + port_view.size(), port);
+
+        if (result.ec != std::errc{}) {
+            throw std::invalid_argument{fmt_with_ctx(
+              fmt::format,
+              "failed to convert {} to port (uint16_t)",
+              port_view)};
+        }
+
+        if (result.ptr != port_view.data() + port_view.size()) {
+            throw std::invalid_argument{fmt_with_ctx(
+              fmt::format,
+              "failed to convert {} to port (uint16_t)",
+              port_view)};
+        }
+
+        return net::unresolved_address{
+          {host_view.data(), host_view.size()}, port};
+    } catch (const std::exception& ex) {
+        throw std::invalid_argument{fmt_with_ctx(
+          fmt::format,
+          "failed to convert port {} to port (uint16_t): {}",
+          port_view,
+          ex.what())};
+    }
+}
+
 refresh_credentials::impl::impl(
-  ss::sstring api_host,
-  uint16_t api_port,
+  net::unresolved_address address,
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
-  : _api_host{std::move(api_host)}
-  , _api_port{api_port}
+  : _address{std::move(address)}
   , _region{std::move(region)}
   , _as{as}
   , _retry_params{retry_params} {
-    if (auto host_override = load_and_validate_env_var(
-          override_api_endpoint_env_vars::host);
-        host_override) {
+    if (auto address_override = load_and_validate_env_var(override_address);
+        address_override) {
+        auto address = parse_address(address_override.value());
         vlog(
           clrl_log.debug,
-          "api_host overridden from {} to {}",
-          _api_host,
-          *host_override);
-        _api_host = {*host_override};
-    }
-    if (auto port_override = load_and_validate_env_var(
-          override_api_endpoint_env_vars::port);
-        port_override) {
-        try {
-            auto override_port = std::stoi(*port_override);
-            vlog(
-              clrl_log.debug,
-              "api_port overridden from {} to {}",
-              _api_port,
-              override_port);
-            _api_port = override_port;
-        } catch (...) {
-            vlog(
-              clrl_log.error,
-              "failed to convert port value {} from string to uint16_t",
-              *port_override);
-        }
+          "api address overridden from {} to {}",
+          _address,
+          address);
+        _address = address;
     }
 }
 
@@ -137,6 +166,8 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
     // 1. do not sleep - this is an initial call to API
     // 2. sleep until we are close to expiry of credentials
     // 3. sleep in case of retryable failure for a short duration
+
+    gate_guard g{_gate};
 
     co_await sleep_until_expiry();
 
@@ -176,6 +207,13 @@ ss::future<> refresh_credentials::fetch_and_update_credentials() {
           vlog(clrl_log.info, "fetched credentials {}", creds);
           return _credentials_update(std::move(creds));
       });
+}
+
+ss::future<> refresh_credentials::stop() {
+    if (!_as.abort_requested()) {
+        _as.request_abort();
+    }
+    co_await _gate.close();
 }
 
 std::chrono::milliseconds
@@ -278,17 +316,17 @@ refresh_credentials::impl::make_api_client(client_tls_enabled enable_tls) {
 
         co_return http::client{
           net::base_transport::configuration{
-            .server_addr = net::unresolved_address{api_host(), api_port()},
+            .server_addr = _address,
             .credentials = _tls_certs,
             // TODO (abhijat) toggle metrics
             .disable_metrics = net::metrics_disabled::yes,
-            .tls_sni_hostname = api_host()},
+            .tls_sni_hostname = _address.host()},
           _as};
     }
 
     co_return http::client{
       net::base_transport::configuration{
-        .server_addr = net::unresolved_address{_api_host, _api_port},
+        .server_addr = _address,
         .credentials = {},
         .disable_metrics = net::metrics_disabled::yes,
         .tls_sni_hostname = std::nullopt},
@@ -323,7 +361,6 @@ ss::future<> refresh_credentials::impl::init_tls_certs() {
 
 refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
-  ss::gate& gate,
   ss::abort_source& as,
   credentials_update_cb_t creds_update_cb,
   aws_region_name region,
@@ -339,7 +376,6 @@ refresh_credentials make_refresh_credentials(
           fmt::format, "cannot generate refresh with static credentials"));
     case model::cloud_credentials_source::aws_instance_metadata:
         return make_refresh_credentials<aws_refresh_impl>(
-          gate,
           as,
           std::move(creds_update_cb),
           std::move(region),
@@ -347,7 +383,6 @@ refresh_credentials make_refresh_credentials(
           retry_params);
     case model::cloud_credentials_source::sts:
         return make_refresh_credentials<aws_sts_refresh_impl>(
-          gate,
           as,
           std::move(creds_update_cb),
           std::move(region),
@@ -355,7 +390,6 @@ refresh_credentials make_refresh_credentials(
           retry_params);
     case model::cloud_credentials_source::gcp_instance_metadata:
         return make_refresh_credentials<gcp_refresh_impl>(
-          gate,
           as,
           std::move(creds_update_cb),
           std::move(region),

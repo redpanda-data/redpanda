@@ -23,13 +23,12 @@ struct ec2_response_schema {
 };
 
 aws_refresh_impl::aws_refresh_impl(
-  seastar::sstring api_host,
-  uint16_t api_port,
+  net::unresolved_address address,
   aws_region_name region,
   ss::abort_source& as,
   retry_params retry_params)
   : refresh_credentials::impl(
-    std::move(api_host), api_port, std::move(region), as, retry_params) {}
+    std::move(address), std::move(region), as, retry_params) {}
 
 ss::future<api_response> aws_refresh_impl::fetch_credentials() {
     if (unlikely(!_role)) {
@@ -63,8 +62,9 @@ ss::future<api_response> aws_refresh_impl::fetch_credentials() {
     }
 
     http::client::request_header creds_req;
+    auto host = address().host();
     creds_req.insert(
-      boost::beast::http::field::host, {api_host().data(), api_host().size()});
+      boost::beast::http::field::host, {host.data(), host.size()});
     creds_req.method(boost::beast::http::verb::get);
     creds_req.target(
       fmt::format("/latest/meta-data/iam/security-credentials/{}", *_role));
@@ -109,8 +109,9 @@ api_response_parse_result aws_refresh_impl::parse_response(iobuf resp) {
 
 ss::future<api_response> aws_refresh_impl::fetch_role_name() {
     http::client::request_header role_req;
+    auto host = address().host();
     role_req.insert(
-      boost::beast::http::field::host, {api_host().data(), api_host().size()});
+      boost::beast::http::field::host, {host.data(), host.size()});
     role_req.method(boost::beast::http::verb::get);
     role_req.target("/latest/meta-data/iam/security-credentials/");
     co_return co_await make_request(
@@ -118,8 +119,7 @@ ss::future<api_response> aws_refresh_impl::fetch_role_name() {
 }
 
 std::ostream& aws_refresh_impl::print(std::ostream& os) const {
-    fmt::print(
-      os, "aws_refresh_impl{{host:{}, port:{}}}", api_host(), api_port());
+    fmt::print(os, "aws_refresh_impl{{address:{}}}", address());
     return os;
 }
 

@@ -17,8 +17,8 @@ class AWSRoleFetchTests(EndToEndShadowIndexingBase):
         super().__init__(test_context,
                          extra_rp_conf,
                          environment={
-                             'RP_SI_CREDS_API_HOST': self.iam_server.hostname,
-                             'RP_SI_CREDS_API_PORT': self.iam_server.port,
+                             'RP_SI_CREDS_API_ADDRESS':
+                             self.iam_server.address,
                          })
         self.redpanda.add_extra_rp_conf(
             {'cloud_storage_credentials_source': 'aws_instance_metadata'})
@@ -86,8 +86,8 @@ class STSRoleFetchTests(EndToEndShadowIndexingBase):
         super().__init__(test_context,
                          extra_rp_conf,
                          environment={
-                             'RP_SI_CREDS_API_HOST': self.iam_server.hostname,
-                             'RP_SI_CREDS_API_PORT': self.iam_server.port,
+                             'RP_SI_CREDS_API_ADDRESS':
+                             self.iam_server.address,
                              'AWS_ROLE_ARN': self.role,
                              'AWS_WEB_IDENTITY_TOKEN_FILE': self.token_path,
                          })
@@ -154,8 +154,8 @@ class ShortLivedCredentialsTests(EndToEndShadowIndexingBase):
         super().__init__(test_context,
                          extra_rp_conf,
                          environment={
-                             'RP_SI_CREDS_API_HOST': self.iam_server.hostname,
-                             'RP_SI_CREDS_API_PORT': self.iam_server.port,
+                             'RP_SI_CREDS_API_ADDRESS':
+                             self.iam_server.address,
                              'AWS_ROLE_ARN': self.role,
                              'AWS_WEB_IDENTITY_TOKEN_FILE': self.token_path,
                          })
