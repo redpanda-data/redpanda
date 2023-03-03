@@ -627,11 +627,7 @@ spec:
                           storageClass:
                             type: string
                         required:
-                        - annotations
                         - enabled
-                        - labels
-                        - size
-                        - storageClass
                         type: object
                       tieredConfig:
                         description: TieredConfig
