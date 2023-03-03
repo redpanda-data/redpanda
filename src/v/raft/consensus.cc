@@ -309,6 +309,21 @@ consensus::success_reply consensus::update_follower_index(
     follower_index_metadata& idx = it->second;
     const append_entries_reply& reply = r.value();
     vlog(_ctxlog.trace, "Append entries response: {}", reply);
+
+    /**
+     * Do not update any of the follower state if a node that replied to
+     * append_entries_request is not the one that the request was addressed to.
+     */
+    if (unlikely(reply.node_id.id() != physical_node)) {
+        vlog(
+          _ctxlog.warn,
+          "Received append entries response node_id doesn't match expected "
+          "node_id (received: {}, expected: {})",
+          reply.node_id.id(),
+          node);
+        return success_reply::no;
+    }
+
     if (unlikely(reply.result == append_entries_reply::status::timeout)) {
         // ignore this response, timed out on the receiver node
         vlog(_ctxlog.trace, "Append entries request timedout at node {}", node);
