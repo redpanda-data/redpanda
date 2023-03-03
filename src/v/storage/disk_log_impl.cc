@@ -743,15 +743,6 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
           if (config().is_collectable()) {
               f = gc(cfg);
           }
-          if (unlikely(
-                config().has_overrides()
-                && config().get_overrides().cleanup_policy_bitflags
-                     == model::cleanup_policy_bitflags::none)) {
-              // prevent *any* collection - used for snapshots
-              // all the internal redpanda logs - i.e.: controller, etc should
-              // have this set
-              f = ss::now();
-          }
           if (config().is_compacted() && !_segs.empty()) {
               f = f.then([this, cfg] { return do_compact(cfg); });
           }
