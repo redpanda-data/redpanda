@@ -52,8 +52,9 @@ ss::future<result<vote_reply>> prevote_stm::do_dispatch_prevote(vnode n) {
     r.target_node_id = n;
     return _ptr->_client_protocol
       .vote(n.id(), std::move(r), rpc::client_opts(_prevote_timeout))
-      .then([this](result<vote_reply> reply) {
-          return _ptr->validate_reply_target_node("prevote", std::move(reply));
+      .then([this, target_node_id = n.id()](result<vote_reply> reply) {
+          return _ptr->validate_reply_target_node(
+            "prevote", reply, target_node_id);
       });
 }
 
