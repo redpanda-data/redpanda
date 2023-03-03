@@ -94,7 +94,7 @@ class ScaleParameters:
         # Reserve a few slots for internal partitions, do not be
         # super specific about how many because we may add some in
         # future for e.g. audit logging.
-        internal_partition_slack = 10
+        internal_partition_slack = 32
 
         # Calculate how many partitions we will aim to create, based
         # on the size & count of nodes.  This enables running the
