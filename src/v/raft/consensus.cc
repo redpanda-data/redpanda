@@ -1507,6 +1507,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _term;
     reply.target_node_id = r.node_id;
+    reply.node_id = _self;
     auto lstats = _log.offsets();
     auto last_log_index = lstats.dirty_offset;
     _probe.vote_request();
@@ -1991,6 +1992,7 @@ consensus::do_install_snapshot(install_snapshot_request&& r) {
     install_snapshot_reply reply{
       .term = _term, .bytes_stored = r.chunk.size_bytes(), .success = false};
     reply.target_node_id = r.node_id;
+    reply.node_id = _self;
 
     if (unlikely(is_request_target_node_invalid("install_snapshot", r))) {
         return ss::make_ready_future<install_snapshot_reply>(reply);
