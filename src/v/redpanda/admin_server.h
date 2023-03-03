@@ -40,6 +40,7 @@ struct admin_server_cfg {
 
 enum class service_kind {
     schema_registry,
+    metadata_dissemination_service,
 };
 
 namespace detail {
@@ -66,7 +67,8 @@ public:
       ss::sharded<cluster::self_test_frontend>&,
       pandaproxy::schema_registry::api*,
       ss::sharded<cloud_storage::topic_recovery_service>&,
-      ss::sharded<cluster::topic_recovery_status_frontend>&);
+      ss::sharded<cluster::topic_recovery_status_frontend>&,
+      ss::sharded<cluster::metadata_dissemination_service>&);
 
     ss::future<> start();
     ss::future<> stop();
@@ -427,4 +429,6 @@ private:
     ss::sharded<cloud_storage::topic_recovery_service>& _topic_recovery_service;
     ss::sharded<cluster::topic_recovery_status_frontend>&
       _topic_recovery_status_frontend;
+    ss::sharded<cluster::metadata_dissemination_service>&
+      _md_dissemination_service;
 };

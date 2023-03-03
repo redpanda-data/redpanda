@@ -827,7 +827,8 @@ void application::configure_admin_server() {
       std::ref(self_test_frontend),
       _schema_registry.get(),
       std::ref(topic_recovery_service),
-      std::ref(topic_recovery_status_frontend))
+      std::ref(topic_recovery_status_frontend),
+      std::ref(md_dissemination_service))
       .get();
 }
 

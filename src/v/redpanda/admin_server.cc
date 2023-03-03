@@ -28,6 +28,7 @@
 #include "cluster/members_frontend.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/metadata_dissemination_service.h"
 #include "cluster/node_status_table.h"
 #include "cluster/partition_balancer_backend.h"
 #include "cluster/partition_balancer_rpc_service.h"
@@ -123,7 +124,9 @@ admin_server::admin_server(
   pandaproxy::schema_registry::api* schema_registry,
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
-    topic_recovery_status_frontend)
+    topic_recovery_status_frontend,
+  ss::sharded<cluster::metadata_dissemination_service>&
+    md_dissemination_service)
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
@@ -138,7 +141,8 @@ admin_server::admin_server(
   , _self_test_frontend(self_test_frontend)
   , _schema_registry(schema_registry)
   , _topic_recovery_service(topic_recovery_svc)
-  , _topic_recovery_status_frontend(topic_recovery_status_frontend) {}
+  , _topic_recovery_status_frontend(topic_recovery_status_frontend)
+  , _md_dissemination_service(md_dissemination_service) {}
 
 ss::future<> admin_server::start() {
     configure_metrics_route();
@@ -3753,6 +3757,8 @@ constexpr std::string_view to_string_view(service_kind kind) {
     switch (kind) {
     case service_kind::schema_registry:
         return "schema-registry";
+    case service_kind::metadata_dissemination_service:
+        return "metadata-dissemination-service";
     }
     return "invalid";
 }
@@ -3768,6 +3774,9 @@ from_string_view<service_kind>(std::string_view sv) {
       .match(
         to_string_view(service_kind::schema_registry),
         service_kind::schema_registry)
+      .match(
+        to_string_view(service_kind::metadata_dissemination_service),
+        service_kind::metadata_dissemination_service)
       .default_match(std::nullopt);
 }
 
@@ -3789,6 +3798,19 @@ ss::future<> admin_server::restart_redpanda_service(service_kind service) {
               ex.what());
             throw ss::httpd::server_error_exception(
               "Unknown issue restarting schema_registry");
+        }
+    }
+
+    if (service == service_kind::metadata_dissemination_service) {
+        try {
+            co_await _md_dissemination_service.local().restart();
+        } catch (const std::exception& ex) {
+            vlog(
+              logger.error,
+              "Unknown issue restarting metadata_dissemination_service: {}",
+              ex.what());
+            throw ss::httpd::server_error_exception(
+              "Unknown issue restarting metadata_dissemination_service");
         }
     }
 }
