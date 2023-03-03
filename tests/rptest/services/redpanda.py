@@ -277,6 +277,7 @@ class SISettings:
 
     GLOBAL_ABS_STORAGE_ACCOUNT = "abs_storage_account"
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
+    GLOBAL_CLOUD_PROVIDER = "cloud_provider"
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
 
@@ -340,6 +341,9 @@ class SISettings:
             self._cloud_storage_bucket = f'panda-bucket-{uuid.uuid1()}'
 
             self.cloud_storage_api_endpoint = cloud_storage_api_endpoint
+            if test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
+                                        'aws') == 'gcp':
+                self.cloud_storage_api_endpoint = 'storage.googleapis.com'
             self.cloud_storage_api_endpoint_port = cloud_storage_api_endpoint_port
         elif self.cloud_storage_type == CloudStorageType.ABS:
             self.cloud_storage_azure_shared_key = self.ABS_AZURITE_KEY
@@ -422,6 +426,9 @@ class SISettings:
             self.cloud_storage_access_key = cloud_storage_access_key
             self.cloud_storage_secret_key = cloud_storage_secret_key
             self.endpoint_url = None  # None so boto auto-gens the endpoint url
+            if test_context.globals.get(self.GLOBAL_CLOUD_PROVIDER,
+                                        'aws') == 'gcp':
+                self.endpoint_url = 'https://storage.googleapis.com'
             self.cloud_storage_disable_tls = False  # SI will fail to create archivers if tls is disabled
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
