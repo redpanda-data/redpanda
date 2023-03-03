@@ -19,9 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var (
-	RedpandaChartRepository = "https://charts.redpanda.com/"
-)
+var RedpandaChartRepository = "https://charts.redpanda.com/"
 
 type ChartRef struct {
 	// ChartName is the chart to use

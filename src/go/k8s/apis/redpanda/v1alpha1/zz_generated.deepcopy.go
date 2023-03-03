@@ -16,6 +16,7 @@ package v1alpha1
 
 import (
 	"encoding/json"
+
 	metav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	"k8s.io/api/core/v1"
 	apismetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
