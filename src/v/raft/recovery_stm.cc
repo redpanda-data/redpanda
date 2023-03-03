@@ -315,7 +315,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
             .then([this](result<install_snapshot_reply> reply) {
                 return handle_install_snapshot_reply(
                   _ptr->validate_reply_target_node(
-                    "install_snapshot", std::move(reply)));
+                    "install_snapshot", reply, _node_id.id()));
             })
             .finally([this, seq] {
                 _ptr->update_suppress_heartbeats(
@@ -504,7 +504,7 @@ ss::future<result<append_entries_reply>> recovery_stm::dispatch_append_entries(
       .append_entries(_node_id.id(), std::move(r), std::move(opts))
       .then([this](result<append_entries_reply> reply) {
           return _ptr->validate_reply_target_node(
-            "append_entries_recovery", std::move(reply));
+            "append_entries_recovery", reply, _node_id.id());
       });
 }
 

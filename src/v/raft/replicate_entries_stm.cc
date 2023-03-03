@@ -118,9 +118,10 @@ replicate_entries_stm::send_append_entries_request(
 
           return _ptr->_client_protocol
             .append_entries(n.id(), std::move(req), std::move(opts))
-            .then([this](result<append_entries_reply> reply) {
+            .then([this, target_node_id = n.id()](
+                    result<append_entries_reply> reply) {
                 return _ptr->validate_reply_target_node(
-                  "append_entries_replicate", std::move(reply));
+                  "append_entries_replicate", reply, target_node_id);
             })
             .finally([this, n, u = std::move(u)] {
                 _ptr->_fstats.return_append_entries_units(n);
