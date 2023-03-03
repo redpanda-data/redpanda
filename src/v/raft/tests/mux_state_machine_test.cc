@@ -16,6 +16,7 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "serde/serde.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
@@ -165,6 +166,40 @@ struct simple_kv {
     }
 };
 
+template<int8_t... bt>
+struct simple_kv_stm final : public raft::mux_state_machine<simple_kv<bt>...> {
+    using base_t = raft::mux_state_machine<simple_kv<bt>...>;
+
+    template<typename... Args>
+    simple_kv_stm(Args&&... stm_args)
+      : base_t(std::forward<Args>(stm_args)...) {}
+
+    ss::future<std::optional<iobuf>>
+    maybe_make_snapshot(ssx::semaphore_units) final {
+        iobuf buf;
+        std::apply(
+          [&](auto&&... states) { (serde::write(buf, states.kv_map), ...); },
+          base_t::_state);
+        co_return buf;
+    }
+    ss::future<>
+    apply_snapshot(model::offset, storage::snapshot_reader& reader) final {
+        const size_t size = co_await reader.get_snapshot_size();
+        auto snap_buf_parser = iobuf_parser{
+          co_await read_iobuf_exactly(reader.input(), size)};
+        auto read_single = [&](auto& state) {
+            state.kv_map = serde::read<absl::flat_hash_map<ss::sstring, int>>(
+              snap_buf_parser);
+        };
+        std::apply(
+          [&](auto&&... states) { (read_single(states), ...); },
+          base_t::_state);
+    }
+};
+
+static absl::flat_hash_set<model::record_batch_type> not_handled_batch_types{
+  model::record_batch_type::raft_configuration};
+
 ss::logger kvlog{"kv-test"};
 
 template<typename T>
@@ -183,11 +218,11 @@ FIXTURE_TEST(
   test_mux_state_machine_simple_scenarios, mux_state_machine_fixture) {
     start_raft();
     simple_kv<batch_type_1> state;
-    raft::mux_state_machine stm(
+    simple_kv_stm<batch_type_1> stm(
       kvlog,
       _raft.get(),
       raft::persistent_last_applied::yes,
-      {model::record_batch_type::raft_configuration},
+      not_handled_batch_types,
       state);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -258,11 +293,11 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_concurrent_sets, mux_state_machine_fixture) {
     start_raft();
     simple_kv<batch_type_1> state;
-    raft::mux_state_machine stm(
+    simple_kv_stm<batch_type_1> stm(
       kvlog,
       _raft.get(),
       raft::persistent_last_applied::yes,
-      {model::record_batch_type::raft_configuration},
+      not_handled_batch_types,
       state);
     stm.start().get0();
     wait_for_becoming_leader();
@@ -345,37 +380,69 @@ FIXTURE_TEST(test_stm_recovery, mux_state_machine_fixture) {
           .get0(); // -> test-1 deleted
         builder.stop().get0();
     }
+    start_raft();
+    wait_for_confirmed_leader();
+
+    auto last_offset = _raft->dirty_offset();
+
     // Correct state:
     // test = 10
     // test-2 = 1
-    start_raft();
-    simple_kv<batch_type_1> state;
-    raft::mux_state_machine stm(
-      kvlog,
-      _raft.get(),
-      raft::persistent_last_applied::yes,
-      {model::record_batch_type::raft_configuration},
-      state);
-    stm.start().get0();
-    auto stop = ss::defer([&stm] { stm.stop().get0(); });
-    wait_for_becoming_leader();
-    auto offset = _storage.local().log_mgr().get(_ntp)->offsets().dirty_offset;
-    stm.wait(offset, model::timeout_clock::now() + 1s).get0();
-    BOOST_REQUIRE_EQUAL(state.kv_map.size(), 2);
-    BOOST_REQUIRE_EQUAL(state.kv_map.find("test")->second, 10);
-    BOOST_REQUIRE_EQUAL(state.kv_map.contains("test-1"), false);
-    BOOST_REQUIRE_EQUAL(state.kv_map.contains("test-2"), 1);
+
+    {
+        simple_kv<batch_type_1> state;
+        simple_kv_stm<batch_type_1> stm(
+          kvlog,
+          _raft.get(),
+          raft::persistent_last_applied::yes,
+          not_handled_batch_types,
+          state);
+        stm.start().get();
+        auto stop = ss::defer([&stm] { stm.stop().get(); });
+
+        stm.wait(last_offset, model::timeout_clock::now() + 1s).get();
+        BOOST_REQUIRE_EQUAL(stm.get_last_applied_offset(), last_offset);
+        BOOST_REQUIRE_EQUAL(state.kv_map.size(), 2);
+        BOOST_REQUIRE_EQUAL(state.kv_map.find("test")->second, 10);
+        BOOST_REQUIRE_EQUAL(state.kv_map.contains("test-1"), false);
+        BOOST_REQUIRE_EQUAL(state.kv_map.contains("test-2"), 1);
+
+        // create a snapshot
+        BOOST_REQUIRE(stm.maybe_write_snapshot().get());
+        BOOST_REQUIRE_EQUAL(
+          _raft->start_offset(),
+          model::next_offset(stm.get_last_applied_offset()));
+    }
+
+    {
+        // test recovering from the snapshot
+        simple_kv<batch_type_1> state;
+        simple_kv_stm<batch_type_1> stm(
+          kvlog,
+          _raft.get(),
+          raft::persistent_last_applied::yes,
+          not_handled_batch_types,
+          state);
+        stm.start().get();
+        auto stop = ss::defer([&stm] { stm.stop().get(); });
+
+        stm.wait(last_offset, model::timeout_clock::now() + 1s).get();
+        BOOST_REQUIRE_EQUAL(state.kv_map.size(), 2);
+        BOOST_REQUIRE_EQUAL(state.kv_map.find("test")->second, 10);
+        BOOST_REQUIRE_EQUAL(state.kv_map.contains("test-1"), false);
+        BOOST_REQUIRE_EQUAL(state.kv_map.contains("test-2"), 1);
+    }
 }
 
 FIXTURE_TEST(test_mulitple_states, mux_state_machine_fixture) {
     start_raft();
     simple_kv<batch_type_1> state_1;
     simple_kv<batch_type_2> state_2;
-    raft::mux_state_machine stm(
+    simple_kv_stm<batch_type_1, batch_type_2> stm(
       kvlog,
       _raft.get(),
       raft::persistent_last_applied::yes,
-      {model::record_batch_type::raft_configuration},
+      not_handled_batch_types,
       state_1,
       state_2);
     stm.start().get0();
@@ -448,11 +515,11 @@ FIXTURE_TEST(test_mulitple_states, mux_state_machine_fixture) {
 FIXTURE_TEST(timeout_test, mux_state_machine_fixture) {
     start_raft();
     simple_kv<batch_type_1> state_1;
-    raft::mux_state_machine stm(
+    simple_kv_stm<batch_type_1> stm(
       kvlog,
       _raft.get(),
       raft::persistent_last_applied::yes,
-      {model::record_batch_type::raft_configuration},
+      not_handled_batch_types,
       state_1);
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });

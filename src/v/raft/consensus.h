@@ -192,6 +192,20 @@ public:
      */
     ss::future<> write_snapshot(write_snapshot_cfg);
 
+    struct opened_snapshot {
+        raft::snapshot_metadata metadata;
+        storage::snapshot_reader reader;
+
+        ss::future<> close() { return reader.close(); }
+    };
+
+    // Open the current snapshot for reading (if present)
+    ss::future<std::optional<opened_snapshot>> open_snapshot();
+
+    std::filesystem::path get_snapshot_path() const {
+        return _snapshot_mgr.snapshot_path();
+    }
+
     /// Increment and returns next append_entries order tracking sequence for
     /// follower with given node id
     follower_req_seq next_follower_sequence(vnode);
@@ -296,6 +310,8 @@ public:
 
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
+
+    model::offset last_snapshot_index() const { return _last_snapshot_index; }
 
     model::offset start_offset() const {
         return model::next_offset(_last_snapshot_index);

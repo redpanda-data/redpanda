@@ -2243,6 +2243,34 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       .then([this](uint64_t size) { _snapshot_size = size; });
 }
 
+ss::future<std::optional<consensus::opened_snapshot>>
+consensus::open_snapshot() {
+    auto reader = co_await _snapshot_mgr.open_snapshot();
+    if (!reader) {
+        co_return std::nullopt;
+    }
+
+    auto metadata
+      = co_await reader->read_metadata()
+          .then([](iobuf md_buf) {
+              auto md_parser = iobuf_parser(std::move(md_buf));
+              return reflection::adl<raft::snapshot_metadata>{}.from(md_parser);
+          })
+          .then_wrapped([&reader](ss::future<raft::snapshot_metadata> f) {
+              if (!f.failed()) {
+                  return f;
+              }
+
+              return reader->close().then(
+                [f = std::move(f)]() mutable { return std::move(f); });
+          });
+
+    co_return opened_snapshot{
+      .metadata = metadata,
+      .reader = std::move(*reader),
+    };
+}
+
 ss::future<std::error_code> consensus::replicate_configuration(
   ssx::semaphore_units u, group_configuration cfg) {
     // under the _op_sem lock

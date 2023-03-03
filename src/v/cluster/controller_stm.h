@@ -51,6 +51,16 @@ public:
     bool throttle() { return _limiter.throttle<Cmd>(); }
 
 private:
+    ss::future<std::optional<iobuf>>
+    maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) final {
+        co_return std::nullopt;
+    }
+    ss::future<>
+    apply_snapshot(model::offset, storage::snapshot_reader&) final {
+        vassert(false, "not implemented");
+    }
+
+private:
     controller_log_limiter _limiter;
 };
 
