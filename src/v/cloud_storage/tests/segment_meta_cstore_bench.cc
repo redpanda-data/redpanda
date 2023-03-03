@@ -23,17 +23,14 @@
 using namespace cloud_storage;
 
 using delta_xor_alg = details::delta_xor;
-using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg>;
+using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg{}>;
 using delta_delta_alg = details::delta_delta<int64_t>;
-using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg>;
+using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg{}>;
 using delta_xor_column = segment_meta_column<int64_t, delta_xor_alg>;
 using delta_delta_column = segment_meta_column<int64_t, delta_delta_alg>;
 
-static const delta_xor_alg initial_xor{};
-static const delta_delta_alg initial_delta{0};
-
 static const delta_xor_frame xor_frame_4K = []() {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096; i++) {
         value += random_generators::get_int(1, 100);
@@ -43,7 +40,7 @@ static const delta_xor_frame xor_frame_4K = []() {
 }();
 
 static const delta_xor_column xor_column_4K = []() {
-    delta_xor_column column(initial_xor);
+    delta_xor_column column{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096; i++) {
         value += random_generators::get_int(1, 100);
@@ -53,7 +50,7 @@ static const delta_xor_column xor_column_4K = []() {
 }();
 
 static const delta_xor_column xor_column_4M = []() {
-    delta_xor_column column(initial_xor);
+    delta_xor_column column{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096000; i++) {
         value += random_generators::get_int(1, 100);
@@ -63,7 +60,7 @@ static const delta_xor_column xor_column_4M = []() {
 }();
 
 static const delta_delta_frame delta_frame_4K = []() {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096; i++) {
         value += random_generators::get_int(1, 100);
@@ -73,7 +70,7 @@ static const delta_delta_frame delta_frame_4K = []() {
 }();
 
 static const delta_delta_column delta_column_4K = []() {
-    delta_delta_column column(initial_delta);
+    delta_delta_column column{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096; i++) {
         value += random_generators::get_int(1, 100);
@@ -83,7 +80,7 @@ static const delta_delta_column delta_column_4K = []() {
 }();
 
 static const delta_delta_column delta_column_4M = []() {
-    delta_delta_column column(initial_delta);
+    delta_delta_column column{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096000; i++) {
         value += random_generators::get_int(1, 100);
@@ -150,28 +147,28 @@ void at_test(StoreT& store) {
 }
 
 PERF_TEST(cstore_bench, xor_frame_append) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     append_test(frame, 4096);
 }
 
 PERF_TEST(cstore_bench, xor_frame_append_tx) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     append_tx_test(frame, 4096);
 }
 
 PERF_TEST(cstore_bench, xor_column_append) {
-    delta_xor_column column(initial_xor);
+    delta_xor_column column{};
     append_test(column, 4096);
 }
 
 PERF_TEST(cstore_bench, xor_column_append_tx) {
-    delta_xor_column column(initial_xor);
+    delta_xor_column column{};
     append_tx_test(column, 4096);
 }
 
 PERF_TEST(cstore_bench, xor_column_append_tx2) {
     // trigger code path that commits by splicing the list
-    delta_xor_column column(initial_xor);
+    delta_xor_column column{};
     append_tx_test(column, 4097);
 }
 
@@ -186,28 +183,28 @@ PERF_TEST(cstore_bench, xor_column_at_4K) { at_test(xor_column_4K); }
 PERF_TEST(cstore_bench, xor_column_at_4M) { at_test(xor_column_4M); }
 
 PERF_TEST(cstore_bench, delta_frame_append) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     append_test(frame, 4096);
 }
 
 PERF_TEST(cstore_bench, delta_frame_append_tx) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     append_tx_test(frame, 4096);
 }
 
 PERF_TEST(cstore_bench, delta_column_append) {
-    delta_delta_column column(initial_delta);
+    delta_delta_column column{};
     append_test(column, 4096);
 }
 
 PERF_TEST(cstore_bench, delta_column_append_tx) {
-    delta_delta_column column(initial_delta);
+    delta_delta_column column{};
     append_tx_test(column, 4096);
 }
 
 PERF_TEST(cstore_bench, delta_column_append_tx2) {
     // trigger code path that commits by splicing the list
-    delta_delta_column column(initial_delta);
+    delta_delta_column column{};
     append_tx_test(column, 4097);
 }
 
@@ -225,7 +222,7 @@ PERF_TEST(cstore_bench, delta_column_at_4M) { at_test(delta_column_4M); }
 
 PERF_TEST(cstore_bench, xor_frame_at_with_index_4K) {
     std::map<int32_t, delta_xor_frame::hint_t> index;
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096; i++) {
         value += random_generators::get_int(1, 100);
@@ -245,7 +242,7 @@ PERF_TEST(cstore_bench, xor_frame_at_with_index_4K) {
 
 PERF_TEST(cstore_bench, xor_column_at_with_index_4K) {
     std::map<int32_t, delta_xor_column::hint_t> index;
-    delta_xor_column column(initial_xor);
+    delta_xor_column column{};
     int64_t value = random_generators::get_int(1000);
     for (int64_t i = 0; i < 4096; i++) {
         value += random_generators::get_int(1, 100);
