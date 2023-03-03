@@ -832,6 +832,8 @@ spec:
                 type: array
               helmRelease:
                 type: string
+              helmRepository:
+                type: string
               installFailures:
                 format: int64
                 type: integer

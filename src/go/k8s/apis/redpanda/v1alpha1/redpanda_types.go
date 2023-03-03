@@ -19,6 +19,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+var (
+	RedpandaChartRepository = "https://charts.redpanda.com/"
+)
+
 type ChartRef struct {
 	// ChartName is the chart to use
 	ChartName string `json:"chartName,omitempty"`
@@ -56,6 +60,9 @@ type RedpandaStatus struct {
 
 	// +optional
 	HelmRelease string `json:"helmRelease,omitempty"`
+
+	// +optional
+	HelmRepository string `json:"helmRepository,omitempty"`
 
 	// +optional
 	UpgradeFailures int64 `json:"upgradeFailures,omitempty"`
