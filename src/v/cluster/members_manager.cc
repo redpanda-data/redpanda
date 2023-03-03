@@ -605,6 +605,15 @@ members_manager::apply_raft_configuration_batch(model::record_batch b) {
     co_return make_error_code(errc::success);
 }
 
+ss::future<> members_manager::fill_snapshot(controller_snapshot&) const {
+    return ss::now();
+}
+
+ss::future<>
+members_manager::apply_snapshot(model::offset, const controller_snapshot&) {
+    return ss::now();
+}
+
 ss::future<std::vector<members_manager::node_update>>
 members_manager::get_node_updates() {
     if (_update_queue.empty()) {

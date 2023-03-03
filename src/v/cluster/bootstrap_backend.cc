@@ -199,4 +199,13 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
     co_return errc::success;
 }
 
+ss::future<> bootstrap_backend::fill_snapshot(controller_snapshot&) const {
+    return ss::now();
+}
+
+ss::future<>
+bootstrap_backend::apply_snapshot(model::offset, const controller_snapshot&) {
+    return ss::now();
+}
+
 } // namespace cluster

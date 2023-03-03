@@ -88,6 +88,15 @@ feature_backend::apply_feature_update_command(feature_update_cmd update) {
     }
 }
 
+ss::future<> feature_backend::fill_snapshot(controller_snapshot&) const {
+    return ss::now();
+}
+
+ss::future<>
+feature_backend::apply_snapshot(model::offset, const controller_snapshot&) {
+    return ss::now();
+}
+
 bool feature_backend::has_snapshot() {
     return _storage.local()
       .kvs()
