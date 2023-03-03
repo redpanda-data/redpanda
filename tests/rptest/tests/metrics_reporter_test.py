@@ -15,6 +15,7 @@ from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
+from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.http_server import HttpServer
 
@@ -77,6 +78,9 @@ class MetricsReporterTest(RedpandaTest):
         def assert_fields_are_the_same(metadata, field):
             assert all(m[field] == metadata[0][field] for m in metadata)
 
+        admin = Admin(self.redpanda)
+        features = admin.get_features()
+
         # cluster uuid and create timestamp should stay the same across requests
         assert_fields_are_the_same(metadata, 'cluster_uuid')
         assert_fields_are_the_same(metadata, 'cluster_created_ts')
@@ -87,6 +91,9 @@ class MetricsReporterTest(RedpandaTest):
         assert last['topic_count'] == total_topics
         assert last['partition_count'] == total_partitions
         assert last['has_kafka_gssapi'] is False
+        assert last['active_logical_version'] == features['cluster_version']
+        assert last['original_logical_version'] == features[
+            'original_cluster_version']
         nodes_meta = last['nodes']
 
         assert len(last['nodes']) == len(self.redpanda.nodes)
@@ -94,6 +101,7 @@ class MetricsReporterTest(RedpandaTest):
         assert all('node_id' in n for n in nodes_meta)
         assert all('cpu_count' in n for n in nodes_meta)
         assert all('version' in n for n in nodes_meta)
+        assert all('logical_version' in n for n in nodes_meta)
         assert all('uptime_ms' in n for n in nodes_meta)
         assert all('is_alive' in n for n in nodes_meta)
         assert all('disks' in n for n in nodes_meta)
