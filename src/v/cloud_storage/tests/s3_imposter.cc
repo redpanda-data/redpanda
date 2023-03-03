@@ -128,12 +128,20 @@ void s3_imposter_fixture::set_routes(
                   .url = request._url, .body = request.content};
                 return "";
             } else if (request._method == "DELETE") {
+                // TODO (abhijat) - enable conditionally failing requests
+                // instead of this hardcoding
+                if (request._url == "/failme") {
+                    repl.set_status(reply::status_type::internal_server_error);
+                    return "";
+                }
+
                 auto it = expectations.find(request._url);
                 if (it == expectations.end() || !it->second.body.has_value()) {
                     vlog(fixt_log.trace, "Reply DELETE request with error");
                     repl.set_status(reply::status_type::not_found);
                     return error_payload;
                 }
+
                 repl.set_status(reply::status_type::no_content);
                 it->second.body = std::nullopt;
                 return "";
