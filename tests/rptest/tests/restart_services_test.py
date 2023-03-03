@@ -61,9 +61,17 @@ class RestartServicesTest(RedpandaTest):
             self.logger.debug(ex)
             assert ex.response.status_code == requests.codes.not_found
 
+        # Success checks
         self.logger.debug("Check schema registry restart")
         result_raw = admin.redpanda_services_restart(
             rp_service='schema-registry')
         check_service_restart(self.redpanda, "Restarting the schema registry")
+        self.logger.debug(result_raw)
+        assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Check metadata dissemination service restart")
+        result_raw = admin.redpanda_services_restart(
+            rp_service='metadata-dissemination-service')
+        check_service_restart(self.redpanda, "Restarting the metadata dissemination service")
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
