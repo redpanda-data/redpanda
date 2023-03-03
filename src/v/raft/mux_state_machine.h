@@ -115,7 +115,7 @@ public:
     // Lifecycle management
     ss::future<> start() final { return raft::state_machine::start(); }
 
-    ss::future<> stop() final {
+    ss::future<> stop() override {
         // close the gate so no new requests will be handled
         _new_result.broken();
         co_await raft::state_machine::stop();
@@ -158,6 +158,9 @@ private:
     ss::future<> apply(model::record_batch b) final;
     ss::future<> do_apply(model::record_batch b);
     ss::future<> handle_eviction() final;
+
+    // called after a batch is applied
+    virtual ss::future<> on_batch_applied() { return ss::now(); }
 
     virtual ss::future<std::optional<iobuf>>
     maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) = 0;
@@ -358,9 +361,11 @@ template<typename... T>
 requires(State<T>, ...) ss::future<> mux_state_machine<T...>::apply(
   model::record_batch b) {
     return ss::with_gate(_gate, [this, b = std::move(b)]() mutable {
-        return _apply_mtx.with([this, b = std::move(b)]() mutable {
-            return do_apply(std::move(b));
-        });
+        return _apply_mtx
+          .with([this, b = std::move(b)]() mutable {
+              return do_apply(std::move(b));
+          })
+          .then([this] { return on_batch_applied(); });
     });
 }
 

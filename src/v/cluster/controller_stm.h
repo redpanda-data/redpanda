@@ -36,9 +36,16 @@ class controller_stm final
       bootstrap_backend> {
 public:
     template<typename... Args>
-    controller_stm(limiter_configuration limiter_conf, Args&&... stm_args)
+    controller_stm(
+      limiter_configuration limiter_conf,
+      const ss::sharded<features::feature_table>& feature_table,
+      config::binding<std::chrono::seconds>&& snapshot_max_age,
+      Args&&... stm_args)
       : mux_state_machine(std::forward<Args>(stm_args)...)
-      , _limiter(std::move(limiter_conf)) {}
+      , _limiter(std::move(limiter_conf))
+      , _feature_table(feature_table.local())
+      , _snapshot_max_age(std::move(snapshot_max_age))
+      , _snapshot_debounce_timer([this] { snapshot_timer_callback(); }) {}
 
     controller_stm(controller_stm&&) = delete;
     controller_stm(const controller_stm&) = delete;
@@ -50,18 +57,22 @@ public:
     requires ControllerCommand<Cmd>
     bool throttle() { return _limiter.throttle<Cmd>(); }
 
+    virtual ss::future<> stop() final;
+
 private:
+    ss::future<> on_batch_applied() final;
+    void snapshot_timer_callback();
+
     ss::future<std::optional<iobuf>>
-    maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) final {
-        co_return std::nullopt;
-    }
-    ss::future<>
-    apply_snapshot(model::offset, storage::snapshot_reader&) final {
-        vassert(false, "not implemented");
-    }
+    maybe_make_snapshot(ssx::semaphore_units apply_mtx_holder) final;
+    ss::future<> apply_snapshot(model::offset, storage::snapshot_reader&) final;
 
 private:
     controller_log_limiter _limiter;
+    const features::feature_table& _feature_table;
+    config::binding<std::chrono::seconds> _snapshot_max_age;
+
+    ss::timer<ss::lowres_clock> _snapshot_debounce_timer;
 };
 
 static constexpr ss::shard_id controller_stm_shard = 0;
