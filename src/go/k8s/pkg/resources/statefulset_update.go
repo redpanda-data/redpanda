@@ -35,8 +35,8 @@ import (
 const (
 	// RequeueDuration is the time controller should
 	// requeue resource reconciliation.
-	RequeueDuration        = time.Second * 10
-	defaultAdminAPITimeout = time.Second * 2
+	RequeueDuration = time.Second * 10
+	adminAPITimeout = time.Second * 2
 )
 
 var (
@@ -190,14 +190,6 @@ func (r *StatefulSetResource) rollingUpdate(
 		}
 
 		adminURL.Path = "metrics"
-
-		params := url.Values{}
-		if featuregates.MetricsQueryParamName(r.pandaCluster.Spec.Version) {
-			params.Add("__name__", "cluster_partition_under_replicated_replicas*")
-		} else {
-			params.Add("name", "cluster_partition_under_replicated_replicas*")
-		}
-		adminURL.RawQuery = params.Encode()
 
 		if err = r.evaluateUnderReplicatedPartitions(ctx, &adminURL); err != nil {
 			return &RequeueAfterError{
@@ -498,7 +490,7 @@ func deleteKubernetesTokenVolumeMounts(obj []byte) ([]byte, error) {
 func (r *StatefulSetResource) queryRedpandaStatus(
 	ctx context.Context, adminURL *url.URL,
 ) error {
-	client := &http.Client{Timeout: defaultAdminAPITimeout}
+	client := &http.Client{Timeout: adminAPITimeout}
 
 	// TODO right now we support TLS only on one listener so if external
 	// connectivity is enabled, TLS is enabled only on external listener. This
@@ -537,7 +529,7 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 func (r *StatefulSetResource) evaluateUnderReplicatedPartitions(
 	ctx context.Context, adminURL *url.URL,
 ) error {
-	client := &http.Client{Timeout: r.metricsTimeout}
+	client := &http.Client{Timeout: adminAPITimeout}
 
 	// TODO right now we support TLS only on one listener so if external
 	// connectivity is enabled, TLS is enabled only on external listener. This

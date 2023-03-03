@@ -1,0 +1,5 @@
+# Cleanup needed since the test uses the default namespace statically
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+- command: kubectl delete cluster additional-configuration -n default

@@ -19,8 +19,6 @@ import (
 	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,12 +52,11 @@ func TestClusterCertificates(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		name              string
-		pandaCluster      *v1alpha1.Cluster
-		expectedNames     []string
-		volumesCount      int
-		verifyVolumes     func(vols []corev1.Volume) bool
-		expectedBrokerTLS *config.ServerTLS
+		name          string
+		pandaCluster  *v1alpha1.Cluster
+		expectedNames []string
+		volumesCount  int
+		verifyVolumes func(vols []corev1.Volume) bool
 	}{
 		{"kafka tls disabled", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
@@ -74,7 +71,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{}, 0, nil, nil},
+		}, []string{}, 0, nil},
 		{"kafka tls", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -96,29 +93,7 @@ func TestClusterCertificates(t *testing.T) {
 				}
 			}
 			return false
-		}, &config.ServerTLS{
-			Enabled:        true,
-			TruststoreFile: "/etc/tls/certs/ca.crt",
 		}},
-		{"kafka tls on external only", &v1alpha1.Cluster{
-			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
-			Spec: v1alpha1.ClusterSpec{
-				Configuration: v1alpha1.RedpandaConfig{
-					KafkaAPI: []v1alpha1.KafkaAPI{
-						{
-							External: v1alpha1.ExternalConnectivityConfig{
-								Enabled: true,
-							},
-							TLS: v1alpha1.KafkaAPITLS{
-								Enabled: true,
-							},
-						},
-					},
-				},
-			},
-		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda"}, 1, func(vols []corev1.Volume) bool {
-			return true
-		}, nil},
 		{"kafka tls with two tls listeners", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -140,10 +115,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda"}, 1, nil, &config.ServerTLS{
-			Enabled:        true,
-			TruststoreFile: "/etc/tls/certs/ca.crt",
-		}},
+		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda"}, 1, nil},
 		{"kafka tls with external node issuer", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -173,8 +145,6 @@ func TestClusterCertificates(t *testing.T) {
 				}
 			}
 			return true
-		}, &config.ServerTLS{
-			Enabled: true,
 		}},
 		{"kafka mutual tls", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
@@ -219,11 +189,6 @@ func TestClusterCertificates(t *testing.T) {
 				}
 			}
 			return foundCrt && foundKey
-		}, &config.ServerTLS{
-			Enabled:        true,
-			KeyFile:        "/etc/tls/certs/ca/tls.key",
-			CertFile:       "/etc/tls/certs/ca/tls.crt",
-			TruststoreFile: "/etc/tls/certs/ca.crt",
 		}},
 		{"kafka mutual tls with two tls listeners", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
@@ -239,12 +204,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda", "test-operator-client", "test-user-client", "test-admin-client"}, 2, nil, &config.ServerTLS{
-			Enabled:        true,
-			KeyFile:        "/etc/tls/certs/ca/tls.key",
-			CertFile:       "/etc/tls/certs/ca/tls.crt",
-			TruststoreFile: "/etc/tls/certs/ca.crt",
-		}},
+		}, []string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-redpanda", "test-operator-client", "test-user-client", "test-admin-client"}, 2, nil},
 		{"admin api tls disabled", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -258,7 +218,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{}, 0, nil, nil},
+		}, []string{}, 0, nil},
 		{"admin api tls", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -272,7 +232,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{"test-admin-selfsigned-issuer", "test-admin-root-certificate", "test-admin-root-issuer", "test-admin-api-node"}, 1, nil, nil},
+		}, []string{"test-admin-selfsigned-issuer", "test-admin-root-certificate", "test-admin-root-issuer", "test-admin-api-node"}, 1, nil},
 		{"admin api mutual tls", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -287,7 +247,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{"test-admin-selfsigned-issuer", "test-admin-root-certificate", "test-admin-root-issuer", "test-admin-api-node", "test-admin-api-client"}, 2, nil, nil},
+		}, []string{"test-admin-selfsigned-issuer", "test-admin-root-certificate", "test-admin-root-issuer", "test-admin-api-node", "test-admin-api-client"}, 2, nil},
 		{"pandaproxy api tls disabled", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -301,7 +261,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{}, 0, nil, nil},
+		}, []string{}, 0, nil},
 		{"pandaproxy api tls", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -315,7 +275,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node"}, 1, nil, nil},
+		}, []string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node"}, 1, nil},
 		{"pandaproxy api mutual tls", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -330,7 +290,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"}, 2, nil, nil},
+		}, []string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"}, 2, nil},
 		{"schematregistry api tls disabled", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -342,7 +302,7 @@ func TestClusterCertificates(t *testing.T) {
 					},
 				},
 			},
-		}, []string{}, 0, nil, nil},
+		}, []string{}, 0, nil},
 		{
 			"schematregistry api tls", &v1alpha1.Cluster{
 				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
@@ -357,7 +317,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node"},
-			1, nil, nil,
+			1, nil,
 		},
 		{
 			"schematregistry api mutual tls", &v1alpha1.Cluster{
@@ -374,7 +334,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"},
-			2, nil, nil,
+			2, nil,
 		},
 		{
 			"kafka and schematregistry with nodesecretref", &v1alpha1.Cluster{
@@ -407,12 +367,7 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 			[]string{"test-kafka-selfsigned-issuer", "test-kafka-root-certificate", "test-kafka-root-issuer", "test-operator-client", "test-user-client", "test-admin-client", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-client"},
-			4, nil, &config.ServerTLS{
-				Enabled:        true,
-				KeyFile:        "/etc/tls/certs/ca/tls.key",
-				CertFile:       "/etc/tls/certs/ca/tls.crt",
-				TruststoreFile: "/etc/tls/certs/ca.crt",
-			},
+			4, nil,
 		},
 	}
 	for _, tt := range tests {
@@ -441,11 +396,6 @@ func TestClusterCertificates(t *testing.T) {
 			require.Equal(t, tt.volumesCount, len(vm), fmt.Sprintf("%s: volume mounts count don't match", tt.name))
 			if tt.verifyVolumes != nil {
 				require.True(t, tt.verifyVolumes(v), "failed during volumes verification")
-			}
-			brokerTLS := cc.KafkaClientBrokerTLS(resourcetypes.GetTLSMountPoints())
-			require.Equal(t, tt.expectedBrokerTLS == nil, brokerTLS == nil)
-			if tt.expectedBrokerTLS != nil && brokerTLS != nil {
-				require.Equal(t, *tt.expectedBrokerTLS, *brokerTLS)
 			}
 		})
 	}

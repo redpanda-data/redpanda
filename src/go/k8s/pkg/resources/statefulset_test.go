@@ -127,8 +127,7 @@ func TestEnsure(t *testing.T) {
 					return adminAPI, nil
 				},
 				time.Second,
-				ctrl.Log.WithName("test"),
-				0)
+				ctrl.Log.WithName("test"))
 
 			err = sts.Ensure(context.Background())
 			if tt.expectedError != nil && errors.Is(err, tt.expectedError) {

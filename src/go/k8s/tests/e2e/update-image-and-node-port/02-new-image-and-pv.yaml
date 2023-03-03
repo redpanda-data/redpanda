@@ -1,10 +1,10 @@
 apiVersion: v1
 data:
-  archival-update-image-and-node-port: WA==
+  archival: WA==
 kind: Secret
 metadata:
   creationTimestamp: null
-  name: archival-update-image-and-node-port
+  name: archival
   namespace: default
 ---
 apiVersion: redpanda.vectorized.io/v1alpha1
@@ -18,7 +18,7 @@ spec:
     accessKey: XXX
     secretKeyRef:
       namespace: default
-      name: archival-update-image-and-node-port
+      name: archival
     region: europe-west1
     bucket: X
     apiEndpoint: storage.googleapis.com
