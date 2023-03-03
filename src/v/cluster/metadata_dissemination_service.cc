@@ -502,4 +502,10 @@ ss::future<> metadata_dissemination_service::stop() {
     return _bg.close();
 }
 
+ss::future<> metadata_dissemination_service::restart() {
+    vlog(clusterlog.info, "Restarting the metadata dissemination service");
+    co_await stop();
+    co_await start();
+}
+
 } // namespace cluster

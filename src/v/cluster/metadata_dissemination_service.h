@@ -93,6 +93,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<> restart();
 
 private:
     // Used to store pending updates
