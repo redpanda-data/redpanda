@@ -55,7 +55,14 @@ remote::remote(
         [](auto&& cfg) { return cfg.disable_public_metrics; }, conf))),
       *_materialized)
   , _azure_shared_key_binding(
-      config::shard_local_cfg().cloud_storage_azure_shared_key.bind()) {
+      config::shard_local_cfg().cloud_storage_azure_shared_key.bind())
+  , _cloud_storage_backend{
+      cloud_storage_clients::infer_backend_from_configuration(
+        conf, cloud_credentials_source)} {
+    vlog(
+      cst_log.info,
+      "remote initialized with backend {}",
+      _cloud_storage_backend);
     // If the credentials source is from config file, bypass the background
     // op to refresh credentials periodically, and load pool with static
     // credentials right now.

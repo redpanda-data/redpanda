@@ -413,6 +413,8 @@ private:
     intrusive_list<event_filter, &event_filter::_hook> _filters;
 
     config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
+
+    model::cloud_storage_backend _cloud_storage_backend;
 };
 
 } // namespace cloud_storage

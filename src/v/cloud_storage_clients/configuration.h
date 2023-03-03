@@ -100,4 +100,8 @@ using client_configuration
 template<typename>
 inline constexpr bool always_false_v = false;
 
+model::cloud_storage_backend infer_backend_from_configuration(
+  const client_configuration& client_config,
+  model::cloud_credentials_source cloud_storage_credentials_source);
+
 } // namespace cloud_storage_clients

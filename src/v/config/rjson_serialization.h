@@ -68,4 +68,7 @@ void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const model::partition_autobalancing_mode& v);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const model::cloud_storage_backend& v);
+
 } // namespace json
