@@ -167,10 +167,7 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
             for sname, seg in partition.segments.items():
                 if seg.base_index:
                     path = os.path.join(partition.path, seg.data_file)
-                    out = partition.node.account.ssh_capture(
-                        f"stat --format=%Y {path}")
-                    mtime = ''.join(out).strip()
-                    seg2mtime[path] = int(mtime)
+                    seg2mtime[path] = partition.get_mtime(seg.data_file)
 
             for k, v in sorted(seg2mtime.items()):
                 self.logger.debug(f"mtime for closed segment {k}: {v}")
