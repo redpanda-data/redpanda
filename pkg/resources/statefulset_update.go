@@ -223,17 +223,26 @@ func (r *StatefulSetResource) podEviction(ctx context.Context, pod, artificialPo
 		return err
 	}
 
-	if patchResult.IsEmpty() {
-		return nil
-	}
-
 	var ordinal int64
 	ordinal, err = utils.GetPodOrdinal(pod.Name, r.pandaCluster.Name)
 	if err != nil {
 		return fmt.Errorf("cluster %s: cannot convert pod name (%s) to ordinal: %w", r.pandaCluster.Name, pod.Name, err)
 	}
 
+	if patchResult.IsEmpty() {
+		if err = r.checkMaintenanceMode(ctx, int32(ordinal)); err != nil {
+			return &RequeueAfterError{
+				RequeueAfter: RequeueDuration,
+				Msg:          fmt.Sprintf("checking maintenance node (%s): %v", pod.Name, err),
+			}
+		}
+		return nil
+	}
+
 	if *r.pandaCluster.Spec.Replicas > 1 {
+		r.logger.Info("Put broker into maintenance mode",
+			"pod-name", pod.Name,
+			"patch", patchResult.Patch)
 		if err = r.putInMaintenanceMode(ctx, int32(ordinal)); err != nil {
 			// As maintenance mode can not be easily watched using controller runtime the requeue error
 			// is always returned. That way a rolling update will not finish when operator waits for
@@ -288,6 +297,38 @@ func (r *StatefulSetResource) putInMaintenanceMode(ctx context.Context, ordinal 
 
 	if !br.Maintenance.Finished {
 		return fmt.Errorf("draining (%t), errors (%t), failed (%d), finished (%t): %w", br.Maintenance.Draining, br.Maintenance.Errors, br.Maintenance.Failed, br.Maintenance.Finished, ErrMaintenanceNotFinished)
+	}
+
+	return nil
+}
+
+func (r *StatefulSetResource) checkMaintenanceMode(ctx context.Context, ordinal int32) error {
+	if *r.pandaCluster.Spec.Replicas <= 1 {
+		return nil
+	}
+
+	adminAPIClient, err := r.getAdminAPIClient(ctx, ordinal)
+	if err != nil {
+		return fmt.Errorf("creating admin API client: %w", err)
+	}
+
+	nodeConf, err := adminAPIClient.GetNodeConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("getting node config: %w", err)
+	}
+
+	br, err := adminAPIClient.Broker(ctx, nodeConf.NodeID)
+	if err != nil {
+		return fmt.Errorf("getting broker info: %w", err)
+	}
+
+	if br.Maintenance != nil && br.Maintenance.Draining {
+		r.logger.Info("Disable broker maintenance mode as patch is empty",
+			"pod-ordinal", ordinal)
+		err = adminAPIClient.DisableMaintenanceMode(ctx, nodeConf.NodeID)
+		if err != nil {
+			return fmt.Errorf("disabling maintenance mode: %w", err)
+		}
 	}
 
 	return nil
