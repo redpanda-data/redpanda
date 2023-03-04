@@ -23,17 +23,17 @@ metadata:
   name: update-image-cluster-and-node-port
 spec:
   image: "vectorized/redpanda"
-  version: "v22.1.10"
+  version: "v22.1.11"
   replicas: 3
   restartConfig:
     underReplicatedPartitionThreshold: 0.00
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1Gi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 1Gi
   configuration:
     rpcServer:
       port: 33145
