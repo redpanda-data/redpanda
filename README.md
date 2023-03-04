@@ -138,8 +138,8 @@ sudo yum install redpanda
 
 ## RC releases on Docker
 
-This is an example with the `v22.1.1-rc1` version prior to the 22.1.1 release.
+This is an example with the `v23.1.1-rc1` version prior to the 23.1.1 release.
 
 ```bash
-docker pull docker.redpanda.com/vectorized/redpanda-unstable:v22.1.1-rc1
+docker pull docker.redpanda.com/redpandadata/redpanda-unstable:v23.1.1-rc1
 ```
