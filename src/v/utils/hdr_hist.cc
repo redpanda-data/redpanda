@@ -95,29 +95,29 @@ ss::metrics::histogram hdr_hist::seastar_histogram_logform(
     // stack allocated; no cleanup needed
     struct hdr_iter iter;
     struct hdr_iter_log* log = &iter.specifics.log;
-    hdr_iter_log_init(&iter, _hist.get(), first_value, log_base);
+
+    const auto log_iter_first_bucket_size = std::max(
+      _first_discernible_value, first_value);
+    hdr_iter_log_init(&iter, _hist.get(), log_iter_first_bucket_size, log_base);
+
+    // hdr_iter.value_iterated_to does not get updated by hdr_iter_next
+    // if the size of the histogram bucket is smaller than the size of
+    // the logarithmic iteration bucket. For this reason, we keep track
+    // of the value we have iterated to separately.
+    int64_t iterated_to = log_iter_first_bucket_size;
 
     // fill in buckets from hdr histogram logarithmic iteration. there may be
-    // more or less hdr buckets reported than what will be returned to seastar.
+    // more or less hdr buckets reported than what will be returned to
+    // seastar.
     size_t bucket_idx = 0;
     for (; hdr_iter_next(&iter) && bucket_idx < sshist.buckets.size();
          bucket_idx++) {
         auto& bucket = sshist.buckets[bucket_idx];
         bucket.count = iter.cumulative_count;
-        bucket.upper_bound = static_cast<double>(iter.value_iterated_to)
+        bucket.upper_bound = static_cast<double>(iter.highest_equivalent_value)
                              / static_cast<double>(scale);
-    }
 
-    if (bucket_idx == 0) {
-        // if the histogram is empty hdr_iter_init doesn't initialize the first
-        // bucket value which is neede by the loop below.
-        iter.value_iterated_to = first_value;
-    } else if (bucket_idx < sshist.buckets.size()) {
-        // if there are padding buckets that need to be created, advance the
-        // bucket boundary which would normally be done by hdr_iter_next, except
-        // that doesn't happen when iteration reaches the end of the recorded
-        // values.
-        iter.value_iterated_to *= static_cast<int64_t>(log->log_base);
+        iterated_to *= static_cast<int64_t>(log->log_base);
     }
 
     // prometheus expects a fixed number of buckets. hdr iteration will stop
@@ -126,9 +126,17 @@ ss::metrics::histogram hdr_hist::seastar_histogram_logform(
     for (; bucket_idx < sshist.buckets.size(); bucket_idx++) {
         auto& bucket = sshist.buckets[bucket_idx];
         bucket.count = iter.cumulative_count;
-        bucket.upper_bound = static_cast<double>(iter.value_iterated_to)
+
+        const int64_t range_size = hdr_size_of_equivalent_value_range(
+          _hist.get(), iterated_to);
+        const int64_t lowest_equivalent_value = hdr_lowest_equivalent_value(
+          _hist.get(), iterated_to);
+        const int64_t highest_equivalent_value = lowest_equivalent_value
+                                                 + range_size - 1;
+        bucket.upper_bound = static_cast<double>(highest_equivalent_value)
                              / static_cast<double>(scale);
-        iter.value_iterated_to *= static_cast<int64_t>(log->log_base);
+
+        iterated_to *= static_cast<int64_t>(log->log_base);
     }
 
     return sshist;
