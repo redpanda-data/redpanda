@@ -217,7 +217,7 @@ func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp v1alpha1.
 			rp.Status.HelmRelease = ""
 			return nil
 		}
-		return fmt.Errorf("failed to retrieve HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+		return fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
 	}
 	if err = r.Client.Delete(ctx, &hr); err == nil {
 		rp.Status.HelmRelease = ""
