@@ -122,11 +122,10 @@ private:
     public:
         explicit batch_applicator(state_machine*);
         ss::future<ss::stop_iteration> operator()(model::record_batch);
-        model::offset end_of_stream() const { return _last_applied; }
+        void end_of_stream() const {}
 
     private:
         state_machine* _machine;
-        model::offset _last_applied;
     };
 
     friend batch_applicator;
