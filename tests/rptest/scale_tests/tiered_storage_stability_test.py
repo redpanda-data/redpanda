@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import re
 import time
 
 from ducktape.utils.util import wait_until
@@ -17,8 +18,10 @@ from rptest.services.failure_injector import FailureInjector, FailureSpec
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, SISettings
+from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
+                                      SISettings)
 from rptest.services.kgo_verifier_services import KgoVerifierProducer
+from rptest.util import firewall_blocked
 import time
 
 
@@ -165,18 +168,18 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
             producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
+    NOS3_LOG_ALLOW_LIST = [
+        re.compile(
+            "s3 - .* - Accessing .*, unexpected REST API error "" detected, code: RequestTimeout"
+        ),
+    ]
+
+
     # Stages for the "test_restarts"
 
     def stage_rolling_restart(self):
         self.logger.info(f"Rolling restarting nodes")
         self.redpanda.rolling_restart_nodes(self.redpanda.nodes, start_timeout=600, stop_timeout=600)
-
-    def stage_hard_stop_start(self):
-        node, node_id, node_str = self.get_node(0)
-        self.logger.info(f"Hard stopping and restarting node {node_str}")
-        self.redpanda.stop_node(node, forced=True)
-        self.redpanda.start_node(node, timeout=600)
-        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
 
     def stage_block_node_traffic(self):
         node, node_id, node_str = self.get_node(0)
@@ -211,3 +214,84 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
         waiter = NodeDecommissionWaiter(self.redpanda, node_id, self.logger)
         waiter.wait_for_removal()
         self.redpanda.stop_node(node)
+
+
+    @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
+    def test_disrupt_cloud_storage(self):
+        """
+        Make segments replicate to the cloud, then disrupt S3 connectivity
+        and restore it
+        """
+        config = {
+            # Segments should go into the cloud at a reasonable rate,
+            # that's why it is smaller than it should be
+            'segment.bytes': int(self.scaled_segment_size/2),
+
+            # Use infinite retention so there aren't sudden, drastic,
+            # unrealistic GCing of logs.
+            'retention.bytes': -1,
+
+            # Keep the local retention low for now so we don't get bogged down
+            # with an inordinate number of local segments.
+            'retention.local.target.bytes': 2 * self.scaled_segment_size,
+            'cleanup.policy': 'delete',
+            'partition_autobalancing_node_availability_timeout_sec': self.unavailable_timeout,
+            'partition_autobalancing_mode': 'continuous',
+            'raft_learner_recovery_rate': 10 * 1024 * 1024 * 1024,
+        }
+        self.rpk.create_topic(self.topic_name,
+                              partitions=self.scaled_num_partitions,
+                              replicas=3,
+                              config=config)
+
+        try:
+            producer = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic_name,
+                msg_size=128 * 1024,
+                msg_count=5 * 1024 * 1024 * 1024 * 1024,
+                rate_limit_bps=self.scaled_data_bps,
+                custom_node=[self.preallocated_nodes[0]])
+            producer.start()
+            wait_until(lambda: producer.produce_status.acked > 10000,
+                       timeout_sec=60,
+                       backoff_sec=1.0)
+
+            # S3 up -> down -> up
+            self.stage_block_s3()
+
+        finally:
+            producer.stop()
+            producer.wait(timeout_sec=600)
+            self.free_preallocated_nodes()
+
+    def _cloud_storage_no_new_errors(self, redpanda, logger=None):
+        num_errors = redpanda.metric_sum(
+            "redpanda_cloud_storage_errors_total",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+        increase = (num_errors - self.last_num_errors) if self.last_num_errors>0 else 0
+        self.last_num_errors = num_errors
+        if logger:
+            logger.info(
+                f"Cluster metrics report {increase} new cloud storage errors ({num_errors} overall)"
+            )
+        return increase == 0
+
+    def stage_block_s3(self):
+        self.logger.info(f"Getting the first 100 segments into the cloud")
+        wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100),
+                   timeout_sec=120,
+                   backoff_sec=5)
+        self.logger.info(f"Blocking S3 traffic for all nodes")
+        self.last_num_errors = 0
+        with firewall_blocked(self.redpanda.nodes, self.s3_port):
+            # wait for the first cloud related failure + one minute
+            wait_until(lambda: not self._cloud_storage_no_new_errors(self.redpanda, self.logger),
+                       timeout_sec=600, backoff_sec=10)
+            time.sleep(60)
+        # make sure nothing is crashed
+        wait_until(self.redpanda.healthy, timeout_sec=60, backoff_sec=1)
+        self.logger.info(f"Waiting for S3 errors to cease")
+        wait_until(lambda: self._cloud_storage_no_new_errors(self.redpanda, self.logger),
+                       timeout_sec=600, backoff_sec=20)
