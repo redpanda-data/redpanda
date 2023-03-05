@@ -266,6 +266,7 @@ struct configuration final : public config_store {
     property<std::optional<size_t>> cloud_storage_segment_size_min;
     property<std::optional<std::chrono::milliseconds>>
       cloud_storage_graceful_transfer_timeout_ms;
+    enum_property<model::cloud_storage_backend> cloud_storage_backend;
 
     // Azure Blob Storage
     property<std::optional<ss::sstring>> cloud_storage_azure_storage_account;

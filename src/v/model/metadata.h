@@ -424,6 +424,29 @@ operator<<(std::ostream& o, const partition_autobalancing_mode& m) {
     }
 }
 
+enum class cloud_storage_backend {
+    aws = 0,
+    google_s3_compat = 1,
+    azure = 2,
+    minio = 3,
+    unknown = 4,
+};
+
+inline std::ostream& operator<<(std::ostream& os, cloud_storage_backend csb) {
+    switch (csb) {
+    case cloud_storage_backend::aws:
+        return os << "aws";
+    case cloud_storage_backend::google_s3_compat:
+        return os << "google_s3_compat";
+    case cloud_storage_backend::azure:
+        return os << "azure";
+    case cloud_storage_backend::minio:
+        return os << "minio";
+    case cloud_storage_backend::unknown:
+        return os << "unknown";
+    }
+}
+
 namespace internal {
 /*
  * Old version for use in backwards compatibility serialization /
