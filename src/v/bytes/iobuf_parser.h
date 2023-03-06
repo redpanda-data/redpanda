@@ -58,6 +58,9 @@ public:
     }
 
     ss::sstring read_string(size_t len) {
+        if (len > _original_size) {
+            throw std::bad_alloc();
+        }
         ss::sstring str = ss::uninitialized_string(len);
         _in.consume_to(str.size(), str.begin());
         validate_utf8(str);
@@ -65,6 +68,9 @@ public:
     }
 
     bytes read_bytes(size_t n) {
+        if (n > _original_size) {
+            throw std::bad_alloc();
+        }
         auto b = ss::uninitialized_string<bytes>(n);
         _in.consume_to(n, b.begin());
         return b;

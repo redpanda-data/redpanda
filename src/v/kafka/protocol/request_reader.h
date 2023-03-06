@@ -245,7 +245,7 @@ private:
             throw std::out_of_range("Attempt to parse array w/ negative len");
         }
         std::vector<T> res;
-        res.reserve(len);
+        // res.reserve(len);
         while (len-- > 0) {
             res.push_back(parser(*this));
         }
