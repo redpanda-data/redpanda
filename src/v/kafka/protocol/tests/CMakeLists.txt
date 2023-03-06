@@ -41,3 +41,30 @@ rp_test(
     kafka
     kafka_protocol
 )
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
+    if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+        add_executable(fuzz_kafka_request_protocol_rpfixture request_protocol_fuzz.cc protocol_utils.cc)
+        add_dependencies(fuzz_kafka_request_protocol_rpfixture kafka-request-generator)
+        target_compile_definitions(fuzz_kafka_request_protocol_rpfixture PRIVATE USE_CUSTOM_MUTATOR BOOST_TEST_DYN_LINK)
+        target_compile_options(fuzz_kafka_request_protocol_rpfixture PRIVATE -g -O0 -fsanitize=address,fuzzer)
+        target_link_libraries(fuzz_kafka_request_protocol_rpfixture v::kafka -fsanitize=address,undefined,fuzzer Boost::unit_test_framework)
+        add_test(
+                NAME fuzz_kafka_request_protocol_rpfixture
+                COMMAND $<TARGET_FILE:fuzz_kafka_request_protocol_rpfixture> -max_total_time=30 -rss_limit_mb=8192
+        )
+        set_property(TEST fuzz_kafka_request_protocol_rpfixture PROPERTY ENVIRONMENT "GENERATOR_BIN=${KAFKA_REQUEST_GENERATOR}")
+
+        add_executable(fuzz_kafka_response_protocol_rpfixture response_protocol_fuzz.cc protocol_utils.cc)
+        add_dependencies(fuzz_kafka_response_protocol_rpfixture kafka-request-generator)
+        target_compile_definitions(fuzz_kafka_response_protocol_rpfixture PRIVATE USE_CUSTOM_MUTATOR BOOST_TEST_DYN_LINK)
+        target_compile_options(fuzz_kafka_response_protocol_rpfixture PRIVATE -g -O0 -fsanitize=address,fuzzer)
+        target_link_libraries(fuzz_kafka_response_protocol_rpfixture v::kafka -fsanitize=address,undefined,fuzzer Boost::unit_test_framework)
+        add_test(
+                NAME fuzz_kafka_response_protocol_rpfixture
+                COMMAND $<TARGET_FILE:fuzz_kafka_response_protocol_rpfixture> -max_total_time=30 -rss_limit_mb=8192
+        )
+        set_property(TEST fuzz_kafka_response_protocol_rpfixture PROPERTY ENVIRONMENT "GENERATOR_BIN=${KAFKA_REQUEST_GENERATOR}")
+    endif()
+endif()
+
