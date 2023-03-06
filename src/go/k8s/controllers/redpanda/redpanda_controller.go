@@ -11,6 +11,8 @@ package redpanda
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	kuberecorder "k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	v2 "sigs.k8s.io/controller-runtime/pkg/webhook/conversion/testdata/api/v2"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
@@ -37,6 +41,7 @@ import (
 type RedpandaReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+	kuberecorder.EventRecorder
 
 	httpClient        *retryablehttp.Client
 	requeueDependency time.Duration
@@ -109,6 +114,24 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", req.NamespacedName)
 
+	// Check if HelmRepository exists or create it
+	hRepository := &sourcev1.HelmRepository{}
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: rp.GetHelmRepositoryName()}, hRepository); err != nil {
+		if apierrors.IsNotFound(err) {
+			hRepository, err = r.createHelmRepositoryFromTemplate(rp)
+			if errCreate := r.Client.Create(ctx, hRepository); errCreate != nil {
+				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("error creating repository: %s", errCreate))
+				return rp, ctrl.Result{}, fmt.Errorf("error creating repository: %s", errCreate)
+			}
+			r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("helmRepository %q created ", rp.GetHelmRepositoryName()))
+		} else {
+			r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("error getting helmRepository %s", err))
+			return rp, ctrl.Result{}, fmt.Errorf("error getting helmRepository %s", err)
+		}
+	}
+	rp.Status.HelmRepository = rp.GetHelmRepositoryName()
+
+	// Check if HelmRelease exists or create it
 	var hr helmv2beta1.HelmRelease
 
 	// check if object exists, if it does then update
@@ -137,11 +160,12 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 			// could be we never updated the status and it already exists, continue and ignore error for now
 			// TODO revise this logic: should we error out, or should we just continue and ignore
 			if !apierrors.IsAlreadyExists(err) {
+				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
 				err = fmt.Errorf("failed to create HelmRelease '%s': %w", rp.Status.HelmRelease, err)
 			}
 		}
+		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("helmRelease %q created ", rp.GetHelmReleaseName()))
 	}
-
 	rp.Status.HelmRelease = rp.GetHelmReleaseName()
 
 	return v1alpha1.RedpandaReady(rp), ctrl.Result{}, nil
@@ -167,29 +191,14 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp v1alpha1.
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", rp.Name)
 
-	// create helm repository if needed
-	hRepository := &sourcev1.HelmRepository{}
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: rp.Namespace, Name: rp.GetHelmRepositoryName()}, hRepository); err != nil {
-		if apierrors.IsNotFound(err) {
-			hRepository, err = r.createHelmRepositoryFromTemplate(rp)
-			if errCreate := r.Client.Create(ctx, hRepository); errCreate != nil {
-				return fmt.Errorf("error creating repository: %s", errCreate)
-			}
-		}
-		return fmt.Errorf("error getting helmRepository %s", err)
-	}
-
 	// create helm release
 	hRelease, err := r.createHelmReleaseFromTemplate(ctx, rp)
 	if err != nil {
+		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("could not create helm release template: %s", err))
 		return fmt.Errorf("could not create helm release template: %s", err)
 	}
 
-	if err = r.Client.Create(ctx, hRelease); err != nil {
-		return fmt.Errorf("could not create helm release: %s", err)
-	}
-
-	return nil
+	return r.Client.Create(ctx, hRelease)
 }
 
 func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) error {
@@ -208,14 +217,14 @@ func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp v1alpha1.
 			rp.Status.HelmRelease = ""
 			return nil
 		}
-		return fmt.Errorf("failed to delete HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+		return fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
 	}
-	if err = r.Client.Delete(ctx, &hr); err != nil {
-		return fmt.Errorf("failed to delete HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+	if err = r.Client.Delete(ctx, &hr); err == nil {
+		rp.Status.HelmRelease = ""
+		rp.Status.HelmRepository = ""
 	}
 
-	rp.Status.HelmRelease = ""
-	return nil
+	return err
 }
 
 func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, rp v1alpha1.Redpanda) (*helmv2beta1.HelmRelease, error) {
@@ -226,6 +235,11 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("could not parse clusterSpec to json: %s", err)
 	}
+
+	hasher := sha1.New()
+	hasher.Write(values.Raw)
+	sha := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
+	r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("values file successfully parsed; %s", sha))
 	log.Info(fmt.Sprintf("values file to use: %s", values))
 
 	return &helmv2beta1.HelmRelease{
@@ -260,7 +274,7 @@ func (r *RedpandaReconciler) createHelmRepositoryFromTemplate(rp v1alpha1.Redpan
 		},
 		Spec: sourcev1.HelmRepositorySpec{
 			Interval: metav1.Duration{Duration: 5 * time.Minute},
-			URL:      "https://charts.redpanda.com/",
+			URL:      v1alpha1.RedpandaChartRepository,
 		},
 	}, nil
 }
@@ -272,4 +286,17 @@ func (r *RedpandaReconciler) patchRedpandaStatus(ctx context.Context, rp *v1alph
 		return err
 	}
 	return r.Client.Status().Patch(ctx, rp, client.MergeFrom(latest))
+}
+
+// event emits a Kubernetes event and forwards the event to notification controller if configured.
+func (r *RedpandaReconciler) event(rp *v1alpha1.Redpanda, revision, severity, msg string) {
+	var meta map[string]string
+	if revision != "" {
+		meta = map[string]string{v2.GroupVersion.Group + "/revision": revision}
+	}
+	eventType := "Normal"
+	if severity == v1alpha1.EventSeverityError {
+		eventType = "Warning"
+	}
+	r.EventRecorder.AnnotatedEventf(rp, meta, eventType, severity, msg)
 }

@@ -182,11 +182,11 @@ type TieredStoragePersistentVolume struct {
 
 // PersistentVolume
 type PersistentVolume struct {
-	Annotations  map[string]string `json:"annotations"`
+	Annotations  map[string]string `json:"annotations,omitempty"`
 	Enabled      bool              `json:"enabled"`
-	Labels       map[string]string `json:"labels"`
-	Size         string            `json:"size"`
-	StorageClass string            `json:"storageClass"`
+	Labels       map[string]string `json:"labels,omitempty"`
+	Size         string            `json:"size,omitempty"`
+	StorageClass string            `json:"storageClass,omitempty"`
 }
 
 // PostInstallJob

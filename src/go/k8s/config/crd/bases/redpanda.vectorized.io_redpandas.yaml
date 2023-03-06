@@ -627,11 +627,7 @@ spec:
                           storageClass:
                             type: string
                         required:
-                        - annotations
                         - enabled
-                        - labels
-                        - size
-                        - storageClass
                         type: object
                       tieredConfig:
                         description: TieredConfig
@@ -831,6 +827,8 @@ spec:
                   type: object
                 type: array
               helmRelease:
+                type: string
+              helmRepository:
                 type: string
               installFailures:
                 format: int64
