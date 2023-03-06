@@ -163,6 +163,7 @@ public:
     std::optional<model::node_id> get_controller_leader_id();
 
     void reset_leaders();
+    ss::future<> refresh_health_monitor();
     cluster::partition_leaders_table::leaders_info_t get_leaders() const;
 
     void set_is_node_isolated_status(bool is_node_isolated);
