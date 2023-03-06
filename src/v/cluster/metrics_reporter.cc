@@ -473,6 +473,9 @@ void rjson_serialize(
     w.EndArray();
     w.Key("has_kafka_gssapi");
     w.Bool(snapshot.has_kafka_gssapi);
+
+    w.Key("config");
+    config::shard_local_cfg().to_json_for_metrics(w);
     w.EndObject();
 }
 

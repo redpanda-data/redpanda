@@ -34,6 +34,7 @@ class MetricsReporterTest(RedpandaTest):
                 "metrics_reporter_report_interval": 1000,
                 "enable_metrics_reporter": True,
                 "metrics_reporter_url": f"{self.http.url}/metrics",
+                "retention_bytes": 20000,
             })
 
     def setUp(self):
@@ -86,6 +87,8 @@ class MetricsReporterTest(RedpandaTest):
         assert_fields_are_the_same(metadata, 'cluster_created_ts')
         # Configuration should be the same across requests
         assert_fields_are_the_same(metadata, 'has_kafka_gssapi')
+        # cluster config should be the same
+        assert_fields_are_the_same(metadata, 'config')
         # get the last report
         last = metadata.pop()
         assert last['topic_count'] == total_topics
@@ -121,6 +124,13 @@ class MetricsReporterTest(RedpandaTest):
                    backoff_sec=1)
         assert_fields_are_the_same(metadata, 'cluster_uuid')
         assert_fields_are_the_same(metadata, 'cluster_created_ts')
+
+        # Check config values
+        assert last["config"]["retention_bytes"] == "[value]"
+        assert last["config"]["enable_metrics_reporter"] == True
+        assert last["config"]["auto_create_topics_enabled"] == False
+        assert "metrics_reporter_tick_interval" not in last["config"]
+        assert last["config"]["log_message_timestamp_type"] == "CreateTime"
 
 
 class MultiNodeMetricsReporterTest(MetricsReporterTest):
