@@ -180,7 +180,7 @@ func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Reque
 	}
 
 	controllerutil.RemoveFinalizer(&rp, FinalizerKey)
-	if err := r.Update(ctx, &rp); err != nil {
+	if err := r.Client.Update(ctx, &rp); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -299,4 +299,13 @@ func (r *RedpandaReconciler) event(rp *v1alpha1.Redpanda, revision, severity, ms
 		eventType = "Warning"
 	}
 	r.EventRecorder.AnnotatedEventf(rp, meta, eventType, severity, msg)
+}
+
+// TODO fill out what items we should update on
+func (r *RedpandaReconciler) helmReleaseRequiresUpdate(rp *v1alpha1.Redpanda, hr *helmv2beta1.HelmRelease) bool {
+
+	switch {
+	default:
+		return false
+	}
 }
