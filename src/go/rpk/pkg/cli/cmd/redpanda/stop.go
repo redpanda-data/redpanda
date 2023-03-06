@@ -53,7 +53,7 @@ running.`,
 		"config",
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations.",
+			" in $PWD or /etc/redpanda/redpanda.yaml.",
 	)
 	command.Flags().DurationVar(
 		&timeout,

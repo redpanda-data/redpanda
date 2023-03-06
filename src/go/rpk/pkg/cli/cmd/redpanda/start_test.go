@@ -339,7 +339,7 @@ func TestStartCommand(t *testing.T) {
 				// A single int value
 				"--set", "redpanda.node_id=39",
 				// A single bool value
-				"--set", "rpk.enable_usage_stats=true",
+				"--set", "rpk.tune_network=true",
 				// A single string value
 				"--set", "node_uuid=helloimauuid1337",
 				// A JSON object
@@ -383,6 +383,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, 39, *conf.Redpanda.ID)
 			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminAPI)
 			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
+			require.Exactly(st, true, conf.Rpk.TuneNetwork)
 		},
 	}, {
 		name: "it should still save values passed through field-specific flags, and prioritize them if they overlap with values set with --set",
@@ -404,7 +405,7 @@ func TestStartCommand(t *testing.T) {
 				// A single int value
 				"--set", "redpanda.node_id=39",
 				// A single bool value
-				"--set", "rpk.enable_usage_stats=true",
+				"--set", "rpk.tune_cpu=true",
 				// A single string value
 				"--set", "node_uuid=helloimauuid1337",
 				// A JSON object

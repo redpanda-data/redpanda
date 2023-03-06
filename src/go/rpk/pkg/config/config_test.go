@@ -25,7 +25,6 @@ func getValidConfig() *Config {
 	}
 	conf.Redpanda.DeveloperMode = false
 	conf.Rpk = RpkConfig{
-		EnableUsageStats:         true,
 		TuneNetwork:              true,
 		TuneDiskScheduler:        true,
 		TuneDiskWriteCache:       true,
@@ -115,10 +114,10 @@ func TestSet(t *testing.T) {
 		},
 		{
 			name:  "set single bool fields",
-			key:   "rpk.enable_usage_stats",
+			key:   "rpk.tune_network",
 			value: "true",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, true, c.Rpk.EnableUsageStats)
+				require.Exactly(st, true, c.Rpk.TuneNetwork)
 			},
 		},
 		{
@@ -164,10 +163,10 @@ func TestSet(t *testing.T) {
 		},
 		{
 			name:  "detect single bool fields if format isn't passed",
-			key:   "rpk.enable_usage_stats",
+			key:   "rpk.tune_cpu",
 			value: "true",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, true, c.Rpk.EnableUsageStats)
+				require.Exactly(st, true, c.Rpk.TuneCPU)
 			},
 		},
 		{
@@ -178,7 +177,6 @@ tune_cpu: true`,
 			format: "yaml",
 			check: func(st *testing.T, c *Config) {
 				expected := RpkConfig{
-					EnableUsageStats:         false,
 					Overprovisioned:          false,
 					TuneNetwork:              false,
 					TuneDiskScheduler:        false,
@@ -540,7 +538,6 @@ func TestWrite(t *testing.T) {
         - address: 0.0.0.0
           port: 9644
 rpk:
-    enable_usage_stats: true
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true
@@ -593,7 +590,6 @@ schema_registry: {}
         address: 174.32.64.2
         port: 33145
 rpk:
-    enable_usage_stats: true
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true
@@ -676,7 +672,6 @@ schema_registry: {}
           port: 9644
     log_segment_size: 536870912
 rpk:
-    enable_usage_stats: true
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true

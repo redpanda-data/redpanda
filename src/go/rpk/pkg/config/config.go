@@ -95,7 +95,6 @@ func setDevelopment(conf *Config) *Config {
 		KafkaAPI:             conf.Rpk.KafkaAPI,
 		AdminAPI:             conf.Rpk.AdminAPI,
 		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
-		EnableUsageStats:     conf.Rpk.EnableUsageStats,
 		CoredumpDir:          conf.Rpk.CoredumpDir,
 		SMP:                  DevDefault().Rpk.SMP,
 		BallastFilePath:      conf.Rpk.BallastFilePath,

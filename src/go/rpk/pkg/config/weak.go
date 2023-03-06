@@ -385,7 +385,6 @@ func (rpkc *RpkConfig) UnmarshalYAML(n *yaml.Node) error {
 		KafkaAPI                 RpkKafkaAPI     `yaml:"kafka_api"`
 		AdminAPI                 RpkAdminAPI     `yaml:"admin_api"`
 		AdditionalStartFlags     weakStringArray `yaml:"additional_start_flags"`
-		EnableUsageStats         weakBool        `yaml:"enable_usage_stats"`
 		TuneNetwork              weakBool        `yaml:"tune_network"`
 		TuneDiskScheduler        weakBool        `yaml:"tune_disk_scheduler"`
 		TuneNomerges             weakBool        `yaml:"tune_disk_nomerges"`
@@ -416,7 +415,6 @@ func (rpkc *RpkConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpkc.KafkaAPI = internal.KafkaAPI
 	rpkc.AdminAPI = internal.AdminAPI
 	rpkc.AdditionalStartFlags = internal.AdditionalStartFlags
-	rpkc.EnableUsageStats = bool(internal.EnableUsageStats)
 	rpkc.TuneNetwork = bool(internal.TuneNetwork)
 	rpkc.TuneDiskScheduler = bool(internal.TuneDiskScheduler)
 	rpkc.TuneNomerges = bool(internal.TuneNomerges)

@@ -167,7 +167,7 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 	}
 
 	// The following flags require parsing before we initialize our client.
-	cmd.Flags().StringVarP(&compression, "compression", "z", "snappy", "Compression to use for producing batches (none, gzip, snapy, lz4, zstd)")
+	cmd.Flags().StringVarP(&compression, "compression", "z", "snappy", "Compression to use for producing batches (none, gzip, snappy, lz4, zstd)")
 	cmd.Flags().IntVar(&acks, "acks", -1, "Number of acks required for producing (-1=all, 0=none, 1=leader)")
 	cmd.Flags().DurationVar(&timeout, "delivery-timeout", 0, "Per-record delivery timeout, if non-zero, min 1s")
 	cmd.Flags().Int32VarP(&partition, "partition", "p", -1, "Partition to directly produce to, if non-negative (also allows %p parsing to set partitions)")

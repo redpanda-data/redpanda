@@ -154,7 +154,6 @@ schema_registry_client:
 {% endif %}
 
 rpk:
-  enable_usage_stats: false
   tune_network: false
   tune_disk_scheduler: false
   tune_disk_nomerges: false
