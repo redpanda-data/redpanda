@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
+import requests
 from pickletools import long1
 from time import sleep, time, time_ns
 
@@ -20,9 +21,11 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import LoggingConfig
 from rptest.services.storage import Topic
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.restart_services_test import check_service_restart
 from rptest.utils.full_disk import FullDiskHelper
 from rptest.utils.partition_metrics import PartitionMetrics
 from rptest.utils.expect_rate import ExpectRate, RateTarget
@@ -46,7 +49,9 @@ class WriteRejectTest(RedpandaTest):
     topic_names = [spec.name for spec in topics]
 
     def __init__(self, test_context: TestContext):
-        super().__init__(test_context)
+        super().__init__(test_context,
+                         log_config=LoggingConfig(
+                             'info', logger_levels={'cluster': 'trace'}))
         self.producers = None
         self.full_disk = FullDiskHelper(self.logger, self.redpanda)
 
@@ -69,18 +74,21 @@ class WriteRejectTest(RedpandaTest):
         # around this.
         sleep(5)
 
+        self.NUM_MESSAGES = MAX_MSG // len(self.topics)
+        self.PAUSE_S = len(self.topics) * 1.0 / MAX_MSG_PER_SEC
+
     def _send_all_topics(self, msg: str, expect_blocked=False):
         """ Send `msg` to all topics, retrying a fixed number of times for
         expected success or failure. """
         futures = []
-        num_topics = len(self.topics)
-        pause: float = num_topics * 1.0 / MAX_MSG_PER_SEC
+        num_topics = self.NUM_MESSAGES
+        pause: float = self.PAUSE_S
         was_blocked = False
         success = False
         t0 = time()
         i = 0
         producers = self._get_producers(refresh=True)
-        for _ in range(MAX_MSG // num_topics):
+        for _ in range(self.NUM_MESSAGES):
             sleep(pause)
             try:
                 for j, topic in enumerate(self.topic_names):
@@ -129,6 +137,65 @@ class WriteRejectTest(RedpandaTest):
                 "A: I don't know, but they can do a lot of bites per second.",
                 expect_blocked=True)
             self.full_disk.clear_low_space()
+
+    @cluster(num_nodes=3, log_allow_list=FDT_LOG_ALLOW_LIST)
+    def test_refresh_disk_health(self):
+        """ Verify that health monitor frontend and backend have valid state after
+        we manually trigger a refresh.
+        """
+        def check_health_monitor_frontend(disk_space_change: str):
+            # Looking for a log statement about a change in disk space.
+            # This is a check for the health monitor frontend because
+            # that structure logs disk space alerts.
+            pattern = f"Update disk health cache {disk_space_change}"
+            wait_until(
+                lambda: self.redpanda.search_log_any(pattern),
+                timeout_sec=5,
+                err_msg=f"Failed to find disk space change: {disk_space_change}"
+            )
+
+        def check_health_monitor_backend(fail_msg: str):
+            # This is an indirect check for the health monitor backend because
+            # RedpandaService.healthy() uses the prometheus metric, vectorized_cluster_partition_under_replicated_replicas,
+            # which is measured in the health monitor backend.
+            wait_until(lambda: self.redpanda.healthy(),
+                       timeout_sec=20,
+                       backoff_sec=1,
+                       err_msg=fail_msg)
+
+        self._setup()
+
+        self._send_all_topics("Q: Why should you be scared of computers?")
+        self.full_disk.trigger_low_space()
+        self._send_all_topics("A: They byte!", expect_blocked=True)
+
+        # Disk health should show degraded state
+        check_health_monitor_frontend(disk_space_change="ok -> degraded")
+
+        check_health_monitor_backend(
+            fail_msg="Cluster is not healthy before health monitor refresh")
+
+        self.logger.debug("Check health monitor refresh")
+        for node in self.redpanda.nodes:
+            result_raw = self.admin.refresh_disk_health_info(node=node)
+            self.logger.debug(result_raw)
+            check_service_restart(self.redpanda, "Refreshing disk health info")
+            assert result_raw.status_code == requests.codes.ok
+
+        check_health_monitor_backend(
+            fail_msg="Cluster is not healthy after health monitor refresh")
+
+        # RP should still reject writes before clearing space
+        self._send_all_topics("Q: What animal does a computer like to watch?",
+                              expect_blocked=True)
+
+        self.full_disk.clear_low_space()
+
+        # RP should now accept writes after clearing space
+        self._send_all_topics("A: A RAM!")
+
+        # Expect the disk health check to tranistion from degraded to ok
+        check_health_monitor_frontend(disk_space_change="degraded -> ok")
 
 
 class FullDiskTest(EndToEndTest):
