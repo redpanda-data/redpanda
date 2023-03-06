@@ -147,4 +147,16 @@ ss::future<bool> health_monitor_frontend::does_raft0_have_leader() {
       [](health_monitor_backend& be) { return be.does_raft0_have_leader(); });
 }
 
+ss::future<> health_monitor_frontend::refresh_info() {
+    // start() checks that the refresh timer is run on the refresher_shard, so
+    // invoke a refresh on that shard
+    vlog(clusterlog.info, "Refreshing disk health info");
+    co_await container().invoke_on(
+      refresher_shard, [](health_monitor_frontend& fe) {
+          return ssx::spawn_with_gate_then(fe._refresh_gate, [&fe]() {
+              return fe.update_disk_health_cache();
+          });
+      });
+}
+
 } // namespace cluster

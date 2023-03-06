@@ -44,6 +44,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<> refresh_info();
 
     // Reports cluster health. Cluster health is based on the cluster health
     // state that is cached on current node. If force_refresh flag is set. It
