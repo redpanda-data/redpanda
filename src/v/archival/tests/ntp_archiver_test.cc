@@ -112,7 +112,6 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    part->stop_archiver().get();
     listen();
     auto [arch_conf, remote_conf] = get_configurations();
     cloud_storage::remote remote(
@@ -142,8 +141,9 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     cloud_storage::partition_manifest manifest;
     {
         BOOST_REQUIRE(get_targets().count(manifest_url)); // NOLINT
-        auto it = get_targets().find(manifest_url);
-        const auto& [url, req] = *it;
+        auto req_opt = get_latest_request(manifest_url);
+        BOOST_REQUIRE(req_opt.has_value());
+        auto req = req_opt.value().get();
         BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
         verify_manifest_content(req.content);
         manifest = load_manifest(req.content);
@@ -153,9 +153,9 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     {
         segment_name segment1_name{"0-1-v1.log"};
         auto segment1_url = get_segment_path(manifest, segment1_name);
-        auto it = get_targets().find("/" + segment1_url().string());
-        BOOST_REQUIRE(it != get_targets().end());
-        const auto& [url, req] = *it;
+        auto req_opt = get_latest_request("/" + segment1_url().string());
+        BOOST_REQUIRE(req_opt.has_value());
+        auto req = req_opt.value().get();
         BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
         verify_segment(manifest_ntp, segment1_name, req.content);
     }
@@ -228,7 +228,6 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
       part->committed_offset(),
       *part);
 
-    part->stop_archiver().get();
     listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
@@ -333,7 +332,6 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
         return part->last_stable_offset() >= model::offset(3000);
     }).get();
 
-    part->stop_archiver().get();
     listen();
     config::shard_local_cfg().delete_retention_ms.set_value(
       std::chrono::milliseconds{1min});
@@ -706,7 +704,6 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
       ->add_segments(old_segments, std::nullopt, ss::lowres_clock::now() + 1s)
       .get();
 
-    part->stop_archiver().get();
     listen();
 
     auto [arch_conf, remote_conf] = get_configurations();
@@ -738,21 +735,19 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
 
     cloud_storage::partition_manifest manifest;
     {
-        auto [begin, end] = get_targets().equal_range(manifest_url);
-        size_t len = std::distance(begin, end);
-        BOOST_REQUIRE_EQUAL(len, 1);
-        BOOST_REQUIRE(begin->second._method == "PUT");
-        manifest = load_manifest(begin->second.content);
+        BOOST_REQUIRE_EQUAL(1, get_request_count(manifest_url));
+        auto req = get_latest_request(manifest_url).value().get();
+        BOOST_REQUIRE(req._method == "PUT");
+        manifest = load_manifest(req.content);
         BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
 
     {
         // Check that we uploaded second segment
-        auto url = get_segment_path(manifest, s2name);
-        auto [begin, end] = get_targets().equal_range("/" + url().string());
-        size_t len = std::distance(begin, end);
-        BOOST_REQUIRE_EQUAL(len, 1);
-        BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
+        auto url = "/" + get_segment_path(manifest, s2name)().string();
+        BOOST_REQUIRE_EQUAL(1, get_request_count(url));
+        auto req = get_latest_request(url).value().get();
+        BOOST_REQUIRE(req._method == "PUT"); // NOLINT
     }
 
     BOOST_REQUIRE(part->archival_meta_stm());
@@ -931,9 +926,8 @@ static void test_partial_upload_impl(
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib(never_abort);
-    part->stop_archiver().get();
     test.listen();
-    auto res = upload_next_with_retries(archiver, lso).get0();
+    auto res = test.upload_next_with_retries(archiver, lso).get0();
 
     auto non_compacted_result = res.non_compacted_upload_result;
     auto compacted_result = res.compacted_upload_result;
@@ -973,7 +967,7 @@ static void test_partial_upload_impl(
     }
 
     lso = last_upl2 + model::offset(1);
-    res = upload_next_with_retries(archiver, lso).get0();
+    res = test.upload_next_with_retries(archiver, lso).get0();
 
     non_compacted_result = res.non_compacted_upload_result;
     compacted_result = res.compacted_upload_result;

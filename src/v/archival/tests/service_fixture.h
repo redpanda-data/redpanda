@@ -157,6 +157,19 @@ public:
         return layouts.find(ntp)->second;
     }
 
+    ss::future<archival::ntp_archiver::batch_result> do_upload_next(
+      archival::ntp_archiver& archiver,
+      std::optional<model::offset> lso,
+      model::timeout_clock::time_point deadline);
+
+    ss::future<archival::ntp_archiver::batch_result> upload_next_with_retries(
+      archival::ntp_archiver&, std::optional<model::offset> lso = std::nullopt);
+
+    void upload_and_verify(
+      archival::ntp_archiver&,
+      archival::ntp_archiver::batch_result,
+      std::optional<model::offset> lso = std::nullopt);
+
 private:
     void initialize_shard(
       storage::api& api,
@@ -166,11 +179,6 @@ private:
 
     std::unordered_map<model::ntp, std::vector<segment_layout>> layouts;
 };
-
-std::tuple<
-  ss::lw_shared_ptr<archival::configuration>,
-  cloud_storage::configuration>
-get_configurations();
 
 cloud_storage::partition_manifest load_manifest(std::string_view v);
 
@@ -192,14 +200,6 @@ struct log_spec {
 };
 
 void populate_log(storage::disk_log_builder& b, const log_spec& spec);
-
-ss::future<archival::ntp_archiver::batch_result> upload_next_with_retries(
-  archival::ntp_archiver&, std::optional<model::offset> lso = std::nullopt);
-
-void upload_and_verify(
-  archival::ntp_archiver&,
-  archival::ntp_archiver::batch_result,
-  std::optional<model::offset> lso = std::nullopt);
 
 /// Creates num_batches with a single record each, used to fit segments close to
 /// each other without gaps.

@@ -42,17 +42,19 @@
 
 #include <optional>
 
-using namespace std::chrono_literals;
-
-inline ss::logger fixt_log("fixture"); // NOLINT
-
 /// For http_imposter to run this binary with a unique port
 uint16_t unit_test_httpd_port_number() { return 4441; }
 
 namespace archival {
 
+using namespace std::chrono_literals;
+
+inline ss::logger fixt_log("fixture"); // NOLINT
+
 archiver_fixture::archiver_fixture()
-  : redpanda_thread_fixture(redpanda_thread_fixture::init_cloud_storage_tag{}) {
+  : http_imposter_fixture()
+  , redpanda_thread_fixture(
+      redpanda_thread_fixture::init_cloud_storage_no_archiver_tag{}) {
     ss::smp::invoke_on_all([port = httpd_port_number()]() {
         auto& cfg = config::shard_local_cfg();
         cfg.cloud_storage_enabled.set_value(true);
@@ -67,6 +69,12 @@ archiver_fixture::archiver_fixture()
           std::optional<ss::sstring>{"us-east1"});
         cfg.cloud_storage_bucket.set_value(
           std::optional<ss::sstring>{"test-bucket"});
+
+        // Disable time-based manifest upload, to enable tests to
+        // deterministically assert on what manifest uploads happen for a given
+        // set of segment uploads
+        cfg.cloud_storage_manifest_max_upload_interval_sec.set_value(
+          std::optional<std::chrono::seconds>());
     }).get0();
 }
 
@@ -287,8 +295,6 @@ void archiver_fixture::initialize_shard(
         } else {
             defaults
               = std::make_unique<storage::ntp_config::default_overrides>();
-            defaults->shadow_indexing_mode
-              = model::shadow_indexing_mode::archival;
         }
         app.partition_manager.local()
           .manage(
@@ -299,6 +305,7 @@ void archiver_fixture::initialize_shard(
           .get();
         BOOST_CHECK_EQUAL(
           api.log_mgr().get(ntp.first)->segment_count(), ntp.second);
+
         vlog(fixt_log.trace, "storage log {}", *api.log_mgr().get(ntp.first));
     }
     BOOST_CHECK(all_ntp.size() <= api.log_mgr().size()); // NOLINT
@@ -463,7 +470,8 @@ void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
     }
 }
 
-ss::future<archival::ntp_archiver::batch_result> do_upload_next(
+ss::future<archival::ntp_archiver::batch_result>
+archiver_fixture::do_upload_next(
   archival::ntp_archiver& archiver,
   std::optional<model::offset> lso,
   model::timeout_clock::time_point deadline) {
@@ -480,13 +488,14 @@ ss::future<archival::ntp_archiver::batch_result> do_upload_next(
     co_return co_await do_upload_next(archiver, lso, deadline);
 }
 
-ss::future<archival::ntp_archiver::batch_result> upload_next_with_retries(
+ss::future<archival::ntp_archiver::batch_result>
+archiver_fixture::upload_next_with_retries(
   archival::ntp_archiver& archiver, std::optional<model::offset> lso) {
     auto deadline = model::timeout_clock::now() + 10s;
     return ss::with_timeout(deadline, do_upload_next(archiver, lso, deadline));
 }
 
-void upload_and_verify(
+void archiver_fixture::upload_and_verify(
   archival::ntp_archiver& archiver,
   archival::ntp_archiver::batch_result expected,
   std::optional<model::offset> lso) {
