@@ -147,4 +147,14 @@ ss::future<bool> health_monitor_frontend::does_raft0_have_leader() {
       [](health_monitor_backend& be) { return be.does_raft0_have_leader(); });
 }
 
+ss::future<> health_monitor_frontend::reset() {
+    vlog(clusterlog.info, "Resetting Health Monitor Frontend");
+    co_await dispatch_to_backend(
+      [](health_monitor_backend& be) { be.reset(); });
+
+    _cluster_disk_health = storage::disk_space_alert::ok;
+    // Resetting _refresh_timer is not needed as it is simply a mechnism to
+    // trigger disk health tick
+}
+
 } // namespace cluster
