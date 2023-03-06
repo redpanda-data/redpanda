@@ -30,11 +30,8 @@ endif
 all: manager
 
 # Run tests
-ENVTEST_ASSETS_DIR=$(shell pwd)/testbin
-test: generate vet manifests
-	mkdir -p ${ENVTEST_ASSETS_DIR}
-	test -f ${ENVTEST_ASSETS_DIR}/setup-envtest.sh || curl -sSLo ${ENVTEST_ASSETS_DIR}/setup-envtest.sh https://raw.githubusercontent.com/kubernetes-sigs/controller-runtime/v0.7.0/hack/setup-envtest.sh
-	source ${ENVTEST_ASSETS_DIR}/setup-envtest.sh; fetch_envtest_tools $(ENVTEST_ASSETS_DIR); setup_envtest_env $(ENVTEST_ASSETS_DIR); go test --race -v ./... -coverprofile cover.out
+test: generate vet manifests envtest
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test --race -v ./... -coverprofile cover.out
 
 # Build manager binary
 manager: generate vet
@@ -92,12 +89,12 @@ prepare-dockerfile:
 # Build the docker image
 docker-build: prepare-dockerfile
 	echo "~~~ Building operator image :docker:"
-	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager -f Dockerfile.out -t ${OPERATOR_IMG_LATEST} ../
+	docker buildx build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=manager --load -f Dockerfile.out -t ${OPERATOR_IMG_LATEST} ../
 
 # Build the docker image
 docker-build-configurator: prepare-dockerfile
 	echo "~~~ Building configurator image :docker:"
-	docker build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator -f Dockerfile.out -t ${CONFIGURATOR_IMG_LATEST} ../
+	docker buildx build --build-arg BUILDPLATFORM='linux/${TARGETARCH}' --build-arg TARGETARCH=${TARGETARCH} --target=configurator --load -f Dockerfile.out -t ${CONFIGURATOR_IMG_LATEST} ../
 
 # Preload controller image to kind cluster
 push-to-kind: kind-create certmanager-install

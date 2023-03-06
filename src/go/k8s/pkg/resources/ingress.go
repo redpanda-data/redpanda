@@ -96,7 +96,7 @@ func (r *IngressResource) WithTLS(
 	clusterIssuer, secretName string,
 ) *IngressResource {
 	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
-	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = "true"
+	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = trueString
 
 	if r.TLS == nil {
 		r.TLS = []netv1.IngressTLS{}

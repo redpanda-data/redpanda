@@ -114,9 +114,9 @@ func ValidatePrometheus(
 		_, ok := secret.Data[prometheus.BasicAuth.PasswordRef.Key]
 		if !ok {
 			allErrs = append(allErrs,
-				field.Invalid(field.NewPath("spec").Child("cloud").Child("prometheusEndpoint").Child("basicAuth").Child("passwordRef"),
+				field.Invalid(field.NewPath("spec").Child("cloud").Child("prometheusEndpoint").Child("basicAuth").Child("passwordRef").Child("key"),
 					"",
-					fmt.Sprintf("basic auth password secret must contain the field %s", prometheus.BasicAuth.PasswordRef.Key)))
+					fmt.Sprintf("basic auth password secret must contain the field key (%s)", prometheus.BasicAuth.PasswordRef.Key)))
 		}
 	}
 
