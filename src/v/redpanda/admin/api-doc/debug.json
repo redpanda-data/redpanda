@@ -204,6 +204,21 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/refresh_disk_health_info",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Force a refresh of node health information",
+                    "type": "void",
+                    "nickname": "refresh_disk_health_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {
