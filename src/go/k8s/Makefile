@@ -167,3 +167,11 @@ GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+.PHONY: gofumpt
+gofumpt:
+	go install mvdan.cc/gofumpt@latest
+
+.PHONY: lint-gofumpt
+lint-gofumpt: gofumpt
+	find . -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.19

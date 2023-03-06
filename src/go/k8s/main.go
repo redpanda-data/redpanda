@@ -9,13 +9,10 @@
 package main
 
 import (
-	"io"
 	"log"
-	"net"
 	"net/http"
 	"net/http/pprof"
 	"os"
-	"path/filepath"
 	"time"
 
 	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -25,15 +22,11 @@ import (
 	helper "github.com/fluxcd/pkg/runtime/controller"
 	"github.com/fluxcd/pkg/runtime/logger"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
-	"github.com/fluxcd/source-controller/controllers"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
-	"github.com/go-logr/logr"
 	flag "github.com/spf13/pflag"
 	"helm.sh/helm/v3/pkg/getter"
-	"helm.sh/helm/v3/pkg/registry"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -49,20 +42,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
-
-// +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=helm.toolkit.fluxcd.io,resources=helmreleases/finalizers,verbs=update
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmcharts,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmcharts/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmcharts/finalizers,verbs=get;create;update;patch;delete
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=helmrepositories/finalizers,verbs=get;create;update;patch;delete
-
-// addtional resources
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=gitrepositories,verbs=get;list;watch;create;update;patch;delete
 
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
@@ -245,8 +224,8 @@ func main() {
 	}
 
 	storageAddr := ":9090"
-	storageAdvAddr = determineAdvStorageAddr(storageAddr, setupLog)
-	storage := mustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, setupLog)
+	storageAdvAddr = redpandacontrollers.DetermineAdvStorageAddr(storageAddr, setupLog)
+	storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, setupLog)
 
 	metricsH := helper.MustMakeMetrics(mgr)
 
@@ -274,7 +253,7 @@ func main() {
 	// Helm Chart Controller
 	helmChart := helmSourceController.HelmChartReconciler{
 		Client:                  mgr.GetClient(),
-		RegistryClientGenerator: clientGenerator,
+		RegistryClientGenerator: redpandacontrollers.ClientGenerator,
 		Getters:                 getters,
 		Metrics:                 metricsH,
 		Storage:                 storage,
@@ -304,13 +283,14 @@ func main() {
 		// to handle that.
 		<-mgr.Elected()
 
-		startFileServer(storage.BasePath, storageAddr, setupLog)
+		redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, setupLog)
 	}()
 
 	if err = (&redpandacontrollers.RedpandaReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		EventRecorder: mgr.GetEventRecorderFor("RedpandaReconciler"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		EventRecorder:   mgr.GetEventRecorderFor("RedpandaReconciler"),
+		RequeueHelmDeps: 10 * time.Second,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
 		os.Exit(1)
@@ -345,87 +325,5 @@ func main() {
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "Problem running manager")
 		os.Exit(1)
-	}
-}
-
-func clientGenerator(isLogin bool) (*registry.Client, string, error) {
-	if isLogin {
-		// create a temporary file to store the credentials
-		// this is needed because otherwise the credentials are stored in ~/.docker/config.json.
-		credentialsFile, err := os.CreateTemp("", "credentials")
-		if err != nil {
-			return nil, "", err
-		}
-
-		var errs []error
-		rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptCredentialsFile(credentialsFile.Name()))
-		if err != nil {
-			errs = append(errs, err)
-			// attempt to delete the temporary file
-			if credentialsFile != nil {
-				err := os.Remove(credentialsFile.Name())
-				if err != nil {
-					errs = append(errs, err)
-				}
-			}
-			return nil, "", errors.NewAggregate(errs)
-		}
-		return rClient, credentialsFile.Name(), nil
-	}
-
-	rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard))
-	if err != nil {
-		return nil, "", err
-	}
-	return rClient, "", nil
-}
-
-func mustInitStorage(path string, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) *controllers.Storage {
-	if path == "" {
-		p, _ := os.Getwd()
-		path = filepath.Join(p, "bin")
-		os.MkdirAll(path, 0o700)
-	}
-
-	storage, err := controllers.NewStorage(path, storageAdvAddr, artifactRetentionTTL, artifactRetentionRecords)
-	if err != nil {
-		l.Error(err, "unable to initialise storage")
-		os.Exit(1)
-	}
-
-	return storage
-}
-
-func determineAdvStorageAddr(storageAddr string, l logr.Logger) string {
-	host, port, err := net.SplitHostPort(storageAddr)
-	if err != nil {
-		l.Error(err, "unable to parse storage address")
-		os.Exit(1)
-	}
-	switch host {
-	case "":
-		host = "localhost"
-	case "0.0.0.0":
-		host = os.Getenv("HOSTNAME")
-		if host == "" {
-			hn, err := os.Hostname()
-			if err != nil {
-				l.Error(err, "0.0.0.0 specified in storage addr but hostname is invalid")
-				os.Exit(1)
-			}
-			host = hn
-		}
-	}
-	return net.JoinHostPort(host, port)
-}
-
-func startFileServer(path string, address string, l logr.Logger) {
-	l.Info("starting file server")
-	fs := http.FileServer(http.Dir(path))
-	mux := http.NewServeMux()
-	mux.Handle("/", fs)
-	err := http.ListenAndServe(address, mux)
-	if err != nil {
-		l.Error(err, "file server error")
 	}
 }
