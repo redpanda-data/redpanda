@@ -49,7 +49,6 @@ redpanda:
     group_topic_partitions: 3
     internal_topic_replication_factor: 3
     log_segment_size: 536870912
-    log_segment_size_min: 1
     storage_min_free_bytes: 10485760
     topic_partitions_per_shard: 1000
 rpk:
