@@ -33,6 +33,9 @@
 
 namespace archival {
 
+// Forward declaration for test class that we will befriend
+class archival_fixture;
+
 using namespace std::chrono_literals;
 
 enum class segment_upload_kind { compacted, non_compacted };
@@ -473,6 +476,8 @@ private:
     // then upload at the next opportunity.
     config::binding<std::optional<std::chrono::seconds>>
       _manifest_upload_interval;
+
+    friend class archival_fixture;
 };
 
 } // namespace archival

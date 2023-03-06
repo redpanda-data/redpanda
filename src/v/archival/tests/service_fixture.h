@@ -32,6 +32,8 @@
 #include <map>
 #include <vector>
 
+namespace archival {
+
 struct segment_desc {
     model::ntp ntp;
     model::offset base_offset;
@@ -189,8 +191,6 @@ struct log_spec {
     size_t last_segment_num_records;
 };
 
-storage::disk_log_builder make_log_builder(std::string_view data_path);
-
 void populate_log(storage::disk_log_builder& b, const log_spec& spec);
 
 ss::future<archival::ntp_archiver::batch_result> upload_next_with_retries(
@@ -205,3 +205,5 @@ void upload_and_verify(
 /// each other without gaps.
 segment_layout write_random_batches_with_single_record(
   ss::lw_shared_ptr<storage::segment> seg, size_t num_batches);
+
+} // namespace archival

@@ -49,6 +49,8 @@ inline ss::logger fixt_log("fixture"); // NOLINT
 /// For http_imposter to run this binary with a unique port
 uint16_t unit_test_httpd_port_number() { return 4441; }
 
+namespace archival {
+
 archiver_fixture::archiver_fixture()
   : redpanda_thread_fixture(redpanda_thread_fixture::init_cloud_storage_tag{}) {
     ss::smp::invoke_on_all([port = httpd_port_number()]() {
@@ -461,15 +463,6 @@ void populate_log(storage::disk_log_builder& b, const log_spec& spec) {
     }
 }
 
-storage::disk_log_builder make_log_builder(std::string_view data_path) {
-    return storage::disk_log_builder{storage::log_config{
-      storage::log_config::storage_type::disk,
-      {data_path.data(), data_path.size()},
-      4_KiB,
-      storage::debug_sanitize_files::yes,
-    }};
-}
-
 ss::future<archival::ntp_archiver::batch_result> do_upload_next(
   archival::ntp_archiver& archiver,
   std::optional<model::offset> lso,
@@ -506,3 +499,5 @@ void upload_and_verify(
       })
       .get0();
 }
+
+} // namespace archival

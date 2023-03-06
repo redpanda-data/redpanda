@@ -19,6 +19,8 @@
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
+using namespace archival;
+
 inline ss::logger test_log("test");
 
 static constexpr std::string_view manifest = R"json({
