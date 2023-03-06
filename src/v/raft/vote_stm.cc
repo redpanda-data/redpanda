@@ -56,9 +56,9 @@ ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
     r.target_node_id = n;
     return _ptr->_client_protocol
       .vote(n.id(), std::move(r), rpc::client_opts(tout))
-      .then([this](result<vote_reply> reply) {
+      .then([this, target_node_id = n.id()](result<vote_reply> reply) {
           return _ptr->validate_reply_target_node(
-            "vote_request", std::move(reply));
+            "vote_request", reply, target_node_id);
       });
 }
 

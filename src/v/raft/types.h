@@ -430,7 +430,7 @@ struct vote_request
 };
 
 struct vote_reply
-  : serde::envelope<vote_reply, serde::version<0>, serde::compat_version<0>> {
+  : serde::envelope<vote_reply, serde::version<1>, serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's term, for the caller to upate itself
@@ -444,12 +444,15 @@ struct vote_reply
     /// - "Preventing disruptions when a server rejoins the cluster"
     bool log_ok = false;
 
+    // replying node
+    vnode node_id;
+
     friend std::ostream& operator<<(std::ostream& o, const vote_reply& r);
 
     friend bool operator==(const vote_reply&, const vote_reply&) = default;
 
     auto serde_fields() {
-        return std::tie(target_node_id, term, granted, log_ok);
+        return std::tie(target_node_id, term, granted, log_ok, node_id);
     }
 };
 
@@ -595,7 +598,7 @@ private:
 struct install_snapshot_reply
   : serde::envelope<
       install_snapshot_reply,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     // node id to validate on receiver
     vnode target_node_id;
@@ -613,6 +616,9 @@ struct install_snapshot_reply
     // indicates if the request was successfull
     bool success = false;
 
+    // replying node
+    vnode node_id;
+
     friend std::ostream&
     operator<<(std::ostream&, const install_snapshot_reply&);
 
@@ -621,7 +627,7 @@ struct install_snapshot_reply
       = default;
 
     auto serde_fields() {
-        return std::tie(target_node_id, term, bytes_stored, success);
+        return std::tie(target_node_id, term, bytes_stored, success, node_id);
     }
 };
 
