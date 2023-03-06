@@ -868,3 +868,9 @@ class Admin:
         return int(
             self._request(
                 "GET", "debug/cloud_storage_usage?retries_allowed=10").json())
+
+    def reset_health_info(self, node: Optional[ClusterNode] = None):
+        """
+        Reset info for cluster health on node
+        """
+        return self._request("post", "debug/reset_health_info", node=node)
