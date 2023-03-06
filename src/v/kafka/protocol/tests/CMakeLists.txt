@@ -7,6 +7,7 @@ rp_test(
   SOURCES
     security_test.cc
     protocol_test.cc
+    protocol_utils.cc
   DEFINITIONS
     BOOST_TEST_DYN_LINK
   LIBRARIES

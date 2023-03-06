@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/handlers/handlers.h"
+#include "protocol_utils.h"
 
 #include <boost/process.hpp>
 #include <boost/test/unit_test.hpp>
@@ -31,62 +32,6 @@
     }
 
 namespace kafka {
-
-/// Signifies a request if true, otherwise is_a kafka response
-using is_kafka_request = ss::bool_class<struct is_kafka_request_tag>;
-
-bytes invoke_franz_harness(
-  api_key key, api_version v, is_kafka_request is_request) {
-    static const boost::filesystem::path generator_path = []() {
-        /// This env var is passed via CMake
-        const char* gen_cstr = std::getenv("GENERATOR_BIN");
-        vassert(gen_cstr, "Missing generator binary path in test env");
-        boost::filesystem::path p(gen_cstr);
-        vassert(
-          boost::filesystem::exists(p),
-          "Harness error, provided GENERATOR_BIN not found: {}",
-          p);
-        return p;
-    }();
-
-    ss::sstring stdout;
-    {
-        boost::process::ipstream is;
-        boost::process::child c(
-          generator_path.string(),
-          boost::process::args({
-            "-api",
-            std::to_string(key()),
-            "-version",
-            std::to_string(v()),
-            (is_request == is_kafka_request::yes ? "-is-request=true"
-                                                 : "-is-request=false"),
-          }),
-          boost::process::std_out > is);
-
-        /// If the program doesn't exit with success, issue is with test binary
-        /// fail hard as author should fix to account for diff in feature set
-        c.wait();
-        vassert(
-          c.exit_code() == 0,
-          "kafka-request-generator exited with non-zero status");
-
-        /// Capture data on stdout
-        std::stringstream ss;
-        ss << is.rdbuf();
-        stdout = ss.str();
-    }
-    auto result = ss::uninitialized_string<bytes>(stdout.size());
-    std::copy_n(stdout.begin(), stdout.size(), result.begin());
-    return result;
-}
-
-/// To adapt the generic test method below for the cases in which some generated
-/// types don't adhere to the standard api for type::decode
-template<typename T>
-concept HasPrimitiveDecode = requires(T t, iobuf iob, api_version v) {
-    { t.decode(std::move(iob), v) } -> std::same_as<void>;
-};
 
 /// If there is an issue with decoding of legacy batches, an exception will not
 /// be thrown. To make the test aware of these potential issues, each
