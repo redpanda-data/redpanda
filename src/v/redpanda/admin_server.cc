@@ -83,6 +83,7 @@
 #include "security/scram_authenticator.h"
 #include "ssx/metrics.h"
 #include "utils/string_switch.h"
+#include "utils/utf8.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
@@ -117,6 +118,64 @@
 using namespace std::chrono_literals;
 
 static ss::logger logger{"admin_api_server"};
+
+// Helpers for partition routes
+namespace {
+
+struct string_conversion_exception : public default_control_character_thrower {
+    using default_control_character_thrower::default_control_character_thrower;
+    [[noreturn]] [[gnu::cold]] void conversion_error() override {
+        throw ss::httpd::bad_request_exception(
+          "Parameter contained invalid control characters: "
+          + get_sanitized_string());
+    }
+};
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param, model::ns ns) {
+    auto topic = model::topic(param["topic"]);
+
+    model::partition_id partition;
+    try {
+        partition = model::partition_id(std::stoi(param["partition"]));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(fmt::format(
+          "Partition id must be an integer: {}", param["partition"]));
+    }
+
+    if (partition() < 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid partition id {}", partition));
+    }
+
+    return {std::move(ns), std::move(topic), partition};
+}
+
+model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
+    return parse_ntp_from_request(param, model::ns(param["namespace"]));
+}
+
+model::ntp
+parse_ntp_from_query_param(const std::unique_ptr<ss::httpd::request>& req) {
+    auto ns = req->get_query_param("namespace");
+    auto topic = req->get_query_param("topic");
+    auto partition_str = req->get_query_param("partition_id");
+    model::partition_id partition;
+    try {
+        partition = model::partition_id(std::stoi(partition_str));
+    } catch (...) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Partition must be an integer: {}", partition_str));
+    }
+
+    if (partition() < 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid partition id {}", partition));
+    }
+
+    return {std::move(ns), std::move(topic), partition};
+}
+
+} // namespace
 
 admin_server::admin_server(
   admin_server_cfg cfg,
@@ -990,6 +1049,7 @@ void admin_server::register_config_routes() {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Invalid parameter 'name' got {{{}}}", req->param["name"]));
           }
+          validate_no_control(name, string_conversion_exception{name});
 
           // current level: will be used revert after a timeout (optional)
           ss::log_level cur_level;
@@ -1567,12 +1627,14 @@ parse_scram_credential(const json::Document& doc) {
     }
     const auto algorithm = std::string_view(
       doc["algorithm"].GetString(), doc["algorithm"].GetStringLength());
+    validate_no_control(algorithm, string_conversion_exception{algorithm});
 
     if (!doc.HasMember("password") || !doc["password"].IsString()) {
         throw ss::httpd::bad_request_exception(
           fmt::format("String password smissing"));
     }
     const auto password = doc["password"].GetString();
+    validate_no_control(password, string_conversion_exception{"PASSWORD"});
 
     security::scram_credential credential;
 
@@ -1598,6 +1660,7 @@ static bool match_scram_credential(
     const auto password = ss::sstring(doc["password"].GetString());
     const auto algorithm = std::string_view(
       doc["algorithm"].GetString(), doc["algorithm"].GetStringLength());
+    validate_no_control(algorithm, string_conversion_exception{algorithm});
 
     if (algorithm == security::scram_sha256_authenticator::name) {
         return security::scram_sha256::validate_password(
@@ -1623,6 +1686,7 @@ admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
     }
 
     auto username = security::credential_user(doc["username"].GetString());
+    validate_no_control(username(), string_conversion_exception{username()});
 
     auto err
       = co_await _controller->get_security_frontend().local().create_user(
@@ -1713,22 +1777,7 @@ void admin_server::register_security_routes() {
 ss::future<ss::json::json_return_type>
 admin_server::kafka_transfer_leadership_handler(
   std::unique_ptr<ss::httpd::request> req) {
-    auto ns = model::ns(req->param["namespace"]);
-
-    auto topic = model::topic(req->param["topic"]);
-
-    model::partition_id partition;
-    try {
-        partition = model::partition_id(std::stoll(req->param["partition"]));
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt::format(
-          "Partition id must be an integer: {}", req->param["partition"]));
-    }
-
-    if (partition() < 0) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Invalid partition id {}", partition));
-    }
+    auto ntp = parse_ntp_from_request(req->param);
 
     std::optional<model::node_id> target;
     if (auto node = req->get_query_param("target"); !node.empty()) {
@@ -1746,15 +1795,9 @@ admin_server::kafka_transfer_leadership_handler(
 
     vlog(
       logger.info,
-      "Leadership transfer request for leader of topic-partition "
-      "{}:{}:{} "
-      "to node {}",
-      ns,
-      topic,
-      partition,
+      "Leadership transfer request for leader of topic-partition {} to node {}",
+      ntp,
       target);
-
-    model::ntp ntp(ns, topic, partition);
 
     auto shard = _shard_table.local().shard_for(ntp);
     if (!shard) {
@@ -2298,30 +2341,6 @@ void admin_server::register_broker_routes() {
       });
 }
 
-// Helpers for partition routes
-namespace {
-model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
-    auto ns = model::ns(param["namespace"]);
-    auto topic = model::topic(param["topic"]);
-
-    model::partition_id partition;
-    try {
-        partition = model::partition_id(std::stoi(param["partition"]));
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt::format(
-          "Partition id must be an integer: {}", param["partition"]));
-    }
-
-    if (partition() < 0) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Invalid partition id {}", partition));
-    }
-
-    return model::ntp(std::move(ns), std::move(topic), partition);
-}
-
-} // namespace
-
 ss::future<ss::json::json_return_type> admin_server::get_transactions_handler(
   std::unique_ptr<ss::httpd::request> req) {
     const model::ntp ntp = parse_ntp_from_request(req->param);
@@ -2542,23 +2561,7 @@ admin_server::unclean_abort_partition_reconfig_handler(
 ss::future<ss::json::json_return_type>
 admin_server::set_partition_replicas_handler(
   std::unique_ptr<ss::httpd::request> req) {
-    auto ns = model::ns(req->param["namespace"]);
-    auto topic = model::topic(req->param["topic"]);
-
-    model::partition_id partition;
-    try {
-        partition = model::partition_id(std::stoi(req->param["partition"]));
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(fmt::format(
-          "Partition id must be an integer: {}", req->param["partition"]));
-    }
-
-    if (partition() < 0) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Invalid partition id {}", partition));
-    }
-
-    const model::ntp ntp(std::move(ns), std::move(topic), partition);
+    auto ntp = parse_ntp_from_request(req->param);
 
     if (ntp == model::controller_ntp) {
         throw ss::httpd::bad_request_exception(
@@ -3095,23 +3098,7 @@ ss::future<ss::json::json_return_type> admin_server::delete_partition_handler(
     }
 
     auto transaction_id = req->param["transactional_id"];
-
-    auto namespace_from_req = req->get_query_param("namespace");
-    auto topic_from_req = req->get_query_param("topic");
-
-    auto partition_str = req->get_query_param("partition_id");
-    int64_t partition;
-    try {
-        partition = std::stoi(partition_str);
-    } catch (...) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Partition must be an integer: {}", partition_str));
-    }
-
-    if (partition < 0) {
-        throw ss::httpd::bad_param_exception(
-          fmt::format("Invalid partition {}", partition));
-    }
+    auto ntp = parse_ntp_from_query_param(req);
 
     auto etag_str = req->get_query_param("etag");
     int64_t etag;
@@ -3127,7 +3114,6 @@ ss::future<ss::json::json_return_type> admin_server::delete_partition_handler(
           fmt::format("Invalid etag {}", etag));
     }
 
-    model::ntp ntp(namespace_from_req, topic_from_req, partition);
     cluster::tm_transaction::tx_partition partition_for_delete{
       .ntp = ntp, .etag = model::term_id(etag)};
     kafka::transactional_id tid(transaction_id);
@@ -3791,10 +3777,7 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
     };
 
     vlog(logger.info, "Requested bucket syncup");
-    auto topic = model::topic(request->param["topic"]);
-    auto partition = model::partition_id(
-      boost::lexical_cast<int32_t>(request->param["partition"]));
-    auto ntp = model::ntp(model::kafka_namespace, topic, partition);
+    auto ntp = parse_ntp_from_request(request->param, model::kafka_namespace);
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
         vlog(logger.info, "Need to redirect bucket syncup request");
         throw co_await redirect_to_leader(*request, ntp);
