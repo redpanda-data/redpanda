@@ -182,7 +182,10 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             message_size = 256 * (2**10)
             message_cnt = 819200
             consumers = 8
-            partitions_count = 18000
+            # Multiply default partition per shard limit by cores in system, subtract
+            # a few to leave room for the consumer offsets etc partitions.
+            partitions_count = 1000 * self.redpanda.get_node_cpu_count() * len(
+                self.redpanda.nodes) - 32
             max_concurrent_moves = 400
             timeout = 500
         else:
@@ -192,6 +195,8 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             partitions_count = 200
             max_concurrent_moves = 200
             timeout = 500
+
+        self.logger.info(f"Running with {partitions_count} partitions")
 
         # set max number of concurrent moves
         self.redpanda.set_cluster_config(
