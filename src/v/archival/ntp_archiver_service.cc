@@ -1164,7 +1164,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
       = co_await ss::when_all_succeed(
         ss::when_all_succeed(begin(flist), end(flist)),
         [this, inline_manifest]() {
-            if (inline_manifest) {
+            if (inline_manifest && _manifest_upload_interval().has_value()) {
                 return maybe_upload_manifest();
             } else {
                 return ss::make_ready_future<std::optional<model::offset>>(
@@ -1254,7 +1254,9 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           total.num_succeeded,
           total.num_failed);
 
-        if (inline_manifest && stm_was_clean) {
+        if (
+          inline_manifest
+          && (stm_was_clean || !_manifest_upload_interval().has_value())) {
             // This is the path for uploading manifests for infrequent*
             // segment uploads: we transitioned from clean to dirty, and the
             // manifest upload interval has expired.
