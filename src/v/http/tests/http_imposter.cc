@@ -72,6 +72,12 @@ http_imposter_fixture::get_latest_request(const ss::sstring& url) const {
     }
 }
 
+size_t http_imposter_fixture::get_request_count(const ss::sstring& url) const {
+    auto [begin, end] = get_targets().equal_range(url);
+    size_t len = std::distance(begin, end);
+    return len;
+}
+
 const std::multimap<ss::sstring, ss::httpd::request>&
 http_imposter_fixture::get_targets() const {
     return _targets;
