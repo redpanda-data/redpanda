@@ -330,6 +330,17 @@ ss::future<> ntp_archiver::upload_topic_manifest() {
 ss::future<> ntp_archiver::upload_until_term_change() {
     ss::lowres_clock::duration backoff = _conf->upload_loop_initial_backoff;
 
+    // Before starting, upload the manifest if needed.  This makes our
+    // behavior more deterministic on first start (uploading the empty
+    // manifest) and after unclean leadership changes (flush dirty manifest
+    // as soon as we can, rather than potentially waiting for segment
+    // uploads).
+    {
+        auto units = co_await ss::get_units(_uploads_active, 1);
+        co_await maybe_upload_manifest();
+        co_await maybe_flush_manifest_clean_offset();
+    }
+
     while (may_begin_uploads()) {
         // Hold sempahore units to enable other code to know that we are in
         // the process of doing uploads + wait for us to drop out if they
