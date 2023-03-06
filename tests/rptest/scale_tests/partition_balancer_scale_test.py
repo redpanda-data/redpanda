@@ -96,6 +96,12 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
         self.logger.info(f"node {node_id} has {len(replicas)} replicas")
         return replicas
 
+    def _max_partition_count(self, node_count):
+        # Multiply default partition per shard limit by cores in system, subtract
+        # a few to leave room for the consumer offsets etc partitions.
+        return (
+            (1000 * self.redpanda.get_node_cpu_count() * node_count) // 3) - 32
+
     @cluster(num_nodes=6)
     @parametrize(type=MANY_PARTITIONS)
     @parametrize(type=BIG_PARTITIONS)
@@ -113,7 +119,8 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             message_size = 128 * (2**10)
             message_cnt = 819200
             consumers = 8
-            partitions_count = 18000
+            partitions_count = self._max_partition_count(
+                len(self.redpanda.nodes))
             timeout = 500
         else:
             message_size = 128 * (2**10)
@@ -182,10 +189,10 @@ class PartitionBalancerScaleTest(PreallocNodesTest, PartitionMovementMixin):
             message_size = 256 * (2**10)
             message_cnt = 819200
             consumers = 8
-            # Multiply default partition per shard limit by cores in system, subtract
-            # a few to leave room for the consumer offsets etc partitions.
-            partitions_count = 1000 * self.redpanda.get_node_cpu_count() * len(
-                self.redpanda.nodes) - 32
+            # Subtract 1 from node count because will decommission one node & the partitions
+            # must fit in the shrunk cluster
+            partitions_count = self._max_partition_count(
+                len(self.redpanda.nodes) - 1)
             max_concurrent_moves = 400
             timeout = 500
         else:
