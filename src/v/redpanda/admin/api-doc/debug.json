@@ -175,6 +175,21 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/reset_health_info",
+            "operations": [
+                {
+                    "method": "POST",
+                    "summary": "Reset information about cluster health for node",
+                    "type": "void",
+                    "nickname": "reset_health_info",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
         }
     ],
     "models": {

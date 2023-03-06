@@ -3464,6 +3464,16 @@ void admin_server::register_debug_routes() {
       });
 
     register_route<user>(
+      ss::httpd::debug_json::reset_health_info,
+      [this](std::unique_ptr<ss::httpd::request>) {
+          vlog(logger.info, "Request to reset cluster health info");
+          return _metadata_cache
+            .invoke_on_all([](auto& mc) { return mc.reset_health_monitor(); })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
+    register_route<user>(
       ss::httpd::debug_json::get_leaders_info,
       [this](std::unique_ptr<ss::httpd::request>) {
           vlog(logger.info, "Request to get leaders info");
