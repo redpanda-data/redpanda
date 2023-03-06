@@ -643,19 +643,6 @@ ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
     }
 }
 
-ss::future<> partition::stop_archiver() {
-    if (_archiver) {
-        _upload_housekeeping.local().deregister_jobs(
-          _archiver->get_housekeeping_jobs());
-        return _archiver->stop().then([this] {
-            // Drop it so that we don't end up double-stopping on shutdown
-            _archiver = nullptr;
-        });
-    } else {
-        return ss::now();
-    }
-}
-
 uint64_t partition::upload_backlog_size() const {
     if (_archiver) {
         return _archiver->estimate_backlog_size();
