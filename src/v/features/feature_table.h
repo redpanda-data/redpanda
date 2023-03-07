@@ -61,6 +61,7 @@ enum class feature : std::uint64_t {
     force_partition_reconfiguration = 1ULL << 26U,
     raft_append_entries_serde = 1ULL << 28U,
     delete_records = 1ULL << 29U,
+    initial_revision_in_leaders_table = 1ULL << 30U,
 
     // Dummy features for testing only
     test_alpha = 1ULL << 61U,
@@ -277,6 +278,12 @@ constexpr static std::array feature_schema{
     cluster::cluster_version{10},
     "delete_records",
     feature::delete_records,
+    feature_spec::available_policy::always,
+    feature_spec::prepare_policy::always},
+  feature_spec{
+    cluster::cluster_version{10},
+    "initial_revision_in_leaders_table",
+    feature::initial_revision_in_leaders_table,
     feature_spec::available_policy::always,
     feature_spec::prepare_policy::always},
 };

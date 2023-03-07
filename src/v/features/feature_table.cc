@@ -73,7 +73,8 @@ std::string_view to_string_view(feature f) {
         return "raft_append_entries_serde";
     case feature::delete_records:
         return "delete_records";
-
+    case feature::initial_revision_in_leaders_table:
+        return "initial_revision_in_leaders_table";
     /*
      * testing features
      */
