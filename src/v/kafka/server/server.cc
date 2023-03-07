@@ -24,6 +24,7 @@
 #include "kafka/server/handlers/create_acls.h"
 #include "kafka/server/handlers/delete_groups.h"
 #include "kafka/server/handlers/delete_topics.h"
+#include "kafka/server/handlers/describe_groups.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/end_txn.h"
 #include "kafka/server/handlers/heartbeat.h"
@@ -1394,6 +1395,55 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       });
 
     return process_result_stages(std::move(dispatch_f), std::move(f));
+}
+
+template<>
+ss::future<response_ptr>
+describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
+    describe_groups_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+
+    auto unauthorized_it = std::partition(
+      request.data.groups.begin(),
+      request.data.groups.end(),
+      [&ctx](const group_id& id) {
+          return ctx.authorized(security::acl_operation::describe, id);
+      });
+
+    std::vector<group_id> unauthorized(
+      std::make_move_iterator(unauthorized_it),
+      std::make_move_iterator(request.data.groups.end()));
+
+    request.data.groups.erase(unauthorized_it, request.data.groups.end());
+
+    describe_groups_response response;
+
+    if (likely(!request.data.groups.empty())) {
+        std::vector<ss::future<described_group>> described;
+        described.reserve(request.data.groups.size());
+        for (auto& group_id : request.data.groups) {
+            described.push_back(ctx.groups().describe_group(group_id).then(
+              [&ctx, &request, group_id](auto res) {
+                  if (request.data.include_authorized_operations) {
+                      res.authorized_operations = details::to_bit_field(
+                        details::authorized_operations(ctx, group_id));
+                  }
+                  return res;
+              }));
+        }
+        response.data.groups = co_await ss::when_all_succeed(
+          described.begin(), described.end());
+    }
+
+    for (auto& group : unauthorized) {
+        response.data.groups.push_back(described_group{
+          .error_code = error_code::group_authorization_failed,
+          .group_id = std::move(group),
+        });
+    }
+
+    co_return co_await ctx.respond(std::move(response));
 }
 
 } // namespace kafka

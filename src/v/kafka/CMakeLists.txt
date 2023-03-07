@@ -11,7 +11,6 @@ set(handlers_srcs
   server/handlers/fetch.cc
   server/handlers/create_topics.cc
   server/handlers/alter_configs.cc
-  server/handlers/describe_groups.cc
   server/handlers/incremental_alter_configs.cc
   server/handlers/describe_acls.cc
   server/handlers/describe_log_dirs.cc
