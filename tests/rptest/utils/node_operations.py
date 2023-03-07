@@ -255,6 +255,32 @@ class NodeOpsExecutor():
             self.logger.info(f"error querying broker statuses - {e}")
             return False
 
+    def is_node_removed(self, node_to_query, node_id):
+        try:
+            brokers = self.get_statuses(node_to_query)
+            self.logger.info(
+                f"broker statuses from {self.redpanda.node_id(node_to_query)}: {brokers}"
+            )
+            ids = map(lambda broker: broker['id'], brokers)
+            return not node_id in ids
+        except Exception as e:
+            self.logger.info(f"error querying broker statuses - {e}")
+            return False
+
+    def node_removed(self, node_id):
+        node_removed_cnt = 0
+        for n in self.redpanda.started_nodes():
+            if self.is_node_removed(n, node_id):
+                node_removed_cnt += 1
+
+        node_count = len(self.redpanda.started_nodes())
+        majority = int(node_count / 2) + 1
+        self.logger.debug(
+            f"node {node_id} removed on {node_removed_cnt} nodes, majority: {majority}"
+        )
+        return node_removed_cnt >= majority
+
+    # just confirm if node removal was propagated to the the majority of nodes
     def wait_for_removed(self, node_id: int):
         self.logger.info(
             f"executor - waiting for node {node_id} to be removed")
@@ -266,34 +292,9 @@ class NodeOpsExecutor():
                                         progress_timeout=60)
 
         waiter.wait_for_removal()
-
-        # just confirm if node removal was propagated to the the majority of nodes
-        def is_node_removed(node_to_query, node_id):
-            try:
-                brokers = self.get_statuses(node_to_query)
-                self.logger.info(
-                    f"broker statuses from {self.redpanda.node_id(node_to_query)}: {brokers}"
-                )
-                ids = map(lambda broker: broker['id'], brokers)
-                return not node_id in ids
-            except Exception as e:
-                self.logger.info(f"error querying broker statuses - {e}")
-                return False
-
-        def node_removed():
-            node_removed_cnt = 0
-            for n in self.redpanda.started_nodes():
-                if is_node_removed(n, node_id):
-                    node_removed_cnt += 1
-
-            node_count = len(self.redpanda.started_nodes())
-            majority = int(node_count / 2) + 1
-            self.logger.debug(
-                f"node {node_id} removed on {node_removed_cnt} nodes, majority: {majority}"
-            )
-            return node_removed_cnt >= majority
-
-        wait_until(node_removed, timeout_sec=self.timeout, backoff_sec=1)
+        wait_until(lambda: self.node_removed(node_id),
+                   timeout_sec=self.timeout,
+                   backoff_sec=1)
 
     def stop_node(self, idx):
         node = self.redpanda.get_node(idx)
