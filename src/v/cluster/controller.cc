@@ -144,7 +144,10 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::move(initial_raft0_brokers));
       })
       .then([this](consensus_ptr c) { _raft0 = c; })
-      .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
+      .then([this] {
+          return _partition_leaders.start(
+            std::ref(_tp_state), std::ref(_feature_table), std::ref(_as));
+      })
       .then(
         [this] { return _drain_manager.start(std::ref(_partition_manager)); })
       .then([this] {

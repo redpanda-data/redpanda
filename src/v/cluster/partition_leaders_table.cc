@@ -12,11 +12,14 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/topic_table.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
+#include "ssx/future-util.h"
 #include "utils/expiring_promise.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 
@@ -25,8 +28,21 @@
 namespace cluster {
 
 partition_leaders_table::partition_leaders_table(
-  ss::sharded<topic_table>& topic_table)
-  : _topic_table(topic_table) {}
+  ss::sharded<topic_table>& topic_table,
+  ss::sharded<features::feature_table>& features,
+  ss::sharded<ss::abort_source>& as)
+  : _topic_table(topic_table)
+  , _features(features)
+  , _as(as)
+  , _use_initial_revision(_features.local().is_active(
+      features::feature::initial_revision_in_leaders_table)) {
+    ssx::spawn_with_gate(_gate, [this] {
+        return _features.local()
+          .await_feature(
+            features::feature::initial_revision_in_leaders_table, _as.local())
+          .then([this] { enable_initial_revision_use(); });
+    });
+}
 
 ss::future<> partition_leaders_table::stop() {
     vlog(clusterlog.info, "Stopping Partition Leaders Table...");
@@ -39,7 +55,15 @@ ss::future<> partition_leaders_table::stop() {
         }
         _leader_promises.erase(it);
     }
-    return ss::now();
+    return _gate.close();
+}
+
+void partition_leaders_table::enable_initial_revision_use() {
+    vlog(
+      clusterlog.info,
+      "Activating use of initial revision in partition leaders table");
+    reset();
+    _use_initial_revision = true;
 }
 
 std::optional<partition_leaders_table::leader_meta>
@@ -87,17 +111,22 @@ void partition_leaders_table::update_partition_leader(
   model::term_id term,
   std::optional<model::node_id> leader_id) {
     // we set revision_id to invalid, this way we will skip revision check
-    update_partition_leader(ntp, model::revision_id{}, term, leader_id);
+    update_partition_leader(
+      ntp, model::revision_id{}, model::initial_revision_id{}, term, leader_id);
 }
 
 void partition_leaders_table::update_partition_leader(
   const model::ntp& ntp,
   model::revision_id revision_id,
+  model::initial_revision_id initial_revision_id,
   model::term_id term,
   std::optional<model::node_id> leader_id) {
     auto key = leader_key_view{
       model::topic_namespace_view(ntp), ntp.tp.partition};
 
+    auto revision = _use_initial_revision
+                      ? model::revision_id(initial_revision_id)
+                      : revision_id;
     const auto is_controller = ntp == model::controller_ntp;
     /**
      * Use revision to differentiate updates for the topic that was
@@ -107,7 +136,7 @@ void partition_leaders_table::update_partition_leader(
      *
      */
     const auto topic_removed
-      = revision_id <= _topic_table.local().last_applied_revision()
+      = revision <= _topic_table.local().last_applied_revision()
         && !_topic_table.local().contains(model::topic_namespace_view(ntp));
 
     if (topic_removed && !is_controller) {
@@ -126,44 +155,30 @@ void partition_leaders_table::update_partition_leader(
           leader_meta{
             .current_leader = leader_id,
             .update_term = term,
-            .partition_revision = revision_id});
+            .partition_revision = revision});
         it = new_it;
     } else {
-        /**
-         * Controller is a special case as it revision never but it
-         * configuration revision does. We always update controller
-         * leadership with revision 0 not to lose any of the updates.
-         *
-         * TODO: introduce a feature that will change the behavior for all
-         * the partitions and it will use ntp_config revision instead of a
-         * revision coming from raft.
-         */
-
         // Currently we have to check if revision id is valid since not all
         // the code paths devlivers revision information
         //
         // TODO: always check revision after we will add revision to
         // metadata dissemination requests
-        const bool revision_id_valid = revision_id >= model::revision_id{0};
+        const bool revision_id_valid = revision >= model::revision_id{0};
         if (!is_controller) {
             // skip update for partition with previous revision
-            if (
-              revision_id_valid
-              && revision_id < it->second.partition_revision) {
+            if (revision_id_valid && revision < it->second.partition_revision) {
                 vlog(
                   clusterlog.trace,
                   "skip update for partition {} with previous revision {} "
                   "current "
                   "revision {}",
                   ntp,
-                  revision_id,
+                  revision,
                   it->second.partition_revision);
                 return;
             }
             // reset the term for new ntp revision
-            if (
-              revision_id_valid
-              && revision_id > it->second.partition_revision) {
+            if (revision_id_valid && revision > it->second.partition_revision) {
                 it->second.update_term = model::term_id{};
             }
         }
@@ -188,7 +203,7 @@ void partition_leaders_table::update_partition_leader(
         it->second.current_leader = leader_id;
         it->second.update_term = term;
         if (revision_id_valid) {
-            it->second.partition_revision = revision_id;
+            it->second.partition_revision = revision;
         }
     }
     vlog(

@@ -14,10 +14,12 @@
 #include "cluster/fwd.h"
 #include "cluster/ntp_callbacks.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "utils/expiring_promise.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
 
 #include <absl/container/node_hash_map.h>
@@ -33,7 +35,10 @@ namespace cluster {
 /// received by cluster::metadata_dissemination_service.
 class partition_leaders_table {
 public:
-    explicit partition_leaders_table(ss::sharded<topic_table>&);
+    explicit partition_leaders_table(
+      ss::sharded<topic_table>&,
+      ss::sharded<features::feature_table>&,
+      ss::sharded<ss::abort_source>&);
 
     ss::future<> stop();
 
@@ -85,6 +90,7 @@ public:
     void update_partition_leader(
       const model::ntp&,
       model::revision_id,
+      model::initial_revision_id,
       model::term_id,
       std::optional<model::node_id>);
 
@@ -202,6 +208,8 @@ private:
     std::optional<leader_meta>
       find_leader_meta(model::topic_namespace_view, model::partition_id) const;
 
+    void enable_initial_revision_use();
+
     absl::node_hash_map<leader_key, leader_meta, leader_key_hash, leader_key_eq>
       _leaders;
 
@@ -218,8 +226,11 @@ private:
     promises_t _leader_promises;
 
     ss::sharded<topic_table>& _topic_table;
-
+    ss::sharded<features::feature_table>& _features;
+    ss::sharded<ss::abort_source>& _as;
     ntp_callbacks<leader_change_cb_t> _watchers;
+    bool _use_initial_revision = false;
+    ss::gate _gate;
 };
 
 } // namespace cluster
