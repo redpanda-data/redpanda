@@ -83,9 +83,11 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
@@ -3452,6 +3454,89 @@ admin_server::cloud_storage_usage_handler(
     }
 }
 
+namespace {
+
+ss::json::json_return_type
+fill_status(cluster::consensus_ptr raft, model::ntp ntp) {
+    if (!raft->is_leader()) {
+        throw ss::httpd::server_error_exception(
+          fmt_with_ctx(fmt::format, "Can not find leader for ntp {}", ntp));
+    }
+
+    seastar::httpd::debug_json::raft_state ans;
+
+    seastar::httpd::debug_json::raft_leader_state leader_metrics;
+    leader_metrics.id = raft->get_leader_id().value();
+    leader_metrics.term = raft->term();
+    leader_metrics.commit_index = raft->committed_offset();
+    leader_metrics.flushed_offset = raft->flushed_offset();
+    leader_metrics.last_quorum_replicated_index
+      = raft->last_quorum_replicated_index();
+    leader_metrics.majority_replicated_index
+      = raft->majority_replicated_index();
+    leader_metrics.visibility_upper_bound_index
+      = raft->visibility_upper_bound_index();
+
+    ans.leader_info = leader_metrics;
+
+    auto followers_info = raft->get_follower_metrics();
+    for (const auto& [_, follower_stat] : raft->get_follower_stats()) {
+        seastar::httpd::debug_json::raft_follower_state metrics;
+        metrics.id = follower_stat.node_id.id();
+        metrics.last_flushed_log_index = follower_stat.last_flushed_log_index;
+        metrics.last_dirty_log_index = follower_stat.last_dirty_log_index;
+        metrics.match_index = follower_stat.match_index;
+        metrics.next_index = follower_stat.next_index;
+        metrics.last_sent_offset = follower_stat.last_sent_offset;
+        metrics.heartbeats_failed = follower_stat.heartbeats_failed;
+        metrics.is_learner = follower_stat.is_learner;
+        metrics.ms_since_last_heartbeat
+          = std::chrono::duration_cast<std::chrono::milliseconds>(
+              raft::clock_type::now()
+              - follower_stat.last_received_reply_timestamp)
+              .count();
+        ans.followers.push(metrics);
+    }
+
+    return ans;
+}
+
+} // namespace
+
+ss::future<ss::json::json_return_type>
+admin_server::get_raft_state_handler(std::unique_ptr<ss::httpd::request> req) {
+    const model::ntp ntp = parse_ntp_from_request(req->param);
+
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, ntp);
+    }
+
+    const bool is_controller = ntp == model::controller_ntp;
+    cluster::consensus_ptr raft;
+
+    if (is_controller) {
+        co_return co_await ss::smp::submit_to(
+          ss::shard_id(0),
+          [ntp, this]() -> ss::future<ss::json::json_return_type> {
+              return ss::make_ready_future<ss::json::json_return_type>(
+                fill_status(_controller->get_raft0(), ntp));
+          });
+    } else {
+        auto shard = _shard_table.local().shard_for(ntp);
+        if (!shard) {
+            throw ss::httpd::not_found_exception(
+              fmt::format("Could not find shard for ntp: {}", ntp));
+        }
+        co_return co_await _partition_manager.invoke_on(
+          shard.value(),
+          [ntp](auto& pm) -> ss::future<ss::json::json_return_type> {
+              auto partition = pm.get(ntp);
+              return ss::make_ready_future<ss::json::json_return_type>(
+                fill_status(partition->raft(), ntp));
+          });
+    }
+}
+
 void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
@@ -3540,6 +3625,13 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           return cloud_storage_usage_handler(std::move(req));
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_raft_state,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_raft_state_handler(std::move(req));
       });
 }
 ss::future<ss::json::json_return_type>

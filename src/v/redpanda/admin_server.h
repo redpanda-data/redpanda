@@ -378,6 +378,10 @@ private:
     ss::future<ss::json::json_return_type>
       self_test_get_results_handler(std::unique_ptr<ss::httpd::request>);
 
+    /// Debug routes
+    ss::future<ss::json::json_return_type>
+      get_raft_state_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<ss::json::json_return_type>
       redpanda_services_restart_handler(std::unique_ptr<ss::httpd::request>);
 
