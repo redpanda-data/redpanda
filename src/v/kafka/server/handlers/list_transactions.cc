@@ -30,36 +30,6 @@
 
 namespace kafka {
 
-namespace {
-
-bool filter_tx(
-  const list_transactions_request& req, const cluster::tm_transaction& tx) {
-    if (!req.data.producer_id_filters.empty()) {
-        if (std::none_of(
-              req.data.producer_id_filters.begin(),
-              req.data.producer_id_filters.end(),
-              [pid = tx.pid.get_id()](const auto& provided_pid) {
-                  return pid == provided_pid;
-              })) {
-            return false;
-        }
-    }
-
-    if (!req.data.state_filters.empty()) {
-        if (std::none_of(
-              req.data.state_filters.begin(),
-              req.data.state_filters.end(),
-              [status = tx.get_kafka_status()](const auto& provided_status) {
-                  return status == provided_status;
-              })) {
-            return false;
-        }
-    }
-    return true;
-}
-
-} // namespace
-
 template<>
 ss::future<response_ptr>
 list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
@@ -68,6 +38,34 @@ list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
     log_request(ctx.header(), request);
 
     list_transactions_response response;
+
+    auto filter_tx = [](
+                       const list_transactions_request& req,
+                       const cluster::tm_transaction& tx) -> bool {
+        if (!req.data.producer_id_filters.empty()) {
+            if (std::none_of(
+                  req.data.producer_id_filters.begin(),
+                  req.data.producer_id_filters.end(),
+                  [pid = tx.pid.get_id()](const auto& provided_pid) {
+                      return pid == provided_pid;
+                  })) {
+                return false;
+            }
+        }
+
+        if (!req.data.state_filters.empty()) {
+            if (std::none_of(
+                  req.data.state_filters.begin(),
+                  req.data.state_filters.end(),
+                  [status = tx.get_kafka_status()](
+                    const auto& provided_status) {
+                      return status == provided_status;
+                  })) {
+                return false;
+            }
+        }
+        return true;
+    };
 
     auto& tx_frontend = ctx.tx_gateway_frontend();
     auto txs = co_await tx_frontend.get_all_transactions();
