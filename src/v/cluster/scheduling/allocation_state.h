@@ -42,6 +42,13 @@ public:
     void recommission_node(model::node_id);
     bool is_empty(model::node_id) const;
     bool contains_node(model::node_id n) const { return _nodes.contains(n); }
+    std::optional<std::reference_wrapper<const node_ptr>>
+    get_node(model::node_id n) {
+        if (!_nodes.contains(n)) {
+            return {};
+        }
+        return std::cref(_nodes.at(n));
+    }
     const underlying_t& allocation_nodes() const { return _nodes; }
     int16_t available_nodes() const;
 

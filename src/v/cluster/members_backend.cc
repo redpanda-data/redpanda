@@ -855,16 +855,19 @@ ss::future<std::error_code> members_backend::reconcile() {
             co_await do_remove_node(meta.update->id, meta.update->offset);
         } else {
             // Decommissioning still in progress
+            auto node = _allocator.local().state().get_node(meta.update->id);
+            auto node_debug = node ? fmt::format("{}", *(node->get())) : "none";
             vlog(
               clusterlog.info,
               "[update: {}] decommissioning in progress. draining: {} "
               "all_reallocations_finished: {}, allocator_empty: {} "
-              "updates_in_progress:{}",
+              "updates_in_progress:{}, alloc_node: {}",
               meta.update,
               is_draining,
               all_reallocations_finished,
               allocator_empty,
-              updates_in_progress);
+              updates_in_progress,
+              node_debug);
             if (!allocator_empty && all_reallocations_finished) {
                 // recalculate reallocations
                 vlog(

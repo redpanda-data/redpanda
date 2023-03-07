@@ -11,6 +11,8 @@
 
 #include "cluster/scheduling/allocation_node.h"
 
+#include "cluster/logger.h"
+
 #include <fmt/ranges.h>
 
 namespace cluster {
@@ -54,6 +56,7 @@ allocation_node::allocate(const partition_allocation_domain domain) {
     (*it)++; // increment the weights
     _allocated_partitions++;
     ++_allocated_domain_partitions[domain];
+    vlog(clusterlog.trace, "allocate node_id: {} domain: {}", id(), domain);
     return std::distance(_weights.begin(), it);
 }
 
@@ -79,6 +82,12 @@ void allocation_node::deallocate_on(
       core,
       domain,
       *this);
+    vlog(
+      clusterlog.trace,
+      "deallocate node_id: {} domain: {} shard: {}",
+      id(),
+      domain,
+      core);
     --domain_partitions;
 
     _allocated_partitions--;

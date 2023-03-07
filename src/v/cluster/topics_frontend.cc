@@ -1230,6 +1230,12 @@ ss::future<std::error_code> topics_frontend::increase_replication_factor(
 
           auto ntp = model::ntp(topic.ns, topic.tp, p_id);
 
+          vlog(
+            clusterlog.debug,
+            "[ntp: {}, {} -> -]  trying to reassign partition replicas",
+            ntp,
+            assignment.replicas);
+
           return _allocator
             .invoke_on(
               partition_allocator::shard,

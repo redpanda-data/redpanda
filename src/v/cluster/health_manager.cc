@@ -79,6 +79,12 @@ ss::future<bool> health_manager::ensure_partition_replication(model::ntp ntp) {
         co_return true;
     }
 
+    vlog(
+      clusterlog.debug,
+      "[ntp: {}, {} -> -]  trying to reassign partition replicas",
+      ntp,
+      assignment->replicas);
+
     partition_constraints constraints(
       ntp.tp.partition, _target_replication_factor);
 
