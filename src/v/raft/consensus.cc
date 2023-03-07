@@ -299,6 +299,17 @@ consensus::success_reply consensus::update_follower_index(
         // current node may change it.
         return success_reply::yes;
     }
+    auto config = _configuration_manager.get_latest();
+    if (!config.contains(node)) {
+        // We might have sent an append_entries just before removing
+        // a node from configuration: ignore its reply, to avoid
+        // doing things like initiating recovery to this removed node.
+        vlog(
+          _ctxlog.debug,
+          "Ignoring reply from node {}, it is not in members list",
+          physical_node);
+        return success_reply::no;
+    }
 
     auto it = _fstats.find(node);
 
@@ -490,18 +501,6 @@ void consensus::process_append_entries_reply(
   result<append_entries_reply> r,
   follower_req_seq seq_id,
   model::offset dirty_offset) {
-    auto config = _configuration_manager.get_latest();
-    if (!config.contains_broker(physical_node)) {
-        // We might have sent an append_entries just before removing
-        // a node from configuration: ignore its reply, to avoid
-        // doing things like initiating recovery to this removed node.
-        vlog(
-          _ctxlog.debug,
-          "Ignoring reply from node {}, it is not in members list",
-          physical_node);
-        return;
-    }
-
     auto is_success = update_follower_index(
       physical_node, r, seq_id, dirty_offset);
     if (is_success) {
@@ -966,7 +965,7 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
               return ss::make_ready_future<std::error_code>(
                 errc::configuration_change_in_progress);
           }
-          maybe_upgrade_configuration(latest_cfg);
+          maybe_upgrade_configuration_to_v4(latest_cfg);
           result<group_configuration> res = f(std::move(latest_cfg));
           if (res) {
               if (res.value().revision_id() < config().revision_id()) {
@@ -983,48 +982,38 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
       });
 }
 
-ss::future<std::error_code> consensus::add_group_members(
-  std::vector<model::broker> nodes, model::revision_id new_revision) {
-    vlog(_ctxlog.trace, "Adding members: {}", nodes);
-    return change_configuration([nodes = std::move(nodes), new_revision](
+ss::future<std::error_code> consensus::add_group_member(
+  model::broker node, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Adding member: {}", node);
+    return change_configuration([node = std::move(node), new_revision](
                                   group_configuration current) mutable {
-        auto contains_already = std::any_of(
-          nodes.cbegin(),
-          nodes.cend(),
-          [&current](const model::broker& broker) {
-              return current.contains_broker(broker.id());
-          });
-
-        if (contains_already) {
-            return result<group_configuration>(errc::node_already_exists);
+        using ret_t = result<group_configuration>;
+        if (current.contains_broker(node.id())) {
+            return ret_t{errc::node_already_exists};
         }
+        current.add_broker(std::move(node), new_revision);
         current.set_revision(new_revision);
-        current.add(std::move(nodes), new_revision);
 
-        return result<group_configuration>(std::move(current));
+        return ret_t{std::move(current)};
     });
 }
 
-ss::future<std::error_code> consensus::remove_members(
-  std::vector<model::node_id> ids, model::revision_id new_revision) {
-    vlog(_ctxlog.trace, "Removing members: {}", ids);
+ss::future<std::error_code>
+consensus::remove_member(model::node_id id, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Removing member: {}", id);
     return change_configuration(
-      [ids = std::move(ids), new_revision](group_configuration current) {
-          auto all_exists = std::all_of(
-            ids.cbegin(), ids.cend(), [&current](model::node_id id) {
-                return current.contains_broker(id);
-            });
-          if (!all_exists) {
-              return result<group_configuration>(errc::node_does_not_exists);
+      [id, new_revision](group_configuration current) {
+          using ret_t = result<group_configuration>;
+          if (!current.contains_broker(id)) {
+              return ret_t{errc::node_does_not_exists};
           }
           current.set_revision(new_revision);
-          current.remove(ids);
+          current.remove_broker(id);
 
           if (current.current_config().voters.empty()) {
-              return result<group_configuration>(
-                errc::invalid_configuration_update);
+              return ret_t{errc::invalid_configuration_update};
           }
-          return result<group_configuration>(std::move(current));
+          return ret_t{std::move(current)};
       });
 }
 
@@ -1034,10 +1023,57 @@ ss::future<std::error_code> consensus::replace_configuration(
     return change_configuration(
       [new_brokers = std::move(new_brokers),
        new_revision](group_configuration current) mutable {
-          current.replace(std::move(new_brokers), new_revision);
+          using ret_t = result<group_configuration>;
+          current.replace_brokers(std::move(new_brokers), new_revision);
           current.set_revision(new_revision);
-          return result<group_configuration>(std::move(current));
+          return ret_t{std::move(current)};
       });
+}
+
+ss::future<std::error_code>
+consensus::add_group_member(vnode node, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Adding member: {}", node);
+    return change_configuration(
+      [node, new_revision](group_configuration current) mutable {
+          using ret_t = result<group_configuration>;
+          if (current.contains(node)) {
+              return ret_t{errc::node_already_exists};
+          }
+          current.set_version(raft::group_configuration::v_5);
+          current.add(node, new_revision);
+
+          return ret_t{std::move(current)};
+      });
+}
+
+ss::future<std::error_code>
+consensus::remove_member(vnode node, model::revision_id new_revision) {
+    vlog(_ctxlog.trace, "Removing member: {}", node);
+    return change_configuration(
+      [node, new_revision](group_configuration current) {
+          using ret_t = result<group_configuration>;
+          if (!current.contains(node)) {
+              return ret_t{errc::node_does_not_exists};
+          }
+          current.set_version(raft::group_configuration::v_5);
+          current.remove(node, new_revision);
+
+          if (current.current_config().voters.empty()) {
+              return ret_t{errc::invalid_configuration_update};
+          }
+          return ret_t{std::move(current)};
+      });
+}
+
+ss::future<std::error_code> consensus::replace_configuration(
+  std::vector<vnode> nodes, model::revision_id new_revision) {
+    return change_configuration([nodes = std::move(nodes), new_revision](
+                                  group_configuration current) mutable {
+        current.set_version(raft::group_configuration::v_5);
+        current.replace(nodes, new_revision);
+
+        return result<group_configuration>{std::move(current)};
+    });
 }
 
 template<typename Func>
@@ -1341,13 +1377,14 @@ ss::future<> consensus::do_start() {
                 // set last heartbeat timestamp to prevent skipping first
                 // election
                 _hbeat = clock_type::time_point::min();
-                auto conf = _configuration_manager.get_latest().brokers();
-                if (!conf.empty() && _self.id() == conf.begin()->id()) {
+                auto conf
+                  = _configuration_manager.get_latest().current_config();
+                if (!conf.voters.empty() && _self == conf.voters.front()) {
                     // Arm immediate election for single node scenarios
                     // or for the very first start of the preferred leader
                     // in a multi-node group.  Otherwise use standard election
                     // timeout.
-                    if (conf.size() > 1 && _term > model::term_id{0}) {
+                    if (conf.voters.size() > 1 && _term > model::term_id{0}) {
                         next_election += _jit.next_duration();
                     }
                 } else {
@@ -2207,7 +2244,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
-          maybe_upgrade_configuration(cfg);
+          maybe_upgrade_configuration_to_v4(cfg);
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
           for (auto& b : batches) {
@@ -2235,13 +2272,13 @@ ss::future<std::error_code> consensus::replicate_configuration(
       });
 }
 
-void consensus::maybe_upgrade_configuration(group_configuration& cfg) {
-    if (unlikely(cfg.version() < group_configuration::version_t(4))) {
+void consensus::maybe_upgrade_configuration_to_v4(group_configuration& cfg) {
+    if (unlikely(cfg.version() < group_configuration::v_4)) {
         if (
           _features.is_active(features::feature::raft_improved_configuration)
           && cfg.get_state() == configuration_state::simple) {
             vlog(_ctxlog.debug, "Upgrading configuration version");
-            cfg.set_version(group_configuration::current_version);
+            cfg.set_version(raft::group_configuration::v_4);
         }
     }
 }
@@ -3227,8 +3264,7 @@ bool consensus::should_reconnect_follower(vnode id) {
 }
 
 voter_priority consensus::next_target_priority() {
-    auto node_count = std::max<size_t>(
-      _configuration_manager.get_latest().brokers().size(), 1);
+    auto node_count = std::max<size_t>(_fstats.size() + 1, 1);
 
     return voter_priority(std::max<voter_priority::type>(
       (_target_priority / node_count) * (node_count - 1), min_voter_priority));
@@ -3245,14 +3281,11 @@ voter_priority consensus::get_node_priority(vnode rni) const {
     }
 
     auto& latest_cfg = _configuration_manager.get_latest();
-    auto& brokers = latest_cfg.brokers();
+    auto nodes = latest_cfg.all_nodes();
 
-    auto it = std::find_if(
-      brokers.cbegin(), brokers.cend(), [rni](const model::broker& b) {
-          return b.id() == rni.id();
-      });
+    auto it = std::find(nodes.begin(), nodes.end(), rni);
 
-    if (it == brokers.cend()) {
+    if (it == nodes.end()) {
         /**
          * If node is not present in current configuration i.e. was added to the
          * cluster, return max, this way for joining node we will use
@@ -3261,14 +3294,14 @@ voter_priority consensus::get_node_priority(vnode rni) const {
         return voter_priority::max();
     }
 
-    auto idx = std::distance(brokers.cbegin(), it);
+    auto idx = std::distance(nodes.begin(), it);
 
     /**
      * Voter priority is inversly proportion to node position in brokers
      * vector.
      */
     return voter_priority(
-      (brokers.size() - idx) * (voter_priority::max() / brokers.size()));
+      (nodes.size() - idx) * (voter_priority::max() / nodes.size()));
 }
 
 model::offset consensus::get_latest_configuration_offset() const {

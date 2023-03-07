@@ -56,7 +56,8 @@ struct config_manager_fixture {
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))
       , _cfg_mgr(
-          raft::group_configuration({}, model::revision_id(0)),
+          raft::group_configuration(
+            std::vector<raft::vnode>{}, model::revision_id(0)),
           raft::group_id(1),
           _storage,
           _logger) {
@@ -115,7 +116,8 @@ struct config_manager_fixture {
 
     void validate_recovery() {
         raft::configuration_manager recovered(
-          raft::group_configuration({}, model::revision_id(0)),
+          raft::group_configuration(
+            std::vector<raft::vnode>{}, model::revision_id(0)),
           raft::group_id(1),
           _storage,
           _logger);
@@ -248,7 +250,8 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
     auto configurations = test_configurations();
 
     raft::configuration_manager new_cfg_manager(
-      raft::group_configuration({}, model::revision_id(1)),
+      raft::group_configuration(
+        std::vector<raft::vnode>{}, model::revision_id(1)),
       raft::group_id(1),
       _storage,
       _logger);

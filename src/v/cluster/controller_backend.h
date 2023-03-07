@@ -372,6 +372,8 @@ private:
 
     void housekeeping();
     void setup_metrics();
+
+    bool command_based_membership_active() const;
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;
     ss::sharded<partition_manager>& _partition_manager;

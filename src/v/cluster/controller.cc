@@ -127,15 +127,13 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
       [](const model::broker& b) { return b.id(); });
 
     return validate_configuration_invariants()
-      .then(
-        [this,
-         initial_raft0_brokers = std::move(initial_raft0_brokers)]() mutable {
-            return create_raft0(
-              _partition_manager,
-              _shard_table,
-              config::node().data_directory().as_sstring(),
-              std::move(initial_raft0_brokers));
-        })
+      .then([this, initial_raft0_brokers]() mutable {
+          return create_raft0(
+            _partition_manager,
+            _shard_table,
+            config::node().data_directory().as_sstring(),
+            std::move(initial_raft0_brokers));
+      })
       .then([this](consensus_ptr c) { _raft0 = c; })
       .then([this] { return _partition_leaders.start(std::ref(_tp_state)); })
       .then(
@@ -277,6 +275,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_api),
             std::ref(_members_manager),
             std::ref(_members_frontend),
+            std::ref(_feature_table),
             _raft0,
             std::ref(_as));
       })
@@ -294,9 +293,13 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
       })
       .then(
         [this] { return _drain_manager.invoke_on_all(&drain_manager::start); })
-      .then([this] {
+      .then([this, initial_raft0_brokers]() mutable {
           return _members_manager.invoke_on(
-            members_manager::shard, &members_manager::start);
+            members_manager::shard,
+            [initial_raft0_brokers = std::move(initial_raft0_brokers)](
+              members_manager& manager) mutable {
+                return manager.start(std::move(initial_raft0_brokers));
+            });
       })
       .then([this] {
           /**
@@ -632,6 +635,7 @@ ss::future<> controller::cluster_creation_hook(cluster_discovery& discovery) {
         cmd_data.node_ids_by_uuid = std::move(discovery.get_node_ids_by_uuid());
         cmd_data.founding_version
           = features::feature_table::get_latest_logical_version();
+        cmd_data.initial_nodes = discovery.founding_brokers();
         co_return co_await create_cluster(std::move(cmd_data));
     }
 

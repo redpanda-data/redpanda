@@ -12,6 +12,7 @@
 #include "raft/group_configuration.h"
 
 #include <boost/test/tools/old/interface.hpp>
+#include <fmt/ostream.h>
 #define BOOST_TEST_MODULE raft
 #include "raft/types.h"
 
@@ -52,20 +53,22 @@ BOOST_AUTO_TEST_CASE(should_return_false_as_it_does_not_contain_machine) {
 
 BOOST_AUTO_TEST_CASE(test_demoting_removed_voters) {
     raft::group_configuration test_grp = raft::group_configuration(
-      {create_broker(3)}, model::revision_id(0));
+      std::vector<model::broker>{create_broker(3)}, model::revision_id(0));
 
     // add brokers
-    test_grp.add({create_broker(1), create_broker(2)}, model::revision_id{0});
-
-    // promote added nodes to voteres
+    test_grp.add_broker(create_broker(1), model::revision_id{0});
     test_grp.promote_to_voter(
       raft::vnode(model::node_id{1}, model::revision_id(0)));
+    test_grp.finish_configuration_transition();
+
+    test_grp.add_broker(create_broker(2), model::revision_id{0});
     test_grp.promote_to_voter(
       raft::vnode(model::node_id{2}, model::revision_id(0)));
+    test_grp.finish_configuration_transition();
 
     test_grp.finish_configuration_transition();
     // remove single broker
-    test_grp.remove({model::node_id(1)});
+    test_grp.remove_broker(model::node_id(1));
     // finish configuration transition
 
     auto demoted = test_grp.maybe_demote_removed_voters();
@@ -82,13 +85,13 @@ BOOST_AUTO_TEST_CASE(test_demoting_removed_voters) {
 
 BOOST_AUTO_TEST_CASE(test_aborting_configuration_change) {
     raft::group_configuration test_grp = raft::group_configuration(
-      {create_broker(3)}, model::revision_id(0));
+      std::vector<model::broker>{create_broker(3)}, model::revision_id(0));
 
     auto original_brokers = test_grp.brokers();
     auto original_voters = test_grp.current_config().voters;
 
     // add brokers
-    test_grp.add({create_broker(1), create_broker(2)}, model::revision_id{0});
+    test_grp.add_broker(create_broker(1), model::revision_id{0});
 
     // abort change
     test_grp.abort_configuration_change(model::revision_id{1});
@@ -101,10 +104,10 @@ BOOST_AUTO_TEST_CASE(test_aborting_configuration_change) {
 
 BOOST_AUTO_TEST_CASE(test_reverting_configuration_change_when_adding) {
     raft::group_configuration test_grp = raft::group_configuration(
-      {create_broker(3)}, model::revision_id(0));
+      std::vector<model::broker>{create_broker(3)}, model::revision_id(0));
 
     // add brokers
-    test_grp.add({create_broker(1), create_broker(2)}, model::revision_id{0});
+    test_grp.add_broker(create_broker(1), model::revision_id{0});
 
     // abort change
     test_grp.cancel_configuration_change(model::revision_id{1});

@@ -2333,7 +2333,7 @@ struct user_and_credential
 struct bootstrap_cluster_cmd_data
   : serde::envelope<
       bootstrap_cluster_cmd_data,
-      serde::version<1>,
+      serde::version<2>,
       serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
@@ -2354,6 +2354,7 @@ struct bootstrap_cluster_cmd_data
     // from this version. Indicates the version of Redpanda of
     // the node that generated the bootstrap record.
     cluster_version founding_version{invalid_version};
+    std::vector<model::broker> initial_nodes;
 };
 
 enum class reconciliation_status : int8_t {

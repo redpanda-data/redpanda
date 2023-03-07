@@ -140,26 +140,43 @@ void partition_leaders_table::update_partition_leader(
             .partition_revision = revision_id});
         it = new_it;
     } else {
-        // Currently we have to check if revision id is valid since not all the
-        // code paths devlivers revision information
+        /**
+         * Controller is a special case as it revision never but it
+         * configuration revision does. We always update controller
+         * leadership with revision 0 not to lose any of the updates.
+         *
+         * TODO: introduce a feature that will change the behavior for all
+         * the partitions and it will use ntp_config revision instead of a
+         * revision coming from raft.
+         */
+
+        // Currently we have to check if revision id is valid since not all
+        // the code paths devlivers revision information
         //
-        // TODO: always check revision after we will add revision to metadata
-        // dissemination requests
+        // TODO: always check revision after we will add revision to
+        // metadata dissemination requests
         const bool revision_id_valid = revision_id >= model::revision_id{0};
-        // skip update for partition with previous revision
-        if (revision_id_valid && revision_id < it->second.partition_revision) {
-            vlog(
-              clusterlog.trace,
-              "skip update for partition {} with previous revision {} current "
-              "revision {}",
-              ntp,
-              revision_id,
-              it->second.partition_revision);
-            return;
-        }
-        // reset the term for new ntp revision
-        if (revision_id_valid && revision_id > it->second.partition_revision) {
-            it->second.update_term = model::term_id{};
+        if (!is_controller) {
+            // skip update for partition with previous revision
+            if (
+              revision_id_valid
+              && revision_id < it->second.partition_revision) {
+                vlog(
+                  clusterlog.trace,
+                  "skip update for partition {} with previous revision {} "
+                  "current "
+                  "revision {}",
+                  ntp,
+                  revision_id,
+                  it->second.partition_revision);
+                return;
+            }
+            // reset the term for new ntp revision
+            if (
+              revision_id_valid
+              && revision_id > it->second.partition_revision) {
+                it->second.update_term = model::term_id{};
+            }
         }
 
         // existing partition

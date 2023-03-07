@@ -513,7 +513,7 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
     BOOST_REQUIRE(
       std::chrono::time_point_cast<std::chrono::milliseconds>(d.cluster_time)
       == std::chrono::time_point_cast<std::chrono::milliseconds>(ct));
-    BOOST_REQUIRE_EQUAL(d.latest_configuration, cfg);
+    BOOST_REQUIRE_EQUAL(d.latest_configuration.all_nodes(), cfg.all_nodes());
     BOOST_REQUIRE_EQUAL(d.log_start_delta, delta);
 }
 

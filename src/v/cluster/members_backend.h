@@ -90,6 +90,7 @@ public:
       ss::sharded<controller_api>&,
       ss::sharded<members_manager>&,
       ss::sharded<members_frontend>&,
+      ss::sharded<features::feature_table>&,
       consensus_ptr,
       ss::sharded<ss::abort_source>&);
 
@@ -99,6 +100,8 @@ public:
     ss::future<std::error_code> request_rebalance();
 
 private:
+    static constexpr model::revision_id raft0_revision{0};
+    using update_t = members_manager::node_update_type;
     struct node_replicas {
         size_t allocated_replicas;
         size_t max_capacity;
@@ -142,6 +145,17 @@ private:
     bool should_stop_rebalancing_update(const update_meta&) const;
 
     static size_t calculate_total_replicas(const node_replicas_map_t&);
+    ss::future<std::error_code>
+    update_raft0_configuration(const members_manager::node_update&);
+
+    ss::future<std::error_code>
+      add_to_raft0(model::node_id, model::revision_id);
+    ss::future<std::error_code>
+      remove_from_raft0(model::node_id, model::revision_id);
+
+    ss::future<> reconcile_raft0_updates();
+    ss::future<std::error_code> do_remove_node(model::node_id, model::offset);
+
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<partition_allocator>& _allocator;
@@ -149,6 +163,7 @@ private:
     ss::sharded<controller_api>& _api;
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<members_frontend>& _members_frontend;
+    ss::sharded<features::feature_table>& _features;
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
@@ -157,6 +172,7 @@ private:
 
     // replicas reallocations in progress
     std::vector<update_meta> _updates;
+    ss::circular_buffer<members_manager::node_update> _raft0_updates;
     std::chrono::milliseconds _retry_timeout;
     ss::condition_variable _new_updates;
     ss::metrics::metric_groups _metrics;

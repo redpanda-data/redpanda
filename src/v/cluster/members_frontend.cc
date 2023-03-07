@@ -9,6 +9,7 @@
 
 #include "cluster/members_frontend.h"
 
+#include "cluster/commands.h"
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
@@ -175,6 +176,21 @@ members_frontend::set_maintenance_mode(model::node_id id, bool enabled) {
     }
 
     co_return res.value().data.error;
+}
+
+ss::future<std::error_code> members_frontend::remove_node(model::node_id id) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+    if (!leader) {
+        co_return errc::no_leader_controller;
+    }
+    /**
+     * There is no need to forward the request to current controller node as
+     * nodes are removed only by the node currently being a controller leader.
+     */
+    if (leader != _self) {
+        co_return errc::not_leader_controller;
+    }
+    co_return co_await do_replicate_node_command<remove_node_cmd>(id);
 }
 
 } // namespace cluster

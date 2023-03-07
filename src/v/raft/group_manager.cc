@@ -10,9 +10,11 @@
 #include "raft/group_manager.h"
 
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "raft/group_configuration.h"
 #include "raft/rpc_client_protocol.h"
 #include "resource_mgmt/io_priority.h"
 
@@ -81,12 +83,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   storage::log log,
   with_learner_recovery_throttle enable_learner_recovery_throttle) {
     auto revision = log.config().get_revision();
-    auto raft_cfg = raft::group_configuration(std::move(nodes), revision);
-
-    if (unlikely(!_feature_table.is_active(
-          features::feature::raft_improved_configuration))) {
-        raft_cfg.set_version(group_configuration::version_t(3));
-    }
+    auto raft_cfg = create_initial_configuration(std::move(nodes), revision);
 
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
@@ -116,6 +113,35 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
             return raft;
         });
     });
+}
+
+raft::group_configuration group_manager::create_initial_configuration(
+  std::vector<model::broker> initial_brokers,
+  model::revision_id revision) const {
+    /**
+     * Decide which raft configuration to use for the partition, if all nodes
+     * are able to understand configuration without broker information the
+     * configuration will only use raft::vnode
+     */
+    if (likely(_feature_table.is_active(
+          features::feature::membership_change_controller_cmds))) {
+        std::vector<vnode> nodes;
+        nodes.reserve(initial_brokers.size());
+        for (auto& b : initial_brokers) {
+            nodes.emplace_back(b.id(), revision);
+        }
+
+        return {std::move(nodes), revision};
+    }
+
+    // old configuration with brokers
+    auto raft_cfg = raft::group_configuration(
+      std::move(initial_brokers), revision);
+    if (unlikely(!_feature_table.is_active(
+          features::feature::raft_improved_configuration))) {
+        raft_cfg.set_version(group_configuration::v_3);
+    }
+    return raft_cfg;
 }
 
 ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
