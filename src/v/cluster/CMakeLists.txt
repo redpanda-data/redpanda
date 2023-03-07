@@ -155,6 +155,7 @@ v_cc_library(
     topic_recovery_status_frontend.cc
     node_isolation_watcher.cc
     topic_recovery_status_types.cc
+    topic_table_partition_generator.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
