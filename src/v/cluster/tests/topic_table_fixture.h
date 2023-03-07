@@ -97,6 +97,7 @@ struct topic_table_fixture {
 
         auto pas = allocator.local()
                      .allocate(std::move(req))
+                     .get()
                      .value()
                      ->get_assignments();
 
