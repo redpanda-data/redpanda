@@ -150,3 +150,24 @@ class MetricCheck(object):
                 return False
 
         return True
+
+    def evaluate_groups(self, expectations):
+        """
+        Similar to `evaluate`, but allowing for mutliple metrics per comparator. Where
+        each comparator will recieve two dicts. The first for a dict of old samples. And
+        the second for a dict of new samples.
+        """
+        metrics = [metric for e in expectations for metric in e[0]]
+        samples = self._capture(metrics)
+
+        for (metrics, comparator) in expectations:
+            old_samples_dict = dict((k, self._initial_samples[k])
+                                    for k in metrics
+                                    if k in self._initial_samples)
+            if len(old_samples_dict) != len(samples):
+                return False
+
+            if not comparator(old_samples_dict, samples):
+                return False
+
+        return True
