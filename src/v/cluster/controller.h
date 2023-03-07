@@ -159,6 +159,8 @@ public:
         return _raft0->committed_offset();
     }
 
+    consensus_ptr get_raft0() { return _raft0; }
+
 private:
     friend controller_probe;
 
