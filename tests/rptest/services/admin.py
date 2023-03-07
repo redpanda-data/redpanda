@@ -884,3 +884,7 @@ class Admin:
         return self._request("post",
                              "debug/refresh_disk_health_info",
                              node=node)
+
+    def get_raft_state(self, namespace, topic, partition):
+        path = f"debug/raft/{namespace}/{topic}/{partition}"
+        return self._request("GET", path).json()
