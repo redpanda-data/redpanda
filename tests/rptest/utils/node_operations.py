@@ -227,7 +227,10 @@ class NodeOpsExecutor():
                 return False
 
         wait_until(decommissioned, timeout_sec=self.timeout, backoff_sec=1)
-        wait_until(lambda: self.has_status(node_id, "draining"),
+        # For quick decommissions with very little to no data movement, `draining` and removal
+        # can be quick succession, so we check for either.
+        wait_until(lambda: self.has_status(node_id, "draining") or self.
+                   node_removed(node_id),
                    timeout_sec=self.timeout,
                    backoff_sec=1)
 
