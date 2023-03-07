@@ -28,6 +28,7 @@ class topics_frontend;
 class topic_table;
 struct topic_table_delta;
 class topic_table_partition_generator;
+class cloud_storage_size_reducer;
 class members_manager;
 class members_table;
 class metadata_cache;
