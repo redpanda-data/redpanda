@@ -500,6 +500,7 @@ ss::future<> cache::stop() {
     _tracker_timer.cancel();
     _as.request_abort();
     _block_puts_cond.broken();
+    _cleanup_sm.broken();
     if (ss::this_shard_id() == 0) {
         co_await save_access_time_tracker();
     }
