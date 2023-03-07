@@ -22,17 +22,6 @@
 #include <seastar/core/when_all.hh>
 
 namespace kafka {
-namespace {
-ss::future<described_group> describe_group(
-  group_id group, bool include_authorized_operations, request_context& ctx) {
-    auto res = co_await ctx.groups().describe_group(group);
-    if (include_authorized_operations) {
-        res.authorized_operations = details::to_bit_field(
-          details::authorized_operations(ctx, group));
-    }
-    co_return res;
-}
-} // namespace
 
 template<>
 ss::future<response_ptr>
@@ -60,10 +49,14 @@ describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
         std::vector<ss::future<described_group>> described;
         described.reserve(request.data.groups.size());
         for (auto& group_id : request.data.groups) {
-            described.push_back(describe_group(
-              std::move(group_id),
-              request.data.include_authorized_operations,
-              ctx));
+            described.push_back(ctx.groups().describe_group(group_id).then(
+              [&ctx, &request, group_id](auto res) {
+                  if (request.data.include_authorized_operations) {
+                      res.authorized_operations = details::to_bit_field(
+                        details::authorized_operations(ctx, group_id));
+                  }
+                  return res;
+              }));
         }
         response.data.groups = co_await ss::when_all_succeed(
           described.begin(), described.end());
