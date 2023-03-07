@@ -9,6 +9,8 @@
 
 import re
 import time
+import itertools
+import math
 
 from ducktape.utils.util import wait_until
 
@@ -23,7 +25,10 @@ from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
 from rptest.services.kgo_verifier_services import (KgoVerifierProducer,
                                                    KgoVerifierRandomConsumer)
 from rptest.util import firewall_blocked
-import time
+from rptest.utils.node_operations import NodeDecommissionWaiter
+from rptest.utils.si_utils import nodes_report_cloud_segments
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.metrics_check import MetricCheck
 
 
 class TieredStorageWithLoadTest(PreallocNodesTest):
@@ -47,6 +52,8 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
     scaled_segment_size = int(regular_segment_size * scaling_factor)
     num_segments_per_partition = 1000
     unavailable_timeout = 60
+    memory_per_broker_bytes = 96 * 1024 * 1024 * 1024  # 96 GiB
+    msg_size = 128 * 1024
 
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
@@ -460,3 +467,172 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
             self.logger.info(f"Stopping consumers")
             consumer.stop()
             consumer.wait(timeout_sec=600)
+
+    def _consume_from_offset(self, topic_name: str, msg_count: int,
+                             partition: int, starting_offset: str,
+                             timeout_per_topic: int):
+        def consumer_saw_msgs(consumer):
+            self.logger.info(
+                f"Consumer message_count={consumer.message_count} / {msg_count}"
+            )
+            # Tolerate greater-than, because if there were errors during production
+            # there can have been retries.
+            return consumer.message_count >= msg_count
+
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               topic_name,
+                               save_msgs=True,
+                               partitions=[partition],
+                               offset=starting_offset,
+                               num_msgs=msg_count)
+        consumer.start()
+        wait_until(lambda: consumer_saw_msgs(consumer),
+                   timeout_sec=timeout_per_topic,
+                   backoff_sec=0.125)
+
+        consumer.stop()
+        consumer.free()
+
+        if starting_offset.isnumeric():
+            expected_offset = int(starting_offset)
+            actual_offset = int(consumer.messages[0]['offset'])
+            assert expected_offset == actual_offset, "expected_offset != actual_offset"
+
+    def stage_consume_miss_cache(self, producer: KgoVerifierProducer):
+        self.logger.info(f"Starting stage_consume_miss_cache")
+
+        # Get current offsets for topic. We'll use these for starting offsets
+        # for consuming messages after we produce enough data to push them out
+        # of the batch cache.
+        last_offsets = [(p.id, p.high_watermark)
+                        for p in self.rpk.describe_topic(self.topic_name)
+                        if p.high_watermark is not None]
+
+        partition_size_check: list[MetricCheck] = []
+        partition_size_metric = "vectorized_storage_log_partition_size"
+
+        for node in self.redpanda.nodes:
+            partition_size_check.append(
+                MetricCheck(self.logger,
+                            self.redpanda,
+                            node,
+                            partition_size_metric,
+                            reduce=sum))
+
+        # wait for producer to produce enough to exceed the batch cache by some margin
+        # For a test on 4x `is4gen.4xlarge` there is about 0.13 GiB/s of throughput per node.
+        # This would mean we'd be waiting 90GiB / 0.13 GiB/s = 688s or 11.5 minutes to ensure
+        # the cache has been filled by the producer.
+        produce_rate_per_node_bytes_s = self.scaled_data_bps / self.num_brokers
+        batch_cache_max_memory = self.memory_per_broker_bytes
+        time_till_memory_full_per_node = batch_cache_max_memory / produce_rate_per_node_bytes_s
+        required_wait_time_s = 1.5 * time_till_memory_full_per_node
+
+        self.logger.info(
+            f"Expecting to wait {required_wait_time_s} seconds. "
+            f"time_till_memory_full_per_node: {time_till_memory_full_per_node}, "
+            f"produce_rate_per_node_bytes_s: {produce_rate_per_node_bytes_s}")
+
+        current_sent = producer.produce_status.sent
+        expected_sent = math.ceil(
+            (self.num_brokers * batch_cache_max_memory) / self.msg_size)
+
+        self.logger.info(
+            f"{current_sent} currently sent messages. Waiting for {expected_sent} messages to be sent"
+        )
+
+        def producer_complete():
+            number_left = (current_sent +
+                           expected_sent) - producer.produce_status.sent
+            self.logger.info(f"{number_left} messages still need to be sent.")
+            return number_left <= 0
+
+        wait_until(producer_complete,
+                   timeout_sec=required_wait_time_s,
+                   backoff_sec=30)
+
+        post_prod_offsets = [(p.id, p.high_watermark)
+                             for p in self.rpk.describe_topic(self.topic_name)
+                             if p.high_watermark is not None]
+
+        offset_deltas = [
+            (c[0][0], c[0][1] - c[1][1])
+            for c in list(itertools.product(post_prod_offsets, last_offsets))
+            if c[0][0] == c[1][0]
+        ]
+        avg_delta = sum([d[1] for d in offset_deltas]) / len(offset_deltas)
+
+        self.logger.info(
+            f"Finished waiting for batch cache to fill. Avg log offset delta: {avg_delta}"
+        )
+
+        # Report under-replicated status for the context in the case the following check fails
+        s = self.redpanda.metrics_sample(
+            "vectorized_cluster_partition_under_replicated_replicas")
+        if sum(x.value for x in s.samples) == 0:
+            self.logger.info(f"No under-replicated replicas")
+        else:
+            self.logger.info(f"Under-replicated replicas: {s.samples}")
+
+        # Ensure total partition size increased by the amount expected.
+        for check in partition_size_check:
+
+            def check_partition_size(old_size, new_size):
+                self.logger.info(
+                    f"Total increase in size for partitions: {new_size-old_size}, "
+                    f"checked from {check.node.name}")
+
+                unreplicated_size_inc = (new_size - old_size) / 3
+                return unreplicated_size_inc >= batch_cache_max_memory
+
+            check.expect([(partition_size_metric, check_partition_size)])
+
+        # Ensure there are metrics available for the topic we're consuming from
+        for p_id, _ in last_offsets:
+            self._consume_from_offset(self.topic_name, 1, p_id, "newest", 10)
+
+        # Stop the producer temporarily as produce requests can cause
+        # batch cache reads which causes false negatives on cache misses.
+        producer.stop()
+
+        check_batch_cache_reads = []
+        cache_metrics = [
+            "vectorized_storage_log_read_bytes_total",
+            "vectorized_storage_log_cached_read_bytes_total",
+        ]
+
+        for node in self.redpanda.nodes:
+            check_batch_cache_reads.append(
+                MetricCheck(self.logger,
+                            self.redpanda,
+                            node,
+                            cache_metrics,
+                            reduce=sum))
+
+        # start consuming at the offsets recorded before the wait.
+        # at this point we can be sure they are not from the batch cache.
+        messages_to_read = 1
+        timeout_seconds = 60
+
+        for p_id, p_hw in last_offsets:
+            self._consume_from_offset(self.topic_name, messages_to_read, p_id,
+                                      str(p_hw), timeout_seconds)
+
+        def check_cache_bytes_ratio(old, new):
+            log_diff = int(new[cache_metrics[0]]) - int(old[cache_metrics[0]])
+            cache_diff = int(new[cache_metrics[1]]) - int(
+                old[cache_metrics[1]])
+            cache_hit_percent = cache_diff / log_diff
+
+            self.logger.info(
+                f"BYTES: log_diff: {log_diff} cache_diff: {cache_diff} cache_hit_percent: {cache_hit_percent}"
+            )
+            return cache_hit_percent <= 0.4
+
+        for check in check_batch_cache_reads:
+            ok = check.evaluate_groups([(cache_metrics,
+                                         check_cache_bytes_ratio)])
+
+            assert ok, "cache hit ratio is higher than expected"
+
