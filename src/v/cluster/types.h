@@ -2979,6 +2979,46 @@ struct cancel_partition_movements_reply
     std::vector<move_cancellation_result> partition_results;
 };
 
+struct cloud_storage_usage_request
+  : serde::envelope<
+      cloud_storage_usage_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    std::vector<model::ntp> partitions;
+
+    friend bool operator==(
+      const cloud_storage_usage_request&, const cloud_storage_usage_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(partitions); }
+};
+
+struct cloud_storage_usage_reply
+  : serde::envelope<
+      cloud_storage_usage_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    uint64_t total_size_bytes{0};
+
+    // When replies are handled in 'cloud_storage_size_reducer'
+    // only the size of this list is currently used. However,
+    // having the actual missing ntps allws for future optimisations:
+    // the request can be retried only for the 'missing_partitions'.
+    std::vector<model::ntp> missing_partitions;
+
+    friend bool operator==(
+      const cloud_storage_usage_reply&, const cloud_storage_usage_reply&)
+      = default;
+
+    auto serde_fields() {
+        return std::tie(total_size_bytes, missing_partitions);
+    }
+};
+
 struct revert_cancel_partition_move_cmd_data
   : serde::envelope<
       revert_cancel_partition_move_cmd_data,

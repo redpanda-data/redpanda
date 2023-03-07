@@ -130,6 +130,11 @@
             "name": "transfer_leadership",
             "input_type": "transfer_leadership_request",
             "output_type": "transfer_leadership_reply"
+        },
+        {
+            "name": "cloud_storage_usage",
+            "input_type": "cloud_storage_usage_request",
+            "output_type": "cloud_storage_usage_reply"
         }
     ]
 }
