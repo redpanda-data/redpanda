@@ -22,6 +22,8 @@
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/coroutine/maybe_yield.hh>
+#include <seastar/util/later.hh>
 
 #include <absl/container/node_hash_set.h>
 #include <sys/resource.h>
@@ -261,7 +263,7 @@ std::error_code partition_allocator::check_cluster_limits(
     return errc::success;
 }
 
-result<allocation_units::pointer>
+ss::future<result<allocation_units::pointer>>
 partition_allocator::allocate(allocation_request request) {
     vlog(
       clusterlog.trace,
@@ -270,7 +272,7 @@ partition_allocator::allocate(allocation_request request) {
 
     auto cluster_errc = check_cluster_limits(request);
     if (cluster_errc) {
-        return cluster_errc;
+        co_return cluster_errc;
     }
 
     intermediate_allocation<partition_assignment> assignments(
@@ -281,13 +283,14 @@ partition_allocator::allocate(allocation_request request) {
         auto replicas = allocate_partition(
           std::move(p_constraints), request.domain);
         if (!replicas) {
-            return replicas.error();
+            co_return replicas.error();
         }
         assignments.emplace_back(
           _state->next_group_id(), partition_id, std::move(replicas.value()));
+        co_await ss::coroutine::maybe_yield();
     }
 
-    return ss::make_foreign(std::make_unique<allocation_units>(
+    co_return ss::make_foreign(std::make_unique<allocation_units>(
       std::move(assignments).finish(), _state.get(), request.domain));
 }
 

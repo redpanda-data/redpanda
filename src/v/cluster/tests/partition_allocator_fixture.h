@@ -62,8 +62,9 @@ struct partition_allocator_fixture {
     }
 
     void saturate_all_machines() {
-        auto units = allocator.allocate(
-          make_allocation_request(max_capacity(), 1));
+        auto units = allocator
+                       .allocate(make_allocation_request(max_capacity(), 1))
+                       .get();
 
         for (auto& pas : units.value()->get_assignments()) {
             allocator.state().apply_update(

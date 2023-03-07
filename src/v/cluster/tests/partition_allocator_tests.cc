@@ -85,7 +85,7 @@ FIXTURE_TEST(invalid_allocation_over_capacity, partition_allocator_fixture) {
     saturate_all_machines();
     auto gr = allocator.state().last_group_id();
     BOOST_REQUIRE(
-      allocator.allocate(make_allocation_request(1, 1)).has_error());
+      allocator.allocate(make_allocation_request(1, 1)).get().has_error());
     // group id hasn't changed
     BOOST_REQUIRE_EQUAL(allocator.state().last_group_id(), gr);
 }
@@ -99,7 +99,7 @@ FIXTURE_TEST(max_allocation, partition_allocator_fixture) {
 
     auto req = make_allocation_request(max_capacity() / 3, 3);
 
-    auto units = allocator.allocate(std::move(req)).value();
+    auto units = allocator.allocate(std::move(req)).get().value();
 
     BOOST_REQUIRE_EQUAL(units->get_assignments().size(), 1998);
     BOOST_REQUIRE_EQUAL(allocated_nodes_count(units->get_assignments()), 5994);
@@ -108,7 +108,7 @@ FIXTURE_TEST(max_allocation, partition_allocator_fixture) {
 
     // make sure there is no room left after
     auto single_partition_req = make_allocation_request(1, 1);
-    auto result = allocator.allocate(std::move(single_partition_req));
+    auto result = allocator.allocate(std::move(single_partition_req)).get();
     BOOST_REQUIRE(result.has_error());
 }
 
@@ -118,7 +118,7 @@ FIXTURE_TEST(unsatisfyable_diversity_assignment, partition_allocator_fixture) {
     register_node(2, 6);
 
     auto req = make_allocation_request(1, 5);
-    auto allocs = allocator.allocate(std::move(req));
+    auto allocs = allocator.allocate(std::move(req)).get();
     BOOST_TEST_REQUIRE(allocs.has_error());
     BOOST_REQUIRE_EQUAL(
       cluster::errc(allocs.error().value()),
@@ -149,7 +149,7 @@ FIXTURE_TEST(diverse_replica_sets, partition_allocator_fixture) {
     absl::flat_hash_set<std::vector<model::broker_shard>> seen_replicas;
     for (int i = 0; i < 1000; i++) {
         auto req = make_allocation_request(1, r);
-        auto result = allocator.allocate(std::move(req));
+        auto result = allocator.allocate(std::move(req)).get();
         BOOST_REQUIRE(result);
         auto assignments = result.value()->get_assignments();
         BOOST_REQUIRE(assignments.size() == 1);
@@ -171,6 +171,7 @@ FIXTURE_TEST(partial_assignment, partition_allocator_fixture) {
     auto units_1 = allocator
                      .allocate(make_allocation_request(
                        max_partitions_in_cluster - 1, 3))
+                     .get()
                      .value();
     BOOST_REQUIRE_EQUAL(
       units_1->get_assignments().size(), max_partitions_in_cluster - 1);
@@ -178,7 +179,7 @@ FIXTURE_TEST(partial_assignment, partition_allocator_fixture) {
     // allocate 2 partitions - one should fail, returning null & deallocating
 
     auto req_2 = make_allocation_request(2, 3);
-    auto units_2 = allocator.allocate(std::move(req_2));
+    auto units_2 = allocator.allocate(std::move(req_2)).get();
     BOOST_REQUIRE(units_2.has_error());
 
     BOOST_REQUIRE_EQUAL(3, max_capacity());
@@ -193,8 +194,9 @@ FIXTURE_TEST(max_deallocation, partition_allocator_fixture) {
     const auto max = max_capacity();
 
     {
-        auto allocs
-          = allocator.allocate(make_allocation_request(max / 3, 3)).value();
+        auto allocs = allocator.allocate(make_allocation_request(max / 3, 3))
+                        .get()
+                        .value();
 
         BOOST_REQUIRE_EQUAL(allocs->get_assignments().size() * 3, max);
 
@@ -263,7 +265,7 @@ FIXTURE_TEST(allocation_units_test, partition_allocator_fixture) {
 
     {
         auto allocs
-          = allocator.allocate(make_allocation_request(10, 3)).value();
+          = allocator.allocate(make_allocation_request(10, 3)).get().value();
         BOOST_REQUIRE_EQUAL(allocs->get_assignments().size(), 10);
         BOOST_REQUIRE_EQUAL(
           allocated_nodes_count(allocs->get_assignments()), 3 * 10);
@@ -293,7 +295,7 @@ FIXTURE_TEST(
     cluster::partition_assignment previous_assignment;
     cluster::partition_assignment new_assignment;
     {
-        auto allocs = allocator.allocate(std::move(req)).value();
+        auto allocs = allocator.allocate(std::move(req)).get().value();
         previous_assignment = allocs->get_assignments().front();
 
         allocator.update_allocation_state(
@@ -347,7 +349,7 @@ FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_fixture) {
     cluster::partition_assignment previous_assignment;
     cluster::partition_assignment new_assignment;
     {
-        auto allocs = allocator.allocate(std::move(req)).value();
+        auto allocs = allocator.allocate(std::move(req)).get().value();
         previous_assignment = allocs->get_assignments().front();
         allocator.update_allocation_state(
           allocs->get_assignments().front().replicas,
@@ -497,7 +499,7 @@ FIXTURE_TEST(allocator_exception_safety_test, partition_allocator_fixture) {
         req.partitions[0].constraints.hard_constraints.push_back(
           ss::make_lw_shared<cluster::hard_constraint>(random_evaluator()));
         try {
-            auto res = allocator.allocate(std::move(req));
+            auto res = allocator.allocate(std::move(req)).get();
             if (res) {
                 capacity--;
                 for (auto& as : res.value()->get_assignments()) {
@@ -523,7 +525,7 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
     for (int i = 0; i < 50; ++i) {
         // try to allocate single partition
         auto req = make_allocation_request(1, 1);
-        auto res = allocator.allocate(std::move(req));
+        auto res = allocator.allocate(std::move(req)).get();
         if (res) {
             for (auto& as : res.value()->get_assignments()) {
                 allocator.update_allocation_state(
@@ -554,7 +556,7 @@ FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {
     register_node(0, 2);
     register_node(1, 4);
     auto req = make_allocation_request(1, 1);
-    auto res = allocator.allocate(std::move(req));
+    auto res = allocator.allocate(std::move(req)).get();
 
     BOOST_CHECK_EQUAL(res.has_value(), true);
 
@@ -591,7 +593,8 @@ FIXTURE_TEST(rack_aware_assignment_1, partition_allocator_fixture) {
         register_node(id, ncpu, rack);
     }
 
-    auto units = allocator.allocate(make_allocation_request(1, 3)).value();
+    auto units
+      = allocator.allocate(make_allocation_request(1, 3)).get().value();
 
     BOOST_REQUIRE(!units->get_assignments().empty());
     auto group = units->get_assignments().front();
@@ -622,7 +625,8 @@ FIXTURE_TEST(rack_aware_assignment_2, partition_allocator_fixture) {
         register_node(id, ncpu, rack);
     }
 
-    auto units = allocator.allocate(make_allocation_request(1, 3)).value();
+    auto units
+      = allocator.allocate(make_allocation_request(1, 3)).get().value();
 
     BOOST_REQUIRE(!units->get_assignments().empty());
     auto group = units->get_assignments().front();
@@ -648,7 +652,7 @@ FIXTURE_TEST(even_distribution_pri_allocation, partition_allocator_fixture) {
     register_node(1, 2);
     register_node(2, 2);
     auto req_reg = make_allocation_request(max_capacity() / 4, 3);
-    auto units_reg = allocator.allocate(std::move(req_reg)).value();
+    auto units_reg = allocator.allocate(std::move(req_reg)).get().value();
     // add empty nodes
     register_node(3, 2);
     register_node(4, 2);
@@ -661,7 +665,8 @@ FIXTURE_TEST(even_distribution_pri_allocation, partition_allocator_fixture) {
         static constexpr auto prio_domain
           = cluster::partition_allocation_domains::consumer_offsets;
         req.domain = prio_domain;
-        units.push_back(std::move(allocator.allocate(std::move(req)).value()));
+        units.push_back(
+          std::move(allocator.allocate(std::move(req)).get().value()));
 
         // invariant: number of partitions allocated in the priority domain
         // across all nodes must be even, i.e. must not vary by more than one
