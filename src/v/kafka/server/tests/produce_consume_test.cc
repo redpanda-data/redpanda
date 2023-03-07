@@ -10,6 +10,7 @@
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/handlers/produce.h"
@@ -528,4 +529,107 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
     BOOST_TEST_CHECK(
       abs(br - br_last - 7) <= 1,
       "Expected 7±1 balancer runs, got " << br - br_last);
+}
+
+// TODO: move producer utilities somewhere else and give this test a proper
+// home.
+FIXTURE_TEST(test_offset_for_leader_epoch_test, prod_consume_fixture) {
+    producer = std::make_unique<kafka::client::transport>(
+      make_kafka_client().get0());
+    producer->connect().get0();
+    model::topic_namespace tp_ns(model::ns("kafka"), test_topic);
+    add_topic(tp_ns).get0();
+    model::ntp ntp(tp_ns.ns, tp_ns.tp, model::partition_id(0));
+    tests::cooperative_spin_wait_with_timeout(10s, [ntp, this] {
+        auto shard = app.shard_table.local().shard_for(ntp);
+        if (!shard) {
+            return ss::make_ready_future<bool>(false);
+        }
+        return app.partition_manager.invoke_on(
+          *shard, [ntp](cluster::partition_manager& pm) {
+              return pm.get(ntp)->is_leader();
+          });
+    }).get0();
+    auto shard = app.shard_table.local().shard_for(ntp);
+    for (int i = 0; i < 3; i++) {
+        // Step down.
+        app.partition_manager
+          .invoke_on(
+            *shard,
+            [ntp](cluster::partition_manager& mgr) {
+                mgr.get(ntp)->raft()->step_down("force_step_down").get();
+            })
+          .get();
+        auto tout = ss::lowres_clock::now() + std::chrono::seconds(10);
+        app.controller->get_partition_leaders()
+          .local()
+          .wait_for_leader(ntp, tout, {})
+          .get();
+        // Become leader and write.
+        app.partition_manager
+          .invoke_on(
+            *shard,
+            [this, ntp](cluster::partition_manager& mgr) {
+                auto partition = mgr.get(ntp);
+                produce([this](size_t cnt) {
+                    return small_batches(cnt);
+                }).get0();
+            })
+          .get();
+    }
+    // Prefix truncate the log so the beginning of the log moves forward.
+    app.partition_manager
+      .invoke_on(
+        *shard,
+        [ntp](cluster::partition_manager& mgr) {
+            auto partition = mgr.get(ntp);
+            storage::truncate_prefix_config cfg(
+              model::offset(1), ss::default_priority_class());
+            partition->log().truncate_prefix(cfg).get();
+        })
+      .get();
+
+    // Make a request getting the offset from a term below the start of the
+    // log.
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto current_term = app.partition_manager
+                          .invoke_on(
+                            *shard,
+                            [ntp](cluster::partition_manager& mgr) {
+                                return mgr.get(ntp)->raft()->term();
+                            })
+                          .get();
+    kafka::offset_for_leader_epoch_request req;
+    kafka::offset_for_leader_topic t{
+      test_topic,
+      {{model::partition_id(0),
+        kafka::leader_epoch(current_term()),
+        kafka::leader_epoch(0)}},
+      {},
+    };
+    req.data.topics.emplace_back(std::move(t));
+    auto resp = client.dispatch(req, kafka::api_version(2)).get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+    BOOST_REQUIRE_EQUAL(1, resp.data.topics.size());
+    const auto& topic_resp = resp.data.topics[0];
+    BOOST_REQUIRE_EQUAL(1, topic_resp.partitions.size());
+    const auto& partition_resp = topic_resp.partitions[0];
+
+    BOOST_REQUIRE_NE(partition_resp.end_offset, model::offset(-1));
+
+    // Check that the returned offset is the start of the log, since the
+    // requested term has been truncated.
+    auto earliest_kafka_offset
+      = app.partition_manager
+          .invoke_on(
+            *shard,
+            [ntp](cluster::partition_manager& mgr) {
+                auto partition = mgr.get(ntp);
+                auto start_offset = partition->log().offsets().start_offset;
+                return partition->get_offset_translator_state()
+                  ->from_log_offset(start_offset);
+            })
+          .get();
+    BOOST_REQUIRE_EQUAL(earliest_kafka_offset, partition_resp.end_offset);
 }
