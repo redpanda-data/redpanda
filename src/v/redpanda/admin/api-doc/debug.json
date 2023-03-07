@@ -175,6 +175,40 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/raft/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get raft states for leader and followers. This request can be executed only on leader for partition . If follower get this request it will be redirected to leader",
+                    "type": "raft_state",
+                    "nickname": "get_raft_state",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -324,6 +358,99 @@
                         "type": "self_test_result"
                     },
                     "description": "Recordings of test runs from a single node"
+                }
+            }
+        },
+        "raft_state": {
+            "id": "raft_state",
+            "description": "Raft state",
+            "properties": {
+                "leader_info": {
+                    "type": "raft_leader_state",
+                    "description": "Raft metrics for ntp raft leader"
+                },
+                "followers": {
+                    "type": "array",
+                    "items": {
+                        "type": "raft_follower_state"
+                    },
+                    "description": "Raft metrics for ntp followers"
+                }
+            }
+        },
+        "raft_leader_state": {
+            "id": "raft_leader_state",
+            "description": "Information about raft state for ntp for leader",
+            "properties": {
+                "id": {
+                    "type": "int",
+                    "description": "Node id"
+                },
+                "term": {
+                    "type": "long",
+                    "description": "Current term"
+                },
+                "flushed_offset": {
+                    "type": "long",
+                    "description": "Flushed offset"
+                },
+                "commit_index": {
+                    "type": "long",
+                    "description": "Commit index"
+                },
+                "majority_replicated_index": {
+                    "type": "long",
+                    "description": "Majority replicated index"
+                },
+                "visibility_upper_bound_index": {
+                    "type": "long",
+                    "description": "Visibility upper bound index"
+                },
+                "last_quorum_replicated_index": {
+                    "type": "long",
+                    "description": "Last quorum replicated index"
+                }
+            }
+        },
+        "raft_follower_state": {
+            "id": "raft_follower_state",
+            "description": "Information about raft state for ntp for follower",
+            "properties": {
+                "id": {
+                    "type": "int",
+                    "description": "Node id"
+                },
+                "last_flushed_log_index": {
+                    "type": "long",
+                    "description": "Last flushed log index"
+                },
+                "last_dirty_log_index": {
+                    "type": "long",
+                    "description": "Last dirty log index"
+                },
+                "match_index": {
+                    "type": "long",
+                    "description": "Match index"
+                },
+                "next_index": {
+                    "type": "long",
+                    "description": "Next index"
+                },
+                "last_sent_offset": {
+                    "type": "long",
+                    "description": "Last sent offset"
+                },
+                "heartbeats_failed": {
+                    "type": "long",
+                    "description": "Heartbeats failed"
+                },
+                "is_learner": {
+                    "type": "boolean",
+                    "description": "Is node learner"
+                },
+                "ms_since_last_heartbeat": {
+                    "type": "long",
+                    "description": "Ms since last heartbeat"
                 }
             }
         }
