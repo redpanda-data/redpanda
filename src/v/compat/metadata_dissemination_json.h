@@ -45,6 +45,8 @@ inline void rjson_serialize(
     rjson_serialize(w, v.leader_id);
     w.Key("revision_id");
     rjson_serialize(w, v.revision);
+    w.Key("initial_revision_id");
+    rjson_serialize(w, v.initial_revision);
     w.EndObject();
 }
 
@@ -54,6 +56,7 @@ read_value(json::Value const& rd, cluster::ntp_leader_revision& obj) {
     read_member(rd, "term", obj.term);
     read_member(rd, "leader_id", obj.leader_id);
     read_member(rd, "revision_id", obj.revision);
+    read_member(rd, "initial_revision_id", obj.initial_revision);
 }
 
 } // namespace json

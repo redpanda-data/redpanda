@@ -86,6 +86,7 @@ public:
     void disseminate_leadership(
       model::ntp,
       model::revision_id,
+      model::initial_revision_id,
       model::term_id,
       std::optional<model::node_id>);
 
@@ -119,11 +120,13 @@ private:
     void handle_leadership_notification(
       model::ntp,
       model::revision_id,
+      model::initial_revision_id,
       model::term_id,
       std::optional<model::node_id>);
     ss::future<> apply_leadership_notification(
       model::ntp,
       model::revision_id,
+      model::initial_revision_id,
       model::term_id,
       std::optional<model::node_id>);
 

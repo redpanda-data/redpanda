@@ -81,17 +81,21 @@ metadata_dissemination_service::metadata_dissemination_service(
 void metadata_dissemination_service::disseminate_leadership(
   model::ntp ntp,
   model::revision_id revision,
+  model::initial_revision_id initial_revision,
   model::term_id term,
   std::optional<model::node_id> leader_id) {
     vlog(
       clusterlog.trace,
-      "Dissemination request for {}, revision {}, term {}, leader {}",
+      "Dissemination request for {}, revision {}, initial_revision: {}, term "
+      "{}, leader {}",
       ntp,
       revision,
+      initial_revision,
       term,
       leader_id.value());
 
-    _requests.emplace_back(std::move(ntp), term, leader_id, revision);
+    _requests.emplace_back(
+      std::move(ntp), term, leader_id, revision, initial_revision);
 }
 
 ss::future<> metadata_dissemination_service::start() {
@@ -109,8 +113,9 @@ ss::future<> metadata_dissemination_service::start() {
             handle_leadership_notification(
               std::move(ntp),
               c->config().revision_id(),
+              c->log_config().get_initial_revision(),
               term,
-              std::move(leader_id));
+              leader_id);
         });
 
     if (ss::this_shard_id() != 0) {
@@ -155,45 +160,69 @@ ss::future<> metadata_dissemination_service::start() {
 void metadata_dissemination_service::handle_leadership_notification(
   model::ntp ntp,
   model::revision_id revision,
+  model::initial_revision_id initial_revision,
   model::term_id term,
   std::optional<model::node_id> lid) {
     ssx::spawn_with_gate(
-      _bg, [this, ntp = std::move(ntp), lid, revision, term]() mutable {
+      _bg,
+      [this,
+       ntp = std::move(ntp),
+       lid,
+       revision,
+       term,
+       initial_revision]() mutable {
           // the lock sequences the updates from raft
-          return _lock.with(
-            [this, ntp = std::move(ntp), lid, revision, term]() mutable {
-                return container().invoke_on(
-                  0,
-                  [ntp = std::move(ntp), lid, revision, term](
-                    metadata_dissemination_service& s) mutable {
-                      return s.apply_leadership_notification(
-                        std::move(ntp), revision, term, lid);
-                  });
-            });
+          return _lock.with([this,
+                             ntp = std::move(ntp),
+                             lid,
+                             revision,
+                             term,
+                             initial_revision]() mutable {
+              return container().invoke_on(
+                0,
+                [ntp = std::move(ntp), lid, revision, term, initial_revision](
+                  metadata_dissemination_service& s) mutable {
+                    return s.apply_leadership_notification(
+                      std::move(ntp), revision, initial_revision, term, lid);
+                });
+          });
       });
 }
 
 ss::future<> metadata_dissemination_service::apply_leadership_notification(
   model::ntp ntp,
   model::revision_id revision,
+  model::initial_revision_id initial_revision,
   model::term_id term,
   std::optional<model::node_id> lid) {
     // the gate also needs to be taken on the destination core.
     return ss::with_gate(
-      _bg, [this, ntp = std::move(ntp), lid, revision, term]() mutable {
+      _bg,
+      [this,
+       ntp = std::move(ntp),
+       lid,
+       revision,
+       term,
+       initial_revision]() mutable {
           // update partition leaders
           vlog(clusterlog.trace, "updating {} leadership locally", ntp);
           auto f = _leaders.invoke_on_all(
-            [ntp, lid, revision, term](partition_leaders_table& leaders) {
-                leaders.update_partition_leader(ntp, revision, term, lid);
+            [ntp, lid, revision, term, initial_revision](
+              partition_leaders_table& leaders) {
+                leaders.update_partition_leader(
+                  ntp, revision, initial_revision, term, lid);
             });
           if (lid == _self.id()) {
               // only disseminate from current leader
-              f = f.then(
-                [this, ntp = std::move(ntp), term, lid, revision]() mutable {
-                    return disseminate_leadership(
-                      std::move(ntp), revision, term, lid);
-                });
+              f = f.then([this,
+                          ntp = std::move(ntp),
+                          term,
+                          lid,
+                          revision,
+                          initial_revision]() mutable {
+                  return disseminate_leadership(
+                    std::move(ntp), revision, initial_revision, term, lid);
+              });
           }
           return f;
       });
@@ -399,6 +428,7 @@ ss::future<> metadata_dissemination_service::update_leaders_with_health_report(
                           leaders.update_partition_leader(
                             model::ntp(tp.tp_ns.ns, tp.tp_ns.tp, p.id),
                             p.revision_id,
+                            p.initial_revision_id,
                             p.term,
                             p.leader_id);
                       }

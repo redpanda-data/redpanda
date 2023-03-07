@@ -14,6 +14,7 @@
 #include "compat/check.h"
 #include "compat/metadata_dissemination_generator.h"
 #include "compat/metadata_dissemination_json.h"
+#include "model/metadata.h"
 
 #include <seastar/core/chunked_fifo.hh>
 

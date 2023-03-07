@@ -18,6 +18,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/node/local_monitor.h"
+#include "cluster/partition.h"
 #include "cluster/partition_manager.h"
 #include "cluster/partition_probe.h"
 #include "config/configuration.h"
@@ -665,6 +666,7 @@ struct ntp_leader {
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision_id;
+    model::initial_revision_id initial_revision_id;
 };
 
 struct ntp_report {
@@ -681,7 +683,9 @@ partition_status to_partition_status(const ntp_report& ntpr) {
       .leader_id = ntpr.leader.leader_id,
       .revision_id = ntpr.leader.revision_id,
       .size_bytes = ntpr.size_bytes,
-      .under_replicated_replicas = ntpr.under_replicated_replicas};
+      .under_replicated_replicas = ntpr.under_replicated_replicas,
+      .initial_revision_id = ntpr.leader.initial_revision_id,
+    };
 }
 
 ss::chunked_fifo<ntp_report> collect_shard_local_reports(
@@ -701,6 +705,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                   .term = p.second->term(),
                   .leader_id = p.second->get_leader_id(),
                   .revision_id = p.second->get_revision_id(),
+                  .initial_revision_id = p.second->log().config().get_initial_revision(),
                 },
                 .size_bytes = p.second->size_bytes() + p.second->non_log_disk_size_bytes(),
                 .under_replicated_replicas = p.second->get_under_replicated(),
@@ -715,6 +720,7 @@ ss::chunked_fifo<ntp_report> collect_shard_local_reports(
                   .term = partition->term(),
                   .leader_id = partition->get_leader_id(),
                   .revision_id = partition->get_revision_id(),
+                  .initial_revision_id = partition->log().config().get_initial_revision(),
                 },
                 .size_bytes = partition->size_bytes(),
                 .under_replicated_replicas = partition->get_under_replicated(),

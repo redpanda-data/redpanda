@@ -28,7 +28,8 @@ struct instance_generator<cluster::update_leadership_request_v2> {
           model::random_ntp(),
           tests::random_named_int<model::term_id>(),
           tests::random_named_int<model::node_id>(),
-          tests::random_named_int<model::revision_id>());
+          tests::random_named_int<model::revision_id>(),
+          tests::random_named_int<model::initial_revision_id>());
 
         return cluster::update_leadership_request_v2(std::move(values));
     }

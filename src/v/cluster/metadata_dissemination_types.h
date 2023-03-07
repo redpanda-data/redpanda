@@ -60,12 +60,13 @@ struct ntp_leader
 struct ntp_leader_revision
   : serde::envelope<
       ntp_leader_revision,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     model::ntp ntp;
     model::term_id term;
     std::optional<model::node_id> leader_id;
     model::revision_id revision;
+    model::initial_revision_id initial_revision;
 
     ntp_leader_revision() noexcept = default;
 
@@ -73,11 +74,13 @@ struct ntp_leader_revision
       model::ntp ntp,
       model::term_id term,
       std::optional<model::node_id> leader_id,
-      model::revision_id revision)
+      model::revision_id revision,
+      model::initial_revision_id initial_revision)
       : ntp(std::move(ntp))
       , term(term)
       , leader_id(leader_id)
-      , revision(revision) {}
+      , revision(revision)
+      , initial_revision(initial_revision) {}
 
     friend bool
     operator==(const ntp_leader_revision&, const ntp_leader_revision&)
@@ -95,7 +98,9 @@ struct ntp_leader_revision
         return o;
     }
 
-    auto serde_fields() { return std::tie(ntp, term, leader_id, revision); }
+    auto serde_fields() {
+        return std::tie(ntp, term, leader_id, revision, initial_revision);
+    }
 };
 
 struct update_leadership_request_v2

@@ -63,6 +63,7 @@ metadata_dissemination_handler::do_update_leadership(
                     _leaders.local().update_partition_leader(
                       leader.ntp,
                       leader.revision,
+                      leader.initial_revision,
                       leader.term,
                       leader.leader_id);
                 }
