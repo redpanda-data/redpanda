@@ -156,6 +156,7 @@ v_cc_library(
     node_isolation_watcher.cc
     topic_recovery_status_types.cc
     topic_table_partition_generator.cc
+    cloud_storage_size_reducer.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
