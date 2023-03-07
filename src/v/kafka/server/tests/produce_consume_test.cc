@@ -533,7 +533,7 @@ FIXTURE_TEST(test_quota_balancer_config_balancer_period, prod_consume_fixture) {
 
 // TODO: move producer utilities somewhere else and give this test a proper
 // home.
-FIXTURE_TEST(test_offset_for_leader_epoch_test, prod_consume_fixture) {
+FIXTURE_TEST(test_offset_for_leader_epoch, prod_consume_fixture) {
     producer = std::make_unique<kafka::client::transport>(
       make_kafka_client().get0());
     producer->connect().get0();
@@ -552,20 +552,18 @@ FIXTURE_TEST(test_offset_for_leader_epoch_test, prod_consume_fixture) {
     }).get0();
     auto shard = app.shard_table.local().shard_for(ntp);
     for (int i = 0; i < 3; i++) {
-        // Step down.
+        // Refresh leadership.
         app.partition_manager
           .invoke_on(
             *shard,
             [ntp](cluster::partition_manager& mgr) {
-                mgr.get(ntp)->raft()->step_down("force_step_down").get();
+                auto raft = mgr.get(ntp)->raft();
+                raft->step_down("force_step_down").get();
+                tests::cooperative_spin_wait_with_timeout(10s, [raft] {
+                    return raft->is_leader();
+                }).get0();
             })
           .get();
-        auto tout = ss::lowres_clock::now() + std::chrono::seconds(10);
-        app.controller->get_partition_leaders()
-          .local()
-          .wait_for_leader(ntp, tout, {})
-          .get();
-        // Become leader and write.
         app.partition_manager
           .invoke_on(
             *shard,
