@@ -381,6 +381,10 @@ private:
     ss::future<ss::json::json_return_type>
       redpanda_services_restart_handler(std::unique_ptr<ss::httpd::request>);
 
+    // Debug routes
+    ss::future<ss::json::json_return_type>
+      cloud_storage_usage_handler(std::unique_ptr<ss::httpd::request>);
+
     ss::future<> throw_on_error(
       ss::httpd::request& req,
       std::error_code ec,
