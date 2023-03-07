@@ -1320,6 +1320,9 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::wait_all_scheduled_uploads(
 
     auto total_successful_uploads = non_compacted_result.num_succeeded
                                     + compacted_result.num_succeeded;
+    if (total_successful_uploads > 0) {
+        _last_segment_upload_time = ss::lowres_clock::now();
+    }
     vlog(
       _rtclog.trace,
       "Segment uploads complete: {} successful uploads",

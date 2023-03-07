@@ -90,6 +90,16 @@ public:
     /// Get revision id
     model::initial_revision_id get_revision_id() const;
 
+    /// Get time when partition manifest was last uploaded
+    const ss::lowres_clock::time_point get_last_manfiest_upload_time() const {
+        return _last_manifest_upload_time;
+    }
+
+    /// Get time when a data segment was last uploaded
+    const ss::lowres_clock::time_point get_last_segment_upload_time() const {
+        return _last_segment_upload_time;
+    }
+
     /// Download manifest from pre-defined S3 locatnewion
     ///
     /// \return future that returns true if the manifest was found in S3
@@ -432,6 +442,9 @@ private:
 
     // When we last wrote the partition manifest to object storage
     ss::lowres_clock::time_point _last_manifest_upload_time;
+
+    // When we last wrote a segment
+    ss::lowres_clock::time_point _last_segment_upload_time;
 
     // Used during leadership transfer: instructs the archiver to
     // not proceed with uploads, even if it has leadership.
