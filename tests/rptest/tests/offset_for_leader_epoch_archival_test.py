@@ -9,6 +9,7 @@
 
 from math import fabs
 from rptest.services.cluster import cluster
+from ducktape.mark import parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kcl import KCL
@@ -66,13 +67,15 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
         wait_until(alter_and_verify, 15, 0.5)
 
     @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_querying_remote_partitions(self):
+    @parametrize(remote_reads=[False, True])
+    def test_querying_remote_partitions(self, remote_reads):
         topic = TopicSpec(redpanda_remote_read=True,
                           redpanda_remote_write=True)
         epoch_offsets = {}
         rpk = RpkTool(self.redpanda)
         self.client().create_topic(topic)
-        rpk.alter_topic_config(topic.name, "redpanda.remote.read", 'true')
+        rpk.alter_topic_config(topic.name, "redpanda.remote.read",
+                               str(remote_reads))
         rpk.alter_topic_config(topic.name, "redpanda.remote.write", 'true')
 
         def wait_for_topic():
@@ -111,4 +114,11 @@ class OffsetForLeaderEpochArchivalTest(RedpandaTest):
             self.logger.info(
                 f"epoch {epoch} end_offset: {epoch_end_offset}, expected offset: {offset}"
             )
-            assert epoch_end_offset == offset
+            if remote_reads:
+                assert epoch_end_offset == offset, f"{epoch_end_offset} vs {offset}"
+            else:
+                # Check that the returned offset isn't an invalid (-1) value,
+                # even if we read from an epoch that has been truncated locally
+                # and we can't read from cloud storage.
+                assert epoch_end_offset != -1, f"{epoch_end_offset} vs -1"
+                assert epoch_end_offset >= offset, f"{epoch_end_offset} vs {offset}"
