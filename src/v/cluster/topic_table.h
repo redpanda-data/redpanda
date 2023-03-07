@@ -469,6 +469,8 @@ private:
       model::model_limits<model::offset>::min()};
     std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;
+
+    friend class topic_table_partition_generator;
 };
 
 } // namespace cluster
