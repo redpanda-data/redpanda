@@ -868,3 +868,7 @@ class Admin:
         return int(
             self._request(
                 "GET", "debug/cloud_storage_usage?retries_allowed=10").json())
+
+    def get_raft_state(self, namespace, topic, partition):
+        path = f"debug/raft/{namespace}/{topic}/{partition}"
+        return self._request("GET", path).json()
