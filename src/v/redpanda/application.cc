@@ -1563,6 +1563,7 @@ void application::wire_up_bootstrap_services() {
     // Wire up the internal RPC server.
     ss::sharded<net::server_configuration> rpc_cfg;
     rpc_cfg.start(ss::sstring("internal_rpc")).get();
+    auto stop_cfg = ss::defer([&rpc_cfg] { rpc_cfg.stop().get(); });
     rpc_cfg
       .invoke_on_all([this](net::server_configuration& c) {
           return ss::async([this, &c] {
@@ -1608,7 +1609,6 @@ void application::wire_up_bootstrap_services() {
       "Constructing internal RPC services {}", rpc_cfg.local())
       .get();
     _rpc.start(&rpc_cfg).get();
-    rpc_cfg.stop().get();
 }
 
 void application::start_bootstrap_services() {
