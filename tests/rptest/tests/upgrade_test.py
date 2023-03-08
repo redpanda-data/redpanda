@@ -259,11 +259,20 @@ class UpgradeBackToBackTest(PreallocNodesTest):
                             'node_latest_version']:
                         # The cluster logical version has not yet updated
                         return False
+                    else:
+                        self.logger.debug(
+                            f"Accepting node {node.name} active version {features['cluster_version']}, it is equal to highest version"
+                        )
+
                 else:
                     # Older feature API just tells us the cluster version, we compare
                     # it to the logical version pre-upgrade
-                    if features['cluster_version'] < old_logical_version:
+                    if features['cluster_version'] <= old_logical_version:
                         return False
+                    else:
+                        self.logger.debug(
+                            f"Accepting node {node.name} active version {features['cluster_version']}, it is > {old_logical_version}"
+                        )
 
                 if any(f['state'] == 'preparing'
                        for f in features['features']):
