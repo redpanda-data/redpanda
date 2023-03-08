@@ -16,6 +16,7 @@ import socket
 import urllib.request
 import ssl
 import threading
+import urllib.parse
 from rptest.services.cluster import cluster
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
@@ -29,6 +30,7 @@ from rptest.tests.restart_services_test import check_service_restart
 from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, PandaproxyConfig, TLSProvider
 from rptest.services.admin import Admin
 from rptest.services import tls
+from rptest.utils.utf8 import CONTROL_CHARS_MAP
 from typing import Optional, List, Dict, Union
 
 
@@ -1077,6 +1079,209 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         self.topics = [TopicSpec(partition_count=3)]
         self._create_initial_topics()
         self._test_http_proxy_restart(topic_name=self.topic)
+
+
+class PandaProxyInvalidInputsTest(PandaProxyEndpoints):
+    """
+    Base class for testing how pandaproxy handles invalid messages
+    """
+    def __init__(self, context, **kwargs):
+        super(PandaProxyInvalidInputsTest, self).__init__(context, **kwargs)
+
+    @cluster(num_nodes=3)
+    def test_invalid_member_id(self):
+        """
+        Validates that an invalid member name is rejected
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.debug(
+            "Attempting to create consumer with a new-line character in name")
+        res = self._create_named_consumer(group_id, "my\nconsumer")
+        assert res.status_code == requests.codes.bad_request
+        assert res.json(
+        )["message"] == b'Parameter contained invalid control characters: my\xe2\x90\x8aconsumer'.decode(
+            'utf-8')
+
+    @cluster(num_nodes=3)
+    def test_invalid_group_name(self):
+        """
+        Validates that an invalid consumer group name is rejected
+        """
+        group_id = "My\rconsumer"
+
+        res = self._create_named_consumer(urllib.parse.quote(group_id), "test")
+        assert res.status_code == requests.codes.bad_request
+        assert res.json(
+        )["message"] == f'Invalid parameter \'group_name\' got \'{group_id.translate(CONTROL_CHARS_MAP)}\''
+
+    @cluster(num_nodes=3)
+    def test_bad_arguments_delete_consumer(self):
+        group_name = "My\x02group"
+        sc_res = requests.delete(
+            f"{self._base_uri()}/consumers/{urllib.parse.quote(group_name)}/instances/a",
+            headers=HTTP_REMOVE_CONSUMER_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'group_name\' got \'{group_name.translate(CONTROL_CHARS_MAP)}\''
+
+        instance = "my\x7finstance"
+        sc_res = requests.delete(
+            f"{self._base_uri()}/consumers/group/instances/{urllib.parse.quote(instance)}",
+            headers=HTTP_REMOVE_CONSUMER_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'instance\' got \'{instance.translate(CONTROL_CHARS_MAP)}\''
+
+    @cluster(num_nodes=3)
+    def test_invalid_subscribe_consumer(self):
+        """
+        Validates that when subscribing to a consumer to a topic the topic name
+        is correctly validated
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.info("Creating consumer group")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+
+        c0 = Consumer(cc_res.json(), self.logger)
+
+        sc_res = c0.subscribe(["test\ntopic"])
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == b'Parameter contained invalid control characters: test\xe2\x90\x8atopic'.decode(
+            'utf-8')
+
+        group_name = "my\x03group"
+        instance = "my\x04instance"
+
+        sc_res = requests.post(
+            f"{self._base_uri()}/consumers/{urllib.parse.quote(group_name)}/instances/a/subscription",
+            headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'group_name\' got \'{group_name.translate(CONTROL_CHARS_MAP)}\''
+
+        sc_res = requests.post(
+            f"{self._base_uri()}/consumers/a/instances/{urllib.parse.quote(instance)}/subscription",
+            headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'instance\' got \'{instance.translate(CONTROL_CHARS_MAP)}\''
+
+    @cluster(num_nodes=3)
+    def test_invalid_get_consumer_offset(self):
+        """
+        Validates that when getting consumer offsets that topic names are checked
+        for invalid control characters
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.info("Creating consumer group")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+
+        c0 = Consumer(cc_res.json(), self.logger)
+        co_req = dict(partitions=[dict(topic="test\ntopic", partition=0)])
+        co_res_raw = c0.get_offsets(data=json.dumps(co_req))
+        assert co_res_raw.status_code == requests.codes.bad_request
+        assert co_res_raw.json(
+        )["message"] == b'Parameter contained invalid control characters: test\xe2\x90\x8atopic'.decode(
+            'utf-8')
+
+        group_name = "my\x03group"
+        instance = "my\x04instance"
+
+        sc_res = requests.get(
+            f"{self._base_uri()}/consumers/{urllib.parse.quote(group_name)}/instances/a/offsets",
+            headers=HTTP_CONSUMER_GET_OFFSETS_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'group_name\' got \'{group_name.translate(CONTROL_CHARS_MAP)}\''
+
+        sc_res = requests.get(
+            f"{self._base_uri()}/consumers/a/instances/{urllib.parse.quote(instance)}/offsets",
+            headers=HTTP_CONSUMER_GET_OFFSETS_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'instance\' got \'{instance.translate(CONTROL_CHARS_MAP)}\''
+
+    @cluster(num_nodes=3)
+    def test_invalid_topic_commit_offset(self):
+        """
+        Validates that when committing offsets for a consumer, that the topic names
+        are checked for invalid control characters
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.info("Creating consumer group")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+
+        c0 = Consumer(cc_res.json(), self.logger)
+        co_req = dict(
+            partitions=[dict(topic="test\ntopic", partition=0, offset=0)])
+        co_res_raw = c0.set_offsets(data=json.dumps(co_req))
+        assert co_res_raw.status_code == requests.codes.bad_request
+        assert co_res_raw.json(
+        )["message"] == b'Parameter contained invalid control characters: test\xe2\x90\x8atopic'.decode(
+            'utf-8')
+
+        group_name = "my\x03group"
+        instance = "my\x04instance"
+
+        sc_res = requests.post(
+            f"{self._base_uri()}/consumers/{urllib.parse.quote(group_name)}/instances/a/offsets",
+            headers=HTTP_CONSUMER_SET_OFFSETS_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'group_name\' got \'{group_name.translate(CONTROL_CHARS_MAP)}\''
+
+        sc_res = requests.post(
+            f"{self._base_uri()}/consumers/a/instances/{urllib.parse.quote(instance)}/offsets",
+            headers=HTTP_CONSUMER_SET_OFFSETS_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'instance\' got \'{instance.translate(CONTROL_CHARS_MAP)}\''
+
+    @cluster(num_nodes=3)
+    def test_invalid_fetch_consumer_assignments(self):
+        group_name = "my\x03group"
+        instance = "my\x04instance"
+
+        sc_res = requests.get(
+            f"{self._base_uri()}/consumers/{urllib.parse.quote(group_name)}/instances/a/records",
+            headers=HTTP_CONSUMER_FETCH_BINARY_V2_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'group_name\' got \'{group_name.translate(CONTROL_CHARS_MAP)}\''
+
+        sc_res = requests.get(
+            f"{self._base_uri()}/consumers/a/instances/{urllib.parse.quote(instance)}/records",
+            headers=HTTP_CONSUMER_FETCH_BINARY_V2_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'instance\' got \'{instance.translate(CONTROL_CHARS_MAP)}\''
+
+    @cluster(num_nodes=3)
+    def test_invalid_topic_produce(self):
+        topic_name = "my\rtopic"
+
+        sc_res = requests.post(
+            f"{self._base_uri()}/topics/{urllib.parse.quote(topic_name)}",
+            headers=HTTP_PRODUCE_JSON_V2_TOPIC_HEADERS)
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'topic_name\' got \'{topic_name.translate(CONTROL_CHARS_MAP)}\''
+
+    @cluster(num_nodes=3)
+    def test_invalid_topics_fetch(self):
+        topic_name = "my\x1ftopic"
+        sc_res = self._fetch_topic(urllib.parse.quote(topic_name))
+        assert sc_res.status_code == requests.codes.bad_request
+        assert sc_res.json(
+        )["message"] == f'Invalid parameter \'topic_name\' got \'{topic_name.translate(CONTROL_CHARS_MAP)}\''
 
 
 class PandaProxySASLTest(PandaProxyEndpoints):
