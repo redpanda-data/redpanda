@@ -20,6 +20,7 @@
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/types.h"
 #include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
@@ -125,10 +126,12 @@ public:
 
     /// Flush metadata to object storage, prior to a topic deletion with
     /// remote deletion disabled.
-    ss::future<finalize_result> finalize(ss::abort_source&);
+    ss::future<finalize_result>
+    finalize(ss::abort_source&, raft::vnode, raft::group_configuration);
 
     /// Remove objects from S3
-    ss::future<> erase(ss::abort_source&);
+    ss::future<>
+    erase(ss::abort_source&, raft::vnode, raft::group_configuration);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);

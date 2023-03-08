@@ -754,9 +754,47 @@ ss::future<bool> remote_partition::tolerant_delete_object(
 
 static constexpr ss::lowres_clock::duration erase_timeout = 60s;
 static constexpr ss::lowres_clock::duration erase_backoff = 1s;
+static constexpr ss::lowres_clock::duration erase_non_0th_delay = 200ms;
 
-ss::future<remote_partition::finalize_result>
-remote_partition::finalize(ss::abort_source& as) {
+/**
+ * Return the index of this node in the list of voters, or nullopt if it
+ * is not a voter.
+ */
+std::optional<size_t>
+voter_position(raft::vnode self, const raft::group_configuration& raft_config) {
+    const auto& voters = raft_config.current_config().voters;
+    auto position = std::find(voters.begin(), voters.end(), self);
+    if (position == voters.end()) {
+        return std::nullopt;
+    } else {
+        return position - voters.begin();
+    }
+}
+
+ss::future<remote_partition::finalize_result> remote_partition::finalize(
+  ss::abort_source& as,
+  raft::vnode self,
+  raft::group_configuration raft_config) {
+    vlog(_ctxlog.info, "Finalizing remote storage state...");
+
+    // To reduce redundant re-uploads in the typical case of all replicas
+    // being alive, have all non-0th replicas delay before attempting to
+    // reconcile the manifest. This is just a best-effort thing, it is
+    // still okay for them to step on each other: finalization is best
+    // effort and the worst case outcome is to leave behind a few orphan
+    // objects if writes were ongoing while deletion happened.
+    auto my_position = voter_position(self, raft_config);
+    if (my_position.has_value()) {
+        auto p = my_position.value();
+        if (p != 0) {
+            co_await ss::sleep_abortable(erase_non_0th_delay * p, as);
+        }
+    } else {
+        co_return finalize_result{
+          // Synthetic success, as we will no-op on non-voters
+          .get_status = download_result::success};
+    }
+
     // This function is called after ::stop, so we may not use our
     // main retry_chain_node which is bound to our abort source,
     // and construct a special one.
@@ -840,12 +878,22 @@ remote_partition::finalize(ss::abort_source& as) {
  *    S3, not the state of the archival metadata stm (which can be out
  *    of date if e.g. we were not the leader)
  */
-ss::future<> remote_partition::erase(ss::abort_source& as) {
+ss::future<> remote_partition::erase(
+  ss::abort_source& as,
+  raft::vnode self,
+  raft::group_configuration raft_config) {
+    if (!raft_config.is_voter(self)) {
+        // Learners are excluded from deletion, because they have a high
+        // risk of having some out of date state, and because there will
+        // always be some voter peers to do the work.
+        co_return;
+    }
+
     // Even though we are going to delete objects, it is still important
     // to flush metadata first, so that if we are interrupted, a future
     // node doing a tombstone-driven deletion can accurately get the
     // segment list.
-    auto finalize_result = co_await finalize(as);
+    auto finalize_result = co_await finalize(as, self, raft_config);
 
     if (finalize_result.get_status != download_result::success) {
         // If we couldn't read a remote manifest at all, give up here rather
@@ -856,6 +904,8 @@ ss::future<> remote_partition::erase(ss::abort_source& as) {
     const partition_manifest& manifest = finalize_result.manifest.has_value()
                                            ? finalize_result.manifest.value()
                                            : _manifest;
+
+    vlog(_ctxlog.info, "Erasing remote storage content...");
 
     // TODO: Edge case 1
     // There is a rare race in which objects might get left behind in S3.
