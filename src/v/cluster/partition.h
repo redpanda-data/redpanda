@@ -126,6 +126,8 @@ public:
 
     const model::ntp& ntp() const { return _raft->ntp(); }
 
+    storage::log log() const { return _raft->log(); }
+
     ss::future<std::optional<storage::timequery_result>>
       timequery(storage::timequery_config);
 

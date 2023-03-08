@@ -264,6 +264,16 @@ public:
         });
     }
 
+    ss::future<> step_down(std::string_view ctx) {
+        return _op_lock.with([this, ctx] {
+            do_step_down(fmt::format("external_stepdown - {}", ctx));
+            if (_leader_id) {
+                _leader_id = std::nullopt;
+                trigger_leadership_notification();
+            }
+        });
+    }
+
     ss::future<> step_down() {
         return _op_lock.with([this] {
             do_step_down("external_stepdown");
