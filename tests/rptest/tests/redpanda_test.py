@@ -127,7 +127,7 @@ class RedpandaTest(Test):
         k = 0
         v = RedpandaInstaller.HEAD
         versions = [v]
-        while (v[0], v[1]) != initial_version:
+        while (v[0], v[1]) != initial_version[0:2]:
             k += 1
 
             v = self.redpanda._installer.highest_from_prior_feature_version(v)
@@ -140,7 +140,7 @@ class RedpandaTest(Test):
 
         return versions
 
-    def upgrade_through_versions(self, versions):
+    def upgrade_through_versions(self, versions, already_running=False):
         """
         Step the cluster through all the versions in `versions`, at each stage
         yielding the version of the cluster.
@@ -202,13 +202,18 @@ class RedpandaTest(Test):
                                      timeout_sec=90,
                                      backoff_sec=3)
 
-        old_logical_version = -1
+        if already_running:
+            old_logical_version = self.redpanda._admin.get_features(
+            )['cluster_version']
+        else:
+            old_logical_version = -1
 
-        # Install the initial version and yield
-        current_version = install_next()
-        self.logger.info("Installed initial version, calling setUp...")
-        RedpandaTest.setUp(self)
-        yield current_version
+        # If we are starting from scratch, then install the initial version and yield
+        if not already_running:
+            current_version = install_next()
+            self.logger.info("Installed initial version, calling setUp...")
+            RedpandaTest.setUp(self)
+            yield current_version
 
         # Install subsequent versions
         while len(versions) != 0:
