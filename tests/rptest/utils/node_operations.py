@@ -102,6 +102,28 @@ class NodeDecommissionWaiter():
             if has_decommission_progress_api(n)
         ]
 
+    def _dump_partition_move_available_bandwidth(self):
+        def get_metric(self, node):
+            try:
+                metrics = list(self.redpanda.metrics(node))
+                family = filter(
+                    lambda fam: fam.name ==
+                    "vectorized_raft_recovery_partition_movement_available_bandwidth",
+                    metrics)
+                shard_to_bandwidth = [{
+                    m.labels['shard']: m.value
+                } for m in next(family).samples]
+                return shard_to_bandwidth
+            except:
+                self.logger.debug(f"error querying metrics for {node}",
+                                  exc_info=True)
+                return None
+
+        for n in self.redpanda.started_nodes():
+            self.logger.debug(
+                f"partition move available bandwidth: node_id: {self.redpanda.node_id(n)} ==> {get_metric(self, n)}"
+            )
+
     def _not_decommissioned_node(self):
         return [
             n for n in self._nodes_with_decommission_progress_api()
@@ -171,6 +193,7 @@ class NodeDecommissionWaiter():
 
             if decommission_status["finished"] == True:
                 break
+            self._dump_partition_move_available_bandwidth()
             time.sleep(1)
 
         assert self._made_progress(
