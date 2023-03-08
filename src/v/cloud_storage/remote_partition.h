@@ -116,6 +116,17 @@ public:
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent);
 
+    struct finalize_result {
+        // If this is set, use this manifest for deletion instead of the usual
+        // local state (the remote content was newer than our local content)
+        std::optional<partition_manifest> manifest;
+        download_result get_status{download_result::failed};
+    };
+
+    /// Flush metadata to object storage, prior to a topic deletion with
+    /// remote deletion disabled.
+    ss::future<finalize_result> finalize(ss::abort_source&);
+
     /// Remove objects from S3
     ss::future<> erase(ss::abort_source&);
 

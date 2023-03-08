@@ -752,6 +752,82 @@ ss::future<bool> remote_partition::tolerant_delete_object(
     }
 }
 
+static constexpr ss::lowres_clock::duration erase_timeout = 60s;
+static constexpr ss::lowres_clock::duration erase_backoff = 1s;
+
+ss::future<remote_partition::finalize_result>
+remote_partition::finalize(ss::abort_source& as) {
+    // This function is called after ::stop, so we may not use our
+    // main retry_chain_node which is bound to our abort source,
+    // and construct a special one.
+    retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
+
+    partition_manifest remote_manifest(
+      _manifest.get_ntp(), _manifest.get_revision_id());
+
+    auto manifest_path = remote_manifest.get_manifest_path();
+    auto manifest_get_result = co_await _api.maybe_download_manifest(
+      _bucket, manifest_path, remote_manifest, local_rtc);
+
+    if (manifest_get_result != download_result::success) {
+        vlog(
+          _ctxlog.warn,
+          "Failed to fetch manifest during finalize(), remote manifest may be "
+          "left in incomplete state after topic deletion. Error: {}",
+          manifest_get_result);
+        co_return finalize_result{.get_status = manifest_get_result};
+    }
+
+    if (remote_manifest.get_insync_offset() > _manifest.get_insync_offset()) {
+        // Our local manifest is behind the remote: return a copy of the
+        // remote manifest for use in deletion
+        vlog(
+          _ctxlog.debug,
+          "Remote manifest has newer state than local ({} > {}), using this "
+          "for deletion during finalize",
+          remote_manifest.get_insync_offset(),
+          _manifest.get_insync_offset());
+        co_return finalize_result{
+          .manifest = std::move(remote_manifest),
+          .get_status = manifest_get_result};
+    } else if (
+      remote_manifest.get_insync_offset() < _manifest.get_insync_offset()) {
+        // The remote manifest is out of date, upload a fresh one
+        vlog(
+          _ctxlog.debug,
+          "Remote manifest has older state than local ({} < {}), attempting to "
+          "upload latest manifest",
+          remote_manifest.get_insync_offset(),
+          _manifest.get_insync_offset());
+        auto manifest_tags
+          = cloud_storage::remote::make_partition_manifest_tags(
+            _manifest.get_ntp(), _manifest.get_revision_id());
+
+        auto manifest_put_result = co_await _api.upload_manifest(
+          _bucket, _manifest, local_rtc, manifest_tags);
+
+        if (manifest_put_result != upload_result::success) {
+            vlog(
+              _ctxlog.warn,
+              "Failed to write manifest during finalize(), remote manifest may "
+              "be left in incomplete state after topic deletion. Error: {}",
+              manifest_put_result);
+        }
+
+        co_return finalize_result{
+          .manifest = std::nullopt, .get_status = manifest_get_result};
+    } else {
+        // Remote and local state is in sync, no action required.
+        vlog(
+          _ctxlog.debug,
+          "Remote manifest is in sync with local state during finalize "
+          "(insync_offset={})",
+          _manifest.get_insync_offset());
+        co_return finalize_result{
+          .manifest = std::nullopt, .get_status = manifest_get_result};
+    }
+}
+
 /**
  * The caller is responsible for determining whether it is appropriate
  * to delete data in S3, for example it is not appropriate if this is
@@ -765,6 +841,22 @@ ss::future<bool> remote_partition::tolerant_delete_object(
  *    of date if e.g. we were not the leader)
  */
 ss::future<> remote_partition::erase(ss::abort_source& as) {
+    // Even though we are going to delete objects, it is still important
+    // to flush metadata first, so that if we are interrupted, a future
+    // node doing a tombstone-driven deletion can accurately get the
+    // segment list.
+    auto finalize_result = co_await finalize(as);
+
+    if (finalize_result.get_status != download_result::success) {
+        // If we couldn't read a remote manifest at all, give up here rather
+        // than issuing a lot of deletion requests that will probably also fail.
+        co_return;
+    }
+
+    const partition_manifest& manifest = finalize_result.manifest.has_value()
+                                           ? finalize_result.manifest.value()
+                                           : _manifest;
+
     // TODO: Edge case 1
     // There is a rare race in which objects might get left behind in S3.
     //
@@ -786,78 +878,48 @@ ss::future<> remote_partition::erase(ss::abort_source& as) {
     // (TODO: fix this by implementing a scrub operation that finds objects
     //  not mentioned in the manifest, and call this before erase())
 
-    static constexpr ss::lowres_clock::duration erase_timeout = 60s;
-    static constexpr ss::lowres_clock::duration erase_backoff = 1s;
-
     // This function is called after ::stop, so we may not use our
     // main retry_chain_node which is bound to our abort source,
     // and construct a special one.
     retry_chain_node local_rtc(as, erase_timeout, erase_backoff);
 
-    // Read the partition manifest fresh: we might already have
-    // dropped local archival_stm state related to this partition.
-    partition_manifest manifest(
-      _manifest.get_ntp(), _manifest.get_revision_id());
-
-    auto manifest_path = manifest.get_manifest_path();
-    auto manifest_get_result = co_await _api.maybe_download_manifest(
-      _bucket, manifest_path, manifest, local_rtc);
-
-    if (manifest_get_result == download_result::timedout) {
-        // Throw on transient connectivity issues, so that controller
-        // will retry this deletion
-        throw std::runtime_error(
-          fmt::format("Timeout reading manifest for {}", manifest.get_ntp()));
-    } else if (manifest_get_result == download_result::failed) {
-        // Treat non-timeout errors as permanent, to avoid controller
-        // getting stuck.
-        vlog(
-          _ctxlog.warn,
-          "Error downloading manifest: objects will not be deleted for "
-          "this "
-          "topic");
-        co_return;
-    }
-
     // Having handled errors above, now our partition manifest fetch was
     // either a notfound (skip straight to erasing topic manifest), or a
     // success (iterate through manifest deleting segements)
-    if (manifest_get_result != download_result::notfound) {
-        // Erase all segments
-        for (const auto& i : manifest) {
-            auto path = manifest.generate_segment_path(i.second);
-            vlog(_ctxlog.debug, "Erasing segment {}", path);
-            // On failure, we throw: this should cause controller to retry
-            // the topic deletion operation that called us, until it
-            // eventually succeeds.
-            // TODO: S3 API has a plural delete API, which would be more
-            // suitable.
-            if (co_await tolerant_delete_object(
-                  _bucket,
-                  cloud_storage_clients::object_key(path),
-                  local_rtc)) {
-                co_return;
-            };
 
-            auto tx_range_manifest_path
-              = tx_range_manifest(path).get_manifest_path();
-            if (co_await tolerant_delete_object(
-                  _bucket,
-                  cloud_storage_clients::object_key(tx_range_manifest_path),
-                  local_rtc)) {
-                co_return;
-            };
-        }
+    // Erase all segments
+    for (const auto& i : manifest) {
+        auto path = manifest.generate_segment_path(i.second);
+        vlog(_ctxlog.debug, "Erasing segment {}", path);
+        // On failure, we throw: this should cause controller to retry
+        // the topic deletion operation that called us, until it
+        // eventually succeeds.
+        // TODO: S3 API has a plural delete API, which would be more
+        // suitable.
+        if (co_await tolerant_delete_object(
+              _bucket, cloud_storage_clients::object_key(path), local_rtc)) {
+            co_return;
+        };
 
-        // Erase the partition manifest
-        vlog(_ctxlog.debug, "Erasing partition manifest {}", manifest_path);
+        auto tx_range_manifest_path
+          = tx_range_manifest(path).get_manifest_path();
         if (co_await tolerant_delete_object(
               _bucket,
-              cloud_storage_clients::object_key(manifest_path),
+              cloud_storage_clients::object_key(tx_range_manifest_path),
               local_rtc)) {
             co_return;
         };
     }
+
+    // Erase the partition manifest
+    auto manifest_path = manifest.get_manifest_path();
+    vlog(_ctxlog.debug, "Erasing partition manifest {}", manifest_path);
+    if (co_await tolerant_delete_object(
+          _bucket,
+          cloud_storage_clients::object_key(manifest_path),
+          local_rtc)) {
+        co_return;
+    };
 
     // If I am partition 0, also delete the topic manifest
     // Note: this behavior means that absence of the topic manifest does
