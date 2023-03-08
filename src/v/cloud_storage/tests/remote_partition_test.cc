@@ -490,7 +490,7 @@ static void reupload_compacted_segments(
 
             auto url = m.generate_segment_path(*m.get(meta.base_offset));
             vlog(test_log.debug, "reuploading segment {}", url);
-            retry_chain_node rtc(never_abort, 10s, 1s);
+            retry_chain_node rtc(never_abort, 60s, 1s);
             bytes bb;
             bb.resize(body.size());
             std::memcpy(bb.data(), body.data(), body.size());
@@ -1628,7 +1628,7 @@ static void remove_segment_from_s3(
     auto meta = m.get(o);
     BOOST_REQUIRE(meta != nullptr);
     auto path = m.generate_segment_path(*meta);
-    retry_chain_node fib(never_abort, 10s, 1s);
+    retry_chain_node fib(never_abort, 60s, 1s);
     auto res = api
                  .delete_object(
                    bucket, cloud_storage_clients::object_key(path()), fib)
