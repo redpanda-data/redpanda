@@ -96,7 +96,7 @@ function install_kaf() {
 
 function install_client_swarm() {
   dir="$1"
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain=1.67.0
   export PATH="$dir/.cargo/bin:${PATH}"
   pushd /tmp
   git clone https://github.com/redpanda-data/client-swarm.git
