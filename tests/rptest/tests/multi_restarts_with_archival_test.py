@@ -11,8 +11,8 @@ import uuid
 
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings
-from ducktape.mark import parametrize
+from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
@@ -33,8 +33,7 @@ class MultiRestartTest(EndToEndTest):
                                                extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=5, log_allow_list=CHAOS_LOG_ALLOW_LIST)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode
     def test_recovery_after_multiple_restarts(self, cloud_storage_type):
         partition_count = 60

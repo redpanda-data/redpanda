@@ -15,7 +15,7 @@ from typing import Any, NamedTuple
 
 import requests
 import yaml
-from ducktape.mark import parametrize
+from ducktape.mark import parametrize, matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -24,7 +24,7 @@ from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST
+from rptest.services.redpanda import CloudStorageType, SISettings, RESTART_LOG_ALLOW_LIST, IAM_ROLES_API_CALL_ALLOW_LIST, get_cloud_storage_type
 from rptest.services.metrics_check import MetricCheck
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import expect_http_error, expect_exception, produce_until_segments
@@ -1453,7 +1453,8 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
              log_allow_list=[
                  r"abs - .* Received .* AuthorizationFailure error response"
              ])
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
+    @matrix(cloud_storage_type=get_cloud_storage_type(
+        applies_only_on=[CloudStorageType.ABS]))
     def test_live_shared_key_change(self, cloud_storage_type):
         """
         This test ensures that 'cloud_storage_azure_shared_key' can

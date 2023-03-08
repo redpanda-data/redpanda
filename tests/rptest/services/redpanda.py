@@ -169,6 +169,40 @@ def one_or_many(value):
         return value
 
 
+def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None):
+    """
+    Returns a list(CloudStorageType) based on the "CLOUD_PROVIDER"
+    environment variable. For example:
+    CLOUD_PROVIDER=docker => returns: [CloudStorageType.S3, CloudStorageType.ABS]
+    CLOUD_PROVIDER=aws => returns: [CloudStorageType.S3]
+
+    :env "CLOUD_PROVIDER": one of "aws", "gcp", "azure" or "docker"
+    :param applies_only_on: optional list(CloudStorageType)
+    that is the allow-list of the cloud storage type for a
+    test.
+    If it's set the function will return the inresection
+    of:
+    * <cloud_storage_type>: discovered based on the CLOUD_PROVIDER env
+    * <applies_only_on>: param provided
+    """
+
+    if applies_only_on is None:
+        applies_only_on = []
+
+    cloud_provider = os.getenv("CLOUD_PROVIDER", "docker")
+    if cloud_provider == "docker":
+        cloud_storage_type = [CloudStorageType.S3, CloudStorageType.ABS]
+    elif cloud_provider in ("aws", "gcp"):
+        cloud_storage_type = [CloudStorageType.S3]
+    elif cloud_provider == "azure":
+        cloud_storage_type = [CloudStorageType.ABS]
+
+    if applies_only_on:
+        cloud_storage_type = list(
+            set(applies_only_on).intersection(cloud_storage_type))
+    return cloud_storage_type
+
+
 class ResourceSettings:
     """
     Control CPU+memory footprint of Redpanda instances.  Pass one

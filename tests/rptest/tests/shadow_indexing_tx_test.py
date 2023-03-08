@@ -7,9 +7,9 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
@@ -51,8 +51,7 @@ class ShadowIndexingTxTest(RedpandaTest):
             rpk.alter_topic_config(topic.name, 'redpanda.remote.read', 'true')
 
     @cluster(num_nodes=4)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode
     def test_shadow_indexing_aborted_txs(self, cloud_storage_type):
         """Check that messages belonging to aborted transaction are not seen by clients

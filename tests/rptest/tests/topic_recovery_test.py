@@ -18,7 +18,7 @@ from typing import Callable, NamedTuple, Optional, Sequence
 
 import requests
 from ducktape.cluster.cluster import ClusterNode
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 from rptest.archival.s3_client import S3Client
@@ -28,7 +28,8 @@ from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import (CloudStorageType, FileToChecksumSize,
-                                      RedpandaService, SISettings)
+                                      RedpandaService, SISettings,
+                                      get_cloud_storage_type)
 from rptest.services.rpk_producer import RpkProducer
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import wait_until_result
@@ -1333,8 +1334,7 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_no_data(self, cloud_storage_type):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
@@ -1346,8 +1346,7 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_empty_segments(self, cloud_storage_type):
         """Test case in which the segments are uploaded but they doesn't
         have any data batches but they do have configuration batches."""
@@ -1359,8 +1358,7 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_missing_topic_manifest(self, cloud_storage_type):
         """If we're trying to recovery a topic which didn't have any data
         in old cluster the empty topic should be created. We should be able
@@ -1373,8 +1371,7 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=4,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_missing_partition(self, cloud_storage_type):
         """Test situation when one of the partition manifests are missing.
         The partition manifest is missing if it doesn't exist in the bucket
@@ -1390,8 +1387,7 @@ class TopicRecoveryTest(RedpandaTest):
 
     @cluster(num_nodes=4,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_missing_segment(self, cloud_storage_type):
         """Test the handling of the missing segment. The segment is
         missing if it's present in the manifest but deleted from the
@@ -1402,8 +1398,7 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_fast1(self, cloud_storage_type):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
@@ -1418,8 +1413,7 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_fast2(self, cloud_storage_type):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
@@ -1437,8 +1431,7 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_fast3(self, cloud_storage_type):
         """Basic recovery test. This test stresses successful recovery
         of the topic with different set of data."""
@@ -1459,8 +1452,7 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_size_based_retention(self, cloud_storage_type):
         """Test topic recovery with size based retention policy.
         It's tests handling of the situation when only subset of the data needs to
@@ -1477,8 +1469,7 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_time_based_retention(self, cloud_storage_type):
         """Test topic recovery with time based retention policy.
         It's tests handling of the situation when only subset of the data needs to
@@ -1496,8 +1487,7 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=3, log_allow_list=TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_time_based_retention_with_legacy_manifest(self,
                                                        cloud_storage_type):
         """Test topic recovery with time based retention policy.
@@ -1516,8 +1506,7 @@ class TopicRecoveryTest(RedpandaTest):
         self.do_run(test_case)
 
     @cluster(num_nodes=4, log_allow_list=TRANSIENT_ERRORS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_admin_api_recovery(self, cloud_storage_type):
         topics = [
             TopicSpec(name='panda-topic',
