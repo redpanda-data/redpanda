@@ -773,8 +773,8 @@ s3_client::delete_object(
                 s3_log.debug,
                 "Object to be deleted was not found in cloud storage: "
                 "object={}, bucket={}. Ignoring ...",
-                bucket,
-                key);
+                key,
+                bucket);
               return ss::make_ready_future<ret_t>(no_response{});
           } else {
               return ss::make_ready_future<ret_t>(result);

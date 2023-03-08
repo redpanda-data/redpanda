@@ -176,6 +176,10 @@ model::cloud_storage_backend infer_backend_from_configuration(
   model::cloud_credentials_source cloud_storage_credentials_source) {
     if (auto v = config::shard_local_cfg().cloud_storage_backend.value();
         v != model::cloud_storage_backend::unknown) {
+        vlog(
+          client_config_log.info,
+          "cloud_storage_backend is explicitly set to {}",
+          v);
         return v;
     }
 
@@ -183,33 +187,45 @@ model::cloud_storage_backend infer_backend_from_configuration(
         return model::cloud_storage_backend::azure;
     }
 
-    if (
-      cloud_storage_credentials_source
-      != model::cloud_credentials_source::config_file) {
-        switch (cloud_storage_credentials_source) {
-        case model::cloud_credentials_source::aws_instance_metadata:
-            [[fallthrough]];
-        case model::cloud_credentials_source::sts:
-            return model::cloud_storage_backend::aws;
-        case model::cloud_credentials_source::gcp_instance_metadata:
-            return model::cloud_storage_backend::google_s3_compat;
-        case model::cloud_credentials_source::config_file:
-            __builtin_unreachable();
-            break;
-        }
+    switch (cloud_storage_credentials_source) {
+    case model::cloud_credentials_source::aws_instance_metadata:
+        [[fallthrough]];
+    case model::cloud_credentials_source::sts:
+        vlog(
+          client_config_log.info,
+          "cloud_storage_backend derived from cloud_credentials_source {} "
+          "as aws",
+          cloud_storage_credentials_source);
+        return model::cloud_storage_backend::aws;
+    case model::cloud_credentials_source::gcp_instance_metadata:
+        vlog(
+          client_config_log.info,
+          "cloud_storage_backend derived from cloud_credentials_source {} "
+          "as google_s3_compat",
+          cloud_storage_credentials_source);
+        return model::cloud_storage_backend::google_s3_compat;
+    case model::cloud_credentials_source::config_file:
+        break;
     }
 
     auto& s3_config = std::get<s3_configuration>(client_config);
     const auto& uri = s3_config.uri;
-    if (uri().find("google") != uri().npos) {
-        return model::cloud_storage_backend::google_s3_compat;
-    }
 
-    if (uri().find("minio") != uri().npos) {
-        return model::cloud_storage_backend::minio;
-    }
+    auto result
+      = string_switch<model::cloud_storage_backend>(uri())
+          .match_expr("google", model::cloud_storage_backend::google_s3_compat)
+          .match_expr(R"(127\.0\.0\.1)", model::cloud_storage_backend::aws)
+          .match_expr("minio", model::cloud_storage_backend::minio)
+          .match_expr("amazon", model::cloud_storage_backend::aws)
+          .default_match(model::cloud_storage_backend::unknown);
 
-    return model::cloud_storage_backend::unknown;
+    vlog(
+      client_config_log.info,
+      "Inferred backend {} using uri: {}",
+      result,
+      uri());
+
+    return result;
 }
 
 } // namespace cloud_storage_clients

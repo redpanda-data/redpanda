@@ -554,7 +554,6 @@ FIXTURE_TEST(test_delete_objects, s3_imposter_fixture) {
     cloud_storage_clients::bucket_name bucket{"test"};
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
-    cloud_storage_clients::object_key path{"p"};
     std::vector<cloud_storage_clients::object_key> to_delete{
       cloud_storage_clients::object_key{"a"},
       cloud_storage_clients::object_key{"b"}};
@@ -564,6 +563,82 @@ FIXTURE_TEST(test_delete_objects, s3_imposter_fixture) {
     BOOST_REQUIRE_EQUAL(request._method, "POST");
     BOOST_REQUIRE_EQUAL(request._url, "/?delete");
     BOOST_REQUIRE(request.query_parameters.contains("delete"));
+}
+
+FIXTURE_TEST(test_delete_objects_on_unknown_backend, s3_imposter_fixture) {
+    auto default_v = config::shard_local_cfg().cloud_storage_backend.value();
+    config::shard_local_cfg().cloud_storage_backend.set_value(
+      model::cloud_storage_backend::google_s3_compat);
+    auto reset = ss::defer([default_v] {
+        config::shard_local_cfg().cloud_storage_backend.set_value(default_v);
+    });
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    remote r{connection_limit{10}, conf, config_file};
+    auto action = ss::defer([&r] { r.stop().get(); });
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 60s, 20ms);
+
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      r.upload_object(bucket, cloud_storage_clients::object_key{"p"}, "p", fib)
+        .get0());
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      r.upload_object(bucket, cloud_storage_clients::object_key{"q"}, "q", fib)
+        .get0());
+
+    std::vector<cloud_storage_clients::object_key> to_delete{
+      cloud_storage_clients::object_key{"p"},
+      cloud_storage_clients::object_key{"q"}};
+    auto result = r.delete_objects(bucket, to_delete, fib).get0();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
+
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
+    auto first_delete = get_requests()[2];
+
+    std::unordered_set<ss::sstring> expected_urls{"/p", "/q"};
+    BOOST_REQUIRE_EQUAL(first_delete._method, "DELETE");
+    BOOST_REQUIRE(expected_urls.contains(first_delete._url));
+
+    expected_urls.erase(first_delete._url);
+    auto second_delete = get_requests()[3];
+    BOOST_REQUIRE_EQUAL(second_delete._method, "DELETE");
+    BOOST_REQUIRE(expected_urls.contains(second_delete._url));
+}
+
+FIXTURE_TEST(
+  test_delete_objects_on_unknown_backend_result_reduction,
+  s3_imposter_fixture) {
+    auto default_v = config::shard_local_cfg().cloud_storage_backend.value();
+    config::shard_local_cfg().cloud_storage_backend.set_value(
+      model::cloud_storage_backend::google_s3_compat);
+
+    auto reset = ss::defer([default_v] {
+        config::shard_local_cfg().cloud_storage_backend.set_value(default_v);
+    });
+    set_expectations_and_listen({});
+    auto conf = get_configuration();
+    remote r{connection_limit{10}, conf, config_file};
+    auto action = ss::defer([&r] { r.stop().get(); });
+
+    cloud_storage_clients::bucket_name bucket{"test"};
+    retry_chain_node fib(never_abort, 5s, 20ms);
+
+    BOOST_REQUIRE_EQUAL(
+      cloud_storage::upload_result::success,
+      r.upload_object(bucket, cloud_storage_clients::object_key{"p"}, "p", fib)
+        .get0());
+
+    std::vector<cloud_storage_clients::object_key> to_delete{
+      // can be deleted
+      cloud_storage_clients::object_key{"p"},
+      // will time out
+      cloud_storage_clients::object_key{"failme"}};
+
+    auto result = r.delete_objects(bucket, to_delete, fib).get0();
+    BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::timedout, result);
 }
 
 FIXTURE_TEST(test_filter_by_source, s3_imposter_fixture) { // NOLINT

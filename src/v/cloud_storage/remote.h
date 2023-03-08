@@ -173,6 +173,10 @@ public:
     /// can perform.
     size_t concurrency() const;
 
+    model::cloud_storage_backend backend() const;
+
+    bool is_batch_delete_supported() const;
+
     /// \brief Download manifest from pre-defined S3 location
     ///
     /// Method downloads the manifest and handles backpressure and
@@ -270,7 +274,13 @@ public:
     /// \brief Delete multiple objects from S3
     ///
     /// Deletes multiple objects from S3, utilizing the S3 client delete_objects
-    /// API.
+    /// API. For the backends where batch deletes are supported, batch deletes
+    /// are performed. In other cases, sequential deletes are used as fallback.
+    ///
+    /// Note: the caller must ensure that if the backend does not support batch
+    /// deletes, then the timeout or deadline set in parent should be sufficient
+    /// to perform sequential deletes of the objects.
+    ///
     /// \param bucket The bucket to delete from
     /// \param keys A vector of keys which will be deleted
     ss::future<upload_result> delete_objects(
@@ -396,6 +406,11 @@ public:
       const model::ntp& ntp, model::initial_revision_id rev);
 
 private:
+    ss::future<upload_result> delete_objects_sequentially(
+      const cloud_storage_clients::bucket_name& bucket,
+      std::vector<cloud_storage_clients::object_key> keys,
+      retry_chain_node& parent);
+
     ss::future<> propagate_credentials(cloud_roles::credentials credentials);
     /// Notify all subscribers about segment or manifest upload/download
     void notify_external_subscribers(

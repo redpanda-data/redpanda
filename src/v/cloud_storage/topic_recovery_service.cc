@@ -643,7 +643,7 @@ ss::future<> topic_recovery_service::do_check_for_downloads() {
     // As deleting keys in azure is a linear operation, timeout should be
     // adjusted to take this into account.
     size_t timeout_multiplier = 1;
-    if (config::shard_local_cfg().cloud_storage_azure_storage_account()) {
+    if (!_remote.local().is_batch_delete_supported()) {
         timeout_multiplier = results.size();
     }
     auto clear_fib = make_rtc(_as, _config, timeout_multiplier);
