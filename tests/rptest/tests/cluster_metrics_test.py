@@ -279,3 +279,44 @@ class ClusterMetricsTest(RedpandaTest):
         except Exception as e:
             topics_info = RpkTool(self.redpanda).list_topics()
             raise e
+
+    @cluster(num_nodes=3)
+    def max_offset_matches_committed_group_offset_test(self):
+        rpk = RpkTool(self.redpanda)
+
+        topic = "topic"
+        rpk.create_topic(topic)
+
+        # write some messages
+        count = 37
+        for _ in range(count):
+            rpk.produce(topic, "k", "v")
+
+        # consume those messages with a group
+        group = "group"
+        rpk.consume(topic, n=count, group=group)
+
+        def check():
+            samples = self.redpanda.metrics_sample(
+                "max_offset", metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+            samples = samples.label_filter({"redpanda_topic": topic})
+            self.logger.debug(f"Read max offset metrics: {samples.samples}")
+            max_offset = samples.samples[0].value
+
+            samples = self.redpanda.metrics_sample(
+                "group_committed_offset",
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+            samples = samples.label_filter({
+                "redpanda_group": group,
+                "redpanda_topic": topic
+            })
+            self.logger.debug(
+                f"Read group committed offset metrics: {samples.samples}")
+            group_offset = samples.samples[0].value
+
+            self.logger.debug(
+                f"Waiting for equal offsets max {max_offset} group {group_offset} target {count}"
+            )
+            return max_offset == group_offset == count
+
+        wait_until(check, timeout_sec=5, backoff_sec=0.5, retry_on_exc=True)
