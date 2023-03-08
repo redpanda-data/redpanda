@@ -362,4 +362,7 @@ private:
     ss::sharded<archival::scheduler_service>& _archival_service;
     ss::sharded<cluster::node_status_table>& _node_status_table;
     pandaproxy::schema_registry::api* _schema_registry;
+    // Value before the temporary override
+    std::chrono::milliseconds _default_blocked_reactor_notify;
+    ss::timer<> _blocked_reactor_notify_reset_timer;
 };
