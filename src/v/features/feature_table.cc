@@ -12,7 +12,9 @@
 #include "feature_table.h"
 
 #include "cluster/types.h"
+#include "config/node_config.h"
 #include "features/logger.h"
+#include "version.h"
 
 #include <seastar/core/abort_source.hh>
 
@@ -526,6 +528,77 @@ void feature_table::set_original_version(cluster::cluster_version v) {
     if (v != cluster::invalid_version) {
         config::shard_local_cfg().notify_original_version(
           config::legacy_version{v});
+    }
+}
+
+/*
+ * Redpanda does not permit upgrading from arbitrarily old versions.  We
+ * test & support upgrades from one feature release series to the next
+ * feature release series only.
+ *
+ * e.g. 22.1.1 -> 22.2.1 is permitted
+ *      22.1.1 -> 22.3.1 is NOT permitted.
+ *
+ * Note that the "old version" in this check is _not_ simply the last
+ * version that was run on this local node: it is the last version that
+ * the whole cluster agreed upon.  This means that clusters in a bad state
+ * will refuse to proceed with an upgrade if an offline node has prevented
+ * the cluster from fully upgrading to the previous version.
+ *
+ * e.g.
+ *  - Three nodes 1,2,3 at version 22.1.1
+ *  - Node 3 fails.
+ *  - User upgrades nodes 1,2 to version 22.2.1
+ *  - At this point the cluster's logical version remains at
+ *    the logical version of 22.1.1, because not all the nodes
+ *    have reported the new version 22.2.1.
+ *  - If user now tries to start redpanda 22.3.1 on node 1 or 2,
+ *    it will refuse to start.
+ *  - The user must get their cluster into a healthy state at version
+ *    22.2.1 (e.g. by decommissioning the failed node) before they
+ *    may proceed to version 22.3.1
+ */
+void feature_table::assert_compatible_version(bool override) {
+    auto active_version = get_active_version();
+    auto binary_version = features::feature_table::get_latest_logical_version();
+
+    // No version currently in the feature table, can't do a safety check.
+    if (active_version == invalid_version) {
+        return;
+    }
+
+    if (active_version < binary_version) {
+        // An upgrade is happening.  This may either be a new feature release,
+        // or a logical version change happened on a patch release due to
+        // some major backport.
+        vlog(
+          featureslog.info,
+          "Upgrading: this node has logical version {} (Redpanda {}), cluster "
+          "is undergoing upgrade from previous logical version {}",
+          binary_version,
+          redpanda_version(),
+          active_version);
+
+        // Compare the old version with our compiled-in knowledge of
+        // the lowest version we can safely upgrade from.
+        if (active_version < get_earliest_logical_version()) {
+            if (override) {
+                vlog(
+                  featureslog.error,
+                  "Upgrading from logical version {} which is outside "
+                  "compatible range {}-{}",
+                  active_version,
+                  get_earliest_logical_version(),
+                  get_latest_logical_version());
+            } else {
+                vassert(
+                  false,
+                  "Attempted to upgrade from incompatible logical version {} "
+                  "to logical version {}!",
+                  active_version,
+                  binary_version);
+            }
+        }
     }
 }
 

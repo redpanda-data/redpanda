@@ -93,16 +93,20 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
       || (req.latest_logical_version != cluster::invalid_version && req.latest_logical_version < expect_version)) {
         // Our active version is outside the range of versions the
         // joining node is compatible with.
+        bool permit_join = config::node().upgrade_override_checks();
         vlog(
           clusterlog.warn,
-          "Rejecting join request from incompatible node {}, our version {} vs "
+          "{}join request from incompatible node {}, our version {} vs "
           "their {}-{}",
+          permit_join ? "" : "Rejecting ",
           req.node,
           expect_version,
           req.earliest_logical_version,
           req.latest_logical_version);
-        return ss::make_ready_future<join_node_reply>(
-          join_node_reply{false, model::node_id{-1}});
+        if (!permit_join) {
+            return ss::make_ready_future<join_node_reply>(
+              join_node_reply{false, model::node_id{-1}});
+        }
     }
 
     return ss::with_scheduling_group(

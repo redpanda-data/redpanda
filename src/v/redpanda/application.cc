@@ -2103,13 +2103,6 @@ void application::load_feature_table_snapshot() {
 #ifndef NDEBUG
         vassert(my_version >= snap.version, "Incompatible downgrade detected");
 #endif
-    } else if (my_version > snap.version) {
-        vlog(
-          _log.info,
-          "Upgrade in progress!  This binary logical version {}, last feature "
-          "table snapshot version {}",
-          my_version,
-          snap.version);
     } else {
         vlog(
           _log.debug,
@@ -2122,4 +2115,8 @@ void application::load_feature_table_snapshot() {
     feature_table
       .invoke_on_all([snap](features::feature_table& ft) { snap.apply(ft); })
       .get();
+
+    // Having loaded a snapshot, do our strict check for version compat.
+    feature_table.local().assert_compatible_version(
+      config::node().upgrade_override_checks);
 }

@@ -441,6 +441,9 @@ public:
         return std::move(builder).build();
     }
 
+    // Assert out on startup if we appear to have upgraded too far
+    void assert_compatible_version(bool);
+
 private:
     // Only for use by our friends feature backend & manager
     void set_active_version(

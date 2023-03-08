@@ -205,6 +205,7 @@ class KgoVerifierService(Service):
         wait_until(lambda: not node.account.exists(f"/proc/{self._pid}"),
                    timeout_sec=10,
                    backoff_sec=0.5)
+        self._pid = None
 
         self.logger.debug(
             f"wait_node {self.who_am_i()}: node={node.name} pid={self._pid} terminated"

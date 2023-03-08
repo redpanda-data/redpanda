@@ -142,6 +142,13 @@ node_config::node_config() noexcept
       "operator intervention is needed to startup the broker.",
       {.visibility = visibility::user},
       std::nullopt)
+  , upgrade_override_checks(
+      *this,
+      "upgrade_override_checks",
+      "Whether to violate safety checks when starting a redpanda version newer "
+      "than the cluster's consensus version",
+      {.visibility = visibility::tunable},
+      false)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",
