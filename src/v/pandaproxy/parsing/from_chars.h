@@ -11,8 +11,10 @@
 
 #pragma once
 
+#include "exceptions.h"
 #include "outcome.h"
 #include "reflection/type_traits.h"
+#include "utils/utf8.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -68,6 +70,9 @@ public:
       "from_chars not defined for T");
 
     result_type operator()(std::string_view in) noexcept {
+        if (unlikely(contains_control_character(in))) {
+            return std::errc::invalid_argument;
+        }
         if constexpr (is_optional) {
             if (in.empty()) {
                 return std::nullopt;
