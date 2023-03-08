@@ -79,4 +79,30 @@
       }
     }
   }
+},
+"/v1/config/blocked_reactor_notify_ms/{timeout}": {
+  "put": {
+    "summary": "Temporarily reduce the threshold over which the reactor is considered blocked if no progress is made. The original threshold value will be restored after 'expire' seconds (default: 5 min)",
+    "operationId": "blocked_reactor_notify_ms",
+    "parameters": [
+        {
+            "name": "timeout",
+            "in": "path",
+            "required": true,
+            "type": "long"
+        },
+        {
+            "name": "expires",
+            "in": "query",
+            "required": false,
+            "allowMultiple": false,
+            "type": "long"
+        }
+    ],
+    "responses": {
+      "200": {
+        "description": "Blocked reactor notify threshold updated"
+      }
+    }
+  }
 }
