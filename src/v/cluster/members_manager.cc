@@ -416,13 +416,14 @@ ss::future<std::error_code> members_manager::do_apply_add_node(
       });
 
     // update internode connections
+    auto target_id = cmd.value.id();
     if (
       update_offset >= _last_connection_update_offset
-      && cmd.key != _self.id()) {
+      && target_id != _self.id()) {
         co_await update_broker_client(
           _self.id(),
           _connection_cache,
-          cmd.value.id(),
+          target_id,
           cmd.value.rpc_address(),
           _rpc_tls_config);
 
@@ -457,13 +458,14 @@ ss::future<std::error_code> members_manager::do_apply_update_node(
       });
 
     // update internode connections
+    auto target_id = cmd.value.id();
     if (
       update_offset >= _last_connection_update_offset
-      && cmd.key != _self.id()) {
+      && target_id != _self.id()) {
         co_await update_broker_client(
           _self.id(),
           _connection_cache,
-          cmd.value.id(),
+          target_id,
           cmd.value.rpc_address(),
           _rpc_tls_config);
 
