@@ -20,6 +20,7 @@
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/types.h"
 #include "storage/ntp_config.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
@@ -116,8 +117,26 @@ public:
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent);
 
+    ss::future<bool> tolerant_delete_objects(
+      const cloud_storage_clients::bucket_name& bucket,
+      std::vector<cloud_storage_clients::object_key>&& keys,
+      retry_chain_node& parent);
+
+    struct finalize_result {
+        // If this is set, use this manifest for deletion instead of the usual
+        // local state (the remote content was newer than our local content)
+        std::optional<partition_manifest> manifest;
+        download_result get_status{download_result::failed};
+    };
+
+    /// Flush metadata to object storage, prior to a topic deletion with
+    /// remote deletion disabled.
+    ss::future<finalize_result>
+    finalize(ss::abort_source&, raft::vnode, raft::group_configuration);
+
     /// Remove objects from S3
-    ss::future<> erase(ss::abort_source&);
+    ss::future<>
+    erase(ss::abort_source&, raft::vnode, raft::group_configuration);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);
