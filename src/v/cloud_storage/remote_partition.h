@@ -117,6 +117,11 @@ public:
       const cloud_storage_clients::object_key& path,
       retry_chain_node& parent);
 
+    ss::future<bool> tolerant_delete_objects(
+      const cloud_storage_clients::bucket_name& bucket,
+      std::vector<cloud_storage_clients::object_key>&& keys,
+      retry_chain_node& parent);
+
     struct finalize_result {
         // If this is set, use this manifest for deletion instead of the usual
         // local state (the remote content was newer than our local content)

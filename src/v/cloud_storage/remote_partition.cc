@@ -752,6 +752,35 @@ ss::future<bool> remote_partition::tolerant_delete_object(
     }
 }
 
+ss::future<bool> remote_partition::tolerant_delete_objects(
+  const cloud_storage_clients::bucket_name& bucket,
+  std::vector<cloud_storage_clients::object_key>&& keys,
+  retry_chain_node& parent) {
+    if (keys.empty()) {
+        co_return false;
+    }
+
+    // Copy first key so that we can use it in error messages
+    auto first_key = keys[0];
+
+    auto result = co_await _api.delete_objects(bucket, std::move(keys), parent);
+    if (result == upload_result::timedout) {
+        throw std::runtime_error(fmt::format(
+          "Timed out deleting objects for partition {} (keys {}-)",
+          _manifest.get_ntp(),
+          first_key));
+    } else if (result != upload_result::success) {
+        vlog(
+          _ctxlog.warn,
+          "Error ({}) deleting objects for partition (keys {}-)",
+          result,
+          first_key);
+        co_return true;
+    } else {
+        co_return false;
+    }
+}
+
 static constexpr ss::lowres_clock::duration erase_timeout = 60s;
 static constexpr ss::lowres_clock::duration erase_backoff = 1s;
 static constexpr ss::lowres_clock::duration erase_non_0th_delay = 200ms;
@@ -938,27 +967,40 @@ ss::future<> remote_partition::erase(
     // success (iterate through manifest deleting segements)
 
     // Erase all segments
-    for (const auto& i : manifest) {
-        auto path = manifest.generate_segment_path(i.second);
-        vlog(_ctxlog.debug, "Erasing segment {}", path);
-        // On failure, we throw: this should cause controller to retry
-        // the topic deletion operation that called us, until it
-        // eventually succeeds.
-        // TODO: S3 API has a plural delete API, which would be more
-        // suitable.
-        if (co_await tolerant_delete_object(
-              _bucket, cloud_storage_clients::object_key(path), local_rtc)) {
-            co_return;
-        };
+    const size_t batch_size = 1000;
+    auto segment_i = manifest.begin();
+    while (segment_i != manifest.end()) {
+        std::vector<cloud_storage_clients::object_key> batch_keys;
+        batch_keys.reserve(batch_size);
 
-        auto tx_range_manifest_path
-          = tx_range_manifest(path).get_manifest_path();
-        if (co_await tolerant_delete_object(
-              _bucket,
-              cloud_storage_clients::object_key(tx_range_manifest_path),
-              local_rtc)) {
+        std::vector<cloud_storage_clients::object_key> tx_batch_keys;
+        tx_batch_keys.reserve(batch_size);
+
+        for (size_t k = 0; k < batch_size && segment_i != manifest.end(); ++k) {
+            auto segment_path = manifest.generate_segment_path(
+              segment_i->second);
+            batch_keys.push_back(
+              cloud_storage_clients::object_key(segment_path));
+            tx_batch_keys.push_back(cloud_storage_clients::object_key(
+              tx_range_manifest(segment_path).get_manifest_path()));
+            segment_i++;
+        }
+
+        vlog(
+          _ctxlog.debug,
+          "Erasing segments {}-{}",
+          *(batch_keys.begin()),
+          *(--batch_keys.end()));
+
+        if (co_await tolerant_delete_objects(
+              _bucket, std::move(batch_keys), local_rtc)) {
             co_return;
-        };
+        }
+
+        if (co_await tolerant_delete_objects(
+              _bucket, std::move(tx_batch_keys), local_rtc)) {
+            co_return;
+        }
     }
 
     // Erase the partition manifest
