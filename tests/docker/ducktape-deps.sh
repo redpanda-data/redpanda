@@ -101,7 +101,7 @@ function install_client_swarm() {
   pushd /tmp
   git clone https://github.com/redpanda-data/client-swarm.git
   pushd client-swarm
-  git reset --hard 9ef8e93
+  git reset --hard 1129d51f
   cargo build --release
   cp target/release/client-swarm /usr/local/bin
   popd
