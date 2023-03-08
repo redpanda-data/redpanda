@@ -210,4 +210,7 @@ private:
     request_authenticator _auth;
     bool _ready{false};
     ss::sharded<archival::scheduler_service>& _archival_service;
+    // Value before the temporary override
+    std::chrono::milliseconds _default_blocked_reactor_notify;
+    ss::timer<> _blocked_reactor_notify_reset_timer;
 };
