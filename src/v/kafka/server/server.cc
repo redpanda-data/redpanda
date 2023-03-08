@@ -24,6 +24,7 @@
 #include "kafka/server/handlers/create_acls.h"
 #include "kafka/server/handlers/delete_groups.h"
 #include "kafka/server/handlers/delete_topics.h"
+#include "kafka/server/handlers/describe_groups.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/end_txn.h"
 #include "kafka/server/handlers/heartbeat.h"
@@ -31,6 +32,7 @@
 #include "kafka/server/handlers/join_group.h"
 #include "kafka/server/handlers/leave_group.h"
 #include "kafka/server/handlers/list_groups.h"
+#include "kafka/server/handlers/list_transactions.h"
 #include "kafka/server/handlers/offset_commit.h"
 #include "kafka/server/handlers/offset_delete.h"
 #include "kafka/server/handlers/offset_fetch.h"
@@ -1394,6 +1396,126 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       });
 
     return process_result_stages(std::move(dispatch_f), std::move(f));
+}
+
+template<>
+ss::future<response_ptr>
+describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
+    describe_groups_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+
+    auto unauthorized_it = std::partition(
+      request.data.groups.begin(),
+      request.data.groups.end(),
+      [&ctx](const group_id& id) {
+          return ctx.authorized(security::acl_operation::describe, id);
+      });
+
+    std::vector<group_id> unauthorized(
+      std::make_move_iterator(unauthorized_it),
+      std::make_move_iterator(request.data.groups.end()));
+
+    request.data.groups.erase(unauthorized_it, request.data.groups.end());
+
+    describe_groups_response response;
+
+    if (likely(!request.data.groups.empty())) {
+        std::vector<ss::future<described_group>> described;
+        described.reserve(request.data.groups.size());
+        for (auto& group_id : request.data.groups) {
+            described.push_back(ctx.groups().describe_group(group_id).then(
+              [&ctx, &request, group_id](auto res) {
+                  if (request.data.include_authorized_operations) {
+                      res.authorized_operations = details::to_bit_field(
+                        details::authorized_operations(ctx, group_id));
+                  }
+                  return res;
+              }));
+        }
+        response.data.groups = co_await ss::when_all_succeed(
+          described.begin(), described.end());
+    }
+
+    for (auto& group : unauthorized) {
+        response.data.groups.push_back(described_group{
+          .error_code = error_code::group_authorization_failed,
+          .group_id = std::move(group),
+        });
+    }
+
+    co_return co_await ctx.respond(std::move(response));
+}
+
+template<>
+ss::future<response_ptr>
+list_transactions_handler::handle(request_context ctx, ss::smp_service_group) {
+    list_transactions_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    log_request(ctx.header(), request);
+
+    list_transactions_response response;
+
+    auto filter_tx = [](
+                       const list_transactions_request& req,
+                       const cluster::tm_transaction& tx) -> bool {
+        if (!req.data.producer_id_filters.empty()) {
+            if (std::none_of(
+                  req.data.producer_id_filters.begin(),
+                  req.data.producer_id_filters.end(),
+                  [pid = tx.pid.get_id()](const auto& provided_pid) {
+                      return pid == provided_pid;
+                  })) {
+                return false;
+            }
+        }
+
+        if (!req.data.state_filters.empty()) {
+            if (std::none_of(
+                  req.data.state_filters.begin(),
+                  req.data.state_filters.end(),
+                  [status = tx.get_kafka_status()](
+                    const auto& provided_status) {
+                      return status == provided_status;
+                  })) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    auto& tx_frontend = ctx.tx_gateway_frontend();
+    auto txs = co_await tx_frontend.get_all_transactions();
+    if (txs.has_value()) {
+        for (const auto& tx : txs.value()) {
+            if (!ctx.authorized(security::acl_operation::describe, tx.id)) {
+                // We should skip this transactional id
+                continue;
+            }
+
+            if (filter_tx(request, tx)) {
+                list_transaction_state tx_state;
+                tx_state.transactional_id = tx.id;
+                tx_state.producer_id = kafka::producer_id(tx.pid.id);
+                tx_state.transaction_state = ss::sstring(tx.get_status());
+                response.data.transaction_states.push_back(std::move(tx_state));
+            }
+        }
+    } else {
+        // In this 2 errors not coordinator got request and we just return empty
+        // array
+        if (
+          txs.error() != cluster::tx_errc::shard_not_found
+          && txs.error() != cluster::tx_errc::not_coordinator) {
+            vlog(
+              klog.error,
+              "Can not return list of transactions. Error: {}",
+              txs.error());
+            response.data.error_code = kafka::error_code::unknown_server_error;
+        }
+    }
+
+    co_return co_await ctx.respond(std::move(response));
 }
 
 } // namespace kafka
