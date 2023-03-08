@@ -707,7 +707,7 @@ ntp_archiver::download_manifest() {
  * then we will do an upload + mark_clean in the main upload loop, even
  * if we did not upload any segments.
  */
-ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
+ss::future<bool> ntp_archiver::maybe_upload_manifest() {
     if (
       _parent.archival_meta_stm()->get_dirty(_projected_manifest_clean_at)
       == cluster::archival_metadata_stm::state_dirty::clean) {
@@ -715,7 +715,7 @@ ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
           _rtclog.debug,
           "Manifest is clean{}, skipping upload",
           _projected_manifest_clean_at.has_value() ? " (projected)" : "");
-        co_return std::nullopt;
+        co_return false;
     }
 
     // Do not upload if interval has not elapsed.  The upload loop will call
@@ -725,7 +725,7 @@ ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
       _manifest_upload_interval().has_value()
       && ss::lowres_clock::now() - _last_manifest_upload_time
            < _manifest_upload_interval().value()) {
-        co_return std::nullopt;
+        co_return false;
     }
 
     auto upload_insync_offset
@@ -740,13 +740,13 @@ ss::future<std::optional<model::offset>> ntp_archiver::maybe_upload_manifest() {
         _last_manifest_upload_time = ss::lowres_clock::now();
         _projected_manifest_clean_at = upload_insync_offset;
 
-        co_return upload_insync_offset;
+        co_return true;
     } else {
         // It is not necessary to retry: we are called from within the main
         // upload_until_term_change loop, and will get another chance to
         // upload the manifest eventually from there.
         vlog(_rtclog.warn, "Failed to upload partition manifest: {}", result);
-        co_return std::nullopt;
+        co_return false;
     }
 }
 
@@ -1156,21 +1156,37 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
         co_return total;
     }
 
+    // Remember if we started with a clean STM: this will be used to decide
+    // whether to maybe do an extra flush of manifest after upload, to get back
+    // into a clean state.
     auto stm_was_clean = _parent.archival_meta_stm()->get_dirty(
                            _projected_manifest_clean_at)
                          == cluster::archival_metadata_stm::state_dirty::clean;
 
-    auto [segment_results, manifest_clean_offset]
-      = co_await ss::when_all_succeed(
-        ss::when_all_succeed(begin(flist), end(flist)),
-        [this, inline_manifest]() {
-            if (inline_manifest && _manifest_upload_interval().has_value()) {
-                return maybe_upload_manifest();
-            } else {
-                return ss::make_ready_future<std::optional<model::offset>>(
-                  std::nullopt);
-            }
-        });
+    // We may upload manifest in parallel with segments when using time-based
+    // (interval) manifest uploads.  If we aren't using an interval, then the
+    // manifest will always be immediately updated after segment uploads, so
+    // there is no point doing it in parallel as well.
+    bool upload_manifest_in_parallel
+      = inline_manifest && _manifest_upload_interval().has_value();
+
+    if (upload_manifest_in_parallel) {
+        // Munge the output of maybe_upload_manifest into an upload result,
+        // so that we can conveniently await it along with our segment
+        // uploads.  The actual result is reflected in
+        // _projected_manifest_clean_at if something was uploaded.
+        flist.push_back(maybe_upload_manifest().then(
+          [](bool) { return cloud_storage::upload_result::success; }));
+    }
+
+    auto segment_results = co_await ss::when_all_succeed(
+      begin(flist), end(flist));
+
+    if (upload_manifest_in_parallel) {
+        // Drop the upload_result from manifest upload, we do not want to
+        // count it in the subsequent success/failure counts.
+        segment_results.pop_back();
+    }
 
     if (!can_update_archival_metadata()) {
         // We exit early even if we have successfully uploaded some segments to
@@ -1226,11 +1242,14 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
         auto deadline = ss::lowres_clock::now()
                         + _conf->manifest_upload_timeout;
 
+        std::optional<model::offset> manifest_clean_offset;
         if (
           _projected_manifest_clean_at
           > _parent.archival_meta_stm()->get_last_clean_at()) {
             // If we have a projected clean offset, take this opportunity to
-            // persist that to the stm.
+            // persist that to the stm.  This is equivalent to what
+            // maybe_flush_manifest_clean_offset does, but we're doing it
+            // inline with our segment-adding batch.
             manifest_clean_offset = _projected_manifest_clean_at;
         }
 

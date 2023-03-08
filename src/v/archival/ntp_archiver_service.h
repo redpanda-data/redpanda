@@ -357,7 +357,9 @@ private:
 
     /// Upload manifest if it is dirty.  Proceed without raising on issues,
     /// in the expectation that we will be called again in the main upload loop.
-    ss::future<std::optional<model::offset>> maybe_upload_manifest();
+    /// Returns true if something was uploaded (_projected_manifest_clean_at
+    /// will have been updated if so)
+    ss::future<bool> maybe_upload_manifest();
 
     /// If we have a projected manifest clean offset, then flush it to
     /// the persistent stm clean offset.
