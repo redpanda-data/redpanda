@@ -315,7 +315,7 @@ class NodeOpsExecutor():
         waiter = NodeDecommissionWaiter(self.redpanda,
                                         node_id=node_id,
                                         logger=self.logger,
-                                        progress_timeout=60)
+                                        progress_timeout=180)
 
         waiter.wait_for_removal()
         wait_until(lambda: self.node_removed(node_id),

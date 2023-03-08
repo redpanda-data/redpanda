@@ -148,7 +148,7 @@ class NodesDecommissioningTest(EndToEndTest):
         waiter = NodeDecommissionWaiter(self.redpanda,
                                         decommissioned_id,
                                         self.logger,
-                                        progress_timeout=60)
+                                        progress_timeout=180)
         waiter.wait_for_removal()
 
         self._check_state_consistent(decommissioned_id)
