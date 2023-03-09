@@ -826,6 +826,11 @@ spec:
                   - type
                   type: object
                 type: array
+              failures:
+                description: Failures is the reconciliation failure count against
+                  the latest desired state. It is reset after a successful reconciliation.
+                format: int64
+                type: integer
               helmRelease:
                 type: string
               helmRepository:
@@ -841,6 +846,15 @@ spec:
                 description: LastAttemptedRevision is the revision of the last reconciliation
                   attempt.
                 type: string
+              lastHandledReconcileAt:
+                description: LastHandledReconcileAt holds the value of the most recent
+                  reconcile request value, so a change of the annotation value can
+                  be detected.
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the last observed generation.
+                format: int64
+                type: integer
               upgradeFailures:
                 format: int64
                 type: integer

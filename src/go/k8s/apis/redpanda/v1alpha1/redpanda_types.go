@@ -44,6 +44,12 @@ type RedpandaSpec struct {
 
 // RedpandaStatus defines the observed state of Redpanda
 type RedpandaStatus struct {
+	// ObservedGeneration is the last observed generation.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	meta.ReconcileRequestStatus `json:",inline"`
+
 	// Conditions holds the conditions for the Redpanda.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -64,6 +70,11 @@ type RedpandaStatus struct {
 
 	// +optional
 	UpgradeFailures int64 `json:"upgradeFailures,omitempty"`
+
+	// Failures is the reconciliation failure count against the latest desired
+	// state. It is reset after a successful reconciliation.
+	// +optional
+	Failures int64 `json:"failures,omitempty"`
 
 	// +optional
 	InstallFailures int64 `json:"installFailures,omitempty"`
@@ -131,6 +142,19 @@ func RedpandaReady(rp Redpanda) Redpanda {
 	}
 	apimeta.SetStatusCondition(rp.GetConditions(), newCondition)
 	rp.Status.LastAppliedRevision = rp.Status.LastAttemptedRevision
+	return rp
+}
+
+// RedpandaNotReady registers a failed reconciliation of the given Redpanda.
+func RedpandaNotReady(rp Redpanda, reason, message string) Redpanda {
+	newCondition := metav1.Condition{
+		Type:    meta.ReadyCondition,
+		Status:  metav1.ConditionFalse,
+		Reason:  reason,
+		Message: message,
+	}
+	apimeta.SetStatusCondition(rp.GetConditions(), newCondition)
+	rp.Status.Failures++
 	return rp
 }
 
