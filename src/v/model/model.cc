@@ -357,6 +357,8 @@ std::ostream& operator<<(std::ostream& o, record_batch_type bt) {
         return o << "batch_type::version_fence";
     case record_batch_type::tx_tm_hosted_trasactions:
         return o << "batch_type::tx_tm_hosted_trasactions";
+    case record_batch_type::prefix_truncate:
+        return o << "batch_type::prefix_truncate";
     }
 
     return o << "batch_type::unknown{" << static_cast<int>(bt) << "}";
