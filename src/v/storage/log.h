@@ -238,4 +238,6 @@ log make_disk_backed_log(
   kvstore&,
   ss::sharded<features::feature_table>& feature_table);
 
+bool deletion_exempt(const model::ntp& ntp);
+
 } // namespace storage

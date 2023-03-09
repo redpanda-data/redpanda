@@ -71,6 +71,11 @@ public:
     ss::future<result<kafka_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
+    /// Truncate the beginning of the log up until a given offset
+    /// Can only be performed on logs that are deletable and non internal
+    ss::future<std::error_code>
+    prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline);
+
     kafka_stages replicate_in_stages(
       model::batch_identity,
       model::record_batch_reader&&,
@@ -381,7 +386,7 @@ private:
 
     consensus_ptr _raft;
     ss::shared_ptr<util::mem_tracker> _partition_mem_tracker;
-    ss::lw_shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
+    ss::shared_ptr<cluster::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::shared_ptr<cluster::tm_stm> _tm_stm;

@@ -306,6 +306,47 @@ replicated_partition::get_leader_epoch_last_offset(
     co_return _translator->from_log_offset(first_local_offset);
 }
 
+ss::future<error_code> replicated_partition::prefix_truncate(
+  model::offset kafka_truncation_offset,
+  ss::lowres_clock::time_point deadline) {
+    if (
+      kafka_truncation_offset <= start_offset()
+      || kafka_truncation_offset > high_watermark()) {
+        co_return error_code::offset_out_of_range;
+    }
+    const auto rp_truncate_offset = _translator->to_log_offset(
+      kafka_truncation_offset);
+    auto errc = co_await _partition->prefix_truncate(
+      rp_truncate_offset, deadline);
+
+    /// Translate any std::error_codes into proper kafka error codes
+    auto kerr = error_code::unknown_server_error;
+    if (errc.category() == cluster::error_category()) {
+        switch (cluster::errc(errc.value())) {
+        case cluster::errc::success:
+            kerr = error_code::none;
+            break;
+        case cluster::errc::timeout:
+        case cluster::errc::shutting_down:
+            kerr = error_code::request_timed_out;
+            break;
+        case cluster::errc::topic_invalid_config:
+        default:
+            vlog(
+              klog.error,
+              "Unhandled cluster::errc encountered: {}",
+              errc.value());
+            kerr = error_code::unknown_server_error;
+        }
+    } else {
+        vlog(
+          klog.error,
+          "Unhandled error_category encountered: {}",
+          errc.category().name());
+    }
+    co_return kerr;
+}
+
 ss::future<error_code> replicated_partition::validate_fetch_offset(
   model::offset fetch_offset,
   bool reading_from_follower,

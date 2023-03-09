@@ -51,7 +51,7 @@
 
 using namespace std::literals::chrono_literals;
 
-namespace {
+namespace storage {
 /*
  * Some logs must be exempt from the cleanup=delete policy such that their full
  * history is retained. This function explicitly protects against any accidental
@@ -68,9 +68,6 @@ bool deletion_exempt(const model::ntp& ntp) {
                              && ntp.tp.topic == model::tx_manager_topic;
     return !is_tx_manager_ntp && is_internal_namespace;
 }
-} // namespace
-
-namespace storage {
 
 disk_log_impl::disk_log_impl(
   ntp_config cfg,

@@ -42,6 +42,8 @@ public:
         virtual bool is_elected_leader() const = 0;
         virtual bool is_leader() const = 0;
         virtual ss::future<std::error_code> linearizable_barrier() = 0;
+        virtual ss::future<error_code>
+          prefix_truncate(model::offset, ss::lowres_clock::time_point) = 0;
         virtual ss::future<storage::translating_reader> make_reader(
           storage::log_reader_config,
           std::optional<model::timeout_clock::time_point>)
@@ -76,6 +78,11 @@ public:
 
     ss::future<std::error_code> linearizable_barrier() {
         return _impl->linearizable_barrier();
+    }
+
+    ss::future<error_code>
+    prefix_truncate(model::offset o, ss::lowres_clock::time_point deadline) {
+        return _impl->prefix_truncate(o, deadline);
     }
 
     bool is_elected_leader() const { return _impl->is_elected_leader(); }

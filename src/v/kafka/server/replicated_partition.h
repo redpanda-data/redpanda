@@ -112,6 +112,9 @@ public:
 
     bool is_leader() const final { return _partition->is_leader(); }
 
+    ss::future<error_code>
+      prefix_truncate(model::offset, ss::lowres_clock::time_point) final;
+
     ss::future<std::error_code> linearizable_barrier() final {
         auto r = co_await _partition->linearizable_barrier();
         if (r) {

@@ -74,9 +74,12 @@ partition::partition(
         _id_allocator_stm = ss::make_shared<cluster::id_allocator_stm>(
           clusterlog, _raft.get());
     } else if (is_tx_manager_topic(_raft->ntp())) {
-        if (_raft->log_config().is_collectable()) {
-            _log_eviction_stm = ss::make_lw_shared<cluster::log_eviction_stm>(
+        if (
+          _raft->log_config().is_collectable()
+          && !storage::deletion_exempt(_raft->ntp())) {
+            _log_eviction_stm = ss::make_shared<cluster::log_eviction_stm>(
               _raft.get(), clusterlog, _as, _kvstore);
+            stm_manager->add_stm(_log_eviction_stm);
         }
 
         if (_is_tx_enabled) {
@@ -87,9 +90,12 @@ partition::partition(
             stm_manager->add_stm(_tm_stm);
         }
     } else {
-        if (_raft->log_config().is_collectable()) {
-            _log_eviction_stm = ss::make_lw_shared<cluster::log_eviction_stm>(
+        if (
+          _raft->log_config().is_collectable()
+          && !storage::deletion_exempt(_raft->ntp())) {
+            _log_eviction_stm = ss::make_shared<cluster::log_eviction_stm>(
               _raft.get(), clusterlog, _as, _kvstore);
+            stm_manager->add_stm(_log_eviction_stm);
         }
         const model::topic_namespace tp_ns(
           _raft->ntp().ns, _raft->ntp().tp.topic);
@@ -169,6 +175,28 @@ partition::partition(
 }
 
 partition::~partition() {}
+
+ss::future<std::error_code> partition::prefix_truncate(
+  model::offset truncation_offset, ss::lowres_clock::time_point deadline) {
+    if (!_log_eviction_stm) {
+        vlog(
+          clusterlog.info,
+          "Cannot prefix-truncate topic/partition {} retention settings not "
+          "applied",
+          _raft->ntp());
+        co_return make_error_code(errc::topic_invalid_config);
+    }
+    if (_archival_meta_stm) {
+        vlog(
+          clusterlog.info,
+          "Cannot prefix-truncate topic/partition {} cloud settings are "
+          "applied",
+          _raft->ntp());
+        co_return make_error_code(errc::topic_invalid_config);
+    }
+    co_return co_await _log_eviction_stm->truncate(
+      truncation_offset, deadline, _as);
+}
 
 ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
   const cloud_storage::offset_range& offsets) {
