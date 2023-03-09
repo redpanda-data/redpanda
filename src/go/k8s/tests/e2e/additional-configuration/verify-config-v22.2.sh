@@ -1,7 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2034  # this is a library file
 expected=$(
-    cat <<EOF
+  cat <<EOF
 config_file: /etc/redpanda/redpanda.yaml
 pandaproxy:
   advertised_pandaproxy_api:

@@ -17,6 +17,7 @@ while getopts 'r:b:c:-:' OPTION; do
     ?)
       echo "usage: $(basename $0) -r <pandaproxy retries> [-c <crash loop limit>] [-b <branch>]"
       exit 1
+      ;;
   esac
 done
 
@@ -32,7 +33,7 @@ if ! (echo "${BRANCH}" | grep -q -E 'v2[2-9]\.[1-4]|dev'); then
   BRANCH=dev
 fi
 
-if [[ "${BRANCH}" == "dev" && -z "$CRASH_LOOP_LIMIT" ]]; then
+if [[ ${BRANCH} == "dev" && -z $CRASH_LOOP_LIMIT ]]; then
   echo "requires two argument, pandaproxy retries count and crash loop limit"
   exit 1
 fi
