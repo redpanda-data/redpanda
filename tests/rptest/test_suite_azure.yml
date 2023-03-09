@@ -1,0 +1,14 @@
+azure:
+  included:
+    - tests
+
+  excluded:
+    - tests/librdkafka_test.py # normally disabled
+    - tests/wasm_filter_test.py # no wasm
+    - tests/wasm_failure_recovery_test.py # no wasm
+    - tests/wasm_identity_test.py # no wasm
+    - tests/wasm_topics_test.py # no wasm
+    - tests/wasm_redpanda_failure_recovery_test.py # no wasm
+    - tests/wasm_partition_movement_test.py # no wasm
+    - tests/e2e_iam_role_test.py # use static credentials
+    - tests/consumer_group_recovery_tool_test.py # use script available in dockerfile
