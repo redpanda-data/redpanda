@@ -307,7 +307,11 @@ private:
 
     ss::sharded<ss::abort_source>& _as;
 
-    absl::flat_hash_set<model::node_id> _connections_to_remove;
+    // A set of node ids for which the removed command has already been
+    // processed, but that are still members of the controller group. We can
+    // close a connection to these nodes only after they leave the controller
+    // group and are fully removed.
+    absl::flat_hash_set<model::node_id> _removed_nodes_still_in_raft0;
 
     const config::tls_config _rpc_tls_config;
 
