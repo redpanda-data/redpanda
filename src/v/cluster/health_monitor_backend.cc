@@ -223,12 +223,12 @@ std::optional<node_health_report> health_monitor_backend::build_node_report(
     return report;
 }
 
-void health_monitor_backend::abortable_refresh_request::abort() {
+void health_monitor_backend::abortable_refresh_request::abort(errc ec) {
     if (finished) {
         return;
     }
     finished = true;
-    done.set_value(errc::leadership_changed);
+    done.set_value(ec);
 }
 
 health_monitor_backend::abortable_refresh_request::abortable_refresh_request(
@@ -378,13 +378,13 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
     co_return make_error_code(errc::success);
 }
 
-void health_monitor_backend::abort_current_refresh() {
+void health_monitor_backend::abort_current_refresh(errc ec) {
     if (_refresh_request) {
         vlog(
           clusterlog.debug,
           "aborting current refresh request to {}",
           _refresh_request->leader_id);
-        _refresh_request->abort();
+        _refresh_request->abort(ec);
     }
 }
 
@@ -824,6 +824,26 @@ health_monitor_backend::get_cluster_health_overview(
 
 bool health_monitor_backend::does_raft0_have_leader() {
     return _raft0->get_leader_id().has_value();
+}
+
+void health_monitor_backend::reset() {
+    // Explicitly reset or wipe state here instead of calling stop() because
+    // stop() will also close the gate and break the mutex
+
+    // Do not clear _node_callbacks because this is used to notify other
+    // structures, such as the feature manager, of changes in cluster health
+
+    vlog(clusterlog.info, "Resetting Health Monitor Backend");
+    _last_replies.clear();
+    _reports.clear();
+    _status.clear();
+    abort_current_refresh(errc::reset_in_progress);
+
+    if (_refresh_request) {
+        _refresh_request.release();
+    }
+    _last_refresh = ss::lowres_clock::time_point{};
+    _reports_disk_health = storage::disk_space_alert::ok;
 }
 
 } // namespace cluster

@@ -10,6 +10,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/health_monitor_types.h"
 #include "cluster/node/local_monitor.h"
@@ -58,6 +59,7 @@ public:
       ss::sharded<features::feature_table>&);
 
     ss::future<> stop();
+    void reset();
 
     ss::future<result<cluster_health_report>> get_cluster_health(
       cluster_report_filter, force_refresh, model::timeout_clock::time_point);
@@ -90,7 +92,7 @@ private:
 
         ss::future<std::error_code>
           abortable_await(ss::future<std::error_code>);
-        void abort();
+        void abort(errc ec = errc::leadership_changed);
 
         bool finished = false;
         model::node_id leader_id;
@@ -136,7 +138,7 @@ private:
       process_node_reply(model::node_id, result<get_node_health_reply>);
 
     std::chrono::milliseconds max_metadata_age();
-    void abort_current_refresh();
+    void abort_current_refresh(errc ec = errc::leadership_changed);
 
     void on_leadership_changed(
       raft::group_id, model::term_id, std::optional<model::node_id>);
