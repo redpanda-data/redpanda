@@ -16,6 +16,7 @@
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "random/generators.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
@@ -29,9 +30,13 @@
 #include <fmt/ostream.h>
 
 #include <algorithm>
+#include <bitset>
+#include <cstddef>
 #include <cstdint>
 #include <exception>
 #include <functional>
+#include <iterator>
+#include <limits>
 #include <optional>
 #include <ostream>
 #include <system_error>
@@ -593,11 +598,31 @@ void members_backend::calculate_reallocations_batch(
                 continue;
             }
         }
+        size_t rand_idx = 0;
+        /**
+         * We use 64 bit field initialized with random number to sample topic
+         * partitions to move, every time the bitfield is exhausted we
+         * reinitialize it and reset counter. This way we chose random
+         * partitions to move without iterating multiple times over the topic
+         * set
+         */
+        std::bitset<sizeof(uint64_t)> sampling_bytes;
         for (const auto& p : metadata.get_assignments()) {
             if (idx_it->second > current_idx++) {
                 continue;
             }
+
+            if (rand_idx % sizeof(uint64_t) == 0) {
+                sampling_bytes = random_generators::get_int(
+                  std::numeric_limits<uint64_t>::max());
+                rand_idx = 0;
+            }
+
             idx_it->second++;
+
+            if (sampling_bytes.test(rand_idx++)) {
+                continue;
+            }
 
             std::erase_if(to_move_from_node, [](const replicas_to_move& v) {
                 return v.left_to_move == 0;
