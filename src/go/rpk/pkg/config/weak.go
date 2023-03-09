@@ -10,6 +10,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/twmb/tlscfg"
 	"gopkg.in/yaml.v3"
 )
 
@@ -362,6 +364,28 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	if v.Kind() == reflect.Slice {
 		once.Do(func() {
 			fmt.Fprintf(os.Stderr, "WARNING: Due to an old rpk bug, your redpanda.yaml's redpanda.rpc_server_tls property is an array, and redpanda reads the field as a struct. rpk cannot automatically fix this: brokers would not be able to rejoin the cluster during a rolling upgrade. To enable TLS on broker RPC ports, you must turn off your cluster, switch the redpanda.rpc_server_tls field to a struct, and then turn your cluster back on. To switch from a list to a struct, replace the single dash under redpanda.rpc_server_tls with a space. This message will continue to appear while redpanda.rpc_server_tls exists and is an array\n")
+
+			// We only care for the first element in the list (if there is any),
+			// we parse the value and check if it's a valid TLS config and print
+			// a warning otherwise.
+			rpcTLS := v.Index(0).Interface()
+			b, _ := json.Marshal(rpcTLS)
+
+			t := ServerTLS{}
+			if err := json.Unmarshal(b, &t); err == nil {
+				_, err := tlscfg.New(
+					tlscfg.MaybeWithDiskCA(
+						t.TruststoreFile,
+						tlscfg.ForClient,
+					),
+					tlscfg.MaybeWithDiskKeyPair(
+						t.CertFile,
+						t.KeyFile,
+					))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "WARNING: Your redpanda.yaml's redpanda.rpc_server_tls is detected to be invalid. Please validate your certs before trying to enable TLS on on your RPC port: %v\n", err)
+				}
+			}
 		})
 	}
 
