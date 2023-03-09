@@ -1,7 +1,7 @@
 #!/bin/bash
 
 expected=$(
-    cat <<EOF
+  cat <<EOF
 redpanda:
     data_directory: /var/lib/redpanda/data
     empty_seed_starts_cluster: false
@@ -75,5 +75,4 @@ schema_registry:
           port: 8081
           name: external
 EOF
-  )
-
+)
