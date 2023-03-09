@@ -20,6 +20,7 @@
 #include "kafka/server/handlers/create_topics.h"
 #include "kafka/server/handlers/delete_acls.h"
 #include "kafka/server/handlers/delete_groups.h"
+#include "kafka/server/handlers/delete_records.h"
 #include "kafka/server/handlers/delete_topics.h"
 #include "kafka/server/handlers/describe_acls.h"
 #include "kafka/server/handlers/describe_configs.h"
@@ -70,6 +71,7 @@ using request_types = make_request_types<
   api_versions_handler,
   join_group_handler,
   heartbeat_handler,
+  delete_records_handler,
   leave_group_handler,
   sync_group_handler,
   create_topics_handler,
