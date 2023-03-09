@@ -114,6 +114,8 @@ public:
         model::node_id id;
         node_update_type type;
         model::offset offset;
+        // indicates if command needs a raft 0 configuration update
+        bool need_raft0_update = false;
         friend bool operator==(const node_update&, const node_update&)
           = default;
         friend std::ostream& operator<<(std::ostream&, const node_update&);

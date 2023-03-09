@@ -1205,15 +1205,23 @@ void members_backend::handle_reallocation_finished(model::node_id id) {
 }
 
 ss::future<> members_backend::reconcile_raft0_updates() {
+    vlog(clusterlog.trace, "starting raft 0 reconciliation");
     while (!_as.local().abort_requested()) {
         co_await _new_updates.wait([this] { return !_raft0_updates.empty(); });
-
+        vlog(
+          clusterlog.trace, "raft_0 updates_size: {}", _raft0_updates.size());
         // check the _raft0_updates as the predicate may not longer hold
         if (_raft0_updates.empty()) {
             continue;
         }
 
         auto update = _raft0_updates.front();
+
+        if (!update.need_raft0_update) {
+            vlog(clusterlog.trace, "skipping raft 0 update: {}", update);
+            _raft0_updates.pop_front();
+            continue;
+        }
         vlog(clusterlog.trace, "processing raft 0 update: {}", update);
         auto err = co_await update_raft0_configuration(update);
         if (err) {
