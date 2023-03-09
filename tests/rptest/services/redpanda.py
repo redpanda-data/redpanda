@@ -1051,8 +1051,8 @@ class RedpandaService(Service):
               start_si=True,
               parallel: bool = True,
               expect_fail: bool = False,
-              auto_assign_node_id: bool = False,
-              omit_seeds_on_idx_one: bool = True):
+              auto_assign_node_id: bool = True,
+              omit_seeds_on_idx_one: bool = False):
         """
         Start the service on all nodes.
 
@@ -1380,8 +1380,8 @@ class RedpandaService(Service):
                    write_config=True,
                    first_start=False,
                    expect_fail: bool = False,
-                   auto_assign_node_id: bool = False,
-                   omit_seeds_on_idx_one: bool = True,
+                   auto_assign_node_id: bool = True,
+                   omit_seeds_on_idx_one: bool = False,
                    skip_readiness_check: bool = False):
         """
         Start a single instance of redpanda. This function will not return until
@@ -2138,8 +2138,8 @@ class RedpandaService(Service):
     def write_node_conf_file(self,
                              node,
                              override_cfg_params=None,
-                             auto_assign_node_id=False,
-                             omit_seeds_on_idx_one=True):
+                             auto_assign_node_id=True,
+                             omit_seeds_on_idx_one=False):
         """
         Write the node config file for a redpanda node: this is the YAML representation
         of Redpanda's `node_config` class.  Distinct from Redpanda's _cluster_ configuration
