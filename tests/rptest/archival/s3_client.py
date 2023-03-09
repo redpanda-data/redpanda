@@ -171,7 +171,7 @@ class S3Client:
                     try:
                         # GCS does not support bulk delete operation through S3 complaint clients
                         # https://cloud.google.com/storage/docs/migrating#methods-comparison
-                        if 'storage.googleapis.com' in self._endpoint:
+                        if self._endpoint is not None and 'storage.googleapis.com' in self._endpoint:
                             for k in key_list:
                                 local.client.delete_object(Bucket=name, Key=k)
                         else:
