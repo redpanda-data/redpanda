@@ -189,6 +189,8 @@ members_manager::changed_nodes members_manager::calculate_changed_nodes(
 
 ss::future<> members_manager::handle_raft0_cfg_update(
   raft::group_configuration cfg, model::offset update_offset) {
+    absl::flat_hash_set<model::node_id> fully_removed_nodes;
+
     // skip if configuration does not contain brokers
     if (unlikely(
           cfg.is_with_brokers()
@@ -224,19 +226,24 @@ ss::future<> members_manager::handle_raft0_cfg_update(
             co_await do_apply_remove_node(
               remove_node_cmd(id, 0), update_offset);
         }
-        co_return;
-    }
 
-    std::vector<model::node_id> fully_removed_nodes;
-    for (const auto& id : _removed_nodes_still_in_raft0) {
-        if (!cfg.contains(raft::vnode(id, model::revision_id(0)))) {
-            fully_removed_nodes.push_back(id);
+        // The cluster hasn't yet switched to using node management commands so
+        // all nodes that were just removed in do_apply_remove_node are
+        // considered fully removed. We can immediately close connections to
+        // them.
+        std::swap(_removed_nodes_still_in_raft0, fully_removed_nodes);
+    } else {
+        for (const auto& id : _removed_nodes_still_in_raft0) {
+            if (!cfg.contains(raft::vnode(id, model::revision_id(0)))) {
+                fully_removed_nodes.insert(id);
+            }
+        }
+
+        for (auto id : fully_removed_nodes) {
+            _removed_nodes_still_in_raft0.erase(id);
         }
     }
 
-    for (auto id : fully_removed_nodes) {
-        _removed_nodes_still_in_raft0.erase(id);
-    }
     if (update_offset >= _last_connection_update_offset) {
         for (auto id : fully_removed_nodes) {
             if (id != _self.id()) {
