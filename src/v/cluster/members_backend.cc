@@ -852,7 +852,7 @@ ss::future<std::error_code> members_backend::reconcile() {
               "[update: {}] decommissioning finished, removing node from "
               "cluster",
               meta.update);
-            co_await do_remove_node(meta.update->id, meta.update->offset);
+            co_await do_remove_node(meta.update->id);
         } else {
             // Decommissioning still in progress
             vlog(
@@ -885,13 +885,12 @@ ss::future<std::error_code> members_backend::reconcile() {
     co_return errc::update_in_progress;
 }
 
-ss::future<std::error_code> members_backend::do_remove_node(
-  model::node_id id, model::offset update_offset) {
-    if (_features.local().is_active(
+ss::future<std::error_code> members_backend::do_remove_node(model::node_id id) {
+    if (!_features.local().is_active(
           features::feature::membership_change_controller_cmds)) {
-        return _members_frontend.local().remove_node(id);
+        return _raft0->remove_member(id, model::revision_id{0});
     }
-    return _raft0->remove_member(id, model::revision_id(update_offset));
+    return _members_frontend.local().remove_node(id);
 }
 
 bool members_backend::should_stop_rebalancing_update(
