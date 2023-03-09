@@ -1235,6 +1235,14 @@ configuration::configuration()
       "remote storage (sec)",
       {.visibility = visibility::tunable},
       std::nullopt)
+  , cloud_storage_manifest_max_upload_interval_sec(
+      *this,
+      "cloud_storage_manifest_max_upload_interval_sec",
+      "Wait at least this long between partition manifest uploads. Actual time "
+      "between uploads may be greater than this interval. If this is null, "
+      "metadata will be updated after each segment upload.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60s)
   , cloud_storage_readreplica_manifest_sync_timeout_ms(
       *this,
       "cloud_storage_readreplica_manifest_sync_timeout_ms",

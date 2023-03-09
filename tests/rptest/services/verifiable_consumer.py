@@ -279,7 +279,6 @@ class VerifiableConsumer(BackgroundThreadService):
         self.stop_timeout_sec = stop_timeout_sec
         self.on_record_consumed = on_record_consumed
         self.verify_offsets = verify_offsets
-        self.last_committed = None
         self.last_consumed = None
 
         self.event_handlers = {}
@@ -366,7 +365,6 @@ class VerifiableConsumer(BackgroundThreadService):
                 state.record_committed(tp,
                                        offset_commit["offset"],
                                        verify_position=True)
-                self.last_committed = datetime.now()
 
     def _update_global_committed_fetched(self, fetch_offsets_ev,
                                          state: WorkerState):
@@ -522,17 +520,12 @@ class VerifiableConsumer(BackgroundThreadService):
 
     def get_committed_offsets(self):
         with self.lock:
-            tps = set().union(s.committed.keys
-                              for s in self.global_state.values())
-            return dict({tp: self.last_committed(tp) for tp in tps})
+            return dict((i, worker.committed)
+                        for i, worker in self.global_state.items())
 
     def get_last_consumed(self):
         with self.lock:
             return self.last_consumed
-
-    def get_last_committed(self):
-        with self.lock:
-            return self.last_committed
 
     def verify_position_offsets_consistency(self):
         msg = []

@@ -190,7 +190,8 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
     def __init__(self, test_context):
         self.si_settings = SISettings(test_context,
-                                      log_segment_size=1024 * 1024)
+                                      log_segment_size=1024 * 1024,
+                                      fast_uploads=True)
         super().__init__(
             test_context=test_context,
             # Use all nodes as brokers: enables each test to set num_nodes

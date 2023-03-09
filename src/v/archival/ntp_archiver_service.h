@@ -33,6 +33,9 @@
 
 namespace archival {
 
+// Forward declaration for test class that we will befriend
+class archival_fixture;
+
 using namespace std::chrono_literals;
 
 enum class segment_upload_kind { compacted, non_compacted };
@@ -87,8 +90,15 @@ public:
     /// Get revision id
     model::initial_revision_id get_revision_id() const;
 
-    /// Get timestamp
-    const ss::lowres_clock::time_point get_last_upload_time() const;
+    /// Get time when partition manifest was last uploaded
+    const ss::lowres_clock::time_point get_last_manfiest_upload_time() const {
+        return _last_manifest_upload_time;
+    }
+
+    /// Get time when a data segment was last uploaded
+    const ss::lowres_clock::time_point get_last_segment_upload_time() const {
+        return _last_segment_upload_time;
+    }
 
     /// Download manifest from pre-defined S3 locatnewion
     ///
@@ -106,6 +116,7 @@ public:
         auto operator<=>(const upload_group_result&) const = default;
     };
 
+    // The result of a group of parallel uploads
     struct batch_result {
         upload_group_result non_compacted_upload_result;
         upload_group_result compacted_upload_result;
@@ -322,7 +333,8 @@ private:
     /// the upload.
     ss::future<ntp_archiver::upload_group_result> wait_uploads(
       std::vector<scheduled_upload> scheduled,
-      segment_upload_kind segment_kind);
+      segment_upload_kind segment_kind,
+      bool inline_manifest);
 
     /// Upload individual segment to S3.
     ///
@@ -342,6 +354,16 @@ private:
       upload_candidate candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
+
+    /// Upload manifest if it is dirty.  Proceed without raising on issues,
+    /// in the expectation that we will be called again in the main upload loop.
+    /// Returns true if something was uploaded (_projected_manifest_clean_at
+    /// will have been updated if so)
+    ss::future<bool> maybe_upload_manifest();
+
+    /// If we have a projected manifest clean offset, then flush it to
+    /// the persistent stm clean offset.
+    ss::future<> maybe_flush_manifest_clean_offset();
 
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest(
@@ -419,7 +441,12 @@ private:
     config::binding<size_t> _max_segments_pending_deletion;
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
-    ss::lowres_clock::time_point _last_upload_time;
+
+    // When we last wrote the partition manifest to object storage
+    ss::lowres_clock::time_point _last_manifest_upload_time;
+
+    // When we last wrote a segment
+    ss::lowres_clock::time_point _last_segment_upload_time;
 
     // Used during leadership transfer: instructs the archiver to
     // not proceed with uploads, even if it has leadership.
@@ -451,6 +478,21 @@ private:
     // NTP level adjacent segment merging job
     std::unique_ptr<housekeeping_job> _local_segment_merger;
     config::binding<bool> _segment_merging_enabled;
+
+    // The archival metadata stm has its own clean/dirty mechanism, but it
+    // is expensive to persistently mark it clean after each segment upload,
+    // if the uploads are infrequent enough to exceed manifest_upload_interval.
+    // As long as leadership remains stable, we may use an in-memory clean
+    // offset to track that we have uploaded manifest for a particular offset,
+    // without persisting this clean offset to the stm.
+    std::optional<model::offset> _projected_manifest_clean_at;
+
+    // If this duration has elapsed since _last_manifest_upload_time,
+    // then upload at the next opportunity.
+    config::binding<std::optional<std::chrono::seconds>>
+      _manifest_upload_interval;
+
+    friend class archival_fixture;
 };
 
 } // namespace archival

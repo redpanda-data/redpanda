@@ -842,7 +842,7 @@ class TimeBasedRetention(BaseCase):
             data = self._s3.get_object_data(self._bucket, id)
             self.logger.info(f"patching manifest {id}, content: {data}")
             obj = json.loads(data)
-            segments = obj['segments']
+            segments = obj.get('segments', {})
             segment_attr = []
             for name_or_path, attrs in segments.items():
                 max_timestamp = attrs['max_timestamp']
@@ -1006,7 +1006,8 @@ class TopicRecoveryTest(RedpandaTest):
                                  cloud_storage_max_connections=5,
                                  cloud_storage_segment_max_upload_interval_sec=
                                  CLOUD_STORAGE_SEGMENT_MAX_UPLOAD_INTERVAL_SEC,
-                                 log_segment_size=default_log_segment_size)
+                                 log_segment_size=default_log_segment_size,
+                                 fast_uploads=True)
 
         self.s3_bucket = si_settings.cloud_storage_bucket
 

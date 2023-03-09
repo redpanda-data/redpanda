@@ -48,6 +48,13 @@ public:
     /// Access all http requests ordered by time
     const std::vector<ss::httpd::request>& get_requests() const;
 
+    /// Get the latest request to a particular URL
+    std::optional<std::reference_wrapper<const ss::httpd::request>>
+    get_latest_request(const ss::sstring& url) const;
+
+    /// Get the number of requests to a particular URL
+    size_t get_request_count(const ss::sstring& url) const;
+
     /// Access all http requests ordered by target url
     const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
 

@@ -519,13 +519,13 @@ class ArchivalTest(RedpandaTest):
     def _verify_manifest(self, ntp, manifest, remote):
         """Check that all segments that present in manifest are available
         in remote storage"""
-        for key, meta in manifest['segments'].items():
+        for key, meta in manifest.get('segments', {}).items():
             segment_name = gen_segment_name_from_meta(meta, key=key)
             spath = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{ntp.revision}/{segment_name}"
             self.logger.info(f"validating manifest path {spath}")
             assert spath in remote
         ranges = [(int(m['base_offset']), int(m['committed_offset']))
-                  for m in manifest['segments'].values()]
+                  for m in manifest.get('segments', {}).values()]
         ranges = sorted(ranges, key=lambda x: x[0])
         last_offset = -1
         num_gaps = 0

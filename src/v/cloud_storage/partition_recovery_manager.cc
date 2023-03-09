@@ -340,7 +340,9 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           r.duration);
     }
     // Move parts to final destinations
-    co_await move_parts(part);
+    if (part.num_files > 0) {
+        co_await move_parts(part);
+    }
 
     log_recovery_result result{
       .completed = true,

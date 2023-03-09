@@ -289,10 +289,6 @@ public:
         }
     }
 
-    /// Fixture testing hook, for tests that would like to stop the
-    /// usual archiver and start their own
-    ss::future<> stop_archiver();
-
     uint64_t upload_backlog_size() const;
 
     /**

@@ -124,6 +124,18 @@ remote_probe::remote_probe(
              sm::description("Number of receive errors"),
              {direction_label("rx")})
              .aggregate({sm::shard_label}),
+           sm::make_counter(
+             "partition_manifest_uploads_total",
+             [this] { return get_partition_manifest_uploads(); },
+             sm::description("Successful partition manifest uploads"),
+             {})
+             .aggregate({sm::shard_label}),
+           sm::make_counter(
+             "segment_uploads_total",
+             [this] { return get_successful_uploads(); },
+             sm::description("Successful data segment uploads"),
+             {})
+             .aggregate({sm::shard_label}),
            sm::make_gauge(
              "active_segments",
              [&ms] { return ms.current_segments(); },

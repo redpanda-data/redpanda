@@ -56,6 +56,7 @@ class EndToEndShadowIndexingBase(EndToEndTest):
             test_context,
             cloud_storage_max_connections=5,
             log_segment_size=self.segment_size,  # 1MB
+            fast_uploads=True,
         )
         self.s3_bucket_name = self.si_settings.cloud_storage_bucket
         self.si_settings.load_context(self.logger, test_context)
@@ -447,7 +448,8 @@ class ShadowIndexingWhileBusyTest(PreallocNodesTest):
                                  log_segment_size=self.segment_size,
                                  cloud_storage_cache_size=20 * 2**30,
                                  cloud_storage_enable_remote_read=False,
-                                 cloud_storage_enable_remote_write=False)
+                                 cloud_storage_enable_remote_write=False,
+                                 fast_uploads=True)
 
         super(ShadowIndexingWhileBusyTest,
               self).__init__(test_context=test_context,
