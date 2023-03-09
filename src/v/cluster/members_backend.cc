@@ -261,13 +261,15 @@ ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
 
 void members_backend::reallocations_for_even_partition_count(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
+    size_t prev_reallocations_count = meta.partition_reallocations.size();
     calculate_reallocations_batch(meta, domain);
-
     auto current_error = calculate_unevenness_error(domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
-    const auto min_improvement = std::max<size_t>(
-                                   meta.partition_reallocations.size() / 10, 1)
-                                 * current_error.e_step;
+    const auto min_improvement
+      = std::max<size_t>(
+          (meta.partition_reallocations.size() - prev_reallocations_count) / 10,
+          1)
+        * current_error.e_step;
 
     auto improvement = it->second - current_error.e;
     vlog(
@@ -284,7 +286,11 @@ void members_backend::reallocations_for_even_partition_count(
 
     // drop all reallocations if there is no improvement
     if (improvement < min_improvement) {
-        meta.partition_reallocations.clear();
+        meta.partition_reallocations.erase(
+          std::next(
+            meta.partition_reallocations.begin(),
+            static_cast<long>(prev_reallocations_count)),
+          meta.partition_reallocations.end());
     }
 }
 
