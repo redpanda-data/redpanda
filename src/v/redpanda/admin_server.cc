@@ -83,8 +83,10 @@
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/prometheus.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
@@ -100,6 +102,8 @@
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
 
+#include <charconv>
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <system_error>
@@ -138,9 +142,16 @@ admin_server::admin_server(
   , _self_test_frontend(self_test_frontend)
   , _schema_registry(schema_registry)
   , _topic_recovery_service(topic_recovery_svc)
-  , _topic_recovery_status_frontend(topic_recovery_status_frontend) {}
+  , _topic_recovery_status_frontend(topic_recovery_status_frontend)
+  , _default_blocked_reactor_notify(
+      ss::engine().get_blocked_reactor_notify_ms()) {}
 
 ss::future<> admin_server::start() {
+    _blocked_reactor_notify_reset_timer.set_callback([this] {
+        return ss::smp::invoke_on_all([ms = _default_blocked_reactor_notify] {
+            ss::engine().update_blocked_reactor_notify_ms(ms);
+        });
+    });
     configure_metrics_route();
     configure_admin_routes();
 
@@ -152,7 +163,10 @@ ss::future<> admin_server::start() {
       _cfg.endpoints);
 }
 
-ss::future<> admin_server::stop() { return _server.stop(); }
+ss::future<> admin_server::stop() {
+    _blocked_reactor_notify_reset_timer.cancel();
+    return _server.stop();
+}
 
 void admin_server::configure_admin_routes() {
     auto rb = ss::make_shared<ss::api_registry_builder20>(
@@ -1031,6 +1045,70 @@ void admin_server::register_config_routes() {
 
           return ss::make_ready_future<ss::json::json_return_type>(
             ss::json::json_void());
+      });
+
+    register_route<superuser>(
+      ss::httpd::config_json::blocked_reactor_notify_ms,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          ss::sstring timeout_str;
+          if (!ss::httpd::connection::url_decode(
+                req->param["timeout"], timeout_str)) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Required parameter 'timeout' is not set"));
+          }
+
+          std::chrono::milliseconds ms;
+          try {
+              ms = std::clamp(
+                std::chrono::milliseconds(
+                  boost::lexical_cast<long long>(timeout_str)),
+                1ms,
+                _default_blocked_reactor_notify);
+          } catch (const boost::bad_lexical_cast&) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'timeout' value {{{}}}", timeout_str));
+          }
+
+          std::optional<std::chrono::seconds> expires;
+          static constexpr std::chrono::seconds max_expire_time_sec
+            = std::chrono::minutes(30);
+          if (auto e = req->get_query_param("expires"); !e.empty()) {
+              try {
+                  expires = std::clamp(
+                    std::chrono::seconds(boost::lexical_cast<long long>(e)),
+                    1s,
+                    max_expire_time_sec);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid parameter 'expires' value {{{}}}", e));
+              }
+          }
+
+          // This value is used when the expiration time is not set explicitly
+          static constexpr std::chrono::seconds default_expiration_time
+            = std::chrono::minutes(5);
+          auto curr = ss::engine().get_blocked_reactor_notify_ms();
+
+          vlog(
+            logger.info,
+            "Setting blocked_reactor_notify_ms from {} to {} for {} "
+            "(default={})",
+            curr,
+            ms.count(),
+            expires.value_or(default_expiration_time),
+            _default_blocked_reactor_notify);
+
+          return ss::smp::invoke_on_all(
+                   [ms] { ss::engine().update_blocked_reactor_notify_ms(ms); })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            })
+            .finally([this, expires] {
+                _blocked_reactor_notify_reset_timer.rearm(
+                  ss::steady_clock_type::now()
+                  + expires.value_or(default_expiration_time));
+            });
       });
 }
 
