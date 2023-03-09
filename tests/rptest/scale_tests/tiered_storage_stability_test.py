@@ -29,6 +29,8 @@ from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
 from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.metrics_check import MetricCheck
+from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
+from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
 
 class TieredStorageWithLoadTest(PreallocNodesTest):
@@ -468,6 +470,71 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
             consumer.stop()
             consumer.wait(timeout_sec=600)
 
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_consume(self):
+        self.setup_cluster(segment_bytes=self.small_segment_size,
+                           retention_local_bytes=2 * self.small_segment_size)
+        # Generate a realistic number of segments per partition.
+        self.load_many_segments()
+        producer = None
+        try:
+            producer = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic_name,
+                msg_size=self.msg_size,
+                msg_count=5 * 1024 * 1024 * 1024 * 1024,
+                rate_limit_bps=self.scaled_data_bps,
+                custom_node=[self.preallocated_nodes[0]])
+            producer.start()
+            wait_until(lambda: producer.produce_status.acked > 10000,
+                       timeout_sec=60,
+                       backoff_sec=1.0)
+
+            self.stage_lots_of_failed_consumers()
+            self.stage_hard_restart(producer)
+
+        finally:
+            producer.stop()
+            producer.wait(timeout_sec=600)
+            self.free_preallocated_nodes()
+
+    @cluster(num_nodes=10, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_ts_resource_utilization(self):
+        self.stage_tiered_storage_consuming()
+
+    def stage_lots_of_failed_consumers(self):
+        # This stage sequentially starts 1,000 consumers. Then allows
+        # them to consume ~10 messages before terminating them with
+        # a SIGKILL.
+
+        self.logger.info(f"Starting stage_lots_of_failed_consumers")
+
+        consume_count = 10000
+
+        def random_stop_check(consumer):
+            if consumer.message_count >= min(10, consume_count):
+                return True
+            else:
+                return False
+
+        while consume_count > 0:
+            consumer = RpkConsumer(self._ctx,
+                                   self.redpanda,
+                                   self.topic_name,
+                                   offset="newest",
+                                   num_msgs=consume_count)
+            consumer.start()
+            wait_until(lambda: random_stop_check(consumer),
+                       timeout_sec=10,
+                       backoff_sec=0.001)
+
+            consumer.stop()
+            consumer.free()
+
+            consume_count -= consumer.message_count
+            self.logger.warn(f"consumed {consumer.message_count} messages")
+
     def _consume_from_offset(self, topic_name: str, msg_count: int,
                              partition: int, starting_offset: str,
                              timeout_per_topic: int):
@@ -499,7 +566,42 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
             actual_offset = int(consumer.messages[0]['offset'])
             assert expected_offset == actual_offset, "expected_offset != actual_offset"
 
+    @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_consume_miss_cache(self):
+        self.setup_cluster(segment_bytes=self.small_segment_size,
+                           retention_local_bytes=2 * self.small_segment_size)
+        # Generate a realistic number of segments per partition.
+        self.load_many_segments()
+        producer = None
+        try:
+            producer = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic_name,
+                msg_size=self.msg_size,
+                msg_count=5 * 1024 * 1024 * 1024 * 1024,
+                rate_limit_bps=self.scaled_data_bps,
+                custom_node=[self.preallocated_nodes[0]])
+            producer.start()
+            wait_until(lambda: producer.produce_status.acked > 10000,
+                       timeout_sec=60,
+                       backoff_sec=1.0)
+
+            # this stage could have been a part of test_consume however one
+            # of the checks requires nicely balanced replicas, and this is
+            # something other test_consume stages could break
+            self.stage_consume_miss_cache(producer)
+
+        finally:
+            producer.stop()
+            producer.wait(timeout_sec=600)
+            self.free_preallocated_nodes()
+
     def stage_consume_miss_cache(self, producer: KgoVerifierProducer):
+        # This stage produces enough data to each RP node to fill up their batch caches
+        # for a specific topic. Then it consumes from offsets known to not be in the
+        # batch and verifies that these fetches occurred from disk and not the cache.
+
         self.logger.info(f"Starting stage_consume_miss_cache")
 
         # Get current offsets for topic. We'll use these for starting offsets
@@ -636,3 +738,170 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
 
             assert ok, "cache hit ratio is higher than expected"
 
+    def _run_omb(self, produce_bps,
+                 validator_overrides) -> OpenMessagingBenchmark:
+        topic_count = 1
+        partitions_per_topic = self.scaled_num_partitions
+        workload = {
+            "name": "StabilityTest",
+            "topics": topic_count,
+            "partitions_per_topic": partitions_per_topic,
+            "subscriptions_per_topic": 1,
+            "consumer_per_subscription": 2,
+            "producers_per_topic": 2,
+            "producer_rate": int(produce_bps / (4 * 1024)),
+            "message_size": 4 * 1024,
+            "payload_file": "payload/payload-4Kb.data",
+            "consumer_backlog_size_GB": 0,
+            "test_duration_minutes": 3,
+            "warmup_duration_minutes": 1,
+        }
+
+        bench_node = self.preallocated_nodes[0]
+        worker_nodes = self.preallocated_nodes[1:]
+
+        benchmark = OpenMessagingBenchmark(
+            self._ctx, self.redpanda, "SIMPLE_DRIVER",
+            (workload, OMBSampleConfigurations.UNIT_TEST_LATENCY_VALIDATOR
+             | validator_overrides))
+
+        benchmark.start()
+        return benchmark
+
+    def stage_tiered_storage_consuming(self):
+        # This stage starts two consume + produce workloads concurrently.
+        # One workload being a usual one without tiered storage that is
+        # consuming entirely from the batch cache. The other being a outlier
+        # where the consumer is consuming entirely from S3. The stage then
+        # ensures that the S3 workload doesn't impact the performance of the
+        # usual workload too greatly.
+
+        self.logger.info(f"Starting stage_tiered_storage_consuming")
+
+        segment_size = 128 * 1024 * 1024  # 128 MiB
+        consume_rate = 1 * 1024 * 1024 * 1024  # 1 GiB/s
+
+        # create a new topic with low local retention.
+        config = {
+            'segment.bytes': segment_size,
+            'retention.bytes': -1,
+            'retention.local.target.bytes': 2 * segment_size,
+            'cleanup.policy': 'delete',
+            'partition_autobalancing_node_availability_timeout_sec':
+            self.unavailable_timeout,
+            'partition_autobalancing_mode': 'continuous',
+            'raft_learner_recovery_rate': 10 * 1024 * 1024 * 1024,
+        }
+        self.rpk.create_topic(self.topic_name,
+                              partitions=self.scaled_num_partitions,
+                              replicas=3,
+                              config=config)
+
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic_name,
+                                       msg_size=self.msg_size,
+                                       msg_count=5 * 1024 * 1024 * 1024 * 1024,
+                                       rate_limit_bps=self.scaled_data_bps)
+        producer.start()
+
+        # produce 10 mins worth of consume data onto S3.
+        produce_time_s = 4 * 60
+        messages_to_produce = (produce_time_s * consume_rate) / self.msg_size
+        time_to_wait = (messages_to_produce *
+                        self.msg_size) / self.scaled_data_bps
+
+        wait_until(
+            lambda: producer.produce_status.acked >= messages_to_produce,
+            timeout_sec=1.5 * time_to_wait,
+            backoff_sec=5,
+            err_msg=
+            f"Could not ack production of {messages_to_produce} messages in {1.5 * time_to_wait} s"
+        )
+        # continue to produce the rest of the test
+
+        validator_overrides = {
+            OMBSampleConfigurations.E2E_LATENCY_50PCT:
+            [OMBSampleConfigurations.lte(51)],
+            OMBSampleConfigurations.E2E_LATENCY_AVG:
+            [OMBSampleConfigurations.lte(145)],
+        }
+
+        # Run a usual producer + consumer workload and a S3 producer + consumer workload concurrently
+        # Ensure that the S3 workload doesn't effect the usual workload majorly.
+        benchmark = self._run_omb(self.scaled_data_bps / 2,
+                                  validator_overrides)
+
+        # This consumer should largely be reading from S3
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               self.topic_name,
+                               offset="oldest",
+                               num_msgs=messages_to_produce)
+        consumer.start()
+        wait_until(
+            lambda: consumer.message_count >= messages_to_produce,
+            timeout_sec=5 * produce_time_s,
+            backoff_sec=5,
+            err_msg=
+            f"Could not consume {messages_to_produce} msgs in {5 * produce_time_s} s"
+        )
+        consumer.stop()
+        consumer.free()
+
+        benchmark_time_min = benchmark.benchmark_time() + 5
+        benchmark.wait(timeout_sec=benchmark_time_min * 60)
+        benchmark.check_succeed()
+
+    def stage_hard_restart(self, producer):
+        # This stage force stops all Redpanda nodes. It then
+        # starts them all again and verifies the cluster is
+        # healthy. Afterwards is runs some basic produce + consume
+        # operations.
+
+        self.logger.info(f"Starting stage_hard_restart")
+
+        # hard stop all nodes
+        self.logger.info("stopping all redpanda nodes")
+        for node in self.redpanda.nodes:
+            self.redpanda.stop_node(node, forced=True)
+
+        # start all nodes again
+        self.logger.info("starting all redpanda nodes")
+        for node in self.redpanda.nodes:
+            self.redpanda.start_node(node, timeout=600)
+
+        # wait until the cluster is health once more
+        self.logger.info("waiting for RP cluster to be healthy")
+        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+
+        # verify basic produce and consume operations still work.
+
+        self.logger.info("checking basic producer functions")
+        current_sent = producer.produce_status.sent
+        produce_count = 100
+
+        def producer_complete():
+            number_left = (current_sent +
+                           produce_count) - producer.produce_status.sent
+            self.logger.info(f"{number_left} messages still need to be sent.")
+            return number_left <= 0
+
+        wait_until(producer_complete, timeout_sec=60, backoff_sec=1)
+
+        self.logger.info("checking basic consumer functions")
+        current_sent = producer.produce_status.sent
+        consume_count = 100
+        consumer = RpkConsumer(self._ctx,
+                               self.redpanda,
+                               self.topic_name,
+                               offset="newest",
+                               num_msgs=consume_count)
+        consumer.start()
+        wait_until(lambda: consumer.message_count >= consume_count,
+                   timeout_sec=60,
+                   backoff_sec=1,
+                   err_msg=f"Could not consume {consume_count} msgs in 1 min")
+
+        consumer.stop()
+        consumer.free()
