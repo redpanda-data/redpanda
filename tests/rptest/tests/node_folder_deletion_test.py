@@ -78,14 +78,17 @@ class NodeFolderDeletionTest(PreallocNodesTest):
         wait_until(lambda: producer.produce_status.acked > 100000,
                    timeout_sec=120,
                    backoff_sec=0.5)
-        to_stop = random.choice(self.redpanda.nodes)
+        # explicitly skip node 0 as this is a seed server and its id doesn't change
+        to_stop = random.choice(self.redpanda.nodes[1:])
         id = self.redpanda.node_id(to_stop)
 
         # remove node data folder
         self.redpanda.stop_node(to_stop)
         self.redpanda.clean_node(to_stop)
         # start node back up
-        self.redpanda.start_node(to_stop, auto_assign_node_id=True)
+        self.redpanda.start_node(to_stop,
+                                 auto_assign_node_id=True,
+                                 omit_seeds_on_idx_one=False)
         # assert that node id has changed
         assert id != self.redpanda.node_id(to_stop, force_refresh=True)
         wait_until(lambda: producer.produce_status.acked > 200000,
