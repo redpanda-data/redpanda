@@ -364,7 +364,40 @@ public:
 
     void insert(const segment_meta& meta) { _data[meta.base_offset] = meta; }
 
+    auto to_iobuf() {
+        iobuf buf;
+        serialize(buf, _data.size());
+        for (auto& [k, v] : _data) {
+            serialize(buf, k);
+            serialize(buf, v);
+        }
+        _data.clear();
+        return buf;
+    }
+
+    void from_iobuf(iobuf in) {
+        auto cons = details::io_iterator_consumer{in.begin(), in.end()};
+        auto map_size = deserialize<size_t>(cons);
+        for (auto i = 0u; i < map_size; ++i) {
+            auto k = deserialize<model::offset>(cons);
+            auto v = deserialize<segment_meta>(cons);
+            _data.emplace(k, v);
+        }
+    }
+
 private:
+    static void serialize(iobuf& buf, auto const& v) {
+        auto tmp = std::bit_cast<std::array<uint8_t, sizeof(v)>>(v);
+        buf.append(tmp.data(), tmp.size());
+    }
+
+    template<typename T>
+    static T deserialize(details::io_iterator_consumer& buf) {
+        std::array<uint8_t, sizeof(T)> tmp;
+        buf.consume_to(tmp.size(), tmp.begin());
+        return std::bit_cast<T>(tmp);
+    }
+
     absl::btree_map<model::offset, segment_meta> _data;
 };
 
@@ -458,6 +491,27 @@ void cs_last_segment_test(StoreT& store, size_t sz) {
     perf_tests::stop_measuring_time();
 }
 
+void cs_serialize_test(auto& store, size_t sz) {
+    for (auto manifest = generate_metadata(sz); auto& s : manifest) {
+        store.insert(s);
+    }
+
+    perf_tests::start_measuring_time();
+    auto buf = store.to_iobuf();
+    perf_tests::do_not_optimize(buf);
+    perf_tests::stop_measuring_time();
+}
+
+void cs_deserialize_test(auto& store, size_t sz) {
+    for (auto manifest = generate_metadata(sz); auto& s : manifest) {
+        store.insert(s);
+    }
+
+    auto buf = store.to_iobuf();
+    perf_tests::start_measuring_time();
+    store.from_iobuf(std::move(buf));
+    perf_tests::stop_measuring_time();
+}
 PERF_TEST(cstore_bench, column_store_append_baseline) {
     baseline_column_store store;
     cs_append_test(store, 10000);
@@ -516,4 +570,24 @@ PERF_TEST(cstore_bench, column_store_last_segment_baseline) {
 PERF_TEST(cstore_bench, column_store_last_segment_result) {
     segment_meta_cstore store;
     cs_last_segment_test(store, 10000);
+}
+
+PERF_TEST(cstore_bench, column_store_serialize_baseline) {
+    baseline_column_store store;
+    cs_serialize_test(store, 10000);
+}
+
+PERF_TEST(cstore_bench, column_store_serialize_result) {
+    segment_meta_cstore store;
+    cs_serialize_test(store, 10000);
+}
+
+PERF_TEST(cstore_bench, column_store_deserialize_baseline) {
+    baseline_column_store store;
+    cs_deserialize_test(store, 10000);
+}
+
+PERF_TEST(cstore_bench, column_store_deserialize_result) {
+    segment_meta_cstore store;
+    cs_deserialize_test(store, 10000);
 }
