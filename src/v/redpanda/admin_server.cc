@@ -925,6 +925,14 @@ ss::future<> admin_server::throw_on_error(
             }
             throw ss::httpd::bad_request_exception(error_msg);
         }
+        case cluster::tx_errc::not_coordinator:
+            throw ss::httpd::base_exception(
+              fmt::format(
+                "Node not a coordinator or coordinator leader is not "
+                "stabilized yet: {}",
+                ec.message()),
+              ss::httpd::reply::status_type::service_unavailable);
+
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected tx_error error: {}", ec.message()));
