@@ -1537,7 +1537,7 @@ class RedpandaService(Service):
         # we need to look for redpanda pid. pids() method returns pids of both
         # nodejs server and redpanda
         try:
-            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | awk '{print $1}'"
+            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version' | awk '{print $1}'"
             for p in node.account.ssh_capture(cmd,
                                               allow_fail=True,
                                               callback=int):
