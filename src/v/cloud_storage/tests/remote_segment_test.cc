@@ -74,9 +74,6 @@ remote::reset_input_stream make_reset_fn(iobuf& segment_bytes) {
     };
 }
 
-static constexpr model::cloud_credentials_source config_file{
-  model::cloud_credentials_source::config_file};
-
 FIXTURE_TEST(
   test_remote_segment_successful_download, cloud_storage_fixture) { // NOLINT
     set_expectations_and_listen({});

@@ -40,6 +40,24 @@ rp_test(
   LABELS cloud_storage
 )
 
+rp_test(
+  FIXTURE_TEST
+  BINARY_NAME cloud_storage_fuzzy
+  SOURCES
+    s3_imposter.cc
+    remote_partition_fuzz_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES
+  Boost::unit_test_framework
+    v::seastar_testing_main
+    v::cloud_storage
+    v::storage_test_utils
+    v::cloud_roles
+    v::application
+  ARGS "-- -c 1"
+  LABELS cloud_storage
+)
+
 # Unit tests that rely on having multiple cores available
 rp_test(
   UNIT_TEST
