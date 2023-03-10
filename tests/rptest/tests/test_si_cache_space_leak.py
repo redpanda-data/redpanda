@@ -50,7 +50,8 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
             'election_timeout_ms': 5000,
             'raft_heartbeat_interval_ms': 500,
             'segment_fallocation_step': 0x1000,
-            'retention_bytes': self._segment_size,
+            'retention_local_target_bytes_default': self._segment_size,
+            'retention_bytes': self._segment_size * 5,
         }
         super().__init__(test_context,
                          num_brokers=3,
@@ -126,7 +127,11 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
             files_count = 0
             for node in self.redpanda.nodes:
                 files = self.redpanda.lsof_node(node)
-                files_count += sum(1 for f in files if is_cache_file(f))
+                cache_files = [f for f in files if is_cache_file(f)]
+                for f in cache_files:
+                    self.logger.debug("Open file: {f}")
+
+                files_count += len(cache_files)
             return files_count == 0
 
         # Reader should eventually trigger some SI cache reads when
