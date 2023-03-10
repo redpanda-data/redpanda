@@ -20,6 +20,7 @@
 #include "cluster/partition.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "storage/fwd.h"
 #include "storage/segment.h"
 #include "utils/intrusive_list_helpers.h"
@@ -371,11 +372,18 @@ private:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
+    /// Get aborted transactions for upload
+    ///
+    /// \return list of aborted transactions
+    ss::future<fragmented_vector<model::tx_range>>
+    get_aborted_transactions(upload_candidate candidate);
+
     /// Upload segment's transactions metadata to S3.
     ///
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_tx(
       upload_candidate candidate,
+      fragmented_vector<model::tx_range> tx,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 

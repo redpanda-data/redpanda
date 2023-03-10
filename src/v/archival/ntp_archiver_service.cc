@@ -24,6 +24,7 @@
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
+#include "model/record.h"
 #include "raft/types.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
@@ -939,12 +940,20 @@ std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
     }
 }
 
-ss::future<cloud_storage::upload_result> ntp_archiver::upload_tx(
-  upload_candidate candidate,
-  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+ss::future<fragmented_vector<model::tx_range>>
+ntp_archiver::get_aborted_transactions(upload_candidate candidate) {
     vassert(
       candidate.remote_sources.empty(),
       "This method can only work with local segments");
+    gate_guard guard{_gate};
+    co_return co_await _parent.aborted_transactions(
+      candidate.starting_offset, candidate.final_offset);
+}
+
+ss::future<cloud_storage::upload_result> ntp_archiver::upload_tx(
+  upload_candidate candidate,
+  fragmented_vector<model::tx_range> tx_range,
+  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     gate_guard guard{_gate};
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
@@ -955,9 +964,6 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_tx(
 
     vlog(
       ctxlog.debug, "Uploading segment's tx range {}", candidate.exposed_name);
-
-    auto tx_range = co_await _parent.aborted_transactions(
-      candidate.starting_offset, candidate.final_offset);
 
     if (tx_range.empty()) {
         // The actual upload only happens if tx_range is not empty.
@@ -1053,8 +1059,13 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     // The upload is successful only if both segment and tx_range are uploaded.
     std::vector<ss::future<cloud_storage::upload_result>> all_uploads;
     all_uploads.emplace_back(upload_segment(upload, std::move(locks)));
+    size_t tx_size = 0;
     if (upload_ctx.upload_kind == segment_upload_kind::non_compacted) {
-        all_uploads.emplace_back(upload_tx(upload));
+        auto tx = co_await get_aborted_transactions(upload);
+        tx_size = tx.size();
+        if (!tx.empty()) {
+            all_uploads.emplace_back(upload_tx(upload, std::move(tx)));
+        }
     }
 
     auto upl_fut = aggregate_upload_results(std::move(all_uploads));
@@ -1076,7 +1087,8 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         .archiver_term = _start_term,
         .segment_term = upload.term,
         .delta_offset_end = delta_offset_next,
-        .sname_format = cloud_storage::segment_name_format::v2,
+        .sname_format = cloud_storage::segment_name_format::v3,
+        .metadata_size_hint = tx_size,
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
@@ -1858,7 +1870,13 @@ ss::future<bool> ntp_archiver::do_upload_local(
     // Upload segments and tx-manifest in parallel
     std::vector<ss::future<cloud_storage::upload_result>> futures;
     futures.emplace_back(upload_segment(upload, std::move(locks), source_rtc));
-    futures.emplace_back(upload_tx(upload, source_rtc));
+    size_t tx_size = 0;
+    auto tx_range = co_await get_aborted_transactions(upload);
+    if (!tx_range.empty()) {
+        tx_size = tx_range.size();
+        futures.emplace_back(
+          upload_tx(upload, std::move(tx_range), source_rtc));
+    }
     auto upl_res = co_await aggregate_upload_results(std::move(futures));
 
     if (upl_res != cloud_storage::upload_result::success) {
@@ -1882,7 +1900,8 @@ ss::future<bool> ntp_archiver::do_upload_local(
       .archiver_term = _start_term,
       .segment_term = upload.term,
       .delta_offset_end = delta_offset_next,
-      .sname_format = cloud_storage::segment_name_format::v2,
+      .sname_format = cloud_storage::segment_name_format::v3,
+      .metadata_size_hint = tx_size,
     };
 
     auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout;
