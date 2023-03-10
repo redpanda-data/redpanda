@@ -595,7 +595,8 @@ std::vector<segment_meta> generate_metadata(size_t sz) {
       .archiver_term = model::term_id(2),
       .segment_term = model::term_id(0),
       .delta_offset_end = model::offset_delta(0),
-      .sname_format = segment_name_format::v2,
+      .sname_format = segment_name_format::v3,
+      .metadata_size_hint = 0,
     };
     bool short_segment_run = false;
     for (size_t i = 0; i < sz; i++) {
@@ -618,6 +619,7 @@ std::vector<segment_meta> generate_metadata(size_t sz) {
                 curr.archiver_term = curr.archiver_term
                                      + model::term_id(rg::get_int(1, 20));
             }
+            curr.metadata_size_hint = rg::get_int(1, 100);
         } else {
             curr.base_offset = model::next_offset(curr.committed_offset);
             curr.committed_offset = curr.committed_offset
@@ -636,6 +638,7 @@ std::vector<segment_meta> generate_metadata(size_t sz) {
                 curr.archiver_term = curr.archiver_term
                                      + model::term_id(rg::get_int(1, 20));
             }
+            curr.metadata_size_hint = rg::get_int(1, 1000);
         }
         if (rg::get_int(200) == 0) {
             short_segment_run = !short_segment_run;
