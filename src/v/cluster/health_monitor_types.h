@@ -286,6 +286,7 @@ struct get_node_health_request
       get_node_health_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -313,6 +314,7 @@ struct get_node_health_reply
       get_node_health_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
@@ -333,6 +335,7 @@ struct get_cluster_health_request
       get_cluster_health_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t initial_version = 0;
     // version -1: included revision id in partition status
     static constexpr int8_t revision_id_version = -1;
@@ -377,6 +380,7 @@ struct get_cluster_health_reply
       get_cluster_health_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     static constexpr int8_t current_version = 0;
 
     errc error = cluster::errc::success;
@@ -393,89 +397,3 @@ struct get_cluster_health_reply
 };
 
 } // namespace cluster
-
-namespace reflection {
-
-template<>
-struct adl<cluster::node_health_report> {
-    void to(iobuf&, cluster::node_health_report&&);
-    cluster::node_health_report from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::cluster_health_report> {
-    void to(iobuf&, cluster::cluster_health_report&&);
-    cluster::cluster_health_report from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::node_state> {
-    void to(iobuf&, cluster::node_state&&);
-    cluster::node_state from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::partition_status> {
-    void to(iobuf&, cluster::partition_status&&);
-    cluster::partition_status from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::topic_status> {
-    void to(iobuf&, cluster::topic_status&&);
-    cluster::topic_status from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::partitions_filter> {
-    struct raw_tp_filter {
-        model::topic topic;
-        std::vector<model::partition_id> partitions;
-    };
-
-    struct raw_ns_filter {
-        model::ns ns;
-        std::vector<raw_tp_filter> topics;
-    };
-
-    void to(iobuf&, cluster::partitions_filter&&);
-    cluster::partitions_filter from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::node_report_filter> {
-    void to(iobuf&, cluster::node_report_filter&&);
-    cluster::node_report_filter from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::cluster_report_filter> {
-    void to(iobuf&, cluster::cluster_report_filter&&);
-    cluster::cluster_report_filter from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::get_node_health_request> {
-    void to(iobuf&, cluster::get_node_health_request&&);
-    cluster::get_node_health_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::get_node_health_reply> {
-    void to(iobuf&, cluster::get_node_health_reply&&);
-    cluster::get_node_health_reply from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::get_cluster_health_request> {
-    void to(iobuf&, cluster::get_cluster_health_request&&);
-    cluster::get_cluster_health_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::get_cluster_health_reply> {
-    void to(iobuf&, cluster::get_cluster_health_reply&&);
-    cluster::get_cluster_health_reply from(iobuf_parser&);
-};
-
-} // namespace reflection

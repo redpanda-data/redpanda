@@ -36,15 +36,15 @@ GEN_COMPAT_CHECK(
       json_read(invalid);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_status_request,
   { json_write(status); },
   { json_read(status); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_status_reply, { json_write(error); }, { json_read(error); })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::cluster_property_kv,
   {
       json_write(key);
@@ -55,7 +55,7 @@ GEN_COMPAT_CHECK(
       json_read(value);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_update_request,
   {
       json_write(upsert);
@@ -66,7 +66,7 @@ GEN_COMPAT_CHECK(
       json_read(remove);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::config_update_reply,
   {
       json_write(error);
@@ -102,17 +102,17 @@ GEN_COMPAT_CHECK(
       json_read(action);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_action_request,
   { json_write(action); },
   { json_read(action); });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_action_response,
   { json_write(error); },
   { json_read(error); });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_barrier_request,
   {
       json_write(tag);
@@ -125,7 +125,7 @@ GEN_COMPAT_CHECK(
       json_read(entered);
   });
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::feature_barrier_response,
   {
       json_write(entered);
@@ -274,7 +274,7 @@ GEN_COMPAT_CHECK(
 
 EMPTY_COMPAT_CHECK(cluster::cancel_all_partition_movements_request);
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::configuration_update_request,
   {
       json_write(node);
@@ -285,7 +285,7 @@ GEN_COMPAT_CHECK(
       json_read(target_node);
   })
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::configuration_update_reply,
   { json_write(success); },
   { json_read(success); })

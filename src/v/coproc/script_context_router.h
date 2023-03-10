@@ -13,6 +13,7 @@
 
 #include "cluster/partition.h"
 #include "model/fundamental.h"
+#include "reflection/async_adl.h"
 
 #include <seastar/core/shared_ptr.hh>
 

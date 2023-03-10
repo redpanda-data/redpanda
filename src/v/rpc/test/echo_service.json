@@ -34,21 +34,6 @@
             "name": "throw_exception",
             "input_type": "throw_req",
             "output_type": "throw_resp"
-        },
-        {
-            "name": "echo_adl_only",
-            "input_type": "echo_req_adl_only",
-            "output_type": "echo_resp_adl_only"
-        },
-        {
-            "name": "echo_adl_serde",
-            "input_type": "echo_req_adl_serde",
-            "output_type": "echo_resp_adl_serde"
-        },
-        {
-            "name": "echo_serde_only",
-            "input_type": "echo_req_serde_only",
-            "output_type": "echo_resp_serde_only"
         }
     ]
 }

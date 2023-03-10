@@ -260,9 +260,7 @@ ss::future<result<rpc::client_context<T>>> parse_result(
      * otherwise this is non-compliant behavior. the exception to this
      * rule is a v0 reply to a v1 request (ie talking to old v0 server).
      */
-    const auto protocol_violation
-      = rep_ver != req_ver
-        && (req_ver != transport_version::v1 || rep_ver != transport_version::v0);
+    const auto protocol_violation = rep_ver != req_ver;
 
     if (unlikely(st != status::success || protocol_violation)) {
         if (st == status::version_not_supported) {
@@ -347,13 +345,8 @@ transport::send_typed_versioned(
     return encode_for_version(target_buffer, std::move(r), version)
       .then([this, version, b = std::move(b), seq, opts = std::move(opts)](
               transport_version effective_version) mutable {
-          /*
-           * enforce the rule that a transport configured as v0 behaves like
-           * a v0 client transport and sends v0 messages.
-           */
           vassert(
-            version != transport_version::v0
-              || effective_version == transport_version::v0,
+            version >= transport_version::min_supported,
             "Request type {} cannot be encoded at version {} (effective {}).",
             typeid(Input).name(),
             version,
@@ -371,19 +364,7 @@ transport::send_typed_versioned(
           const auto version = sctx.value()->get_header().version;
           return internal::parse_result<Output>(
                    _in, std::move(sctx.value()), req_ver)
-            .then([this, version](result<client_context<Output>> r) {
-                /*
-                 * upgrade transport to v2 when:
-                 * - at version v1 (do not upgrade from v0 -- for testing)
-                 * - the response was handled/contains no errors
-                 * - the response is v1,v2 (from a new server)
-                 */
-                if (
-                  _version == transport_version::v1 && r.has_value()
-                  && (version == transport_version::v1 || version == transport_version::v2)) {
-                    vlog(rpclog.debug, "Upgrading connection from v1 to v2");
-                    _version = transport_version::v2;
-                }
+            .then([version](result<client_context<Output>> r) {
                 return ret_t(result_context<Output>{version, std::move(r)});
             });
       });

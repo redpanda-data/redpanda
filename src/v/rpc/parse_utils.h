@@ -141,9 +141,10 @@ encode_for_version(iobuf& out, T msg, transport_version version) {
             return transport_version::v0;
         });
     } else if constexpr (is_rpc_adl_exempt<T>) {
-        return ss::do_with(std::move(msg), [&out](T& msg) {
-            return serde::write_async(out, std::move(msg)).then([] {
-                return transport_version::v2;
+        vassert(version >= transport_version::v2, "Can't encode serde <= v2");
+        return ss::do_with(std::move(msg), [&out, version](T& msg) {
+            return serde::write_async(out, std::move(msg)).then([version] {
+                return version;
             });
         });
     } else {

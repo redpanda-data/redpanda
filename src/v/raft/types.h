@@ -200,6 +200,7 @@ struct append_entries_request
       append_entries_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
     /*
@@ -301,6 +302,7 @@ struct append_entries_reply
       append_entries_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     enum class status : uint8_t {
         success,
         failure,
@@ -363,6 +365,7 @@ struct heartbeat_metadata {
 struct heartbeat_request
   : serde::
       envelope<heartbeat_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     std::vector<heartbeat_metadata> heartbeats;
 
     heartbeat_request() noexcept = default;
@@ -382,6 +385,7 @@ struct heartbeat_request
 struct heartbeat_reply
   : serde::
       envelope<heartbeat_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     std::vector<append_entries_reply> meta;
 
     heartbeat_reply() noexcept = default;
@@ -399,6 +403,7 @@ struct heartbeat_reply
 
 struct vote_request
   : serde::envelope<vote_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     vnode node_id;
     // node id to validate on receiver
     vnode target_node_id;
@@ -433,6 +438,7 @@ struct vote_request
 
 struct vote_reply
   : serde::envelope<vote_reply, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's term, for the caller to upate itself
@@ -529,6 +535,7 @@ struct install_snapshot_request
       install_snapshot_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
     // leader’s term
@@ -602,6 +609,7 @@ struct install_snapshot_reply
       install_snapshot_reply,
       serde::version<1>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
     // current term, for leader to update itself
@@ -652,6 +660,7 @@ struct timeout_now_request
       timeout_now_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     // node id to validate on receiver
     vnode target_node_id;
 
@@ -687,6 +696,7 @@ struct timeout_now_request
 struct timeout_now_reply
   : serde::
       envelope<timeout_now_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     enum class status : uint8_t { success, failure };
     // node id to validate on receiver
     vnode target_node_id;
@@ -717,6 +727,7 @@ struct transfer_leadership_request
       transfer_leadership_request,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     group_id group;
     std::optional<model::node_id> target;
     raft::group_id target_group() const { return group; }
@@ -739,6 +750,7 @@ struct transfer_leadership_reply
       transfer_leadership_reply,
       serde::version<0>,
       serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     bool success{false};
     raft::errc result;
 
@@ -810,235 +822,17 @@ using keep_snapshotted_log = ss::bool_class<struct keep_snapshotted_log_tag>;
 } // namespace raft
 
 namespace reflection {
-template<>
-struct async_adl<raft::append_entries_request> {
-    ss::future<> to(iobuf& out, raft::append_entries_request&& request);
-    ss::future<raft::append_entries_request> from(iobuf_parser& in);
-};
+
 template<>
 struct adl<raft::protocol_metadata> {
     void to(iobuf& out, raft::protocol_metadata request);
     raft::protocol_metadata from(iobuf_parser& in);
-};
-template<>
-struct async_adl<raft::heartbeat_request> {
-    ss::future<> to(iobuf& out, raft::heartbeat_request&& request);
-    ss::future<raft::heartbeat_request> from(iobuf_parser& in);
-};
-
-template<>
-struct async_adl<raft::heartbeat_reply> {
-    ss::future<> to(iobuf& out, raft::heartbeat_reply&& request);
-    ss::future<raft::heartbeat_reply> from(iobuf_parser& in);
 };
 
 template<>
 struct adl<raft::snapshot_metadata> {
     void to(iobuf& out, raft::snapshot_metadata&& request);
     raft::snapshot_metadata from(iobuf_parser& in);
-};
-
-template<>
-struct adl<raft::transfer_leadership_request> {
-    void to(iobuf& out, raft::transfer_leadership_request&& r) {
-        serialize(out, r.group, r.target);
-    }
-    raft::transfer_leadership_request from(iobuf_parser& in) {
-        auto group = adl<raft::group_id>{}.from(in);
-        auto target = adl<std::optional<model::node_id>>{}.from(in);
-        return {.group = group, .target = target};
-    }
-};
-
-template<>
-struct adl<raft::transfer_leadership_reply> {
-    void to(iobuf& out, raft::transfer_leadership_reply&& r) {
-        serialize(out, r.success, r.result);
-    }
-    raft::transfer_leadership_reply from(iobuf_parser& in) {
-        auto success = adl<bool>{}.from(in);
-        auto result = adl<raft::errc>{}.from(in);
-        return {.success = success, .result = result};
-    }
-};
-
-template<>
-struct adl<raft::timeout_now_request> {
-    void to(iobuf& out, raft::timeout_now_request&& r) {
-        serialize(out, r.target_node_id, r.node_id, r.group, r.term);
-    }
-    raft::timeout_now_request from(iobuf_parser& in) {
-        auto target_node_id = adl<raft::vnode>{}.from(in);
-        auto node_id = adl<raft::vnode>{}.from(in);
-        auto group = adl<raft::group_id>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        return {
-          .target_node_id = target_node_id,
-          .node_id = node_id,
-          .group = group,
-          .term = term,
-        };
-    }
-};
-
-template<>
-struct adl<raft::timeout_now_reply> {
-    void to(iobuf& out, raft::timeout_now_reply&& r) {
-        serialize(out, r.target_node_id, r.term, r.result);
-    }
-    raft::timeout_now_reply from(iobuf_parser& in) {
-        auto target_node_id = adl<raft::vnode>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto result = adl<raft::timeout_now_reply::status>{}.from(in);
-        return {
-          .target_node_id = target_node_id,
-          .term = term,
-          .result = result,
-        };
-    }
-};
-
-template<>
-struct adl<raft::install_snapshot_request> {
-    void to(iobuf& out, raft::install_snapshot_request&& r) {
-        serialize(
-          out,
-          r.target_node_id,
-          r.term,
-          r.group,
-          r.node_id,
-          r.last_included_index,
-          r.file_offset,
-          std::move(r.chunk),
-          r.done);
-    }
-    raft::install_snapshot_request from(iobuf_parser& in) {
-        auto target_node_id = adl<raft::vnode>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto group = adl<raft::group_id>{}.from(in);
-        auto node_id = adl<raft::vnode>{}.from(in);
-        auto last_included_index = adl<model::offset>{}.from(in);
-        auto file_offset = adl<uint64_t>{}.from(in);
-        auto chunk = adl<iobuf>{}.from(in);
-        auto done = adl<bool>{}.from(in);
-        return {
-          .target_node_id = target_node_id,
-          .term = term,
-          .group = group,
-          .node_id = node_id,
-          .last_included_index = last_included_index,
-          .file_offset = file_offset,
-          .chunk = std::move(chunk),
-          .done = done,
-        };
-    }
-};
-
-template<>
-struct adl<raft::install_snapshot_reply> {
-    void to(iobuf& out, raft::install_snapshot_reply&& r) {
-        serialize(out, r.target_node_id, r.term, r.bytes_stored, r.success);
-    }
-    raft::install_snapshot_reply from(iobuf_parser& in) {
-        auto target_node_id = adl<raft::vnode>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto bytes_stored = adl<uint64_t>{}.from(in);
-        auto success = adl<bool>{}.from(in);
-        return {
-          .target_node_id = target_node_id,
-          .term = term,
-          .bytes_stored = bytes_stored,
-          .success = success,
-        };
-    }
-};
-
-template<>
-struct adl<raft::vote_request> {
-    void to(iobuf& out, raft::vote_request&& r) {
-        serialize(
-          out,
-          r.node_id,
-          r.target_node_id,
-          r.group,
-          r.term,
-          r.prev_log_index,
-          r.prev_log_term,
-          r.leadership_transfer);
-    }
-    raft::vote_request from(iobuf_parser& in) {
-        auto node_id = adl<raft::vnode>{}.from(in);
-        auto target_node_id = adl<raft::vnode>{}.from(in);
-        auto group = adl<raft::group_id>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto prev_log_index = adl<model::offset>{}.from(in);
-        auto prev_log_term = adl<model::term_id>{}.from(in);
-        auto leadership_transfer = adl<bool>{}.from(in);
-        return {
-          .node_id = node_id,
-          .target_node_id = target_node_id,
-          .group = group,
-          .term = term,
-          .prev_log_index = prev_log_index,
-          .prev_log_term = prev_log_term,
-          .leadership_transfer = leadership_transfer,
-        };
-    }
-};
-
-template<>
-struct adl<raft::vote_reply> {
-    void to(iobuf& out, raft::vote_reply&& r) {
-        serialize(out, r.target_node_id, r.term, r.granted, r.log_ok);
-    }
-    raft::vote_reply from(iobuf_parser& in) {
-        auto target_node_id = adl<raft::vnode>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto granted = adl<bool>{}.from(in);
-        auto log_ok = adl<bool>{}.from(in);
-        return {
-          .target_node_id = target_node_id,
-          .term = term,
-          .granted = granted,
-          .log_ok = log_ok,
-        };
-    }
-};
-
-template<>
-struct adl<raft::append_entries_reply> {
-    void to(iobuf& out, raft::append_entries_reply&& r) {
-        serialize(
-          out,
-          r.target_node_id,
-          r.node_id,
-          r.group,
-          r.term,
-          r.last_flushed_log_index,
-          r.last_dirty_log_index,
-          r.last_term_base_offset,
-          r.result);
-    }
-    raft::append_entries_reply from(iobuf_parser& in) {
-        auto target_node_id = adl<raft::vnode>{}.from(in);
-        auto node_id = adl<raft::vnode>{}.from(in);
-        auto group = adl<raft::group_id>{}.from(in);
-        auto term = adl<model::term_id>{}.from(in);
-        auto last_flushed_log_index = adl<model::offset>{}.from(in);
-        auto last_dirty_log_index = adl<model::offset>{}.from(in);
-        auto last_term_base_offset = adl<model::offset>{}.from(in);
-        auto result = adl<raft::append_entries_reply::status>{}.from(in);
-        return {
-          .target_node_id = target_node_id,
-          .node_id = node_id,
-          .group = group,
-          .term = term,
-          .last_flushed_log_index = last_flushed_log_index,
-          .last_dirty_log_index = last_dirty_log_index,
-          .last_term_base_offset = last_term_base_offset,
-          .result = result,
-        };
-    }
 };
 
 } // namespace reflection

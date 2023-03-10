@@ -48,11 +48,11 @@ struct compat_check<raft::timeout_now_request> {
     }
 
     static std::vector<compat_binary> to_binary(raft::timeout_now_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(raft::timeout_now_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -93,11 +93,11 @@ struct compat_check<raft::timeout_now_reply> {
     }
 
     static std::vector<compat_binary> to_binary(raft::timeout_now_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(raft::timeout_now_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -129,12 +129,12 @@ struct compat_check<raft::transfer_leadership_request> {
 
     static std::vector<compat_binary>
     to_binary(raft::transfer_leadership_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void
     check(raft::transfer_leadership_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -238,11 +238,11 @@ struct compat_check<raft::transfer_leadership_reply> {
 
     static std::vector<compat_binary>
     to_binary(raft::transfer_leadership_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(raft::transfer_leadership_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -285,11 +285,11 @@ struct compat_check<raft::install_snapshot_request> {
 
     static std::vector<compat_binary>
     to_binary(raft::install_snapshot_request obj) {
-        return compat_binary::serde_and_adl(std::move(obj));
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void check(raft::install_snapshot_request obj, compat_binary test) {
-        verify_adl_or_serde(std::move(obj), std::move(test));
+        verify_serde_only(std::move(obj), std::move(test));
     }
 };
 
@@ -341,11 +341,11 @@ struct compat_check<raft::install_snapshot_reply> {
 
     static std::vector<compat_binary>
     to_binary(raft::install_snapshot_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(raft::install_snapshot_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -384,11 +384,11 @@ struct compat_check<raft::vote_request> {
     }
 
     static std::vector<compat_binary> to_binary(raft::vote_request obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(raft::vote_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -421,11 +421,11 @@ struct compat_check<raft::vote_reply> {
     }
 
     static std::vector<compat_binary> to_binary(raft::vote_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(raft::vote_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 
@@ -453,11 +453,11 @@ struct compat_check<raft::heartbeat_request> {
     }
 
     static std::vector<compat_binary> to_binary(raft::heartbeat_request obj) {
-        return compat_binary::serde_and_adl(std::move(obj));
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void check(raft::heartbeat_request expected, compat_binary test) {
-        verify_adl_or_serde(std::move(expected), std::move(test));
+        verify_serde_only(std::move(expected), std::move(test));
     }
 };
 
@@ -493,11 +493,11 @@ struct compat_check<raft::heartbeat_reply> {
     }
 
     static std::vector<compat_binary> to_binary(raft::heartbeat_reply obj) {
-        return compat_binary::serde_and_adl(std::move(obj));
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void check(raft::heartbeat_reply expected, compat_binary test) {
-        verify_adl_or_serde(std::move(expected), std::move(test));
+        verify_serde_only(std::move(expected), std::move(test));
     }
 };
 
@@ -580,12 +580,12 @@ struct compat_check<raft::append_entries_request> {
 
     static std::vector<compat_binary>
     to_binary(raft::append_entries_request obj) {
-        return compat_binary::serde_and_adl(std::move(obj));
+        return {compat_binary::serde(std::move(obj))};
     }
 
     static void
     check(raft::append_entries_request expected, compat_binary test) {
-        auto decoded = decode_adl_or_serde<raft::append_entries_request>(
+        auto decoded = decode_serde_only<raft::append_entries_request>(
           std::move(test));
 
         if (decoded.node_id != expected.node_id) {
@@ -667,11 +667,11 @@ struct compat_check<raft::append_entries_reply> {
 
     static std::vector<compat_binary>
     to_binary(raft::append_entries_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void check(raft::append_entries_reply obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        verify_serde_only(obj, std::move(test));
     }
 };
 } // namespace compat

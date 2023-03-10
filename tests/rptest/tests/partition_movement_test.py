@@ -299,9 +299,7 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         install_opts = InstallOptions()
         if test_mixed_versions:
             # Start at a version that supports consumer groups.
-            # TODO: use 'install_previous_version' once it becomes the prior
-            # feature version.
-            install_opts = InstallOptions(version=(22, 1, 3),
+            install_opts = InstallOptions(install_previous_version=True,
                                           num_to_upgrade=num_to_upgrade)
         self.start_redpanda(num_nodes=3,
                             install_opts=install_opts,

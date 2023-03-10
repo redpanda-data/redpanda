@@ -62,11 +62,6 @@ struct echo_impl final : echo::echo_service_base<Codec> {
     echo_impl(ss::scheduling_group& sc, ss::smp_service_group& ssg)
       : echo::echo_service_base<Codec>(sc, ssg) {}
     ss::future<echo::echo_resp>
-    echo(echo::echo_req&& req, rpc::streaming_context&) final {
-        return ss::make_ready_future<echo::echo_resp>(
-          echo::echo_resp{.str = req.str});
-    }
-    ss::future<echo::echo_resp>
     prefix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
           echo::echo_resp{.str = ssx::sformat("prefix_{}", req.str)});
@@ -103,22 +98,10 @@ struct echo_impl final : echo::echo_service_base<Codec> {
         }
     }
 
-    ss::future<echo::echo_resp_adl_only> echo_adl_only(
-      echo::echo_req_adl_only&& req, rpc::streaming_context&) final {
-        return ss::make_ready_future<echo::echo_resp_adl_only>(
-          echo::echo_resp_adl_only{.str = req.str});
-    }
-
-    ss::future<echo::echo_resp_adl_serde> echo_adl_serde(
-      echo::echo_req_adl_serde&& req, rpc::streaming_context&) final {
-        return ss::make_ready_future<echo::echo_resp_adl_serde>(
-          echo::echo_resp_adl_serde{.str = req.str});
-    }
-
-    ss::future<echo::echo_resp_serde_only> echo_serde_only(
-      echo::echo_req_serde_only&& req, rpc::streaming_context&) final {
-        return ss::make_ready_future<echo::echo_resp_serde_only>(
-          echo::echo_resp_serde_only{.str = req.str});
+    ss::future<echo::echo_resp>
+    echo(echo::echo_req&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo::echo_resp>(
+          echo::echo_resp{.str = req.str});
     }
 
     uint64_t cnt = 0;
@@ -129,11 +112,10 @@ struct echo_v2_impl final : echo_v2::echo_service_base<Codec> {
     echo_v2_impl(ss::scheduling_group& sc, ss::smp_service_group& ssg)
       : echo_v2::echo_service_base<Codec>(sc, ssg) {}
 
-    ss::future<echo_v2::echo_resp_serde_only> echo_serde_only(
-      echo_v2::echo_req_serde_only&& req, rpc::streaming_context&) final {
-        return ss::make_ready_future<echo_v2::echo_resp_serde_only>(
-          echo_v2::echo_resp_serde_only{
-            .str = req.str, .str_two = req.str_two});
+    ss::future<echo_v2::echo_resp>
+    echo(echo_v2::echo_req&& req, rpc::streaming_context&) final {
+        return ss::make_ready_future<echo_v2::echo_resp>(
+          echo_v2::echo_resp{.str = req.str, .str_two = req.str_two});
     }
 };
 
@@ -146,12 +128,6 @@ public:
         register_service<movistar<rpc::default_message_codec>>();
         register_service<echo_impl<rpc::default_message_codec>>();
         register_service<echo_v2_impl<rpc::default_message_codec>>();
-    }
-
-    void register_services_v0() {
-        register_service<movistar<rpc::v0_message_codec>>();
-        register_service<echo_impl<rpc::v0_message_codec>>();
-        register_service<echo_v2_impl<rpc::v0_message_codec>>();
     }
 
     static constexpr uint16_t redpanda_rpc_port = 32147;
@@ -513,7 +489,9 @@ FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
     futures.reserve(10);
     for (uint64_t i = 0; i < 10; ++i) {
         futures.push_back(
-          client.counter(echo::cnt_req{i}, rpc::client_opts(rpc::no_timeout))
+          client
+            .counter(
+              echo::cnt_req{.expected = i}, rpc::client_opts(rpc::no_timeout))
             .then(&rpc::get_ctx_data<echo::cnt_resp>)
             .then([i](result<echo::cnt_resp> r) {
                 BOOST_REQUIRE_EQUAL(r.value().current, i);
@@ -629,13 +607,19 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
     nb.set_compression(rpc::compression_type::none);
     nb.set_correlation_id(10);
     nb.set_service_method(echo::echo_service::echo_method);
-    reflection::adl<echo::echo_req>{}.to(
-      nb.buffer(), echo::echo_req{.str = "testing..."});
-    // will fail all the futures as server close the connection
-    auto ret = t.send(
-                  std::move(nb), rpc::client_opts(rpc::clock_type::now() + 1s))
-                 .get0();
-    ret.value()->signal_body_parse();
+    serde::write(nb.buffer(), echo::echo_req{.str = "testing..."});
+    std::exception_ptr err;
+    try {
+        // will fail all the futures as server close the connection
+        auto ret
+          = t.send(std::move(nb), rpc::client_opts(rpc::clock_type::now() + 1s))
+              .get0();
+        ret.value()->signal_body_parse();
+    } catch (...) {
+        err = std::current_exception();
+    }
+
+    BOOST_REQUIRE(err);
 
     // reconnect
     BOOST_TEST_MESSAGE("Another request with valid payload");
@@ -693,14 +677,6 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     }
 }
 
-/*
- * the not_supported_version test uses the echo_adl_serde variant rather than
- * the original version whose types cause it to be treated as adl-only. Because
- * adl-only messages are sent at v0 and the test specifically requires sending
- * messages at an arbitrarily higher value to trigger the error, a type was
- * needed that supports a dynamic version range. When encoding adl/serde
- * supported types the version is passed through.
- */
 FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     configure_server();
     register_services();
@@ -712,11 +688,9 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     auto client = echo::echo_client_protocol(t);
 
     const auto check_unsupported = [&] {
-        auto f = t.send_typed_versioned<
-          echo::echo_req_adl_serde,
-          echo::echo_resp_adl_serde>(
-          echo::echo_req_adl_serde{.str = "testing..."},
-          echo::echo_service::echo_adl_serde_method,
+        auto f = t.send_typed_versioned<echo::echo_req, echo::echo_resp>(
+          echo::echo_req{.str = "testing..."},
+          echo::echo_service::echo_method,
           rpc::client_opts(rpc::no_timeout),
           rpc::transport_version::unsupported);
         return f.then([&](auto ret) {
@@ -734,17 +708,12 @@ FIXTURE_TEST(version_not_supported, rpc_integration_fixture) {
     };
 
     const auto check_supported = [&] {
-        auto f = client.echo_adl_serde(
-          echo::echo_req_adl_serde{.str = "testing..."},
+        auto f = client.echo(
+          echo::echo_req{.str = "testing..."},
           rpc::client_opts(rpc::no_timeout));
         return f.then([&](auto ret) {
             BOOST_REQUIRE(ret.has_value());
-            // could be either one. depends on timing of transport upgrade
-            BOOST_REQUIRE(
-              ret.value().data.str
-                == "testing..._to_aas_from_aas_to_aas_from_aas"
-              || ret.value().data.str
-                   == "testing..._to_sas_from_sas_to_sas_from_sas");
+            BOOST_REQUIRE(ret.value().data.str == "testing...");
         });
     };
 
@@ -827,328 +796,6 @@ FIXTURE_TEST(unhandled_throw_in_proto_apply, erroneous_service_fixture) {
         echo::echo_req{.str = "testing..."}, rpc::client_opts(rpc::no_timeout))
       .get();
     t.stop().get();
-}
-
-/*
- * new client, new server
- * client has initial transport version v1
- * sends adl+serde message at (adl,v1)
- * client has transport upgraded to v2
- * client transport remains at v2
- */
-FIXTURE_TEST(nc_ns_adl_serde_client_upgraded, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
-    auto client = echo::echo_client_protocol(t);
-
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-
-    // first messages are sent with adl
-    {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_adl_serde(
-          echo::echo_req_adl_serde{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_aas_from_aas_to_aas_from_aas");
-    }
-
-    // subsequent messages use serde
-    for (int i = 0; i < 10; i++) {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_adl_serde(
-          echo::echo_req_adl_serde{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_sas_from_sas_to_sas_from_sas");
-
-        // upgraded and remains at v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v2);
-    }
-}
-
-/*
- * new client, new server
- * client has initial transport version v1
- * sends serde-only message at (serde,v2)
- * client has transport upgraded to v2
- * client transport remains at v2
- */
-FIXTURE_TEST(nc_ns_serde_only_client_upgraded, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
-    auto client = echo::echo_client_protocol(t);
-
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-
-    for (int i = 0; i < 10; i++) {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_serde_only(
-          echo::echo_req_serde_only{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_sso_from_sso_to_sso_from_sso");
-
-        // upgraded and remains at v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v2);
-    }
-}
-
-/*
- * new client, new server
- * client sends adl-only message (adl,v1)
- * client remains pinned at v1
- *
- * client will not be upgraded. adl-only messages are always set at v0 and the
- * server will always respond with v0 messages. upgrade doesn't happen because
- * client only upgrades in response to a v1 or v2 message.
- *
- * this case is for the interim development period where we are allowing types
- * with only adl support until all types have serde support added.
- */
-FIXTURE_TEST(nc_ns_adl_only_no_client_upgrade, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
-    auto client = echo::echo_client_protocol(t);
-
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-
-    for (int i = 0; i < 10; i++) {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_adl_only(
-          echo::echo_req_adl_only{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_aao_from_aao_to_aao_from_aao");
-
-        // no upgrade
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-    }
-}
-
-/*
- * new client, old server
- * client has initial transport version v1
- * [sends adl+serde message at (adl,v1)] * N
- * client transport version is not upgraded
- */
-FIXTURE_TEST(nc_os_adl_serde_no_client_upgrade, rpc_integration_fixture) {
-    configure_server();
-    register_services_v0();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
-    auto client = echo::echo_client_protocol(t);
-
-    // client initially at v1
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-
-    for (int i = 0; i < 10; i++) {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_adl_serde(
-          echo::echo_req_adl_serde{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_aas_from_aas_to_aas_from_aas");
-
-        // client stays at v1 without upgrade to v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-    }
-}
-
-/*
- * new client, old server
- * client has initial transport version v1
- * [sends adl-only message at (adl,v1)] * N
- * client transport verison is not upgraded
- */
-FIXTURE_TEST(nc_os_adl_only_no_client_upgrade, rpc_integration_fixture) {
-    configure_server();
-    register_services_v0();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&t] { t.stop().get(); });
-    auto client = echo::echo_client_protocol(t);
-
-    // client initially at v1
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-
-    for (int i = 0; i < 10; i++) {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_adl_only(
-          echo::echo_req_adl_only{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_aao_from_aao_to_aao_from_aao");
-
-        // client stays at v1 without upgrade to v2
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v1);
-    }
-}
-
-/*
- * old client, new server
- * sends an adl encoded message which the server understands but also has serde
- * support for. communication should continue to use adl.
- */
-FIXTURE_TEST(oc_ns_adl_serde_no_upgrade, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    t.set_version(rpc::transport_version::v0); // connect resets version=v1
-    auto stop = ss::defer([&t] { t.stop().get(); });
-    auto client = echo::echo_client_protocol(t);
-
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
-
-    for (int i = 0; i < 10; i++) {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_adl_serde(
-          echo::echo_req_adl_serde{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_aas_from_aas_to_aas_from_aas");
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
-    }
-}
-
-/*
- * old client, new server
- * adl-only. verifies behavior for intermediate state when we support adl-only
- * messages.
- */
-FIXTURE_TEST(oc_ns_adl_only_no_upgrade, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    t.set_version(rpc::transport_version::v0); // connect resets version=v1
-    auto stop = ss::defer([&t] { t.stop().get(); });
-    auto client = echo::echo_client_protocol(t);
-
-    BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
-
-    for (int i = 0; i < 10; i++) {
-        const auto payload = random_generators::gen_alphanum_string(100);
-        auto f = client.echo_adl_only(
-          echo::echo_req_adl_only{.str = payload},
-          rpc::client_opts(rpc::no_timeout));
-        auto ret = f.get();
-        BOOST_REQUIRE(ret.has_value());
-        BOOST_REQUIRE_EQUAL(
-          ret.value().data.str, payload + "_to_aao_from_aao_to_aao_from_aao");
-        BOOST_REQUIRE_EQUAL(t.version(), rpc::transport_version::v0);
-    }
-}
-
-FIXTURE_TEST(echo_evolve_newer_client, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&] { t.stop().get(); });
-    auto old_client = echo::echo_client_protocol(t);
-
-    /// Make a request serde::version<1> of echo_req_serde_only
-    auto f = old_client.echo_serde_only(
-      echo::echo_req_serde_only{.str = "Hi there!"},
-      rpc::client_opts(rpc::no_timeout));
-    BOOST_REQUIRE(!f.get().has_error());
-
-    /// Make a request serde::version<2> emmulating echo_req_serde_only
-    const auto echo_serde_only_method
-      = echo::echo_service::echo_serde_only_method;
-
-    /// Since the server is old, it will send responses in the v1 format, the
-    /// client must expect this thats why the response type of `send_typed<>` is
-    /// echo::echo_resp_serde_only
-    echo_v2::echo_req_serde_only r{.str = "Hello", .str_two = "World"};
-    auto response_f
-      = t.send_typed<echo_v2::echo_req_serde_only, echo::echo_resp_serde_only>(
-        std::move(r),
-        echo_serde_only_method,
-        rpc::client_opts(rpc::no_timeout));
-    auto response = response_f.get();
-    BOOST_REQUIRE(!response.has_error());
-    BOOST_CHECK_EQUAL(
-      response.value().data.str, "Hello_to_sso_v2_from_sso_to_sso_from_sso");
-}
-
-FIXTURE_TEST(echo_evolve_from_older_client, rpc_integration_fixture) {
-    configure_server();
-    register_services();
-    start_server();
-
-    rpc::transport t(client_config());
-    t.connect(model::no_timeout).get();
-    auto stop = ss::defer([&] { t.stop().get(); });
-    auto old_client = echo::echo_client_protocol(t);
-
-    /// Make a request with an version of the rpc, with the newer service
-    const auto echo_serde_only_method = echo_v2::echo_service_base<
-      rpc::default_message_codec>::echo_serde_only_method;
-
-    auto f
-      = t.send_typed<echo::echo_req_serde_only, echo_v2::echo_resp_serde_only>(
-        echo::echo_req_serde_only{.str = "Hi_there"},
-        echo_serde_only_method,
-        rpc::client_opts(rpc::no_timeout));
-    auto normal_response = f.get();
-    BOOST_REQUIRE(!normal_response.has_error());
-    BOOST_CHECK_EQUAL(
-      normal_response.value().data.str,
-      "Hi_there_to_sso_from_sso_v2_to_sso_v2_from_sso_v2");
-
-    /// Upgrade the client, sending the newer version of the request type
-    auto new_client = echo_v2::echo_client_protocol(t);
-    auto f2 = new_client.echo_serde_only(
-      echo_v2::echo_req_serde_only{.str = "Hi_v2", .str_two = "world_v2"},
-      rpc::client_opts(rpc::no_timeout));
-    auto response = f2.get();
-    BOOST_REQUIRE(!response.has_error());
-    BOOST_CHECK_EQUAL(
-      response.value().data.str,
-      "Hi_v2_to_sso_v2_from_sso_v2_to_sso_v2_from_sso_v2");
 }
 
 class rpc_sharded_fixture : public rpc_sharded_integration_fixture {

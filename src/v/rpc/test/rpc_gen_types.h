@@ -41,119 +41,61 @@ struct mount_tamalpais {
 } // namespace cycling
 
 namespace echo {
-struct echo_req {
-    using rpc_serde_exempt = std::true_type;
+struct echo_req
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     ss::sstring str;
 };
 
-struct echo_resp {
-    using rpc_serde_exempt = std::true_type;
+struct echo_resp
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     ss::sstring str;
 };
 
-struct cnt_req {
-    using rpc_serde_exempt = std::true_type;
+static_assert(serde::is_serde_compatible_v<echo_req>);
+static_assert(serde::is_serde_compatible_v<echo_resp>);
+static_assert(rpc::is_rpc_adl_exempt<echo_req>);
+static_assert(rpc::is_rpc_adl_exempt<echo_resp>);
+
+struct cnt_req
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     uint64_t expected;
 };
 
-struct cnt_resp {
-    using rpc_serde_exempt = std::true_type;
+struct cnt_resp
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     uint64_t expected;
     uint64_t current;
 };
 
-struct sleep_req {
-    using rpc_serde_exempt = std::true_type;
+struct sleep_req
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     uint64_t secs;
 };
 
-struct sleep_resp {
-    using rpc_serde_exempt = std::true_type;
+struct sleep_resp
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     ss::sstring str;
 };
 
 enum class failure_type { throw_exception, exceptional_future, none };
 
-struct throw_req {
-    using rpc_serde_exempt = std::true_type;
+struct throw_req
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     failure_type type;
 };
 
-struct throw_resp {
-    using rpc_serde_exempt = std::true_type;
+struct throw_resp
+  : serde::envelope<echo_req, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     ss::sstring reply;
 };
-
-/*
- * echo methods with req/resp that support encodings:
- * - adl only
- * - serde only
- * - serde and adl
- */
-struct echo_req_adl_only {
-    using rpc_serde_exempt = std::true_type;
-    ss::sstring str;
-};
-
-struct echo_resp_adl_only {
-    using rpc_serde_exempt = std::true_type;
-    ss::sstring str;
-};
-
-// an adl-only type should not have serde support
-static_assert(!serde::is_serde_compatible_v<echo_req_adl_only>);
-static_assert(!serde::is_serde_compatible_v<echo_resp_adl_only>);
-
-// an adl-only type should not be exempt from adl support
-static_assert(!rpc::is_rpc_adl_exempt<echo_req_adl_only>);
-static_assert(!rpc::is_rpc_adl_exempt<echo_resp_adl_only>);
-
-struct echo_req_adl_serde
-  : serde::envelope<
-      echo_req_adl_serde,
-      serde::version<1>,
-      serde::compat_version<1>> {
-    ss::sstring str;
-
-    void serde_write(iobuf& out) const {
-        // serialize with serde an adl-serde type
-        using serde::write;
-        write(out, str + "_to_sas");
-    }
-
-    void serde_read(iobuf_parser& in, const serde::header& h) {
-        // deserialize with serde an adl-serde type
-        using serde::read_nested;
-        str = read_nested<ss::sstring>(in, h._bytes_left_limit);
-        str += "_from_sas";
-    }
-};
-
-struct echo_resp_adl_serde
-  : serde::envelope<
-      echo_resp_adl_serde,
-      serde::version<1>,
-      serde::compat_version<1>> {
-    ss::sstring str;
-
-    void serde_write(iobuf& out) const {
-        // serialize with serde an adl-serde type
-        using serde::write;
-        write(out, str + "_to_sas");
-    }
-
-    void serde_read(iobuf_parser& in, const serde::header& h) {
-        // deserialize with serde an adl-serde type
-        using serde::read_nested;
-        str = read_nested<ss::sstring>(in, h._bytes_left_limit);
-        str += "_from_sas";
-    }
-};
-
-static_assert(serde::is_serde_compatible_v<echo_req_adl_serde>);
-static_assert(serde::is_serde_compatible_v<echo_resp_adl_serde>);
-static_assert(!rpc::is_rpc_adl_exempt<echo_req_adl_serde>);
-static_assert(!rpc::is_rpc_adl_exempt<echo_resp_adl_serde>);
 
 struct echo_req_serde_only
   : serde::envelope<
@@ -220,11 +162,8 @@ namespace echo_v2 {
 /// desired changes desired for the type evolution of echo_req_serde_only, and
 /// tests will use raw `send_typed<req, resp>` when making requests to rpc
 /// servers
-struct echo_req_serde_only
-  : serde::envelope<
-      echo_req_serde_only,
-      serde::version<2>,
-      serde::compat_version<1>> {
+struct echo_req
+  : serde::envelope<echo_req, serde::version<2>, serde::compat_version<1>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring str;
     ss::sstring str_two;
@@ -248,11 +187,8 @@ struct echo_req_serde_only
     }
 };
 
-struct echo_resp_serde_only
-  : serde::envelope<
-      echo_resp_serde_only,
-      serde::version<2>,
-      serde::compat_version<1>> {
+struct echo_resp
+  : serde::envelope<echo_resp, serde::version<2>, serde::compat_version<1>> {
     using rpc_adl_exempt = std::true_type;
     ss::sstring str;
     ss::sstring str_two;
@@ -276,68 +212,10 @@ struct echo_resp_serde_only
     }
 };
 
-static_assert(serde::is_serde_compatible_v<echo_req_serde_only>);
-static_assert(rpc::is_rpc_adl_exempt<echo_req_serde_only>);
+static_assert(serde::is_serde_compatible_v<echo_req>);
+static_assert(rpc::is_rpc_adl_exempt<echo_req>);
 
-static_assert(rpc::is_rpc_adl_exempt<echo_req_serde_only>);
-static_assert(rpc::is_rpc_adl_exempt<echo_resp_serde_only>);
+static_assert(rpc::is_rpc_adl_exempt<echo_req>);
+static_assert(rpc::is_rpc_adl_exempt<echo_resp>);
 
 } // namespace echo_v2
-
-namespace reflection {
-template<>
-struct adl<echo::echo_req_adl_only> {
-    void to(iobuf& out, echo::echo_req_adl_only&& r) {
-        // serialize with adl an adl-only type
-        reflection::serialize(out, r.str + "_to_aao");
-    }
-    echo::echo_req_adl_only from(iobuf_parser& in) {
-        // deserialize with adl an adl-only type
-        return echo::echo_req_adl_only{
-          .str = adl<ss::sstring>{}.from(in) + "_from_aao",
-        };
-    }
-};
-
-template<>
-struct adl<echo::echo_resp_adl_only> {
-    void to(iobuf& out, echo::echo_resp_adl_only&& r) {
-        // serialize with adl an adl-only type
-        reflection::serialize(out, r.str + "_to_aao");
-    }
-    echo::echo_resp_adl_only from(iobuf_parser& in) {
-        // deserialize with adl an adl-only type
-        return echo::echo_resp_adl_only{
-          .str = adl<ss::sstring>{}.from(in) + "_from_aao",
-        };
-    }
-};
-
-template<>
-struct adl<echo::echo_req_adl_serde> {
-    void to(iobuf& out, echo::echo_req_adl_serde&& r) {
-        // serialize with adl an adl-serde type
-        reflection::serialize(out, r.str + "_to_aas");
-    }
-    echo::echo_req_adl_serde from(iobuf_parser& in) {
-        // deserialize with adl an adl-serde type
-        return echo::echo_req_adl_serde{
-          .str = adl<ss::sstring>{}.from(in) + "_from_aas",
-        };
-    }
-};
-
-template<>
-struct adl<echo::echo_resp_adl_serde> {
-    void to(iobuf& out, echo::echo_resp_adl_serde&& r) {
-        // serialize with adl an adl-serde type
-        reflection::serialize(out, r.str + "_to_aas");
-    }
-    echo::echo_resp_adl_serde from(iobuf_parser& in) {
-        // deserialize with adl an adl-serde type
-        return echo::echo_resp_adl_serde{
-          .str = adl<ss::sstring>{}.from(in) + "_from_aas",
-        };
-    }
-};
-} // namespace reflection

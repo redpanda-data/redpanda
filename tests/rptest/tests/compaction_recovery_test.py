@@ -135,6 +135,11 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
         * Old redpanda version with v1 footers is not able to recover
           v2 footers, but at least it should be able to rebuild them.
         """
+
+        # The version we will update+rollback to, before eventually upgrading
+        # all the way to HEAD
+        next_version = self.installer.latest_for_line(release_line=(23, 1))[0]
+
         def get_storage_partition(node):
             storage = self.redpanda.node_storage(node, sizes=True)
             partitions = storage.partitions('kafka', self.topic)
@@ -183,7 +188,7 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
         seg2mtime_1 = get_closed_segment2mtime(to_restart)
         assert len(seg2mtime_1) >= 2
 
-        self.installer.install([to_restart], RedpandaInstaller.HEAD)
+        self.installer.install([to_restart], next_version)
         self.redpanda.restart_nodes([to_restart])
         self.redpanda.wait_for_membership(first_start=False)
 
@@ -214,3 +219,11 @@ class CompactionRecoveryUpgradeTest(RedpandaTest):
             else:
                 # old version should rebuild v2 indices and re-compact segments
                 assert seg2mtime_3[index] > seg2mtime_2[index]
+
+        # Now that we are back at the old version, proceed to upgrade all the way to HEAD
+        remaining_versions = self.load_version_range(self.OLD_VERSION)[1:]
+        for version in self.upgrade_through_versions(remaining_versions,
+                                                     already_running=True):
+            self.logger.info(f"Updated to {version}")
+
+        produce_and_wait_for_compaction(self.redpanda.nodes[0], 2)

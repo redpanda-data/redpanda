@@ -18,7 +18,7 @@
 
 namespace compat {
 
-GEN_COMPAT_CHECK(
+GEN_COMPAT_CHECK_SERDE_ONLY(
   cluster::get_node_health_request,
   { json_write(filter); },
   { json_read(filter); });
@@ -47,13 +47,13 @@ struct compat_check<cluster::get_node_health_reply> {
 
     static std::vector<compat_binary>
     to_binary(cluster::get_node_health_reply obj) {
-        return compat_binary::serde_and_adl(obj);
+        return {compat_binary::serde(obj)};
     }
 
     static void
     check(cluster::get_node_health_reply expected, compat_binary test) {
         const auto name = test.name;
-        auto decoded = decode_adl_or_serde<cluster::get_node_health_reply>(
+        auto decoded = decode_serde_only<cluster::get_node_health_reply>(
           std::move(test));
 
         /*
