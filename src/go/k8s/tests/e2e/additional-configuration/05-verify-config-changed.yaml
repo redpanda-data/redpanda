@@ -1,5 +1,5 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestStep
 commands:
-- command: ./verify-config-dev.sh 11 5
+- command: ./verify-config-dev.sh -r 11 -c 5
   namespaced: true
