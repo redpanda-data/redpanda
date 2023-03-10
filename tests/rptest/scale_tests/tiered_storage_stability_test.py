@@ -73,11 +73,16 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
         self.rpk = RpkTool(self.redpanda)
         self.s3_port = si_settings.cloud_storage_api_endpoint_port
 
-    def load_many_segments(self):
-        config = {
+    def setup_cluster(self, segment_bytes: int, retention_local_bytes: int, extra_cluster_props: dict = {}):
+        self.redpanda.set_cluster_config({
+            'partition_autobalancing_node_availability_timeout_sec': self.unavailable_timeout,
+            'partition_autobalancing_mode': 'continuous',
+            'raft_learner_recovery_rate': 10 * 1024 * 1024 * 1024,
+        } | extra_cluster_props)
+        topic_config = {
             # Use a tiny segment size so we can generate many cloud segments
             # very quickly.
-            'segment.bytes': self.small_segment_size,
+            'segment.bytes': segment_bytes,
 
             # Use infinite retention so there aren't sudden, drastic,
             # unrealistic GCing of logs.
@@ -85,20 +90,16 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
 
             # Keep the local retention low for now so we don't get bogged down
             # with an inordinate number of local segments.
-            'retention.local.target.bytes': 2 * self.small_segment_size,
+            'retention.local.target.bytes': retention_local_bytes,
             'cleanup.policy': 'delete',
-            'partition_autobalancing_node_availability_timeout_sec':
-            self.unavailable_timeout,
-            'partition_autobalancing_mode': 'continuous',
-            'raft_learner_recovery_rate': 10 * 1024 * 1024 * 1024,
         }
         self.rpk.create_topic(self.topic_name,
                               partitions=self.scaled_num_partitions,
                               replicas=3,
-                              config=config)
+                              config=topic_config)
 
+    def load_many_segments(self):
         target_cloud_segments = self.num_segments_per_partition * self.scaled_num_partitions
-        producer = None
         try:
             producer = KgoVerifierProducer(
                 self.test_context,
@@ -107,14 +108,16 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
                 self.small_segment_size,  # msg_size
                 int(2 * target_cloud_segments),  # msg_count
                 custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, target_cloud_segments),
-                       timeout_sec=600,
-                       backoff_sec=5)
+            try:
+                producer.start()
+                wait_until(lambda: nodes_report_cloud_segments(
+                    self.redpanda, target_cloud_segments),
+                           timeout_sec=600,
+                           backoff_sec=5)
+            finally:
+                producer.stop()
+                producer.wait(timeout_sec=600)
         finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
         # Once some segments are generated, configure the topic to use more
@@ -131,9 +134,10 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
 
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_restarts(self):
+        self.setup_cluster(segment_bytes=self.small_segment_size,
+                           retention_local_bytes=2 * self.small_segment_size)
         # Generate a realistic number of segments per partition.
         self.load_many_segments()
-        producer = None
         try:
             producer = KgoVerifierProducer(
                 self.test_context,
@@ -143,26 +147,28 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
                 msg_count=5 * 1024 * 1024 * 1024 * 1024,
                 rate_limit_bps=self.scaled_data_bps,
                 custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
-                       backoff_sec=1.0)
+            try:
+                producer.start()
+                wait_until(lambda: producer.produce_status.acked > 10000,
+                        timeout_sec=60,
+                        backoff_sec=1.0)
 
-            # Run a rolling restart.
-            self.stage_rolling_restart()
+                # Run a rolling restart.
+                self.stage_rolling_restart()
 
-            # Hard stop, then restart.
-            self.stage_hard_stop_start()
+                # Hard stop, then restart.
+                self.stage_stop_wait_start(forced_stop=True, downtime=0)
 
-            # Stop a node, wait for enough time for movement to occur, then
-            # restart.
-            self.stage_stop_wait_start()
+                # Stop a node, wait for enough time for movement to occur, then
+                # restart.
+                self.stage_stop_wait_start()
 
-            # Block traffic to/from one node.
-            self.stage_block_node_traffic()
+                # Block traffic to/from one node.
+                self.stage_block_node_traffic()
+            finally:
+                producer.stop()
+                producer.wait(timeout_sec=600)
         finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
     NOS3_LOG_ALLOW_LIST = [
@@ -210,27 +216,12 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
         Make segments replicate to the cloud, then disrupt S3 connectivity
         and restore it
         """
-        config = {
+        self.setup_cluster(
             # Segments should go into the cloud at a reasonable rate,
             # that's why it is smaller than it should be
-            'segment.bytes': int(self.scaled_segment_size/2),
-
-            # Use infinite retention so there aren't sudden, drastic,
-            # unrealistic GCing of logs.
-            'retention.bytes': -1,
-
-            # Keep the local retention low for now so we don't get bogged down
-            # with an inordinate number of local segments.
-            'retention.local.target.bytes': 2 * self.scaled_segment_size,
-            'cleanup.policy': 'delete',
-            'partition_autobalancing_node_availability_timeout_sec': self.unavailable_timeout,
-            'partition_autobalancing_mode': 'continuous',
-            'raft_learner_recovery_rate': 10 * 1024 * 1024 * 1024,
-        }
-        self.rpk.create_topic(self.topic_name,
-                              partitions=self.scaled_num_partitions,
-                              replicas=3,
-                              config=config)
+            segment_bytes = int(self.scaled_segment_size/2),
+            retention_local_bytes=2 * self.scaled_segment_size,
+        )
 
         try:
             producer = KgoVerifierProducer(
