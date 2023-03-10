@@ -306,7 +306,7 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 			Chart: helmv2beta1.HelmChartTemplate{
 				Spec: helmv2beta1.HelmChartTemplateSpec{
 					Chart:    "redpanda",
-					Version:  rp.Spec.ChartVersion,
+					Version:  rp.Spec.ChartRef.ChartVersion,
 					Interval: &metav1.Duration{Duration: 1 * time.Minute},
 					SourceRef: helmv2beta1.CrossNamespaceObjectReference{
 						Kind:      "HelmRepository",

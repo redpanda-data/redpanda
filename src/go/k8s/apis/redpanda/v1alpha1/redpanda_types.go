@@ -34,12 +34,10 @@ type ChartRef struct {
 type RedpandaSpec struct {
 	// ChartRef defines chart details including repository
 	ChartRef ChartRef `json:"chartRef"`
-	// ChartVersion defines the helm chart version to use
-	ChartVersion string `json:"chartVersion,omitempty"`
 	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
 	HelmRepositoryName string `json:"helmRepositoryName,omitempty"`
 	// ClusterSpec defines the values to use in the cluster
-	ClusterSpec RedpandaClusterSpec `json:"clusterSpec,omitempty"`
+	ClusterSpec *RedpandaClusterSpec `json:"clusterSpec,omitempty"`
 }
 
 // RedpandaStatus defines the observed state of Redpanda

@@ -50,9 +50,6 @@ spec:
                       defaults to redpanda if not defined
                     type: string
                 type: object
-              chartVersion:
-                description: ChartVersion defines the helm chart version to use
-                type: string
               clusterSpec:
                 description: ClusterSpec defines the values to use in the cluster
                 properties:
