@@ -16,34 +16,29 @@ from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST
+from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
-from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.mode_checks import cleanup_on_early_exit, skip_debug_mode
 from rptest.utils.node_operations import FailureInjectorBackgroundThread, NodeOpsExecutor, generate_random_workload
 
 from rptest.clients.offline_log_viewer import OfflineLogViewer
 
 
 class RandomNodeOperationsTest(EndToEndTest):
-
-    consumer_timeout = 180
-    producer_timeout = 180
-
     def __init__(self, test_context):
         self.admin_fuzz = None
         super(RandomNodeOperationsTest,
               self).__init__(test_context=test_context)
 
-    def producer_throughput(self):
-        return 1000 if self.debug_mode else 10000
-
     def min_producer_records(self):
-        return 20 * self.producer_throughput()
+        return 20 * self.producer_throughput
 
     def _create_topics(self, count):
-        max_partitions = 32
+
         topics = []
         for _ in range(0, count):
-            spec = TopicSpec(partition_count=random.randint(1, max_partitions),
+            spec = TopicSpec(partition_count=random.randint(
+                1, self.max_partitions),
                              replication_factor=3)
             topics.append(spec)
 
@@ -58,17 +53,26 @@ class RandomNodeOperationsTest(EndToEndTest):
 
         return super().tearDown()
 
+    def early_exit_hook(self):
+        """
+        Hook for `skip_debug_mode` decorator
+        """
+        if self.redpanda:
+            self.redpanda.set_skip_if_no_redpanda_log(True)
+
     @skip_debug_mode
     @cluster(num_nodes=7,
              log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
-    @matrix(enable_failures=[False, True])
-    def test_node_operations(
-        self,
-        enable_failures,
-    ):
+    @matrix(enable_failures=[True, False],
+            num_to_upgrade=[0, 3],
+            compacted_topics=[True, False])
+    def test_node_operations(self, enable_failures, num_to_upgrade,
+                             compacted_topics):
 
         lock = threading.Lock()
+
         extra_rp_conf = {
+            "compacted_log_segment_size": 5 * (2**20),
             "default_topic_replications": 3,
             "raft_learner_recovery_rate": 512 * (1024 * 1024),
             "partition_autobalancing_mode": "node_add",
@@ -81,16 +85,49 @@ class RandomNodeOperationsTest(EndToEndTest):
                                         5,
                                         extra_rp_conf=extra_rp_conf)
 
-        self.redpanda.set_seed_servers(self.redpanda.nodes)
+        # test setup
+        self.producer_timeout = 180
+        self.consumer_timeout = 180
 
-        self.redpanda.start(auto_assign_node_id=True,
-                            omit_seeds_on_idx_one=False)
+        if self.redpanda.dedicated_nodes:
+            # scale test setup
+            self.max_partitions = 32
+            self.producer_throughput = 20000
+            self.node_operations = 30
+        else:
+            # container test setup
+            # skip compacted topics and upgrade tests when running in container
+            if compacted_topics or num_to_upgrade > 0:
+
+                cleanup_on_early_exit(self)
+                return
+            self.max_partitions = 32
+            self.producer_throughput = 1000 if self.debug_mode else 10000
+            self.node_operations = 10
+
+        self.redpanda.set_seed_servers(self.redpanda.nodes)
+        if num_to_upgrade > 0:
+            installer = self.redpanda._installer
+            installer.install(
+                self.redpanda.nodes,
+                installer.highest_from_prior_feature_version(
+                    RedpandaInstaller.HEAD))
+            self.redpanda.start()
+            installer.install(self.redpanda.nodes[:num_to_upgrade],
+                              RedpandaInstaller.HEAD)
+            self.redpanda.restart_nodes(self.redpanda.nodes[:num_to_upgrade])
+        else:
+            self.redpanda.start(auto_assign_node_id=True,
+                                omit_seeds_on_idx_one=False)
         # create some topics
         self._create_topics(10)
         # start workload
-        self.start_producer(1, throughput=self.producer_throughput())
-        self.start_consumer(1)
-        self.await_startup()
+        self.start_producer(1,
+                            throughput=self.producer_throughput,
+                            repeating_keys=100 if compacted_topics else None)
+        self.start_consumer(1, verify_offsets=not compacted_topics)
+
+        self.await_startup(min_records=3 * self.producer_throughput)
 
         # start admin operations fuzzer, it will provide a stream of
         # admin day 2 operations executed during the test
@@ -108,13 +145,14 @@ class RandomNodeOperationsTest(EndToEndTest):
             fi = FailureInjectorBackgroundThread(self.redpanda, self.logger,
                                                  lock)
             fi.start()
-        op_cnt = 10
+
         for i, op in enumerate(
                 generate_random_workload(
                     available_nodes=self.active_node_idxs)):
-            if i >= op_cnt:
+            if i >= self.node_operations:
                 break
-            self.logger.info(f"starting operation {i+1}/{op_cnt}")
+            self.logger.info(
+                f"starting operation {i+1}/{self.node_operations}")
             executor.execute_operation(op)
 
         self.admin_fuzz.wait(20, 180)
@@ -125,7 +163,8 @@ class RandomNodeOperationsTest(EndToEndTest):
         self.run_validation(min_records=self.min_producer_records(),
                             enable_idempotence=False,
                             producer_timeout_sec=self.producer_timeout,
-                            consumer_timeout_sec=self.consumer_timeout)
+                            consumer_timeout_sec=self.consumer_timeout,
+                            enable_compaction=compacted_topics)
 
         # Validate that the controller log written during the test is readable by offline log viewer
         log_viewer = OfflineLogViewer(self.redpanda)
