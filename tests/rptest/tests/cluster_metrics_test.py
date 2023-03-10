@@ -255,8 +255,12 @@ class ClusterMetricsTest(RedpandaTest):
                                               "cluster_partitions",
                                               value=0)
 
-            RpkTool(self.redpanda).create_topic("topic-a", partitions=20)
-            RpkTool(self.redpanda).create_topic("topic-b", partitions=10)
+            RpkTool(self.redpanda).create_topic("topic-a",
+                                                partitions=20,
+                                                replicas=3)
+            RpkTool(self.redpanda).create_topic("topic-b",
+                                                partitions=10,
+                                                replicas=3)
             self._wait_until_metric_holds_value(controller,
                                                 "cluster_partitions",
                                                 value=30)
@@ -266,7 +270,9 @@ class ClusterMetricsTest(RedpandaTest):
                                                 "cluster_partitions",
                                                 value=10)
 
-            RpkTool(self.redpanda).create_topic("topic-a", partitions=30)
+            RpkTool(self.redpanda).create_topic("topic-a",
+                                                partitions=30,
+                                                replicas=3)
             self._wait_until_metric_holds_value(controller,
                                                 "cluster_partitions",
                                                 value=40)
