@@ -160,9 +160,6 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
 
             # Block traffic to/from one node.
             self.stage_block_node_traffic()
-
-            # Decommission.
-            self.stage_decommission()
         finally:
             producer.stop()
             producer.wait(timeout_sec=600)
@@ -205,15 +202,6 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
         self.logger.info(f"Restarting node {node_str}")
         self.redpanda.start_node(node, timeout=600)
         wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
-
-    def stage_decommission(self):
-        node, node_id, node_str = self.get_node(0)
-        self.logger.info(f"Decommissioning node {node_str}")
-        admin = self.redpanda._admin
-        admin.decommission_broker(node_id)
-        waiter = NodeDecommissionWaiter(self.redpanda, node_id, self.logger)
-        waiter.wait_for_removal()
-        self.redpanda.stop_node(node)
 
 
     @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
@@ -294,4 +282,93 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
         wait_until(self.redpanda.healthy, timeout_sec=60, backoff_sec=1)
         self.logger.info(f"Waiting for S3 errors to cease")
         wait_until(lambda: self._cloud_storage_no_new_errors(self.redpanda, self.logger),
-                       timeout_sec=600, backoff_sec=20)
+                   timeout_sec=600, backoff_sec=20)
+
+    @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_decommission_and_add(self):
+        """
+        Preloads cluster with large number of messages/segments that are also
+        replicated to the cloud, and then runs the decommission-and-add a node
+        stage. This could have been a part of 'test_combo_preloaded' but
+        this stage alone is too heavy and long-lasting, so it's put into a
+        separate test.
+        """
+        self.setup_cluster(segment_bytes=self.small_segment_size,
+                           retention_local_bytes=2 * self.small_segment_size)
+        # Generate a realistic number of segments per partition.
+        self.load_many_segments()
+        try:
+            producer = KgoVerifierProducer(
+                self.test_context,
+                self.redpanda,
+                self.topic_name,
+                msg_size=128 * 1024,
+                msg_count=5 * 1024 * 1024 * 1024 * 1024,
+                rate_limit_bps=self.scaled_data_bps,
+                custom_node=[self.preallocated_nodes[0]])
+            try:
+                producer.start()
+                wait_until(lambda: producer.produce_status.acked > 10000,
+                           timeout_sec=60,
+                           backoff_sec=1.0)
+
+                # Decommission.
+                # Add node (after stage_decommission has freed up a node)
+                # and wait for partitions to move in.
+                self.stage_decommission_and_add()
+            finally:
+                producer.stop()
+                producer.wait(timeout_sec=600)
+        finally:
+            self.free_preallocated_nodes()
+
+    def stage_decommission_and_add(self):
+        node, node_id, node_str = self.get_node(1)
+
+        def topic_partitions_on_node():
+            try:
+                parts = self.redpanda.partitions(self.topic_name)
+            except StopIteration:
+                return 0
+            n = sum([
+                1 if r.account == node.account else 0 for p in parts
+                for r in p.replicas
+            ])
+            self.logger.debug(f"Partitions in the node-topic: {n}")
+            return n
+
+        nt_partitions_before = topic_partitions_on_node()
+
+        self.logger.info(
+            f"Decommissioning node {node_str}, partitions: {nt_partitions_before}"
+        )
+        decomm_time = time.monotonic()
+        admin = self.redpanda._admin
+        admin.decommission_broker(node_id)
+        waiter = NodeDecommissionWaiter(self.redpanda,
+                                        node_id,
+                                        self.logger,
+                                        progress_timeout=120)
+        waiter.wait_for_removal()
+        self.redpanda.stop_node(node)
+        assert topic_partitions_on_node() == 0
+        decomm_time = time.monotonic() - decomm_time
+
+        self.logger.info(f"Adding a node")
+        self.redpanda.clean_node(node,
+                                 preserve_logs=True,
+                                 preserve_current_install=True)
+        self.redpanda.start_node(node,
+                                 auto_assign_node_id=False,
+                                 omit_seeds_on_idx_one=False)
+        wait_until(self.redpanda.healthy, timeout_sec=600, backoff_sec=1)
+        new_node_id = self.redpanda.node_id(node, force_refresh=True)
+
+        self.logger.info(
+            f"Node added, new node_id: {new_node_id}, waiting for {int(nt_partitions_before/2)} partitions to move there in {int(decomm_time)} s"
+        )
+        wait_until(
+            lambda: topic_partitions_on_node() > nt_partitions_before / 2,
+            timeout_sec=max(60, decomm_time),
+            backoff_sec=2)
+        self.logger.info(f"{topic_partitions_on_node()} partitions moved")
