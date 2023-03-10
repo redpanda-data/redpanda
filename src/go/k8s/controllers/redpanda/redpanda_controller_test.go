@@ -27,7 +27,7 @@ import (
 // This is a unit test
 var _ = Describe("Redpanda Controller", func() {
 	const (
-		ClusterName = "redpanda-test-cluster"
+		ClusterName  = "redpanda-test-cluster"
 		RedpandaName = "redpanda"
 
 		timeout  = time.Second * 30
@@ -39,9 +39,9 @@ var _ = Describe("Redpanda Controller", func() {
 	)
 	var (
 		RedpandaNamespace string
-		key         types.NamespacedName
-		testCluster *v1alpha1.Cluster
-		namespace   *corev1.Namespace
+		key               types.NamespacedName
+		testCluster       *v1alpha1.Cluster
+		namespace         *corev1.Namespace
 	)
 
 	BeforeEach(func() {
@@ -79,7 +79,7 @@ var _ = Describe("Redpanda Controller", func() {
 						ChartVersion: "3.x.x",
 					},
 					HelmRepositoryName: "redpanda-repository",
-					ClusterSpec: &v1alpha1.RedpandaClusterSpec{},
+					ClusterSpec:        &v1alpha1.RedpandaClusterSpec{},
 				},
 			}
 
@@ -87,4 +87,5 @@ var _ = Describe("Redpanda Controller", func() {
 			Eventually(func() bool { return k8sClient.Get(ctx, key, &v1alpha1.Redpanda{}) == nil }, timeout, interval).Should(BeTrue())
 		}
 	})
-}
+
+})
