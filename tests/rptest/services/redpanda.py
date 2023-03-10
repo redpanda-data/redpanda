@@ -1497,6 +1497,15 @@ class RedpandaService(Service):
         self.start_service(node, start_rp)
         self._started.append(node)
 
+        # We need to manually read the config from the file and add it
+        # to _node_configs since we use rpk to write the file instead of
+        # the write_node_conf_file method.
+        with tempfile.TemporaryDirectory() as d:
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
+            with open(os.path.join(d, "redpanda.yaml")) as f:
+                actual_config = yaml.full_load(f.read())
+                self._node_configs[node] = actual_config
+
     def _log_node_process_state(self, node):
         """
         For debugging issues around starting and stopping processes: log

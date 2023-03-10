@@ -461,7 +461,6 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 		// We want to redact any blindly decoded parameters.
 		redactOtherMap(conf.Other)
 		redactOtherMap(conf.Redpanda.Other)
-		redactServerTLSSlice(conf.Redpanda.RPCServerTLS)
 		redactServerTLSSlice(conf.Redpanda.KafkaAPITLS)
 		redactServerTLSSlice(conf.Redpanda.AdminAPITLS)
 		if conf.SchemaRegistry != nil {
