@@ -148,3 +148,110 @@ class CloudRetentionTest(PreallocNodesTest):
         self.logger.info("finished consuming")
         assert consumer.consumer_status.validator.valid_reads > \
             segment_size * num_partitions / msg_size
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    def test_gc_entire_manifest(self):
+        """
+        Regression test for #8945, where GCing all cloud segments could prevent
+        further uploads from taking place.
+        """
+        small_segment_size = 1024 * 1024
+        num_partitions = 16
+        si_settings = SISettings(log_segment_size=small_segment_size)
+        self.redpanda.set_si_settings(si_settings)
+        extra_rp_conf = dict(retention_local_target_bytes_default=self.
+                             default_retention_segments * small_segment_size,
+                             log_segment_size_jitter_percent=5,
+                             group_initial_rebalance_delay=300,
+                             cloud_storage_segment_max_upload_interval_sec=1,
+                             cloud_storage_housekeeping_interval_ms=1000)
+        self.redpanda.add_extra_rp_conf(extra_rp_conf)
+        self.redpanda.start()
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(
+            topic=self.topic_name,
+            partitions=num_partitions,
+            replicas=3,
+            config={
+                "cleanup.policy": TopicSpec.CLEANUP_DELETE,
+                # Intentionally sabotage Redpanda to use lower
+                # retention than a single segment.
+                "retention.bytes": int(small_segment_size / 2),
+                "retention.local.target.bytes": 2 * small_segment_size,
+            })
+
+        # Write more data than we intend to retain.
+        msg_size = 4 * 1024
+        msg_count = int(5 * 1024 * 1024 / msg_size)
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic_name,
+                                       msg_size=msg_size,
+                                       msg_count=msg_count,
+                                       custom_node=self.preallocated_nodes)
+        producer.start(clean=False)
+        producer.wait()
+
+        topics = (TopicSpec(name=self.topic_name,
+                            partition_count=num_partitions), )
+
+        def uploaded_all_partitions():
+            s3_snapshot = S3Snapshot(topics, self.redpanda.s3_client,
+                                     si_settings.cloud_storage_bucket,
+                                     self.logger)
+            for partition in range(0, num_partitions):
+                size = s3_snapshot.cloud_log_size_for_ntp(
+                    self.topic_name, partition)
+                if size == 0:
+                    self.logger.info("Partition {} has size 0", partition)
+                    return False
+
+            return True
+
+        wait_until(uploaded_all_partitions,
+                   timeout_sec=60,
+                   backoff_sec=5,
+                   err_msg="Waiting for all parents to upload cloud data")
+
+        def gced_all_segments():
+            s3_snapshot = S3Snapshot(topics, self.redpanda.s3_client,
+                                     si_settings.cloud_storage_bucket,
+                                     self.logger)
+            for partition in range(0, num_partitions):
+                try:
+                    manifest = s3_snapshot.manifest_for_ntp(
+                        self.topic_name, partition)
+                except:
+                    self.logger.info(
+                        f"Partition {partition} has no uploaded manifest")
+                    return False
+
+                # Wait for the manifest to have uploaded some offsets, but not have
+                # any segments, indicating we truncated.
+                if "last_offset" not in manifest or manifest[
+                        "last_offset"] == 0:
+                    self.logger.info(
+                        f"Partition {partition} doesn't have last_offset")
+                    return False
+
+                if not "segments" not in manifest:
+                    self.logger.info(
+                        f"Partition {partition} still has segments")
+                    return False
+
+            return True
+
+        rpk.alter_topic_config(self.topic_name, "retention.bytes", "1")
+        wait_until(gced_all_segments,
+                   timeout_sec=120,
+                   backoff_sec=5,
+                   err_msg="Waiting for all cloud segments to be GC")
+        producer = KgoVerifierProducer(self.test_context,
+                                       self.redpanda,
+                                       self.topic_name,
+                                       msg_size=msg_size,
+                                       msg_count=msg_count,
+                                       custom_node=self.preallocated_nodes)
+        producer.start(clean=False)
+        producer.wait()
