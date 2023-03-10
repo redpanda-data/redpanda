@@ -981,10 +981,7 @@ rpk:
 					AdminAPITLS: []ServerTLS{
 						{Enabled: false, CertFile: "certs/tls-cert.pem"},
 					},
-					RPCServer: SocketAddress{"0.0.0.0", 33145},
-					RPCServerTLS: []ServerTLS{
-						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
-					},
+					RPCServer:        SocketAddress{"0.0.0.0", 33145},
 					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
 					KafkaAPI: []NamedAuthNSocketAddress{
 						{"0.0.0.0", 9092, "internal", nil},
@@ -1003,6 +1000,13 @@ rpk:
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
+						// This one is a slice
+						"rpc_server_tls": []interface{}{
+							map[string]interface{}{
+								"require_client_auth": false,
+								"truststore_file":     "certs/tls-ca.pem",
+							},
+						},
 					},
 				},
 				Pandaproxy: &Pandaproxy{
@@ -1131,10 +1135,7 @@ redpanda:
 					AdminAPITLS: []ServerTLS{
 						{Enabled: false, CertFile: "certs/tls-cert.pem"},
 					},
-					RPCServer: SocketAddress{"0.0.0.0", 33145},
-					RPCServerTLS: []ServerTLS{
-						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
-					},
+					RPCServer:        SocketAddress{"0.0.0.0", 33145},
 					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
 					KafkaAPI: []NamedAuthNSocketAddress{
 						{"0.0.0.0", 9092, "internal", nil},
@@ -1153,6 +1154,13 @@ redpanda:
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
+						// This one is a slice
+						"rpc_server_tls": []interface{}{
+							map[string]interface{}{
+								"require_client_auth": false,
+								"truststore_file":     "certs/tls-ca.pem",
+							},
+						},
 					},
 				},
 			},
@@ -1303,10 +1311,7 @@ rpk:
 					AdminAPITLS: []ServerTLS{
 						{Enabled: false, CertFile: "certs/tls-cert.pem"},
 					},
-					RPCServer: SocketAddress{"0.0.0.0", 33145},
-					RPCServerTLS: []ServerTLS{
-						{RequireClientAuth: false, TruststoreFile: "certs/tls-ca.pem"},
-					},
+					RPCServer:        SocketAddress{"0.0.0.0", 33145},
 					AdvertisedRPCAPI: &SocketAddress{"0.0.0.0", 33145},
 					KafkaAPI: []NamedAuthNSocketAddress{
 						{"0.0.0.0", 9092, "internal", nil},
@@ -1327,6 +1332,10 @@ rpk:
 					},
 					Other: map[string]interface{}{
 						"enable_admin_api": true,
+						"rpc_server_tls": map[string]interface{}{
+							"require_client_auth": false,
+							"truststore_file":     "certs/tls-ca.pem",
+						},
 					},
 				},
 				Pandaproxy: &Pandaproxy{

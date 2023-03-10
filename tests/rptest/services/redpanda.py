@@ -1173,12 +1173,16 @@ class RedpandaService(Service):
         if not expect_fail:
             self._started.append(node)
 
-    def start_node_with_rpk(self, node, additional_args=""):
+    def start_node_with_rpk(self, node, additional_args="", clean_node=True):
         """
         Start a single instance of redpanda using rpk. similar to start_node, 
         this function will not return until redpanda appears to have started 
         successfully.
         """
+        if clean_node:
+            self.clean_node(node, preserve_current_install=True)
+        else:
+            self.logger.debug("%s: skip cleaning node" % self.who_am_i(node))
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
@@ -1201,6 +1205,15 @@ class RedpandaService(Service):
         self.logger.debug(f"Node status prior to redpanda startup:")
         self.start_service(node, start_rp)
         self._started.append(node)
+
+        # We need to manually read the config from the file and add it
+        # to _node_configs since we use rpk to write the file instead of
+        # the write_node_conf_file method.
+        with tempfile.TemporaryDirectory() as d:
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
+            with open(os.path.join(d, "redpanda.yaml")) as f:
+                actual_config = yaml.full_load(f.read())
+                self._node_configs[node] = actual_config
 
     def _log_node_process_state(self, node):
         """
@@ -2360,24 +2373,31 @@ class RedpandaService(Service):
         self.logger.warn(f"{self.COV_KEY} should be one of 'ON', or 'OFF'")
         return False
 
-    def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
-        # Test helper for grepping the redpanda log.
-        # The design follows python's built-in any() function.
-        # https://docs.python.org/3/library/functions.html#any
+    def search_log_node(self, node: ClusterNode, pattern: str):
+        for line in node.account.ssh_capture(
+                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+        ):
+            # We got a match
+            self.logger.debug(f"Found {pattern} on node {node.name}: {line}")
+            return True
 
-        # :param pattern: the string to search for
-        # :param nodes: a list of nodes to run grep on
-        # :return:  true if any instances of `pattern` found
+        return False
+
+    def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
+        """
+        Test helper for grepping the redpanda log.
+        The design follows python's built-in any() function.
+        https://docs.python.org/3/library/functions.html#any
+
+        :param pattern: the string to search for
+        :param nodes: a list of nodes to run grep on
+        :return:  true if any instances of `pattern` found
+        """
         if nodes is None:
             nodes = self.nodes
 
         for node in nodes:
-            for line in node.account.ssh_capture(
-                    f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-            ):
-                # We got a match
-                self.logger.debug(
-                    f"Found {pattern} on node {node.name}: {line}")
+            if self.search_log_node(node, pattern):
                 return True
 
         # Fall through, no matches
