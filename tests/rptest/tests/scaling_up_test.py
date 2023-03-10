@@ -142,6 +142,7 @@ class ScalingUpTest(EndToEndTest):
         self.await_startup(min_records=15 * throughput, timeout_sec=120)
         # add three nodes at once
         for n in self.redpanda.nodes[3:]:
+            self.redpanda.clean_node(n)
             self.redpanda.start_node(n)
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
