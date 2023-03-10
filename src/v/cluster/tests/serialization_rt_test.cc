@@ -191,7 +191,7 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
 SEASTAR_THREAD_TEST_CASE(config_invariants_test) {
     auto invariants = cluster::configuration_invariants(model::node_id(12), 64);
 
-    auto res = serialize_roundtrip_rpc_adl(std::move(invariants));
+    auto res = serialize_roundtrip_adl(std::move(invariants));
     BOOST_REQUIRE_EQUAL(res.core_count, 64);
     BOOST_REQUIRE_EQUAL(res.node_id, model::node_id(12));
     BOOST_REQUIRE_EQUAL(res.version, 0);

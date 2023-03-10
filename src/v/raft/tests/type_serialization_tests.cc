@@ -482,7 +482,7 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
       .cluster_time = ct,
       .log_start_delta = delta};
 
-    auto d = serialize_roundtrip_rpc_adl(std::move(metadata));
+    auto d = serialize_roundtrip_adl(std::move(metadata));
 
     BOOST_REQUIRE_EQUAL(d.last_included_index, model::offset(123));
     BOOST_REQUIRE_EQUAL(d.last_included_term, model::term_id(32));
