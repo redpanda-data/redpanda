@@ -217,7 +217,7 @@ topic_table_delta::topic_table_delta(
   model::offset o,
   op_type tp,
   std::optional<std::vector<model::broker_shard>> previous,
-  std::optional<revision_map_t> replica_revisions)
+  std::optional<replicas_revision_map> replica_revisions)
   : ntp(std::move(ntp))
   , new_assignment(std::move(new_assignment))
   , offset(o)
@@ -384,12 +384,13 @@ std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
     fmt::print(
       o,
       "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
-      "previous_replica_set: {}}}",
+      "previous_replica_set: {}, replica_revisions: {}}}",
       d.type,
       d.ntp,
       d.offset,
       d.new_assignment,
-      d.previous_replica_set);
+      d.previous_replica_set,
+      d.replica_revisions);
 
     return o;
 }

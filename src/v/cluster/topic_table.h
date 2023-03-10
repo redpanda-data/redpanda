@@ -78,12 +78,23 @@ namespace cluster {
 class topic_table {
 public:
     enum class topic_state { exists, not_exists, indeterminate };
-    /**
-     * Replicas revision map is used to track revision of brokers in a replica
-     * set. When a node is added into replica set its gets the revision assigned
-     */
-    using replicas_revision_map
-      = absl::flat_hash_map<model::node_id, model::revision_id>;
+
+    // Guide to various partition revisions (i.e. offsets of the corresponding
+    // commands in the controller log), presented in the chronological order:
+    // * topic creation revision
+    // * revision of the command (topic creation or partition movement) that
+    //   caused a partition replica to appear on a given node (note that the
+    //   partition can move away from a node and come back again and each time
+    //   revision will be different). This revision appears in:
+    //   * replicas_revision_map
+    //   * partition::get_ntp_config().get_revision()
+    //   * the partition directory name
+    // * revision of the last applied command that caused raft reconfiguration
+    //   (can be reconfiguration itself or cancellation). This revision appears
+    //   in:
+    //   * in_progress_update::get_last_cmd_revision()
+    //   * partition::get_revision_id()
+    //   * raft::group_configuration::revision_id()
 
     class in_progress_update {
     public:
@@ -92,13 +103,12 @@ public:
           std::vector<model::broker_shard> target_replicas,
           reconfiguration_state state,
           model::revision_id update_revision,
-          replicas_revision_map replicas_revisions,
           topic_table_probe& probe)
           : _previous_replicas(std::move(previous_replicas))
           , _target_replicas(std::move(target_replicas))
           , _state(state)
           , _update_revision(update_revision)
-          , _replicas_revisions(std::move(replicas_revisions))
+          , _last_cmd_revision(update_revision)
           , _probe(probe) {
             _probe.handle_update(_previous_replicas, _target_replicas);
         }
@@ -121,7 +131,7 @@ public:
 
         const reconfiguration_state& get_state() const { return _state; }
 
-        void set_state(reconfiguration_state state) {
+        void set_state(reconfiguration_state state, model::revision_id rev) {
             if (
               _state == reconfiguration_state::in_progress
               && (state == reconfiguration_state::cancelled || state == reconfiguration_state::force_cancelled)) {
@@ -129,6 +139,7 @@ public:
                   _previous_replicas, _target_replicas);
             }
             _state = state;
+            _last_cmd_revision = rev;
         }
 
         const std::vector<model::broker_shard>& get_previous_replicas() const {
@@ -138,16 +149,12 @@ public:
             return _target_replicas;
         }
 
-        const replicas_revision_map& get_replicas_revisions() const {
-            return _replicas_revisions;
-        }
-
         const model::revision_id& get_update_revision() const {
             return _update_revision;
         }
 
-        void swap_replica_revisions(replicas_revision_map& revisions) {
-            std::swap(_replicas_revisions, revisions);
+        const model::revision_id& get_last_cmd_revision() const {
+            return _last_cmd_revision;
         }
 
     private:
@@ -155,15 +162,23 @@ public:
         std::vector<model::broker_shard> _target_replicas;
         reconfiguration_state _state;
         model::revision_id _update_revision;
-        replicas_revision_map _replicas_revisions;
+        model::revision_id _last_cmd_revision;
         topic_table_probe& _probe;
+    };
+
+    struct partition_meta {
+        /// Replica revision map reflecting *only the finished partition
+        /// updates* (i.e. it only gets updated when the update_finished command
+        /// is processed).
+        replicas_revision_map replicas_revisions;
+        /// Revision id of the last applied update_finished controller command
+        /// (or of addition command if none)
+        model::revision_id last_update_finished_revision;
     };
 
     struct topic_metadata_item {
         topic_metadata metadata;
-        // replicas revisions for each partition
-        absl::node_hash_map<model::partition_id, replicas_revision_map>
-          replica_revisions;
+        absl::node_hash_map<model::partition_id, partition_meta> partitions;
 
         bool is_topic_replicable() const {
             return metadata.is_topic_replicable();
@@ -394,11 +409,6 @@ public:
     std::optional<std::vector<model::broker_shard>>
     get_target_replica_set(const model::ntp&) const;
 
-    const absl::node_hash_map<model::ntp, in_progress_update>&
-    in_progress_updates() const {
-        return _updates_in_progress;
-    }
-
     /**
      * Lists all NTPs that replicas are being move to a node
      */
@@ -437,7 +447,6 @@ private:
         ss::abort_source::subscription sub;
         uint64_t id;
     };
-    void deallocate_topic_partitions(const std::vector<partition_assignment>&);
 
     void notify_waiters();
 
@@ -465,8 +474,6 @@ private:
     std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
       _notifications;
     uint64_t _waiter_id{0};
-    model::offset _last_consumed_by_notifier{
-      model::model_limits<model::offset>::min()};
     std::vector<delta>::difference_type _last_consumed_by_notifier_offset{0};
     topic_table_probe _probe;
 

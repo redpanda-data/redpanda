@@ -321,7 +321,7 @@ ss::future<result<std::vector<partition_reconfiguration_state>>>
 controller_api::get_partitions_reconfiguration_state(
   std::vector<model::ntp> partitions,
   model::timeout_clock::time_point timeout) {
-    auto& updates_in_progress = _topics.local().in_progress_updates();
+    auto& updates_in_progress = _topics.local().updates_in_progress();
 
     partitions_filter partitions_filter;
     absl::node_hash_map<model::ntp, partition_reconfiguration_state> states;

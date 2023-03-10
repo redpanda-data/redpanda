@@ -179,8 +179,9 @@ void validate_brokers_revisions(
     auto p_it = tp_it->second.metadata.get_assignments().find(ntp.tp.partition);
     BOOST_REQUIRE(p_it != tp_it->second.metadata.get_assignments().end());
 
-    auto rev_it = tp_it->second.replica_revisions.find(ntp.tp.partition);
-    BOOST_REQUIRE(rev_it != tp_it->second.replica_revisions.end());
+    auto p_meta_it = tp_it->second.partitions.find(ntp.tp.partition);
+    BOOST_REQUIRE(p_meta_it != tp_it->second.partitions.end());
+    const auto& revisions = p_meta_it->second.replicas_revisions;
 
     for (auto& bs : p_it->replicas) {
         fmt::print("replica: {}\n", bs);
@@ -189,23 +190,48 @@ void validate_brokers_revisions(
         fmt::print("expected_rev: {} = {}\n", bs.first, bs.second);
     }
 
-    for (auto& bs : rev_it->second) {
-        fmt::print("current_rev: {} = {}\n", bs.first, bs.second);
+    for (const auto& [node, rev] : revisions) {
+        fmt::print("current_rev: {} = {}\n", node, rev);
     }
-    BOOST_REQUIRE_EQUAL(expected_revisions.size(), rev_it->second.size());
-    for (auto& bs : p_it->replicas) {
-        auto r = rev_it->second.find(bs.node_id);
-        auto ex = expected_revisions.find(bs.node_id);
+    BOOST_REQUIRE_EQUAL(expected_revisions.size(), revisions.size());
+    for (auto& [id, rev] : revisions) {
+        auto ex = expected_revisions.find(id);
 
-        BOOST_REQUIRE(r != rev_it->second.end());
         BOOST_REQUIRE(ex != expected_revisions.end());
 
-        fmt::print("Checking {} == {}\n", r->second, ex->second);
-        BOOST_REQUIRE_EQUAL(
-          rev_it->second.find(bs.node_id)->second,
-          expected_revisions.find(bs.node_id)->second);
+        fmt::print("Checking {} == {}\n", rev, ex->second);
+        BOOST_REQUIRE_EQUAL(rev, ex->second);
     }
 }
+
+void validate_command_revisions(
+  const model::ntp& ntp,
+  const cluster::topic_table& topics,
+  model::revision_id exp_last_update_finished,
+  model::revision_id exp_cur_update,
+  model::revision_id exp_last_cmd) {
+    auto tp_it = topics.all_topics_metadata().find(
+      model::topic_namespace_view(ntp));
+    BOOST_REQUIRE(tp_it != topics.all_topics_metadata().end());
+
+    auto p_meta_it = tp_it->second.partitions.find(ntp.tp.partition);
+    BOOST_REQUIRE(p_meta_it != tp_it->second.partitions.end());
+
+    BOOST_REQUIRE_EQUAL(
+      p_meta_it->second.last_update_finished_revision,
+      exp_last_update_finished);
+
+    model::revision_id cur_update;
+    model::revision_id last_cmd;
+    auto in_progress_it = topics.updates_in_progress().find(ntp);
+    if (in_progress_it != topics.updates_in_progress().end()) {
+        cur_update = in_progress_it->second.get_update_revision();
+        last_cmd = in_progress_it->second.get_last_cmd_revision();
+    }
+
+    BOOST_REQUIRE_EQUAL(cur_update, exp_cur_update);
+    BOOST_REQUIRE_EQUAL(last_cmd, exp_last_cmd);
+};
 
 template<typename Cmd, typename Key, typename Val>
 void apply_cmd(
@@ -215,7 +241,7 @@ void apply_cmd(
     BOOST_REQUIRE_EQUAL(ec, cluster::errc::success);
 }
 
-FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
+FIXTURE_TEST(test_tracking_broker_and_command_revisions, topic_table_fixture) {
     auto& topics = table.local();
     static const model::node_id n_0(0);
     static const model::node_id n_1(1);
@@ -257,6 +283,13 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
         {n_1, model::revision_id(10)},
         {n_2, model::revision_id(10)}});
 
+    validate_command_revisions(
+      ntp_0,
+      table.local(),
+      model::revision_id{10},
+      model::revision_id{},
+      model::revision_id{});
+
     // move one of the topic partitions to new replica set
     apply_cmd<cluster::move_partition_replicas_cmd>(
       topics,
@@ -268,14 +301,21 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
       },
       model::offset(11));
 
-    // validate that new broker was added with updated revision
+    // validate that revisions are unchanged
     validate_brokers_revisions(
       ntp_0,
       topic_metadata,
       rev_map_t{
         {n_0, model::revision_id(10)},
         {n_1, model::revision_id(10)},
-        {n_3, model::revision_id(11)}});
+        {n_2, model::revision_id(10)}});
+
+    validate_command_revisions(
+      ntp_0,
+      table.local(),
+      model::revision_id{10},
+      model::revision_id{11},
+      model::revision_id{11});
 
     apply_cmd<cluster::finish_moving_partition_replicas_cmd>(
       topics,
@@ -286,6 +326,22 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
         model::broker_shard{n_3, 0}, // new broker
       },
       model::offset(12));
+
+    validate_command_revisions(
+      ntp_0,
+      table.local(),
+      model::revision_id{12},
+      model::revision_id{},
+      model::revision_id{});
+
+    // validate that the new broker was added with the updated_version
+    validate_brokers_revisions(
+      ntp_0,
+      topic_metadata,
+      rev_map_t{
+        {n_0, model::revision_id(10)},
+        {n_1, model::revision_id(10)},
+        {n_3, model::revision_id(11)}});
 
     apply_cmd<cluster::move_partition_replicas_cmd>(
       topics,
@@ -317,7 +373,7 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
         {n_4, model::revision_id(13)},
         {n_3, model::revision_id(11)}});
 
-    // x-core move should not update revision
+    // x-core move should not update replica revisions
     apply_cmd<cluster::move_partition_replicas_cmd>(
       topics,
       ntp_0,
@@ -335,6 +391,13 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
         {n_0, model::revision_id(10)},
         {n_4, model::revision_id(13)},
         {n_3, model::revision_id(11)}});
+
+    validate_command_revisions(
+      ntp_0,
+      table.local(),
+      model::revision_id{14},
+      model::revision_id{15},
+      model::revision_id{15});
 
     // finish before validating
     apply_cmd<cluster::finish_moving_partition_replicas_cmd>(
@@ -362,7 +425,7 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
       topic_metadata,
       rev_map_t{
         {n_0, model::revision_id(10)},
-        {n_1, model::revision_id(17)},
+        {n_4, model::revision_id(13)},
         {n_3, model::revision_id(11)}});
 
     // cancel should revert replica revisions to previous state
@@ -380,6 +443,13 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
         {n_4, model::revision_id(13)},
         {n_3, model::revision_id(11)}});
 
+    validate_command_revisions(
+      ntp_0,
+      table.local(),
+      model::revision_id{16},
+      model::revision_id{17},
+      model::revision_id{18});
+
     // force cancel should not change the revision tracking
     apply_cmd<cluster::cancel_moving_partition_replicas_cmd>(
       topics,
@@ -395,4 +465,11 @@ FIXTURE_TEST(test_tracking_broker_revisions, topic_table_fixture) {
         {n_0, model::revision_id(10)},
         {n_4, model::revision_id(13)},
         {n_3, model::revision_id(11)}});
+
+    validate_command_revisions(
+      ntp_0,
+      table.local(),
+      model::revision_id{16},
+      model::revision_id{17},
+      model::revision_id{19});
 }

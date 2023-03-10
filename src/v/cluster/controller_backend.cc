@@ -410,7 +410,7 @@ find_interrupting_operation(deltas_t::iterator current_it, deltas_t& deltas) {
 ss::future<std::error_code> do_update_replica_set(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
+  const replicas_revision_map& replica_revisions,
   model::revision_id rev,
   ss::lw_shared_ptr<partition> p,
   members_table& members,
@@ -437,7 +437,7 @@ ss::future<std::error_code> do_update_replica_set(
 ss::future<std::error_code> revert_configuration_update(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
+  const replicas_revision_map& replica_revisions,
   model::revision_id rev,
   ss::lw_shared_ptr<partition> p,
   members_table& members,
@@ -998,7 +998,7 @@ controller_backend::process_partition_reconfiguration(
   model::ntp ntp,
   const partition_assignment& target_assignment,
   const std::vector<model::broker_shard>& previous_replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
+  const replicas_revision_map& replica_revisions,
   model::revision_id command_rev) {
     vlog(
       clusterlog.trace,
@@ -1313,7 +1313,7 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
   topic_table_delta::op_type type,
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replica_set,
-  const topic_table_delta::revision_map_t& replica_revisions,
+  const replicas_revision_map& replica_revisions,
   const std::vector<model::broker_shard>& previous_replica_set,
   model::revision_id revision) {
     switch (type) {
@@ -1461,7 +1461,7 @@ controller_backend::apply_configuration_change_on_leader(
 ss::future<std::error_code> controller_backend::cancel_replica_set_update(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
+  const replicas_revision_map& replica_revisions,
   const std::vector<model::broker_shard>& previous_replicas,
   model::revision_id rev) {
     /**
@@ -1558,7 +1558,7 @@ controller_backend::dispatch_revert_cancel_move(model::ntp ntp) {
 ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
+  const replicas_revision_map& replica_revisions,
   const std::vector<model::broker_shard>& previous_replicas,
   model::revision_id rev) {
     /**
@@ -1641,7 +1641,7 @@ ss::future<std::error_code> controller_backend::force_abort_replica_set_update(
 ss::future<std::error_code> controller_backend::update_partition_replica_set(
   const model::ntp& ntp,
   const std::vector<model::broker_shard>& replicas,
-  const topic_table_delta::revision_map_t& replica_revisions,
+  const replicas_revision_map& replica_revisions,
   model::revision_id rev) {
     /**
      * Following scenarios can happen in here:

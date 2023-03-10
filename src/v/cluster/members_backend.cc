@@ -647,7 +647,7 @@ std::vector<model::ntp> members_backend::ntps_moving_from_node_older_than(
   model::node_id node, model::revision_id revision) const {
     std::vector<model::ntp> ret;
 
-    for (const auto& [ntp, state] : _topics.local().in_progress_updates()) {
+    for (const auto& [ntp, state] : _topics.local().updates_in_progress()) {
         if (state.get_update_revision() < revision) {
             continue;
         }

@@ -1876,10 +1876,16 @@ public:
 private:
     ss::sstring _msg;
 };
+
+/**
+ * Replicas revision map is used to track revision of brokers in a replica
+ * set. When a node is added into replica set its gets the revision assigned
+ */
+using replicas_revision_map
+  = absl::flat_hash_map<model::node_id, model::revision_id>;
+
 // delta propagated to backend
 struct topic_table_delta {
-    using revision_map_t
-      = absl::flat_hash_map<model::node_id, model::revision_id>;
     enum class op_type {
         add,
         del,
@@ -1898,14 +1904,14 @@ struct topic_table_delta {
       model::offset,
       op_type,
       std::optional<std::vector<model::broker_shard>> = std::nullopt,
-      std::optional<revision_map_t> = std::nullopt);
+      std::optional<replicas_revision_map> = std::nullopt);
 
     model::ntp ntp;
     cluster::partition_assignment new_assignment;
     model::offset offset;
     op_type type;
     std::optional<std::vector<model::broker_shard>> previous_replica_set;
-    std::optional<revision_map_t> replica_revisions;
+    std::optional<replicas_revision_map> replica_revisions;
 
     model::topic_namespace_view tp_ns() const {
         return model::topic_namespace_view(ntp);
@@ -4010,3 +4016,22 @@ struct adl<cluster::cancel_partition_movements_reply> {
 };
 
 } // namespace reflection
+
+namespace absl {
+
+template<typename K, typename V>
+std::ostream& operator<<(std::ostream& o, const absl::flat_hash_map<K, V>& r) {
+    o << "{";
+    bool first = true;
+    for (const auto& [k, v] : r) {
+        if (!first) {
+            o << ", ";
+        }
+        o << "{" << k << " -> " << v << "}";
+        first = false;
+    }
+    o << "}";
+    return o;
+}
+
+} // namespace absl
