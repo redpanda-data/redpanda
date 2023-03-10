@@ -67,7 +67,6 @@ type RedpandaNodeConfig struct {
 	EmptySeedStartsCluster     *bool                     `yaml:"empty_seed_starts_cluster,omitempty" json:"empty_seed_starts_cluster,omitempty"`
 	SeedServers                []SeedServer              `yaml:"seed_servers" json:"seed_servers"`
 	RPCServer                  SocketAddress             `yaml:"rpc_server,omitempty" json:"rpc_server"`
-	RPCServerTLS               []ServerTLS               `yaml:"rpc_server_tls,omitempty" json:"rpc_server_tls"`
 	KafkaAPI                   []NamedAuthNSocketAddress `yaml:"kafka_api,omitempty" json:"kafka_api"`
 	KafkaAPITLS                []ServerTLS               `yaml:"kafka_api_tls,omitempty" json:"kafka_api_tls"`
 	AdminAPI                   []NamedSocketAddress      `yaml:"admin,omitempty" json:"admin"`
