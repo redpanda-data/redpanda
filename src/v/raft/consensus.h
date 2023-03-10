@@ -99,7 +99,8 @@ public:
       std::optional<std::reference_wrapper<recovery_throttle>>,
       recovery_memory_quota&,
       features::feature_table&,
-      std::optional<voter_priority> = std::nullopt);
+      std::optional<voter_priority> = std::nullopt,
+      keep_snapshotted_log = keep_snapshotted_log::no);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -191,6 +192,20 @@ public:
      * consensus operations lock.
      */
     ss::future<> write_snapshot(write_snapshot_cfg);
+
+    struct opened_snapshot {
+        raft::snapshot_metadata metadata;
+        storage::snapshot_reader reader;
+
+        ss::future<> close() { return reader.close(); }
+    };
+
+    // Open the current snapshot for reading (if present)
+    ss::future<std::optional<opened_snapshot>> open_snapshot();
+
+    std::filesystem::path get_snapshot_path() const {
+        return _snapshot_mgr.snapshot_path();
+    }
 
     /// Increment and returns next append_entries order tracking sequence for
     /// follower with given node id
@@ -296,6 +311,8 @@ public:
 
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
+
+    model::offset last_snapshot_index() const { return _last_snapshot_index; }
 
     model::offset start_offset() const {
         return model::next_offset(_last_snapshot_index);
@@ -410,7 +427,7 @@ private:
     ss::future<append_entries_reply>
     do_append_entries(append_entries_request&&);
     ss::future<install_snapshot_reply>
-    do_install_snapshot(install_snapshot_request&& r);
+    do_install_snapshot(install_snapshot_request r);
     ss::future<> do_start();
 
     ss::future<result<replicate_result>> dispatch_replicate(
@@ -699,6 +716,11 @@ private:
     model::offset _visibility_upper_bound_index;
     voter_priority _target_priority = voter_priority::max();
     std::optional<voter_priority> _node_priority_override;
+    keep_snapshotted_log _keep_snapshotted_log;
+
+    // used to track currently installed snapshot
+    model::offset _received_snapshot_index;
+    size_t _received_snapshot_bytes = 0;
 
     /**
      * We keep an idex of the most recent entry replicated with quorum

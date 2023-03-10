@@ -81,7 +81,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   raft::group_id id,
   std::vector<model::broker> nodes,
   storage::log log,
-  with_learner_recovery_throttle enable_learner_recovery_throttle) {
+  with_learner_recovery_throttle enable_learner_recovery_throttle,
+  keep_snapshotted_log keep_snapshotted_log) {
     auto revision = log.config().get_revision();
     auto raft_cfg = create_initial_configuration(std::move(nodes), revision);
 
@@ -105,7 +106,8 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
         : std::nullopt,
       _recovery_mem_quota,
       _feature_table,
-      _is_ready ? std::nullopt : std::make_optional(min_voter_priority));
+      _is_ready ? std::nullopt : std::make_optional(min_voter_priority),
+      keep_snapshotted_log);
 
     return ss::with_gate(_gate, [this, raft] {
         return _heartbeats.register_group(raft).then([this, raft] {

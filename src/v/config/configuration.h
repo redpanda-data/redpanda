@@ -385,6 +385,8 @@ struct configuration final : public config_store {
 
     bounded_property<int64_t> node_isolation_heartbeat_timeout;
 
+    property<std::chrono::seconds> controller_snapshot_max_age_sec;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);

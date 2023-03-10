@@ -100,7 +100,8 @@ consensus::consensus(
   std::optional<std::reference_wrapper<recovery_throttle>> recovery_throttle,
   recovery_memory_quota& recovery_mem_quota,
   features::feature_table& ft,
-  std::optional<voter_priority> voter_priority_override)
+  std::optional<voter_priority> voter_priority_override,
+  keep_snapshotted_log should_keep_snapshotted_log)
   : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
@@ -137,6 +138,7 @@ consensus::consensus(
       _scheduling.default_iopc)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
   , _node_priority_override(voter_priority_override)
+  , _keep_snapshotted_log(should_keep_snapshotted_log)
   , _append_requests_buffer(*this, 256) {
     setup_metrics();
     setup_public_metrics();
@@ -2003,12 +2005,22 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
             metadata.last_included_index,
             _last_snapshot_index);
 
+          vlog(
+            _ctxlog.info,
+            "hydrating snapshot with last included index: {}",
+            metadata.last_included_index);
+
           _last_snapshot_index = metadata.last_included_index;
           _last_snapshot_term = metadata.last_included_term;
 
           // TODO: add applying snapshot content to state machine
+          auto prev_commit_index = _commit_index;
           _commit_index = std::max(_last_snapshot_index, _commit_index);
           maybe_update_last_visible_index(_commit_index);
+          if (prev_commit_index != _commit_index) {
+              _commit_index_updated.broadcast();
+              _event_manager.notify_commit_index();
+          }
 
           update_follower_stats(metadata.latest_configuration);
           return _configuration_manager
@@ -2030,31 +2042,42 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
                 return _offset_translator.prefix_truncate_reset(
                   _last_snapshot_index, delta);
             })
-            .then([this] { return truncate_to_latest_snapshot(); })
-            .then(
-              [this] { _log.set_collectible_offset(_last_snapshot_index); });
+            .then([this] {
+                if (
+                  _keep_snapshotted_log
+                  && _log.offsets().dirty_offset >= _last_snapshot_index) {
+                    // skip prefix truncating if we want to preserve the log
+                    // (e.g. for the controller partition), but only if there is
+                    // no gap between old end offset and new start offset,
+                    // otherwise we must still advance the log start offset by
+                    // prefix-truncating.
+                    return ss::now();
+                }
+                return truncate_to_latest_snapshot().then([this] {
+                    _log.set_collectible_offset(_last_snapshot_index);
+                });
+            });
       })
       .then([this] { return _snapshot_mgr.get_snapshot_size(); })
       .then([this](uint64_t size) { _snapshot_size = size; });
 }
 
 ss::future<install_snapshot_reply>
-consensus::do_install_snapshot(install_snapshot_request&& r) {
-    vlog(_ctxlog.trace, "Install snapshot request: {}", r);
+consensus::do_install_snapshot(install_snapshot_request r) {
+    vlog(_ctxlog.trace, "received install_snapshot request: {}", r);
 
-    install_snapshot_reply reply{
-      .term = _term, .bytes_stored = r.chunk.size_bytes(), .success = false};
+    install_snapshot_reply reply{.term = _term, .success = false};
     reply.target_node_id = r.node_id;
     reply.node_id = _self;
 
     if (unlikely(is_request_target_node_invalid("install_snapshot", r))) {
-        return ss::make_ready_future<install_snapshot_reply>(reply);
+        co_return reply;
     }
 
     bool is_done = r.done;
     // Raft paper: Reply immediately if term < currentTerm (§7.1)
     if (r.term < _term) {
-        return ss::make_ready_future<install_snapshot_reply>(reply);
+        co_return reply;
     }
 
     // no need to trigger timeout
@@ -2065,42 +2088,46 @@ consensus::do_install_snapshot(install_snapshot_request&& r) {
         _term = r.term;
         _voted_for = {};
         do_step_down("install_snapshot_term_greater");
-        return do_install_snapshot(std::move(r));
+        co_return co_await do_install_snapshot(std::move(r));
     }
 
-    auto f = ss::now();
     // Create new snapshot file if first chunk (offset is 0) (§7.2)
     if (r.file_offset == 0) {
         // discard old chunks, previous snaphost wasn't finished
         if (_snapshot_writer) {
-            f = _snapshot_writer->close().then(
-              [this] { return _snapshot_mgr.remove_partial_snapshots(); });
+            co_await _snapshot_writer->close();
+            co_await _snapshot_mgr.remove_partial_snapshots();
         }
-        f = f.then([this] {
-            return _snapshot_mgr.start_snapshot().then(
-              [this](storage::snapshot_writer w) {
-                  _snapshot_writer.emplace(std::move(w));
-              });
-        });
+
+        auto w = co_await _snapshot_mgr.start_snapshot();
+        _snapshot_writer.emplace(std::move(w));
+        _received_snapshot_index = r.last_included_index;
+        _received_snapshot_bytes = 0;
+    }
+
+    if (
+      r.last_included_index != _received_snapshot_index
+      || r.file_offset != _received_snapshot_bytes) {
+        // Out of order request? Ignore and answer with success=false.
+        co_return reply;
     }
 
     // Write data into snapshot file at given offset (§7.3)
-    f = f.then([this, chunk = std::move(r.chunk)]() mutable {
-        return write_iobuf_to_output_stream(
-          std::move(chunk), _snapshot_writer->output());
-    });
+    size_t chunk_size = r.chunk.size_bytes();
+    co_await write_iobuf_to_output_stream(
+      std::move(r.chunk), _snapshot_writer->output());
+
+    _received_snapshot_bytes += chunk_size;
+    reply.bytes_stored = _received_snapshot_bytes;
 
     // Reply and wait for more data chunks if done is false (§7.4)
     if (!is_done) {
-        return f.then([reply]() mutable {
-            reply.success = true;
-            return reply;
-        });
+        reply.success = true;
+        co_return reply;
     }
+
     // Last chunk, finish storing snapshot
-    return f.then([this, r = std::move(r), reply]() mutable {
-        return finish_snapshot(std::move(r), reply);
-    });
+    co_return co_await finish_snapshot(std::move(r), reply);
 }
 
 ss::future<install_snapshot_reply> consensus::finish_snapshot(
@@ -2173,6 +2200,12 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
         co_return;
     }
 
+    if (_keep_snapshotted_log) {
+        // Skip prefix truncating to preserve the log (we want this e.g. for the
+        // controller partition in case we need to turn off snapshots).
+        co_return;
+    }
+
     // Release the lock when truncating the log because it can take some
     // time while we wait for readers to be evicted.
     co_await _log.truncate_prefix(storage::truncate_prefix_config(
@@ -2234,6 +2267,34 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
           return _snapshot_mgr.get_snapshot_size();
       })
       .then([this](uint64_t size) { _snapshot_size = size; });
+}
+
+ss::future<std::optional<consensus::opened_snapshot>>
+consensus::open_snapshot() {
+    auto reader = co_await _snapshot_mgr.open_snapshot();
+    if (!reader) {
+        co_return std::nullopt;
+    }
+
+    auto metadata
+      = co_await reader->read_metadata()
+          .then([](iobuf md_buf) {
+              auto md_parser = iobuf_parser(std::move(md_buf));
+              return reflection::adl<raft::snapshot_metadata>{}.from(md_parser);
+          })
+          .then_wrapped([&reader](ss::future<raft::snapshot_metadata> f) {
+              if (!f.failed()) {
+                  return f;
+              }
+
+              return reader->close().then(
+                [f = std::move(f)]() mutable { return std::move(f); });
+          });
+
+    co_return opened_snapshot{
+      .metadata = metadata,
+      .reader = std::move(*reader),
+    };
 }
 
 ss::future<std::error_code> consensus::replicate_configuration(

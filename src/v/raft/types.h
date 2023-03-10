@@ -614,7 +614,7 @@ struct install_snapshot_reply
     //  as the value for byte_offset in the next request (most importantly,
     //  when a follower reboots, it returns 0 here and the leader starts at
     //  offset 0 in the next request).
-    uint64_t bytes_stored;
+    uint64_t bytes_stored = 0;
     // indicates if the request was successfull
     bool success = false;
 
@@ -804,6 +804,9 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
 
 using with_learner_recovery_throttle
   = ss::bool_class<struct with_recovery_throttle_tag>;
+
+using keep_snapshotted_log = ss::bool_class<struct keep_snapshotted_log_tag>;
+
 } // namespace raft
 
 namespace reflection {

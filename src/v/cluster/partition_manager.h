@@ -89,7 +89,8 @@ public:
       std::optional<remote_topic_properties> = std::nullopt,
       std::optional<cloud_storage_clients::bucket_name> = std::nullopt,
       raft::with_learner_recovery_throttle
-      = raft::with_learner_recovery_throttle::yes);
+      = raft::with_learner_recovery_throttle::yes,
+      raft::keep_snapshotted_log = raft::keep_snapshotted_log::no);
 
     ss::future<> shutdown(const model::ntp& ntp);
 

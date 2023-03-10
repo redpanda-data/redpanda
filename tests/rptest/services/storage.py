@@ -105,6 +105,12 @@ class Partition:
         # until they're sealed)
         return n_recovered >= len(self.segments) - 1
 
+    def get_mtime(self, filename):
+        path = os.path.join(self.path, filename)
+        out = self.node.account.ssh_capture(f"stat --format=%Y {path}")
+        mtime = ''.join(out).strip()
+        return int(mtime)
+
     def __repr__(self):
         return "part-{}-{}-{}".format(self.node.name, self.num, self.segments)
 

@@ -208,6 +208,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
           };
           return _stm.start_single(
             std::move(limiter_conf),
+            std::ref(_feature_table),
+            config::shard_local_cfg().controller_snapshot_max_age_sec.bind(),
             std::ref(clusterlog),
             _raft0.get(),
             raft::persistent_last_applied::yes,

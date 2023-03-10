@@ -81,8 +81,8 @@ state_machine::batch_applicator::operator()(model::record_batch batch) {
 
     auto last_offset = batch.last_offset();
     return _machine->apply(std::move(batch)).then([this, last_offset] {
-        _last_applied = last_offset;
-        _machine->_waiters.notify(_last_applied);
+        _machine->_next = model::next_offset(last_offset);
+        _machine->_waiters.notify(last_offset);
         return ss::stop_iteration::no;
     });
 }
@@ -134,13 +134,8 @@ ss::future<> state_machine::apply() {
       })
       .then([this](model::record_batch_reader reader) {
           // apply each batch to the state machine
-          return std::move(reader)
-            .consume(batch_applicator(this), model::no_timeout)
-            .then([this](model::offset last_applied) {
-                if (last_applied >= model::offset(0)) {
-                    _next = last_applied + model::offset(1);
-                }
-            });
+          return std::move(reader).consume(
+            batch_applicator(this), model::no_timeout);
       })
       .handle_exception_type([this](const ss::timed_out_error&) {
           // This is a safe retry, but if it happens in tests we're interested

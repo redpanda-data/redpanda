@@ -1839,7 +1839,14 @@ configuration::configuration()
       "considering itself to be isolated",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       3000,
-      {.min = 100, .max = 10000}) {}
+      {.min = 100, .max = 10000})
+  , controller_snapshot_max_age_sec(
+      *this,
+      "controller_snapshot_max_age_sec",
+      "Max time that will pass before we make an attempt to create a "
+      "controller snapshot, after a new controller command appears",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60s) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

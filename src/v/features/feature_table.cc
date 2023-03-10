@@ -71,6 +71,9 @@ std::string_view to_string_view(feature f) {
         return "rpc_transport_unknown_errc";
     case feature::membership_change_controller_cmds:
         return "membership_change_controller_cmds";
+    case feature::controller_snapshots:
+        return "controller_snapshots";
+
     /*
      * testing features
      */
