@@ -2,7 +2,7 @@
 # Regular unit tests that don't open ports and run on a single core
 rp_test(
   UNIT_TEST
-  BINARY_NAME test_cloud_storage_basic
+  BINARY_NAME cloud_storage_basic
   SOURCES
     directory_walker_test.cc
     partition_manifest_test.cc
@@ -21,7 +21,7 @@ rp_test(
 # Unit tests that rely on doing remote I/O via s3_imposter
 rp_test(
   UNIT_TEST
-  BINARY_NAME test_cloud_storage
+  BINARY_NAME cloud_storage
   SOURCES
     s3_imposter.cc
     remote_test.cc
@@ -61,7 +61,7 @@ rp_test(
 # Unit tests that rely on having multiple cores available
 rp_test(
   UNIT_TEST
-  BINARY_NAME test_cloud_storage_smp
+  BINARY_NAME cloud_storage_smp
   SOURCES
     cache_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
@@ -72,7 +72,7 @@ rp_test(
 
 rp_test(
   BENCHMARK_TEST
-  BINARY_NAME cloud_storage_bench
+  BINARY_NAME cloud_storage
   SOURCES cache_bench.cc segment_meta_cstore_bench.cc
   LIBRARIES Seastar::seastar_perf_testing v::cloud_storage
   LABELS cloud_storage
