@@ -41,6 +41,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace fmt {
@@ -191,8 +192,7 @@ partition_manifest::lw_segment_meta::convert(const segment_meta& m) {
       .segment_term = m.segment_term,
       .size_bytes = m.sname_format == segment_name_format::v1 ? 0
                                                               : m.size_bytes,
-      .sname_format = m.sname_format,
-    };
+      .sname_format = m.sname_format};
 }
 
 segment_meta partition_manifest::lw_segment_meta::convert(
@@ -931,6 +931,8 @@ struct partition_manifest_handler
                 _delta_offset_end = model::offset_delta(u);
             } else if ("sname_format" == _segment_meta_key) {
                 _meta_sname_format = segment_name_format(u);
+            } else if ("metadata_size_hint") {
+                _metadata_size_hint = static_cast<size_t>(u);
             }
             if (_state == state::expect_segment_meta_value) {
                 _state = state::expect_segment_meta_key;
@@ -984,7 +986,8 @@ struct partition_manifest_handler
               .delta_offset_end = _delta_offset_end.value_or(
                 model::offset_delta::min()),
               .sname_format = _meta_sname_format.value_or(
-                segment_name_format::v1)};
+                segment_name_format::v1),
+              .metadata_size_hint = _metadata_size_hint.value_or(0)};
             if (_state == state::expect_segment_meta_key) {
                 if (!_segments) {
                     _segments = std::make_unique<segment_map>(
@@ -1146,6 +1149,7 @@ struct partition_manifest_handler
     std::optional<model::term_id> _segment_term;
     std::optional<model::offset_delta> _delta_offset_end;
     std::optional<segment_name_format> _meta_sname_format;
+    std::optional<size_t> _metadata_size_hint;
 
     ss::shared_ptr<util::mem_tracker> _manifest_mem_tracker;
 
@@ -1186,6 +1190,7 @@ struct partition_manifest_handler
         _segment_term = std::nullopt;
         _delta_offset_end = std::nullopt;
         _meta_sname_format = std::nullopt;
+        _metadata_size_hint = std::nullopt;
     }
 
     void check_manifest_fields_are_present() {
@@ -1442,7 +1447,7 @@ void partition_manifest::serialize_segment_meta(
     w.Key("segment_term");
     w.Int64(meta.segment_term());
     if (
-      meta.sname_format == segment_name_format::v2
+      meta.sname_format >= segment_name_format::v2
       && meta.delta_offset_end != model::offset_delta::min()) {
         w.Key("delta_offset_end");
         w.Int64(meta.delta_offset_end());
@@ -1450,6 +1455,10 @@ void partition_manifest::serialize_segment_meta(
     if (meta.sname_format != segment_name_format::v1) {
         w.Key("sname_format");
         w.Int64(static_cast<int16_t>(meta.sname_format));
+    }
+    if (meta.sname_format == segment_name_format::v3) {
+        w.Key("metadata_size_hint");
+        w.Int64(static_cast<int64_t>(meta.metadata_size_hint));
     }
     w.EndObject();
 }
