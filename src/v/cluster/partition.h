@@ -246,6 +246,8 @@ public:
     /// method returned 'true'.
     bool cloud_data_available() const;
 
+    uint64_t cloud_log_size() const;
+
     /// Starting offset in the object store
     model::offset start_cloud_offset() const;
 

@@ -679,4 +679,70 @@ ss::future<transfer_leadership_reply> service::transfer_leadership(
     }
 }
 
+ss::future<cloud_storage_usage_reply> service::cloud_storage_usage(
+  cloud_storage_usage_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_cloud_storage_usage(req);
+    });
+}
+
+ss::future<cloud_storage_usage_reply>
+service::do_cloud_storage_usage(cloud_storage_usage_request req) {
+    struct res_type {
+        uint64_t total_size{0};
+        std::vector<model::ntp> missing_partitions;
+    };
+
+    std::vector<model::ntp> missing_ntps;
+
+    absl::flat_hash_map<ss::shard_id, std::vector<model::ntp>> ntps_by_shard;
+    for (const auto& ntp : req.partitions) {
+        auto shard = _api.local().shard_for(ntp);
+        if (!shard) {
+            missing_ntps.push_back(ntp);
+        } else {
+            ntps_by_shard[*shard].push_back(ntp);
+        }
+    }
+
+    res_type result = co_await _partition_manager.map_reduce0(
+      [&partitions = ntps_by_shard](const partition_manager& pm) {
+          auto iter = partitions.find(ss::this_shard_id());
+          if (iter == partitions.end()) {
+              return res_type{};
+          }
+
+          const auto& ntps_for_shard = iter->second;
+
+          std::vector<model::ntp> missing_partitions_on_shard;
+          uint64_t size_on_shard = 0;
+          for (const auto& ntp : ntps_for_shard) {
+              auto partition = pm.get(ntp);
+
+              if (!partition) {
+                  missing_partitions_on_shard.push_back(ntp);
+              } else {
+                  size_on_shard += partition->cloud_log_size();
+              }
+          }
+          return res_type{
+            .total_size = size_on_shard,
+            .missing_partitions = std::move(missing_partitions_on_shard)};
+      },
+      res_type{.missing_partitions = std::move(missing_ntps)},
+      [](res_type acc, res_type map_result) {
+          acc.total_size += map_result.total_size;
+          acc.missing_partitions.insert(
+            acc.missing_partitions.end(),
+            std::make_move_iterator(map_result.missing_partitions.begin()),
+            std::make_move_iterator(map_result.missing_partitions.end()));
+
+          return acc;
+      });
+
+    co_return cloud_storage_usage_reply{
+      .total_size_bytes = result.total_size,
+      .missing_partitions = std::move(result.missing_partitions)};
+}
+
 } // namespace cluster

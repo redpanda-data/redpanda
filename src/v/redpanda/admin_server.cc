@@ -14,6 +14,7 @@
 #include "archival/ntp_archiver_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/topic_recovery_service.h"
+#include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/config_frontend.h"
 #include "cluster/controller.h"
@@ -3394,6 +3395,58 @@ void admin_server::register_self_test_routes() {
       });
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::cloud_storage_usage_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    auto batch_size
+      = cluster::topic_table_partition_generator::default_batch_size;
+    if (auto batch_size_param = req->get_query_param("batch_size");
+        !batch_size_param.empty()) {
+        try {
+            batch_size = std::stoi(batch_size_param);
+        } catch (...) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "batch_size must be an integer: {}", batch_size_param));
+        }
+    }
+
+    auto retries_allowed
+      = cluster::cloud_storage_size_reducer::default_retries_allowed;
+    if (auto retries_param = req->get_query_param("retries_allowed");
+        !retries_param.empty()) {
+        try {
+            retries_allowed = std::stoi(retries_param);
+        } catch (...) {
+            throw ss::httpd::bad_param_exception(fmt::format(
+              "retries_allowed must be an integer: {}", retries_param));
+        }
+    }
+
+    vlog(
+      logger.info,
+      "Members table at: {}",
+      static_cast<void*>(&(_controller->get_members_table())));
+
+    cluster::cloud_storage_size_reducer reducer(
+      _controller->get_topics_state(),
+      _controller->get_members_table(),
+      _controller->get_partition_leaders(),
+      _connection_cache,
+      batch_size,
+      retries_allowed);
+
+    auto res = co_await reducer.reduce();
+
+    if (res) {
+        co_return ss::json::json_return_type(res.value());
+    } else {
+        throw ss::httpd::base_exception(
+          fmt::format("Failed to generate total cloud storage usage. "
+                      "Please retry."),
+          ss::httpd::reply::status_type::service_unavailable);
+    }
+}
+
 void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
@@ -3475,6 +3528,13 @@ void admin_server::register_debug_routes() {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   ss::json::json_return_type(ans));
             });
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_cloud_storage_usage,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return cloud_storage_usage_handler(std::move(req));
       });
 }
 ss::future<ss::json::json_return_type>

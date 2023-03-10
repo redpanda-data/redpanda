@@ -171,6 +171,14 @@ bool partition::cloud_data_available() const {
            && _cloud_storage_partition->is_data_available();
 }
 
+uint64_t partition::cloud_log_size() const {
+    if (!cloud_data_available() || is_read_replica_mode_enabled()) {
+        return 0;
+    }
+
+    return _cloud_storage_partition->cloud_log_size();
+}
+
 model::offset partition::start_cloud_offset() const {
     vassert(
       cloud_data_available(),

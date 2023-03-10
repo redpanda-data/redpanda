@@ -104,6 +104,8 @@ public:
     /// Returns true if at least one segment is uploaded to the bucket
     bool is_data_available() const;
 
+    uint64_t cloud_log_size() const;
+
     // returns term last kafka offset
     std::optional<kafka::offset> get_term_last_offset(model::term_id) const;
 

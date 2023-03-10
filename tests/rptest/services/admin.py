@@ -863,3 +863,8 @@ class Admin:
 
     def is_node_isolated(self, node):
         return self._request("GET", "debug/is_node_isolated", node=node).json()
+
+    def cloud_storage_usage(self) -> int:
+        return int(
+            self._request(
+                "GET", "debug/cloud_storage_usage?retries_allowed=10").json())
