@@ -130,6 +130,13 @@ remote_segment::remote_segment(
     _compacted = meta->is_compacted;
     _size = meta->size_bytes;
 
+    if (
+      meta->sname_format == segment_name_format::v3
+      && meta->metadata_size_hint == 0) {
+        // The tx-manifest is empty, no need to download it.
+        _tx_range.emplace();
+    }
+
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
 }
