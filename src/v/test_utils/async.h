@@ -21,6 +21,8 @@
 
 #include <chrono>
 
+using namespace std::chrono_literals;
+
 namespace tests {
 
 // clang-format off
@@ -63,9 +65,9 @@ requires ss::ApplyReturns<Predicate, bool> ||
 // **Be aware** that there are assumptions to using this:
 // A) That your test code is using the same default scheduling group that
 //    this routine will run within.
-// B) That debug mode scheduling randomization in seastar does not re-order
-//    things so dramatically that our messages can go between every core and
-//    back before a future that was already ready on some shard gets run.
+// B) Seastar's debug-mode shuffling of tasks doesn't re-order stuff so
+//    far that resulting delay outruns the invoke_on_all round trip, *and*
+//    the timer sleep that we do in debug mode.
 // C) You are calling from a seastar thread (.get() is used)
 // D) Tasks that have exhausted their scheduling quota and been suspended
 //    can still be running after this returns.
@@ -80,6 +82,11 @@ inline void flush_tasks() {
     // Yield to anything that ended up runnable on the current core as a result
     // of the above flush.
     ss::thread::yield();
+
+    // Mitigate shuffling task queues in debug mode with a crude sleep
+#ifndef NDEBUG
+    ss::sleep(10ms).get();
+#endif
 }
 
 }; // namespace tests
