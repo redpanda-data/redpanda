@@ -284,9 +284,10 @@ func main() {
 	}()
 
 	if err = (&redpandacontrollers.RedpandaReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		EventRecorder: mgr.GetEventRecorderFor("RedpandaReconciler"),
+		Client:          mgr.GetClient(),
+		Scheme:          mgr.GetScheme(),
+		EventRecorder:   mgr.GetEventRecorderFor("RedpandaReconciler"),
+		RequeueHelmDeps: 10 * time.Second,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
 		os.Exit(1)

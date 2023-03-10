@@ -14,15 +14,14 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
-	"github.com/fluxcd/pkg/apis/meta"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"time"
 
 	helmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
+	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/predicates"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
-	"github.com/hashicorp/go-retryablehttp"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -45,8 +44,7 @@ type RedpandaReconciler struct {
 	Scheme *runtime.Scheme
 	kuberecorder.EventRecorder
 
-	httpClient        *retryablehttp.Client
-	requeueDependency time.Duration
+	RequeueHelmDeps time.Duration
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpanda,verbs=get;list;watch;create;update;patch;delete
@@ -116,6 +114,16 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", req.NamespacedName)
 
+	// Observe HelmRelease generation.
+	if rp.Status.ObservedGeneration != rp.Generation {
+		rp.Status.ObservedGeneration = rp.Generation
+		rp = v1alpha1.RedpandaProgressing(rp)
+		if updateStatusErr := r.patchRedpandaStatus(ctx, &rp); updateStatusErr != nil {
+			log.Error(updateStatusErr, "unable to update status after generation update")
+			return rp, ctrl.Result{Requeue: true}, updateStatusErr
+		}
+	}
+
 	// Check if HelmRepository exists or create it
 	rp, repo, err := r.reconcileHelmRepository(ctx, rp)
 	if err != nil {
@@ -123,31 +131,40 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 	}
 	if repo.Generation != repo.Status.ObservedGeneration || !apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition) {
 		msg := fmt.Sprintf("HelmRepository '%s/%s' is not ready", repo.GetNamespace(), repo.GetName())
-		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, msg)
+		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRepository '%s/%s' is not ready", repo.GetNamespace(), repo.GetName()))
 		log.Info(msg)
 		// Do not requeue immediately.
-		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msg), ctrl.Result{RequeueAfter: repo.Spec.Interval.Duration}, nil
+		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msg), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
 	}
+	r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRepository '%s/%s' is ready!", repo.GetNamespace(), repo.GetName()))
 
 	// Check if HelmRelease exists or create it also
 	rp, hr, err := r.reconcileHelmRelease(ctx, rp)
 	if err != nil {
 		return rp, ctrl.Result{}, err
 	}
-	if hr == nil || (hr.Generation != hr.Status.ObservedGeneration || !apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition)) {
+	if hr.Name == "" {
+		log.Info(fmt.Sprintf("Created HelmRelease for '%s/%s', will requeue", rp.Namespace, rp.Name))
+		return rp, ctrl.Result{}, err
+	}
+	if hr.Generation != hr.Status.ObservedGeneration || !apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition) {
 		msg := fmt.Sprintf("HelmRelease '%s/%s' is not ready", hr.GetNamespace(), hr.GetName())
 		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, msg)
 		log.Info(msg)
 		// Do not requeue immediately.
-		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msg), ctrl.Result{RequeueAfter: hr.Spec.Interval.Duration}, nil
+		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msg), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
 	}
+
+	r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' is ready!", hr.GetNamespace(), hr.GetName()))
+
+	// todo update status here before setting ready
 
 	return v1alpha1.RedpandaReady(rp), ctrl.Result{}, nil
 }
 
 func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) (v1alpha1.Redpanda, *helmv2beta1.HelmRelease, error) {
 	// Check if HelmRelease exists or create it
-	var hr *helmv2beta1.HelmRelease
+	hr := &helmv2beta1.HelmRelease{}
 
 	// check if object exists, if it does then update
 	// if it does not, then create
@@ -158,29 +175,30 @@ func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp v1alph
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				rp.Status.HelmRelease = ""
-				if err = r.createHelmRelease(ctx, rp); err != nil {
+				if hr, err = r.createHelmRelease(ctx, rp); err != nil {
 					if !apierrors.IsAlreadyExists(err) {
 						r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
-						return rp, hr, fmt.Errorf("failed to create HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+						return rp, hr, fmt.Errorf("failed to create HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
 					}
 					rp.Status.HelmRelease = rp.GetHelmReleaseName()
 					return rp, hr, nil
 				}
+				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' created ", rp.Namespace, rp.GetHelmReleaseName()))
 			}
-			return rp, hr, fmt.Errorf("failed to get HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+			return rp, hr, fmt.Errorf("failed to get HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
 		}
 		// ok found the release, let's just move on
 	} else {
 		// did not find helmRelease, then create it
-		if err := r.createHelmRelease(ctx, rp); err != nil {
+		if hr, err := r.createHelmRelease(ctx, rp); err != nil {
 			// could be we never updated the status and it already exists, continue and ignore error for now
 			// TODO revise this logic: should we error out, or should we just continue and ignore
 			if !apierrors.IsAlreadyExists(err) {
 				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
-				return rp, hr, fmt.Errorf("failed to create HelmRelease '%s': %w", rp.Status.HelmRelease, err)
+				return rp, hr, fmt.Errorf("failed to create HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
 			}
 		}
-		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("helmRelease %q created ", rp.GetHelmReleaseName()))
+		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' created ", rp.Namespace, rp.GetHelmReleaseName()))
 	}
 	rp.Status.HelmRelease = rp.GetHelmReleaseName()
 
@@ -194,13 +212,13 @@ func (r *RedpandaReconciler) reconcileHelmRepository(ctx context.Context, rp v1a
 		if apierrors.IsNotFound(err) {
 			repo, err = r.createHelmRepositoryFromTemplate(rp)
 			if errCreate := r.Client.Create(ctx, repo); errCreate != nil {
-				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("error creating repository: %s", errCreate))
-				return rp, repo, fmt.Errorf("error creating repository: %s", errCreate)
+				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("error creating HelmRepository: %s", errCreate))
+				return rp, repo, fmt.Errorf("error creating HelmRepository: %s", errCreate)
 			}
-			r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("helmRepository %q created ", rp.GetHelmRepositoryName()))
+			r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRepository '%s/%s' created ", rp.Namespace, rp.GetHelmRepositoryName()))
 		} else {
-			r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("error getting helmRepository %s", err))
-			return rp, repo, fmt.Errorf("error getting helmRepository %s", err)
+			r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("error getting HelmRepository: %s", err))
+			return rp, repo, fmt.Errorf("error getting HelmRepository: %s", err)
 		}
 	}
 	rp.Status.HelmRepository = rp.GetHelmRepositoryName()
@@ -224,7 +242,7 @@ func (r *RedpandaReconciler) reconcileDelete(ctx context.Context, req ctrl.Reque
 	return ctrl.Result{}, nil
 }
 
-func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) error {
+func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) (*helmv2beta1.HelmRelease, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", rp.Name)
 
@@ -232,10 +250,10 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp v1alpha1.
 	hRelease, err := r.createHelmReleaseFromTemplate(ctx, rp)
 	if err != nil {
 		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("could not create helm release template: %s", err))
-		return fmt.Errorf("could not create helm release template: %s", err)
+		return hRelease, fmt.Errorf("could not create helm release template: %s", err)
 	}
 
-	return r.Client.Create(ctx, hRelease)
+	return hRelease, r.Client.Create(ctx, hRelease)
 }
 
 func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) error {
