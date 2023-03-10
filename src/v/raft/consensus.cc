@@ -358,6 +358,12 @@ consensus::success_reply consensus::update_follower_index(
           _group));
     }
 
+    // check preconditions for processing the reply
+    if (unlikely(!is_elected_leader())) {
+        vlog(_ctxlog.debug, "ignoring append entries reply, not leader");
+        return success_reply::no;
+    }
+
     update_node_reply_timestamp(node);
 
     if (
@@ -396,11 +402,6 @@ consensus::success_reply consensus::update_follower_index(
     auto broadcast_state_change = ss::defer(
       [&idx] { idx.follower_state_change.broadcast(); });
 
-    // check preconditions for processing the reply
-    if (!is_elected_leader()) {
-        vlog(_ctxlog.debug, "ignoring append entries reply, not leader");
-        return success_reply::no;
-    }
     // If RPC request or response contains term T > currentTerm:
     // set currentTerm = T, convert to follower (Raft paper: §5.1)
     if (reply.term > _term) {
