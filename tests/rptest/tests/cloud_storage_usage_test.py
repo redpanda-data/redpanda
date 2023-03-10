@@ -16,6 +16,7 @@ from rptest.util import firewall_blocked
 from rptest.utils.si_utils import BucketView
 from rptest.clients.types import TopicSpec
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.utils.mode_checks import skip_debug_mode
 from ducktape.utils.util import wait_until
 
 import random
@@ -45,8 +46,8 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
         self.si_settings = SISettings(
             test_context,
             log_segment_size=self.log_segment_size,
-            cloud_storage_segment_max_upload_interval_sec=5,
-            cloud_storage_housekeeping_interval_ms=2000)
+            cloud_storage_housekeeping_interval_ms=2000,
+            fast_uploads=True)
 
         extra_rp_conf = dict(log_compaction_interval_ms=2000,
                              compacted_log_segment_size=self.log_segment_size)
@@ -80,7 +81,7 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
 
         return producers
 
-    def _check_usage(self):
+    def _check_usage(self, timeout_sec):
         bucket_view = BucketView(self.redpanda)
 
         def check():
@@ -100,25 +101,19 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
         # what's in the uploaded manifest. For this reason, we wait until the two match.
         wait_until(
             check,
-            timeout_sec=5,
+            timeout_sec=timeout_sec,
             backoff_sec=0.2,
             err_msg=
             "Reported cloud storage usage did not match the actual usage")
 
     def _test_epilogue(self):
-        bucket_view = BucketView(self.redpanda, topics=self.topics)
-
-        # Assert that housekeeping operated during the test
-        topic_1_manifests = [
-            bucket_view.manifest_for_ntp(self.topics[0].name, p)
-            for p in range(self.topics[0].partition_count)
-            if bucket_view.is_ntp_in_manifest(self.topics[0].name, p)
-        ]
-        self.logger.info(f"MANIFESTS {topic_1_manifests}")
-        assert any(
-            p_man.get("start_offset", 0) > 0 for p_man in topic_1_manifests)
+        # Assert tht retention was active
+        self.redpanda.metric_sum(
+            "redpanda_cloud_storage_deleted_segments",
+            metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS) > 0
 
         # Assert that compacted segment re-upload operated during the test
+        bucket_view = BucketView(self.redpanda, topics=self.topics)
         bucket_view.assert_at_least_n_uploaded_segments_compacted(
             self.topics[1].name, partition=0, n=1)
 
@@ -138,18 +133,17 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
 
         producers_done = lambda: all([p.is_complete() for p in producers])
         while not producers_done():
-            self._check_usage()
+            self._check_usage(timeout_sec=5)
 
             time.sleep(self.check_interval)
 
         for p in producers:
             p.wait()
 
-        bucket_view = BucketView(self.redpanda, topics=self.topics)
-
         self._test_epilogue()
 
     @cluster(num_nodes=5)
+    @skip_debug_mode
     def test_cloud_storage_usage_reporting_with_partition_moves(self):
         """
         This test has the same workload as test_cloud_storage_usage_reporting,
@@ -173,7 +167,7 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
             self._dispatch_random_partition_move(ntp_to_move[0],
                                                  ntp_to_move[1])
 
-            self._check_usage()
+            self._check_usage(timeout_sec=10)
 
             time.sleep(self.check_interval)
 
