@@ -92,35 +92,41 @@ private:
     uint32_t _size{0};
 };
 
-template<class value_t, class delta_t = details::delta_xor>
-class segment_meta_column_frame {
+template<class value_t, auto delta_alg_instance = details::delta_xor{}>
+class segment_meta_column_frame
+  : public serde::envelope<
+      segment_meta_column_frame<value_t, delta_alg_instance>,
+      serde::version<0>,
+      serde::compat_version<0>> {
+public:
+    using delta_alg = std::remove_cvref_t<decltype(delta_alg_instance)>;
+
+private:
     constexpr static uint32_t buffer_depth = details::FOR_buffer_depth;
     constexpr static uint32_t index_mask = buffer_depth - 1;
-    using encoder_t = deltafor_encoder<value_t, delta_t>;
-    using decoder_t = deltafor_decoder<value_t, delta_t>;
+    using encoder_t
+      = deltafor_encoder<value_t, delta_alg, true, delta_alg_instance>;
+    using decoder_t = deltafor_decoder<value_t, delta_alg>;
 
     struct index_value {
         size_t ix;
         value_t value;
     };
 
+    using self_t = segment_meta_column_frame<value_t, delta_alg_instance>;
+
 public:
     using const_iterator
       = segment_meta_frame_const_iterator<value_t, decoder_t>;
 
-    using delta_alg = delta_t;
-
     using hint_t = deltafor_stream_pos_t<value_t>;
-
-    explicit segment_meta_column_frame(delta_alg d)
-      : _delta_alg(std::move(d)) {}
 
     void append(value_t value) {
         auto ix = index_mask & _size++;
         _head.at(ix) = value;
         if ((_size & index_mask) == 0) {
             if (!_tail.has_value()) {
-                _tail.emplace(_head.at(0), _delta_alg);
+                _tail.emplace(_head.at(0));
             }
             _last_row = _tail->get_position();
             _tail->add(_head);
@@ -129,11 +135,9 @@ public:
 
     struct frame_tx_t {
         typename encoder_t::tx_state inner;
-        segment_meta_column_frame<value_t, delta_t>& self;
+        self_t& self;
 
-        frame_tx_t(
-          typename encoder_t::tx_state&& s,
-          segment_meta_column_frame<value_t, delta_t>& self)
+        frame_tx_t(typename encoder_t::tx_state&& s, self_t& self)
           : inner(std::move(s))
           , self(self) {}
 
@@ -158,7 +162,7 @@ public:
         _head.at(ix) = value;
         if ((_size & index_mask) == 0) {
             if (!_tail.has_value()) {
-                _tail.emplace(_head.at(0), _delta_alg);
+                _tail.emplace(_head.at(0));
             }
             _last_row = _tail->get_position();
             tx.emplace(_tail->tx_start(), *this);
@@ -192,7 +196,7 @@ public:
           _tail->get_initial_value(),
           _tail->get_row_count(),
           _tail->share(),
-          _delta_alg);
+          delta_alg_instance);
         decoder.skip(hint);
         auto curr_ix = hint.num_rows * details::FOR_buffer_depth;
         auto it = const_iterator(std::move(decoder), _head, _size, curr_ix);
@@ -215,12 +219,12 @@ public:
               _tail->get_initial_value(),
               _tail->get_row_count(),
               _tail->share(),
-              _delta_alg);
+              delta_alg_instance);
             return const_iterator(std::move(decoder), _head, _size);
         } else if (_size != 0) {
             // special case, data is only stored in the buffer
             // not in the compressed column
-            decoder_t decoder(0, 0, iobuf(), _delta_alg);
+            decoder_t decoder(0, 0, iobuf(), delta_alg_instance);
             return const_iterator(std::move(decoder), _head, _size);
         }
         return end();
@@ -253,7 +257,7 @@ public:
     /// Prefix truncate the frame. Index ix_exclusive is a new
     /// start of the frame.
     void prefix_truncate_ix(uint32_t ix_exclusive) {
-        segment_meta_column_frame<value_t, delta_t> tmp(_delta_alg);
+        self_t tmp{};
         for (auto it = at_index(ix_exclusive); it != end(); ++it) {
             tmp.append(*it);
         }
@@ -262,6 +266,8 @@ public:
         _size = tmp._size;
         _last_row = tmp._last_row;
     }
+
+    auto serde_fields() { return std::tie(_head, _tail, _size, _last_row); }
 
 private:
     template<class PredT>
@@ -277,9 +283,8 @@ private:
 
     std::array<value_t, buffer_depth> _head{};
     std::optional<encoder_t> _tail{std::nullopt};
-    const delta_t _delta_alg;
     size_t _size{0};
-    std::optional<hint_t> _last_row;
+    std::optional<hint_t> _last_row{std::nullopt};
 };
 
 /// Column iterator
@@ -290,23 +295,23 @@ private:
 /// is stored in the vector. The iterators are referencing the immutable
 /// copy of the column (the underlying iobuf is shared, the write buffer
 /// is copied).
-template<class value_t, class delta_t>
+template<class value_t, auto delta_alg>
 class segment_meta_column_const_iterator
   : public boost::iterator_facade<
-      segment_meta_column_const_iterator<value_t, delta_t>,
+      segment_meta_column_const_iterator<value_t, delta_alg>,
       value_t const,
       boost::iterators::forward_traversal_tag> {
     friend class boost::iterator_core_access;
 
 public:
-    using frame_t = segment_meta_column_frame<value_t, delta_t>;
+    using frame_t = segment_meta_column_frame<value_t, delta_alg>;
     using frame_iter_t = typename frame_t::const_iterator;
     using hint_t = typename frame_t::hint_t;
 
 private:
     using outer_iter_t = typename std::list<frame_iter_t>::iterator;
     using iter_list_t = std::list<frame_iter_t>;
-    using self_t = segment_meta_column_const_iterator<value_t, delta_t>;
+    using self_t = segment_meta_column_const_iterator<value_t, delta_alg>;
 
     template<class container_t>
     static iter_list_t make_snapshot(const container_t& src) {
@@ -374,7 +379,7 @@ private:
     }
 
 public:
-    /// Create iterator that points to the begining of the column
+    /// Create iterator that points to the beginning of the column
     template<class container_t>
     explicit segment_meta_column_const_iterator(const container_t& src)
       : _snapshot(make_snapshot(src))
@@ -427,20 +432,27 @@ private:
     uint32_t _ix_column{0};
 };
 
-/// Column that represents a signle field
+/// Column that represents a single field
 ///
 /// There are two specializations of this template. One for delta_xor
 /// algorithm and another one for delta_delta. The latter one is guaranteed
-/// to be used with monotonic sequences which makes some serach
+/// to be used with monotonic sequences which makes some search
 /// optimizations possible.
 template<class value_t, class delta_t>
 class segment_meta_column;
 
 // to get rid of value_t and delta_alg
-template<class value_t, class delta_alg, class Derived>
-class segment_meta_column_impl {
+template<class value_t, auto delta_alg, class Derived>
+class segment_meta_column_impl
+  : public serde::envelope<
+      segment_meta_column_impl<value_t, delta_alg, Derived>,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using delta_t = std::remove_cvref_t<decltype(delta_alg)>;
     using frame_t = segment_meta_column_frame<value_t, delta_alg>;
-    using decoder_t = deltafor_decoder<value_t, delta_alg>;
+    using decoder_t = deltafor_decoder<value_t, delta_t>;
+
+    using self_t = segment_meta_column_impl<value_t, delta_alg, Derived>;
 
 public:
     /// Position in the column, can be used by
@@ -451,12 +463,9 @@ public:
     using const_iterator
       = segment_meta_column_const_iterator<value_t, delta_alg>;
 
-    explicit segment_meta_column_impl(delta_alg d)
-      : _delta_alg(d) {}
-
     void append(value_t value) {
         if (_frames.empty() || _frames.back().size() == max_frame_size) {
-            _frames.emplace_back(_delta_alg);
+            _frames.push_back({});
         }
         _frames.back().append(value);
     }
@@ -487,7 +496,7 @@ public:
         using frame_tx_t = typename frame_t::frame_tx_t;
         using frame_list_t = std::list<frame_t>;
         std::variant<frame_tx_t, frame_list_t> inner;
-        segment_meta_column_impl<value_t, delta_alg, Derived>& self;
+        self_t& self;
 
         column_tx_t(
           frame_tx_t inner,
@@ -530,7 +539,7 @@ public:
     std::optional<column_tx_t> append_tx(value_t value) {
         std::optional<column_tx_t> tx;
         if (_frames.empty() || _frames.back().size() == max_frame_size) {
-            frame_t tmp(_delta_alg);
+            frame_t tmp{};
             tmp.append(value);
             tx.emplace(std::move(tmp), *this);
             return tx;
@@ -633,6 +642,45 @@ public:
         }
     }
 
+    void serde_write(iobuf& out) {
+        // std::list is not part of the serde-enabled types, save is as
+        // size,elements
+        auto const frames_size = _frames.size();
+        if (unlikely(
+              frames_size > std::numeric_limits<serde::serde_size_t>::max())) {
+            throw serde::serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "serde: {}::_frames size {} exceeds serde_size_t",
+              serde::type_str<self_t>(),
+              frames_size));
+        }
+        serde::write(out, static_cast<serde::serde_size_t>(frames_size));
+        for (auto& e : _frames) {
+            serde::write(out, std::move(e));
+        }
+    }
+
+    void serde_read(iobuf_parser& in, serde::header const& h) {
+        // std::list is not part of the serde-enabled types, retrieve size and
+        // push_back the elements
+        if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+            throw serde::serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "field spill over in {}, field type {}: envelope_end={}, "
+              "in.bytes_left()={}",
+              serde::type_str<self_t>(),
+              serde::type_str<std::remove_reference_t<decltype(_frames)>>(),
+              h._bytes_left_limit,
+              in.bytes_left()));
+        }
+        auto const frames_size = serde::read_nested<serde::serde_size_t>(
+          in, h._bytes_left_limit);
+        for (auto i = 0U; i < frames_size; ++i) {
+            _frames.push_back(
+              serde::read_nested<frame_t>(in, h._bytes_left_limit));
+        }
+    }
+
 protected:
     template<class PredT>
     const_iterator pred_search_impl(value_t value) const {
@@ -641,7 +689,6 @@ protected:
     }
 
     std::list<frame_t> _frames;
-    const delta_alg _delta_alg;
 };
 
 /// Segment metadata column.
@@ -655,19 +702,16 @@ template<class value_t>
 class segment_meta_column<value_t, details::delta_xor>
   : public segment_meta_column_impl<
       value_t,
-      details::delta_xor,
+      details::delta_xor{},
       segment_meta_column<value_t, details::delta_xor>> {
     using base_t = segment_meta_column_impl<
       value_t,
-      details::delta_xor,
+      details::delta_xor{},
       segment_meta_column<value_t, details::delta_xor>>;
 
 public:
     using delta_alg = details::delta_xor;
     using typename base_t::const_iterator;
-
-    explicit segment_meta_column(delta_alg d)
-      : base_t(d) {}
 
     template<class PredT>
     const_iterator pred_search(value_t value) const {
@@ -692,19 +736,16 @@ template<class value_t>
 class segment_meta_column<value_t, details::delta_delta<value_t>>
   : public segment_meta_column_impl<
       value_t,
-      details::delta_delta<value_t>,
+      details::delta_delta<value_t>{},
       segment_meta_column<value_t, details::delta_delta<value_t>>> {
     using base_t = segment_meta_column_impl<
       value_t,
-      details::delta_delta<value_t>,
+      details::delta_delta<value_t>{},
       segment_meta_column<value_t, details::delta_delta<value_t>>>;
 
 public:
     using delta_alg = details::delta_delta<value_t>;
     using typename base_t::const_iterator;
-
-    explicit segment_meta_column(delta_alg d)
-      : base_t(d) {}
 
     template<class PredT>
     const_iterator pred_search(value_t value) const {
@@ -816,6 +857,10 @@ public:
     /// Removes all values up to the offset. The provided offset is
     /// a new start offset.
     void prefix_truncate(model::offset);
+
+    void from_iobuf(iobuf in);
+
+    iobuf to_iobuf();
 
 private:
     std::unique_ptr<impl> _impl;

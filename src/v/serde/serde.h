@@ -167,6 +167,7 @@ inline constexpr auto const is_serde_compatible_v
          && (!std::is_same_v<double, T> || std::numeric_limits<double>::is_iec559)
          && (!serde_is_enum_v<T> || sizeof(std::decay_t<T>) <= sizeof(serde_enum_serialized_t)))
     || reflection::is_std_vector<T>
+    || reflection::is_std_array<T>
     || reflection::is_rp_named_type<T>
     || reflection::is_ss_bool_class<T>
     || reflection::is_std_optional<T>
@@ -286,6 +287,9 @@ void write(iobuf& out, T t);
 
 template<typename T>
 void write(iobuf& out, std::vector<T> t);
+
+template<typename T, std::size_t Size>
+void write(iobuf& out, std::array<T, Size> const& t);
 
 template<typename T>
 requires is_envelope<std::decay_t<T>>
@@ -475,6 +479,18 @@ void write(iobuf& out, std::vector<T> t) {
     write(out, static_cast<serde_size_t>(t.size()));
     for (auto& el : t) {
         write(out, std::move(el));
+    }
+}
+
+template<typename T, std::size_t Size>
+void write(iobuf& out, std::array<T, Size> const& t) {
+    if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
+        throw serde_exception(fmt_with_ctx(
+          ssx::sformat, "serde: array size {} exceeds serde_size_t", t.size()));
+    }
+    write(out, static_cast<serde_size_t>(t.size()));
+    for (auto& el : t) {
+        write(out, el);
     }
 }
 
@@ -712,6 +728,20 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
             t.push_back(read_nested<value_type>(in, bytes_left_limit));
+        }
+    } else if constexpr (reflection::is_std_array<Type>) {
+        using value_type = typename Type::value_type;
+        const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
+        if (unlikely(size != std::tuple_size_v<Type>)) {
+            throw serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "reading type {}, size mismatch. expected {} go {}",
+              type_str<Type>(),
+              std::tuple_size_v<Type>,
+              size));
+        }
+        for (auto i = 0U; i < std::tuple_size_v<Type>; ++i) {
+            t[i] = read_nested<value_type>(in, bytes_left_limit);
         }
     } else if constexpr (reflection::is_rp_named_type<Type>) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};

@@ -99,21 +99,11 @@ void value_or(const std::tuple<Args...>& iters, T& res) {
 /// The data structure contains several columns, one per
 /// field in the segment_meta struct. All columns have the same
 /// number of elements at any point in time.
-class column_store {
+class column_store
+  : public serde::
+      envelope<column_store, serde::version<0>, serde::compat_version<0>> {
     using hint_t = deltafor_stream_pos_t<int64_t>;
-    using hint_vec_t = std::tuple<
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t,
-      hint_t>;
+    using hint_vec_t = std::array<hint_t, 12>;
 
     static constexpr size_t hint_array_size = sizeof(hint_vec_t); // (192 bytes)
 
@@ -124,7 +114,7 @@ class column_store {
     // same as the key.
     // The nullopt values act as a dividers between different frames.
     // Without them it will be possible to fetch hint that corresponds
-    // to previoius frame using lower_bound method. This will lead to
+    // to previous frame using lower_bound method. This will lead to
     // assertion. To prevent this we need to insert a nullopt when the
     // frame starts.
 
@@ -179,19 +169,7 @@ public:
       counter_col_t::const_iterator,
       counter_col_t::const_iterator>;
 
-    column_store()
-      : _is_compacted(int64_xor_alg())
-      , _size_bytes(int64_xor_alg())
-      , _base_offset(int64_delta_alg(0))
-      , _committed_offset(int64_xor_alg())
-      , _base_timestamp(int64_xor_alg())
-      , _max_timestamp(int64_xor_alg())
-      , _delta_offset(int64_delta_alg(0))
-      , _ntp_revision(int64_delta_alg(0))
-      , _archiver_term(int64_xor_alg())
-      , _segment_term(int64_delta_alg(0))
-      , _delta_offset_end(int64_delta_alg(0))
-      , _sname_format(int64_delta_alg(0)) {}
+    column_store() = default;
 
     /// Add element to the store. The operation is transactional.
     void append(const segment_meta& meta) {
@@ -232,7 +210,7 @@ public:
             // one column we will get nullopt from other columns. The opposite
             // is also true.
             if (base_offset_hint.has_value()) {
-                auto tup = std::make_tuple(
+                auto tup = hint_vec_t{
                   *_is_compacted.get_current_stream_pos(),
                   *_size_bytes.get_current_stream_pos(),
                   *base_offset_hint,
@@ -244,7 +222,7 @@ public:
                   *_archiver_term.get_current_stream_pos(),
                   *_segment_term.get_current_stream_pos(),
                   *_delta_offset_end.get_current_stream_pos(),
-                  *_sname_format.get_current_stream_pos());
+                  *_sname_format.get_current_stream_pos()};
                 _hints.insert(std::make_pair(meta.base_offset(), tup));
             } else {
                 _hints.insert(std::make_pair(meta.base_offset(), std::nullopt));
@@ -437,23 +415,103 @@ public:
 
     bool empty() const { return size() == 0; }
 
+    auto serde_fields() {
+        return std::tie(
+          _is_compacted,
+          _size_bytes,
+          _base_offset,
+          _committed_offset,
+          _base_timestamp,
+          _max_timestamp,
+          _delta_offset,
+          _ntp_revision,
+          _archiver_term,
+          _segment_term,
+          _delta_offset_end,
+          _sname_format,
+          _hints);
+    }
+
+    void serde_write(iobuf& out) {
+        // hint_map_t (absl::btree_map) is not serde-enabled, it's serialized
+        // manually as size,[(key,value)...]
+        serde::envelope_for_each_field(
+          *this, [&out]<typename FieldType>(FieldType& f) {
+              if constexpr (std::same_as<FieldType, hint_map_t>) {
+                  if (unlikely(
+                        f.size()
+                        > std::numeric_limits<serde::serde_size_t>::max())) {
+                      throw serde::serde_exception(fmt_with_ctx(
+                        ssx::sformat,
+                        "serde: {} size {} exceeds serde_size_t",
+                        serde::type_str<column_store>(),
+                        f.size()));
+                  }
+                  serde::write(out, static_cast<serde::serde_size_t>(f.size()));
+                  for (auto& [k, v] : f) {
+                      serde::write(out, k);
+                      serde::write(out, std::move(v));
+                  }
+              } else {
+                  serde::write(out, std::move(f));
+              }
+          });
+    }
+
+    void serde_read(iobuf_parser& in, serde::header const& h) {
+        // hint_map_t (absl::btree_map) is not serde-enabled, read it as
+        // size,[(key,value)...]
+        serde::envelope_for_each_field(
+          *this, [&]<typename FieldType>(FieldType& f) {
+              if (h._bytes_left_limit == in.bytes_left()) {
+                  return false;
+              }
+              if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+                  throw serde::serde_exception(fmt_with_ctx(
+                    ssx::sformat,
+                    "field spill over in {}, field type {}: envelope_end={}, "
+                    "in.bytes_left()={}",
+                    serde::type_str<column_store>(),
+                    serde::type_str<FieldType>(),
+                    h._bytes_left_limit,
+                    in.bytes_left()));
+              }
+              if constexpr (std::same_as<hint_map_t, FieldType>) {
+                  const auto size = serde::read_nested<serde::serde_size_t>(
+                    in, h._bytes_left_limit);
+                  for (auto i = 0U; i < size; ++i) {
+                      auto key
+                        = serde::read_nested<typename hint_map_t::key_type>(
+                          in, h._bytes_left_limit);
+                      auto value
+                        = serde::read_nested<typename hint_map_t::mapped_type>(
+                          in, h._bytes_left_limit);
+                      f.emplace(std::move(key), std::move(value));
+                  }
+              } else {
+                  f = serde::read_nested<FieldType>(in, h._bytes_left_limit);
+              }
+              return true;
+          });
+    }
+
 private:
-    gauge_col_t _is_compacted;
-    gauge_col_t _size_bytes;
-    counter_col_t _base_offset;
-    gauge_col_t _committed_offset;
-    gauge_col_t _base_timestamp;
-    gauge_col_t _max_timestamp;
-    counter_col_t _delta_offset;
-    counter_col_t _ntp_revision;
+    gauge_col_t _is_compacted{};
+    gauge_col_t _size_bytes{};
+    counter_col_t _base_offset{};
+    gauge_col_t _committed_offset{};
+    gauge_col_t _base_timestamp{};
+    gauge_col_t _max_timestamp{};
+    counter_col_t _delta_offset{};
+    counter_col_t _ntp_revision{};
     /// The archiver term is not strictly monotonic in manifests
     /// generated by old redpanda versions
-    gauge_col_t _archiver_term;
-    counter_col_t _segment_term;
-    counter_col_t _delta_offset_end;
-    counter_col_t _sname_format;
+    gauge_col_t _archiver_term{};
+    counter_col_t _segment_term{};
+    counter_col_t _delta_offset_end{};
+    counter_col_t _sname_format{};
 
-    hint_map_t _hints;
+    hint_map_t _hints{};
 };
 
 /// Materializing iterator implementation
@@ -500,7 +558,11 @@ bool segment_meta_materializing_iterator::equal(
 }
 
 /// Column store implementation
-class segment_meta_cstore::impl {
+class segment_meta_cstore::impl
+  : public serde::envelope<
+      segment_meta_cstore::impl,
+      serde::version<0>,
+      serde::compat_version<0>> {
 public:
     void append(const segment_meta& meta) { _col.append(meta); }
 
@@ -555,6 +617,8 @@ public:
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.at_index(ix));
     }
+
+    auto serde_fields() { return std::tie(_col); }
 
 private:
     column_store _col;
@@ -615,4 +679,14 @@ segment_meta_cstore::at_index(size_t ix) const {
     return const_iterator(_impl->at_index(ix));
 }
 
+void segment_meta_cstore::from_iobuf(iobuf in) {
+    // NOTE: this process is not optimal memory-wise, but it's simple and
+    // correct. It would require some rewrite on serde to accept a type& out
+    // parameter.
+    *_impl = serde::from_iobuf<segment_meta_cstore::impl>(std::move(in));
+}
+
+iobuf segment_meta_cstore::to_iobuf() {
+    return serde::to_iobuf(std::exchange(*_impl, {}));
+}
 } // namespace cloud_storage

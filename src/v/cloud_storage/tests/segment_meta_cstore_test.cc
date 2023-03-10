@@ -32,14 +32,11 @@ using namespace cloud_storage;
 static ss::logger test("test-logger-s");
 
 using delta_xor_alg = details::delta_xor;
-using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg>;
+using delta_xor_frame = segment_meta_column_frame<int64_t, delta_xor_alg{}>;
 using delta_delta_alg = details::delta_delta<int64_t>;
-using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg>;
+using delta_delta_frame = segment_meta_column_frame<int64_t, delta_delta_alg{}>;
 using delta_xor_column = segment_meta_column<int64_t, delta_xor_alg>;
 using delta_delta_column = segment_meta_column<int64_t, delta_delta_alg>;
-
-static const delta_xor_alg initial_xor{};
-static const delta_delta_alg initial_delta{0};
 
 // The performance of these tests depend on compiler optimizations a lot.
 // The read codepath only works well when the compiler is able to vectorize
@@ -69,22 +66,22 @@ void append_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     append_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     append_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     append_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     append_test_case(short_test_size, col);
 }
 
@@ -105,22 +102,22 @@ void append_tx_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_tx_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     append_tx_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_append_tx_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     append_tx_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_tx_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     append_tx_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_append_tx_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     append_tx_test_case(short_test_size, col);
 }
 
@@ -145,22 +142,22 @@ void iter_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_iter_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     iter_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_iter_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     iter_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_iter_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     iter_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_iter_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     iter_test_case(short_test_size, col);
 }
 
@@ -191,42 +188,42 @@ void find_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     find_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_xor_small) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     find_test_case(random_generators::get_int(1, 16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     find_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_find_delta_small) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     find_test_case(random_generators::get_int(1, 16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     find_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_xor_small) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     find_test_case(random_generators::get_int(1, 16), col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     find_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_find_delta_small) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     find_test_case(random_generators::get_int(1, 16), col);
 }
 
@@ -266,42 +263,42 @@ void lower_bound_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     lower_bound_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_xor_small) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     lower_bound_test_case(random_generators::get_int(1, 16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     lower_bound_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_lower_bound_delta_small) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     lower_bound_test_case(random_generators::get_int(1, 16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     lower_bound_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_xor_small) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     lower_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     lower_bound_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_lower_bound_delta_small) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     lower_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
@@ -339,42 +336,42 @@ void upper_bound_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     upper_bound_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_xor_small) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     upper_bound_test_case(random_generators::get_int(1, 16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     upper_bound_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_upper_bound_delta_small) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     upper_bound_test_case(random_generators::get_int(1, 16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     upper_bound_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_xor_small) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     upper_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     upper_bound_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_upper_bound_delta_small) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     upper_bound_test_case(random_generators::get_int(1, 16), col);
 }
 
@@ -406,42 +403,42 @@ void at_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     at_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_xor_small) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     at_test_case(random_generators::get_int(16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     at_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_delta_small) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     at_test_case(random_generators::get_int(16), frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     at_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_xor_small) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     at_test_case(random_generators::get_int(16), col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     at_test_case(short_test_size, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_delta_small) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     at_test_case(random_generators::get_int(16), col);
 }
 
@@ -488,22 +485,22 @@ void prefix_truncate_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_prefix_truncate_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     prefix_truncate_test_case(10, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_prefix_truncate_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     prefix_truncate_test_case(10, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_prefix_truncate_xor) {
-    delta_xor_column col(initial_xor);
+    delta_xor_column col{};
     prefix_truncate_test_case(10, col);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_prefix_truncate_delta) {
-    delta_delta_column col(initial_delta);
+    delta_delta_column col{};
     prefix_truncate_test_case(10, col);
 }
 
@@ -563,22 +560,22 @@ void at_with_hint_test_case(const int64_t num_elements, column_t& column) {
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_with_hint_xor) {
-    delta_xor_frame frame(initial_xor);
+    delta_xor_frame frame{};
     at_with_hint_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_frame_at_with_hint_delta) {
-    delta_delta_frame frame(initial_delta);
+    delta_delta_frame frame{};
     at_with_hint_test_case(short_test_size, frame);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_with_hint_xor) {
-    delta_xor_column column(initial_xor);
+    delta_xor_column column{};
     at_with_hint_test_case(short_test_size, column);
 }
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_col_at_with_hint_delta) {
-    delta_delta_column column(initial_delta);
+    delta_delta_column column{};
     at_with_hint_test_case(short_test_size, column);
 }
 
@@ -755,7 +752,7 @@ void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
     }
 
     // Truncate the generated manifest and the column store
-    // and check that all operations can be perfomed.
+    // and check that all operations can be performed.
     auto ix = random_generators::get_int(1, (int)max_truncate_ix);
     auto iter = manifest.begin();
     std::advance(iter, ix);
@@ -789,4 +786,38 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_small) {
 
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_prefix_truncate_full) {
     test_cstore_prefix_truncate(short_test_size, short_test_size);
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
+    segment_meta_cstore store{};
+    auto manifest = generate_metadata(10007);
+    for (auto const& sm : manifest) {
+        store.insert(sm);
+    }
+    {
+        auto [inflated_sz, actual_sz] = store.inflated_actual_size();
+        auto iobuf = store.to_iobuf();
+        auto serialized_sz = iobuf.size_bytes();
+        BOOST_REQUIRE(store.empty());
+        store.from_iobuf(std::move(iobuf));
+        vlog(
+          test.info,
+          "store size inflated:{} in memory:{} serialized:{}",
+          human::bytes(inflated_sz),
+          human::bytes(actual_sz),
+          human::bytes(serialized_sz));
+    }
+
+    BOOST_REQUIRE_EQUAL(store.size(), manifest.size());
+
+    // NOTE: store.begin() returns an interator that can't be copied around.
+    // can't use std::equal needs to copy the iterators around (a quirk of this
+    // implementation) with clang15 we have std::views::ref_view +
+    // std::ranges::subranges that take care of this
+    auto store_it = store.begin();
+    auto store_end = store.end();
+    auto manifest_it = manifest.begin();
+    for (; store_it != store_end; ++store_it, ++manifest_it) {
+        BOOST_REQUIRE_EQUAL(*store_it, *manifest_it);
+    }
 }

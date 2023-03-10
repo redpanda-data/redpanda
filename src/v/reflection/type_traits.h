@@ -18,6 +18,7 @@
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <array>
 #include <optional>
 #include <type_traits>
 #include <vector>
@@ -32,12 +33,20 @@ template<typename T, template<typename...> class C>
 inline constexpr bool is_specialization_of_v
   = is_specialization_of<T, C>::value;
 
+template<class T>
+struct is_std_array_t : std::false_type {};
+template<class T, std::size_t N>
+struct is_std_array_t<std::array<T, N>> : std::true_type {};
+
 } // namespace detail
 
 namespace reflection {
 
 template<typename T>
 concept is_std_vector = ::detail::is_specialization_of_v<T, std::vector>;
+
+template<typename T>
+concept is_std_array = ::detail::is_std_array_t<T>::value;
 
 template<typename T>
 concept is_ss_circular_buffer
