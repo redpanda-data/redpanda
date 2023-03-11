@@ -11,8 +11,11 @@ package redpanda_test
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/fluxcd/helm-controller/api/v2beta1"
+	"github.com/fluxcd/source-controller/api/v1beta2"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -27,17 +30,15 @@ import (
 // This is a unit test
 var _ = Describe("Redpanda Controller", func() {
 	const (
-		ClusterName  = "redpanda-test-cluster"
-		RedpandaName = "redpanda"
+		ClusterName        = "redpanda-test-cluster"
+		RedpandaName       = "redpanda"
+		HelmRepositoryName = "redpanda-repository"
 
 		timeout  = time.Second * 30
 		interval = time.Millisecond * 100
-
-		deploymentImage      = "vectorized/console:latest"
-		enableSchemaRegistry = true
-		enableConnect        = false
 	)
 	var (
+		RedpandaObj       *v1alpha1.Redpanda
 		RedpandaNamespace string
 		key               types.NamespacedName
 		testCluster       *v1alpha1.Cluster
@@ -60,12 +61,13 @@ var _ = Describe("Redpanda Controller", func() {
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 		}
 		// check if redpanda cluster exists, create it if not
+		RedpandaObj = &v1alpha1.Redpanda{}
 		key := client.ObjectKey{Namespace: RedpandaNamespace, Name: RedpandaName}
-		if err := k8sClient.Get(ctx, key, &v1alpha1.Redpanda{}); err != nil {
+		if err := k8sClient.Get(ctx, key, RedpandaObj); err != nil {
 			if !apierrors.IsNotFound(err) {
 				Expect(err).To(Equal(nil))
 			}
-			rp := &v1alpha1.Redpanda{
+			RedpandaObj = &v1alpha1.Redpanda{
 				TypeMeta: metav1.TypeMeta{
 					APIVersion: "redpanda.vectorized.io/v1alpha1",
 					Kind:       "Redpanda",
@@ -78,14 +80,33 @@ var _ = Describe("Redpanda Controller", func() {
 					ChartRef: v1alpha1.ChartRef{
 						ChartVersion: "3.x.x",
 					},
-					HelmRepositoryName: "redpanda-repository",
+					HelmRepositoryName: HelmRepositoryName,
 					ClusterSpec:        &v1alpha1.RedpandaClusterSpec{},
 				},
 			}
 
-			Expect(k8sClient.Create(ctx, rp)).Should(Succeed())
-			Eventually(func() bool { return k8sClient.Get(ctx, key, &v1alpha1.Redpanda{}) == nil }, timeout, interval).Should(BeTrue())
+			Expect(k8sClient.Create(ctx, RedpandaObj)).Should(Succeed())
+			Eventually(func() bool { return k8sClient.Get(ctx, key, RedpandaObj) == nil }, timeout, interval).Should(BeTrue())
 		}
 	})
 
+	Context("When creating a Redpanda", func() {
+		ctx := context.Background()
+
+		It("Should create a HelmRepository", func() {
+			key := client.ObjectKey{Namespace: RedpandaNamespace, Name: HelmRepositoryName}
+			Eventually(func() bool { return k8sClient.Get(ctx, key, &v1beta2.HelmRepository{}) == nil }, timeout, interval).Should(BeTrue())
+		})
+
+		It("Should create a HelmRelease", func() {
+			key := client.ObjectKey{Namespace: RedpandaNamespace, Name: RedpandaName}
+			Eventually(func() bool { return k8sClient.Get(ctx, key, &v2beta1.HelmRelease{}) == nil }, timeout, interval).Should(BeTrue())
+		})
+
+		It("Should create a HelmChart", func() {
+			key := client.ObjectKey{Namespace: RedpandaNamespace, Name: fmt.Sprintf("%s-%s", RedpandaNamespace, RedpandaName)}
+			Eventually(func() bool { return k8sClient.Get(ctx, key, &v1beta2.HelmChart{}) == nil }, timeout, interval).Should(BeTrue())
+		})
+
+	})
 })

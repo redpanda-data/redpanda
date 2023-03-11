@@ -355,11 +355,3 @@ func (r *RedpandaReconciler) event(rp *v1alpha1.Redpanda, revision, severity, ms
 	}
 	r.EventRecorder.AnnotatedEventf(rp, meta, eventType, severity, msg)
 }
-
-// TODO fill out what items we should update on
-func (r *RedpandaReconciler) helmReleaseRequiresUpdate(rp *v1alpha1.Redpanda, hr *helmv2beta1.HelmRelease) bool {
-	switch {
-	default:
-		return false
-	}
-}
