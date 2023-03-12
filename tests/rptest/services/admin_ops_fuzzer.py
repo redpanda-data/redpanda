@@ -417,8 +417,10 @@ class AdminOperationsFuzzer():
             # Enable back the ADD_PARTITIONS operation
             # https://github.com/redpanda-data/redpanda/issues/8747
             self.allowed_operations = [
-                o for o in RedpandaAdminOperation
-                if o != RedpandaAdminOperation.ADD_PARTITIONS
+                o for o in RedpandaAdminOperation if o not in [
+                    RedpandaAdminOperation.ADD_PARTITIONS,
+                    RedpandaAdminOperation.DELETE_TOPIC
+                ]
             ]
         else:
             self.allowed_operations = allowed_operations
