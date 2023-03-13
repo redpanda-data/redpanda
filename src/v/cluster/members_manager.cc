@@ -189,6 +189,8 @@ members_manager::changed_nodes members_manager::calculate_changed_nodes(
 
 ss::future<> members_manager::handle_raft0_cfg_update(
   raft::group_configuration cfg, model::offset update_offset) {
+    absl::flat_hash_set<model::node_id> fully_removed_nodes;
+
     // skip if configuration does not contain brokers
     if (unlikely(
           cfg.is_with_brokers()
@@ -224,22 +226,34 @@ ss::future<> members_manager::handle_raft0_cfg_update(
             co_await do_apply_remove_node(
               remove_node_cmd(id, 0), update_offset);
         }
-        co_return;
-    }
 
-    std::vector<model::node_id> removed_nodes;
+        // The cluster hasn't yet switched to using node management commands so
+        // all nodes that were just removed in do_apply_remove_node are
+        // considered fully removed. We can immediately close connections to
+        // them.
+        std::swap(_removed_nodes_still_in_raft0, fully_removed_nodes);
+    } else {
+        for (const auto& id : _removed_nodes_still_in_raft0) {
+            if (!cfg.contains(raft::vnode(id, model::revision_id(0)))) {
+                fully_removed_nodes.insert(id);
+            }
+        }
 
-    for (const auto& id : _connections_to_remove) {
-        if (!cfg.contains(raft::vnode(id, model::revision_id(0)))) {
-            removed_nodes.push_back(id);
+        for (auto id : fully_removed_nodes) {
+            _removed_nodes_still_in_raft0.erase(id);
         }
     }
-    for (auto id : removed_nodes) {
-        co_await remove_broker_client(_self.id(), _connection_cache, id);
-        _connections_to_remove.erase(id);
-    }
 
-    co_return;
+    if (update_offset >= _last_connection_update_offset) {
+        for (auto id : fully_removed_nodes) {
+            if (id != _self.id()) {
+                co_await remove_broker_client(
+                  _self.id(), _connection_cache, id);
+            }
+        }
+
+        _last_connection_update_offset = update_offset;
+    }
 }
 
 bool members_manager::is_batch_applicable(const model::record_batch& b) const {
@@ -480,18 +494,17 @@ ss::future<std::error_code> members_manager::do_apply_remove_node(
     if (ec) {
         co_return ec;
     }
+
+    _removed_nodes_still_in_raft0.insert(cmd.key);
+
     co_await persist_members_in_kvstore(update_offset);
+
     // update partition allocator
     co_await _allocator.invoke_on(
       partition_allocator::shard, [cmd](partition_allocator& allocator) {
           allocator.remove_allocation_node(cmd.key);
       });
-    if (
-      update_offset >= _last_connection_update_offset
-      && cmd.key != _self.id()) {
-        _connections_to_remove.emplace(cmd.key);
-        _last_connection_update_offset = update_offset;
-    }
+
     co_await _update_queue.push_eventually(node_update{
       .id = cmd.key,
       .type = node_update_type::removed,
@@ -1399,6 +1412,14 @@ members_manager::persist_members_in_kvstore(model::offset update_offset) {
     brokers.reserve(_members_table.local().node_count());
     for (auto& [_, node_metadata] : _members_table.local().nodes()) {
         brokers.push_back(node_metadata.broker);
+    }
+    for (auto id : _removed_nodes_still_in_raft0) {
+        // we persist broker info for removed nodes that are still part of the
+        // controller group because after restart we still need to open
+        // connections to these nodes.
+        auto node_md = _members_table.local().get_removed_node_metadata_ref(id);
+        vassert(node_md, "metadata for removed node {} must be present", id);
+        brokers.push_back(node_md.value().get().broker);
     }
     return _storage.local().kvs().put(
       storage::kvstore::key_space::controller,
