@@ -760,6 +760,13 @@ model::offset archival_metadata_stm::max_collectible_offset() {
     if (_manifest->size() == 0 && lo == model::offset{0}) {
         lo = model::offset::min();
     }
+
+    // Do not collect past the offset we last uploaded manifest for: this is
+    // needed for correctness because the remote manifest is used in
+    // handle_eviction() - it is what a remote node doing snapshot-driven
+    // raft recovery will use to start from.
+    lo = std::min(lo, _last_clean_at);
+
     return lo;
 }
 
