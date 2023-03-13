@@ -17,6 +17,7 @@
 #include "serde/checksum_t.h"
 #include "serde/envelope_for_each_field.h"
 #include "serde/logger.h"
+#include "serde/read_header.h"
 #include "serde/serde_exception.h"
 #include "serde/serde_is_enum.h"
 #include "serde/serde_size_t.h"
@@ -57,12 +58,6 @@ To bit_cast(From const& f) {
     std::memcpy(&to, &f, sizeof(To));
     return to;
 }
-
-struct header {
-    version_t _version, _compat_version;
-    size_t _bytes_left_limit;
-    checksum_t _checksum;
-};
 
 template<typename T>
 concept has_serde_read = requires(T t, iobuf_parser& in, const header& h) {
@@ -579,64 +574,6 @@ std::decay_t<T> read(iobuf_parser& in) {
           in.bytes_left())};
     }
     return ret;
-}
-
-template<typename T>
-header read_header(iobuf_parser& in, std::size_t const bytes_left_limit) {
-    using Type = std::decay_t<T>;
-
-    auto const version = read_nested<version_t>(in, bytes_left_limit);
-    auto const compat_version = read_nested<version_t>(in, bytes_left_limit);
-    auto const size = read_nested<serde_size_t>(in, bytes_left_limit);
-
-    auto checksum = checksum_t{};
-    if constexpr (is_checksum_envelope<T>) {
-        checksum = read_nested<checksum_t>(in, bytes_left_limit);
-    }
-
-    if (unlikely(in.bytes_left() < size)) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "bytes_left={}, size={}",
-          in.bytes_left(),
-          static_cast<int>(size)));
-    }
-
-    if (unlikely(in.bytes_left() - size < bytes_left_limit)) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "envelope does not fit into bytes left: bytes_left={}, size={}, "
-          "bytes_left_limit={}",
-          in.bytes_left(),
-          static_cast<int>(size),
-          bytes_left_limit));
-    }
-
-    if (unlikely(compat_version > Type::redpanda_serde_version)) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "read {}: compat_version={} > {}::version={}",
-          type_str<Type>(),
-          static_cast<int>(compat_version),
-          type_str<T>(),
-          static_cast<int>(Type::redpanda_serde_version)));
-    }
-
-    if (unlikely(version < Type::redpanda_serde_compat_version)) {
-        throw serde_exception(fmt_with_ctx(
-          ssx::sformat,
-          "read {}: version={} < {}::compat_version={}",
-          type_str<Type>(),
-          static_cast<int>(version),
-          type_str<T>(),
-          static_cast<int>(Type::redpanda_serde_compat_version)));
-    }
-
-    return header{
-      ._version = version,
-      ._compat_version = compat_version,
-      ._bytes_left_limit = in.bytes_left() - size,
-      ._checksum = checksum};
 }
 
 template<typename T>

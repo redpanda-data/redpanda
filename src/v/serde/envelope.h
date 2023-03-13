@@ -1,4 +1,4 @@
-// Copyright 2021 Redpanda Data, Inc.
+// Copyright 2023 Redpanda Data, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -9,24 +9,14 @@
 
 #pragma once
 
+#include "serde/version.h"
+
 #include <cinttypes>
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
 
 namespace serde {
-
-using version_t = uint8_t;
-
-template<version_t V>
-struct version {
-    static constexpr auto const v = V;
-};
-
-template<version_t V>
-struct compat_version {
-    static constexpr auto const v = V;
-};
 
 /**
  * \brief provides versioning (version + compat version)
