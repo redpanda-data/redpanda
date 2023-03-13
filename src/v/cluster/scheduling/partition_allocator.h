@@ -67,14 +67,6 @@ public:
      */
     ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
-    /// Reallocates partition replicas, moving them away from decommissioned
-    /// nodes. Replicas on nodes that were left untouched are not changed.
-    /// Allocation domain must match the one used to allocate the partition.
-    ///
-    /// Returns an error it reallocation is impossible
-    result<allocation_units> reassign_decommissioned_replicas(
-      const partition_assignment&, partition_allocation_domain);
-
     result<allocation_units> reallocate_partition(
       partition_constraints,
       const partition_assignment&,
