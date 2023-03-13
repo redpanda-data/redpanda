@@ -8,6 +8,8 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
+#pragma once
+
 #include "cloud_storage/cache_service.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
@@ -24,6 +26,9 @@
 
 using namespace std::chrono_literals;
 using namespace cloud_storage;
+
+static constexpr model::cloud_credentials_source config_file{
+  model::cloud_credentials_source::config_file};
 
 struct cloud_storage_fixture : s3_imposter_fixture {
     cloud_storage_fixture() {
