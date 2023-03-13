@@ -53,8 +53,8 @@ public:
     segment_seq segments();
 
     /// Once segments are collected, this query determines if the collected
-    /// segments will be able to replace at least one segment in manifest.
-    bool can_replace_manifest_segment() const;
+    /// segments should replace at least one segment in manifest.
+    bool should_replace_manifest_segment() const;
 
     /// The starting point for the collection, this may not coincide with the
     /// start of the first collected segment. It should be aligned
