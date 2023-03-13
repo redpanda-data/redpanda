@@ -33,6 +33,26 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
+      path: /mutate-redpanda-com-v1alpha2-topic
+  failurePolicy: Fail
+  name: mtopic.kb.io
+  rules:
+  - apiGroups:
+    - redpanda.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - topics
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
       path: /mutate-redpanda-vectorized-io-v1alpha1-console
   failurePolicy: Fail
   name: mconsole.kb.io
@@ -75,6 +95,26 @@ webhooks:
     - UPDATE
     resources:
     - clusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-redpanda-com-v1alpha2-topic
+  failurePolicy: Fail
+  name: vtopic.kb.io
+  rules:
+  - apiGroups:
+    - redpanda.com
+    apiVersions:
+    - v1alpha2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - topics
   sideEffects: None
 - admissionReviewVersions:
   - v1
