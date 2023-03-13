@@ -439,7 +439,7 @@ archival_policy::get_next_compacted_segment(
         * compacted_segment_size_multiplier};
 
     compacted_segment_collector.collect_segments();
-    if (!compacted_segment_collector.can_replace_manifest_segment()) {
+    if (!compacted_segment_collector.should_replace_manifest_segment()) {
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
