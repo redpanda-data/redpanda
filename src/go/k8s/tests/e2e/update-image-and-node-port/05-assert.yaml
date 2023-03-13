@@ -15,18 +15,6 @@ spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -38,20 +26,8 @@ metadata:
   name: update-image-cluster-and-node-port-1
 spec:
   containers:
-  - name: redpanda
-    image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
+    - name: redpanda
+      image: "localhost/redpanda:dev"
 status:
   phase: "Running"
 
@@ -63,20 +39,8 @@ metadata:
   name: update-image-cluster-and-node-port-2
 spec:
   containers:
-  - name: redpanda
-    image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
+    - name: redpanda
+      image: "localhost/redpanda:dev"
 status:
   phase: "Running"
 
@@ -86,7 +50,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-and-node-port/step-5"
-  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-and-node-port/step-5/pods.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-and-node-port/step-5/pods.yaml"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-0 -- curl -s http://update-image-cluster-and-node-port-0.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-5/brokers-from-pod-0.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-1 -- curl -s http://update-image-cluster-and-node-port-1.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-5/brokers-from-pod-1.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-2 -- curl -s http://update-image-cluster-and-node-port-2.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-5/brokers-from-pod-2.json"

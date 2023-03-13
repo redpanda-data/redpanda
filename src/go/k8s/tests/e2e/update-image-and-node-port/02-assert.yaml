@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.8"
+    image: "vectorized/redpanda:v22.2.10"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -41,7 +41,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.8"
+    image: "vectorized/redpanda:v22.2.10"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -68,7 +68,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "vectorized/redpanda:v22.2.8"
+    image: "vectorized/redpanda:v22.2.10"
     volumeMounts:
     - mountPath: /etc/redpanda
       name: config-dir
@@ -113,7 +113,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-and-node-port/step-2"
-  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-and-node-port/step-2/pods.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-and-node-port/step-2/pods.yaml"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-0 -- curl -s http://update-image-cluster-and-node-port-0.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-2/brokers-from-pod-0.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-1 -- curl -s http://update-image-cluster-and-node-port-1.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-2/brokers-from-pod-1.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-2 -- curl -s http://update-image-cluster-and-node-port-2.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-2/brokers-from-pod-2.json"
@@ -131,7 +131,7 @@ kind: Cluster
 metadata:
   name: update-image-cluster-and-node-port
 status:
-  version: "v22.2.8"
+  version: "v22.2.10"
   readyReplicas: 3
   replicas: 3
   upgrading: false

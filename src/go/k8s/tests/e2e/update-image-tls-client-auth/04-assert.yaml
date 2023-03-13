@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "localhost/redpanda:dev"
+    image: "vectorized/redpanda:v23.1.1"
 status:
   phase: "Running"
 
@@ -27,7 +27,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "localhost/redpanda:dev"
+    image: "vectorized/redpanda:v23.1.1"
 status:
   phase: "Running"
 
@@ -40,7 +40,7 @@ metadata:
 spec:
   containers:
   - name: redpanda
-    image: "localhost/redpanda:dev"
+    image: "vectorized/redpanda:v23.1.1"
 status:
   phase: "Running"
 
@@ -50,7 +50,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-tls-client-auth/step-4"
-  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-tls-client-auth/step-4/pods.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-tls-client-auth/step-4/pods.yaml"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-0 -- curl -sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https://up-img-0.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls-client-auth/step-4/brokers-from-pod-0.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-1 -- curl -sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https://up-img-1.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls-client-auth/step-4/brokers-from-pod-1.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-2 -- curl -sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https://up-img-2.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls-client-auth/step-4/brokers-from-pod-2.json"
@@ -68,7 +68,7 @@ kind: Cluster
 metadata:
   name: up-img
 status:
-  version: "dev"
+  version: "v23.1.1"
   readyReplicas: 3
   replicas: 3
   upgrading: false

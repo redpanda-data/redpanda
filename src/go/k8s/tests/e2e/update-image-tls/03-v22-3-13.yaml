@@ -4,4 +4,4 @@ metadata:
   name: up-img
 spec:
   image: "vectorized/redpanda"
-  version: "v23.1.1"
+  version: "v22.3.13"
