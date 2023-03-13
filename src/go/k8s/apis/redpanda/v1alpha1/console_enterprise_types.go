@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -59,7 +60,7 @@ type EnterpriseLoginGoogle struct {
 
 	// ClientCredentials is the Secret that contains SSO credentials
 	// The Secret should contain keys "clientId", "clientSecret"
-	ClientCredentialsRef NamespaceNameRef `json:"clientCredentialsRef"`
+	ClientCredentialsRef redpanda.NamespaceNameRef `json:"clientCredentialsRef"`
 
 	// Use Google groups in your RBAC role bindings.
 	Directory *EnterpriseLoginGoogleDirectory `json:"directory,omitempty"`

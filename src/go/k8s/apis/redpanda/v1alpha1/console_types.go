@@ -13,6 +13,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -49,7 +50,7 @@ type ConsoleSpec struct {
 	SchemaRegistry Schema `json:"schema"`
 
 	// The referenced Redpanda Cluster
-	ClusterRef NamespaceNameRef `json:"clusterRef"`
+	ClusterRef redpanda.NamespaceNameRef `json:"clusterRef"`
 
 	Deployment Deployment `json:"deployment"`
 	Connect    Connect    `json:"connect"`

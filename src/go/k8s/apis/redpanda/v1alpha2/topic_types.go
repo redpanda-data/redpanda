@@ -10,25 +10,42 @@
 package v1alpha2
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // TopicSpec defines the desired state of Topic
 type TopicSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Partitions is the number topic shards that is distributed across the nodes in a cluster.
+	// This cannot be decreased after topic creation.
+	// It can be increased after topic creation, but it is
+	// important to understand the consequences that has, especially for
+	// topics with semantic partitioning. When absent this will default to
+	// the Redpanda cluster configuration `default_topic_partitions`.
+	// https://docs.redpanda.com/docs/reference/cluster-properties/#default_topic_partitions
+	// https://docs.redpanda.com/docs/get-started/architecture/#partitions
+	Partitions *int `json:"partitions,omitempty"`
+	// ReplicationFactor is the number of replicas the topic should have. Must be odd value.
+	// When absent this will default to the Redpanda cluster configuration `default_topic_replications`.
+	// https://docs.redpanda.com/docs/reference/cluster-properties/#default_topic_replications
+	ReplicationFactor *int `json:"replicationFactor,omitempty"`
+	// OverwriteTopicName will change the topic name from the `metadata.name` to `OverwriteTopicName`
+	OverwriteTopicName *string `json:"overwriteTopicName,omitempty"`
+	// AdditionalConfig is free form map of any configuration option that topic can have.
+	// Examples:
+	// cleanup.policy=compact
+	// redpanda.remote.write=true
+	// redpanda.remote.read=true
+	// redpanda.remote.recovery=true
+	// redpanda.remote.delete=true
+	AdditionalConfig map[string]string `json:"additionalConfig,omitempty"`
 
-	// Foo is an example field of Topic. Edit topic_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// The referenced Redpanda Cluster
+	ClusterRef redpanda.NamespaceNameRef `json:"clusterRef"`
 }
 
 // TopicStatus defines the observed state of Topic
 type TopicStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
 }
 
 //+kubebuilder:object:root=true
