@@ -456,6 +456,8 @@ private:
       model::record_batch_reader&&,
       replicate_options);
 
+    ss::future<result<replicate_result>> chain_stages(replicate_stages);
+
     ss::future<storage::append_result>
     disk_append(model::record_batch_reader&&, update_last_quorum_index);
 
