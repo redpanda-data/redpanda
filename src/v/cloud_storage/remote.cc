@@ -14,6 +14,7 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/client_pool.h"
 #include "model/metadata.h"
 #include "utils/retry_chain_node.h"
 
@@ -47,10 +48,10 @@ namespace cloud_storage {
 using namespace std::chrono_literals;
 
 remote::remote(
-  connection_limit limit,
+  ss::sharded<cloud_storage_clients::client_pool>& clients,
   const cloud_storage_clients::client_configuration& conf,
   model::cloud_credentials_source cloud_credentials_source)
-  : _pool(limit(), conf)
+  : _pool(clients)
   , _auth_refresh_bg_op{_gate, _as, conf, cloud_credentials_source}
   , _materialized(std::make_unique<materialized_segments>())
   , _probe(
@@ -72,7 +73,8 @@ remote::remote(
     // op to refresh credentials periodically, and load pool with static
     // credentials right now.
     if (_auth_refresh_bg_op.is_static_config()) {
-        _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
+        _pool.local().load_credentials(
+          _auth_refresh_bg_op.build_static_credentials());
     }
 
     _azure_shared_key_binding.watch([this] {
@@ -106,15 +108,15 @@ remote::remote(
         abs_config.shared_key = cloud_roles::private_key_str{*new_shared_key};
         _auth_refresh_bg_op.set_client_config(std::move(current_config));
 
-        _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
+        _pool.local().load_credentials(
+          _auth_refresh_bg_op.build_static_credentials());
     });
 }
 
-remote::remote(ss::sharded<configuration>& conf)
-  : remote(
-    conf.local().connection_limit,
-    conf.local().client_config,
-    conf.local().cloud_credentials_source) {}
+remote::remote(
+  ss::sharded<cloud_storage_clients::client_pool>& pool,
+  const configuration& conf)
+  : remote(pool, conf.client_config, conf.cloud_credentials_source) {}
 
 remote::~remote() {
     // This is declared in the .cc to avoid header trying to
@@ -140,18 +142,12 @@ ss::future<> remote::stop() {
     cst_log.debug("Stopping remote...");
     _as.request_abort();
     co_await _materialized->stop();
-    co_await _pool.stop();
     co_await _gate.close();
     co_await _auth_refresh_bg_op.stop();
     cst_log.debug("Stopped remote...");
 }
 
-void remote::shutdown_connections() {
-    cst_log.debug("Shutting down remote connections...");
-    _pool.shutdown_connections();
-}
-
-size_t remote::concurrency() const { return _pool.max_size(); }
+size_t remote::concurrency() const { return _pool.local().max_size(); }
 
 model::cloud_storage_backend remote::backend() const {
     return _cloud_storage_backend;
@@ -199,7 +195,7 @@ ss::future<download_result> remote::do_download_manifest(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(key().native());
-    auto lease = co_await _pool.acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto retry_permit = fib.retry();
     std::optional<download_result> result;
     vlog(ctxlog.debug, "Download manifest {}", key());
@@ -292,7 +288,7 @@ ss::future<upload_result> remote::upload_manifest(
     retry_chain_logger ctxlog(cst_log, fib);
     auto key = manifest.get_manifest_path();
     auto path = cloud_storage_clients::object_key(key());
-    auto lease = co_await _pool.acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Uploading manifest {} to the {}", path, bucket());
     std::optional<upload_result> result;
@@ -414,7 +410,7 @@ ss::future<upload_result> remote::upload_segment(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto lease = co_await _pool.acquire(fib.root_abort_source());
+        auto lease = co_await _pool.local().acquire(fib.root_abort_source());
         notify_external_subscribers(
           api_activity_notification::segment_upload, parent);
 
@@ -514,7 +510,7 @@ ss::future<download_result> remote::download_segment(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
-    auto lease = co_await _pool.acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
 
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Download segment {}", path);
@@ -593,7 +589,7 @@ ss::future<download_result> remote::segment_exists(
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto path = cloud_storage_clients::object_key(segment_path());
-    auto lease = co_await _pool.acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Check segment {}", path);
     std::optional<download_result> result;
@@ -665,7 +661,7 @@ ss::future<upload_result> remote::delete_object(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto lease = co_await _pool.acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete object {}", path);
     std::optional<upload_result> result;
@@ -753,7 +749,7 @@ ss::future<upload_result> remote::delete_objects(
 
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto lease = co_await _pool.acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "Delete objects count {}", keys.size());
     std::optional<upload_result> result;
@@ -894,7 +890,7 @@ ss::future<remote::list_result> remote::list_objects(
     ss::gate::holder gh{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
-    auto lease = co_await _pool.acquire(fib.root_abort_source());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
     auto permit = fib.retry();
     vlog(ctxlog.debug, "List objects {}", bucket);
     std::optional<list_result> result;
@@ -1012,7 +1008,7 @@ ss::future<upload_result> remote::upload_object(
       content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
-        auto lease = co_await _pool.acquire(fib.root_abort_source());
+        auto lease = co_await _pool.local().acquire(fib.root_abort_source());
 
         auto path = cloud_storage_clients::object_key(object_path());
         vlog(ctxlog.debug, "Uploading object to path {}", object_path);
@@ -1093,7 +1089,7 @@ ss::future<>
 remote::propagate_credentials(cloud_roles::credentials credentials) {
     return container().invoke_on_all(
       [c = std::move(credentials)](remote& svc) mutable {
-          svc._pool.load_credentials(std::move(c));
+          svc._pool.local().load_credentials(std::move(c));
       });
 }
 

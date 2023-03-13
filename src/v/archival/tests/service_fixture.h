@@ -11,7 +11,9 @@
 #pragma once
 
 #include "archival/ntp_archiver_service.h"
+#include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/client_pool.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -169,6 +171,9 @@ public:
       archival::ntp_archiver&,
       archival::ntp_archiver::batch_result,
       std::optional<model::offset> lso = std::nullopt);
+
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    ss::sharded<cloud_storage::remote> remote;
 
 private:
     void initialize_shard(

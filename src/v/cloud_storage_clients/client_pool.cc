@@ -31,6 +31,8 @@ void client_pool::shutdown_connections() {
     }
 }
 
+bool client_pool::shutdown_initiated() { return _as.abort_requested(); }
+
 /// \brief Acquire http client from the pool.
 ///
 /// as: An abort source which must outlive the lease, that will

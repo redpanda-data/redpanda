@@ -136,18 +136,15 @@ static model::record_batch_header read_single_batch_from_remote_partition(
   bool expect_exists = true) {
     auto conf = fixture.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       target, target, ss::default_priority_class());
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(fixture.api.local(), bucket);
 
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, fixture.cache.local(), bucket);
+      manifest, fixture.api.local(), fixture.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     auto reader = partition->make_reader(reader_config).get().reader;
@@ -807,13 +804,10 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
 
     auto conf = get_configuration();
     auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket);
 
     // starting max_bytes
     constexpr size_t max_bytes_limit = 4_KiB;
@@ -822,7 +816,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // After this block finishes the segment will be hydrated.
     {
         auto partition = ss::make_shared<remote_partition>(
-          manifest, api, cache.local(), bucket);
+          manifest, api.local(), cache.local(), bucket);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -843,7 +837,7 @@ FIXTURE_TEST(test_remote_partition_read_cached_index, cloud_storage_fixture) {
     // This will trigger offset_index materialization from cache.
     {
         auto partition = ss::make_shared<remote_partition>(
-          manifest, api, cache.local(), bucket);
+          manifest, api.local(), cache.local(), bucket);
         auto partition_stop = ss::defer(
           [&partition] { partition->stop().get(); });
         partition->start().get();
@@ -905,16 +899,12 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     // create a reader that consumes segments one by one
-    auto conf = get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket);
 
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, cache.local(), bucket);
+      manifest, api.local(), cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -939,7 +929,7 @@ FIXTURE_TEST(test_remote_partition_concurrent_truncate, cloud_storage_fixture) {
         BOOST_REQUIRE(headers_read.size() == 1);
         BOOST_REQUIRE(headers_read.front().base_offset == model::offset(0));
 
-        remove_segment_from_s3(manifest, model::offset(0), api, bucket);
+        remove_segment_from_s3(manifest, model::offset(0), api.local(), bucket);
         BOOST_REQUIRE(manifest.advance_start_offset(model::offset(400)));
         manifest.truncate();
         manifest.advance_insync_offset(model::offset(10000));
@@ -1010,23 +1000,19 @@ FIXTURE_TEST(
     vlog(test_log.debug, "offset range: {}-{}", base, max);
 
     // create a reader that consumes segments one by one
-    auto conf = get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket);
 
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, cache.local(), bucket);
+      manifest, api.local(), cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
 
     model::offset cutoff_offset(500);
 
-    remove_segment_from_s3(manifest, model::offset(0), api, bucket);
+    remove_segment_from_s3(manifest, model::offset(0), api.local(), bucket);
     BOOST_REQUIRE(manifest.advance_start_offset(cutoff_offset));
     manifest.truncate();
     manifest.advance_insync_offset(model::offset(10000));
@@ -1099,16 +1085,12 @@ FIXTURE_TEST(
     auto compacted_segments = make_segments(compacted_layout);
 
     // create a reader that consumes segments one by one
-    auto conf = get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket);
 
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, cache.local(), bucket);
+      manifest, api.local(), cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -1165,9 +1147,12 @@ FIXTURE_TEST(
         for (int i = 0; i < 10; i++) {
             const int batches_per_segment = 100;
             remove_segment_from_s3(
-              manifest, model::offset(i * batches_per_segment), api, bucket);
+              manifest,
+              model::offset(i * batches_per_segment),
+              api.local(),
+              bucket);
         }
-        reupload_compacted_segments(*this, manifest, compacted_segments, api);
+        reupload_compacted_segments(*this, manifest, compacted_segments);
         manifest.advance_insync_offset(model::offset(10000));
 
         headers_read
@@ -1287,9 +1272,6 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     auto base = segments[0].base_offset;
 
     auto remote_conf = this->get_configuration();
-    remote api(connection_limit(10), remote_conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
 
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
@@ -1297,9 +1279,9 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
     storage::log_reader_config reader_config(
       base, model::offset::max(), ss::default_priority_class());
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(api.local(), bucket);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, this->cache.local(), bucket);
+      manifest, api.local(), this->cache.local(), bucket);
     partition->start().get();
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
@@ -1311,8 +1293,8 @@ FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
                        .then([] {
                            return ss::sleep(std::chrono::milliseconds(10));
                        })
-                       .then([&] {
-                           api.shutdown_connections();
+                       .then([this, &g]() mutable {
+                           pool.local().shutdown_connections();
                            return g.close();
                        });
     ss::with_timeout(model::timeout_clock::now() + 60s, std::move(close_fut))
