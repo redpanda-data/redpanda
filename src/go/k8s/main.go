@@ -301,6 +301,10 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Topic")
 		os.Exit(1)
 	}
+	if err = (&redpandav1alpha2.Topic{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Topic")
+		os.Exit(1)
+	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
