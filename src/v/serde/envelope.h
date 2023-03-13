@@ -47,7 +47,7 @@ struct envelope {
 
 // Overhead of the envelope in bytes: 4 bytes of size, one byte of version,
 // one byte of compat version.
-static constexpr size_t envelope_header_size = 6;
+static constexpr std::size_t envelope_header_size = 6;
 
 /**
  * Checksum envelope uses CRC32c to check data integrity.
@@ -68,7 +68,7 @@ struct checksum_envelope {
 
 // Overhead of the envelope in bytes: a checksummed envelope is
 // a regular envelope plus 4 bytes of checksum.
-static constexpr size_t checksum_envelope_header_size = envelope_header_size
+static constexpr std::size_t checksum_envelope_header_size = envelope_header_size
                                                         + 4;
 
 template<typename T, typename Version = const serde::version_t&>
