@@ -631,9 +631,11 @@ ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
           get_ntp_config().is_archival_enabled(),
           get_ntp_config().is_read_replica_mode_enabled());
         co_await _cloud_storage_partition->erase(as);
-    } else {
+    } else if (_cloud_storage_partition && tiered_storage) {
         vlog(
-          clusterlog.info, "Leaving S3 objects behind for partition {}", ntp());
+          clusterlog.info,
+          "Leaving tiered storage objects behind for partition {}",
+          ntp());
     }
 }
 
