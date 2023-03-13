@@ -19,6 +19,7 @@
 #include "raft/types.h"
 
 #include <absl/container/node_hash_map.h>
+#include <fmt/ranges.h>
 
 #include <iterator>
 #include <system_error>
@@ -63,6 +64,7 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                               topic_assignments.has_value(),
                               "Topic had to exist before successful delete");
                             deallocate_topic(
+                              tp_ns,
                               *topic_assignments,
                               in_progress,
                               get_allocation_domain(tp_ns));
@@ -410,12 +412,37 @@ topic_updates_dispatcher::collect_in_progress(
     in_progress.reserve(current_assignments.size());
     // collect in progress assignments
     for (auto& p : current_assignments) {
-        auto previous = _topic_table.local().get_previous_replica_set(
-          model::ntp(tp_ns.ns, tp_ns.tp, p.id));
-        if (previous) {
-            in_progress.emplace(p.id, std::move(previous.value()));
+        model::ntp ntp(tp_ns.ns, tp_ns.tp, p.id);
+        const auto& in_progress_updates
+          = _topic_table.local().updates_in_progress();
+        auto it = in_progress_updates.find(ntp);
+        if (it == in_progress_updates.end()) {
+            continue;
+        }
+        const auto state = it->second.get_state();
+        if (state == reconfiguration_state::in_progress) {
+            auto previous = _topic_table.local().get_previous_replica_set(ntp);
+            if (previous) {
+                in_progress.emplace(p.id, std::move(previous.value()));
+            }
+        } else {
+            vassert(
+              state == reconfiguration_state::cancelled
+                || state == reconfiguration_state::force_cancelled,
+              "Invalid reconfiguration state: {}",
+              state);
+
+            auto target = _topic_table.local().get_target_replica_set(ntp);
+            if (target) {
+                in_progress.emplace(p.id, std::move(target.value()));
+            }
         }
     }
+    vlog(
+      clusterlog.debug,
+      "Deleting ntp: {},  in_progress ops: {}",
+      tp_ns,
+      in_progress);
     return in_progress;
 }
 
@@ -482,10 +509,17 @@ topic_updates_dispatcher::dispatch_updates_to_cores(Cmd cmd, model::offset o) {
 }
 
 void topic_updates_dispatcher::deallocate_topic(
+  const model::topic_namespace& tp_ns,
   const assignments_set& topic_assignments,
   const in_progress_map& in_progress,
   const partition_allocation_domain domain) {
     for (auto& p_as : topic_assignments) {
+        model::ntp ntp(tp_ns.ns, tp_ns.tp, p_as.id);
+        vlog(
+          clusterlog.trace,
+          "attempting to deallocate ntp: {}, replicas size: {}",
+          ntp,
+          p_as.replicas.size());
         _partition_allocator.local().deallocate(p_as.replicas, domain);
         auto it = in_progress.find(p_as.id);
 
@@ -493,6 +527,14 @@ void topic_updates_dispatcher::deallocate_topic(
         // be removed with update_finished request
         if (it != in_progress.end()) {
             auto to_delete = subtract_replica_sets(it->second, p_as.replicas);
+            vlog(
+              clusterlog.trace,
+              "removing allocations for ntp: {}, it: {}, curr: {}, to_delete: "
+              "{}",
+              ntp,
+              *it,
+              fmt::join(p_as.replicas, ","),
+              fmt::join(to_delete, ","));
             _partition_allocator.local().remove_allocations(to_delete, domain);
         }
     }
