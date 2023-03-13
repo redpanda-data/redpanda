@@ -107,6 +107,5 @@ var _ = Describe("Redpanda Controller", func() {
 			key := client.ObjectKey{Namespace: RedpandaNamespace, Name: fmt.Sprintf("%s-%s", RedpandaNamespace, RedpandaName)}
 			Eventually(func() bool { return k8sClient.Get(ctx, key, &v1beta2.HelmChart{}) == nil }, timeout, interval).Should(BeTrue())
 		})
-
 	})
 })
