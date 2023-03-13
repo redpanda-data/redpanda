@@ -9,9 +9,12 @@
  */
 
 #include "archival/tests/service_fixture.h"
+#include "cloud_storage_clients/client_pool.h"
 #include "config/configuration.h"
 #include "storage/ntp_config.h"
 #include "test_utils/fixture.h"
+
+#include <seastar/core/sharded.hh>
 
 using namespace std::chrono_literals;
 using namespace archival;
@@ -228,13 +231,8 @@ struct reupload_fixture : public archiver_fixture {
 
     void init_archiver() {
         auto [arch_conf, remote_conf] = get_configurations();
-        remote.emplace(
-          remote_conf.connection_limit,
-          remote_conf.client_config,
-          remote_conf.cloud_credentials_source);
-
         auto part = app.partition_manager.local().get(manifest_ntp);
-        archiver.emplace(get_ntp_conf(), arch_conf, *remote, *part);
+        archiver.emplace(get_ntp_conf(), arch_conf, remote.local(), *part);
     }
 
     ss::lw_shared_ptr<storage::segment> self_compact_next_segment() {
@@ -266,7 +264,6 @@ struct reupload_fixture : public archiver_fixture {
         return last_compacted_segment;
     }
 
-    std::optional<cloud_storage::remote> remote;
     std::optional<archival::ntp_archiver> archiver;
     ss::abort_source abort_source;
 };

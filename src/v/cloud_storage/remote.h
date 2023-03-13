@@ -147,7 +147,7 @@ public:
     /// \param limit is a number of simultaneous connections
     /// \param conf is an S3 configuration
     remote(
-      connection_limit limit,
+      ss::sharded<cloud_storage_clients::client_pool>& clients,
       const cloud_storage_clients::client_configuration& conf,
       model::cloud_credentials_source cloud_credentials_source);
 
@@ -156,7 +156,9 @@ public:
     /// \brief Initialize 'remote'
     ///
     /// \param conf is an archival configuration
-    explicit remote(ss::sharded<configuration>& conf);
+    explicit remote(
+      ss::sharded<cloud_storage_clients::client_pool>& pool,
+      const configuration& conf);
 
     /// \brief Start the remote
     ss::future<> start();
@@ -165,9 +167,6 @@ public:
     ///
     /// Wait until all background operations complete
     ss::future<> stop();
-
-    /// Stop all underlying connection in the pool
-    void shutdown_connections();
 
     /// Return max number of concurrent requests that the object
     /// can perform.
@@ -416,7 +415,7 @@ private:
     void notify_external_subscribers(
       api_activity_notification, const retry_chain_node& caller);
 
-    cloud_storage_clients::client_pool _pool;
+    ss::sharded<cloud_storage_clients::client_pool>& _pool;
     ss::gate _gate;
     ss::abort_source _as;
     auth_refresh_bg_op _auth_refresh_bg_op;

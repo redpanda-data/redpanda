@@ -571,15 +571,12 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(imposter.api.local(), bucket);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, imposter.cache.local(), bucket);
+      manifest, imposter.api.local(), imposter.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -645,18 +642,15 @@ std::vector<model::record_batch_header> scan_remote_partition(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
     storage::log_reader_config reader_config(
       base, max, ss::default_priority_class());
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(imposter.api.local(), bucket);
 
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, imposter.cache.local(), bucket);
+      manifest, imposter.api.local(), imposter.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -674,7 +668,6 @@ void reupload_compacted_segments(
   cloud_storage_fixture& fixture,
   cloud_storage::partition_manifest& m,
   const std::vector<in_memory_segment>& segments,
-  cloud_storage::remote& api,
   bool truncate_segments = false) {
     ss::lowres_clock::update();
     static ss::abort_source never_abort;
@@ -719,7 +712,7 @@ void reupload_compacted_segments(
                   std::make_unique<storage::segment_reader_handle>(
                     make_iobuf_input_stream(bytes_to_iobuf(body))));
             };
-            auto result = api
+            auto result = fixture.api.local()
                             .upload_segment(
                               cloud_storage_clients::bucket_name("bucket"),
                               url,

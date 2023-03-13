@@ -21,14 +21,13 @@ inline ss::logger test_log("test"); // NOLINT
 
 static std::vector<model::record_batch_header>
 scan_remote_partition_incrementally_with_reuploads(
-  cloud_storage_fixture& imposter,
+  cloud_storage_fixture& fixt,
   model::offset base,
   model::offset max,
   std::vector<in_memory_segment> segments,
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0) {
-    ss::lowres_clock::update();
-    auto conf = imposter.get_configuration();
+    auto conf = fixt.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
         config::shard_local_cfg()
@@ -39,15 +38,12 @@ scan_remote_partition_incrementally_with_reuploads(
         config::shard_local_cfg().cloud_storage_max_readers_per_shard(
           maybe_max_readers);
     }
-    remote api(connection_limit(10), conf, config_file);
-    api.start().get();
-    auto action = ss::defer([&api] { api.stop().get(); });
     auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
       manifest_ntp, manifest_revision);
 
-    auto manifest = hydrate_manifest(api, bucket);
+    auto manifest = hydrate_manifest(fixt.api.local(), bucket);
     auto partition = ss::make_shared<remote_partition>(
-      manifest, api, imposter.cache.local(), bucket);
+      manifest, fixt.api.local(), fixt.cache.local(), bucket);
     auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
 
     partition->start().get();
@@ -68,11 +64,10 @@ scan_remote_partition_incrementally_with_reuploads(
             s.do_not_reupload = true;
         }
     };
-    auto maybe_reupload_range = [&imposter,
+    auto maybe_reupload_range = [&fixt,
                                  &manifest,
                                  &next_insync_offset,
-                                 &segments,
-                                 &api](model::offset begin) {
+                                 &segments](model::offset begin) {
         // if this is true, start from prev segment, not the one which is
         // the closest to 'begin'
         auto shift_one_back = random_generators::get_int(0, 4) == 0;
@@ -144,12 +139,12 @@ scan_remote_partition_incrementally_with_reuploads(
         };
         if (n > 1) {
             merge_segments(ix, ix + n);
-            reupload_compacted_segments(imposter, manifest, segments, api);
+            reupload_compacted_segments(fixt, manifest, segments);
             manifest.advance_insync_offset(next_insync_offset);
             next_insync_offset = model::next_offset(next_insync_offset);
         } else if (n == 1) {
             segments[ix].do_not_reupload = false;
-            reupload_compacted_segments(imposter, manifest, segments, api);
+            reupload_compacted_segments(fixt, manifest, segments);
             manifest.advance_insync_offset(next_insync_offset);
             next_insync_offset = model::next_offset(next_insync_offset);
         }

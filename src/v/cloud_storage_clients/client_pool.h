@@ -90,6 +90,8 @@ public:
 
     void shutdown_connections();
 
+    bool shutdown_initiated();
+
     /// Performs the dual functions of loading refreshed credentials into
     /// apply_credentials object, as well as initializing the client pool
     /// the first time this function is called.
