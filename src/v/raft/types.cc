@@ -130,6 +130,20 @@ replicate_stages::replicate_stages(raft::errc ec)
   , replicate_finished(
       ss::make_ready_future<result<replicate_result>>(make_error_code(ec))){};
 
+void follower_index_metadata::reset() {
+    last_dirty_log_index = model::offset{};
+    last_flushed_log_index = model::offset{};
+    last_sent_offset = model::offset{};
+    match_index = model::offset{};
+    next_index = model::offset{};
+    heartbeats_failed = 0;
+    last_sent_seq = follower_req_seq{0};
+    last_received_seq = follower_req_seq{0};
+    last_successful_received_seq = follower_req_seq{0};
+    last_suppress_heartbeats_seq = follower_req_seq{0};
+    suppress_heartbeats = heartbeats_suppressed::no;
+}
+
 std::ostream& operator<<(std::ostream& o, const vnode& id) {
     return o << "{id: " << id.id() << ", revision: " << id.revision() << "}";
 }
