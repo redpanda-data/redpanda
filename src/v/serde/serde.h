@@ -17,6 +17,7 @@
 #include "serde/envelope_for_each_field.h"
 #include "serde/logger.h"
 #include "serde/serde_exception.h"
+#include "serde/serde_size_t.h"
 #include "serde/type_str.h"
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
@@ -52,12 +53,6 @@ inline constexpr bool serde_is_enum_v =
   std::is_scoped_enum_v<T>;
 #else
   std::is_enum_v<T>;
-#endif
-
-#if defined(SERDE_TEST)
-using serde_size_t = uint16_t;
-#else
-using serde_size_t = uint32_t;
 #endif
 
 using checksum_t = uint32_t;
@@ -122,12 +117,6 @@ concept is_absl_flat_hash_set
   = ::detail::is_specialization_of_v<T, absl::flat_hash_set>;
 
 using serde_enum_serialized_t = int32_t;
-
-#if defined(SERDE_TEST)
-using serde_size_t = uint16_t;
-#else
-using serde_size_t = uint32_t;
-#endif
 
 namespace detail {
 
