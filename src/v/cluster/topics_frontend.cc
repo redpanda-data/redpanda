@@ -414,8 +414,7 @@ make_allocation_request(const custom_assignable_topic_configuration& ca_cfg) {
         req.partitions.reserve(ca_cfg.custom_assignments.size());
         for (auto& cas : ca_cfg.custom_assignments) {
             allocation_constraints constraints;
-            constraints.hard_constraints.push_back(
-              ss::make_lw_shared<hard_constraint>(on_nodes(cas.replicas)));
+            constraints.add(on_nodes(cas.replicas));
 
             req.partitions.emplace_back(
               cas.id, cas.replicas.size(), std::move(constraints));
@@ -1139,9 +1138,8 @@ partition_constraints topics_frontend::get_partition_constraints(
     allocation_constraints allocation_constraints;
 
     // Add constraint on least disk usage
-    allocation_constraints.soft_constraints.push_back(
-      ss::make_lw_shared<soft_constraint>(
-        least_disk_filled(max_disk_usage_ratio, info.node_disk_reports)));
+    allocation_constraints.add(
+      least_disk_filled(max_disk_usage_ratio, info.node_disk_reports));
 
     auto partition_size_it = info.ntp_sizes.find(id);
     if (partition_size_it == info.ntp_sizes.end()) {
@@ -1149,11 +1147,8 @@ partition_constraints topics_frontend::get_partition_constraints(
     }
 
     // Add constraint on partition max_disk_usage_ratio overfill
-    allocation_constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(disk_not_overflowed_by_partition(
-        max_disk_usage_ratio,
-        partition_size_it->second,
-        info.node_disk_reports)));
+    allocation_constraints.add(disk_not_overflowed_by_partition(
+      max_disk_usage_ratio, partition_size_it->second, info.node_disk_reports));
 
     return {id, new_replication_factor, std::move(allocation_constraints)};
 }
@@ -1333,8 +1328,7 @@ allocation_request make_allocation_request(
       get_allocation_domain(model::topic_namespace{ntp.ns, ntp.tp.topic}));
     req.partitions.reserve(1);
     allocation_constraints constraints;
-    constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(on_nodes(new_replicas)));
+    constraints.add(on_nodes(new_replicas));
     req.partitions.emplace_back(
       ntp.tp.partition, tp_replication_factor, std::move(constraints));
     return req;

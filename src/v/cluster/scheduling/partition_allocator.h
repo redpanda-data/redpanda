@@ -65,7 +65,7 @@ public:
      * Return an allocation_units object wrapping the result of the allocating
      * the given allocation request, or an error if it was not possible.
      */
-    result<allocation_units::pointer> allocate(allocation_request);
+    ss::future<result<allocation_units::pointer>> allocate(allocation_request);
 
     /// Reallocates partition replicas, moving them away from decommissioned
     /// nodes. Replicas on nodes that were left untouched are not changed.

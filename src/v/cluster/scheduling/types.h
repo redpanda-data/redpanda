@@ -60,15 +60,13 @@ public:
     ~hard_constraint() noexcept = default;
 
     hard_constraint_evaluator
-    make_evaluator(const replicas_t& current_replicas) const {
-        return _impl->make_evaluator(current_replicas);
-    }
+    make_evaluator(const replicas_t& current_replicas) const;
 
     ss::sstring name() const { return _impl->name(); }
 
 private:
     friend std::ostream& operator<<(std::ostream& o, const hard_constraint& c) {
-        fmt::print("hard constraint: [{}]", c.name());
+        fmt::print(o, "hard constraint: [{}]", c.name());
         return o;
     }
     std::unique_ptr<impl> _impl;
@@ -96,15 +94,13 @@ public:
     ~soft_constraint() noexcept = default;
 
     soft_constraint_evaluator
-    make_evaluator(const replicas_t& current_replicas) const {
-        return _impl->make_evaluator(current_replicas);
-    };
+    make_evaluator(const replicas_t& current_replicas) const;
 
     ss::sstring name() const { return _impl->name(); }
 
 private:
     friend std::ostream& operator<<(std::ostream& o, const soft_constraint& c) {
-        fmt::print("soft constraint: [{}]", c.name());
+        fmt::print(o, "soft constraint: [{}]", c.name());
         return o;
     }
 
@@ -123,6 +119,16 @@ struct allocation_constraints {
 
     std::vector<soft_constraint_ptr> soft_constraints;
     std::vector<hard_constraint_ptr> hard_constraints;
+
+    void add(soft_constraint c) {
+        return soft_constraints.push_back(
+          ss::make_lw_shared<soft_constraint>(std::move(c)));
+    }
+
+    void add(hard_constraint c) {
+        return hard_constraints.push_back(
+          ss::make_lw_shared<hard_constraint>(std::move(c)));
+    }
 
     void add(allocation_constraints);
     friend std::ostream&

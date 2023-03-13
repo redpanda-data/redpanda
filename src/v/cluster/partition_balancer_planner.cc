@@ -212,29 +212,23 @@ partition_constraints partition_balancer_planner::get_partition_constraints(
     allocation_constraints allocation_constraints;
 
     // Add constraint on least disk usage
-    allocation_constraints.soft_constraints.push_back(
-      ss::make_lw_shared<soft_constraint>(
-        least_disk_filled(max_disk_usage_ratio, rrs.node_disk_reports)));
+    allocation_constraints.add(
+      least_disk_filled(max_disk_usage_ratio, rrs.node_disk_reports));
 
     // Add constraint on partition max_disk_usage_ratio overfill
     size_t upper_bound_for_partition_size = partition_size
                                             + _config.segment_fallocation_step;
-    allocation_constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(disk_not_overflowed_by_partition(
-        max_disk_usage_ratio,
-        upper_bound_for_partition_size,
-        rrs.node_disk_reports)));
+    allocation_constraints.add(disk_not_overflowed_by_partition(
+      max_disk_usage_ratio,
+      upper_bound_for_partition_size,
+      rrs.node_disk_reports));
 
     // Add constraint on unavailable nodes
-    allocation_constraints.hard_constraints.push_back(
-      ss::make_lw_shared<hard_constraint>(
-        distinct_from(rrs.timed_out_unavailable_nodes)));
+    allocation_constraints.add(distinct_from(rrs.timed_out_unavailable_nodes));
 
     // Add constraint on decommissioning nodes
     if (!rrs.decommissioning_nodes.empty()) {
-        allocation_constraints.hard_constraints.push_back(
-          ss::make_lw_shared<hard_constraint>(
-            distinct_from(rrs.decommissioning_nodes)));
+        allocation_constraints.add(distinct_from(rrs.decommissioning_nodes));
     }
 
     return partition_constraints(
