@@ -26,6 +26,7 @@
 #include "ssx/future-util.h"
 #include "ssx/sformat.h"
 #include "storage/parser.h"
+#include "storage/segment_index.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 
@@ -127,6 +128,7 @@ remote_segment::remote_segment(
     _base_offset_delta = std::clamp(
       meta->delta_offset, model::offset_delta(0), model::offset_delta::max());
     _compacted = meta->is_compacted;
+    _size = meta->size_bytes;
 
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
@@ -312,6 +314,10 @@ ss::future<> remote_segment::do_hydrate_segment() {
     retry_chain_node local_rtc(
       cache_hydration_timeout, cache_hydration_backoff, &_rtc);
 
+    // RAII reservation object represents the disk space this put will consume
+    auto reservation = co_await _cache.reserve_space(
+      _size + storage::segment_index::estimate_size(_size));
+
     auto res = co_await _api.download_segment(
       _bucket,
       _path,
@@ -358,6 +364,7 @@ ss::future<> remote_segment::do_hydrate_txrange() {
         }
 
         auto [stream, size] = co_await manifest.serialize();
+        auto reservation = _cache.reserve_space(size);
         co_await _cache.put(manifest.get_manifest_path(), stream)
           .finally([&s = stream]() mutable { return s.close(); });
     }

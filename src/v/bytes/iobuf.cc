@@ -257,7 +257,7 @@ std::string iobuf::hexdump(size_t limit) const {
             }
 
             auto c = data[i];
-            result << fmt::format("{:02x} ", int(c));
+            result << fmt::format("{:02x} ", uint8_t(c));
 
             if (std::isprint(c) && c != '\n') {
                 trail.push_back(c);

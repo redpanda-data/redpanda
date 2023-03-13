@@ -973,6 +973,18 @@ inline version_t peek_version(iobuf_parser& in) {
     return serde::read_nested<serde::version_t>(version_reader, 0);
 }
 
+inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
+    if (unlikely(in.bytes_left() < envelope_header_size)) {
+        throw serde_exception{"cannot peek size"};
+    }
+
+    // Take bytes 2-6
+    auto header_buf = in.peek(envelope_header_size);
+    header_buf.trim_front(2);
+    auto size_reader = iobuf_parser{std::move(header_buf)};
+    return serde::read_nested<serde::serde_size_t>(size_reader, 0);
+}
+
 template<typename T>
 iobuf to_iobuf(T&& t) {
     iobuf b;

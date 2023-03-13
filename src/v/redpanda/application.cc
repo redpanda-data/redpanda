@@ -678,6 +678,8 @@ void application::check_environment() {
     storage::directories::initialize(
       config::node().data_directory().as_sstring())
       .get();
+    cloud_storage::cache::initialize(config::node().cloud_storage_cache_path())
+      .get();
 
     if (config::shard_local_cfg().storage_strict_data_init()) {
         // Look for the special file that indicates a user intends
@@ -1193,17 +1195,32 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
     if (archival_storage_enabled()) {
         syschecks::systemd_message("Starting shadow indexing cache").get();
-        auto cache_path_cfg
-          = config::node().cloud_storage_cache_directory.value();
         auto redpanda_dir = config::node().data_directory.value();
-        std::filesystem::path cache_dir = redpanda_dir.path
-                                          / "cloud_storage_cache";
-        if (cache_path_cfg) {
-            cache_dir = std::filesystem::path(cache_path_cfg.value());
-        }
-        auto cache_size
-          = config::shard_local_cfg().cloud_storage_cache_size.value();
-        construct_service(shadow_index_cache, cache_dir, cache_size).get();
+        construct_service(
+          shadow_index_cache,
+          config::node().cloud_storage_cache_path(),
+          ss::sharded_parameter([] {
+              return config::shard_local_cfg().cloud_storage_cache_size.bind();
+          }))
+          .get();
+
+        // Hook up local_monitor to update storage_resources when disk state
+        // changes
+        auto cloud_storage_cache_disk_notification
+          = storage_node.local().register_disk_notification(
+            storage::node_api::disk_type::cache,
+            [this](
+              uint64_t total_space,
+              uint64_t free_space,
+              storage::disk_space_alert alert) {
+                return shadow_index_cache.local().notify_disk_status(
+                  total_space, free_space, alert);
+            });
+        _deferred.emplace_back([this, cloud_storage_cache_disk_notification] {
+            storage_node.local().unregister_disk_notification(
+              storage::node_api::disk_type::cache,
+              cloud_storage_cache_disk_notification);
+        });
 
         shadow_index_cache
           .invoke_on_all(
@@ -1526,6 +1543,7 @@ void application::wire_up_bootstrap_services() {
         .storage_space_alert_free_threshold_percent.bind(),
       config::shard_local_cfg().storage_min_free_bytes.bind(),
       config::node().data_directory().as_sstring(),
+      config::node().cloud_storage_cache_path().string(),
       std::ref(storage_node),
       std::ref(storage))
       .get();
@@ -1545,7 +1563,11 @@ void application::wire_up_bootstrap_services() {
     // Hook up local_monitor to update storage_resources when disk state changes
     auto storage_disk_notification
       = storage_node.local().register_disk_notification(
-        [this](uint64_t total_space, uint64_t free_space) {
+        storage::node_api::disk_type::data,
+        [this](
+          uint64_t total_space,
+          uint64_t free_space,
+          storage::disk_space_alert) {
             return storage.invoke_on_all(
               [total_space, free_space](storage::api& api) {
                   api.resources().update_allowance(total_space, free_space);
@@ -1553,7 +1575,7 @@ void application::wire_up_bootstrap_services() {
         });
     _deferred.emplace_back([this, storage_disk_notification] {
         storage_node.local().unregister_disk_notification(
-          storage_disk_notification);
+          storage::node_api::disk_type::data, storage_disk_notification);
     });
 
     // Start empty, populated from snapshot in start_bootstrap_services

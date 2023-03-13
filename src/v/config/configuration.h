@@ -289,7 +289,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> retention_local_target_ms_default;
 
     // Archival cache
-    property<size_t> cloud_storage_cache_size;
+    property<uint64_t> cloud_storage_cache_size;
     property<std::chrono::milliseconds> cloud_storage_cache_check_interval_ms;
     property<std::optional<uint32_t>> cloud_storage_max_readers_per_shard;
     property<std::optional<uint32_t>>

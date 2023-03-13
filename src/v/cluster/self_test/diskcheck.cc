@@ -67,22 +67,11 @@ ss::future<> diskcheck::verify_remaining_space(size_t dataset_size) {
     const auto disk_state = co_await _nlm.invoke_on(
       node::local_monitor::shard,
       [](node::local_monitor& lm) { return lm.get_state_cached(); });
-    const auto data_dir = config::node().data_directory.value();
-    auto found = std::find_if(
-      disk_state.disks.begin(),
-      disk_state.disks.end(),
-      [&data_dir](const auto& disk) {
-          return data_dir.as_sstring() == disk.path;
-      });
-    if (found == disk_state.disks.end()) {
-        throw diskcheck_exception(
-          fmt::format("Could not stat data_dir: {}", data_dir));
-    }
-    if (found->free <= dataset_size) {
+    if (disk_state.data_disk.free <= dataset_size) {
         throw diskcheck_option_out_of_range(fmt::format(
           "Not enough disk space to run benchmark, requested: {}, existing: {}",
           dataset_size,
-          found->free));
+          disk_state.data_disk.free));
     }
 }
 

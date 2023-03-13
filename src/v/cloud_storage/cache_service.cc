@@ -11,6 +11,7 @@
 #include "bytes/iostream.h"
 #include "cloud_storage/access_time_tracker.h"
 #include "cloud_storage/logger.h"
+#include "seastar/util/file.hh"
 #include "ssx/future-util.h"
 #include "storage/segment.h"
 #include "utils/gate_guard.h"
@@ -38,6 +39,9 @@ using namespace std::chrono_literals;
 namespace cloud_storage {
 
 static constexpr auto access_timer_period = 60s;
+static constexpr const char* access_time_tracker_file_name = "accesstime";
+static constexpr const char* access_time_tracker_file_name_tmp
+  = "accesstime.tmp";
 
 std::ostream& operator<<(std::ostream& o, cache_element_status s) {
     switch (s) {
@@ -56,16 +60,30 @@ std::ostream& operator<<(std::ostream& o, cache_element_status s) {
 
 static constexpr std::string_view tmp_extension{".part"};
 
-static constexpr ss::lowres_clock::duration min_clean_up_interval = 5000ms;
-
-cache::cache(std::filesystem::path cache_dir, size_t max_cache_size) noexcept
+cache::cache(
+  std::filesystem::path cache_dir, config::binding<uint64_t> max_bytes) noexcept
   : _cache_dir(std::move(cache_dir))
-  , _max_cache_size(max_cache_size)
+  , _max_bytes(max_bytes)
   , _cnt(0)
-  , _total_cleaned(0) {}
+  , _total_cleaned(0) {
+    if (ss::this_shard_id() == ss::shard_id{0}) {
+        _max_bytes.watch([this]() {
+            vlog(
+              cst_log.info,
+              "Cache max_bytes adjusted to {} (current size {})",
+              _max_bytes(),
+              _current_cache_size);
+            if (_current_cache_size > _max_bytes()) {
+                ssx::spawn_with_gate(_gate, [this]() {
+                    return ss::with_semaphore(
+                      _cleanup_sm, 1, [this]() { return trim_throttled(); });
+                });
+            }
+        });
+    }
+}
 
-ss::future<>
-cache::recursive_delete_empty_directory(const std::string_view& key) {
+ss::future<> cache::delete_file_and_empty_parents(const std::string_view& key) {
     gate_guard guard{_gate};
 
     std::filesystem::path normal_path
@@ -82,18 +100,16 @@ cache::recursive_delete_empty_directory(const std::string_view& key) {
           normal_cache_dir.native()));
     }
 
+    // Delete the specified file, and iterate through parents
+    // attempting to delete them (will delete empty directories,
+    // and then drop out when we hit a non-empty directory).
     while (normal_path != normal_cache_dir) {
         try {
-            // ss::remove_file removes only empty directory
+            vlog(cst_log.trace, "Removing {}", normal_path);
             co_await ss::remove_file(normal_path.native());
         } catch (std::filesystem::filesystem_error& e) {
             if (e.code() == std::errc::directory_not_empty) {
                 // we stop when we find a non-empty directory
-                vlog(
-                  cst_log.debug,
-                  "Could not delete directory {}: {}.",
-                  normal_path,
-                  e.what());
                 co_return;
             } else {
                 throw;
@@ -105,47 +121,49 @@ cache::recursive_delete_empty_directory(const std::string_view& key) {
 
 uint64_t cache::get_total_cleaned() { return _total_cleaned; }
 
-ss::future<> cache::consume_cache_space(size_t sz) {
+void cache::consume_cache_space(size_t sz) {
     vassert(ss::this_shard_id() == 0, "This method can only run on shard 0");
+    vlog(
+      cst_log.trace, "consume_cache_space: {} += {}", _current_cache_size, sz);
     _current_cache_size += sz;
     probe.set_size(_current_cache_size);
-    if (_current_cache_size > _max_cache_size) {
-        if (ss::lowres_clock::now() - _last_clean_up > min_clean_up_interval) {
-            auto units = ss::try_get_units(_cleanup_sm, 1);
-            if (units) {
-                co_await clean_up_cache();
-            }
-            // Otherwise the cleanup is already running
-        }
+    if (_current_cache_size > _max_bytes()) {
+        // This should not happen, because callers to put() should have used
+        // reserve_space() to ensure they stay within the cache size limit. This
+        // is not a fatal error in itself, so we do not assert, but emitting as
+        // an ERROR log ensures detection if we hit this path in our integration
+        // tests.
+        vlog(
+          cst_log.warn,
+          "Exceeded cache size limit!  (size={} reserved={} pending={} max={})",
+          _current_cache_size,
+          _reserved_cache_size,
+          _reservations_pending,
+          _max_bytes());
     }
 }
 
 ss::future<> cache::clean_up_at_start() {
     gate_guard guard{_gate};
-    auto [cache_size, candidates_for_deletion, empty_dirs]
+    auto [walked_size, candidates_for_deletion, empty_dirs]
       = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
-    probe.set_size(cache_size);
-    probe.set_num_files(candidates_for_deletion.size());
 
     // The state of the _access_time_tracker and the actual content of the
     // cache directory might diverge over time (if the user removes segment
     // files manually). We need to take this into account.
-    access_time_tracker tmp;
-    for (const auto& it : candidates_for_deletion) {
-        tmp.add_timestamp(
-          it.path, std::chrono::system_clock::time_point::min());
-    }
-    _access_time_tracker.remove_others(tmp);
-    _current_cache_size = cache_size;
+    co_await _access_time_tracker.trim(candidates_for_deletion);
 
+    uint64_t deleted_bytes{0};
+    size_t deleted_count{0};
     for (const auto& file_item : candidates_for_deletion) {
         auto filepath_to_remove = file_item.path;
 
         // delete only tmp files that are left from previous RedPanda run
         if (std::string_view(filepath_to_remove).ends_with(tmp_extension)) {
             try {
-                co_await recursive_delete_empty_directory(filepath_to_remove);
-                _total_cleaned += file_item.size;
+                co_await delete_file_and_empty_parents(filepath_to_remove);
+                deleted_bytes += file_item.size;
+                deleted_bytes++;
             } catch (std::exception& e) {
                 vlog(
                   cst_log.error,
@@ -170,35 +188,85 @@ ss::future<> cache::clean_up_at_start() {
         }
     }
 
+    _total_cleaned = deleted_bytes;
+    _current_cache_size = walked_size;
+    probe.set_size(_current_cache_size - deleted_bytes);
+    probe.set_num_files(candidates_for_deletion.size() - deleted_count);
+
     vlog(
       cst_log.debug,
-      "Clean up at start deleted files of total size {}.",
-      _total_cleaned);
+      "Clean up at start deleted {} files of total size {}.",
+      deleted_count,
+      deleted_bytes);
 }
 
-ss::future<> cache::clean_up_cache() {
+ss::future<> cache::trim_throttled() {
+    // If we trimmed very recently then do not do it immediately:
+    // this reduces load and improves chance of currently promoted
+    // segments finishing their read work before we demote their
+    // data from cache.
+    auto now = ss::lowres_clock::now();
+    auto interval
+      = config::shard_local_cfg().cloud_storage_cache_check_interval_ms();
+    if (now - _last_clean_up < interval) {
+        auto delay = interval - (now - _last_clean_up);
+        vlog(
+          cst_log.info,
+          "Cache trimming throttled, waiting {}ms",
+          std::chrono::duration_cast<std::chrono::milliseconds>(delay).count());
+        co_await ss::sleep_abortable(delay, _as);
+    }
+
+    co_await trim();
+}
+
+ss::future<> cache::trim() {
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
     gate_guard guard{_gate};
-    auto [current_cache_size, candidates_for_deletion, _]
+    auto [walked_cache_size, candidates_for_deletion, _]
       = co_await _walker.walk(_cache_dir.native(), _access_time_tracker);
-    _current_cache_size = current_cache_size;
-    probe.set_size(_current_cache_size);
-    probe.set_num_files(candidates_for_deletion.size());
 
     // Updating the access time tracker in case if some files were removed
     // from cache directory by the user manually.
-    access_time_tracker tmp;
-    for (const auto& it : candidates_for_deletion) {
-        tmp.add_timestamp(
-          it.path, std::chrono::system_clock::time_point::min());
+    co_await _access_time_tracker.trim(candidates_for_deletion);
+
+    // We aim to trim to within the upper size limit, and additionally
+    // free enough space for anyone waiting in `reserve_space` to proceed
+    auto target_size = uint64_t(
+      (_max_bytes() - std::min(_reservations_pending, _max_bytes()))
+      * _cache_size_low_watermark);
+
+    // Calculate total space used by tmp files: we will use this later
+    // when updating current_cache_size.
+    uint64_t tmp_files_size{0};
+    for (const auto& i : candidates_for_deletion) {
+        if (std::string_view(i.path).ends_with(tmp_extension)) {
+            tmp_files_size += i.size;
+        }
     }
-    _access_time_tracker.remove_others(tmp);
+
+    vlog(
+      cst_log.debug,
+      "trim: set target_size {}, size {}, walked size {} (max {}, "
+      "pending "
+      "{})",
+      target_size,
+      _current_cache_size,
+      walked_cache_size,
+      _max_bytes(),
+      _reservations_pending);
 
     uint64_t deleted_size = 0;
-    if (_current_cache_size >= _max_cache_size) {
-        auto size_to_delete
-          = _current_cache_size
-            - (_max_cache_size * (long double)_cache_size_low_watermark);
+    size_t deleted_count = 0;
+    if (_current_cache_size >= target_size) {
+        auto size_to_delete = _current_cache_size - target_size;
+
+        vlog(
+          cst_log.debug,
+          "trim: removing {} bytes ({}% of cache) to reach target {}",
+          size_to_delete,
+          (size_to_delete * 100) / _current_cache_size,
+          target_size);
 
         // Sort by atime for the subsequent LRU trimming loop
         std::sort(
@@ -206,14 +274,22 @@ ss::future<> cache::clean_up_cache() {
           candidates_for_deletion.end(),
           [](auto& a, auto& b) { return a.access_time < b.access_time; });
 
-        size_t i_to_delete = 0;
-        while (i_to_delete < candidates_for_deletion.size()
+        size_t candidate_i = 0;
+        while (candidate_i < candidates_for_deletion.size()
                && deleted_size < size_to_delete) {
-            auto filename_to_remove = candidates_for_deletion[i_to_delete].path;
+            auto& file_stat = candidates_for_deletion[candidate_i++];
+
+            // Skip the accesstime file, we should never delete this.
+            if (
+              file_stat.path
+              == (_cache_dir / access_time_tracker_file_name).string()) {
+                candidate_i++;
+                continue;
+            }
 
             // skip tmp files since someone may be writing to it
-            if (std::string_view(filename_to_remove).ends_with(tmp_extension)) {
-                i_to_delete++;
+            if (std::string_view(file_stat.path).ends_with(tmp_extension)) {
+                candidate_i++;
                 continue;
             }
 
@@ -221,20 +297,24 @@ ss::future<> cache::clean_up_cache() {
             // they refer to: we will clear them out along with the main log
             // segment file if they exist.
             if (
-              std::string_view(filename_to_remove).ends_with(".tx")
-              || std::string_view(filename_to_remove).ends_with(".index")) {
-                i_to_delete++;
+              std::string_view(file_stat.path).ends_with(".tx")
+              || std::string_view(file_stat.path).ends_with(".index")) {
+                candidate_i++;
                 continue;
             }
 
             try {
-                auto tx_file = fmt::format("{}.tx", filename_to_remove);
-                auto index_file = fmt::format("{}.index", filename_to_remove);
+                uint64_t this_segment_deleted_bytes{0};
+                auto tx_file = fmt::format("{}.tx", file_stat.path);
+                auto index_file = fmt::format("{}.index", file_stat.path);
 
                 try {
                     auto sz = co_await ss::file_size(tx_file);
                     co_await ss::remove_file(tx_file);
                     deleted_size += sz;
+                    this_segment_deleted_bytes += sz;
+                    deleted_count += 1;
+                    _current_cache_size -= sz;
                 } catch (std::filesystem::filesystem_error& e) {
                     if (e.code() != std::errc::no_such_file_or_directory) {
                         throw;
@@ -245,18 +325,31 @@ ss::future<> cache::clean_up_cache() {
                     auto sz = co_await ss::file_size(index_file);
                     co_await ss::remove_file(index_file);
                     deleted_size += sz;
+                    this_segment_deleted_bytes += sz;
+                    deleted_count += 1;
+                    _current_cache_size -= sz;
                 } catch (std::filesystem::filesystem_error& e) {
                     if (e.code() != std::errc::no_such_file_or_directory) {
                         throw;
                     }
                 }
 
-                co_await recursive_delete_empty_directory(filename_to_remove);
-                deleted_size += candidates_for_deletion[i_to_delete].size;
+                co_await delete_file_and_empty_parents(file_stat.path);
+                deleted_size += file_stat.size;
+                this_segment_deleted_bytes += file_stat.size;
+                _current_cache_size -= file_stat.size;
+                deleted_count += 1;
+
                 // Remove key if possible to make sure there is no resource
                 // leak
                 _access_time_tracker.remove_timestamp(
-                  std::string_view(filename_to_remove));
+                  std::string_view(file_stat.path));
+
+                vlog(
+                  cst_log.trace,
+                  "Reclaimed {} bytes from {}",
+                  this_segment_deleted_bytes,
+                  file_stat.path);
             } catch (const ss::gate_closed_exception&) {
                 // We are shutting down, stop iterating and propagate
                 throw;
@@ -264,21 +357,39 @@ ss::future<> cache::clean_up_cache() {
                 vlog(
                   cst_log.error,
                   "Cache eviction couldn't delete {}: {}.",
-                  filename_to_remove,
+                  file_stat.path,
                   e.what());
             }
-            i_to_delete++;
+            candidate_i++;
         }
-        _total_cleaned += deleted_size;
-        _current_cache_size -= deleted_size;
+
+        // We aim to keep current_cache_size continuously up to date, but
+        // in case of housekeeping issues, correct it if it apepars to have
+        // drifted too far from the result of our directory walk.
+        // This is a lower bound that permits current cache size to deviate
+        // by the amount of data currently in tmp files, because they may be
+        // updated while the walk is happening.
+        uint64_t cache_size_lower_bound = walked_cache_size - deleted_size
+                                          - tmp_files_size;
+        if (_current_cache_size < cache_size_lower_bound) {
+            vlog(
+              cst_log.debug,
+              "Correcting cache size drift ({} -> {})",
+              _current_cache_size,
+              cache_size_lower_bound);
+            _current_cache_size = cache_size_lower_bound;
+        }
+
         vlog(
           cst_log.debug,
-          "Cache eviction deleted {} files of total size {}.",
-          i_to_delete,
+          "trim: deleted {}/{} files of total size {}.",
+          deleted_count,
+          candidates_for_deletion.size(),
           deleted_size);
 
+        _total_cleaned += deleted_size;
         probe.set_size(_current_cache_size);
-        probe.set_num_files(candidates_for_deletion.size() - i_to_delete);
+        probe.set_num_files(candidates_for_deletion.size() - deleted_count);
     }
 
     _last_clean_up = ss::lowres_clock::now();
@@ -295,23 +406,26 @@ ss::future<> cache::load_access_time_tracker() {
     }
     vlog(
       cst_log.info, "Trying to hydrate access time tracker from '{}'", source);
-    if (auto cache_item = co_await get(source); cache_item.has_value()) {
+
+    ss::file_open_options open_opts;
+
+    ss::file_input_stream_options input_opts{};
+    input_opts.buffer_size = config::shard_local_cfg().storage_read_buffer_size;
+    input_opts.read_ahead
+      = config::shard_local_cfg().storage_read_readahead_count;
+    input_opts.io_priority_class
+      = priority_manager::local().shadow_indexing_priority();
+
+    auto exists = co_await ss::file_exists(source.string());
+    if (exists) {
         try {
-            ss::file_input_stream_options options{};
-            options.buffer_size
-              = config::shard_local_cfg().storage_read_buffer_size;
-            options.read_ahead
-              = config::shard_local_cfg().storage_read_readahead_count;
-            options.io_priority_class
-              = priority_manager::local().shadow_indexing_priority();
-            auto inp_stream = ss::make_file_input_stream(
-              cache_item->body, options);
-            iobuf state;
-            auto out_stream = make_iobuf_ref_output_stream(state);
-            co_await ss::copy(inp_stream, out_stream).finally([&inp_stream] {
-                return inp_stream.close();
-            });
-            _access_time_tracker.from_iobuf(std::move(state));
+            co_await ss::util::with_file_input_stream(
+              source,
+              [this](ss::input_stream<char>& in) {
+                  return _access_time_tracker.read(in);
+              },
+              open_opts,
+              input_opts);
         } catch (...) {
             vlog(
               cst_log.warn,
@@ -319,24 +433,39 @@ ss::future<> cache::load_access_time_tracker() {
               source,
               std::current_exception());
         }
-        co_await cache_item->body.close();
     } else {
         vlog(
           cst_log.info, "Access time tracker is not available at '{}'", source);
     }
 }
 
+/**
+ * Inner part of save_access_time_tracker, to be called with a file
+ * that the caller will close for us after we return.
+ */
+ss::future<> cache::_save_access_time_tracker(ss::file f) {
+    auto out = co_await ss::make_file_output_stream(std::move(f));
+    co_await _access_time_tracker.write(out);
+    co_await out.flush();
+}
+
 ss::future<> cache::save_access_time_tracker() {
     ss::gate::holder guard{_gate};
     vassert(ss::this_shard_id() == 0, "Method can only be invoked on shard 0");
-    auto source = _cache_dir / access_time_tracker_file_name;
-    auto index_stream = make_iobuf_input_stream(
-      _access_time_tracker.to_iobuf());
-    vlog(
-      cst_log.debug,
-      "current access_time_tracker size: {}",
-      _access_time_tracker.size());
-    co_await put(source.native(), index_stream);
+    auto tmp_path = _cache_dir / access_time_tracker_file_name_tmp;
+
+    ss::file_open_options open_opts;
+    co_await ss::with_file(
+      ss::open_file_dma(
+        tmp_path.string(),
+        ss::open_flags::create | ss::open_flags::wo,
+        open_opts),
+      [this](ss::file f) -> ss::future<> {
+          return _save_access_time_tracker(std::move(f));
+      });
+
+    auto final_path = _cache_dir / access_time_tracker_file_name;
+    co_await ss::rename_file(tmp_path.string(), final_path.string());
 }
 
 ss::future<> cache::maybe_save_access_time_tracker() {
@@ -369,6 +498,9 @@ ss::future<> cache::start() {
 ss::future<> cache::stop() {
     vlog(cst_log.debug, "Stopping archival cache service");
     _tracker_timer.cancel();
+    _as.request_abort();
+    _block_puts_cond.broken();
+    _cleanup_sm.broken();
     if (ss::this_shard_id() == 0) {
         co_await save_access_time_tracker();
     }
@@ -467,7 +599,7 @@ ss::future<> cache::put(
     ss::file tmp_cache_file;
     while (true) {
         try {
-            // recursive_delete_empty_directory may delete dir_path before
+            // delete_file_and_empty_parents may delete dir_path before
             // we open file, in this case we recreate dir_path and try again
             if (!co_await ss::file_exists(dir_path.string())) {
                 co_await ss::recursive_touch_directory(dir_path.string());
@@ -509,19 +641,17 @@ ss::future<> cache::put(
 
     co_await ss::rename_file(src, dest);
 
-    // Bump access time of the file
+    // Update housekeeping state on shard 0
     if (ss::this_shard_id() == 0) {
         _access_time_tracker.add_timestamp(
           dest, std::chrono::system_clock::now());
-        ssx::spawn_with_gate(_gate, [this, dest, put_size] {
-            return consume_cache_space(put_size);
-        });
+        consume_cache_space(put_size);
     } else {
         ssx::spawn_with_gate(_gate, [this, dest, put_size] {
             return container().invoke_on(0, [dest, put_size](cache& c) {
-                c._access_time_tracker.add_timestamp(
+                c.consume_cache_space(put_size);
+                return c._access_time_tracker.add_timestamp(
                   dest, std::chrono::system_clock::now());
-                return c.consume_cache_space(put_size);
             });
         });
     }
@@ -550,8 +680,12 @@ ss::future<> cache::invalidate(const std::filesystem::path& key) {
       "Trying to invalidate {} from archival cache.",
       key.native());
     try {
+        auto path = (_cache_dir / key).native();
+        auto stat = co_await ss::file_stat(path);
         _access_time_tracker.remove_timestamp(key.native());
-        co_await recursive_delete_empty_directory((_cache_dir / key).native());
+        co_await delete_file_and_empty_parents(path);
+        _current_cache_size -= stat.size;
+        probe.set_size(_current_cache_size);
     } catch (std::filesystem::filesystem_error& e) {
         if (e.code() == std::errc::no_such_file_or_directory) {
             vlog(
@@ -565,5 +699,188 @@ ss::future<> cache::invalidate(const std::filesystem::path& key) {
         }
     }
 };
+
+ss::future<space_reservation_guard> cache::reserve_space(size_t bytes) {
+    while (_block_puts) {
+        vlog(
+          cst_log.warn,
+          "Blocking tiered storage cache write, disk space critically low.");
+        co_await _block_puts_cond.wait();
+    }
+
+    co_await container().invoke_on(
+      0, [bytes](cache& c) { return c.do_reserve_space(bytes); });
+
+    vlog(cst_log.trace, "reserve_space: reserved {} bytes", bytes);
+
+    co_return space_reservation_guard(*this, bytes);
+}
+
+void cache::reserve_space_release(size_t bytes) {
+    vlog(
+      cst_log.trace,
+      "reserve_space_release: releasing {} reserved bytes",
+      bytes);
+
+    if (ss::this_shard_id() == ss::shard_id{0}) {
+        do_reserve_space_release(bytes);
+    } else {
+        ssx::spawn_with_gate(_gate, [this, bytes]() {
+            return container().invoke_on(0, [bytes](cache& c) {
+                return c.do_reserve_space_release(bytes);
+            });
+        });
+    }
+}
+
+void cache::do_reserve_space_release(size_t bytes) {
+    vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
+    vassert(_reserved_cache_size >= bytes, "Double free of reserved bytes?");
+    _reserved_cache_size -= bytes;
+}
+
+bool cache::may_reserve_space(size_t bytes) {
+    return _current_cache_size + _reserved_cache_size + bytes <= _max_bytes();
+}
+
+ss::future<> cache::do_reserve_space(size_t bytes) {
+    vassert(ss::this_shard_id() == ss::shard_id{0}, "Only call on shard 0");
+
+    if (may_reserve_space(bytes)) {
+        // Fast path: space was available.
+        _reserved_cache_size += bytes;
+        co_return;
+    }
+
+    // Slow path: register a pending need for bytes that will be used in
+    // clean_up_cache to make space available, and then proceed to cooperatively
+    // call clean_up_cache along with anyone else who is waiting.
+    _reservations_pending += bytes;
+
+    vlog(
+      cst_log.trace,
+      "Out of space reserving {} bytes (size={} "
+      "reserved={} pending={}): proceeding to maybe trim",
+      bytes,
+      _current_cache_size,
+      _reserved_cache_size,
+      _reservations_pending);
+
+    try {
+        auto units = co_await ss::get_units(_cleanup_sm, 1);
+        while (!may_reserve_space(bytes)) {
+            // After taking lock, there still isn't space: means someone else
+            // didn't take it and free space for us already, so we will do
+            // the trim.
+            co_await trim_throttled();
+
+            if (!may_reserve_space(bytes)) {
+                // Even after trimming, the reservation cannot be accommodated.
+                // This is unexpected: either something is wrong with the trim,
+                // or the requested bytes cannot fit into the max cache size.
+                // In this case, we log a warning and exceed the configured
+                // cache size limit, because the alternative would be to
+                // stall entirely.
+                vlog(
+                  cst_log.warn,
+                  "Failed to trim cache enough to reserve {} bytes (size={} "
+                  "reserved={} pending={})",
+                  bytes,
+                  _current_cache_size,
+                  _reserved_cache_size,
+                  _reservations_pending);
+
+                // If there is a lot of free space on the disk, and we already
+                // tried our best to trim, then we may exceed the cache size
+                // limit. Approximate "a lot" of free disk space as 10x the size
+                // of what we're trying to promote.
+                if (_free_space > bytes * 10) {
+                    vlog(
+                      cst_log.info,
+                      "Intentionally exceeding cache size limit {},"
+                      "there are {} bytes of free space on the cache disk",
+                      _max_bytes(),
+                      _free_space);
+
+                    // Deduct the amount by which we're about to violate the
+                    // cache allowance, in order to avoid many reservations
+                    // all skipping the cache limit based on the same apparent
+                    // free bytes.  This counter will get reset to ground
+                    // truth the next time we get a disk status notification.
+                    _free_space -= bytes;
+                    break;
+                } else {
+                    // No allowance, and the disk does not have a lot of
+                    // slack free space: we must wait.
+                    vlog(
+                      cst_log.debug,
+                      "Could not reserve {} bytes, waiting",
+                      bytes);
+
+                    // No explicit sleep needed: we will proceed around the
+                    // loop into trim_throttled, and sleep waiting for the
+                    // throttle period to expire.
+                }
+            }
+        }
+    } catch (...) {
+        _reservations_pending -= bytes;
+        throw;
+    }
+
+    _reservations_pending -= bytes;
+    _reserved_cache_size += bytes;
+}
+
+void cache::set_block_puts(bool block_puts) {
+    if (_block_puts && !block_puts) {
+        _block_puts_cond.signal();
+    }
+    _block_puts = block_puts;
+}
+
+void cache::notify_disk_status(
+  [[maybe_unused]] uint64_t total_space,
+  [[maybe_unused]] uint64_t free_space,
+  storage::disk_space_alert alert) {
+    vassert(ss::this_shard_id() == 0, "Called on wrong shard");
+
+    _free_space = free_space;
+
+    bool block_puts = (alert == storage::disk_space_alert::degraded);
+
+    if (block_puts && !_block_puts) {
+        // Start blocking: log, and propagate to other shards
+        vlog(
+          cst_log.warn,
+          "Tiered storage cache blocking segment promotions, disk space is "
+          "critically low.");
+        ssx::spawn_with_gate(_gate, [this, block_puts]() {
+            return container().invoke_on_all(
+              [block_puts](cache& c) { c.set_block_puts(block_puts); });
+        });
+    } else if (!block_puts && _block_puts) {
+        // Log on un-blocking
+        vlog(
+          cst_log.info,
+          "Tiered storage cache un-blocking promotions, disk space is no "
+          "longer critical.");
+    }
+}
+
+space_reservation_guard::~space_reservation_guard() {
+    if (_bytes) {
+        _cache.reserve_space_release(_bytes);
+    }
+}
+
+ss::future<> cache::initialize(std::filesystem::path cache_dir) {
+    // Create this up-front, we will need it even if cache is
+    // never used, e.g. when saving access time tracker.
+    if (!co_await ss::file_exists(cache_dir.string())) {
+        vlog(cst_log.info, "Creating cache directory {}", cache_dir);
+        co_await ss::recursive_touch_directory(cache_dir.string());
+    }
+}
 
 } // namespace cloud_storage

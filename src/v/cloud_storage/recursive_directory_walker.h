@@ -10,8 +10,8 @@
 
 #pragma once
 
-#include "cloud_storage/access_time_tracker.h"
 #include "seastarx.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
@@ -19,6 +19,8 @@
 #include <chrono>
 
 namespace cloud_storage {
+
+class access_time_tracker;
 
 struct file_list_item {
     std::chrono::system_clock::time_point access_time;
@@ -28,7 +30,7 @@ struct file_list_item {
 
 struct walk_result {
     uint64_t cache_size{0};
-    std::vector<file_list_item> regular_files;
+    fragmented_vector<file_list_item> regular_files;
     std::vector<ss::sstring> empty_dirs;
 };
 

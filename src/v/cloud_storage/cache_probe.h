@@ -26,7 +26,10 @@ public:
     void cached_get() { ++_num_cached_gets; }
     void miss_get() { ++_num_miss_gets; }
 
-    void set_size(uint64_t size) { _cur_size_bytes = size; }
+    void set_size(uint64_t size) {
+        _cur_size_bytes = size;
+        _hwm_size_bytes = std::max(_cur_size_bytes, _hwm_size_bytes);
+    }
     void set_num_files(uint64_t num_files) { _cur_num_files = num_files; }
     void put_started() { ++_cur_in_progress_files; }
     void put_ended() { --_cur_in_progress_files; }
@@ -38,6 +41,7 @@ private:
     uint64_t _num_miss_gets = 0;
 
     int64_t _cur_size_bytes = 0;
+    int64_t _hwm_size_bytes = 0;
     int64_t _cur_num_files = 0;
     int64_t _cur_in_progress_files = 0;
 

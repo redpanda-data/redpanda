@@ -133,24 +133,36 @@ FIXTURE_TEST(file_bigger_than_max_cache_size_deleted, cache_test_fixture) {
     auto data_string1 = create_data_string('a', 2_MiB + 1_KiB);
     put_into_cache(data_string1, KEY);
 
-    ss::sleep(ss::lowres_clock::duration(2s)).get();
+    trim_cache();
 
     BOOST_CHECK_EQUAL(2_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
 }
 
 FIXTURE_TEST(
   files_bigger_than_max_cache_size_oldest_deleted, cache_test_fixture) {
+    // put() calls are _not_ strictly capacity checked: we are circumventing
+    // the capacity checks that would usually happen in reserve_space()
     auto data_string1 = create_data_string('a', 1_MiB + 1_KiB);
     put_into_cache(data_string1, KEY);
     auto data_string2 = create_data_string('b', 1_MiB + 1_KiB);
-    ss::sleep(1s).get();
+    ss::sleep(1s).get(); // Sleep long enough to ensure low res atimes differ
     put_into_cache(data_string1, KEY2);
 
+    // Give backgrounded futures a chance to execute
     ss::sleep(ss::lowres_clock::duration(2s)).get();
 
-    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
+    // Our direct put() calls succeed and violate the cache capacity
+    BOOST_REQUIRE(ss::file_exists((CACHE_DIR / KEY).native()).get());
+    BOOST_REQUIRE(ss::file_exists((CACHE_DIR / KEY2).native()).get());
+
+    // A trim will delete the oldest.  We call this explicitly: ordinarily
+    // it would get called either periodically, or in the reserve_space path.
+    trim_cache();
+
     BOOST_REQUIRE(!ss::file_exists((CACHE_DIR / KEY).native()).get());
     BOOST_REQUIRE(ss::file_exists((CACHE_DIR / KEY2).native()).get());
+
+    BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
 }
 
 FIXTURE_TEST(cannot_put_tmp_file, cache_test_fixture) {
@@ -188,7 +200,7 @@ FIXTURE_TEST(eviction_cleans_directory, cache_test_fixture) {
     // this file will not be evicted
     put_into_cache(data_string2, key2);
 
-    ss::sleep(ss::lowres_clock::duration(2s)).get();
+    trim_cache();
 
     BOOST_CHECK_EQUAL(1_MiB + 1_KiB, sharded_cache.local().get_total_cleaned());
     BOOST_CHECK(!ss::file_exists((CACHE_DIR / key1).native()).get());
@@ -286,7 +298,7 @@ FIXTURE_TEST(put_outside_cache_dir_throws, cache_test_fixture) {
     BOOST_CHECK(!ss::file_exists((CACHE_DIR / key).native()).get());
 }
 
-static std::chrono::system_clock::time_point make_ts(int64_t val) {
+static std::chrono::system_clock::time_point make_ts(uint64_t val) {
     auto seconds = std::chrono::seconds(val);
     return std::chrono::system_clock::time_point(seconds);
 }
@@ -330,20 +342,42 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker) {
     }
 }
 
+static access_time_tracker serde_roundtrip(access_time_tracker& t) {
+    // Round trip
+    iobuf serialized;
+    auto out_stream = make_iobuf_ref_output_stream(serialized);
+    t.write(out_stream).get();
+    out_stream.flush().get();
+
+    access_time_tracker out;
+    try {
+        auto serialized_copy = serialized.copy();
+        auto in_stream = make_iobuf_input_stream(std::move(serialized_copy));
+        out.read(in_stream).get();
+
+    } catch (...) {
+        // Dump serialized buffer on failure.
+        std::cerr << serialized.hexdump(4096) << std::endl;
+        throw;
+    }
+
+    return out;
+}
+
 SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
     access_time_tracker in;
 
     std::vector<std::chrono::system_clock::time_point> timestamps = {
-      make_ts(1653000000),
-      make_ts(1653000001),
-      make_ts(1653000002),
-      make_ts(1653000003),
-      make_ts(1653000004),
-      make_ts(1653000005),
-      make_ts(1653000006),
-      make_ts(1653000007),
-      make_ts(1653000008),
-      make_ts(1653000009),
+      make_ts(0xbeefed00),
+      make_ts(0xbeefed01),
+      make_ts(0xbeefed02),
+      make_ts(0xbeefed03),
+      make_ts(0xbeefed04),
+      make_ts(0xbeefed05),
+      make_ts(0xbeefed06),
+      make_ts(0xbeefed07),
+      make_ts(0xbeefed08),
+      make_ts(0xbeefed09),
     };
 
     std::vector<std::string_view> names = {
@@ -363,13 +397,27 @@ SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer) {
         in.add_timestamp(names[i], timestamps[i]);
     }
 
-    access_time_tracker out;
-    out.from_iobuf(in.to_iobuf());
+    auto out = serde_roundtrip(in);
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < timestamps.size(); i++) {
         auto ts = out.estimate_timestamp(names[i]);
+        BOOST_REQUIRE(ts.has_value());
         BOOST_REQUIRE(ts.value() >= timestamps[i]);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_access_time_tracker_serializer_large) {
+    access_time_tracker in;
+
+    // Serialization uses chunking of 2048 items: use more items than this
+    // to verify the chunking code works properly;
+    uint32_t item_count = 7777;
+    for (uint32_t i = 0; i < item_count; i++) {
+        in.add_timestamp(fmt::format("key{:08x}", i), make_ts(i));
+    }
+
+    auto out = serde_roundtrip(in);
+    BOOST_REQUIRE_EQUAL(out.size(), item_count);
 }
 
 /**
@@ -410,8 +458,6 @@ FIXTURE_TEST(test_clean_up_on_start, cache_test_fixture) {
  * to be deleted.
  */
 FIXTURE_TEST(test_clean_up_on_start_empty, cache_test_fixture) {
-    ss::make_directory(CACHE_DIR.native()).get();
-
     clean_up_at_start().get();
 
     BOOST_CHECK(ss::file_exists(CACHE_DIR.native()).get());

@@ -79,6 +79,18 @@ public:
         return data_directory().path / "syschecks";
     }
 
+    /**
+     * Return the configured cache path if set, otherwise a default
+     * path within the data directory.
+     */
+    std::filesystem::path cloud_storage_cache_path() const {
+        if (cloud_storage_cache_directory().has_value()) {
+            return std::string(cloud_storage_cache_directory().value());
+        } else {
+            return data_directory().path / "cloud_storage_cache";
+        }
+    }
+
     std::vector<model::broker_endpoint> advertised_kafka_api() const {
         if (_advertised_kafka_api().empty()) {
             std::vector<model::broker_endpoint> eps;

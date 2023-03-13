@@ -45,6 +45,10 @@ struct envelope {
     static constexpr auto redpanda_inherits_from_envelope = true;
 };
 
+// Overhead of the envelope in bytes: 4 bytes of size, one byte of version,
+// one byte of compat version.
+static constexpr size_t envelope_header_size = 6;
+
 /**
  * Checksum envelope uses CRC32c to check data integrity.
  * The idea is that CRC32 has hardware support and is faster than
@@ -61,6 +65,11 @@ struct checksum_envelope {
     static constexpr auto redpanda_inherits_from_envelope = true;
     static constexpr auto redpanda_serde_build_checksum = true;
 };
+
+// Overhead of the envelope in bytes: a checksummed envelope is
+// a regular envelope plus 4 bytes of checksum.
+static constexpr size_t checksum_envelope_header_size = envelope_header_size
+                                                        + 4;
 
 template<typename T, typename Version = const serde::version_t&>
 concept is_envelope = requires {

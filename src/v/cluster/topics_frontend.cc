@@ -1106,10 +1106,12 @@ ss::future<topics_frontend::capacity_info> topics_frontend::get_health_info(
     for (const auto& node_report : health_report.value().node_reports) {
         uint64_t total = 0;
         uint64_t free = 0;
-        for (const auto& disk : node_report.local_state.disks) {
-            total += disk.total;
-            free += disk.free;
-        }
+
+        // This health report is just on the data disk.  If the cache has
+        // a separate disk, it is not reflected in the node health.
+        total += node_report.local_state.data_disk.total;
+        free += node_report.local_state.data_disk.free;
+
         info.node_disk_reports.emplace(
           node_report.id, node_disk_space(node_report.id, total, total - free));
     }

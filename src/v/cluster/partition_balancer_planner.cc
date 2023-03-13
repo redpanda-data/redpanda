@@ -124,12 +124,9 @@ void partition_balancer_planner::init_per_node_state(
     }
 
     for (const auto& node_report : health_report.node_reports) {
-        uint64_t total = 0;
-        uint64_t free = 0;
-        for (const auto& disk : node_report.local_state.disks) {
-            total += disk.total;
-            free += disk.free;
-        }
+        const uint64_t total = node_report.local_state.data_disk.total;
+        const uint64_t free = node_report.local_state.data_disk.free;
+
         rrs.node_disk_reports.emplace(
           node_report.id, node_disk_space(node_report.id, total, total - free));
     }

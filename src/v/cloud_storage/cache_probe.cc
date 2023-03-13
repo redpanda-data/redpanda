@@ -68,6 +68,12 @@ cache_probe::cache_probe() {
                   sm::description("Sum of size of cached objects."))
                   .aggregate(aggregate_labels),
                 sm::make_gauge(
+                  "hwm_size_bytes",
+                  [this] { return _hwm_size_bytes; },
+                  sm::description(
+                    "High watermark of sum of size of cached objects."))
+                  .aggregate(aggregate_labels),
+                sm::make_gauge(
                   "files",
                   [this] { return _cur_num_files; },
                   sm::description("Number of objects in cache."))
