@@ -71,16 +71,6 @@ set_source_files_properties(
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
 
 rp_test(
-  FIXTURE_TEST
-  BINARY_NAME cluster_partition_moving
-  SOURCES partition_moving_test.cc
-  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
-  DEFINITIONS SEASTAR_TESTING_MAIN
-  # disabled for issue #2909
-  LABELS cluster disable_on_ci
-)
-
-rp_test(
   UNIT_TEST
   BINARY_NAME leader_balancer_test
   SOURCES leader_balancer_test.cc
