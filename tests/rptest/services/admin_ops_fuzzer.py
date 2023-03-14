@@ -33,7 +33,7 @@ class OperationCtx:
         return RpkTool(self.redpanda)
 
     def admin(self):
-        return Admin(self.redpanda)
+        return Admin(self.redpanda, retry_codes=[503, 504])
 
 
 # Base class for operation

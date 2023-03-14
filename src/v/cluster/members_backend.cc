@@ -852,7 +852,7 @@ ss::future<std::error_code> members_backend::reconcile() {
               "[update: {}] decommissioning finished, removing node from "
               "cluster",
               meta.update);
-            co_await do_remove_node(meta.update->id, meta.update->offset);
+            co_await do_remove_node(meta.update->id);
         } else {
             // Decommissioning still in progress
             vlog(
@@ -885,13 +885,12 @@ ss::future<std::error_code> members_backend::reconcile() {
     co_return errc::update_in_progress;
 }
 
-ss::future<std::error_code> members_backend::do_remove_node(
-  model::node_id id, model::offset update_offset) {
-    if (_features.local().is_active(
+ss::future<std::error_code> members_backend::do_remove_node(model::node_id id) {
+    if (!_features.local().is_active(
           features::feature::membership_change_controller_cmds)) {
-        return _members_frontend.local().remove_node(id);
+        return _raft0->remove_member(id, model::revision_id{0});
     }
-    return _raft0->remove_member(id, model::revision_id(update_offset));
+    return _members_frontend.local().remove_node(id);
 }
 
 bool members_backend::should_stop_rebalancing_update(
@@ -1206,15 +1205,23 @@ void members_backend::handle_reallocation_finished(model::node_id id) {
 }
 
 ss::future<> members_backend::reconcile_raft0_updates() {
+    vlog(clusterlog.trace, "starting raft 0 reconciliation");
     while (!_as.local().abort_requested()) {
         co_await _new_updates.wait([this] { return !_raft0_updates.empty(); });
-
+        vlog(
+          clusterlog.trace, "raft_0 updates_size: {}", _raft0_updates.size());
         // check the _raft0_updates as the predicate may not longer hold
         if (_raft0_updates.empty()) {
             continue;
         }
 
         auto update = _raft0_updates.front();
+
+        if (!update.need_raft0_update) {
+            vlog(clusterlog.trace, "skipping raft 0 update: {}", update);
+            _raft0_updates.pop_front();
+            continue;
+        }
         vlog(clusterlog.trace, "processing raft 0 update: {}", update);
         auto err = co_await update_raft0_configuration(update);
         if (err) {

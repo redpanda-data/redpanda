@@ -11,6 +11,8 @@
 
 #include "cluster/scheduling/allocation_node.h"
 
+#include "cluster/logger.h"
+
 #include <fmt/ranges.h>
 
 namespace cluster {
@@ -54,7 +56,14 @@ allocation_node::allocate(const partition_allocation_domain domain) {
     (*it)++; // increment the weights
     _allocated_partitions++;
     ++_allocated_domain_partitions[domain];
-    return std::distance(_weights.begin(), it);
+    const ss::shard_id core = std::distance(_weights.begin(), it);
+    vlog(
+      clusterlog.trace,
+      "allocation [node: {}, core: {}], total allocated: {}",
+      _id,
+      core,
+      _allocated_partitions);
+    return core;
 }
 
 void allocation_node::deallocate_on(
@@ -83,6 +92,12 @@ void allocation_node::deallocate_on(
 
     _allocated_partitions--;
     _weights[core]--;
+    vlog(
+      clusterlog.trace,
+      "deallocation [node: {}, core: {}], total allocated: {}",
+      _id,
+      core,
+      _allocated_partitions);
 }
 
 void allocation_node::allocate_on(
@@ -92,9 +107,16 @@ void allocation_node::allocate_on(
       "Tried to allocate a non-existing core:{} - {}",
       core,
       *this);
+
     _weights[core]++;
     _allocated_partitions++;
     ++_allocated_domain_partitions[domain];
+    vlog(
+      clusterlog.trace,
+      "allocation [node: {}, core: {}], total allocated: {}",
+      _id,
+      core,
+      _allocated_partitions);
 }
 
 void allocation_node::update_core_count(uint32_t core_count) {

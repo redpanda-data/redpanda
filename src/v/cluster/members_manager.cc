@@ -283,8 +283,7 @@ members_manager::apply_update(model::record_batch b) {
                     f = _update_queue.push_eventually(node_update{
                       .id = id,
                       .type = node_update_type::decommissioned,
-                      .offset = update_offset,
-                    });
+                      .offset = update_offset});
                 }
                 return f.then([error] { return error; });
             });
@@ -448,6 +447,8 @@ ss::future<std::error_code> members_manager::do_apply_add_node(
       .id = cmd.value.id(),
       .type = node_update_type::added,
       .offset = update_offset,
+      .need_raft0_update = update_offset
+                           >= _first_node_operation_command_offset,
     });
     co_return errc::success;
 }
@@ -508,7 +509,10 @@ ss::future<std::error_code> members_manager::do_apply_remove_node(
     co_await _update_queue.push_eventually(node_update{
       .id = cmd.key,
       .type = node_update_type::removed,
-      .offset = update_offset});
+      .offset = update_offset,
+      .need_raft0_update = update_offset
+                           >= _first_node_operation_command_offset,
+    });
 
     co_return errc::success;
 }
@@ -607,6 +611,7 @@ ss::future<> members_manager::set_initial_state(
           .id = b.id(),
           .type = node_update_type::added,
           .offset = model::offset{0},
+          .need_raft0_update = false,
         });
     }
 }
@@ -1319,7 +1324,12 @@ operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
 std::ostream&
 operator<<(std::ostream& o, const members_manager::node_update& u) {
     fmt::print(
-      o, "{{node_id: {}, type: {}, offset: {}}}", u.id, u.type, u.offset);
+      o,
+      "{{node_id: {}, type: {}, offset: {}, update_raft0: {}}}",
+      u.id,
+      u.type,
+      u.offset,
+      u.need_raft0_update);
     return o;
 }
 

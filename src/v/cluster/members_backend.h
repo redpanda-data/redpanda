@@ -154,7 +154,7 @@ private:
       remove_from_raft0(model::node_id, model::revision_id);
 
     ss::future<> reconcile_raft0_updates();
-    ss::future<std::error_code> do_remove_node(model::node_id, model::offset);
+    ss::future<std::error_code> do_remove_node(model::node_id);
 
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<topic_table>& _topics;
