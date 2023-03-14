@@ -36,6 +36,7 @@ class MetricsReporterTest(RedpandaTest):
                 "metrics_reporter_url": f"{self.http.url}/metrics",
                 "retention_bytes": 20000,
             })
+        self.redpanda.set_environment({"REDPANDA_ENVIRONMENT": "test"})
 
     def setUp(self):
         # Start HTTP server before redpanda
@@ -131,6 +132,7 @@ class MetricsReporterTest(RedpandaTest):
         assert last["config"]["auto_create_topics_enabled"] == False
         assert "metrics_reporter_tick_interval" not in last["config"]
         assert last["config"]["log_message_timestamp_type"] == "CreateTime"
+        assert last["redpanda_environment"] == "test"
 
 
 class MultiNodeMetricsReporterTest(MetricsReporterTest):
