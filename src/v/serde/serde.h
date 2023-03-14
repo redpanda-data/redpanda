@@ -235,9 +235,6 @@ void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
 template<typename T>
 void write(iobuf& out, std::optional<T> t);
 
-template<typename Tag>
-void write(iobuf& out, ss::bool_class<Tag> t);
-
 inline void write(iobuf& out, bytes t);
 
 template<typename T, size_t fragment_size>
@@ -346,11 +343,6 @@ void write(iobuf& out, std::optional<T> t) {
     } else {
         write(out, false);
     }
-}
-
-template<typename Tag>
-void write(iobuf& out, ss::bool_class<Tag> t) {
-    write(out, static_cast<int8_t>(bool(t)));
 }
 
 inline void write(iobuf& out, bytes t) {
@@ -634,8 +626,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         }
     } else if constexpr (reflection::is_rp_named_type<Type>) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
-    } else if constexpr (reflection::is_ss_bool_class<Type>) {
-        t = Type{read_nested<int8_t>(in, bytes_left_limit) != 0};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (std::is_same_v<Type, ss::sstring>) {
@@ -956,4 +946,5 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 }
 
 } // namespace serde
+#include "serde/rw/bool_class.h"
 #include "serde/rw/scalar.h"
