@@ -8,6 +8,8 @@
 # by the Apache License, Version 2.0
 
 import random
+
+import requests
 from rptest.clients.kafka_cat import KafkaCat
 from time import sleep
 from rptest.clients.default import DefaultClient
@@ -161,6 +163,47 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self._check_state_consistent(decommissioned_id)
 
+    def _decommission(self, node_id, node=None):
+        def decommissioned():
+            try:
+                brokers = self.admin.get_brokers()
+                for b in brokers:
+                    if b['node_id'] == node_id and b[
+                            'membership_status'] == 'draining':
+                        return True
+
+                r = self.admin.decommission_broker(node_id, node=node)
+                return r.status_code == 200
+            except requests.exceptions.RetryError:
+                return False
+            except requests.exceptions.ConnectionError:
+                return False
+            except requests.exceptions.HTTPError:
+                return False
+
+        wait_until(decommissioned, 30, 1)
+
+    def _recommission(self, node_id, node=None):
+        def recommissioned():
+            try:
+
+                brokers = self.admin.get_brokers()
+                for b in brokers:
+                    if b['node_id'] == node_id and b[
+                            'membership_status'] == 'active':
+                        return True
+
+                r = self.admin.recommission_broker(node_id, node=node)
+                return r.status_code == 200
+            except requests.exceptions.RetryError:
+                return False
+            except requests.exceptions.ConnectionError:
+                return False
+            except requests.exceptions.HTTPError:
+                return False
+
+        wait_until(recommissioned, 30, 1)
+
     @cluster(
         num_nodes=6,
         # A decom can look like a restart in terms of logs from peers dropping
@@ -178,7 +221,7 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission = random.choice(self.redpanda.nodes)
         to_decommission_id = self.redpanda.idx(to_decommission)
         self.logger.info(f"decommissioning node: {to_decommission_id}", )
-        self.admin.decommission_broker(to_decommission_id)
+        self._decommission(to_decommission_id)
         if delete_topic:
             self.client().delete_topic(self.topic)
         self._wait_for_node_removed(to_decommission_id)
@@ -208,7 +251,7 @@ class NodesDecommissioningTest(EndToEndTest):
         node_id = self.redpanda.idx(to_decommission)
         self.redpanda.stop_node(node=to_decommission)
         self.logger.info(f"decommissioning node: {node_id}", )
-        self.admin.decommission_broker(id=node_id)
+        self._decommission(node_id)
 
         self._wait_for_node_removed(node_id)
 
@@ -258,7 +301,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
         self.logger.info(f"decommissioning node: {to_decommission}", )
-        self.admin.decommission_broker(to_decommission)
+        self._decommission(to_decommission)
 
         # adjust recovery throttle to make sure moves will finish
         self._set_recovery_rate(2 << 30)
@@ -285,7 +328,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self._set_recovery_rate(1)
 
         self.logger.info(f"decommissioning node: {to_decommission}", )
-        self.admin.decommission_broker(to_decommission)
+        self._decommission(to_decommission)
 
         self._wait_until_status(to_decommission, 'draining')
 
@@ -294,7 +337,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
         # recommission broker
-        self.admin.recommission_broker(to_decommission)
+        self._recommission(to_decommission)
         self._wait_until_status(to_decommission, 'active')
 
         wait_until(lambda: self._partitions_not_moving(),
@@ -317,7 +360,7 @@ class NodesDecommissioningTest(EndToEndTest):
         self._set_recovery_rate(1)
 
         self.logger.info(f"decommissioning node: {to_decommission}", )
-        self.admin.decommission_broker(to_decommission)
+        self._decommission(to_decommission)
 
         self._wait_until_status(to_decommission, 'draining')
 
@@ -326,14 +369,14 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
         # recommission broker
-        self.admin.recommission_broker(to_decommission)
+        self._recommission(to_decommission)
         self._wait_until_status(to_decommission, 'active')
 
         wait_until(lambda: self._partitions_not_moving(),
                    timeout_sec=15,
                    backoff_sec=1)
 
-        self.admin.decommission_broker(to_decommission)
+        self._decommission(to_decommission)
 
         self._wait_until_status(to_decommission, 'draining')
         self._set_recovery_rate(1024 * 1024 * 1024)
@@ -376,7 +419,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
         self.logger.info(f"decommissioning node: {to_decommission}", )
-        self.admin.decommission_broker(to_decommission)
+        self._decommission(to_decommission)
 
         self._wait_until_status(to_decommission, 'draining')
 
@@ -385,7 +428,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
         # recommission broker
-        self.admin.recommission_broker(to_decommission)
+        self._recommission(to_decommission)
         self._wait_until_status(to_decommission, 'active')
 
         def one_left_moving():
@@ -419,9 +462,9 @@ class NodesDecommissioningTest(EndToEndTest):
         self._set_recovery_rate(1)
 
         self.logger.info(f"decommissioning node: {to_decommission_1}", )
-        self.admin.decommission_broker(to_decommission_1, node=survivor_node)
+        self._decommission(to_decommission_1, node=survivor_node)
         self.logger.info(f"decommissioning node: {to_decommission_2}", )
-        self.admin.decommission_broker(to_decommission_2, node=survivor_node)
+        self._decommission(to_decommission_2, node=survivor_node)
 
         self._wait_until_status(to_decommission_1,
                                 'draining',
@@ -435,7 +478,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
         # recommission broker that was decommissioned first
-        self.admin.recommission_broker(to_decommission_1, node=survivor_node)
+        self._recommission(to_decommission_1, node=survivor_node)
         self._wait_until_status(to_decommission_1,
                                 'active',
                                 api_node=survivor_node)
@@ -486,7 +529,7 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
 
         # request decommission of newly added broker
-        self.admin.decommission_broker(to_decommission_id, node=first_node)
+        self._decommission(to_decommission_id, node=first_node)
 
         # stop the node that is being decommissioned
         if shutdown_decommissioned:
@@ -519,7 +562,7 @@ class NodesDecommissioningTest(EndToEndTest):
 
         survivor_node = self._not_decommissioned_node(node_id)
         self.logger.info(f"decommissioning node: {node_id}", )
-        self.admin.decommission_broker(id=node_id)
+        self._decommission(node_id)
 
         # wait for some partitions to start moving
         wait_until(lambda: self._partitions_moving(node=survivor_node),
@@ -563,7 +606,7 @@ class NodesDecommissioningTest(EndToEndTest):
             # set recovery rate to small value to prevent node
             # from finishing decommission operation
             self._set_recovery_rate(1)
-            self.admin.decommission_broker(id=node_id)
+            self._decommission(node_id)
             wait_until(lambda: self._partitions_moving(node=survivor_node) or
                        self._node_removed(node_id, survivor_node),
                        timeout_sec=60,
@@ -571,13 +614,13 @@ class NodesDecommissioningTest(EndToEndTest):
             if self._node_removed(node_id, survivor_node):
                 break
             self.logger.info(f"recommissioning node: {node_id}", )
-            self.admin.recommission_broker(id=node_id)
+            self._recommission(node_id)
             self._set_recovery_rate(100 * 1024 * 1024)
 
         if not self._node_removed(node_id, survivor_node):
             # finally decommission node
             self.logger.info(f"decommissioning node: {node_id}", )
-            self.admin.decommission_broker(id=node_id)
+            self._decommission(node_id)
 
             self._wait_for_node_removed(node_id)
 
@@ -621,7 +664,7 @@ class NodesDecommissioningTest(EndToEndTest):
                 self.logger.info(f"decommissioning node: {id}, iteration: {i}")
 
                 decom_node = node_by_id(id)
-                self.admin.decommission_broker(id)
+                self._decommission(id)
                 self._wait_for_node_removed(id)
 
                 def has_partitions():
@@ -649,7 +692,7 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission = self.redpanda.nodes[-1]
         to_decommission_id = self.redpanda.node_id(to_decommission)
         self.logger.info(f"decommissioning node: {to_decommission_id}")
-        self.admin.decommission_broker(to_decommission_id)
+        self._decommission(to_decommission_id)
         self._wait_for_node_removed(to_decommission_id)
 
         # restart decommissioned node without cleaning up the data directory,
