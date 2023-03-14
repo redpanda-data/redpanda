@@ -888,3 +888,7 @@ class Admin:
         return self._request("post",
                              "debug/refresh_disk_health_info",
                              node=node)
+
+    def get_partition_cloud_storage_status(self, topic, partition):
+        return self._request(
+            "GET", f"cloud_storage/status/{topic}/{partition}").json()
