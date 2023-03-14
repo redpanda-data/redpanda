@@ -399,6 +399,9 @@ private:
     ss::future<cloud_storage::upload_result>
     delete_segment(const remote_segment_path& path);
 
+    /// If true, we are holding up trimming of local storage
+    bool local_storage_pressure() const;
+
     void update_probe();
 
     /// Return true if archival metadata can be replicated.

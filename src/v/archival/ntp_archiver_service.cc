@@ -721,9 +721,10 @@ ss::future<bool> ntp_archiver::maybe_upload_manifest() {
 
     // Do not upload if interval has not elapsed.  The upload loop will call
     // us again periodically and we will eventually upload when we pass the
-    // interval.
+    // interval.  Make an exception if we are under local storage pressure,
+    // and skip the interval wait in this case.
     if (
-      _manifest_upload_interval().has_value()
+      !local_storage_pressure() && _manifest_upload_interval().has_value()
       && ss::lowres_clock::now() - _last_manifest_upload_time
            < _manifest_upload_interval().value()) {
         co_return false;
@@ -1898,6 +1899,14 @@ void ntp_archiver::complete_transfer_leadership() {
       _uploads_active.current());
     _paused = false;
     _leader_cond.signal();
+}
+
+bool ntp_archiver::local_storage_pressure() const {
+    auto eviction_offset = _parent.eviction_requested_offset();
+
+    return eviction_offset.has_value()
+           && _parent.archival_meta_stm()->get_last_clean_at()
+                <= eviction_offset.value();
 }
 
 } // namespace archival
