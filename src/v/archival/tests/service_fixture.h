@@ -36,7 +36,8 @@ struct segment_desc {
     model::ntp ntp;
     model::offset base_offset;
     model::term_id term;
-    std::optional<size_t> num_batches;
+    std::optional<size_t> num_records;
+    std::optional<size_t> records_per_batch;
     std::optional<model::timestamp> timestamp;
 };
 
@@ -111,8 +112,7 @@ public:
     void verify_segments(
       const model::ntp& ntp,
       const std::vector<archival::segment_name>& names,
-      const ss::sstring& expected,
-      size_t expected_size);
+      const ss::sstring& expected);
 
     /// Verify manifest using log_manager's state,
     /// find matching segments and check the fields.
@@ -201,7 +201,8 @@ void upload_and_verify(
   archival::ntp_archiver::batch_result,
   std::optional<model::offset> lso = std::nullopt);
 
-/// Creates num_batches with a single record each, used to fit segments close to
-/// each other without gaps.
-segment_layout write_random_batches_with_single_record(
-  ss::lw_shared_ptr<storage::segment> seg, size_t num_batches);
+segment_layout write_random_batches(
+  ss::lw_shared_ptr<storage::segment> seg,
+  size_t records = 1,
+  size_t records_per_batch = 1,
+  std::optional<model::timestamp> timestamp = std::nullopt);

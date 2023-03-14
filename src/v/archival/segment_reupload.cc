@@ -233,8 +233,41 @@ const storage::ntp_config* segment_collector::ntp_cfg() const {
     return _ntp_cfg;
 }
 
-bool segment_collector::can_replace_manifest_segment() const {
-    return _can_replace_manifest_segment && _begin_inclusive < _end_inclusive;
+bool segment_collector::should_replace_manifest_segment() const {
+    const bool valid_collection = _can_replace_manifest_segment
+                                  && _begin_inclusive < _end_inclusive;
+
+    // If we have selected only one segment for collection, ensure
+    // that its compacted size is smaller than the size associated
+    // with the selected segment in the manifest. This guards against,
+    // name clashing between the existing segment and the re-uploaded segment.
+    if (valid_collection && _segments.size() == 1) {
+        auto segment_to_replace = _manifest.segment_containing(
+          _begin_inclusive);
+
+        // This branch is *not* taken if the begin and/or end offsets of the
+        // collected range are in a manifest gap. In that scenario, a name
+        // clash is not possible.
+        if (
+          segment_to_replace != _manifest.end()
+          && _begin_inclusive == segment_to_replace->second.base_offset
+          && _end_inclusive == segment_to_replace->second.committed_offset) {
+            const bool should = _collected_size
+                                < segment_to_replace->second.size_bytes;
+
+            if (!should) {
+                vlog(
+                  archival_log.debug,
+                  "Skipping re-upload of compacted segment as its size has "
+                  "not decreased as a result of self-compaction: {}",
+                  *(_segments.front()));
+            }
+
+            return should;
+        }
+    }
+
+    return valid_collection;
 }
 
 cloud_storage::segment_name segment_collector::adjust_segment_name() const {
