@@ -211,9 +211,8 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.run_consumer_validation(enable_compaction=True)
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
-        s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
-                                                                  partition=0,
-                                                                  n=1)
+        s3_snapshot.assert_at_least_n_uploaded_segments_compacted(
+            self.topic, partition=0, revision=None, n=1)
         s3_snapshot.assert_segments_replaced(self.topic, partition=0)
 
     @skip_debug_mode
@@ -244,9 +243,8 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         self.run_consumer_validation(enable_compaction=True)
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
-        s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
-                                                                  partition=0,
-                                                                  n=1)
+        s3_snapshot.assert_at_least_n_uploaded_segments_compacted(
+            self.topic, partition=0, revision=None, n=1)
         s3_snapshot.assert_segments_replaced(self.topic, partition=0)
 
 
