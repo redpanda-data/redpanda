@@ -135,6 +135,18 @@ public:
         return _raft->log().offsets().dirty_offset;
     }
 
+    /// Return the offset up to which the storage layer would like to
+    /// prefix truncate the log, if any.  This may be consumed as an indicator
+    /// that any truncation-delaying activitiy (like uploading to tiered
+    /// storage) could be expedited to enable local disk space to be reclaimed.
+    std::optional<model::offset> eviction_requested_offset() {
+        if (_log_eviction_stm) {
+            return _log_eviction_stm->eviction_requested_offset();
+        } else {
+            return std::nullopt;
+        }
+    }
+
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     storage::log log() const { return _raft->log(); }

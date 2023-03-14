@@ -45,6 +45,16 @@ public:
 
     ss::future<> stop();
 
+    /// Return the offset up to which the storage layer would like to
+    /// prefix truncate the log, if any.
+    std::optional<model::offset> eviction_requested_offset() const {
+        if (_requested_eviction_offset == model::offset{}) {
+            return std::nullopt;
+        } else {
+            return _requested_eviction_offset;
+        }
+    }
+
 private:
     ss::future<> handle_deletion_notification(model::offset);
     void monitor_log_eviction();
@@ -55,6 +65,7 @@ private:
     ss::abort_source& _as;
     ss::gate _gate;
     model::offset _previous_eviction_offset;
+    model::offset _requested_eviction_offset;
 };
 
 } // namespace raft
