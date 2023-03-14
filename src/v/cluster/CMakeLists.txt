@@ -101,6 +101,7 @@ v_cc_library(
     controller_probe.cc
     controller_log_limiter.cc
     controller_stm.cc
+    controller_snapshot.cc
     controller.cc
     partition.cc
     partition_probe.cc
