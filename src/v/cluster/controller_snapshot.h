@@ -26,7 +26,8 @@ struct controller_snapshot
     operator==(const controller_snapshot&, const controller_snapshot&)
       = default;
 
-    auto serde_fields() { return std::tie(); }
+    ss::future<> serde_async_write(iobuf&);
+    ss::future<> serde_async_read(iobuf_parser&, serde::header const);
 };
 
 } // namespace cluster
