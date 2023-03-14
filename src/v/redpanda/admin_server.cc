@@ -3777,45 +3777,38 @@ from_string_view<service_kind>(std::string_view sv) {
       .default_match(std::nullopt);
 }
 
-ss::future<> admin_server::restart_redpanda_service(service_kind service) {
-    if (service == service_kind::schema_registry) {
-        // Checks specific to schema registry
-        if (_schema_registry == nullptr) {
-            throw ss::httpd::server_error_exception(
-              "Schema Registry is undefined. Is it set in the .yaml config "
-              "file?");
-        }
-
-        try {
-            co_await _schema_registry->restart();
-        } catch (const std::exception& ex) {
-            vlog(
-              logger.error,
-              "Unknown issue restarting schema_registry: {}",
-              ex.what());
-            throw ss::httpd::server_error_exception(
-              "Unknown issue restarting schema_registry");
-        }
+namespace {
+template<typename service_t>
+ss::future<>
+try_service_restart(service_t* svc, std::string_view service_str_view) {
+    if (svc == nullptr) {
+        throw ss::httpd::server_error_exception(fmt::format(
+          "{} is undefined. Is it set in the .yaml config file?",
+          service_str_view));
     }
 
-    if (service == service_kind::http_proxy) {
-        // Checks specific to http proxy
-        if (_http_proxy == nullptr) {
-            throw ss::httpd::server_error_exception(
-              "Pandaproxy is undefined. Is it set in the .yaml config "
-              "file?");
-        }
+    try {
+        co_await svc->restart();
+    } catch (const std::exception& ex) {
+        vlog(
+          logger.error,
+          "Unknown issue restarting {}: {}",
+          service_str_view,
+          ex.what());
+        throw ss::httpd::server_error_exception(
+          fmt::format("Unknown issue restarting {}", service_str_view));
+    }
+}
+} // namespace
 
-        try {
-            co_await _http_proxy->restart();
-        } catch (const std::exception& ex) {
-            vlog(
-              logger.error,
-              "Unknown issue restarting http_proxy: {}",
-              ex.what());
-            throw ss::httpd::server_error_exception(
-              "Unknown issue restarting http_proxy");
-        }
+ss::future<> admin_server::restart_redpanda_service(service_kind service) {
+    switch (service) {
+    case service_kind::schema_registry:
+        co_await try_service_restart(_schema_registry, to_string_view(service));
+        break;
+    case service_kind::http_proxy:
+        co_await try_service_restart(_http_proxy, to_string_view(service));
+        break;
     }
 }
 
