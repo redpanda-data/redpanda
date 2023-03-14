@@ -32,6 +32,13 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
     files are opened in the cache directory.
     """
 
+    # Random consumer loops indefinitely, doing this many reads each
+    # loop: this must be small enough to complete promptly once we
+    # enter wait().  Because we use a tiny cache, readers will often
+    # encounter the tiered storage cache's throttling, so doing
+    # just this many reads will not be very fast in this particular test.
+    rand_consumer_msgs_per_pass = 100
+
     topics = (TopicSpec(partition_count=100, replication_factor=3), )
     test_defaults = {
         'default':
@@ -70,11 +77,11 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
                                              num_messages,
                                              [self._verifier_node])
 
-    def init_consumer(self, msg_size, num_messages, concurrency):
-        self._consumer = KgoVerifierRandomConsumer(self._ctx, self.redpanda,
-                                                   self.topic, msg_size,
-                                                   num_messages, concurrency,
-                                                   [self._verifier_node])
+    def init_consumer(self, msg_size, concurrency):
+        self._consumer = KgoVerifierRandomConsumer(
+            self._ctx, self.redpanda, self.topic, msg_size,
+            self.rand_consumer_msgs_per_pass, concurrency,
+            [self._verifier_node])
 
     def free_nodes(self):
         super().free_nodes()
@@ -84,11 +91,8 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         self.test_context.cluster.free_single(self._verifier_node)
 
     @cluster(num_nodes=4)
-    @matrix(message_size=[10000],
-            num_messages=[100000],
-            num_read=[1000],
-            concurrency=[2])
-    def test_si_cache(self, message_size, num_messages, num_read, concurrency):
+    @matrix(message_size=[10000], num_messages=[100000], concurrency=[2])
+    def test_si_cache(self, message_size, num_messages, concurrency):
         if self.debug_mode:
             self.logger.info(
                 "Skipping test in debug mode (requires release build)")
@@ -106,7 +110,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
 
         wait_until(s3_has_some_data, timeout_sec=300, backoff_sec=5)
 
-        self.init_consumer(message_size, num_read, concurrency)
+        self.init_consumer(message_size, concurrency)
         self._consumer.start(clean=False)
 
         self._producer.wait()
@@ -143,7 +147,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         self._consumer.wait()
 
         assert self._producer.produce_status.acked >= num_messages
-        assert self._consumer.consumer_status.validator.total_reads >= num_read * concurrency
+        assert self._consumer.consumer_status.validator.total_reads >= self.rand_consumer_msgs_per_pass * concurrency
 
         assert cache_files_closed() == False
         # Wait until all files are closed. The SI evicts all unused segments
