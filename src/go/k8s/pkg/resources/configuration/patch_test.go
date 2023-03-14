@@ -29,6 +29,7 @@ func TestComputePatch(t *testing.T) {
 		lastApplied map[string]interface{}
 		invalid     []string
 		expected    configuration.CentralConfigurationPatch
+		schema      map[string]admin.ConfigPropertyMetadata
 	}{
 		{
 			name: "simple",
@@ -113,11 +114,41 @@ func TestComputePatch(t *testing.T) {
 				Remove: []string{},
 			},
 		},
+		{
+			name: "support array type value",
+			apply: map[string]interface{}{
+				"kong": "[foo bar fizz buzz]",
+			},
+			current:     map[string]interface{}{},
+			lastApplied: map[string]interface{}{},
+			expected: configuration.CentralConfigurationPatch{
+				Upsert: map[string]interface{}{
+					"kong": []interface{}{"foo bar fizz buzz"},
+				},
+				Remove: []string{},
+			},
+			schema: map[string]admin.ConfigPropertyMetadata{"kong": {Type: "array"}},
+		},
+		{
+			name: "invalid array type value",
+			apply: map[string]interface{}{
+				"kong": "foo bar fizz buzz",
+			},
+			current:     map[string]interface{}{},
+			lastApplied: map[string]interface{}{},
+			expected: configuration.CentralConfigurationPatch{
+				Upsert: map[string]interface{}{
+					"kong": "foo bar fizz buzz",
+				},
+				Remove: []string{},
+			},
+			schema: map[string]admin.ConfigPropertyMetadata{"kong": {Type: "array"}},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(fmt.Sprintf("ComputePatch-%s", tc.name), func(t *testing.T) {
-			compPatch := configuration.ThreeWayMerge(logr.Discard(), tc.apply, tc.current, tc.lastApplied, tc.invalid, nil)
+			compPatch := configuration.ThreeWayMerge(logr.Discard(), tc.apply, tc.current, tc.lastApplied, tc.invalid, tc.schema)
 			assert.Equal(t, tc.expected.Upsert, compPatch.Upsert, "Upsert does not match")
 			assert.Equal(t, tc.expected.Remove, compPatch.Remove, "Remove list does not match")
 		})

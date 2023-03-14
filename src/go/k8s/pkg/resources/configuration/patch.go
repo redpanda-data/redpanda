@@ -19,12 +19,15 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"gopkg.in/yaml.v3"
 )
 
 const (
 	floatPrecision = 1e-6
 
 	schemaMismatchInfoLog = "Warning: property values do not match their type"
+
+	debugLogLevel = 4
 )
 
 // CentralConfigurationPatch represents a patch for the redpanda admin API
@@ -76,6 +79,24 @@ func ThreeWayMerge(
 	}
 	for k, v := range apply {
 		if oldValue, ok := current[k]; !ok || !PropertiesEqual(log, v, oldValue, schema[k]) {
+			// Value must be type []interface{} if array
+			// https://github.com/redpanda-data/team-kubernetes-internal/issues/11
+			if meta, ok := schema[k]; ok && meta.Type == "array" {
+				value, ok := v.(string)
+				if !ok {
+					log.V(debugLogLevel).Info(fmt.Sprintf("computing patch: expected value to be string, got %T", v), "key", k, "value", v)
+					continue
+				}
+				var a []interface{}
+				if err := yaml.Unmarshal([]byte(value), &a); err != nil {
+					log.Error(err, fmt.Sprintf("computing patch: unable to marshal config to %T", a), "key", k, "value", value)
+					// want: fail fast, admin api will eventually return error
+					patch.Upsert[k] = v
+					continue
+				}
+				patch.Upsert[k] = a
+				continue
+			}
 			patch.Upsert[k] = v
 		}
 	}
