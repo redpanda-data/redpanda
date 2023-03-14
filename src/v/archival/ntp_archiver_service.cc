@@ -1736,7 +1736,12 @@ ss::future<bool> ntp_archiver::upload(
     if (upload_locks.candidate.sources.size() > 0) {
         return do_upload_local(std::move(upload_locks), source_rtc);
     }
-    return do_upload_remote(std::move(upload_locks), source_rtc);
+    // Currently, the uploading of remote segments is disabled and
+    // the only reason why the list of locks is empty is truncation.
+    // The log could be truncated right after we scanned the manifest to
+    // find upload candidate. In this case we will get an empty candidate
+    // which is not a failure so we shuld return 'true'.
+    return ss::make_ready_future<bool>(true);
 }
 
 ss::future<bool> ntp_archiver::do_upload_local(
