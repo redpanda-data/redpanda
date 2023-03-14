@@ -368,8 +368,10 @@ field_name_type_map = {
 
 # primitive types
 basic_type_map = dict(
-    string=("ss::sstring", "read_string()", "read_nullable_string()",
-            "read_flex_string()", "read_nullable_flex_string()"),
+    string=("ss::sstring", "read_string_with_control_check()",
+            "read_nullable_string_with_control_check()",
+            "read_flex_string_with_control_check()",
+            "read_nullable_flex_string_with_control_check()"),
     bytes=("bytes", "read_bytes()", None, "read_flex_bytes()", None),
     bool=("bool", "read_bool()"),
     int8=("int8_t", "read_int8()"),

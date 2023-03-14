@@ -72,6 +72,7 @@ parse_v1_header(ss::input_stream<char>& src) {
     header.client_id = std::string_view(
       header.client_id_buffer.get(), header.client_id_buffer.size());
     validate_utf8(*header.client_id);
+    validate_no_control(*header.client_id);
     co_return header;
 }
 

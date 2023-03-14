@@ -57,13 +57,32 @@ public:
         return i;
     }
 
+    static ss::sstring apply_control_validation(ss::sstring val) {
+        validate_no_control(val);
+        return val;
+    }
+
     ss::sstring read_string() { return do_read_string(read_int16()); }
+
+    ss::sstring read_string_with_control_check() {
+        return apply_control_validation(do_read_string(read_int16()));
+    }
+
     ss::sstring read_string_unchecked(int16_t len) {
         return do_read_string(len);
     }
 
+    ss::sstring read_string_unchecked_with_control_check(int16_t len) {
+        return apply_control_validation(do_read_string(len));
+    }
+
     ss::sstring read_flex_string() {
         return do_read_flex_string(read_unsigned_varint());
+    }
+
+    ss::sstring read_flex_string_with_control_check() {
+        return apply_control_validation(
+          do_read_flex_string(read_unsigned_varint()));
     }
 
     std::optional<ss::sstring> read_nullable_string() {
@@ -74,12 +93,28 @@ public:
         return {do_read_string(n)};
     }
 
+    std::optional<ss::sstring> read_nullable_string_with_control_check() {
+        auto n = read_int16();
+        if (n < 0) {
+            return std::nullopt;
+        }
+        return {apply_control_validation(do_read_string(n))};
+    }
+
     std::optional<ss::sstring> read_nullable_flex_string() {
         auto n = read_unsigned_varint();
         if (n == 0) {
             return std::nullopt;
         }
         return {do_read_flex_string(n)};
+    }
+
+    std::optional<ss::sstring> read_nullable_flex_string_with_control_check() {
+        auto n = read_unsigned_varint();
+        if (n == 0) {
+            return std::nullopt;
+        }
+        return {apply_control_validation(do_read_flex_string(n))};
     }
 
     uuid read_uuid() {

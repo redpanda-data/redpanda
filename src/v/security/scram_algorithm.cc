@@ -193,6 +193,7 @@ client_first_message::client_first_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
+    validate_no_control(view);
 
     auto match = parse_client_first(view);
     if (unlikely(!match)) {
@@ -265,6 +266,7 @@ client_final_message::client_final_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
+    validate_no_control(view);
 
     auto match = parse_client_final(view);
     if (unlikely(!match)) {
@@ -305,6 +307,7 @@ server_first_message::server_first_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
+    validate_no_control(view);
 
     auto match = parse_server_first(view);
     if (unlikely(!match)) {
@@ -328,6 +331,7 @@ server_final_message::server_final_message(bytes_view data) {
     auto view = std::string_view(
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
+    validate_no_control(view);
 
     auto match = parse_server_final(view);
     if (unlikely(!match)) {
