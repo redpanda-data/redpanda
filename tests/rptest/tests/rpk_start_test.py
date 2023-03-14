@@ -10,6 +10,7 @@
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
+from ducktape.utils.util import wait_until
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.services.redpanda import RedpandaService
 from rptest.services import tls
@@ -292,8 +293,9 @@ class RpkRedpandaStartTest(RedpandaTest):
         # formed a cluster and we can produce and consume from it
         # even after restarting.
         try:
-            nodes = self.rpk.cluster_info()
-            assert len(nodes) == 3
+            wait_until(lambda: len(self.rpk.cluster_info()) == 3,
+                       timeout_sec=120,
+                       backoff_sec=3)
 
             topic = "test-rpc"
             self.rpk.create_topic(topic)
@@ -390,8 +392,9 @@ class RpkRedpandaStartTest(RedpandaTest):
             "redpanda.rpc_server_tls:{ enabled: 0", self.redpanda.nodes)
 
         try:
-            nodes = self.rpk.cluster_info()
-            assert len(nodes) == 3
+            wait_until(lambda: len(self.rpk.cluster_info()) == 3,
+                       timeout_sec=120,
+                       backoff_sec=3)
 
             topic = "test-rpc"
             self.rpk.create_topic(topic)
@@ -418,8 +421,9 @@ class RpkRedpandaStartTest(RedpandaTest):
             "redpanda.rpc_server_tls:{ enabled: 1", self.redpanda.nodes)
 
         try:
-            nodes = self.rpk.cluster_info()
-            assert len(nodes) == 3
+            wait_until(lambda: len(self.rpk.cluster_info()) == 3,
+                       timeout_sec=120,
+                       backoff_sec=3)
 
             for i in range(50, 100):
                 self.rpk.produce(topic, f"k-{i}", f"v-test-{i}", timeout=5)
