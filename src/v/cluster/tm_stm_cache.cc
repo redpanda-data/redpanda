@@ -38,6 +38,10 @@ std::optional<tm_transaction>
 tm_stm_cache::find(model::term_id term, kafka::transactional_id tx_id) {
     vlog(txlog.trace, "looking for tx:{} etag:{}", tx_id, term);
     if (_mem_term && _mem_term.value() == term) {
+        // when a node fetches a tx withing a term it means that it was
+        // elected as a leader with a higher term and the request should
+        // prevent old leader from changing in-memory state (log changes
+        // are protected by raft)
         clear_mem();
     }
     auto entry_it = _state.find(term);
