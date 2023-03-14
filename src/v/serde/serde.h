@@ -216,8 +216,6 @@ int64_t checked_duration_cast_to_nanoseconds(
       .count();
 }
 
-inline void write(iobuf& out, uuid_t t);
-
 template<typename Rep, typename Period>
 void write(iobuf& out, std::chrono::duration<Rep, Period> t);
 
@@ -263,10 +261,6 @@ requires is_envelope<std::decay_t<T>>
 void write(iobuf& out, T t);
 
 inline void write(iobuf& out, iobuf t);
-
-inline void write(iobuf& out, uuid_t t) {
-    out.append(t.uuid().data, uuid_t::length);
-}
 
 template<typename Rep, typename Period>
 void write(iobuf& out, std::chrono::duration<Rep, Period> t) {
@@ -604,8 +598,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
           read_nested<serde_size_t>(in, bytes_left_limit));
         in.consume_to(str.size(), str.begin());
         t = str;
-    } else if constexpr (std::is_same_v<Type, uuid_t>) {
-        in.consume_to(uuid_t::length, t.mutable_uuid().begin());
     } else if constexpr (reflection::is_std_optional<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(
@@ -915,3 +907,4 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 #include "serde/rw/bool_class.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/scalar.h"
+#include "serde/rw/uuid.h"
