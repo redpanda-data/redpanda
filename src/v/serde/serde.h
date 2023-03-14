@@ -187,8 +187,6 @@ template<typename T>
 requires is_envelope<std::decay_t<T>>
 void write(iobuf& out, T t);
 
-inline void write(iobuf& out, iobuf t);
-
 inline void write(iobuf& out, ss::net::inet_address t) {
     iobuf address_bytes;
 
@@ -306,11 +304,6 @@ void write(iobuf& out, T t) {
     }
 }
 
-inline void write(iobuf& out, iobuf t) {
-    write<serde_size_t>(out, t.size_bytes());
-    out.append(t.share(0, t.size_bytes()));
-}
-
 template<typename T>
 std::decay_t<T> read_nested(iobuf_parser&, std::size_t bytes_left_limit);
 
@@ -383,8 +376,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         if (in.bytes_left() > h._bytes_left_limit) {
             in.skip(in.bytes_left() - h._bytes_left_limit);
         }
-    } else if constexpr (std::is_same_v<Type, iobuf>) {
-        t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (reflection::is_std_optional<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(
@@ -681,6 +672,7 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 #include "serde/rw/bool_class.h"
 #include "serde/rw/chrono.h"
 #include "serde/rw/enum.h"
+#include "serde/rw/iobuf.h"
 #include "serde/rw/named_type.h"
 #include "serde/rw/scalar.h"
 #include "serde/rw/sstring.h"
