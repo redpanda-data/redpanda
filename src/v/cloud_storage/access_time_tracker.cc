@@ -63,7 +63,8 @@ ss::future<> access_time_tracker::write(ss::output_stream<char>& out) {
 
     _dirty = false;
 
-    const table_header h{.table_size = _table.size()};
+    // some older versions of absl::btree_map had signed size_type
+    const table_header h{.table_size = static_cast<size_t>(_table.size())};
     iobuf header_buf;
     serde::write(header_buf, h);
     co_await write_iobuf_to_output_stream(std::move(header_buf), out);
