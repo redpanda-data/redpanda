@@ -164,9 +164,6 @@ inline constexpr auto const is_serde_compatible_v
 
 inline void write(iobuf& out, ss::net::inet_address t);
 
-template<typename T, typename Tag, typename IsConstexpr>
-void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
-
 template<typename T>
 void write(iobuf& out, std::optional<T> t);
 
@@ -200,11 +197,6 @@ inline void write(iobuf& out, ss::net::inet_address t) {
 
     write(out, t.is_ipv4());
     write(out, std::move(address_bytes));
-}
-
-template<typename T, typename Tag, typename IsConstexpr>
-void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t) {
-    return write(out, static_cast<T>(t));
 }
 
 template<typename T>
@@ -391,8 +383,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         if (in.bytes_left() > h._bytes_left_limit) {
             in.skip(in.bytes_left() - h._bytes_left_limit);
         }
-    } else if constexpr (reflection::is_rp_named_type<Type>) {
-        t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
     } else if constexpr (reflection::is_std_optional<Type>) {
@@ -691,6 +681,7 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 #include "serde/rw/bool_class.h"
 #include "serde/rw/chrono.h"
 #include "serde/rw/enum.h"
+#include "serde/rw/named_type.h"
 #include "serde/rw/scalar.h"
 #include "serde/rw/sstring.h"
 #include "serde/rw/uuid.h"
