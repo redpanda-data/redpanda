@@ -242,7 +242,7 @@ make_random_batches(record_batch_spec spec) {
             base_sequence += num_records;
         }
         auto b = make_random_batch(batch_spec);
-        o = b.last_offset() + model::offset(num_records);
+        o = b.last_offset() + model::offset(1);
         b.set_term(model::term_id(0));
         ret.push_back(std::move(b));
     }
