@@ -104,60 +104,59 @@ static void write_batches(
     seg->flush().get();
 }
 
-static segment_layout write_random_batches(
+segment_layout write_random_batches(
   ss::lw_shared_ptr<storage::segment> seg,
-  size_t num_batches = 1,
-  std::optional<model::timestamp> timestamp = std::nullopt) { // NOLINT
+  size_t records,
+  size_t records_per_batch,
+  std::optional<model::timestamp> timestamp) { // NOLINT
     segment_layout layout{
       .base_offset = seg->offsets().base_offset,
     };
-    auto batches = model::test::make_random_batches(
-      seg->offsets().base_offset,
-      num_batches,
-      true /* allow_compression */,
-      timestamp);
 
-    vlog(fixt_log.debug, "Generated {} random batches", batches.size());
-    for (const auto& batch : batches) {
+    auto leftover_records = records % records_per_batch;
+    int full_batches_count = records / records_per_batch;
+    auto full_batches = model::test::make_random_batches(
+      model::test::record_batch_spec{
+        .offset = seg->offsets().base_offset,
+        .allow_compression = true,
+        .count = full_batches_count,
+        .records = records_per_batch,
+        .max_key_cardinality = 1,
+        .timestamp = timestamp});
+
+    vlog(
+      fixt_log.debug,
+      "Generated {} random batches",
+      leftover_records ? full_batches.size() + 1 : full_batches.size());
+    for (const auto& batch : full_batches) {
         vlog(fixt_log.debug, "Generated random batch {}", batch);
         layout.ranges.push_back({
           .base_offset = batch.base_offset(),
           .last_offset = batch.last_offset(),
         });
     }
-    write_batches(seg, std::move(batches));
-    return layout;
-}
+    write_batches(seg, std::move(full_batches));
 
-segment_layout write_random_batches_with_single_record(
-  ss::lw_shared_ptr<storage::segment> seg, size_t num_batches) {
-    segment_layout layout{
-      .base_offset = seg->offsets().base_offset,
-    };
+    if (leftover_records != 0) {
+        auto leftover_batches = model::test::make_random_batches(
+          model::test::record_batch_spec{
+            .offset = seg->offsets().committed_offset + model::offset(1),
+            .allow_compression = true,
+            .count = 1,
+            .records = leftover_records,
+            .max_key_cardinality = 1,
+            .timestamp = timestamp});
 
-    ss::circular_buffer<model::record_batch> batches;
-    batches.reserve(num_batches);
-
-    auto ts = model::timestamp::now();
-    auto o = seg->offsets().base_offset;
-
-    for (int i = 0; i < num_batches; i++) {
-        auto b = model::test::make_random_batch(
-          o, 1, true, model::record_batch_type::raft_data, std::nullopt, ts);
-        o = b.last_offset() + model::offset(1);
-        b.set_term(model::term_id(0));
-        batches.push_back(std::move(b));
+        for (const auto& batch : leftover_batches) {
+            vlog(fixt_log.debug, "Generated random batch {}", batch);
+            layout.ranges.push_back({
+              .base_offset = batch.base_offset(),
+              .last_offset = batch.last_offset(),
+            });
+        }
+        write_batches(seg, std::move(leftover_batches));
     }
 
-    vlog(fixt_log.debug, "Generated {} random batches", batches.size());
-    for (const auto& batch : batches) {
-        vlog(fixt_log.debug, "Generated random batch {}", batch);
-        layout.ranges.push_back({
-          .base_offset = batch.base_offset(),
-          .last_offset = batch.last_offset(),
-        });
-    }
-    write_batches(seg, std::move(batches));
     return layout;
 }
 
@@ -265,13 +264,12 @@ void archiver_fixture::initialize_shard(
         vlog(fixt_log.trace, "write random batches to segment");
 
         segment_layout layout;
-        if (fit_segments) {
-            layout = write_random_batches_with_single_record(
-              seg, d.num_batches.value());
-        } else {
-            layout = write_random_batches(
-              seg, d.num_batches.value_or(1), d.timestamp);
-        }
+
+        layout = write_random_batches(
+          seg,
+          d.num_records.value_or(1),
+          d.records_per_batch.value_or(1),
+          d.timestamp);
 
         layouts[d.ntp].push_back(std::move(layout));
         vlog(fixt_log.trace, "segment close");
@@ -375,8 +373,7 @@ template<class Fixture>
 void segment_matcher<Fixture>::verify_segments(
   const model::ntp& ntp,
   const std::vector<archival::segment_name>& names,
-  const seastar::sstring& expected,
-  size_t expected_size) {
+  const seastar::sstring& expected) {
     std::vector<ss::lw_shared_ptr<storage::segment>> segments;
     segments.reserve(names.size());
     std::transform(
@@ -387,6 +384,12 @@ void segment_matcher<Fixture>::verify_segments(
 
     storage::concat_segment_reader_view v{
       segments, 0, segments.back()->size_bytes(), ss::default_priority_class()};
+
+    auto expected_size = std::reduce(
+      segments.begin(),
+      segments.end(),
+      size_t{0},
+      [](auto acc, const auto& seg) { return acc + seg->size_bytes(); });
 
     auto stream = v.take_stream();
     auto data = stream.read_exactly(expected_size).get0();
@@ -504,7 +507,6 @@ void archiver_fixture::upload_and_verify(
       [&archiver, expected, lso]() {
           return archiver.upload_next_candidates(lso).then(
             [expected](auto result) { return result == expected; });
-          ;
       })
       .get0();
 }

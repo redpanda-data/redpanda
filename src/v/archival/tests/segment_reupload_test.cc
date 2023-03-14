@@ -11,6 +11,7 @@
 #include "archival/segment_reupload.h"
 #include "archival/tests/service_fixture.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/types.h"
 #include "storage/log_manager.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/archival.h"
@@ -115,7 +116,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_collection) {
 
     // The three compacted segments are collected, with the begin and end
     // markers set to align with manifest segment.
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
     BOOST_REQUIRE_EQUAL(3, collector.segments().size());
@@ -140,7 +141,7 @@ SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE_EQUAL(false, collector.can_replace_manifest_segment());
+        BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
         auto segments = collector.segments();
         BOOST_REQUIRE(segments.empty());
     }
@@ -153,7 +154,7 @@ SEASTAR_THREAD_TEST_CASE(test_start_ahead_of_manifest) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE_EQUAL(false, collector.can_replace_manifest_segment());
+        BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
         auto segments = collector.segments();
         BOOST_REQUIRE(segments.empty());
     }
@@ -176,7 +177,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.can_replace_manifest_segment());
+    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
     BOOST_REQUIRE(collector.segments().empty());
 }
 
@@ -208,7 +209,7 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.can_replace_manifest_segment());
+    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
     BOOST_REQUIRE_EQUAL(collector.segments().size(), 1);
 }
 
@@ -236,7 +237,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(!collector.should_replace_manifest_segment());
     auto segments = collector.segments();
     BOOST_REQUIRE_EQUAL(1, segments.size());
 
@@ -272,7 +273,7 @@ SEASTAR_THREAD_TEST_CASE(
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.can_replace_manifest_segment());
+    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
     auto segments = collector.segments();
     BOOST_REQUIRE_EQUAL(1, segments.size());
 
@@ -308,7 +309,7 @@ SEASTAR_THREAD_TEST_CASE(
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
     BOOST_REQUIRE_EQUAL(5, segments.size());
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{10});
@@ -341,7 +342,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_larger_than_manifest_segment) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(!collector.should_replace_manifest_segment());
     auto segments = collector.segments();
 
     BOOST_REQUIRE_EQUAL(1, segments.size());
@@ -380,7 +381,7 @@ SEASTAR_THREAD_TEST_CASE(test_collect_capped_by_size) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     auto segments = collector.segments();
 
     BOOST_REQUIRE_EQUAL(3, segments.size());
@@ -422,7 +423,7 @@ SEASTAR_THREAD_TEST_CASE(test_no_compacted_segments) {
 
     collector.collect_segments();
 
-    BOOST_REQUIRE_EQUAL(false, collector.can_replace_manifest_segment());
+    BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
     BOOST_REQUIRE(collector.segments().empty());
 }
 
@@ -512,7 +513,7 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE(collector.can_replace_manifest_segment());
+        BOOST_REQUIRE(collector.should_replace_manifest_segment());
         auto segments = collector.segments();
 
         BOOST_REQUIRE_EQUAL(3, segments.size());
@@ -556,7 +557,7 @@ SEASTAR_THREAD_TEST_CASE(test_collected_segments_completely_cover_gap) {
 
         collector.collect_segments();
 
-        BOOST_REQUIRE(collector.can_replace_manifest_segment());
+        BOOST_REQUIRE(collector.should_replace_manifest_segment());
         auto segments = collector.segments();
 
         BOOST_REQUIRE_EQUAL(3, segments.size());
@@ -603,7 +604,7 @@ SEASTAR_THREAD_TEST_CASE(test_collection_starts_in_gap) {
       model::offset{2}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     BOOST_REQUIRE_EQUAL(1, collector.segments().size());
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{25});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
@@ -635,7 +636,7 @@ SEASTAR_THREAD_TEST_CASE(test_collection_ends_in_gap) {
       model::offset{1}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     BOOST_REQUIRE_EQUAL(1, collector.segments().size());
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{20});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{44});
@@ -667,7 +668,7 @@ SEASTAR_THREAD_TEST_CASE(test_compacted_segment_after_manifest_start) {
       model::offset{0}, m, b.get_disk_log_impl(), max_upload_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
     BOOST_REQUIRE_EQUAL(1, collector.segments().size());
     BOOST_REQUIRE_EQUAL(collector.begin_inclusive(), model::offset{20});
     BOOST_REQUIRE_EQUAL(collector.end_inclusive(), model::offset{39});
@@ -717,7 +718,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_candidate_generation) {
       model::offset{5}, m, b.get_disk_log_impl(), max_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
 
     auto upload_with_locks = collector
                                .make_upload_candidate(
@@ -799,7 +800,7 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
       model::offset{5}, m, b.get_disk_log_impl(), max_size};
 
     collector.collect_segments();
-    BOOST_REQUIRE(collector.can_replace_manifest_segment());
+    BOOST_REQUIRE(collector.should_replace_manifest_segment());
 
     auto upload_with_locks = collector
                                .make_upload_candidate(
@@ -825,4 +826,90 @@ SEASTAR_THREAD_TEST_CASE(test_upload_aligned_to_non_existent_offset) {
       expected_content_length, upload_candidate.content_length);
 
     BOOST_REQUIRE_EQUAL(upload_with_locks.read_locks.size(), 3);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
+    // 'segment_collector' should not propose the re-upload
+    // of a single segment if the compacted size is equal to
+    // the size of the segment in the manifest. In that case,
+    // the resulting addresable name in cloud storage would be the
+    // same for the segment before and after compaction. This would
+    // result in the deletion of the segment.
+    //
+    // This test checks the invariant above.
+
+    auto ntp = model::ntp{"test_ns", "test_tpc", 0};
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    auto o = std::make_unique<ntp_config::default_overrides>();
+    o->cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    b | start(ntp_config{ntp, {data_path}, std::move(o)});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    // Create a segment containing two records with unique keys and
+    // add it to the partition manifest.
+    b | storage::add_segment(0) | storage::add_random_batch(0, 2);
+    auto first_seg_size = b.get_segment(0).size_bytes();
+    cloud_storage::partition_manifest m(ntp, model::initial_revision_id{1});
+    m.add(
+      segment_name("0-1-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = first_seg_size,
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(1),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+
+    // Mark self compaction as complete on the segment and collect
+    // segments for re-upload. 'should_replace_manifest_segment'
+    // must return 'false' as the 'mock' self-compaction did not reduce
+    // the size.
+    b.get_segment(0).mark_as_finished_self_compaction();
+
+    {
+        archival::segment_collector collector{
+          model::offset{0}, m, b.get_disk_log_impl(), first_seg_size};
+
+        collector.collect_segments();
+        BOOST_REQUIRE_EQUAL(collector.collected_size(), first_seg_size);
+        BOOST_REQUIRE(!collector.should_replace_manifest_segment());
+    }
+
+    // Add another segment to the log and partition manifest.
+    b | storage::add_segment(2) | storage::add_random_batch(2, 2);
+    auto second_seg_size = b.get_segment(1).size_bytes();
+    m.add(
+      segment_name("2-1-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = second_seg_size,
+        .base_offset = model::offset(2),
+        .committed_offset = model::offset(3),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+
+    // Mark the second segment as having completed self compaction
+    // and collect segments for re-upload again. This time,
+    // 'should_replace_manifest_segment' must return 'true',
+    // as we are not replacing a signle segment and there's no
+    // posibility for a clash (two segments get replaced with one).
+    b.get_segment(1).mark_as_finished_self_compaction();
+
+    {
+        archival::segment_collector collector{
+          model::offset{0},
+          m,
+          b.get_disk_log_impl(),
+          first_seg_size + second_seg_size};
+
+        collector.collect_segments();
+        BOOST_REQUIRE_EQUAL(
+          collector.collected_size(), first_seg_size + second_seg_size);
+        BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    }
 }
