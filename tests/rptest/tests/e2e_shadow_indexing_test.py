@@ -388,6 +388,11 @@ class ShadowIndexingManyPartitionsTest(PreallocNodesTest):
                 # quickly.
                 "cloud_storage_enable_segment_merging": False,
                 'log_segment_size_min': 1024,
+                # Since we will read a large number of segments quickly, reduce
+                # the read buffer size and read-ahead. In Docker deployments
+                # these would contribute to aggresive memory consumption.
+                'storage_read_buffer_size': 32 * 1024,
+                'storage_read_readahead_count': 4,
             },
             si_settings=si_settings)
         self.kafka_tools = KafkaCliTools(self.redpanda)
