@@ -162,10 +162,6 @@ inline constexpr auto const is_serde_compatible_v
     || is_std_unordered_map<T>
     || is_fragmented_vector<T> || is_chunked_fifo<T> || reflection::is_tristate<T> || std::is_same_v<T, ss::net::inet_address>;
 
-template<typename T>
-inline constexpr auto const are_bytes_and_string_different = !(
-  std::is_same_v<T, ss::sstring> && std::is_same_v<T, bytes>);
-
 template<class R, class P>
 int64_t checked_duration_cast_to_nanoseconds(
   const std::chrono::duration<R, P>& duration) {
@@ -219,8 +215,6 @@ int64_t checked_duration_cast_to_nanoseconds(
 template<typename Rep, typename Period>
 void write(iobuf& out, std::chrono::duration<Rep, Period> t);
 
-inline void write(iobuf& out, ss::sstring t);
-
 inline void write(iobuf& out, ss::net::inet_address t);
 
 template<typename T, typename Tag, typename IsConstexpr>
@@ -228,8 +222,6 @@ void write(iobuf& out, ::detail::base_named_type<T, Tag, IsConstexpr> t);
 
 template<typename T>
 void write(iobuf& out, std::optional<T> t);
-
-inline void write(iobuf& out, bytes t);
 
 template<typename T, size_t fragment_size>
 void write(iobuf& out, fragmented_vector<T, fragment_size> t);
@@ -287,11 +279,6 @@ void write(iobuf& out, std::chrono::duration<Rep, Period> t) {
     write<int64_t>(out, checked_duration_cast_to_nanoseconds(t));
 }
 
-inline void write(iobuf& out, ss::sstring t) {
-    write<serde_size_t>(out, t.size());
-    out.append(t.data(), t.size());
-}
-
 inline void write(iobuf& out, ss::net::inet_address t) {
     iobuf address_bytes;
 
@@ -315,11 +302,6 @@ void write(iobuf& out, std::optional<T> t) {
     } else {
         write(out, false);
     }
-}
-
-inline void write(iobuf& out, bytes t) {
-    write<serde_size_t>(out, t.size());
-    out.append(t.data(), t.size());
 }
 
 template<typename T, size_t fragment_size>
@@ -509,7 +491,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
       !is_chrono_time_point<Type>,
       "Time point serialization is risky and can have unintended "
       "consequences. Check with Redpanda team before fixing this.");
-    static_assert(are_bytes_and_string_different<Type>);
     static_assert(has_serde_read<T> || is_serde_compatible_v<Type>);
 
     if constexpr (is_envelope<Type>) {
@@ -588,16 +569,6 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
         t = Type{read_nested<typename Type::type>(in, bytes_left_limit)};
     } else if constexpr (std::is_same_v<Type, iobuf>) {
         t = in.share(read_nested<serde_size_t>(in, bytes_left_limit));
-    } else if constexpr (std::is_same_v<Type, ss::sstring>) {
-        auto str = ss::uninitialized_string(
-          read_nested<serde_size_t>(in, bytes_left_limit));
-        in.consume_to(str.size(), str.begin());
-        t = str;
-    } else if constexpr (std::is_same_v<Type, bytes>) {
-        auto str = ss::uninitialized_string<bytes>(
-          read_nested<serde_size_t>(in, bytes_left_limit));
-        in.consume_to(str.size(), str.begin());
-        t = str;
     } else if constexpr (reflection::is_std_optional<Type>) {
         t = read_nested<bool>(in, bytes_left_limit)
               ? Type{read_nested<typename Type::value_type>(
@@ -907,4 +878,5 @@ inline serde::serde_size_t peek_body_size(iobuf_parser& in) {
 #include "serde/rw/bool_class.h"
 #include "serde/rw/enum.h"
 #include "serde/rw/scalar.h"
+#include "serde/rw/sstring.h"
 #include "serde/rw/uuid.h"
