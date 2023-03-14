@@ -92,7 +92,7 @@ cache_probe::cache_probe() {
               .aggregate(aggregate_labels),
             sm::make_counter(
               "miss",
-              [this] { return _num_cached_gets; },
+              [this] { return _num_miss_gets; },
               sm::description("Number of get requests that are not satisfied "
                               "from the cache."))
               .aggregate(aggregate_labels),
