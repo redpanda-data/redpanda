@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/trstringer/go-systemd-time/pkg/systemdtime"
 	k8score "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -98,16 +100,20 @@ func executeK8SBundle(ctx context.Context, bp bundleParams) error {
 	return nil
 }
 
+func k8sClientset() (*kubernetes.Clientset, error) {
+	k8sCfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes cluster configuration: %v", err)
+	}
+
+	return kubernetes.NewForConfig(k8sCfg)
+}
+
 // k8sPodList will create a clientset using the config object which uses the
 // service account kubernetes gives to pods (InClusterConfig) and the list of
 // pods in the given namespace.
 func k8sPodList(ctx context.Context, namespace string) (*kubernetes.Clientset, *k8score.PodList, error) {
-	k8sCfg, err := rest.InClusterConfig()
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to get kubernetes cluster configuration: %v", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(k8sCfg)
+	clientset, err := k8sClientset()
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to create kubernetes client: %v", err)
 	}
@@ -123,17 +129,41 @@ func k8sPodList(ctx context.Context, namespace string) (*kubernetes.Clientset, *
 // K8S Api.
 func adminAddressesFromK8S(ctx context.Context, namespace string) ([]string, error) {
 	// This is intended to run only in a k8s cluster:
-	_, pods, err := k8sPodList(ctx, namespace)
+	cl, err := k8sClientset()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to create kubernetes client: %v", err)
 	}
 
+	var svc k8score.Service
+	services, err := cl.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("unable to list services: %v", err)
+	}
+	// To get the service name we use the service that have None as ClusterIP
+	// this is the case in both our helm deployment and k8s operator.
+	for _, s := range services.Items {
+		if s.Spec.ClusterIP == k8score.ClusterIPNone {
+			svc = s
+			break // no need to keep looping.
+		}
+	}
+
+	// And list the pods based on the service label selector.
+	pods, err := cl.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: labels.SelectorFromSet(svc.Spec.Selector).String(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to list pods in the service %q: %v", svc.Name, err)
+	}
+
+	clusterDomain := getClusterDomain()
 	// Get the admin addresses from ContainerPort.
 	var adminAddresses []string
 	for _, p := range pods.Items {
 		for _, port := range p.Spec.Containers[0].Ports {
 			if port.Name == "admin" {
-				a := fmt.Sprintf("%v:%v", p.Status.PodIP, port.ContainerPort)
+				fqdn := fmt.Sprintf("%v.%v.%v.svc.%v", p.Spec.Hostname, svc.Name, p.Namespace, clusterDomain)
+				a := fmt.Sprintf("%v:%v", fqdn, port.ContainerPort)
 				adminAddresses = append(adminAddresses, a)
 			}
 		}
@@ -144,6 +174,20 @@ func adminAddressesFromK8S(ctx context.Context, namespace string) ([]string, err
 	}
 
 	return adminAddresses, nil
+}
+
+// getClusterDomain returns Kubernetes cluster domain, default to
+// "cluster.local.".
+func getClusterDomain() string {
+	const apiSvc = "kubernetes.default.svc"
+
+	cname, err := net.LookupCNAME(apiSvc)
+	if err != nil {
+		return "cluster.local."
+	}
+	clusterDomain := strings.TrimPrefix(cname, apiSvc+".")
+
+	return clusterDomain
 }
 
 // saveClusterAdminAPICalls save the following admin API request to the zip:
