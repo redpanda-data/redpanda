@@ -643,11 +643,12 @@ ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
     } else if (_cloud_storage_partition && tiered_storage) {
         // Tiered storage is enabled, but deletion is disabled: ensure the
         // remote metadata is up to date before we drop the local partition.
+        vlog(
+          clusterlog.info,
+          "Leaving tiered storage objects behind for partition {}",
+          ntp());
         co_await _cloud_storage_partition->finalize(
           as, _raft->self(), group_configuration());
-    } else {
-        vlog(
-          clusterlog.info, "Leaving S3 objects behind for partition {}", ntp());
     }
 }
 
