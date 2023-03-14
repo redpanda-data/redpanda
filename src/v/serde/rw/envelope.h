@@ -45,7 +45,8 @@ void tag_invoke(
         auto read_only_in = iobuf_const_parser{shared};
         auto crc = crc::crc32c{};
         read_only_in.consume(
-          read_only_in.bytes_left(), [&crc](char const* src, size_t const n) {
+          read_only_in.bytes_left(),
+          [&crc](char const* src, std::size_t const n) {
               crc.extend(src, n);
               return ss::stop_iteration::no;
           });
@@ -123,10 +124,11 @@ void tag_invoke(tag_t<w>, iobuf& out, T t) {
         auto crc = crc::crc32c{};
         auto in = iobuf_const_parser{out};
         in.skip(size_before);
-        in.consume(in.bytes_left(), [&crc](char const* src, size_t const n) {
-            crc.extend(src, n);
-            return ss::stop_iteration::no;
-        });
+        in.consume(
+          in.bytes_left(), [&crc](char const* src, std::size_t const n) {
+              crc.extend(src, n);
+              return ss::stop_iteration::no;
+          });
         auto const checksum = ss::cpu_to_le(crc.value());
         static_assert(
           std::is_same_v<std::decay_t<decltype(checksum)>, checksum_t>);
