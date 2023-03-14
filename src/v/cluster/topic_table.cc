@@ -64,8 +64,8 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     md.replica_revisions.reserve(cmd.value.assignments.size());
     for (auto& pas : md.get_assignments()) {
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
+        _partition_count++;
         for (auto& r : pas.replicas) {
-            _partition_count++;
             md.replica_revisions[pas.id][r.node_id] = model::revision_id(
               offset);
         }
