@@ -75,6 +75,9 @@ public:
 
         std::vector<node_metrics> nodes;
         bool has_kafka_gssapi;
+
+        static constexpr int64_t max_size_for_rp_env = 80;
+        ss::sstring redpanda_environment;
     };
     static constexpr ss::shard_id shard = 0;
 
