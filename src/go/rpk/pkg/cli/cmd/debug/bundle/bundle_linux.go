@@ -474,9 +474,13 @@ func saveConfig(ps *stepParams, conf *config.Config) step {
 		}
 		if conf.PandaproxyClient != nil {
 			redactOtherMap(conf.PandaproxyClient.Other)
+			conf.PandaproxyClient.SCRAMPassword = &redacted
+			conf.PandaproxyClient.SCRAMUsername = &redacted
 		}
 		if conf.SchemaRegistryClient != nil {
 			redactOtherMap(conf.SchemaRegistryClient.Other)
+			conf.SchemaRegistryClient.SCRAMPassword = &redacted
+			conf.SchemaRegistryClient.SCRAMUsername = &redacted
 		}
 
 		bs, err := yaml.Marshal(conf)
