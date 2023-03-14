@@ -217,21 +217,21 @@ func NewClusterCertificates(
 	if adminListeners := adminAPIListeners(cluster); len(adminListeners) > 0 {
 		cc.adminAPI, err = cc.prepareAPI(ctx, adminAPI, adminAPINodeCert, []string{adminAPIClientCert}, adminListeners, &keystoreSecret)
 		if err != nil {
-			return nil, fmt.Errorf("kafka api certificates %w", err)
+			return nil, fmt.Errorf("admin api certificates %w", err)
 		}
 	}
 
 	if pandaProxyListeners := pandaProxyAPIListeners(cluster); len(pandaProxyListeners) > 0 {
 		cc.pandaProxyAPI, err = cc.prepareAPI(ctx, pandaproxyAPI, pandaproxyAPINodeCert, []string{pandaproxyAPIClientCert}, pandaProxyListeners, &keystoreSecret)
 		if err != nil {
-			return nil, fmt.Errorf("kafka api certificates %w", err)
+			return nil, fmt.Errorf("panda proxy certificates %w", err)
 		}
 	}
 
 	if schemaRegistryListeners := schemaRegistryAPIListeners(cluster); len(schemaRegistryListeners) > 0 {
 		cc.schemaRegistryAPI, err = cc.prepareAPI(ctx, schemaRegistryAPI, schemaRegistryAPINodeCert, []string{schemaRegistryAPIClientCert}, schemaRegistryListeners, &keystoreSecret)
 		if err != nil {
-			return nil, fmt.Errorf("kafka api certificates %w", err)
+			return nil, fmt.Errorf("schema registry certificates %w", err)
 		}
 	}
 
