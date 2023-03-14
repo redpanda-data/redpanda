@@ -16,6 +16,7 @@
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/condition-variable.hh>
+#include <seastar/core/sharded.hh>
 
 namespace cloud_storage_clients {
 
@@ -25,14 +26,15 @@ namespace cloud_storage_clients {
 enum class client_pool_overdraft_policy {
     /// Client pool should wait unitl any existing lease will be canceled
     wait_if_empty,
-    /// Client pool should create transient client connection to serve the
-    /// request
-    create_new_if_empty
+    /// Client pool should try to borrow connection from another shard
+    borrow_if_empty
 };
 
 /// Connection pool implementation
 /// All connections share the same configuration
-class client_pool : public ss::weakly_referencable<client_pool> {
+class client_pool
+  : public ss::weakly_referencable<client_pool>
+  , public ss::peering_sharded_service<client_pool> {
 public:
     using http_client_ptr = ss::shared_ptr<client>;
     struct client_lease {
@@ -80,6 +82,12 @@ public:
         client_lease& operator=(const client_lease&) = delete;
     };
 
+    /// C-tor
+    ///
+    /// \param size is a size of the pool
+    /// \param conf is a client configuration
+    /// \param policy controls what happens when the pool is empty (wait or try
+    ///               to borrow from another shard)
     client_pool(
       size_t size,
       client_configuration conf,
@@ -116,11 +124,19 @@ private:
     http_client_ptr make_client() const;
     void release(http_client_ptr leased);
 
+    /// Return number of clients which wasn't utilized
+    size_t normalized_num_clients_in_use() const;
+    bool borrow_one(unsigned other);
+    void return_one(unsigned other);
+
+    void update_usage_stats();
+
     ///  Wait for credentials to be acquired. Once credentials are acquired,
     ///  based on the policy, optionally wait for client pool to initialize.
     ss::future<> wait_for_credentials();
 
-    const size_t _max_size;
+    /// Configured capacity per shard
+    const size_t _capacity;
     client_configuration _config;
     client_pool_overdraft_policy _policy;
     std::vector<http_client_ptr> _pool;
