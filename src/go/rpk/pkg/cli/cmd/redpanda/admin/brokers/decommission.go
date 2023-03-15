@@ -59,7 +59,7 @@ cluster is unreachable), use the hidden --force flag.
 							out.Exit("version for broker %d is unknown, is the node offline?\nto bypass the node version check re-run this with --force; see this command's help text for more details", br.NodeID)
 						}
 						version, err := redpanda.VersionFromString(br.Version)
-						out.MaybeDie(err, "unable to get broker %q version: %v; to bypass the node version check re-run this with --force; see this command's help text for more details", br.NodeID, err)
+						out.MaybeDie(err, "unable to get broker %d version: %v; to bypass the node version check re-run this with --force; see this command's help text for more details", br.NodeID, err)
 						isOld := version.Less(redpanda.Version{Year: 23, Feature: 1, Patch: 1})
 
 						anyOld = anyOld || isOld
