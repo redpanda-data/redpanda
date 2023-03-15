@@ -17,7 +17,7 @@ import urllib.request
 import ssl
 import threading
 from rptest.services.cluster import cluster
-from ducktape.mark import matrix
+from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
@@ -27,6 +27,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.tests.restart_services_test import check_service_restart
 from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, PandaproxyConfig, TLSProvider
+from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services.admin import Admin
 from rptest.services import tls
 from typing import Optional, List, Dict, Union
@@ -1860,3 +1861,65 @@ class PandaProxyMTLSAndBasicAuthTest(PandaProxyMTLSBase):
         result = result_raw.json()
         self.logger.debug(result)
         assert result[0] == self.topic
+
+
+class BasicAuthUpgradeTest(PandaProxyEndpoints):
+    topics = [
+        TopicSpec(),
+    ]
+
+    def __init__(self, context):
+        # Dissable pandaproxy by default since it is set later in the test
+        super(BasicAuthUpgradeTest, self).__init__(context,
+                                                   pandaproxy_config=None)
+
+        self.installer = self.redpanda._installer
+
+    def setUp(self):
+        # Do not call super's setUp yet because redpanda
+        # is manually started in the test methods
+        pass
+
+    def check_usage(self):
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+        result_raw = self._get_topics(auth=(super_username, super_password))
+        assert result_raw.status_code == requests.codes.ok
+        result = result_raw.json()
+        assert result[0] == self.topic
+
+    @cluster(num_nodes=3)
+    @parametrize(base_release=(22, 2), next_release=(22, 3))
+    @parametrize(base_release=(22, 3), next_release=(23, 1))
+    def test_upgrade_and_enable_basic_auth(self, base_release: tuple[int, int],
+                                           next_release: tuple[int, int]):
+        old_version, old_version_str = self.installer.install(
+            self.redpanda.nodes, base_release)
+        security = SecurityConfig()
+        security.enable_sasl = True
+        security.endpoint_authn_method = 'sasl'
+        self.redpanda.set_security_settings(security)
+
+        pandaproxy_config = PandaproxyConfig()
+        if base_release == (22, 2):
+            # v22.2.x or earlier do not support Basic Auth
+            # so there is no kafka client cache
+            pandaproxy_config.cache_keep_alive_ms = None
+            pandaproxy_config.cache_max_size = None
+
+        self.redpanda.set_pandaproxy_settings(pandaproxy_config)
+        self.redpanda.start()
+        self._create_initial_topics()
+        self.check_usage()
+
+        # Upgrade to cluster with basic auth support
+        # and test with basic auth enabled
+        self.installer.install(self.redpanda.nodes, next_release)
+        pandaproxy_config.authn_method = 'http_basic'
+        pandaproxy_config.cache_keep_alive_ms = 300000
+        pandaproxy_config.cache_max_size = 10
+        self.redpanda.set_pandaproxy_settings(pandaproxy_config)
+        self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+        # self.redpanda.rolling_restart_nodes(self.redpanda.nodes)
+        unique_versions = wait_for_num_versions(self.redpanda, 1)
+        assert old_version_str not in unique_versions
+        self.check_usage()
