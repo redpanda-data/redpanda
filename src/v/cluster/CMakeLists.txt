@@ -171,6 +171,7 @@ v_cc_library(
     ../archival/retention_calculator.cc
     ../archival/upload_housekeeping_service.cc
     ../archival/adjacent_segment_merger.cc
+    ../archival/scrubber.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc

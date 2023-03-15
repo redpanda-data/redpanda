@@ -251,6 +251,7 @@ private:
     ss::sharded<archival::upload_housekeeping_service>
       _archival_upload_housekeeping;
     std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
+    ss::sharded<archival::scrubber> _archival_scrubber;
 
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
