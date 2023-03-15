@@ -89,10 +89,11 @@ public:
         model::term_id archiver_term;
         /// Term of the segment itself
         model::term_id segment_term;
-        /// Size of the segment if segment_name_format::v2 is used,
-        /// or 0 otherwise. The sname_format field is not added explicitly
-        /// but its value is encoded using size-bytes field.
+        /// Size of the segment if segment_name_format::v2 or later is used,
+        /// or 0 otherwise.
         size_t size_bytes;
+
+        segment_name_format sname_format{segment_name_format::v1};
 
         auto operator<=>(const lw_segment_meta&) const = default;
 
