@@ -306,12 +306,19 @@ ss::future<> disk_log_impl::garbage_collect_segments(
       config().ntp(),
       ctx,
       max_offset);
-    // we only notify eviction monitor if there are segments to evict
-    auto have_segments_to_evict = _segs.size() > 1
-                                  && _segs.front()->offsets().committed_offset
-                                       <= max_offset;
 
-    if (_eviction_monitor && have_segments_to_evict) {
+    const auto eligible_segments = [this, &cfg](auto max_offset) {
+        return _segs.size() > 1 && !cfg.asrc->abort_requested()
+               && _segs.front()->offsets().committed_offset <= max_offset;
+    };
+
+    /*
+     * the eviction monitor upcall should receive the desired max offset before
+     * it is adjusted based on max collectible restrictions below. this is so
+     * that the monitor will make progress--it is involved in calculating the
+     * max collectible offset and feeding it back into storage layer.
+     */
+    if (_eviction_monitor && eligible_segments(max_offset)) {
         _eviction_monitor->promise.set_value(max_offset);
         _eviction_monitor.reset();
     }
@@ -330,12 +337,7 @@ ss::future<> disk_log_impl::garbage_collect_segments(
      * delete segments from the front of the log, in order of lowest to highest
      * offset, until we have reached as close to the target offset as possible.
      */
-    while (true) {
-        if (
-          _segs.size() <= 1 || cfg.asrc->abort_requested()
-          || _segs.front()->offsets().committed_offset > max_offset) {
-            break;
-        }
+    while (eligible_segments(max_offset)) {
         auto seg = _segs.front();
         co_await update_start_offset(
           seg->offsets().dirty_offset + model::offset(1));
