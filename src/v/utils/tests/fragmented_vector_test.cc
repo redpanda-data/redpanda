@@ -272,6 +272,24 @@ BOOST_AUTO_TEST_CASE(fragmented_vector_iterator_comparison) {
     BOOST_CHECK(b1 >= b);
 }
 
+BOOST_AUTO_TEST_CASE(fragmented_vector_empty_after_move) {
+    // Checks that post move, the source vector is empty().
+    // This is inline with std::vector guarantees.
+    fragmented_vector<int> v1;
+    v1.push_back(1);
+    BOOST_CHECK(!v1.empty());
+
+    auto v2 = std::move(v1);
+    // NOLINTNEXTLINE(bugprone-use-after-move)
+    BOOST_CHECK(v1.empty());
+    BOOST_CHECK(v1.begin() == v1.end());
+
+    auto v3(std::move(v2));
+    // NOLINTNEXTLINE(bugprone-use-after-move)
+    BOOST_CHECK(v2.empty());
+    BOOST_CHECK(v2.begin() == v2.end());
+}
+
 BOOST_AUTO_TEST_CASE(fragmented_vector_sort) {
     auto v = make<int64_t, 8>({3, 2, 1});
     auto expected = make<int64_t, 8>({1, 2, 3});
