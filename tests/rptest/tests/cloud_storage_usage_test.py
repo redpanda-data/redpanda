@@ -21,6 +21,7 @@ from ducktape.utils.util import wait_until
 
 import random
 import time
+from collections import deque
 
 
 class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
@@ -84,27 +85,32 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
     def _check_usage(self, timeout_sec):
         bucket_view = BucketView(self.redpanda)
 
+        # The usage inferred from the uploaded manifest
+        # lags behind the actual reported usage. For this reason,
+        # we maintain a sliding window of reported usages and check whether
+        # the manifest inferred usage can be found in it.
+        reported_usage_sliding_window = deque(maxlen=10)
+
         def check():
-            actual_usage = bucket_view.total_cloud_log_size()
+            manifest_usage = bucket_view.total_cloud_log_size()
+
             reported_usage = self.admin.cloud_storage_usage()
+            reported_usage_sliding_window.append(reported_usage)
 
             self.logger.info(
-                f"Expected {actual_usage} bytes of cloud storage usage")
+                f"Expected {manifest_usage} bytes of cloud storage usage")
             self.logger.info(
-                f"Reported {reported_usage} bytes of cloud storage usage")
-            return actual_usage == reported_usage
+                f"Reported usages in sliding window: {reported_usage_sliding_window}"
+            )
+            return manifest_usage in reported_usage_sliding_window
 
-        # Manifests are not immediately uploaded after they are mutated locally.
-        # For example, during cloud storage housekeeping, the manifest is not uploaded
-        # after the 'start_offset' advances, but after the segments are deleted as well.
-        # If a request lands mid-housekeeping, the results will not be consistent with
-        # what's in the uploaded manifest. For this reason, we wait until the two match.
         wait_until(
             check,
             timeout_sec=timeout_sec,
             backoff_sec=0.2,
             err_msg=
-            "Reported cloud storage usage did not match the actual usage")
+            "Reported cloud storage usage did not match the manifest inferred usage"
+        )
 
     def _test_epilogue(self):
         # Assert tht retention was active
