@@ -65,6 +65,7 @@ public:
     static constexpr auto commands = make_commands_list<
       create_topic_cmd,
       delete_topic_cmd,
+      topic_lifecycle_transition_cmd,
       move_partition_replicas_cmd,
       finish_moving_partition_replicas_cmd,
       update_topic_properties_cmd,
@@ -87,6 +88,8 @@ private:
 
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
     ss::future<std::error_code> apply(delete_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(topic_lifecycle_transition_cmd, model::offset);
     ss::future<std::error_code>
       apply(move_partition_replicas_cmd, model::offset);
     ss::future<std::error_code>
@@ -114,6 +117,9 @@ private:
       const assignments_set&,
       const in_progress_map&,
       partition_allocation_domain);
+
+    ss::future<std::error_code>
+      do_topic_delete(topic_lifecycle_transition, model::offset);
 
     in_progress_map
     collect_in_progress(const model::topic_namespace&, const assignments_set&);

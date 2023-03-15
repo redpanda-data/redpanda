@@ -41,6 +41,63 @@ topic_updates_dispatcher::topic_updates_dispatcher(
   , _partition_leaders_table(leaders)
   , _partition_balancer_state(pb_state) {}
 
+ss::future<std::error_code> topic_updates_dispatcher::do_topic_delete(
+  topic_lifecycle_transition transition, model::offset base_offset) {
+    in_progress_map in_progress;
+    std::optional<assignments_set> topic_assignments;
+
+    bool local_delete = transition.mode
+                          == topic_lifecycle_transition_mode::oneshot_delete
+                        || transition.mode
+                             == topic_lifecycle_transition_mode::pending_gc;
+
+    // If the command includes local deletion of the topic, we will do some
+    // extra work as well as applying the command to the topic table.
+    if (local_delete) {
+        topic_assignments = _topic_table.local().get_topic_assignments(
+          transition.topic.nt);
+        if (topic_assignments) {
+            in_progress = collect_in_progress(
+              transition.topic.nt, *topic_assignments);
+        }
+    }
+
+    return dispatch_updates_to_cores(transition, base_offset)
+      .then([this,
+             tp_ns = std::move(transition.topic.nt),
+             topic_assignments = std::move(topic_assignments),
+             in_progress = std::move(in_progress),
+             local_delete](std::error_code ec) {
+          vlog(
+            clusterlog.info,
+            "dispatched to cores: {} (local delete {})",
+            ec,
+            local_delete);
+          if (ec == errc::success && local_delete) {
+              vassert(
+                topic_assignments.has_value(),
+                "Topic had to exist before successful delete");
+              vlog(
+                clusterlog.trace,
+                "Deallocating ntp: {}, in_progress ops: {}",
+                tp_ns,
+                in_progress);
+              deallocate_topic(
+                tp_ns,
+                *topic_assignments,
+                in_progress,
+                get_allocation_domain(tp_ns));
+
+              for (const auto& p_as : *topic_assignments) {
+                  _partition_balancer_state.local().handle_ntp_update(
+                    tp_ns.ns, tp_ns.tp, p_as.id, p_as.replicas, {});
+              }
+          }
+
+          return ec;
+      });
+}
+
 ss::future<std::error_code>
 topic_updates_dispatcher::apply_update(model::record_batch b) {
     auto offset = b.base_offset();
@@ -81,44 +138,25 @@ ss::future<std::error_code> topic_updates_dispatcher::apply(
 
     co_return ec;
 }
+
 ss::future<std::error_code>
 topic_updates_dispatcher::apply(delete_topic_cmd cmd, model::offset offset) {
-    auto topic_assignments = _topic_table.local().get_topic_assignments(
-      cmd.value);
-    in_progress_map in_progress;
+    // Legacy delete commands never create tombstones, so revision
+    // ID doesn't matter: use a synthetic '0' version.
+    topic_lifecycle_transition transition{
+      .topic
+      = nt_revision{.nt = cmd.key, .initial_revision_id = model::initial_revision_id{0}},
+      .mode = topic_lifecycle_transition_mode::oneshot_delete,
+    };
 
-    if (topic_assignments) {
-        in_progress = collect_in_progress(cmd.key, *topic_assignments);
-    }
-    return dispatch_updates_to_cores(cmd, offset)
-      .then([this,
-             tp_ns = std::move(cmd.key),
-             topic_assignments = std::move(topic_assignments),
-             in_progress = std::move(in_progress)](std::error_code ec) {
-          if (ec == errc::success) {
-              vassert(
-                topic_assignments.has_value(),
-                "Topic had to exist before successful delete");
-              vlog(
-                clusterlog.trace,
-                "Deallocating ntp: {},  in_progress ops: {}",
-                tp_ns,
-                in_progress);
-              deallocate_topic(
-                tp_ns,
-                *topic_assignments,
-                in_progress,
-                get_allocation_domain(tp_ns));
-
-              for (const auto& p_as : *topic_assignments) {
-                  _partition_balancer_state.local().handle_ntp_update(
-                    tp_ns.ns, tp_ns.tp, p_as.id, p_as.replicas, {});
-              }
-          }
-
-          return ec;
-      });
+    return do_topic_delete(transition, offset);
 }
+
+ss::future<std::error_code> topic_updates_dispatcher::apply(
+  topic_lifecycle_transition_cmd cmd, model::offset offset) {
+    return do_topic_delete(cmd.value, offset);
+}
+
 ss::future<std::error_code> topic_updates_dispatcher::apply(
   move_partition_replicas_cmd cmd, model::offset offset) {
     auto p_as = _topic_table.local().get_partition_assignment(cmd.key);

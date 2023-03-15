@@ -622,7 +622,37 @@ ss::future<std::vector<topic_result>> topics_frontend::delete_topics(
 
 ss::future<topic_result> topics_frontend::do_delete_topic(
   model::topic_namespace tp_ns, model::timeout_clock::time_point timeout) {
-    delete_topic_cmd cmd(tp_ns, tp_ns);
+    // Look up config
+    auto topic_meta_opt = _topics.local().get_topic_metadata_ref(tp_ns);
+    if (!topic_meta_opt.has_value()) {
+        topic_result result(std::move(tp_ns), errc::topic_not_exists);
+        return ss::make_ready_future<topic_result>(result);
+    }
+    auto& topic_meta = topic_meta_opt.value().get();
+
+    // Default to traditional deletion, without tombstones
+    // Use tombstones for tiered storage topics that require remote erase
+    topic_lifecycle_transition_mode mode
+      = topic_meta.get_configuration().properties.requires_remote_erase()
+          ? topic_lifecycle_transition_mode::pending_gc
+          : topic_lifecycle_transition_mode::oneshot_delete;
+
+    if (mode == topic_lifecycle_transition_mode::oneshot_delete) {
+        vlog(clusterlog.debug, "Deleting {} without tombstone", tp_ns);
+    } else if (mode == topic_lifecycle_transition_mode::pending_gc) {
+        vlog(
+          clusterlog.debug,
+          "Deleting {} with tombstone (tiered storage enabled)",
+          tp_ns);
+    }
+
+    auto remote_revision = topic_meta.get_remote_revision().value_or(
+      model::initial_revision_id{topic_meta.get_revision()});
+
+    topic_lifecycle_transition_cmd cmd(
+      tp_ns,
+      {.topic = {.nt = tp_ns, .initial_revision_id = remote_revision},
+       .mode = mode});
 
     return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
       .then_wrapped(
