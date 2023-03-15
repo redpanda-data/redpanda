@@ -321,24 +321,26 @@ ss::future<> disk_log_impl::garbage_collect_segments(
     max_offset = std::min(
       cfg.max_collectible_offset,
       std::min(max_offset, _max_collectible_offset));
-    auto* as = cfg.asrc;
-    return ss::do_until(
-      [this, as, max_offset] {
-          return _segs.size() <= 1 || as->abort_requested()
-                 || _segs.front()->offsets().committed_offset > max_offset;
-      },
-      [this, ctx] {
-          auto ptr = _segs.front();
-          return update_start_offset(
-                   ptr->offsets().dirty_offset + model::offset(1))
-            .then([this, ptr, ctx](bool /*updated*/) {
-                if (!is_front_segment(ptr)) {
-                    return ss::now();
-                }
-                _segs.pop_front();
-                return remove_segment_permanently(ptr, ctx);
-            });
-      });
+
+    /*
+     * delete segments from the front of the log, in order of lowest to highest
+     * offset, until we have reached as close to the target offset as possible.
+     */
+    while (true) {
+        if (
+          _segs.size() <= 1 || cfg.asrc->abort_requested()
+          || _segs.front()->offsets().committed_offset > max_offset) {
+            break;
+        }
+        auto seg = _segs.front();
+        co_await update_start_offset(
+          seg->offsets().dirty_offset + model::offset(1));
+        if (!is_front_segment(seg)) {
+            continue;
+        }
+        _segs.pop_front();
+        co_await remove_segment_permanently(seg, ctx);
+    }
 }
 
 ss::future<>
