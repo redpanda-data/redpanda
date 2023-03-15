@@ -40,6 +40,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<> restart();
 
     ss::future<> set_config(ss::sstring name, std::any val);
     ss::future<> set_client_config(ss::sstring name, std::any val);

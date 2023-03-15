@@ -856,10 +856,13 @@ class Admin:
     def self_test_status(self):
         return self._request("GET", "debug/self_test/status").json()
 
-    def redpanda_services_restart(self, rp_service: Optional[str] = None):
+    def redpanda_services_restart(self,
+                                  rp_service: Optional[str] = None,
+                                  node: Optional[ClusterNode] = None):
         service_param = f"service={rp_service if rp_service is not None else ''}"
         return self._request("PUT",
-                             f"redpanda-services/restart?{service_param}")
+                             f"redpanda-services/restart?{service_param}",
+                             node=node)
 
     def is_node_isolated(self, node):
         return self._request("GET", "debug/is_node_isolated", node=node).json()

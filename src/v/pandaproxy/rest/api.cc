@@ -12,6 +12,7 @@
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "model/metadata.h"
+#include "pandaproxy/logger.h"
 #include "pandaproxy/rest/configuration.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/rest/proxy.h"
@@ -64,6 +65,12 @@ ss::future<> api::stop() {
     co_await _proxy.stop();
     co_await _client_cache.stop();
     co_await _client.stop();
+}
+
+ss::future<> api::restart() {
+    vlog(plog.info, "Restarting the http proxy");
+    co_await stop();
+    co_await start();
 }
 
 ss::future<> api::set_config(ss::sstring name, std::any val) {

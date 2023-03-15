@@ -67,3 +67,37 @@ class RestartServicesTest(RedpandaTest):
         check_service_restart(self.redpanda, "Restarting the schema registry")
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
+
+
+class RestartServicesUndefinedConfigTest(RedpandaTest):
+    def __init__(self, context, **kwargs):
+        super(RestartServicesUndefinedConfigTest, self).__init__(
+            context,
+            num_brokers=1,
+            extra_rp_conf={"auto_create_topics_enabled": False},
+            resource_settings=ResourceSettings(num_cpus=1),
+            log_config=log_config,
+            **kwargs)
+
+    @cluster(
+        num_nodes=1,
+        log_allow_list=[
+            r"admin_api_server - .* is undefined. Is it set in the .yaml config file?"
+        ])
+    def test_undefined_config(self):
+        admin = Admin(self.redpanda)
+
+        # Success checks
+        self.logger.debug("Check http proxy restart")
+        try:
+            admin.redpanda_services_restart(rp_service='http-proxy')
+        except requests.exceptions.HTTPError as ex:
+            self.logger.debug(ex.response.json())
+            assert ex.response.status_code == requests.codes.internal_server_error
+
+        self.logger.debug("Check schema registry restart")
+        try:
+            admin.redpanda_services_restart(rp_service='schema-registry')
+        except requests.exceptions.HTTPError as ex:
+            self.logger.debug(ex.response.json())
+            assert ex.response.status_code == requests.codes.internal_server_error

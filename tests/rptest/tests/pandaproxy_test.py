@@ -25,6 +25,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.restart_services_test import check_service_restart
 from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, PandaproxyConfig, TLSProvider
 from rptest.services.admin import Admin
 from rptest.services import tls
@@ -332,6 +333,126 @@ class PandaProxyEndpoints(RedpandaTest):
                             }),
                             headers=headers)
         return res
+
+    def _test_http_proxy_restart(self,
+                                 topic_name: str,
+                                 auth_tuple: Optional[tuple[str, str]] = None):
+        def check_produce_output(produce_result_raw, expected_offset: int):
+            assert produce_result_raw.status_code == requests.codes.ok
+            produce_result = produce_result_raw.json()
+            for o in produce_result["offsets"]:
+                assert o[
+                    "offset"] == expected_offset, f'error_code {o["error_code"]}'
+
+        def check_fetch_output(fetch_result_raw, topic_name: str,
+                               expected_data: dict, expected_offset: int):
+            assert fetch_result_raw.status_code == requests.codes.ok
+            fetch_result_0 = fetch_result_raw.json()
+            assert len(fetch_result_0) == 1
+            assert fetch_result_0[0]["topic"] == topic_name
+            assert fetch_result_0[0]["key"] is None
+            assert fetch_result_0[0]["value"] == expected_data["records"][0][
+                "value"]
+            assert fetch_result_0[0]["partition"] == expected_data["records"][
+                0]["partition"]
+            assert fetch_result_0[0]["offset"] == expected_offset
+
+        def check_offsets(group_id: str,
+                          topic_name: str,
+                          expected_offset: int,
+                          auth_tuple: Optional[tuple[str, str]] = None,
+                          do_set_offsets: bool = True):
+            self.logger.debug(
+                f"Create a consumer and subscribe to topic: {topic_name}")
+            # A consumer is kept in a memory resident map within the kafka::client
+            # and that map is wiped after restart. Therefore, we create new consumer each time
+            cc_res = self._create_consumer(group_id, auth=auth_tuple)
+            assert cc_res.status_code == requests.codes.ok
+            c0 = Consumer(cc_res.json(), self.logger)
+            sc_res = c0.subscribe([topic_name], auth=auth_tuple)
+            assert sc_res.status_code == requests.codes.no_content
+
+            # Maybe set consumer offsets to 0
+            parts = [0, 1, 2]
+            if do_set_offsets:
+                sco_req = dict(partitions=[
+                    dict(topic=topic_name, partition=p, offset=expected_offset)
+                    for p in parts
+                ])
+                co_res_raw = c0.set_offsets(data=json.dumps(sco_req),
+                                            auth=auth_tuple)
+                assert co_res_raw.status_code == requests.codes.no_content
+
+            self.logger.debug(f"Check consumer offsets")
+            co_req = dict(partitions=[
+                dict(topic=topic_name, partition=p) for p in parts
+            ])
+            offset_result_raw = c0.get_offsets(data=json.dumps(co_req),
+                                               auth=auth_tuple)
+            assert offset_result_raw.status_code == requests.codes.ok
+            res = offset_result_raw.json()
+            # Should be one offset for each partition that we previously set offsets for
+            assert len(res["offsets"]) == len(parts)
+            for r in res["offsets"]:
+                assert r["topic"] == topic_name
+                assert r["partition"] in parts
+                assert r["offset"] == expected_offset
+                assert r["metadata"] == ""
+
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+
+        self.logger.info(f"Producing to topic: {topic_name}")
+        check_produce_output(self._produce_topic(topic_name,
+                                                 data,
+                                                 auth=auth_tuple),
+                             expected_offset=0)
+
+        self.logger.info(f"Fetch from topic: {topic_name}")
+        check_fetch_output(self._fetch_topic(topic_name, 0, auth=auth_tuple),
+                           topic_name=topic_name,
+                           expected_data=json.loads(data),
+                           expected_offset=0)
+
+        self.logger.info("Check consumer offsets")
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+        check_offsets(group_id=group_id,
+                      topic_name=topic_name,
+                      expected_offset=0,
+                      auth_tuple=auth_tuple)
+
+        self.logger.debug("Restart the http proxy")
+        admin = Admin(self.redpanda)
+        for node in self.redpanda.nodes:
+            result_raw = admin.redpanda_services_restart(
+                rp_service='http-proxy', node=node)
+            check_service_restart(self.redpanda, "Restarting the http proxy")
+            self.logger.debug(result_raw)
+            assert result_raw.status_code == requests.codes.ok
+
+        self.logger.debug("Check consumer offsets after restart")
+        check_offsets(group_id=group_id,
+                      topic_name=topic_name,
+                      expected_offset=0,
+                      auth_tuple=auth_tuple,
+                      do_set_offsets=False)
+
+        self.logger.debug("Check fetch and produce after restart")
+        check_fetch_output(self._fetch_topic(topic_name, 0, auth=auth_tuple),
+                           topic_name=topic_name,
+                           expected_data=json.loads(data),
+                           expected_offset=0)
+
+        check_produce_output(self._produce_topic(topic_name,
+                                                 data,
+                                                 auth=auth_tuple),
+                             expected_offset=1)
 
 
 class PandaProxyTestMethods(PandaProxyEndpoints):
@@ -946,6 +1067,17 @@ class PandaProxyTestMethods(PandaProxyEndpoints):
         rc_res = c0.remove()
         assert rc_res.status_code == requests.codes.no_content
 
+    @cluster(num_nodes=3)
+    def test_restart_http_proxy(self):
+        """
+        The proxy uses an internal kafka client to issue requests.
+        So check that the connection still works after restart with a
+        simple prod-fetch example.
+        """
+        self.topics = [TopicSpec(partition_count=3)]
+        self._create_initial_topics()
+        self._test_http_proxy_restart(topic_name=self.topic)
+
 
 class PandaProxySASLTest(PandaProxyEndpoints):
     """
@@ -1312,6 +1444,20 @@ class PandaProxyBasicAuthTest(PandaProxyEndpoints):
         # Put the original password back incase future changes to the
         # teardown process in RedpandaService relies on the superuser
         admin.update_user(super_username, super_password, super_algorithm)
+
+    @cluster(num_nodes=3)
+    def test_restart_http_proxy(self):
+        """
+        The proxy uses an internal kafka client cache to issue requests when
+        Basic Auth is enabled. So check that the connection(s) still work
+        after restart with a simple prod-fetch example.
+        """
+        self.topics = [TopicSpec(partition_count=3)]
+        self._create_initial_topics()
+        super_username, super_password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+        self._test_http_proxy_restart(topic_name=self.topic,
+                                      auth_tuple=(super_username,
+                                                  super_password))
 
 
 class PandaProxyAutoAuthTest(PandaProxyTestMethods):

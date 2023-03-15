@@ -58,6 +58,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "net/dns.h"
+#include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/broker.json.h"
@@ -125,6 +126,7 @@ admin_server::admin_server(
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<cluster::node_status_table>& node_status_table,
   ss::sharded<cluster::self_test_frontend>& self_test_frontend,
+  pandaproxy::rest::api* http_proxy,
   pandaproxy::schema_registry::api* schema_registry,
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
   ss::sharded<cluster::topic_recovery_status_frontend>&
@@ -141,6 +143,7 @@ admin_server::admin_server(
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
   , _node_status_table(node_status_table)
   , _self_test_frontend(self_test_frontend)
+  , _http_proxy(http_proxy)
   , _schema_registry(schema_registry)
   , _topic_recovery_service(topic_recovery_svc)
   , _topic_recovery_status_frontend(topic_recovery_status_frontend)
@@ -3896,6 +3899,8 @@ constexpr std::string_view to_string_view(service_kind kind) {
     switch (kind) {
     case service_kind::schema_registry:
         return "schema-registry";
+    case service_kind::http_proxy:
+        return "http-proxy";
     }
     return "invalid";
 }
@@ -3911,28 +3916,42 @@ from_string_view<service_kind>(std::string_view sv) {
       .match(
         to_string_view(service_kind::schema_registry),
         service_kind::schema_registry)
+      .match(to_string_view(service_kind::http_proxy), service_kind::http_proxy)
       .default_match(std::nullopt);
 }
 
-ss::future<> admin_server::restart_redpanda_service(service_kind service) {
-    if (service == service_kind::schema_registry) {
-        // Checks specific to schema registry
-        if (_schema_registry == nullptr) {
-            throw ss::httpd::server_error_exception(
-              "Schema Registry is undefined. Is it set in the .yaml config "
-              "file?");
-        }
+namespace {
+template<typename service_t>
+ss::future<>
+try_service_restart(service_t* svc, std::string_view service_str_view) {
+    if (svc == nullptr) {
+        throw ss::httpd::server_error_exception(fmt::format(
+          "{} is undefined. Is it set in the .yaml config file?",
+          service_str_view));
+    }
 
-        try {
-            co_await _schema_registry->restart();
-        } catch (const std::exception& ex) {
-            vlog(
-              logger.error,
-              "Unknown issue restarting schema_registry: {}",
-              ex.what());
-            throw ss::httpd::server_error_exception(
-              "Unknown issue restarting schema_registry");
-        }
+    try {
+        co_await svc->restart();
+    } catch (const std::exception& ex) {
+        vlog(
+          logger.error,
+          "Unknown issue restarting {}: {}",
+          service_str_view,
+          ex.what());
+        throw ss::httpd::server_error_exception(
+          fmt::format("Unknown issue restarting {}", service_str_view));
+    }
+}
+} // namespace
+
+ss::future<> admin_server::restart_redpanda_service(service_kind service) {
+    switch (service) {
+    case service_kind::schema_registry:
+        co_await try_service_restart(_schema_registry, to_string_view(service));
+        break;
+    case service_kind::http_proxy:
+        co_await try_service_restart(_http_proxy, to_string_view(service));
+        break;
     }
 }
 
