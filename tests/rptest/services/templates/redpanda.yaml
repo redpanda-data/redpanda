@@ -63,8 +63,12 @@ pandaproxy:
     authentication_method: {{ pandaproxy_config.authn_method }}
     {% endif %}
 
+  {% if pandaproxy_config.cache_keep_alive_ms is not none %}
   client_keep_alive: {{ pandaproxy_config.cache_keep_alive_ms }}
+  {% endif %}
+  {% if pandaproxy_config.cache_max_size is not none %}
   client_cache_max_size: {{ pandaproxy_config.cache_max_size }}
+  {% endif %}
 
   advertised_pandaproxy_api:
     address: "{{node.account.hostname}}"
