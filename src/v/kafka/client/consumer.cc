@@ -133,7 +133,7 @@ ss::future<> consumer::stop() {
     _inactive_timer.cancel();
     _inactive_timer.set_callback([]() {});
 
-    _on_stopped(_name);
+    _on_stopped(name());
     if (_as.abort_requested()) {
         return ss::now();
     }
