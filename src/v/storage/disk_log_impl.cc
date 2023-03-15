@@ -782,7 +782,7 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
           gclog.trace,
           "[{}] skipped log deletion, exempt topic",
           config().ntp());
-        return ss::make_ready_future<>();
+        co_return;
     }
     if (cfg.max_bytes) {
         size_t max = cfg.max_bytes.value();
@@ -793,10 +793,10 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
           max,
           _probe.partition_size());
         if (!_segs.empty() && _probe.partition_size() > max) {
-            return garbage_collect_max_partition_size(cfg);
+            co_return co_await garbage_collect_max_partition_size(cfg);
         }
     }
-    return garbage_collect_oldest_segments(cfg);
+    co_await garbage_collect_oldest_segments(cfg);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
