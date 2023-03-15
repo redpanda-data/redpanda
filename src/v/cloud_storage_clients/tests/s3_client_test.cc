@@ -796,8 +796,8 @@ SEASTAR_TEST_CASE(test_client_pool_wait_strategy) {
 
 SEASTAR_TEST_CASE(test_client_pool_create_new_strategy) {
     return ss::async([] {
-        test_client_pool(cloud_storage_clients::client_pool_overdraft_policy::
-                           create_new_if_empty);
+        test_client_pool(
+          cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty);
     });
 }
 
