@@ -343,8 +343,21 @@ ss::future<> disk_log_impl::garbage_collect_segments(
 
 ss::future<>
 disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
+    if (!cfg.max_bytes.has_value()) {
+        co_return;
+    }
+    auto max = cfg.max_bytes.value();
+    vlog(
+      gclog.debug,
+      "[{}] retention max bytes: {}, current partition size: {}",
+      config().ntp(),
+      max,
+      _probe.partition_size());
+    if (_segs.empty() || _probe.partition_size() <= max) {
+        co_return;
+    }
     model::offset max_offset = size_based_gc_max_offset(cfg.max_bytes.value());
-    return garbage_collect_segments(
+    co_await garbage_collect_segments(
       cfg, max_offset, "gc[size_based_retention]");
 }
 
@@ -784,18 +797,7 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
           config().ntp());
         co_return;
     }
-    if (cfg.max_bytes) {
-        size_t max = cfg.max_bytes.value();
-        vlog(
-          gclog.debug,
-          "[{}] retention max bytes: {}, current partition size: {}",
-          config().ntp(),
-          max,
-          _probe.partition_size());
-        if (!_segs.empty() && _probe.partition_size() > max) {
-            co_return co_await garbage_collect_max_partition_size(cfg);
-        }
-    }
+    co_await garbage_collect_max_partition_size(cfg);
     co_await garbage_collect_oldest_segments(cfg);
 }
 
