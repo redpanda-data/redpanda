@@ -10,6 +10,7 @@
 package config
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
@@ -36,6 +37,8 @@ use the 'edit' command and delete the property's line.
 This command erases a named property from an internal cache of the cluster
 configuration on the local node, so that on next startup redpanda will treat
 the setting as if it was set to the default.
+
+WARNING: this should only be used when redpanda is not running.
 `,
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, propertyNames []string) {
@@ -72,6 +75,8 @@ the setting as if it was set to the default.
 			// Write back output
 			err = afero.WriteFile(fs, configCacheFile, outBytes, 0o755)
 			out.MaybeDie(err, "Couldn't write %q: %v", configCacheFile, err)
+
+			fmt.Println("The property has been successfully removed from the cluster configuration cache. Next time Redpanda starts, the setting will be treated as if it were set to its default value.")
 		},
 	}
 
