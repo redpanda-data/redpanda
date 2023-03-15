@@ -1878,6 +1878,46 @@ struct create_topics_reply
     auto serde_fields() { return std::tie(results, metadata, configs); }
 };
 
+struct purged_topic_request
+  : serde::envelope<
+      purged_topic_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    nt_revision topic;
+    model::timeout_clock::duration timeout;
+
+    friend bool
+    operator==(const purged_topic_request&, const purged_topic_request&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream&, const purged_topic_request&);
+
+    auto serde_fields() { return std::tie(topic, timeout); }
+};
+
+struct purged_topic_reply
+  : serde::envelope<
+      purged_topic_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    topic_result result;
+
+    purged_topic_reply() noexcept = default;
+    purged_topic_reply(topic_result r)
+      : result(r) {}
+
+    friend bool operator==(const purged_topic_reply&, const purged_topic_reply&)
+      = default;
+
+    friend std::ostream& operator<<(std::ostream&, const purged_topic_reply&);
+
+    auto serde_fields() { return std::tie(result); }
+};
+
 struct finish_partition_update_request
   : serde::envelope<
       finish_partition_update_request,

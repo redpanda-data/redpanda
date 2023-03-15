@@ -27,6 +27,11 @@
             "output_type": "create_topics_reply"
         },
         {
+            "name": "purged_topic",
+            "input_type": "purged_topic_request",
+            "output_type": "purged_topic_reply"
+        },
+        {
             "name": "create_non_replicable_topics",
             "input_type": "create_non_replicable_topics_request",
             "output_type": "create_non_replicable_topics_reply"

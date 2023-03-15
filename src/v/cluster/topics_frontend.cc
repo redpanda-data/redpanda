@@ -673,6 +673,51 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
         });
 }
 
+ss::future<topic_result> topics_frontend::purged_topic(
+  nt_revision topic, model::timeout_clock::duration timeout) {
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!leader) {
+        return ss::make_ready_future<topic_result>(
+          topic_result(topic.nt, errc::no_leader_controller));
+    }
+    // current node is a leader controller
+    if (leader == _self) {
+        return do_purged_topic(
+          std::move(topic), model::timeout_clock::now() + timeout);
+    } else {
+        return dispatch_purged_topic_to_leader(
+          leader.value(), std::move(topic), timeout);
+    }
+}
+
+ss::future<topic_result> topics_frontend::do_purged_topic(
+  nt_revision topic, model::timeout_clock::time_point deadline) {
+    topic_lifecycle_transition_cmd cmd(
+      topic.nt,
+      topic_lifecycle_transition{
+        .topic = topic, .mode = topic_lifecycle_transition_mode::drop});
+    std::error_code repl_ec;
+    try {
+        repl_ec = co_await replicate_and_wait(
+          _stm, _features, _as, std::move(cmd), deadline);
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "Unable to mark topic {} purged - {}",
+          topic.nt,
+          std::current_exception());
+        co_return topic_result(std::move(topic.nt), errc::replication_error);
+    }
+
+    if (repl_ec != errc::success) {
+        co_return topic_result(std::move(topic.nt), map_errc(repl_ec));
+    } else {
+        co_return topic_result(std::move(topic.nt), errc::success);
+    }
+}
+
 ss::future<std::vector<topic_result>> topics_frontend::autocreate_topics(
   std::vector<topic_configuration> topics,
   model::timeout_clock::duration timeout) {
@@ -722,6 +767,37 @@ topics_frontend::dispatch_create_to_leader(
             }
             return std::move(r.value().results);
         });
+}
+
+ss::future<topic_result> topics_frontend::dispatch_purged_topic_to_leader(
+  model::node_id leader,
+  nt_revision topic,
+  model::timeout_clock::duration timeout) {
+    vlog(
+      clusterlog.trace,
+      "Dispatching purged topic ({}) to {}",
+      topic.nt,
+      leader);
+
+    return _connections.local()
+      .with_node_client<cluster::controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        leader,
+        timeout,
+        [topic, timeout](controller_client_protocol cp) mutable {
+            return cp.purged_topic(
+              purged_topic_request{
+                .topic = std::move(topic), .timeout = timeout},
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<purged_topic_reply>)
+      .then([topic = std::move(topic)](result<purged_topic_reply> r) mutable {
+          if (r.has_error()) {
+              return topic_result(topic.nt, map_errc(r.error()));
+          }
+          return std::move(r.value().result);
+      });
 }
 
 bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
