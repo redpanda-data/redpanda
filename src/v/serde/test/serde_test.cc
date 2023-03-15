@@ -981,3 +981,68 @@ SEASTAR_THREAD_TEST_CASE(no_default_ctor_vector_test) {
       serde_input(std::vector<no_default_ctor>({no_default_ctor(37)})).at(0).x,
       37);
 }
+
+struct async_checksummed
+  : public serde::checksum_envelope<
+      async_checksummed,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    test_msg0 msg;
+    ss::sstring str;
+
+    bool operator==(const async_checksummed&) const = default;
+
+    ss::future<> serde_async_read(iobuf_parser& in, serde::header const h) {
+        msg = co_await serde::read_async_nested<decltype(msg)>(
+          in, h._bytes_left_limit);
+        str = co_await serde::read_async_nested<decltype(str)>(
+          in, h._bytes_left_limit);
+    }
+
+    ss::future<> serde_async_write(iobuf& out) const {
+        co_await serde::write_async(out, msg);
+        co_await serde::write_async(out, str);
+    }
+};
+
+static_assert(serde::is_envelope<async_checksummed>);
+static_assert(serde::is_checksum_envelope<async_checksummed>);
+static_assert(serde::has_serde_async_read<async_checksummed>);
+static_assert(serde::has_serde_async_write<async_checksummed>);
+
+SEASTAR_THREAD_TEST_CASE(test_async_checksummed) {
+    auto obj = async_checksummed{
+        .msg = test_msg0{
+            ._i = 12,
+            ._j = 34,
+        },
+        .str = "hello",
+    };
+
+    {
+        auto b = iobuf{};
+        serde::write_async(b, obj).get();
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK(obj == serde::read_async<async_checksummed>(parser).get());
+    }
+
+    {
+        auto b = iobuf{};
+        serde::write_async(b, obj).get();
+
+        // corrupt the buffer
+        BOOST_REQUIRE(b.size_bytes() > 0);
+        auto& last_frag = *b.rbegin();
+        BOOST_REQUIRE(last_frag.size() > 0);
+        last_frag.get_write()[last_frag.size() - 1] += 1;
+
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK_EXCEPTION(
+          serde::read_async<async_checksummed>(parser).get(),
+          serde::serde_exception,
+          [](const serde::serde_exception& ex) {
+              return std::string_view{ex.what()}.find("bad checksum")
+                     != std::string_view::npos;
+          });
+    }
+}

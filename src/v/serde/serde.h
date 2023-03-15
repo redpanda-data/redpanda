@@ -891,19 +891,71 @@ read_nested(iobuf_parser& in, std::size_t const bytes_left_limit) {
     }
 }
 
+// TODO: coroutinize async functions after we switch to clang 16 (see
+// https://github.com/llvm/llvm-project/issues/49689)
+
+inline ss::future<crc::crc32c> calculate_crc_async(iobuf_const_parser in) {
+    return ss::do_with(
+      crc::crc32c{},
+      std::move(in),
+      [](crc::crc32c& crc, iobuf_const_parser& in) {
+          return ss::do_until(
+                   [&in] { return in.bytes_left() == 0; },
+                   [&in, &crc] {
+                       in.consume(
+                         in.bytes_left(),
+                         [&crc](char const* src, size_t const n) {
+                             crc.extend(src, n);
+                             return (
+                               ss::need_preempt() ? ss::stop_iteration::yes
+                                                  : ss::stop_iteration::no);
+                         });
+                       return ss::now();
+                   })
+            .then([&crc] { return crc; });
+      });
+}
+
 template<typename T>
 ss::future<std::decay_t<T>>
 read_async_nested(iobuf_parser& in, size_t const bytes_left_limit) {
     using Type = std::decay_t<T>;
-    if constexpr (has_serde_async_direct_read<Type>) {
+    if constexpr (
+      has_serde_async_direct_read<Type> || has_serde_async_read<Type>) {
         auto const h = read_header<Type>(in, bytes_left_limit);
-        return Type::serde_async_direct_read(in, h._bytes_left_limit);
-    } else if constexpr (has_serde_async_read<Type>) {
-        auto const h = read_header<Type>(in, bytes_left_limit);
-        return ss::do_with(Type{}, [&in, h](Type& t) {
-            return t.serde_async_read(in, h).then(
-              [&t]() { return std::move(t); });
-        });
+        auto f = ss::now();
+        if constexpr (is_checksum_envelope<Type>) {
+            auto shared = in.share_no_consume(
+              in.bytes_left() - h._bytes_left_limit);
+            f = ss::do_with(std::move(shared), [h](const iobuf& shared) {
+                return calculate_crc_async(iobuf_const_parser{shared})
+                  .then([h](const crc::crc32c crc) {
+                      if (unlikely(crc.value() != h._checksum)) {
+                          throw serde_exception(fmt_with_ctx(
+                            ssx::sformat,
+                            "serde: envelope {} (ends at bytes_left={}) has "
+                            "bad checksum: stored={}, actual={}",
+                            type_str<Type>(),
+                            h._bytes_left_limit,
+                            h._checksum,
+                            crc.value()));
+                      }
+                  });
+            });
+        }
+
+        if constexpr (has_serde_async_direct_read<Type>) {
+            return f.then([&in, h] {
+                return Type::serde_async_direct_read(in, h._bytes_left_limit);
+            });
+        } else if constexpr (has_serde_async_read<Type>) {
+            return f.then([&in, h] {
+                return ss::do_with(Type{}, [&in, h](Type& t) {
+                    return t.serde_async_read(in, h).then(
+                      [&t]() { return std::move(t); });
+                });
+            });
+        }
     } else {
         return ss::make_ready_future<std::decay_t<T>>(
           read_nested<T>(in, bytes_left_limit));
@@ -935,16 +987,27 @@ ss::future<> write_async(iobuf& out, T t) {
         write(out, Type::redpanda_serde_compat_version);
 
         auto size_placeholder = out.reserve(sizeof(serde_size_t));
+
+        auto checksum_placeholder = iobuf::placeholder{};
+        if constexpr (is_checksum_envelope<Type>) {
+            checksum_placeholder = out.reserve(sizeof(checksum_t));
+        }
+
         auto const size_before = out.size_bytes();
 
         return ss::do_with(
           std::move(t),
-          [&out, size_before, size_placeholder = std::move(size_placeholder)](
+          [&out,
+           size_before,
+           size_placeholder = std::move(size_placeholder),
+           checksum_placeholder = std::move(checksum_placeholder)](
             T& t) mutable {
               return t.serde_async_write(out).then(
                 [&out,
                  size_before,
-                 size_placeholder = std::move(size_placeholder)]() mutable {
+                 size_placeholder = std::move(size_placeholder),
+                 checksum_placeholder = std::move(
+                   checksum_placeholder)]() mutable {
                     auto const written_size = out.size_bytes() - size_before;
                     if (unlikely(
                           written_size
@@ -957,7 +1020,24 @@ ss::future<> write_async(iobuf& out, T t) {
                       reinterpret_cast<char const*>(&size),
                       sizeof(serde_size_t));
 
-                    return ss::make_ready_future<>();
+                    if constexpr (is_checksum_envelope<Type>) {
+                        auto in = iobuf_const_parser{out};
+                        in.skip(size_before);
+                        return calculate_crc_async(std::move(in))
+                          .then([checksum_placeholder = std::move(
+                                   checksum_placeholder)](
+                                  const crc::crc32c crc) mutable {
+                              auto const checksum = ss::cpu_to_le(crc.value());
+                              static_assert(std::is_same_v<
+                                            std::decay_t<decltype(checksum)>,
+                                            checksum_t>);
+                              checksum_placeholder.write(
+                                reinterpret_cast<char const*>(&checksum),
+                                sizeof(checksum_t));
+                          });
+                    } else {
+                        return ss::now();
+                    }
                 });
           });
     } else {
