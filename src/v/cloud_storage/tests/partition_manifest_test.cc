@@ -947,6 +947,96 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
     }
 }
 
+SEASTAR_THREAD_TEST_CASE(test_replaced_sname_format_version) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    m.add(
+      segment_name("0-1-v1.log"),
+      {
+        .base_offset = model::offset{0},
+        .committed_offset = model::offset{9},
+      });
+
+    m.add(
+      segment_name("10-1-v1.log"),
+      {
+        .size_bytes = 0,
+        .base_offset = model::offset{10},
+        .committed_offset = model::offset{19},
+      });
+    m.add(
+      segment_name("20-1-v1.log"),
+      {
+        .size_bytes = 0,
+        .base_offset = model::offset{20},
+        .committed_offset = model::offset{29},
+      });
+    m.add(
+      segment_name("30-1-v1.log"),
+      {
+        .size_bytes = 0,
+        .base_offset = model::offset{30},
+        .committed_offset = model::offset{39},
+        .sname_format = segment_name_format::v2,
+      });
+    m.add(
+      segment_name("40-1-v1.log"),
+      {
+        .size_bytes = 0,
+        .base_offset = model::offset{40},
+        .committed_offset = model::offset{49},
+        .sname_format = segment_name_format::v3,
+      });
+
+    // replacement
+    m.add(
+      segment_name("10-1-v1.log"),
+      {
+        .size_bytes = 0,
+        .base_offset = model::offset{10},
+        .committed_offset = model::offset{19},
+      });
+    m.add(
+      segment_name("20-1-v1.log"),
+      {
+        .size_bytes = 1,
+        .base_offset = model::offset{20},
+        .committed_offset = model::offset{29},
+      });
+    m.add(
+      segment_name("30-1-v1.log"),
+      {
+        .size_bytes = 0,
+        .base_offset = model::offset{30},
+        .committed_offset = model::offset{39},
+        .sname_format = segment_name_format::v2,
+      });
+    m.add(
+      segment_name("40-1-v1.log"),
+      {
+        .size_bytes = 0,
+        .base_offset = model::offset{40},
+        .committed_offset = model::offset{49},
+        .sname_format = segment_name_format::v3,
+      });
+
+    std::stringstream sstr;
+    m.serialize(sstr);
+
+    vlog(test_log.info, "serialized: {}", sstr.str());
+
+    partition_manifest m2;
+    m2.update(make_manifest_stream(sstr.str())).get();
+    auto replaced = m2.replaced_segments();
+    BOOST_REQUIRE_EQUAL(replaced.size(), 4);
+    // size 0, inferred as v1
+    BOOST_REQUIRE_EQUAL(replaced[0].sname_format, segment_name_format::v1);
+    BOOST_REQUIRE_EQUAL(replaced[1].sname_format, segment_name_format::v1);
+    // size 0, explicitly set to v2
+    BOOST_REQUIRE_EQUAL(replaced[2].sname_format, segment_name_format::v2);
+    // size 0, explicitly set to v3
+    BOOST_REQUIRE_EQUAL(replaced[3].sname_format, segment_name_format::v3);
+}
+
 namespace cloud_storage {
 
 struct partition_manifest_accessor {
