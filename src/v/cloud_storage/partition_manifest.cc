@@ -373,6 +373,8 @@ segment_name partition_manifest::generate_remote_segment_name(
         return segment_name(
           ssx::sformat("{}-{}-v1.log", val.base_offset(), val.segment_term()));
     case segment_name_format::v2:
+        [[fallthrough]];
+    case segment_name_format::v3:
         // Use new stlyle format ".../base-committed-term-size-v1.log"
         return segment_name(ssx::sformat(
           "{}-{}-{}-{}-v1.log",
