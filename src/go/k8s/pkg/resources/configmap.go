@@ -26,6 +26,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
+	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -41,6 +42,8 @@ const (
 	archivalCacheIndexDirectory = "/var/lib/shadow-index-cache"
 
 	superusersConfigurationKey = "superusers"
+	kafkaNoDeleteTopicsKey     = "kafka_nodelete_topics"
+	redpandaPropertyPrefix     = "redpanda."
 
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
@@ -376,6 +379,17 @@ func (r *ConfigMapResource) CreateConfiguration(
 
 	if err := cfg.SetAdditionalFlatProperties(r.pandaCluster.Spec.AdditionalConfiguration); err != nil {
 		return nil, err
+	}
+
+	// kafka_nodelete_topics must be already set in SetAdditionalFlatProperties
+	// BUT as a string, override it and set as []string
+	// Override here so we don't need to update SetAdditionalFlatProperties in all flavors of GlobalConfigurationMode
+	if topics, ok := r.pandaCluster.Spec.AdditionalConfiguration[redpandaPropertyPrefix+kafkaNoDeleteTopicsKey]; ok {
+		var nodeleteTopics []string
+		if err := yaml.Unmarshal([]byte(topics), &nodeleteTopics); err != nil {
+			return nil, err
+		}
+		cfg.SetAdditionalRedpandaProperty(kafkaNoDeleteTopicsKey, nodeleteTopics)
 	}
 
 	return cfg, nil

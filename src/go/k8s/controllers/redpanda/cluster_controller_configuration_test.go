@@ -19,6 +19,7 @@ import (
 	"github.com/moby/moby/pkg/namesgenerator"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -855,6 +856,35 @@ var _ = Describe("RedPandaCluster configuration controller", func() {
 
 			By("Deleting the cluster")
 			Expect(k8sClient.Delete(context.Background(), redpandaCluster)).Should(Succeed())
+		})
+	})
+
+	Context("When managing a RedpandaCluster with kafka_nodelete_topics config", func() {
+		It("Can initialize a cluster", func() {
+			nodeleteTopics := "[_internal_connectors_configs, _internal_connectors_offsets, _internal_connectors_status, __audit, __consumer_offsets, _redpanda_e2e_probe, _schemas]"
+
+			By("Allowing creation of a new cluster with AdditionalConfiguration")
+			_, baseKey, redpandaCluster, namespace := getInitialTestCluster("test-kafka-nodelete-topics")
+			if redpandaCluster.Spec.AdditionalConfiguration == nil {
+				redpandaCluster.Spec.AdditionalConfiguration = make(map[string]string)
+			}
+			redpandaCluster.Spec.AdditionalConfiguration["redpanda.kafka_nodelete_topics"] = nodeleteTopics
+			Expect(k8sClient.Create(context.Background(), namespace)).Should(Succeed())
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Creating a Configmap")
+			var cm corev1.ConfigMap
+			Eventually(resourceGetter(baseKey, &cm), timeout, interval).Should(Succeed())
+
+			By("Having an array in .bootstrap.yaml in the configmap")
+			bootstrapFile := cm.Data[bootstrapConfigurationFile]
+			clusterConfig := make(map[string]interface{})
+			Expect(yaml.Unmarshal([]byte(bootstrapFile), &clusterConfig)).Should(Succeed())
+			actualTopics, ok := clusterConfig["kafka_nodelete_topics"].([]interface{})
+			Expect(ok).Should(BeTrue())
+			expectedTopics := []string{}
+			Expect(yaml.Unmarshal([]byte(nodeleteTopics), &expectedTopics)).Should(Succeed())
+			Expect(len(actualTopics)).Should(Equal(len(expectedTopics)))
 		})
 	})
 })
