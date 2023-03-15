@@ -11,10 +11,15 @@ package redpanda_test
 
 import (
 	"context"
+	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
 
+	helmController "github.com/fluxcd/helm-controller/controllers"
+	helper "github.com/fluxcd/pkg/runtime/controller"
+	helmSourceController "github.com/fluxcd/source-controller/controllers"
+	"github.com/go-logr/logr"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -26,8 +31,10 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
+	"helm.sh/helm/v3/pkg/getter"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -50,6 +57,17 @@ var (
 
 	ctx              context.Context
 	controllerCancel context.CancelFunc
+
+	getters = getter.Providers{
+		getter.Provider{
+			Schemes: []string{"http", "https"},
+			New:     getter.NewHTTPGetter,
+		},
+		getter.Provider{
+			Schemes: []string{"oci"},
+			New:     getter.NewOCIGetter,
+		},
+	}
 )
 
 func TestAPIs(t *testing.T) {
@@ -147,6 +165,71 @@ var _ = BeforeSuite(func(done Done) {
 	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	storageAddr := ":9090"
+	storageAdvAddr := redpandacontrollers.DetermineAdvStorageAddr(storageAddr, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+	storage := redpandacontrollers.MustInitStorage("/tmp", storageAdvAddr, 60*time.Second, 2, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+
+	metricsH := helper.MustMakeMetrics(k8sManager)
+	// TODO fill this in with options
+	helmOpts := helmController.HelmReleaseReconcilerOptions{
+		MaxConcurrentReconciles:   1,                // "The number of concurrent HelmRelease reconciles."
+		DependencyRequeueInterval: 30 * time.Second, // The interval at which failing dependencies are reevaluated.
+		HTTPRetry:                 9,                // The maximum number of retries when failing to fetch artifacts over HTTP.
+		RateLimiter:               workqueue.NewItemExponentialFailureRateLimiter(30*time.Second, 60*time.Second),
+	}
+
+	// Helm Release Controller
+	helmRelease := helmController.HelmReleaseReconciler{
+		Client:        k8sManager.GetClient(),
+		Config:        k8sManager.GetConfig(),
+		Scheme:        k8sManager.GetScheme(),
+		EventRecorder: k8sManager.GetEventRecorderFor("HelmReleaseReconciler"),
+	}
+	err = helmRelease.SetupWithManager(k8sManager, helmOpts)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Helm Chart Controller
+	helmChart := helmSourceController.HelmChartReconciler{
+		Client:                  k8sManager.GetClient(),
+		RegistryClientGenerator: redpandacontrollers.ClientGenerator,
+		Getters:                 getters,
+		Metrics:                 metricsH,
+		Storage:                 storage,
+		EventRecorder:           k8sManager.GetEventRecorderFor("HelmChartReconciler"),
+	}
+	err = helmChart.SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	// Helm Repository Controller
+	helmRepository := helmSourceController.HelmRepositoryReconciler{
+		Client:         k8sManager.GetClient(),
+		EventRecorder:  k8sManager.GetEventRecorderFor("HelmRepositoryReconciler"),
+		Getters:        getters,
+		ControllerName: "redpanda-controller",
+		TTL:            15 * time.Minute,
+		Metrics:        metricsH,
+		Storage:        storage,
+	}
+	err = helmRepository.SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	go func() {
+		// Block until our controller manager is elected leader. We presume our
+		// entire process will terminate if we lose leadership, so we don't need
+		// to handle that.
+		<-k8sManager.Elected()
+
+		startFileServer(storage.BasePath, storageAddr, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+	}()
+
+	err = (&redpandacontrollers.RedpandaReconciler{
+		Client:          k8sManager.GetClient(),
+		Scheme:          k8sManager.GetScheme(),
+		EventRecorder:   k8sManager.GetEventRecorderFor("RedpandaReconciler"),
+		RequeueHelmDeps: 10 * time.Second,
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	go func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
@@ -185,3 +268,14 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
+
+func startFileServer(path string, address string, l logr.Logger) {
+	l.Info("starting file server")
+	fs := http.FileServer(http.Dir(path))
+	mux := http.NewServeMux()
+	mux.Handle("/", fs)
+	err := http.ListenAndServe(address, mux)
+	if err != nil {
+		l.Error(err, "file server error")
+	}
+}

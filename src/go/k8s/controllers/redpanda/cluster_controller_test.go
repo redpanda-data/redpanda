@@ -208,7 +208,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 					validOwner(redpandaCluster, cm.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
-			By("Creating ServiceAcount")
+			By("Creating ServiceAccount")
 			var sa corev1.ServiceAccount
 			Eventually(func() bool {
 				err := k8sClient.Get(context.Background(), key, &sa)
