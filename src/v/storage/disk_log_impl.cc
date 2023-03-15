@@ -777,9 +777,6 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
       "[{}] applying 'deletion' log cleanup policy with config: {}",
       config().ntp(),
       cfg);
-    if (unlikely(cfg.asrc->abort_requested())) {
-        return ss::make_ready_future<>();
-    }
     if (deletion_exempt(config().ntp())) {
         vlog(
           gclog.trace,
