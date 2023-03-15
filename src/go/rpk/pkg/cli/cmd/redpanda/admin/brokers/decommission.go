@@ -47,7 +47,7 @@ cluster is unreachable), use the hidden --force flag.
 
 			if !force {
 				brokers, err := cl.Brokers(cmd.Context())
-				out.MaybeDie(err, "unable to get broker list: %v; to bypass the node version check re-run this with --force; see this command's help text for for more details", err)
+				out.MaybeDie(err, "unable to get broker list: %v; to bypass the node version check re-run this with --force; see this command's help text for more details", err)
 
 				var (
 					b             admin.Broker
@@ -55,8 +55,11 @@ cluster is unreachable), use the hidden --force flag.
 				)
 				for _, br := range brokers {
 					if br.NodeID == broker {
+						if br.Version == "" {
+							out.Exit("version for broker %d is unknown, is the node offline?\nto bypass the node version check re-run this with --force; see this command's help text for more details", br.NodeID)
+						}
 						version, err := redpanda.VersionFromString(br.Version)
-						out.MaybeDie(err, "unable to get broker %q version: %v; to bypass the node version check re-run this with --force; see this command's help text for for more details", br.NodeID, err)
+						out.MaybeDie(err, "unable to get broker %q version: %v; to bypass the node version check re-run this with --force; see this command's help text for more details", br.NodeID, err)
 						isOld := version.Less(redpanda.Version{Year: 23, Feature: 1, Patch: 1})
 
 						anyOld = anyOld || isOld
@@ -65,7 +68,7 @@ cluster is unreachable), use the hidden --force flag.
 					}
 				}
 				if !found {
-					out.Die("unable to find broker %v in the cluster; to bypass the node version check re-run this with --force; see this command's help text for for more details", broker)
+					out.Die("unable to find broker %v in the cluster; to bypass the node version check re-run this with --force; see this command's help text for more details", broker)
 				}
 
 				// If any of the brokers is older than v23.1.1 we need to check
