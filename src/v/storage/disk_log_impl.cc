@@ -316,8 +316,12 @@ ss::future<> disk_log_impl::garbage_collect_segments(
         _eviction_monitor.reset();
     }
 
-    // Max collectible offset can be overriden from multiple places
-    // (unfortunately). We take the min.
+    /*
+     * adjust downward the max offset to comply with restrictions other than
+     * basic retention policy. cfg.max_collectible_offset is sourced from
+     * installed stms (e.g. archival) and _max_collecitble_offset member is set
+     * by raft is used to protect an offset range not included in snapshots.
+     */
     max_offset = std::min(
       cfg.max_collectible_offset,
       std::min(max_offset, _max_collectible_offset));
