@@ -1883,3 +1883,117 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(test_cloud_log_size_updates) {
+    partition_manifest manifest;
+    manifest.update(make_manifest_stream(empty_manifest_json)).get();
+
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 0);
+
+    segment_meta seg1{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(10)};
+
+    manifest.add(
+      segment_name(fmt::format("{}-1-v1.log", model::offset(0))), seg1);
+
+    BOOST_REQUIRE_EQUAL(manifest.size(), 1);
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 1024);
+
+    segment_meta seg2{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(11),
+      .committed_offset = model::offset(20)};
+
+    manifest.add(
+      segment_name(fmt::format("{}-1-v1.log", model::offset(11))), seg2);
+
+    BOOST_REQUIRE_EQUAL(manifest.size(), 2);
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 2048);
+
+    segment_meta merged_seg{
+      .is_compacted = false,
+      .size_bytes = 2000,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(20)};
+
+    manifest.add(
+      segment_name(fmt::format("{}-1-v1.log", model::offset(0))), merged_seg);
+
+    BOOST_REQUIRE_EQUAL(manifest.size(), 1);
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 2000);
+
+    segment_meta compacted_seg{
+      .is_compacted = true,
+      .size_bytes = 100,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(20)};
+
+    manifest.add(
+      segment_name(fmt::format("{}-1-v1.log", model::offset(0))),
+      compacted_seg);
+
+    BOOST_REQUIRE_EQUAL(manifest.size(), 1);
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 100);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_deserialize_v1_manifest) {
+    // Test the deserialisation of v1 partition manifests (prior to v23.2).
+
+    constexpr std::string_view v1_manifest_json = R"json({
+    "version": 1,
+    "namespace": "test-ns",
+    "topic": "test-topic",
+    "partition": 42,
+    "revision": 1,
+    "last_offset": 39,
+    "segments": {
+        "10-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 1024,
+            "base_offset": 10,
+            "committed_offset": 19,
+            "base_timestamp": 123000,
+            "max_timestamp": 123009
+        },
+        "20-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 2048,
+            "base_offset": 20,
+            "committed_offset": 29,
+            "base_timestamp": 123010,
+            "max_timestamp": 123019
+        },
+        "30-1-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 30,
+            "committed_offset": 39,
+            "base_timestamp": 123020,
+            "max_timestamp": 123029,
+            "delta_offset": 1
+        },
+        "40-11-v1.log": {
+            "is_compacted": false,
+            "size_bytes": 4096,
+            "base_offset": 40,
+            "committed_offset": 49,
+            "base_timestamp": 123030,
+            "max_timestamp": 123039,
+            "delta_offset": 2,
+            "archiver_term": 42,
+            "segment_term": 11,
+            "delta_offset_end": 9,
+            "sname_format": 2
+        }
+    }
+})json";
+
+    partition_manifest manifest;
+    manifest.update(make_manifest_stream(v1_manifest_json)).get();
+
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 11264);
+}

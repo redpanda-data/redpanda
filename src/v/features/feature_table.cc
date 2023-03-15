@@ -73,6 +73,8 @@ std::string_view to_string_view(feature f) {
         return "membership_change_controller_cmds";
     case feature::controller_snapshots:
         return "controller_snapshots";
+    case feature::cloud_storage_manifest_format_v2:
+        return "cloud_storage_manifest_format_v2";
 
     /*
      * testing features

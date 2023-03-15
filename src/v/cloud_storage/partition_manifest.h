@@ -164,6 +164,7 @@ public:
               nm.name);
             nm.meta.segment_term = maybe_key->term;
             _segments.insert(std::make_pair(nm.meta.base_offset, nm.meta));
+            _cloud_log_size_bytes += nm.meta.size_bytes;
         }
     }
 
@@ -220,7 +221,7 @@ public:
     // manifest, or 0 if the memory is not being tracked.
     size_t segments_metadata_bytes() const;
 
-    // Computes the size in bytes of all segments available to clients
+    // Returns the cached size in bytes of all segments available to clients.
     // (i.e. all segments after and including the segment that starts at
     // the current _start_offset).
     uint64_t cloud_log_size() const;
@@ -285,12 +286,6 @@ public:
                && _replaced == other._replaced;
     }
 
-    /// Remove segment record from manifest
-    ///
-    /// \param name is a segment name
-    /// \return true on success, false on failure (no such segment)
-    bool delete_permanently(const key& name);
-
     manifest_type get_manifest_type() const override {
         return manifest_type::partition;
     };
@@ -318,12 +313,20 @@ public:
     ss::shared_ptr<util::mem_tracker> mem_tracker() { return _mem_tracker; }
 
 private:
+    void subtract_from_cloud_log_size(size_t to_subtract);
+
+    // Computes the size in bytes of all segments available to clients
+    // (i.e. all segments after and including the segment that starts at
+    // the current _start_offset).
+    uint64_t compute_cloud_log_size() const;
+
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
     void update(partition_manifest_handler&& handler);
 
     /// Move segments from _segments to _replaced
-    void move_aligned_offset_range(
+    /// Returns the total size in bytes of the replaced segments
+    size_t move_aligned_offset_range(
       model::offset begin_inclusive, model::offset end_inclusive);
 
     friend class serialization_cursor_data_source;
@@ -361,6 +364,7 @@ private:
     model::offset _start_offset;
     model::offset _last_uploaded_compacted_offset;
     model::offset _insync_offset;
+    size_t _cloud_log_size_bytes{0};
 };
 
 } // namespace cloud_storage
