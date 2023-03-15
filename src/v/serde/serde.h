@@ -905,7 +905,8 @@ read_async_nested(iobuf_parser& in, size_t const bytes_left_limit) {
               [&t]() { return std::move(t); });
         });
     } else {
-        return ss::make_ready_future<std::decay_t<T>>(read<T>(in));
+        return ss::make_ready_future<std::decay_t<T>>(
+          read_nested<T>(in, bytes_left_limit));
     }
 }
 
