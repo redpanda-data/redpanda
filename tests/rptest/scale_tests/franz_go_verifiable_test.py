@@ -226,12 +226,14 @@ class KgoVerifierWithSiTest(KgoVerifierBase):
 
 class KgoVerifierWithSiTestLargeSegments(KgoVerifierWithSiTest):
     @cluster(num_nodes=4, log_allow_list=KGO_LOG_ALLOW_LIST)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_si_without_timeboxed(self, cloud_storage_type):
         self.without_timeboxed()
 
     @cluster(num_nodes=4, log_allow_list=KGO_RESTART_LOG_ALLOW_LIST)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_si_with_timeboxed(self, cloud_storage_type):
         self.with_timeboxed()
 

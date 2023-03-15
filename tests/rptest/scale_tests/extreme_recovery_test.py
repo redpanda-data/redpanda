@@ -171,7 +171,8 @@ class ExtremeRecoveryTest(TopicRecoveryTest):
         super(ExtremeRecoveryTest, self).tearDown()
 
     @cluster(num_nodes=8, log_allow_list=TRANSIENT_ERRORS)
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_recovery_scale(self, cloud_storage_type):
         # This test requires dedicated system resources
         assert self.redpanda.dedicated_nodes

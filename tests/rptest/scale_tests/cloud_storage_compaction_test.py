@@ -171,7 +171,8 @@ class CloudStorageCompactionTest(EndToEndTest):
                  "Cannot validate Kafka record batch. Missmatching CRC",
                  "batch has invalid CRC"
              ])
-    @matrix(cloud_storage_type=get_cloud_storage_type())
+    @matrix(
+        cloud_storage_type=get_cloud_storage_type(docker_use_arbitrary=True))
     def test_read_from_replica(self, cloud_storage_type):
         self.start_workload()
         self.start_consumer(num_nodes=2,

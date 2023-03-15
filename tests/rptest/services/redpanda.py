@@ -169,7 +169,8 @@ def one_or_many(value):
         return value
 
 
-def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None):
+def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None,
+                           docker_use_arbitrary=False):
     """
     Returns a list(CloudStorageType) based on the "CLOUD_PROVIDER"
     environment variable. For example:
@@ -182,8 +183,10 @@ def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None):
     test.
     If it's set the function will return the inresection
     of:
-    * <cloud_storage_type>: discovered based on the CLOUD_PROVIDER env
-    * <applies_only_on>: param provided
+        * <cloud_storage_type>: discovered based on the CLOUD_PROVIDER env
+        * <applies_only_on>: param provided
+    :param docker_use_arbitrary: optional bool to use arbitrary backend when
+    the cloud provider is docker.
     """
 
     if applies_only_on is None:
@@ -191,7 +194,10 @@ def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None):
 
     cloud_provider = os.getenv("CLOUD_PROVIDER", "docker")
     if cloud_provider == "docker":
-        cloud_storage_type = [CloudStorageType.S3, CloudStorageType.ABS]
+        if docker_use_arbitrary:
+            cloud_storage_type = [CloudStorageType.S3]
+        else:
+            cloud_storage_type = [CloudStorageType.S3, CloudStorageType.ABS]
     elif cloud_provider in ("aws", "gcp"):
         cloud_storage_type = [CloudStorageType.S3]
     elif cloud_provider == "azure":
