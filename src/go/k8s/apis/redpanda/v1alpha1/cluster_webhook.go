@@ -154,6 +154,7 @@ func (r *Cluster) Default() {
 func (r *Cluster) getDefaultAdditionalConfiguration() map[string]int {
 	if featuregates.InternalTopicReplication(r.Spec.Version) {
 		return map[string]int{
+			defaultTopicReplicationKey:        defaultTopicReplicationNumber,
 			internalTopicReplicationFactorKey: defaultInternalTopicReplicationNumber,
 		}
 	} else {
