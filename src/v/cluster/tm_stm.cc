@@ -310,6 +310,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
           tx.id,
           tx.pid,
           tx.tx_seq);
+        // update_tx must return conflict only in this case, see expire_tx
         co_return tm_stm::op_status::conflict;
     }
     co_return tx_opt.value();
@@ -919,20 +920,35 @@ tm_stm::delete_partition_from_tx(
     }
 }
 
-ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
+ss::future<tm_stm::op_status>
+tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
-        co_return;
+        co_return tm_stm::op_status::unknown;
     }
     tm_transaction tx = tx_opt.value();
-    tx.etag = _insync_term;
+    tx.etag = term;
     tx.status = tm_transaction::tx_status::tombstone;
     tx.last_pid = model::unknown_pid;
     tx.partitions.clear();
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
     auto etag = tx.etag;
-    co_await update_tx(std::move(tx), etag).discard_result();
+    auto r0 = co_await update_tx(std::move(tx), etag);
+    if (r0.has_value()) {
+        vlog(
+          txlog.error,
+          "written tombstone should evict tx:{} from the cache",
+          tx_id);
+        co_return tm_stm::op_status::unknown;
+    }
+    if (r0.error() == tm_stm::op_status::conflict) {
+        // update_tx returns conflict when it can't find
+        // tx after the successful update; it may happen only
+        // with the tombstone
+        co_return tm_stm::op_status::success;
+    }
+    co_return r0.error();
 }
 
 ss::future<> tm_stm::handle_eviction() {
