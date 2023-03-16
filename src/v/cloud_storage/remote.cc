@@ -1268,6 +1268,8 @@ const cloud_storage_clients::object_tag_formatter
 const cloud_storage_clients::object_tag_formatter
   remote::default_partition_manifest_tags
   = {{"rp-type", "partition-manifest"}};
+const cloud_storage_clients::object_tag_formatter remote::default_index_tags = {
+  {"rp-type", "segment-index"}};
 
 ss::future<api_activity_notification>
 remote::subscribe(remote::event_filter& filter) {

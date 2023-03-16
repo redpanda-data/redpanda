@@ -122,6 +122,7 @@ public:
       default_partition_manifest_tags;
     static const cloud_storage_clients::object_tag_formatter
       default_topic_manifest_tags;
+    static const cloud_storage_clients::object_tag_formatter default_index_tags;
 
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
