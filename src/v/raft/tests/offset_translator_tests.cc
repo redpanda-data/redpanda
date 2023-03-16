@@ -26,10 +26,17 @@
 using namespace std::chrono_literals; // NOLINT
 
 static model::record_batch create_batch(
-  model::record_batch_type type, model::offset o, size_t length = 1) {
+  model::record_batch_type type,
+  model::offset o,
+  size_t length = 1,
+  size_t data_size = 0) {
     storage::record_batch_builder b(type, o);
     for (size_t i = 0; i < length; ++i) {
-        b.add_raw_kv(iobuf{}, iobuf{});
+        iobuf value;
+        if (data_size > 0) {
+            value = random_generators::make_iobuf(data_size);
+        }
+        b.add_raw_kv(iobuf{}, std::move(value));
     }
     return std::move(b).build();
 }
@@ -306,11 +313,10 @@ collect_base_offsets(storage::log log) {
 
 struct fuzz_checker {
     fuzz_checker(
-      model::ntp ntp,
+      storage::log log,
       std::function<raft::offset_translator()>&& make_offset_translator)
       : _make_offset_translator(std::move(make_offset_translator))
-      , _log(storage::make_memory_backed_log(
-          storage::ntp_config(ntp, "test.dir"))) {}
+      , _log(std::move(log)) {}
 
     ss::future<> start() {
         _tr.emplace(_make_offset_translator());
@@ -329,10 +335,7 @@ struct fuzz_checker {
 
             size_t batch_length = random_generators::get_int(1, 3);
             auto batch = create_batch(
-              batch_type, model::offset{0}, batch_length);
-            // fake batch size so that offset_translator does checkpoints more
-            // often.
-            batch.header().size_bytes = 10_MiB;
+              batch_type, model::offset{0}, batch_length, 512_KiB);
             batches.push_back(std::move(batch));
         }
 
@@ -379,7 +382,7 @@ struct fuzz_checker {
 
         if (_tr) {
             (void)ss::with_gate(
-              _gate, [this] { return _tr->maybe_checkpoint(); });
+              _gate, [this] { return _tr->maybe_checkpoint(2_MiB); });
         }
     }
 
@@ -552,8 +555,13 @@ FIXTURE_TEST(fuzz_operations_test, base_fixture) {
     };
 
     for (size_t i_run = 0; i_run < number_of_runs; ++i_run) {
-        fuzz_checker checker(
-          test_ntp, [this] { return make_offset_translator(); });
+        auto ntp = test_ntp;
+        ntp.tp.topic = model::topic(fmt::format("{}_{}", ntp.tp.topic, i_run));
+        auto log = _api.local()
+                     .log_mgr()
+                     .manage(storage::ntp_config(ntp, _test_dir))
+                     .get();
+        fuzz_checker checker(log, [this] { return make_offset_translator(); });
         checker.start().get();
 
         for (size_t i_op = 0; i_op < number_of_ops; ++i_op) {
