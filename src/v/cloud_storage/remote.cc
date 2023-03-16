@@ -1252,6 +1252,16 @@ cloud_storage_clients::object_tag_formatter remote::make_segment_tags(
     return tags;
 }
 
+cloud_storage_clients::object_tag_formatter remote::make_segment_index_tags(
+  const model::ntp& ntp, model::initial_revision_id rev) {
+    auto tags = default_index_tags;
+    tags.add("rp-ns", ntp.ns());
+    tags.add("rp-topic", ntp.tp.topic());
+    tags.add("rp-part", ntp.tp.partition());
+    tags.add("rp-rev", rev());
+    return tags;
+}
+
 cloud_storage_clients::object_tag_formatter remote::make_tx_manifest_tags(
   const model::ntp& ntp, model::initial_revision_id rev) {
     // Note: tx-manifest is related to segment (contains data which are used

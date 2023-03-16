@@ -405,6 +405,9 @@ public:
     static cloud_storage_clients::object_tag_formatter make_tx_manifest_tags(
       const model::ntp& ntp, model::initial_revision_id rev);
 
+    static cloud_storage_clients::object_tag_formatter make_segment_index_tags(
+      const model::ntp& ntp, model::initial_revision_id rev);
+
 private:
     ss::future<upload_result> delete_objects_sequentially(
       const cloud_storage_clients::bucket_name& bucket,

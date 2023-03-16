@@ -96,6 +96,8 @@ ntp_archiver::ntp_archiver(
   , _manifest_tags(
       cloud_storage::remote::make_partition_manifest_tags(_ntp, _rev))
   , _tx_tags(cloud_storage::remote::make_tx_manifest_tags(_ntp, _rev))
+  , _segment_index_tags(
+      cloud_storage::remote::make_segment_index_tags(_ntp, _rev))
   , _local_segment_merger(
       maybe_make_adjacent_segment_merger(*this, _rtclog, parent.log().config()))
   , _segment_merging_enabled(
