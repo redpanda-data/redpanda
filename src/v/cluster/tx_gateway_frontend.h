@@ -221,12 +221,6 @@ private:
       cluster::tm_transaction,
       model::timeout_clock::duration,
       ss::lw_shared_ptr<available_promise<tx_errc>>);
-    ss::future<checked<cluster::tm_transaction, tx_errc>> do_commit_tm_tx(
-      ss::shared_ptr<cluster::tm_stm>,
-      kafka::transactional_id,
-      model::producer_identity,
-      model::tx_seq,
-      model::timeout_clock::duration);
     ss::future<checked<cluster::tm_transaction, tx_errc>> recommit_tm_tx(
       ss::shared_ptr<tm_stm>,
       model::term_id,

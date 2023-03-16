@@ -143,7 +143,7 @@ FIXTURE_TEST(test_tm_stm_seq_tx, mux_state_machine_fixture) {
                      .get0();
     BOOST_REQUIRE_EQUAL(op_code, op_status::success);
     auto tx1 = expect_tx(stm.get_tx(tx_id).get0());
-    auto tx2 = stm.reset_tx_ongoing(tx_id, c->term()).get0();
+    auto tx2 = stm.mark_tx_ongoing(c->term(), tx_id).get0();
     std::vector<tm_transaction::tx_partition> partitions = {
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
@@ -192,7 +192,7 @@ FIXTURE_TEST(test_tm_stm_re_tx, mux_state_machine_fixture) {
         .ntp = model::ntp("kafka", "topic", 0), .etag = model::term_id(0)},
       tm_transaction::tx_partition{
         .ntp = model::ntp("kafka", "topic", 1), .etag = model::term_id(0)}};
-    auto tx2 = stm.reset_tx_ongoing(tx_id, c->term()).get0();
+    auto tx2 = stm.mark_tx_ongoing(c->term(), tx_id).get0();
     BOOST_REQUIRE_EQUAL(
       stm.add_partitions(c->term(), tx_id, partitions).get0(),
       cluster::tm_stm::op_status::success);
