@@ -1,5 +1,0 @@
-apiVersion: kuttl.dev/v1beta1
-kind: TestStep
-commands:
-# Configurator version will become default (latest) and all redpanda configurators (one here) get updated to latest
-- command: kubectl patch deployment redpanda-controller-manager -n redpanda-system --type='json' -p='[{"op":"remove", "path":"/spec/template/spec/containers/1/args/4"}]'
