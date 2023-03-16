@@ -47,7 +47,7 @@ namespace storage {
 
 // class log_config {
 struct log_config {
-    enum class storage_type { memory, disk };
+    enum class storage_type { disk };
 
     log_config(
       storage_type type,
