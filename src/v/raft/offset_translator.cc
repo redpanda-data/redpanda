@@ -326,14 +326,12 @@ bytes offset_translator::highest_known_offset_key() const {
     return kvstore_highest_known_offset_key(_group);
 }
 
-ss::future<> offset_translator::maybe_checkpoint() {
+ss::future<> offset_translator::maybe_checkpoint(size_t checkpoint_threshold) {
     if (_filtered_types.empty()) {
         co_return;
     }
 
-    constexpr size_t checkpoint_threshold = 64_MiB;
-
-    co_await _checkpoint_lock.with([this]() {
+    co_await _checkpoint_lock.with([this, checkpoint_threshold] {
         if (
           _bytes_processed
             < _bytes_processed_at_checkpoint + checkpoint_threshold

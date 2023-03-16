@@ -17,6 +17,7 @@
 #include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/offset_translator_state.h"
+#include "units.h"
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
@@ -78,8 +79,12 @@ public:
 
     /// Checkpoints offset translation state to the kvstore if enough batches
     /// were processed (to ensure that we have to read only a small amount of
-    /// data during the startup)
-    ss::future<> maybe_checkpoint();
+    /// data during the startup).
+    ///
+    /// Threshold adjustment is for testing.
+    static constexpr size_t default_checkpoint_threshold = 64_MiB;
+    ss::future<> maybe_checkpoint(
+      size_t checkpoint_threshold = default_checkpoint_threshold);
 
     /// Removes the offset translation state starting from the offset
     /// (inclusive).
