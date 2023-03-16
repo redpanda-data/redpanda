@@ -3258,7 +3258,8 @@ follower_metrics build_follower_metrics(
       .last_heartbeat = meta.last_received_reply_timestamp,
       .is_live = is_live,
       .under_replicated = (meta.is_recovering || !is_live)
-                          && meta.match_index < lstats.dirty_offset};
+                          && meta.match_index < lstats.dirty_offset
+                          && !meta.is_learner};
 }
 
 std::vector<follower_metrics> consensus::get_follower_metrics() const {
