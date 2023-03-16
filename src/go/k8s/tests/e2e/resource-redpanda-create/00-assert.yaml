@@ -1,4 +1,5 @@
 ---
+apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Redpanda
 metadata:
   finalizers:
@@ -12,36 +13,18 @@ spec:
       replicas: 1
 status:
   conditions:
-      message: Redpanda reconciliation succeeded
+    - message: Redpanda reconciliation succeeded
       reason: RedpandaClusterDeployed
       status: "True"
       type: Ready
   helmRelease: redpanda
   helmRepository: redpanda-repository
-  observedGeneration: 1
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  annotations:
-    meta.helm.sh/release-name: redpanda
-    meta.helm.sh/release-namespace: redpanda
-  creationTimestamp: "2023-03-16T18:04:48Z"
-  generation: 1
-  labels:
-    app.kubernetes.io/component: redpanda
-    app.kubernetes.io/instance: redpanda
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/name: redpanda
-    helm.sh/chart: redpanda-3.0.3
-    helm.toolkit.fluxcd.io/name: redpanda
-    helm.toolkit.fluxcd.io/namespace: redpanda
   name: redpanda
-  namespace: redpanda
-  resourceVersion: "151217"
-  uid: 6c9e2632-a97b-4d6d-8f4b-255df8c61195
 spec:
-  podManagementPolicy: Parallel
   replicas: 1
 status:
   availableReplicas: 1
