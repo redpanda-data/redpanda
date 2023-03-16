@@ -23,8 +23,7 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
 from rptest.services.verifiable_consumer import VerifiableConsumer
-from rptest.util import (
-    wait_until, )
+from rptest.util import (wait_until, wait_until_result)
 
 
 class BucketUsage(NamedTuple):
@@ -169,6 +168,48 @@ class TestReadReplicaService(EndToEndTest):
             return BucketUsage(obj_delta, bytes_delta, keys_delta)
         else:
             return None
+
+    @cluster(num_nodes=8)
+    @matrix(partition_count=[5], cloud_storage_type=[CloudStorageType.S3])
+    def test_identical_hwms(self, partition_count: int,
+                            cloud_storage_type: CloudStorageType) -> None:
+        self._setup_read_replica(partition_count=partition_count,
+                                 num_messages=1000)
+        self.start_consumer()
+        self.run_validation(min_records=1000)  # calls self.consumer.stop()
+
+        def get_hwm_per_partition(cluster: RedpandaService):
+            id_to_hwm = dict()
+            rpk = RpkTool(cluster)
+            for prt in rpk.describe_topic(self.topic_name):
+                id_to_hwm[prt.id] = prt.high_watermark
+            if len(id_to_hwm) != partition_count:
+                return False, None
+            return True, id_to_hwm
+
+        def hwms_are_identical():
+            # Collect the HWMs for each partition before stopping.
+            src_hwms = wait_until_result(
+                lambda: get_hwm_per_partition(self.redpanda),
+                timeout_sec=30,
+                backoff_sec=1)
+
+            # Ensure that our HWMs on the destination are the same.
+            rr_hwms = wait_until_result(
+                lambda: get_hwm_per_partition(self.second_cluster),
+                timeout_sec=30,
+                backoff_sec=1)
+            self.logger.info(f"{src_hwms} vs {rr_hwms}")
+            return src_hwms == rr_hwms
+
+        wait_until(hwms_are_identical, timeout_sec=30, backoff_sec=1)
+
+        # As a sanity check, ensure the same is true after a restart.
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        wait_until(hwms_are_identical, timeout_sec=30, backoff_sec=1)
+
+        self.second_cluster.restart_nodes(self.second_cluster.nodes)
+        wait_until(hwms_are_identical, timeout_sec=30, backoff_sec=1)
 
     @cluster(num_nodes=7)
     @matrix(partition_count=[10])
