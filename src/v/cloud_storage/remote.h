@@ -319,8 +319,10 @@ public:
     ss::future<upload_result> upload_object(
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& object_path,
-      ss::sstring payload,
-      retry_chain_node& parent);
+      iobuf payload,
+      retry_chain_node& parent,
+      const cloud_storage_clients::object_tag_formatter& tags,
+      const char* log_object_type = "object");
 
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,

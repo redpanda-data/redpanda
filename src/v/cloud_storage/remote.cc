@@ -994,16 +994,19 @@ ss::future<remote::list_result> remote::list_objects(
 ss::future<upload_result> remote::upload_object(
   const cloud_storage_clients::bucket_name& bucket,
   const cloud_storage_clients::object_key& object_path,
-  ss::sstring payload,
-  retry_chain_node& parent) {
+  iobuf payload,
+  retry_chain_node& parent,
+  const cloud_storage_clients::object_tag_formatter& tags,
+  const char* log_object_type) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
-    auto content_length = payload.size();
+    auto content_length = payload.size_bytes();
     vlog(
       ctxlog.debug,
-      "Uploading object to path {}, length {}",
+      "Uploading {} to path {}, length {}",
+      log_object_type,
       object_path,
       content_length);
     std::optional<upload_result> result;
@@ -1011,16 +1014,19 @@ ss::future<upload_result> remote::upload_object(
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
 
         auto path = cloud_storage_clients::object_key(object_path());
-        vlog(ctxlog.debug, "Uploading object to path {}", object_path);
+        vlog(
+          ctxlog.debug,
+          "Uploading {} to path {}",
+          log_object_type,
+          object_path);
 
-        iobuf buffer;
-        buffer.append(payload.data(), payload.size());
+        auto to_upload = payload.copy();
         auto res = co_await lease.client->put_object(
           bucket,
           path,
           content_length,
-          make_iobuf_input_stream(std::move(buffer)),
-          {{"rp-type", "recovery-lock"}},
+          make_iobuf_input_stream(std::move(to_upload)),
+          tags,
           fib.get_timeout());
 
         if (res) {
@@ -1037,7 +1043,8 @@ ss::future<upload_result> remote::upload_object(
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
-              "Uploading object {} to {}, {} backoff required",
+              "Uploading {} {} to {}, {} backoff required",
+              log_object_type,
               path,
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1058,17 +1065,21 @@ ss::future<upload_result> remote::upload_object(
     if (!result) {
         vlog(
           ctxlog.warn,
-          "Uploading object {} to {}, backoff quota exceded, object not "
+          "Uploading {} {} to {}, backoff quota exceded, {} not "
           "uploaded",
+          log_object_type,
           object_path,
-          bucket);
+          bucket,
+          log_object_type);
     } else {
         vlog(
           ctxlog.warn,
-          "Uploading object {} to {}, {}, object not uploaded",
+          "Uploading {} {} to {}, {}, {} not uploaded",
+          log_object_type,
           object_path,
           bucket,
-          *result);
+          *result,
+          log_object_type);
     }
     co_return upload_result::timedout;
 }
