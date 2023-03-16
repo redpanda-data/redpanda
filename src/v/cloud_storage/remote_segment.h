@@ -147,11 +147,16 @@ private:
 
     /// Helper for do_hydrate_segment
     ss::future<uint64_t>
-      do_hydrate_segment_inner(uint64_t, ss::input_stream<char>);
+      put_segment_in_cache_and_create_index(uint64_t, ss::input_stream<char>);
+
+    ss::future<uint64_t> put_segment_in_cache(uint64_t, ss::input_stream<char>);
 
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.
     ss::future<> do_hydrate_txrange();
+
+    ss::future<> do_hydrate_index();
+
     /// Materilize segment. Segment has to be hydrated beforehand. The
     /// 'materialization' process opens file handle and creates
     /// compressed segment index in memory.
@@ -197,6 +202,8 @@ private:
 
     bool _compacted{false};
     bool _stopped{false};
+
+    segment_name_format _sname_format;
 };
 
 class remote_segment_batch_consumer;
@@ -228,10 +235,15 @@ public:
       partition_probe& probe,
       ssx::semaphore_units) noexcept;
 
+    // The following lines of code have different formatting on newer versions
+    // of clang-format. In CI the clang-format version is 14 which expects
+    // formatting as below.
+    // clang-format off
     remote_segment_batch_reader(
       remote_segment_batch_reader&&) noexcept = delete;
     remote_segment_batch_reader&
     operator=(remote_segment_batch_reader&&) noexcept = delete;
+    // clang-format on
     remote_segment_batch_reader(const remote_segment_batch_reader&) = delete;
     remote_segment_batch_reader& operator=(const remote_segment_batch_reader&)
       = delete;

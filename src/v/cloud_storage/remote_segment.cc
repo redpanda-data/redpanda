@@ -129,6 +129,7 @@ remote_segment::remote_segment(
       meta->delta_offset, model::offset_delta(0), model::offset_delta::max());
     _compacted = meta->is_compacted;
     _size = meta->size_bytes;
+    _sname_format = meta->sname_format;
 
     if (
       meta->sname_format == segment_name_format::v3
@@ -272,7 +273,7 @@ remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
  * Called by do_hydrate_segment on the stream the S3 remote creates for
  * a GET response: pass the dat through into the cache.
  */
-ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
+ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
   uint64_t size_bytes, ss::input_stream<char> s) {
     offset_index tmpidx(
       get_base_rp_offset(),
@@ -317,6 +318,22 @@ ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
     co_return size_bytes;
 }
 
+ss::future<uint64_t> remote_segment::put_segment_in_cache(
+  uint64_t size_bytes, ss::input_stream<char> s) {
+    try {
+        co_await _cache.put(_path, s).finally([&s] { return s.close(); });
+    } catch (...) {
+        auto put_exception = std::current_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to write a segment file to cache, error: {}",
+          put_exception);
+        std::rethrow_exception(put_exception);
+    }
+
+    co_return size_bytes;
+}
+
 ss::future<> remote_segment::do_hydrate_segment() {
     retry_chain_node local_rtc(
       cache_hydration_timeout, cache_hydration_backoff, &_rtc);
@@ -329,7 +346,16 @@ ss::future<> remote_segment::do_hydrate_segment() {
       _bucket,
       _path,
       [this](uint64_t size_bytes, ss::input_stream<char> s) {
-          return do_hydrate_segment_inner(size_bytes, std::move(s));
+          auto index_not_in_object_store = _sname_format
+                                             == segment_name_format::v1
+                                           || _sname_format
+                                                == segment_name_format::v2;
+          if (unlikely(index_not_in_object_store)) {
+              return put_segment_in_cache_and_create_index(
+                size_bytes, std::move(s));
+          } else {
+              return put_segment_in_cache(size_bytes, std::move(s));
+          }
       },
       local_rtc);
 
@@ -342,6 +368,33 @@ ss::future<> remote_segment::do_hydrate_segment() {
           _wait_list.size());
         throw download_exception(res, _path);
     }
+}
+
+ss::future<> remote_segment::do_hydrate_index() {
+    retry_chain_node local_rtc(
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+
+    offset_index ix(
+      _base_rp_offset,
+      _base_rp_offset - _base_offset_delta,
+      0,
+      remote_segment_sampling_step_bytes);
+
+    auto index_path = fmt::format("{}.index", _path());
+    auto result = co_await _api.download_index(
+      _bucket, remote_segment_path{index_path}, ix, local_rtc);
+
+    if (result != download_result::success) {
+        throw download_exception(result, index_path);
+    }
+
+    _index = std::move(ix);
+    auto buf = _index->to_iobuf();
+
+    auto str = make_iobuf_input_stream(std::move(buf));
+    co_await _cache.put(index_path, str).finally([&str] {
+        return str.close();
+    });
 }
 
 ss::future<> remote_segment::do_hydrate_txrange() {
@@ -477,6 +530,11 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
 }
 
 ss::future<> remote_segment::maybe_materialize_index() {
+    if (_index) {
+        vlog(_ctxlog.debug, "index already materialized");
+        co_return;
+    }
+
     ss::gate::holder guard(_gate);
     auto path = _path().native() + ".index";
     offset_index ix(
