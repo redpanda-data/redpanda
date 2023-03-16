@@ -1003,12 +1003,6 @@ ss::future<upload_result> remote::upload_object(
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
     auto content_length = payload.size_bytes();
-    vlog(
-      ctxlog.debug,
-      "Uploading {} to path {}, length {}",
-      log_object_type,
-      object_path,
-      content_length);
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
@@ -1016,9 +1010,10 @@ ss::future<upload_result> remote::upload_object(
         auto path = cloud_storage_clients::object_key(object_path());
         vlog(
           ctxlog.debug,
-          "Uploading {} to path {}",
+          "Uploading {} to path {}, length {}",
           log_object_type,
-          object_path);
+          object_path,
+          content_length);
 
         auto to_upload = payload.copy();
         auto res = co_await lease.client->put_object(

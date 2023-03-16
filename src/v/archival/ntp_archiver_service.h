@@ -14,6 +14,7 @@
 #include "archival/types.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client.h"
 #include "cluster/fwd.h"
@@ -384,6 +385,16 @@ private:
     ss::future<cloud_storage::upload_result> upload_tx(
       upload_candidate candidate,
       fragmented_vector<model::tx_range> tx,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
+      = std::nullopt);
+
+    ss::future<std::optional<cloud_storage::offset_index>> make_segment_index(
+      const upload_candidate& candidate,
+      retry_chain_logger& ctxlog,
+      std::string_view index_path);
+
+    ss::future<cloud_storage::upload_result> upload_segment_index(
+      upload_candidate candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 

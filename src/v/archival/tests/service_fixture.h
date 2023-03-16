@@ -110,6 +110,12 @@ public:
       const archival::segment_name& name,
       const ss::sstring& expected);
 
+    void verify_index(
+      const model::ntp& ntp,
+      const archival::segment_name& name,
+      const cloud_storage::partition_manifest& pm,
+      const ss::sstring& expected);
+
     /// Given a set of segments, verifies that a concatenated segment composed
     /// of the set was uploaded, by concatenating segments from disk log and
     /// comparing the content with request content.
@@ -188,6 +194,9 @@ private:
 cloud_storage::partition_manifest load_manifest(std::string_view v);
 
 archival::remote_segment_path get_segment_path(
+  const cloud_storage::partition_manifest&, const archival::segment_name&);
+
+archival::remote_segment_path get_segment_index_path(
   const cloud_storage::partition_manifest&, const archival::segment_name&);
 
 /// Specification for the segments and data to go into the log for a test

@@ -134,7 +134,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     for (auto [url, req] : get_targets()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
     }
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -156,6 +156,13 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         auto req = req_opt.value().get();
         BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
         verify_segment(manifest_ntp, segment1_name, req.content);
+
+        auto index_url = get_segment_index_path(manifest, segment1_name);
+        auto index_req_maybe = get_latest_request("/" + index_url().string());
+        BOOST_REQUIRE(index_req_maybe.has_value());
+        auto index_req = index_req_maybe.value().get();
+        BOOST_REQUIRE_EQUAL(index_req.method, "PUT");
+        verify_index(manifest_ntp, segment1_name, manifest, index_req.content);
     }
 
     {
