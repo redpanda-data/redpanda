@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: call-console
+  namespace: console-admin-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+            - -ex
+          args:
+            - echo "Checking that the console is up" &&
+              res=$(curl --silent -o /dev/null -w "%{http_code}" -k http://console.$POD_NAMESPACE.svc.cluster.local:8080/admin/health) &&
+              if [[ "$res" != "200" ]]; then
+                exit 1;
+              fi
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

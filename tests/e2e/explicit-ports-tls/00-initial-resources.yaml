@@ -1,0 +1,65 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: explicit-port-tls-issuer
+spec:
+  selfSigned: {}
+
+---
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: explicit-ports-tls
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    adminApi:
+    - port: 9644
+    kafkaApi:
+    - port: 9092
+    - port: 30092
+      external:
+        enabled: true
+        subdomain: cluster.com
+        endpointTemplate: "kafka-{{ .Index }}"
+      tls:
+        enabled: true
+        issuerRef:
+          kind: Issuer
+          name: explicit-port-tls-issuer
+    pandaproxyApi:
+     - port: 8082
+     - port: 30082
+       external:
+         enabled: true
+         subdomain: cluster.com
+         endpointTemplate: "panda-proxy-{{ .Index }}"
+       tls:
+         enabled: true
+         issuerRef:
+           kind: Issuer
+           name: explicit-port-tls-issuer
+    schemaRegistry:
+      port: 30081
+      external:
+        staticNodePort: true
+        enabled: true
+        subdomain: cluster.com
+        endpoint: schema-registry
+      tls:
+        enabled: true
+        issuerRef:
+          kind: Issuer
+          name: explicit-port-tls-issuer
+    developerMode: true

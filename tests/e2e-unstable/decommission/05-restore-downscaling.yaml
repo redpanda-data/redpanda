@@ -1,0 +1,5 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+# Downscaling will be set to the default value
+- command: "sh -c 'kustomize build ../../../config/e2e-tests | kubectl apply -f -'"

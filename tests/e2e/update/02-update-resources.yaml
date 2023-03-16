@@ -1,0 +1,8 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-cluster
+spec:
+  resources:
+    requests:
+      memory: 99M

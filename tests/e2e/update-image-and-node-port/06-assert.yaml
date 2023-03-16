@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-image-cluster-and-node-port
+status:
+  readyReplicas: 3
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-0
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-1
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+status:
+  phase: "Running"
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-and-node-port-2
+spec:
+  containers:
+  - name: redpanda
+    image: "localhost/redpanda:dev"
+    volumeMounts:
+    - mountPath: /etc/redpanda
+      name: config-dir
+    - mountPath: /scripts
+      name: hook-scripts-dir
+    - mountPath: /etc/redpanda/.bootstrap.yaml
+      name: configmap-dir
+      subPath: .bootstrap.yaml
+    - mountPath: /var/lib/redpanda/data
+      name: datadir
+    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+      readOnly: true
+status:
+  phase: "Running"
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-and-node-port/step-6"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-and-node-port/step-6/pods.yaml"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-0 -- curl -s http://update-image-cluster-and-node-port-0.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-6/brokers-from-pod-0.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-1 -- curl -s http://update-image-cluster-and-node-port-1.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-6/brokers-from-pod-1.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-2 -- curl -s http://update-image-cluster-and-node-port-2.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-and-node-port/step-6/brokers-from-pod-2.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-0 -- curl -s http://update-image-cluster-and-node-port-0.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/cluster_config/status > ../../_e2e_artifacts/update-image-and-node-port/step-6/config-status-from-pod-0.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-1 -- curl -s http://update-image-cluster-and-node-port-1.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/cluster_config/status > ../../_e2e_artifacts/update-image-and-node-port/step-6/config-status-from-pod-1.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda update-image-cluster-and-node-port-2 -- curl -s http://update-image-cluster-and-node-port-2.update-image-cluster-and-node-port.$NAMESPACE.svc.cluster.local.:9644/v1/cluster_config/status > ../../_e2e_artifacts/update-image-and-node-port/step-6/config-status-from-pod-2.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE logs update-image-cluster-and-node-port-0 -c redpanda > ../../_e2e_artifacts/update-image-and-node-port/step-6/logs-from-pod-0.txt"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE logs update-image-cluster-and-node-port-1 -c redpanda > ../../_e2e_artifacts/update-image-and-node-port/step-6/logs-from-pod-1.txt"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE logs update-image-cluster-and-node-port-2 -c redpanda > ../../_e2e_artifacts/update-image-and-node-port/step-6/logs-from-pod-2.txt"
+
+---
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-image-cluster-and-node-port
+status:
+  version: "dev"
+  readyReplicas: 3
+  replicas: 3
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"

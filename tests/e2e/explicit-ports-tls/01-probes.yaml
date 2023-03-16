@@ -1,0 +1,30 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: explicit-ports-tls-check
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      activeDeadlineSeconds: 90
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          env:
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+            - -ex
+          args:
+            - >
+              echo "Checking that the listener is bound to both Pandaproxy and schema registry ports and TLS is used" && 
+              sr_res=$(curl --silent -o /dev/null -w "%{http_code}" -k https://explicit-ports-tls-0.explicit-ports-tls.$NAMESPACE.svc.cluster.local:30081) &&
+              pp_res=$(curl --silent -o /dev/null -w "%{http_code}" -k https://explicit-ports-tls-0.explicit-ports-tls.$NAMESPACE.svc.cluster.local:30082) &&
+              if [[ "$sr_res" != "404" ]] || [[ "$pp_res" != "404" ]]; then
+                exit 1;
+              fi
+      restartPolicy: Never
