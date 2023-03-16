@@ -140,7 +140,8 @@ public:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
-    ss::future<> expire_tx(kafka::transactional_id);
+    ss::future<tm_stm::op_status>
+      expire_tx(model::term_id, kafka::transactional_id);
 
     bool is_expired(const tm_transaction&);
 
