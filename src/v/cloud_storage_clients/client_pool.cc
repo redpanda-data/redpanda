@@ -13,6 +13,7 @@ client_pool::client_pool(
   size_t size, client_configuration conf, client_pool_overdraft_policy policy)
   : _capacity(size)
   , _config(std::move(conf))
+  , _probe(std::visit([](auto&& p) { return p._probe; }, _config))
   , _policy(policy) {}
 
 ss::future<> client_pool::stop() {
@@ -100,6 +101,9 @@ client_pool::acquire(ss::abort_source& as) {
                 // Depending on the result either wait or create new connection
                 if (success) {
                     vlog(pool_log.debug, "successfuly borrowed from {}", sid);
+                    if (_probe) {
+                        _probe->register_borrow();
+                    }
                     source_sid = sid;
                     _pool.emplace_back(make_client());
                 } else {
@@ -127,6 +131,11 @@ client_pool::acquire(ss::abort_source& as) {
       "client lease is acquired, own usage stat: {}, is-borrowed: {}",
       normalized_num_clients_in_use(),
       source_sid.has_value());
+
+    std::unique_ptr<hdr_hist::measurement> measurement;
+    if (_probe) {
+        measurement = _probe->register_lease_duration();
+    }
 
     client_lease lease(
       client,
@@ -160,13 +169,17 @@ client_pool::acquire(ss::abort_source& as) {
                   pool->release(client);
               }
           }
-      }));
+      }),
+      std::move(measurement));
     _leased.push_back(lease);
 
     co_return lease;
 }
 
 void client_pool::update_usage_stats() {
+    if (_probe) {
+        _probe->register_utilization(normalized_num_clients_in_use());
+    }
 }
 
 size_t client_pool::normalized_num_clients_in_use() const {
@@ -174,7 +187,8 @@ size_t client_pool::normalized_num_clients_in_use() const {
     // the pool was depleted. This is needed to prevent borrowing from
     // overloaded shards.
     auto current = _capacity - std::clamp(_pool.size(), 0UL, _capacity);
-    auto normalized = static_cast<int>(100.0 * double(current) / static_cast<double>(_capacity));
+    auto normalized = static_cast<int>(
+      100.0 * double(current) / static_cast<double>(_capacity));
     return normalized;
 }
 

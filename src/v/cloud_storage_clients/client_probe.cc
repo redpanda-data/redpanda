@@ -12,8 +12,10 @@
 
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
+#include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics.hh>
+#include <seastar/core/metrics_types.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
@@ -90,6 +92,16 @@ void client_probe::register_retryable_failure(
     }
     _total_slowdowns += 1;
     _total_rpc_errors += 1;
+}
+
+void client_probe::register_borrow() { _total_borrows += 1; }
+
+std::unique_ptr<hdr_hist::measurement> client_probe::register_lease_duration() {
+    return _lease_duration.auto_measure();
+}
+
+void client_probe::register_utilization(unsigned clients_in_use) {
+    _pool_utilization = clients_in_use;
 }
 
 void client_probe::setup_internal_metrics(
@@ -176,6 +188,25 @@ void client_probe::setup_internal_metrics(
             "Total number of NoSuchKey errors received from cloud "
             "storage provider"),
           labels),
+        sm::make_counter(
+          "num_borrows",
+          [this] { return _total_borrows; },
+          sm::description("Number of time current shard had to borrow a cloud "
+                          "storage client from another shard"),
+          labels),
+        sm::make_histogram(
+          "lease_duration",
+          [this] {
+              return ssx::metrics::report_default_histogram(_lease_duration);
+          },
+          sm::description("Lease duration histogram"),
+          labels),
+        sm::make_gauge(
+          "client_pool_utiliazation",
+          [this] { return _pool_utilization; },
+          sm::description("Utilization of the cloud storage pool(0 - unused, "
+                          "100 - fully utilized)"),
+          labels),
       });
 }
 
@@ -239,6 +270,25 @@ void client_probe::setup_public_metrics(
                           "from cloud storage"),
           labels)
           .aggregate({sm::shard_label}),
+        sm::make_counter(
+          "num_borrows",
+          [this] { return _total_borrows; },
+          sm::description("Number of time current shard had to borrow a cloud "
+                          "storage client from another shard"),
+          labels),
+        sm::make_histogram(
+          "lease_duration",
+          [this] {
+              return ssx::metrics::report_default_histogram(_lease_duration);
+          },
+          sm::description("Lease duration histogram"),
+          labels),
+        sm::make_gauge(
+          "client_pool_utiliazation",
+          [this] { return _pool_utilization; },
+          sm::description("Utilization of the cloud storage pool(0 - unused, "
+                          "100 - fully utilized)"),
+          labels),
       });
 }
 

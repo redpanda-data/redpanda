@@ -13,10 +13,12 @@
 #include "cloud_roles/apply_credentials.h"
 #include "cloud_storage_clients/client.h"
 #include "utils/gate_guard.h"
+#include "utils/hdr_hist.h"
 #include "utils/intrusive_list_helpers.h"
 
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 namespace cloud_storage_clients {
 
@@ -42,11 +44,16 @@ public:
         ss::deleter deleter;
         ss::abort_source::subscription as_sub;
         intrusive_list_hook _hook;
+        std::unique_ptr<hdr_hist::measurement> _track_duration;
 
         client_lease(
-          http_client_ptr p, ss::abort_source& as, ss::deleter deleter)
+          http_client_ptr p,
+          ss::abort_source& as,
+          ss::deleter deleter,
+          std::unique_ptr<hdr_hist::measurement> m)
           : client(std::move(p))
-          , deleter(std::move(deleter)) {
+          , deleter(std::move(deleter))
+          , _track_duration(std::move(m)) {
             auto as_sub_opt = as.subscribe(
               // Lifetimes:
               // - Object referred to by `client` must stay alive until this
@@ -138,6 +145,7 @@ private:
     /// Configured capacity per shard
     const size_t _capacity;
     client_configuration _config;
+    ss::shared_ptr<client_probe> _probe;
     client_pool_overdraft_policy _policy;
     std::vector<http_client_ptr> _pool;
     // List of all connections currently used by clients
