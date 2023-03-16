@@ -14,6 +14,7 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/probe.h"
+#include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -252,6 +253,15 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& path,
       const try_consume_stream& cons_str,
+      retry_chain_node& parent);
+
+    /// \brief Download segment index from S3
+    /// \param ix is the index which will be populated from data from the object
+    /// store
+    ss::future<download_result> download_index(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_segment_path& index_path,
+      offset_index& ix,
       retry_chain_node& parent);
 
     /// Checks if the segment exists in the bucket

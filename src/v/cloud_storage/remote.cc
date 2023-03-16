@@ -15,6 +15,7 @@
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/util.h"
 #include "model/metadata.h"
 #include "utils/retry_chain_node.h"
 
@@ -581,6 +582,87 @@ ss::future<download_result> remote::download_segment(
     }
     co_return *result;
 }
+
+ss::future<download_result> remote::download_index(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& index_path,
+  offset_index& ix,
+  retry_chain_node& parent) {
+    gate_guard guard{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto path = cloud_storage_clients::object_key(index_path());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "Download index {}", path);
+
+    std::optional<download_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        notify_external_subscribers(
+          api_activity_notification::segment_download, parent);
+        auto resp = co_await lease.client->get_object(
+          bucket, path, fib.get_timeout());
+
+        if (resp) {
+            vlog(ctxlog.debug, "Receive OK response from {}", path);
+            _probe.successful_download();
+            auto index_buffer
+              = co_await cloud_storage_clients::util::drain_response_stream(
+                resp.value());
+            ix.from_iobuf(std::move(index_buffer));
+            co_return download_result::success;
+        }
+
+        lease.client->shutdown();
+
+        switch (resp.error()) {
+        case cloud_storage_clients::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case cloud_storage_clients::error_outcome::retry_slowdown:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "Downloading index from {}, {} backoff required",
+              bucket,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
+            _probe.download_backoff();
+            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
+            permit = fib.retry();
+            break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::fail:
+            result = download_result::failed;
+            break;
+        case cloud_storage_clients::error_outcome::key_not_found:
+            result = download_result::notfound;
+            break;
+        }
+    }
+    _probe.failed_download();
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Downloading index from {}, backoff quota exceded, index at {} "
+          "not available",
+          bucket,
+          path);
+        result = download_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Downloading index from {}, {}, index at {} not available",
+          bucket,
+          *result,
+          path);
+    }
+    co_return *result;
+}
+
 ss::future<download_result> remote::segment_exists(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
