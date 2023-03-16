@@ -303,6 +303,12 @@ public:
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
+    ss::future<std::optional<model::offset>>
+    apply_retention(compaction_config cfg);
+    ss::future<> apply_compaction(
+      compaction_config cfg,
+      std::optional<model::offset> new_start_offset = std::nullopt);
+    ss::future<bool> update_start_offset(model::offset start_offset);
     ss::future<> add_batch(
       model::record_batch batch,
       log_append_config config = append_config(),

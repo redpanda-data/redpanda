@@ -127,13 +127,14 @@ private:
     // Returns if the update actually took place.
     ss::future<bool> update_start_offset(model::offset o);
 
-    ss::future<> do_compact(compaction_config);
+    ss::future<> do_compact(
+      compaction_config, std::optional<model::offset> = std::nullopt);
     ss::future<compaction_result> compact_adjacent_segments(
       std::pair<segment_set::iterator, segment_set::iterator>,
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
     find_compaction_range(const compaction_config&);
-    ss::future<> gc(compaction_config);
+    ss::future<std::optional<model::offset>> gc(compaction_config);
 
     ss::future<> remove_empty_segments();
 
@@ -155,9 +156,11 @@ private:
     ss::future<> do_truncate_prefix(truncate_prefix_config);
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
-    ss::future<> garbage_collect_max_partition_size(compaction_config cfg);
-    ss::future<> garbage_collect_oldest_segments(compaction_config cfg);
-    ss::future<> garbage_collect_segments(
+    ss::future<model::offset>
+    garbage_collect_max_partition_size(compaction_config cfg);
+    ss::future<model::offset>
+    garbage_collect_oldest_segments(compaction_config cfg);
+    ss::future<model::offset> garbage_collect_segments(
       compaction_config cfg, model::offset, std::string_view);
     model::offset size_based_gc_max_offset(size_t);
     model::offset time_based_gc_max_offset(model::timestamp);
