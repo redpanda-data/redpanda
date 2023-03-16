@@ -427,9 +427,16 @@ class RpkTool:
                 if "COORDINATOR_NOT_AVAILABLE" in e.msg:
                     # Transient, return None to retry
                     return None
-                elif "Kafka replied that group" in e.msg:
+                elif "NOT_COORDINATOR" in e.msg:
+                    # Transient, retry
+                    return None
+                elif "broker replied that group" in e.msg:
                     # Transient, return None to retry
-                    # e.g. Kafka replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
+                    # e.g. broker replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
+                    return None
+                elif "connection refused" in e.msg:
+                    # Metadata directed us to a broker that is uncontactable, perhaps
+                    # it was just stopped.  Retry should succeed once metadata updates.
                     return None
                 else:
                     raise

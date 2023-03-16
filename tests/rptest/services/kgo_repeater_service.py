@@ -12,6 +12,7 @@ import requests
 import json
 from typing import Optional, Callable
 from contextlib import contextmanager
+from collections import defaultdict
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -36,7 +37,9 @@ class KgoRepeaterService(Service):
                  msg_size: Optional[int],
                  workers: int,
                  key_count: int,
-                 group_name: str = "repeat01"):
+                 group_name: str = "repeat01",
+                 max_buffered_records: Optional[int] = None,
+                 mb_per_worker: Optional[int] = None):
         # num_nodes=0 because we're asking it to not allocate any for us
         super().__init__(context, num_nodes=0 if nodes else 1)
 
@@ -56,6 +59,12 @@ class KgoRepeaterService(Service):
         self.remote_port = 8080
 
         self.key_count = key_count
+        self.max_buffered_records = max_buffered_records
+
+        if mb_per_worker is None:
+            mb_per_worker = 4
+
+        self.mb_per_worker = mb_per_worker
 
         self._stopped = False
 
@@ -66,8 +75,7 @@ class KgoRepeaterService(Service):
             node.account.remove(self.LOG_PATH)
 
     def start_node(self, node, clean=None):
-        mb_per_worker = 1
-        initial_data_mb = mb_per_worker * self.workers
+        initial_data_mb = self.mb_per_worker * self.workers
 
         cmd = (
             "/opt/kgo-verifier/kgo-repeater "
@@ -81,6 +89,9 @@ class KgoRepeaterService(Service):
 
         if self.key_count is not None:
             cmd += f" -keys={self.key_count}"
+
+        if self.max_buffered_records is not None:
+            cmd += f" -max-buffered-records={self.max_buffered_records}"
 
         cmd = f"nohup {cmd} >> {self.LOG_PATH} 2>&1 &"
 
@@ -146,12 +157,7 @@ class KgoRepeaterService(Service):
                     f"group_ready: waiting for stable, current state {group.state}"
                 )
                 return False
-            elif group.members < expect_members / 2:
-                # FIXME: this should really require that all consumers are present, but
-                # in practice I see some a small minority of consumers drop out of the
-                # group sometimes when the cluster undergoes an all-node concurrent restart,
-                # and I don't want to stop the test for that.
-                # https://github.com/redpanda-data/redpanda/issues/5959
+            elif group.members < expect_members:
                 self.logger.debug(
                     f"group_ready: waiting for node count ({group.members} != {expect_members})"
                 )
@@ -161,7 +167,32 @@ class KgoRepeaterService(Service):
 
         self.logger.debug(f"Waiting for group {self.group_name} to be ready")
         t1 = time.time()
-        wait_until(group_ready, timeout_sec=120, backoff_sec=10)
+        try:
+            wait_until(group_ready, timeout_sec=120, backoff_sec=10)
+        except:
+            # On failure, inspect the group to identify which workers
+            # specifically were absent.  This information helps to
+            # go inspect the remote kgo-repeater logs to see if the
+            # client logged any errors.
+
+            rpk = RpkTool(self.redpanda)
+            group = rpk.group_describe(self.group_name, summary=False)
+
+            # Identify which of the clients is dropping some consumers
+            workers_by_host = defaultdict(set)
+            for p in group.partitions:
+                # kgo-repeater worker names are like this:
+                # {hostname}_{pid}_w_{index}, where index is a zero-based counter
+                host, pid, _, n = p.client_id.split("_")
+                workers_by_host[host].add(int(n))
+
+            for host, live_workers in workers_by_host.items():
+                expect_workers = set(range(0, self.workers))
+                missing_workers = expect_workers - live_workers
+                self.logger.error(f"  {host}: missing {missing_workers}")
+
+            raise
+
         self.logger.debug(
             f"Group {self.group_name} became ready in {time.time() - t1}s")
 
