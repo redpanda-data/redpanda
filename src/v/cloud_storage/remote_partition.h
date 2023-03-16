@@ -95,7 +95,7 @@ public:
     kafka::offset first_uploaded_offset();
 
     /// Return last uploaded kafka offset
-    model::offset last_uploaded_offset();
+    kafka::offset last_uploaded_offset();
 
     /// Get partition NTP
     const model::ntp& get_ntp() const;

@@ -262,6 +262,14 @@ const model::offset partition_manifest::get_last_offset() const {
     return _last_offset;
 }
 
+const std::optional<kafka::offset>
+partition_manifest::get_last_kafka_offset() const {
+    if (_segments.empty()) {
+        return std::nullopt;
+    }
+    return _segments.rbegin()->second.committed_kafka_offset();
+}
+
 const model::offset partition_manifest::get_insync_offset() const {
     return _insync_offset;
 }
