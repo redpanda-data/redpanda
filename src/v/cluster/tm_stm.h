@@ -116,6 +116,8 @@ public:
     ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
+      reset_transferring(model::term_id, kafka::transactional_id);
+    ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ready(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       reset_tx_ready(model::term_id, kafka::transactional_id, model::term_id);
