@@ -29,7 +29,7 @@ class tx_range_manifest final : public base_manifest {
 public:
     /// Create manifest for specific ntp
     explicit tx_range_manifest(
-      remote_segment_path spath, const std::vector<model::tx_range>& range);
+      remote_segment_path spath, fragmented_vector<model::tx_range>&& range);
 
     /// Create empty manifest that supposed to be updated later
     explicit tx_range_manifest(remote_segment_path spath);
