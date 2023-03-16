@@ -202,7 +202,6 @@ private:
     storage::probe _probe;
     failure_probes _failure_probes;
     std::optional<eviction_monitor> _eviction_monitor;
-    model::offset _max_collectible_offset;
     size_t _max_segment_size;
     std::unique_ptr<readers_cache> _readers_cache;
     // average ratio of segment sizes after segment size before compaction

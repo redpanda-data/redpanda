@@ -2061,9 +2061,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
                     // prefix-truncating.
                     return ss::now();
                 }
-                return truncate_to_latest_snapshot().then([this] {
-                    _log.set_collectible_offset(_last_snapshot_index);
-                });
+                return truncate_to_latest_snapshot();
             });
       })
       .then([this] { return _snapshot_mgr.get_snapshot_size(); })
@@ -2230,8 +2228,6 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
               _flushed_offset = std::max(last_included_index, _flushed_offset);
           });
     });
-
-    _log.set_collectible_offset(last_included_index);
 }
 
 ss::future<>
