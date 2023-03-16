@@ -435,30 +435,6 @@ tm_stm::reset_transferring(model::term_id term, kafka::transactional_id tx_id) {
     co_return tx;
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
-  model::term_id expected_term, kafka::transactional_id tx_id) {
-    return reset_tx_ready(expected_term, tx_id, expected_term);
-}
-
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
-  model::term_id expected_term,
-  kafka::transactional_id tx_id,
-  model::term_id term) {
-    auto tx_opt = co_await get_tx(tx_id);
-    if (!tx_opt.has_value()) {
-        co_return tx_opt;
-    }
-    tm_transaction tx = tx_opt.value();
-    tx.status = tm_transaction::tx_status::ready;
-    tx.last_pid = model::unknown_pid;
-    tx.partitions.clear();
-    tx.groups.clear();
-    tx.etag = term;
-    tx.tx_seq += 1;
-    tx.last_update_ts = clock_type::now();
-    co_return co_await update_tx(std::move(tx), expected_term);
-}
-
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
   model::term_id expected_term, kafka::transactional_id tx_id) {
     auto tx_opt = co_await get_tx(tx_id);
@@ -483,23 +459,6 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
     tx.partitions.clear();
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
-    _cache.local().set_mem(tx.etag, tx_id, tx);
-    co_return tx;
-}
-
-ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::reset_tx_ongoing(kafka::transactional_id tx_id, model::term_id term) {
-    auto tx_opt = co_await get_tx(tx_id);
-    if (!tx_opt.has_value()) {
-        co_return tx_opt;
-    }
-    tm_transaction tx = tx_opt.value();
-    tx.status = tm_transaction::tx_status::ongoing;
-    tx.tx_seq += 1;
-    tx.partitions.clear();
-    tx.groups.clear();
-    tx.last_update_ts = clock_type::now();
-    tx.etag = term;
     _cache.local().set_mem(tx.etag, tx_id, tx);
     co_return tx;
 }
