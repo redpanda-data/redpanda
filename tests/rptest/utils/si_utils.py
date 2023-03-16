@@ -513,14 +513,21 @@ class BucketView:
         self._state.partition_manifests[ntp] = manifest
         return manifest
 
-    def get_partition_manifest(self, ntp):
+    def get_partition_manifest(self, ntp: NTP | NTPR):
         """
         Fetch a manifest, looking up revision as needed.
         """
+        ntpr = None
+        if isinstance(ntp, NTPR):
+            ntpr = ntp
+            ntp = ntpr.to_ntp()
+
         if ntp in self._state.partition_manifests:
             return self._state.partition_manifests[ntp]
 
-        ntpr = self.ntp_to_ntpr(ntp)
+        if not ntpr:
+            ntpr = self.ntp_to_ntpr(ntp)
+
         manifest_path = gen_manifest_path(ntpr)
         return self._load_manifest(ntp, manifest_path)
 
@@ -585,6 +592,14 @@ class BucketView:
         else:
             return True
 
+    def manifest_for_ntpr(self,
+                          topic: str,
+                          partition: int,
+                          revision: int,
+                          ns: str = 'kafka') -> dict:
+        ntpr = NTPR(ns, topic, partition, revision)
+        return self.get_partition_manifest(ntpr)
+
     def manifest_for_ntp(self,
                          topic: str,
                          partition: int,
@@ -636,8 +651,12 @@ class BucketView:
     def assert_at_least_n_uploaded_segments_compacted(self,
                                                       topic: str,
                                                       partition: int,
+                                                      revision: Optional[int],
                                                       n=1):
-        manifest_data = self.manifest_for_ntp(topic, partition)
+        if revision:
+            manifest_data = self.manifest_for_ntpr(topic, partition, revision)
+        else:
+            manifest_data = self.manifest_for_ntp(topic, partition)
         segments = manifest_data['segments']
         compacted_segments = len(
             [meta for meta in segments.values() if meta['is_compacted']])
