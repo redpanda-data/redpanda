@@ -1,0 +1,16 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-cluster-resources
+spec:
+  resources:
+    redpanda:
+      cpu: 2
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  configuration:
+    developerMode: true

@@ -1,0 +1,41 @@
+{{/*
+Copyright 2020 Redpanda Data, Inc.
+
+Use of this software is governed by the Business Source License
+included in the file licenses/BSL.md
+
+As of the Change Date specified in that file, in accordance with
+the Business Source License, use of this software will be governed
+by the Apache License, Version 2.0
+*/}}
+
+{{- if .Values.webhook.enabled -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/redpanda-serving-cert
+  name: {{ include "redpanda-operator.fullname" . }}-validating-webhook-configuration
+webhooks:
+  - admissionReviewVersions:
+    - v1
+    - v1beta1
+    clientConfig:
+      service:
+        name: {{ include "redpanda-operator.name" . }}-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /validate-redpanda-vectorized-io-v1alpha1-cluster
+    failurePolicy: Fail
+    name: mcluster.kb.io
+    rules:
+    - apiGroups:
+      - redpanda.vectorized.io
+      apiVersions:
+      - v1alpha1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - clusters
+    sideEffects: None
+{{- end -}}

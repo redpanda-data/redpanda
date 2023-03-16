@@ -1,0 +1,6 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+# Set the --allow-downscaling=true parameter in the controller manager
+- command: kubectl patch deployment redpanda-controller-manager -n redpanda-system --type='strategic' -p='{"spec":{"template":{"spec":{"$setElementOrder/containers":[{"name":"kube-rbac-proxy"},{"name":"manager"}],"containers":[{"args":["--health-probe-bind-address=:8081","--metrics-bind-address=127.0.0.1:8080","--leader-elect","--webhook-enabled=true","--configurator-base-image=localhost/configurator","--configurator-tag=dev","--configurator-image-pull-policy=Never","--allow-downscaling=true"],"name":"manager"}]}}}}'
+- command: kubectl get deployment redpanda-controller-manager -n redpanda-system -o json

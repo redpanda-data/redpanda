@@ -1,0 +1,20 @@
+{{/*
+Copyright 2020 Redpanda Data, Inc.
+
+Use of this software is governed by the Business Source License
+included in the file licenses/BSL.md
+
+As of the Change Date specified in that file, in accordance with
+the Business Source License, use of this software will be governed
+by the Apache License, Version 2.0
+*/}}
+
+Congratulations on installing {{ .Chart.Name }}!
+
+The pods will rollout in a few seconds. To check the status:
+
+  kubectl -n {{ .Release.Namespace }} rollout status -w deployment/{{ template "redpanda-operator.fullname" . }}
+
+Now you can install Cluster custom resource:
+
+  kubectl apply -f https://raw.githubusercontent.com/redpanda-data/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml

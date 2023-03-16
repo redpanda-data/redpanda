@@ -1,0 +1,26 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestSuite
+startKIND: true
+skipDelete: true
+skipClusterDelete: true
+kindContainers:
+  - localhost/redpanda-operator:dev
+  - localhost/configurator:dev
+  - localhost/redpanda:dev
+testDirs:
+  - ./tests/e2e-unstable
+kindConfig: ./kind.yaml
+kindNodeCache: false
+commands:
+  - command: "mkdir -p tests/_e2e_unstable_artifacts"
+  - command: "kubectl taint nodes -l node-role.kubernetes.io/master= node-role.kubernetes.io/master:NoSchedule-"
+  - command: "./hack/install-cert-manager.sh tests/_e2e_unstable_artifacts"
+  - command: "kubectl create -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/e23ff77fceba6a5d9f190f5d1a123c87701dc964/bundle.yaml"
+  - command: "sh -c 'cd config/manager && kustomize edit set image vectorized/redpanda-operator=localhost/redpanda-operator:dev'"
+  - command: "sh -c 'kustomize build config/default | kubectl apply -f -'"
+  - command: "kind load docker-image localhost/redpanda:dev"
+  - command: "./hack/wait-for-webhook-ready.sh"
+artifactsDir: tests/_e2e_unstable_artifacts
+timeout: 300
+reportFormat: xml
+parallel: 1
