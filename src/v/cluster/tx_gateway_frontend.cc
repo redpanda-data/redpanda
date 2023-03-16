@@ -2262,8 +2262,11 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::forget_tx(
         co_return tx_errc::not_coordinator;
     }
 
-    // TODO: check result
-    co_await stm->expire_tx(tx.id);
+    auto ec = co_await stm->expire_tx(term, tx.id);
+    if (ec != tm_stm::op_status::success) {
+        vlog(txlog.warn, "got error {} on expiring tx.id={}", ec, tx.id);
+        co_return tx_errc::not_coordinator;
+    }
 
     // just wrote a tombstone
     co_return tx_errc::tx_not_found;
@@ -2830,7 +2833,9 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
         co_return;
     }
 
-    co_await stm->expire_tx(tx_id);
+    // it's ok not to check ec because if the expiration isn't passed
+    // it will be retried and it's an idempotent operation
+    co_await stm->expire_tx(term, tx_id).discard_result();
 }
 
 ss::future<tx_gateway_frontend::return_all_txs_res>
