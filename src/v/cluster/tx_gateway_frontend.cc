@@ -1018,18 +1018,19 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         co_return init_tm_tx_reply{tx_errc::not_coordinator};
     }
     auto term = term_opt.value();
-    auto tx_opt = co_await stm->get_tx(tx_id);
 
-    if (!tx_opt.has_value()) {
-        if (tx_opt.error() == tm_stm::op_status::not_leader) {
-            co_return init_tm_tx_reply{tx_errc::leader_not_found};
+    auto r0 = co_await get_tx(term, stm, tx_id, timeout);
+    if (!r0.has_value()) {
+        if (r0.error() != tx_errc::tx_not_found) {
+            vlog(
+              txlog.warn,
+              "got error {} on loading tx.id={}",
+              r0.error(),
+              tx_id);
+            co_return init_tm_tx_reply{tx_errc::not_coordinator};
         }
-        if (tx_opt.error() == tm_stm::op_status::timeout) {
-            co_return init_tm_tx_reply{tx_errc::timeout};
-        }
-        if (tx_opt.error() != tm_stm::op_status::not_found) {
-            co_return init_tm_tx_reply{tx_errc::unknown_server_error};
-        }
+
+        // tx is missing
         allocate_id_reply pid_reply
           = co_await _id_allocator_frontend.local().allocate_id(timeout);
         if (pid_reply.ec != errc::success) {
@@ -1068,8 +1069,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
         }
         co_return reply;
     }
-
-    auto tx = tx_opt.value();
+    auto tx = r0.value();
 
     if (!is_valid_producer(tx, expected_pid)) {
         co_return init_tm_tx_reply{tx_errc::invalid_producer_epoch};
@@ -1077,28 +1077,12 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
     checked<tm_transaction, tx_errc> r(tx);
 
-    if (tx.status == tm_transaction::tx_status::ready) {
-        // already in a good state, we don't need to do nothing. even if
-        // tx's etag is old it will be bumped by re_register_producer
-    } else if (tx.status == tm_transaction::tx_status::ongoing) {
+    if (tx.status == tm_transaction::tx_status::ongoing) {
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     } else if (tx.status == tm_transaction::tx_status::preparing) {
-        r = co_await do_commit_tm_tx(
-          term,
-          stm,
-          tx,
-          timeout,
-          ss::make_lw_shared<available_promise<tx_errc>>());
-    } else {
-        if (tx.status == tm_transaction::tx_status::prepared) {
-            r = co_await recommit_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::aborting) {
-            r = co_await reabort_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::killed) {
-            r = co_await reabort_tm_tx(stm, term, tx, timeout);
-        } else {
-            vassert(false, "unexpected tx status {}", tx.status);
-        }
+        // preparing is obsolete, also it isn't acked until
+        // it's prepared si it's safe to abort it
+        r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     }
 
     if (!r.has_value()) {
@@ -1803,7 +1787,9 @@ tx_gateway_frontend::do_abort_tm_tx(
         co_return co_await reabort_tm_tx(stm, expected_term, tx, timeout);
     }
 
-    if (tx.status != tm_transaction::tx_status::ongoing) {
+    if (
+      tx.status != tm_transaction::tx_status::ongoing
+      && tx.status != tm_transaction::tx_status::preparing) {
         vlog(
           txlog.warn,
           "abort encontered a tx with unexpected status:{} (tx:{} etag:{} "
@@ -2839,12 +2825,7 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
     } else if (tx.status == tm_transaction::tx_status::ongoing) {
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     } else if (tx.status == tm_transaction::tx_status::preparing) {
-        r = co_await do_commit_tm_tx(
-          term,
-          stm,
-          tx,
-          timeout,
-          ss::make_lw_shared<available_promise<tx_errc>>());
+        r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     } else {
         if (tx.status == tm_transaction::tx_status::prepared) {
             r = co_await recommit_tm_tx(stm, term, tx, timeout);
