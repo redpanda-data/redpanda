@@ -82,7 +82,8 @@ public:
     private:
         std::chrono::seconds
         reset_state(fragmented_vector<usage_window> buckets);
-        ss::future<> close_window();
+        void close_window();
+        ss::future<> async_data_fetch(size_t index, uint64_t close_ts);
 
     private:
         size_t _usage_num_windows;
