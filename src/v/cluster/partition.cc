@@ -855,39 +855,35 @@ ss::future<> partition::remove_remote_persistent_state(ss::abort_source& as) {
     // excludes read replica clusters from deleting data in S3)
     bool tiered_storage = get_ntp_config().is_tiered_storage();
 
-    if (
-      _cloud_storage_partition && tiered_storage
-      && get_ntp_config().remote_delete()) {
-        vlog(
-          clusterlog.debug,
-          "Erasing S3 objects for partition {} ({} {} {})",
-          ntp(),
-          get_ntp_config(),
-          get_ntp_config().is_archival_enabled(),
-          get_ntp_config().is_read_replica_mode_enabled());
+    if (_cloud_storage_partition && tiered_storage) {
+        const auto finalize = co_await should_finalize(
+          as, _raft->self(), group_configuration());
 
-        if (!group_configuration().is_voter(_raft->self())) {
-            // Learners are excluded from deletion, because they have a high
-            // risk of having some out of date state, and because there will
-            // always be some voter peers to do the work.
-            co_return;
+        cloud_storage::remote_partition::finalize_result finalize_r;
+        if (finalize) {
+            vlog(
+              clusterlog.debug,
+              "Finalizing remote metadata on partition delete {}",
+              ntp());
+            finalize_r = co_await _cloud_storage_partition->finalize(as);
         }
 
-        const auto finalize = co_await should_finalize(
-          as, _raft->self(), group_configuration());
-
-        co_await _cloud_storage_partition->erase(as, finalize);
-    } else if (_cloud_storage_partition && tiered_storage) {
-        // Tiered storage is enabled, but deletion is disabled: ensure the
-        // remote metadata is up to date before we drop the local partition.
-        vlog(
-          clusterlog.info,
-          "Leaving tiered storage objects behind for partition {}",
-          ntp());
-        const auto finalize = co_await should_finalize(
-          as, _raft->self(), group_configuration());
-        if (finalize) {
-            co_await _cloud_storage_partition->finalize(as);
+        if (
+          get_ntp_config().remote_delete()
+          && finalize_r.get_status == cloud_storage::download_result::success) {
+            const bool do_erase = voter_position(
+                                    _raft->self(), group_configuration())
+                                  == 0;
+            if (do_erase) {
+                vlog(
+                  clusterlog.debug,
+                  "Erasing S3 objects for partition {} ({} {} {})",
+                  ntp(),
+                  get_ntp_config(),
+                  get_ntp_config().is_archival_enabled(),
+                  get_ntp_config().is_read_replica_mode_enabled());
+                co_await _cloud_storage_partition->try_erase(as);
+            }
         }
     }
 }
