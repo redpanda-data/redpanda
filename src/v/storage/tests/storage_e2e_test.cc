@@ -69,6 +69,26 @@ void validate_offsets(
         it++;
     }
 }
+
+void compact_and_prefix_truncate(
+  storage::disk_log_impl& log, storage::compaction_config cfg) {
+    ss::abort_source as;
+    auto eviction_future = log.monitor_eviction(as);
+
+    log.compact(cfg).get();
+
+    if (eviction_future.available()) {
+        auto evict_until = eviction_future.get();
+        log
+          .truncate_prefix(storage::truncate_prefix_config{
+            model::next_offset(evict_until), ss::default_priority_class()})
+          .get();
+    } else {
+        as.request_abort();
+        eviction_future.ignore_ready_future();
+    }
+}
+
 FIXTURE_TEST(
   test_assinging_offsets_in_single_segment_log, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
@@ -510,14 +530,12 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
      * [100..110][200..230][231..261]
      */
 
-    // Set max_collectible_offset to min should not gc any segments.
     storage::compaction_config ccfg_no_compact(
       model::timestamp(200),
       std::nullopt,
       model::offset::min(), // should prevent compaction
       ss::default_priority_class(),
       as);
-    log.set_collectible_offset(log.offsets().dirty_offset);
     auto before = log.offsets();
     log.compact(ccfg_no_compact).get0();
     auto after = log.offsets();
@@ -531,10 +549,9 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
           ss::default_priority_class(),
           as);
     };
-    log.set_collectible_offset(log.offsets().dirty_offset);
 
     // gc with timestamp 50, no segments should be evicted
-    log.compact(make_compaction_cfg(50)).get0();
+    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(50));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().front()->offsets().base_offset, model::offset(0));
@@ -542,21 +559,21 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
       disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
 
     // gc with timestamp 102, no segments should be evicted
-    log.compact(make_compaction_cfg(102)).get0();
+    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(102));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 3);
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().front()->offsets().base_offset, model::offset(0));
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
     // gc with timestamp 201, should evict first segment
-    log.compact(make_compaction_cfg(201)).get0();
+    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(201));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 2);
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().front()->offsets().base_offset, model::offset(10));
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().back()->offsets().dirty_offset, model::offset(59));
     // gc with timestamp 240, should evict first segment
-    log.compact(make_compaction_cfg(240)).get0();
+    compact_and_prefix_truncate(*disk_log, make_compaction_cfg(240));
     BOOST_REQUIRE_EQUAL(disk_log->segments().size(), 1);
     BOOST_REQUIRE_EQUAL(
       disk_log->segments().front()->offsets().base_offset, model::offset(40));
@@ -576,6 +593,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
 
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto disk_log = get_disk_log(log);
     auto headers = append_random_batches(log, 10);
     log.flush().get0();
     auto all_batches = read_and_validate_all_batches(log);
@@ -595,15 +613,15 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
       size_t(0),
       [](size_t acc, model::record_batch& b) { return acc + b.size_bytes(); });
 
-    // Set max_collectible_offset to min should not gc any segments.
+    // Set the max number of bytes to the total size of the log.
+    // This will prevent compaction.
     storage::compaction_config ccfg_no_compact(
       model::timestamp::min(),
-      (total_size - first_size) + 1,
-      model::offset::min(), // should prevent compaction
+      total_size + first_size,
+      model::offset::max(),
       ss::default_priority_class(),
       as);
-    log.set_collectible_offset(log.offsets().dirty_offset);
-    log.compact(ccfg_no_compact).get0();
+    compact_and_prefix_truncate(*disk_log, ccfg_no_compact);
 
     auto new_lstats = log.offsets();
     BOOST_REQUIRE_EQUAL(new_lstats.start_offset, lstats.start_offset);
@@ -614,8 +632,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
       model::offset::max(),
       ss::default_priority_class(),
       as);
-    log.set_collectible_offset(log.offsets().dirty_offset);
-    log.compact(ccfg).get0();
+    compact_and_prefix_truncate(*disk_log, ccfg);
 
     new_lstats = log.offsets();
     info("Final offsets {}", new_lstats);
@@ -669,10 +686,12 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
     auto lstats_after = log.offsets();
 
     BOOST_REQUIRE_EQUAL(lstats_before.start_offset, lstats_after.start_offset);
-    // set max evictable offset
-    log.set_collectible_offset(offset);
     // wait for compaction
     log.compact(ccfg).get0();
+    log
+      .truncate_prefix(storage::truncate_prefix_config{
+        model::next_offset(offset), ss::default_priority_class()})
+      .get();
     auto compacted_lstats = log.offsets();
     info("Compacted offsets {}", compacted_lstats);
     // check if compaction happend
@@ -762,7 +781,6 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
     ss::semaphore _sem{1};
     int appends = 100;
     int batches_per_append = 5;
-    log.set_collectible_offset(model::offset(10000000));
     auto compact = [log, &as]() mutable {
         storage::compaction_config ccfg(
           model::timestamp::min(),
@@ -1366,7 +1384,6 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
       lstats_before.committed_offset, model::offset{input_batch_count - 1});
     BOOST_REQUIRE_EQUAL(lstats_before.start_offset, model::offset{0});
 
-    log.set_collectible_offset(log.offsets().dirty_offset);
     storage::compaction_config ccfg(
       model::timestamp::min(),
       50_KiB,
@@ -1377,7 +1394,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     // Compact 10 times, with a configuration calling for 60kiB max log size.
     // This results in prefix truncating at offset 50.
     for (int i = 0; i < 10; ++i) {
-        log.compact(ccfg).get0();
+        compact_and_prefix_truncate(*get_disk_log(log), ccfg);
     }
     get_disk_log(log)->get_probe().partition_size();
 
@@ -3282,16 +3299,15 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
         auto disk_log = get_disk_log(log);
 
         BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 11);
-        log.set_collectible_offset(model::offset::max());
 
-        log
-          .compact(storage::compaction_config(
+        compact_and_prefix_truncate(
+          *disk_log,
+          storage::compaction_config(
             model::timestamp::min(),
             cfg.retention_bytes(),
             model::offset::max(),
             ss::default_priority_class(),
-            as))
-          .get();
+            as));
         // make sure we retain less than expected bytes
         BOOST_REQUIRE_LE(disk_log->size_bytes(), tc.expected_bytes_left);
         BOOST_REQUIRE_GT(
@@ -3436,7 +3452,7 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
     using namespace storage;
 
     ss::abort_source abs;
-    temporary_dir tmp_dir("concat_segment_read");
+    temporary_dir tmp_dir("storage_e2e");
     auto data_path = tmp_dir.get_path();
 
     storage::ntp_config config{{"test_ns", "test_tpc", 0}, {data_path}};
@@ -3481,17 +3497,16 @@ FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
 
     // Grab the new start offset from the notification and
     // update the collectible offset and start offsets.
-    auto start_offset = eviction_future.get();
-    BOOST_REQUIRE_EQUAL(*new_start_offset, start_offset);
-    BOOST_REQUIRE(b.update_start_offset(start_offset).get());
-    log.set_collectible_offset(start_offset);
+    auto evict_at_offset = eviction_future.get();
+    BOOST_REQUIRE_EQUAL(*new_start_offset, model::next_offset(evict_at_offset));
+    BOOST_REQUIRE(b.update_start_offset(*new_start_offset).get());
 
     // Call into `disk_log_impl::compact`. The only segment eligible for
     // compaction is the below the start offset and it should be ignored.
     auto& first_seg = log.segments().front();
     BOOST_REQUIRE_EQUAL(first_seg->finished_self_compaction(), false);
 
-    b.apply_compaction(cfg, start_offset).get();
+    b.apply_compaction(cfg, *new_start_offset).get();
 
     BOOST_REQUIRE_EQUAL(first_seg->finished_self_compaction(), false);
 
