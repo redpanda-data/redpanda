@@ -222,7 +222,6 @@ private:
 class log_manager;
 class segment_set;
 class kvstore;
-log make_memory_backed_log(ntp_config);
 log make_disk_backed_log(
   ntp_config,
   log_manager&,
