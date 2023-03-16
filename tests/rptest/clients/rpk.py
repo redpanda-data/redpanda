@@ -443,9 +443,9 @@ class RpkTool:
                 elif "NOT_COORDINATOR" in e.msg:
                     # Transient, retry
                     return None
-                elif "Kafka replied that group" in e.msg:
+                elif "broker replied that group" in e.msg:
                     # Transient, return None to retry
-                    # e.g. Kafka replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
+                    # e.g. broker replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
                     return None
                 else:
                     raise
