@@ -144,7 +144,12 @@ private:
       ss::shared_ptr<cluster::tm_stm>,
       cluster::tm_transaction,
       model::timeout_clock::duration);
-
+    ss::future<checked<tm_transaction, tx_errc>> get_latest_tx(
+      model::term_id,
+      ss::shared_ptr<tm_stm>,
+      model::producer_identity,
+      kafka::transactional_id,
+      model::timeout_clock::duration);
     ss::future<checked<tm_transaction, tx_errc>> get_ongoing_tx(
       model::term_id,
       ss::shared_ptr<tm_stm>,
