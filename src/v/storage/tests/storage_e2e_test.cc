@@ -24,11 +24,13 @@
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_utils.h"
+#include "storage/tests/disk_log_builder_fixture.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/log_gap_analysis.h"
 #include "storage/types.h"
 #include "test_utils/async.h"
+#include "test_utils/tmp_dir.h"
 #include "units.h"
 #include "utils/directory_walker.h"
 #include "utils/to_string.h"
@@ -3428,4 +3430,70 @@ FIXTURE_TEST(issue_8091, storage_test_fixture) {
 
     // at the end of this test there must be no batch parse errors
     BOOST_REQUIRE_EQUAL(disk_log->get_probe().get_batch_parse_errors(), 0);
+}
+
+FIXTURE_TEST(test_skipping_compaction_below_start_offset, log_builder_fixture) {
+    using namespace storage;
+
+    ss::abort_source abs;
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+
+    storage::ntp_config config{{"test_ns", "test_tpc", 0}, {data_path}};
+
+    storage::ntp_config::default_overrides overrides;
+    overrides.retention_bytes = tristate<size_t>{1};
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction
+        | model::cleanup_policy_bitflags::deletion;
+
+    config.set_overrides(overrides);
+
+    // Create a log and populate it with two segments,
+    // while making sure to close the first segment before
+    // opening the second.
+    b | start(std::move(config));
+
+    auto& log = b.get_disk_log_impl();
+
+    b | add_segment(0) | add_random_batch(0, 100);
+
+    log.force_roll(ss::default_priority_class()).get();
+
+    b | add_segment(100) | add_random_batch(100, 100);
+
+    BOOST_REQUIRE_EQUAL(log.segment_count(), 2);
+
+    compaction_config cfg{
+      model::timestamp::max(),
+      1,
+      model::offset::max(),
+      ss::default_priority_class(),
+      abs};
+
+    // Call into `disk_log_impl::gc` and listen for the eviction
+    // notification being created.
+    auto eviction_future = log.monitor_eviction(abs);
+    auto new_start_offset = b.apply_retention(cfg).get();
+    BOOST_REQUIRE(new_start_offset);
+
+    BOOST_REQUIRE_EQUAL(log.segment_count(), 2);
+
+    // Grab the new start offset from the notification and
+    // update the collectible offset and start offsets.
+    auto start_offset = eviction_future.get();
+    BOOST_REQUIRE_EQUAL(*new_start_offset, start_offset);
+    BOOST_REQUIRE(b.update_start_offset(start_offset).get());
+    log.set_collectible_offset(start_offset);
+
+    // Call into `disk_log_impl::compact`. The only segment eligible for
+    // compaction is the below the start offset and it should be ignored.
+    auto& first_seg = log.segments().front();
+    BOOST_REQUIRE_EQUAL(first_seg->finished_self_compaction(), false);
+
+    b.apply_compaction(cfg, start_offset).get();
+
+    BOOST_REQUIRE_EQUAL(first_seg->finished_self_compaction(), false);
+
+    b.stop().get();
 }

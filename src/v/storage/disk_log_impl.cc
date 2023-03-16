@@ -298,7 +298,7 @@ bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
            && ptr->reader().filename() == (*_segs.begin())->reader().filename();
 }
 
-ss::future<> disk_log_impl::garbage_collect_segments(
+ss::future<model::offset> disk_log_impl::garbage_collect_segments(
   compaction_config cfg, model::offset max_offset, std::string_view ctx) {
     vlog(
       gclog.debug,
@@ -314,7 +314,11 @@ ss::future<> disk_log_impl::garbage_collect_segments(
     if (_eviction_monitor && have_segments_to_evict) {
         _eviction_monitor->promise.set_value(max_offset);
         _eviction_monitor.reset();
+
+        co_return max_offset;
     }
+
+    // This is dead code. A subsequent commit removes it.
 
     // Max collectible offset can be overriden from multiple places
     // (unfortunately). We take the min.
@@ -322,7 +326,7 @@ ss::future<> disk_log_impl::garbage_collect_segments(
       cfg.max_collectible_offset,
       std::min(max_offset, _max_collectible_offset));
     auto* as = cfg.asrc;
-    return ss::do_until(
+    co_await ss::do_until(
       [this, as, max_offset] {
           return _segs.size() <= 1 || as->abort_requested()
                  || _segs.front()->offsets().committed_offset > max_offset;
@@ -339,12 +343,14 @@ ss::future<> disk_log_impl::garbage_collect_segments(
                 return remove_segment_permanently(ptr, ctx);
             });
       });
+
+    co_return _start_offset;
 }
 
-ss::future<>
+ss::future<model::offset>
 disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
     if (!cfg.max_bytes.has_value()) {
-        co_return;
+        co_return _start_offset;
     }
     auto max = cfg.max_bytes.value();
     vlog(
@@ -354,14 +360,14 @@ disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
       max,
       _probe.partition_size());
     if (_segs.empty() || _probe.partition_size() <= max) {
-        co_return;
+        co_return _start_offset;
     }
     model::offset max_offset = size_based_gc_max_offset(cfg.max_bytes.value());
-    co_await garbage_collect_segments(
+    co_return co_await garbage_collect_segments(
       cfg, max_offset, "gc[size_based_retention]");
 }
 
-ss::future<>
+ss::future<model::offset>
 disk_log_impl::garbage_collect_oldest_segments(compaction_config cfg) {
     vlog(
       gclog.debug,
@@ -375,7 +381,8 @@ disk_log_impl::garbage_collect_oldest_segments(compaction_config cfg) {
       cfg, max_offset, "gc[time_based_retention]");
 }
 
-ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
+ss::future<> disk_log_impl::do_compact(
+  compaction_config cfg, std::optional<model::offset> new_start_offset) {
     vlog(
       gclog.trace,
       "[{}] applying 'compaction' log cleanup policy with config: {}",
@@ -383,11 +390,24 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
       cfg);
 
     // create a logging predicate for offsets..
-    auto offsets_compactible = [&cfg, this](segment& s) {
+    auto offsets_compactible = [&cfg, &new_start_offset, this](segment& s) {
+        if (new_start_offset && s.offsets().base_offset < *new_start_offset) {
+            vlog(
+              gclog.debug,
+              "[{}] segment {} base offs {}, new start offset {}, "
+              "skipping self compaction.",
+              config().ntp(),
+              s.reader().filename(),
+              s.offsets().base_offset,
+              *new_start_offset);
+            return false;
+        }
+
         if (s.has_compactible_offsets(cfg)) {
             vlog(
               gclog.debug,
-              "[{}] segment {} stable offs {}, max compactible {}, compacting.",
+              "[{}] segment {} stable offs {}, max compactible {}, "
+              "compacting.",
               config().ntp(),
               s.reader().filename(),
               s.offsets().stable_offset,
@@ -397,7 +417,7 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
             vlog(
               gclog.trace,
               "[{}] segment {} stable offs {} > max compactible offs {}, "
-              "skipping.",
+              "skipping self compaction.",
               config().ntp(),
               s.reader().filename(),
               s.offsets().stable_offset,
@@ -763,27 +783,28 @@ disk_log_impl::apply_overrides(compaction_config defaults) const {
 }
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
-    return ss::try_with_gate(
-      _compaction_housekeeping_gate, [this, cfg]() mutable {
-          vlog(
-            gclog.trace,
-            "[{}] house keeping with configuration from manager: {}",
-            config().ntp(),
-            cfg);
-          cfg = apply_overrides(cfg);
-          ss::future<> f = ss::now();
-          if (config().is_collectable()) {
-              f = gc(cfg);
-          }
-          if (config().is_compacted() && !_segs.empty()) {
-              f = f.then([this, cfg] { return do_compact(cfg); });
-          }
-          return f.then(
-            [this] { _probe.set_compaction_ratio(_compaction_ratio.get()); });
-      });
+    ss::gate::holder holder{_compaction_housekeeping_gate};
+    vlog(
+      gclog.trace,
+      "[{}] house keeping with configuration from manager: {}",
+      config().ntp(),
+      cfg);
+    cfg = apply_overrides(cfg);
+
+    std::optional<model::offset> new_start_offset;
+    if (config().is_collectable()) {
+        new_start_offset = co_await gc(cfg);
+    }
+
+    if (config().is_compacted() && !_segs.empty()) {
+        co_await do_compact(cfg, new_start_offset);
+    }
+
+    _probe.set_compaction_ratio(_compaction_ratio.get());
 }
 
-ss::future<> disk_log_impl::gc(compaction_config cfg) {
+ss::future<std::optional<model::offset>>
+disk_log_impl::gc(compaction_config cfg) {
     vassert(!_closed, "gc on closed log - {}", *this);
     vlog(
       gclog.trace,
@@ -795,10 +816,14 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
           gclog.trace,
           "[{}] skipped log deletion, exempt topic",
           config().ntp());
-        co_return;
+        co_return std::nullopt;
     }
-    co_await garbage_collect_max_partition_size(cfg);
-    co_await garbage_collect_oldest_segments(cfg);
+    auto size_retention_new_start = co_await garbage_collect_max_partition_size(
+      cfg);
+    auto time_retention_new_start = co_await garbage_collect_oldest_segments(
+      cfg);
+
+    co_return std::max(size_retention_new_start, time_retention_new_start);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
