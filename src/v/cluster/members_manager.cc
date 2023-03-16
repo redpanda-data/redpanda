@@ -244,6 +244,10 @@ ss::future<> members_manager::handle_raft0_cfg_update(
         }
     }
 
+    for (auto id : fully_removed_nodes) {
+        _in_progress_updates.erase(id);
+    }
+
     if (update_offset >= _last_connection_update_offset) {
         for (auto id : fully_removed_nodes) {
             if (id != _self.id()) {
@@ -275,21 +279,36 @@ members_manager::apply_update(model::record_batch b) {
       cmd,
       [this, update_offset](decommission_node_cmd cmd) mutable {
           auto id = cmd.key;
+          vlog(
+            clusterlog.trace,
+            "applying decommission_node_cmd, offset: {}, node id: {}",
+            id,
+            update_offset);
+
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, id, update_offset](std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().decommission_node(id);
-                    f = _update_queue.push_eventually(node_update{
+                    auto update = node_update{
                       .id = id,
                       .type = node_update_type::decommissioned,
-                      .offset = update_offset});
+                      .offset = update_offset,
+                    };
+                    _in_progress_updates[id] = update;
+                    f = _update_queue.push_eventually(std::move(update));
                 }
                 return f.then([error] { return error; });
             });
       },
       [this, update_offset](recommission_node_cmd cmd) mutable {
           auto id = cmd.key;
+          vlog(
+            clusterlog.trace,
+            "applying recommission_node_cmd, offset: {}, node id: {}",
+            id,
+            update_offset);
+
           // TODO: remove this part after we introduce simplified raft
           // configuration handling as this will be commands driven
           auto raft0_cfg = _raft0->config();
@@ -308,15 +327,31 @@ members_manager::apply_update(model::record_batch b) {
               }
           }
 
+          auto update_it = _in_progress_updates.find(id);
+          if (update_it == _in_progress_updates.end()) {
+              return ss::make_ready_future<std::error_code>(
+                errc::invalid_node_operation);
+          }
+          if (update_it->second.type != node_update_type::decommissioned) {
+              return ss::make_ready_future<std::error_code>(
+                errc::invalid_node_operation);
+          }
+          auto corresponding_decom_rev = model::revision_id{
+            update_it->second.offset};
+
           return dispatch_updates_to_cores(update_offset, cmd)
-            .then([this, id, update_offset](std::error_code error) {
+            .then([this, id, update_offset, corresponding_decom_rev](
+                    std::error_code error) {
                 auto f = ss::now();
                 if (!error) {
                     _allocator.local().recommission_node(id);
-                    f = _update_queue.push_eventually(node_update{
+                    auto update = node_update{
                       .id = id,
                       .type = node_update_type::recommissioned,
-                      .offset = update_offset});
+                      .offset = update_offset,
+                      .decommission_update_revision = corresponding_decom_rev};
+                    _in_progress_updates[id] = update;
+                    f = _update_queue.push_eventually(std::move(update));
                 }
                 return f.then([error] { return error; });
             });
@@ -325,14 +360,47 @@ members_manager::apply_update(model::record_batch b) {
           // we do not have to dispatch this command to members table since this
           // command is only used by a backend to signal successfully finished
           // node reallocations
+
+          model::node_id id = cmd.key;
+          vlog(
+            clusterlog.trace,
+            "applying finish_reallocations_cmd, offset: {}, node id: {}",
+            id,
+            update_offset);
+
+          if (auto it = _in_progress_updates.find(id);
+              it != _in_progress_updates.end()) {
+              auto update_type = it->second.type;
+              // We could have started decommissioning the node while we
+              // were finishing reallocations for node addition or
+              // recommissioning so we need to verify the update type before
+              // deleting. Unfortunately, there is no way to verify that this
+              // command really comes from processing the it->second update and
+              // not from some earlier one, but it will be stopped anyway so we
+              // can safely delete it.
+
+              if (
+                update_type == node_update_type::added
+                || update_type == node_update_type::recommissioned) {
+                  _in_progress_updates.erase(it);
+              }
+          }
           return _update_queue
             .push_eventually(node_update{
-              .id = cmd.key,
+              .id = id,
               .type = node_update_type::reallocation_finished,
               .offset = update_offset})
             .then([] { return make_error_code(errc::success); });
       },
       [this, update_offset](maintenance_mode_cmd cmd) {
+          vlog(
+            clusterlog.trace,
+            "applying maintenance_mode_cmd, offset: {}, node id: {}, enabled: "
+            "{}",
+            cmd.key,
+            update_offset,
+            cmd.value);
+
           return dispatch_updates_to_cores(update_offset, cmd)
             .then([this, cmd](std::error_code error) {
                 auto f = ss::now();
@@ -443,13 +511,16 @@ ss::future<std::error_code> members_manager::do_apply_add_node(
         _last_connection_update_offset = update_offset;
     }
 
-    co_await _update_queue.push_eventually(node_update{
+    auto update = node_update{
       .id = cmd.value.id(),
       .type = node_update_type::added,
       .offset = update_offset,
       .need_raft0_update = update_offset
                            >= _first_node_operation_command_offset,
-    });
+    };
+    _in_progress_updates[update.id] = update;
+    co_await _update_queue.push_eventually(std::move(update));
+
     co_return errc::success;
 }
 
@@ -506,13 +577,15 @@ ss::future<std::error_code> members_manager::do_apply_remove_node(
           allocator.remove_allocation_node(cmd.key);
       });
 
-    co_await _update_queue.push_eventually(node_update{
+    auto update = node_update{
       .id = cmd.key,
       .type = node_update_type::removed,
       .offset = update_offset,
       .need_raft0_update = update_offset
                            >= _first_node_operation_command_offset,
-    });
+    };
+    _in_progress_updates[update.id] = update;
+    co_await _update_queue.push_eventually(std::move(update));
 
     co_return errc::success;
 }
@@ -607,12 +680,14 @@ ss::future<> members_manager::set_initial_state(
         _last_connection_update_offset = model::offset{0};
     }
     for (auto& b : initial_brokers) {
-        co_await _update_queue.push_eventually(node_update{
+        auto update = node_update{
           .id = b.id(),
           .type = node_update_type::added,
           .offset = model::offset{0},
           .need_raft0_update = false,
-        });
+        };
+        _in_progress_updates[b.id()] = update;
+        co_await _update_queue.push_eventually(std::move(update));
     }
 }
 
@@ -1304,32 +1379,18 @@ members_manager::handle_configuration_update_request(
             errc::join_request_dispatch_error);
       });
 }
-std::ostream&
-operator<<(std::ostream& o, const members_manager::node_update_type& tp) {
-    switch (tp) {
-    case members_manager::node_update_type::added:
-        return o << "added";
-    case members_manager::node_update_type::decommissioned:
-        return o << "decommissioned";
-    case members_manager::node_update_type::recommissioned:
-        return o << "recommissioned";
-    case members_manager::node_update_type::reallocation_finished:
-        return o << "reallocation_finished";
-    case members_manager::node_update_type::removed:
-        return o << "removed";
-    }
-    return o << "unknown";
-}
 
 std::ostream&
 operator<<(std::ostream& o, const members_manager::node_update& u) {
     fmt::print(
       o,
-      "{{node_id: {}, type: {}, offset: {}, update_raft0: {}}}",
+      "{{node_id: {}, type: {}, offset: {}, update_raft0: {}, "
+      "decom_upd_revision: {}}}",
       u.id,
       u.type,
       u.offset,
-      u.need_raft0_update);
+      u.need_raft0_update,
+      u.decommission_update_revision);
     return o;
 }
 

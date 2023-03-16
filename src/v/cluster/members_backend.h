@@ -77,9 +77,6 @@ public:
         absl::flat_hash_map<partition_allocation_domain, double>
           last_unevenness_error;
         absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
-        // revision of a related decommission command, present only in
-        // recommission update_meta
-        std::optional<model::revision_id> decommission_update_revision;
     };
 
     members_backend(
@@ -101,7 +98,6 @@ public:
 
 private:
     static constexpr model::revision_id raft0_revision{0};
-    using update_t = members_manager::node_update_type;
     struct node_replicas {
         size_t allocated_replicas;
         size_t max_capacity;
@@ -122,8 +118,6 @@ private:
 
     ss::future<> handle_updates();
     void handle_single_update(members_manager::node_update);
-    model::revision_id handle_recommissioned_and_get_decomm_revision(
-      members_manager::node_update&);
     void stop_node_decommissioning(model::node_id);
     void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
