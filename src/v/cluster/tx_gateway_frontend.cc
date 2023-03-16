@@ -1243,11 +1243,6 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     }
     auto tx = r.value();
 
-    if (tx.etag != term) {
-        co_return make_add_partitions_error_response(
-          request, tx_errc::invalid_txn_state);
-    }
-
     add_paritions_tx_reply response;
 
     std::vector<model::ntp> new_partitions;
@@ -1446,11 +1441,6 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
         co_return add_offsets_tx_reply{.error_code = r.error()};
     }
     auto tx = r.value();
-
-    if (tx.etag != term) {
-        co_return add_offsets_tx_reply{
-          .error_code = tx_errc::invalid_txn_state};
-    }
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
       request.group_id, pid, tx.tx_seq, tx.timeout_ms);
@@ -3185,96 +3175,59 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
 
 ss::future<checked<tm_transaction, tx_errc>>
 tx_gateway_frontend::get_ongoing_tx(
-  model::term_id expected_term,
+  model::term_id term,
   ss::shared_ptr<tm_stm> stm,
   model::producer_identity pid,
   kafka::transactional_id tx_id,
   model::timeout_clock::duration timeout) {
-    auto tx_opt = co_await stm->get_tx(tx_id);
-    if (!tx_opt.has_value()) {
-        auto status = tx_opt.error();
-        tx_errc err = tx_errc::invalid_producer_id_mapping;
-        if (status == tm_stm::op_status::not_leader) {
-            err = tx_errc::leader_not_found;
-        } else if (status == tm_stm::op_status::unknown) {
-            err = tx_errc::unknown_server_error;
-        } else if (status == tm_stm::op_status::timeout) {
-            err = tx_errc::timeout;
-        }
-        co_return err;
+    auto r0 = co_await get_tx(term, stm, tx_id, timeout);
+    if (!r0.has_value()) {
+        co_return r0.error();
     }
-    auto tx = tx_opt.value();
+
+    auto tx = r0.value();
+
+    if (term != tx.etag) {
+        // very unlikely situation happens only when !is_fetch_tx_supported()
+        // all we can do is to finish tx and give up
+        checked<tm_transaction, tx_errc> r1(tx);
+        if (tx.status == tm_transaction::tx_status::prepared) {
+            r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
+        } else if (tx.status == tm_transaction::tx_status::aborting) {
+            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
+        } else if (tx.status == tm_transaction::tx_status::killed) {
+            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
+        }
+        if (!r1.has_value()) {
+            vlog(
+              txlog.warn,
+              "got error {} on rolling previous tx.id={} with status={}",
+              r1.error(),
+              tx.id,
+              tx.status);
+            // until any decision is made it's ok to ask user retry
+            co_return tx_errc::not_coordinator;
+        }
+        co_return tx_errc::unknown_server_error;
+    }
 
     if (tx.pid != pid) {
         if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
+            vlog(
+              txlog.info,
+              "Producer {} (tx:{}) is fenced off by {}",
+              pid,
+              tx_id,
+              tx.pid);
             co_return tx_errc::fenced;
         }
 
+        vlog(txlog.info, "tx:{} is mapped to {} not {}", tx_id, tx.pid, pid);
         co_return tx_errc::invalid_producer_id_mapping;
     }
 
-    if (
-      tx.status == tm_transaction::tx_status::ready
-      || tx.status == tm_transaction::tx_status::ongoing) {
-        if (expected_term != tx.etag) {
-            if (!is_fetch_tx_supported()) {
-                co_return tx_errc::invalid_txn_state;
-            }
-            // There is a possibility that a transaction already added a
-            // partition on the previous leader. Fetch its state to recover
-            vlog(
-              txlog.trace,
-              "encountered old tx:{} term:{} etag:{} status:{}, fetching state "
-              "from old leader",
-              tx.id,
-              expected_term,
-              tx.etag,
-              tx.status);
-            auto r1 = co_await fetch_tx(tx.id, tx.etag);
-            if (!r1) {
-                vlog(
-                  txlog.warn, "can't find old tx:{} etag:{}", tx.id, tx.etag);
-                co_return tx_errc::invalid_txn_state;
-            }
-
-            auto old_tx = r1.value();
-
-            if (
-              old_tx.status != tm_transaction::tx_status::ongoing
-              && old_tx.status != tm_transaction::tx_status::ready) {
-                vlog(
-                  txlog.warn,
-                  "fetched tx:{} pid:{} etag:{} has unexpected status {}",
-                  tx.id,
-                  old_tx.pid,
-                  old_tx.etag,
-                  old_tx.status);
-                co_return tx_errc::invalid_txn_state;
-            }
-
-            if (old_tx.pid != tx.pid) {
-                vlog(
-                  txlog.warn,
-                  "fetched tx:{} pid:{} etag:{} should have pid:{}",
-                  tx.id,
-                  old_tx.pid,
-                  old_tx.etag,
-                  tx.pid);
-                co_return tx_errc::invalid_txn_state;
-            }
-
-            old_tx.etag = expected_term;
-            auto r2 = co_await stm->update_tx(old_tx, expected_term);
-            if (!r2) {
-                vlog(txlog.info, "got {} on updating fetched tx", r2.error());
-                co_return tx_errc::not_coordinator;
-            }
-            tx = r2.value();
-        }
-
-        if (tx.status == tm_transaction::tx_status::ongoing) {
-            co_return tx;
-        }
+    if (tx.status == tm_transaction::tx_status::ongoing) {
+        co_return tx;
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         // a producer can see a transaction with the same pid and in a
         // preparing state only if it attempted a commit, the commit
@@ -3296,172 +3249,32 @@ tx_gateway_frontend::get_ongoing_tx(
           tx.pid,
           tx.etag,
           tx.tx_seq,
-          expected_term);
+          term);
         co_return tx_errc::fenced;
     } else {
-        // A previous transaction has failed after its status has been
-        // decided, rolling it forward.
-        checked<tm_transaction, tx_errc> r(tx);
-
-        if (tx.status == tm_transaction::tx_status::prepared) {
-            r = co_await recommit_tm_tx(stm, expected_term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::aborting) {
-            r = co_await reabort_tm_tx(stm, expected_term, tx, timeout);
-        } else {
+        if (
+          tx.status == tm_transaction::tx_status::prepared
+          || tx.status == tm_transaction::tx_status::aborting) {
+            // previous commit was acked to the client
+            // the the commit / abort failed on recommit or the node crushed
+            // client retries new implicit tx on the new leader
+            // and encounters half committed / aborted tx
+            // get_tx is correcting so it was already rolled forward
+            // we just need to implicitly start new ongoing tx
+        } else if (tx.status != tm_transaction::tx_status::ready) {
             vassert(false, "unexpected tx status {}", tx.status);
         }
-
-        if (!r.has_value()) {
+        auto ongoing_tx = co_await stm->reset_tx_ongoing(tx.id, term);
+        if (!ongoing_tx.has_value()) {
             vlog(
-              txlog.trace,
-              "rolling previous tx failed with {}; pid:{}",
-              r.error(),
+              txlog.warn,
+              "resetting tx as ongoing failed with {} pid:{}",
+              ongoing_tx.error(),
               pid);
-            co_return r.error();
+            co_return tx_errc::invalid_txn_state;
         }
-
-        if (expected_term != tx.etag) {
-            // The tx has started on the previous term. Even though we rolled it
-            // forward there is a possibility that a previous leader did the
-            // same and already started the current transaction.
-            checked<tm_transaction, tx_errc> r1 = tx_errc::tx_not_found;
-            if (is_fetch_tx_supported()) {
-                // Fetching its state
-                vlog(
-                  txlog.trace,
-                  "encountered old tx:{} term:{} etag:{} tx_seq:{} status:{} "
-                  "fetching state from old leader",
-                  tx.id,
-                  expected_term,
-                  tx.etag,
-                  tx.tx_seq,
-                  tx.status);
-                r1 = co_await fetch_tx(tx.id, tx.etag);
-            } else {
-                // Failing the current request. By the spec a client should
-                // abort on failure, but abort doesn't handle prepared and
-                // aborting statuses. So marking it as ready. We use previous
-                // term because aborting a tx in current ready state with
-                // current term means we abort a tx which wasn't started and it
-                // leads to an error.
-                vlog(
-                  txlog.warn,
-                  "failing a tx initiated on the previous tx coordinator tx:{} "
-                  "pid:{} etag:{} tx_seq:{} in term:{}",
-                  tx.id,
-                  tx.pid,
-                  tx.etag,
-                  tx.tx_seq,
-                  expected_term);
-            }
-
-            if (!r1) {
-                vlog(
-                  txlog.trace,
-                  "can't find old tx:{} failing a tx initiated on the previous "
-                  "tx coordinator pid:{} etag:{} status:{} term:{}",
-                  tx.id,
-                  pid,
-                  tx.etag,
-                  tx.status,
-                  expected_term);
-                // Failing the current request. By the spec a client should
-                // abort on failure, but abort doesn't handle prepared and
-                // aborting statuses. So marking it as ready. We use previous
-                // term because aborting a tx in current ready state with
-                // current term means we abort a tx which wasn't started and it
-                // leads to an error.
-                auto c = co_await stm->reset_tx_ready(
-                  expected_term, tx.id, tx.etag);
-                if (!c) {
-                    vlog(
-                      txlog.trace,
-                      "resetting tx as ready failed with {} pid:{}",
-                      c.error(),
-                      pid);
-                    co_return tx_errc::not_coordinator;
-                }
-                co_return tx_errc::invalid_txn_state;
-            }
-
-            auto old_tx = r1.value();
-
-            if (
-              old_tx.status != tm_transaction::tx_status::ongoing
-              && old_tx.status != tm_transaction::tx_status::prepared
-              && old_tx.status != tm_transaction::tx_status::aborting) {
-                vlog(
-                  txlog.warn,
-                  "fetched tx:{} pid:{} etag:{} has unexpected status {}",
-                  tx.id,
-                  old_tx.pid,
-                  old_tx.etag,
-                  old_tx.status);
-                co_return tx_errc::invalid_txn_state;
-            }
-
-            if (old_tx.pid != tx.pid) {
-                vlog(
-                  txlog.warn,
-                  "fetched tx:{} pid:{} etag:{} should have pid:{}",
-                  tx.id,
-                  old_tx.pid,
-                  old_tx.etag,
-                  tx.pid);
-                co_return tx_errc::invalid_txn_state;
-            }
-
-            if (old_tx.status == tm_transaction::tx_status::ongoing) {
-                if (old_tx.tx_seq() == tx.tx_seq()) {
-                    // previous leader attempted a commit/about, the operation
-                    // returned indecisive error (the cached ongoing wasn't
-                    // updated) but the operation actually passed (current
-                    // leader observes the commit/abort)"
-                    old_tx = tx;
-                } else if (old_tx.tx_seq() != tx.tx_seq() + 1) {
-                    vlog(
-                      txlog.warn,
-                      "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
-                      "isn't"
-                      "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
-                      "status:{}))",
-                      old_tx.id,
-                      old_tx.pid,
-                      old_tx.etag,
-                      old_tx.tx_seq,
-                      old_tx.get_status(),
-                      tx.pid,
-                      tx.etag,
-                      tx.tx_seq,
-                      tx.get_status());
-                    co_return tx_errc::invalid_txn_state;
-                }
-            }
-
-            old_tx.etag = expected_term;
-            auto r2 = co_await stm->update_tx(old_tx, expected_term);
-            if (!r2) {
-                vlog(txlog.trace, "got {} on updating fetched tx", r2.error());
-                co_return tx_errc::not_coordinator;
-            }
-            tx = r2.value();
-
-            if (tx.status == tm_transaction::tx_status::ongoing) {
-                co_return tx;
-            }
-        }
+        co_return ongoing_tx.value();
     }
-
-    auto ongoing_tx = co_await stm->reset_tx_ongoing(tx.id, expected_term);
-    if (!ongoing_tx.has_value()) {
-        vlog(
-          txlog.warn,
-          "resetting tx as ongoing failed with {} pid:{}",
-          ongoing_tx.error(),
-          pid);
-        co_return tx_errc::invalid_txn_state;
-    }
-    co_return ongoing_tx.value();
 }
 
 ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
