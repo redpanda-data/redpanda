@@ -121,6 +121,21 @@ ss::future<> disk_log_builder::gc(
       _abort_source));
 }
 
+ss::future<std::optional<model::offset>>
+disk_log_builder::apply_retention(compaction_config cfg) {
+    return get_disk_log_impl().gc(cfg);
+}
+
+ss::future<> disk_log_builder::apply_compaction(
+  compaction_config cfg, std::optional<model::offset> new_start_offset) {
+    return get_disk_log_impl().do_compact(cfg, new_start_offset);
+}
+
+ss::future<bool>
+disk_log_builder::update_start_offset(model::offset start_offset) {
+    return get_disk_log_impl().update_start_offset(start_offset);
+}
+
 ss::future<> disk_log_builder::stop() {
     return _storage.stop().then([this]() { return _feature_table.stop(); });
 }
