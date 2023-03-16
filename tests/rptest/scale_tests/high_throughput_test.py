@@ -459,7 +459,7 @@ class HighThroughputTest(PreallocNodesTest):
                 producer.wait(timeout_sec=600)
         finally:
             self.free_preallocated_nodes()
-            
+
     def stage_decommission_and_add(self):
         node, node_id, node_str = self.get_node(1)
 
@@ -474,7 +474,7 @@ class HighThroughputTest(PreallocNodesTest):
             ])
             self.logger.debug(f"Partitions in the node-topic: {n}")
             return n
-        
+
         nt_partitions_before = topic_partitions_on_node()
 
         self.logger.info(
@@ -505,9 +505,10 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.info(
             f"Node added, new node_id: {new_node_id}, waiting for {int(nt_partitions_before/2)} partitions to move there in {int(decomm_time)} s"
         )
-        wait_until(lambda: topic_partitions_on_node() > nt_partitions_before / 2,
-                   timeout_sec=max(60, decomm_time),
-                   backoff_sec=2)
+        wait_until(
+            lambda: topic_partitions_on_node() > nt_partitions_before / 2,
+            timeout_sec=max(60, decomm_time),
+            backoff_sec=2)
         self.logger.info(f"{topic_partitions_on_node()} partitions moved")
 
     @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
