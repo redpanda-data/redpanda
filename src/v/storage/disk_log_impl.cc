@@ -299,14 +299,9 @@ bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
 }
 
 ss::future<> disk_log_impl::garbage_collect_segments(
-  compaction_config cfg, model::offset max_offset, std::string_view ctx) {
-    vlog(
-      gclog.debug,
-      "[{}] {} requested to remove segments up to {} offset",
-      config().ntp(),
-      ctx,
-      max_offset);
-
+  compaction_config cfg,
+  model::offset max_offset_wanted,
+  std::string_view ctx) {
     const auto eligible_segments = [this, &cfg](auto max_offset) {
         return _segs.size() > 1 && !cfg.asrc->abort_requested()
                && _segs.front()->offsets().committed_offset <= max_offset;
@@ -318,8 +313,8 @@ ss::future<> disk_log_impl::garbage_collect_segments(
      * that the monitor will make progress--it is involved in calculating the
      * max collectible offset and feeding it back into storage layer.
      */
-    if (_eviction_monitor && eligible_segments(max_offset)) {
-        _eviction_monitor->promise.set_value(max_offset);
+    if (_eviction_monitor && eligible_segments(max_offset_wanted)) {
+        _eviction_monitor->promise.set_value(max_offset_wanted);
         _eviction_monitor.reset();
     }
 
@@ -329,9 +324,17 @@ ss::future<> disk_log_impl::garbage_collect_segments(
      * installed stms (e.g. archival) and _max_collecitble_offset member is set
      * by raft is used to protect an offset range not included in snapshots.
      */
-    max_offset = std::min(
+    const auto max_offset = std::min(
       cfg.max_collectible_offset,
-      std::min(max_offset, _max_collectible_offset));
+      std::min(max_offset_wanted, _max_collectible_offset));
+
+    vlog(
+      gclog.debug,
+      "[{}] {} requested to remove segments up to {} offset adjusted to {}",
+      config().ntp(),
+      ctx,
+      max_offset_wanted,
+      max_offset);
 
     /*
      * delete segments from the front of the log, in order of lowest to highest
