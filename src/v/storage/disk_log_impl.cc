@@ -283,14 +283,9 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
       .promise.get_future();
 }
 
-void disk_log_impl::set_collectible_offset(model::offset o) {
-    vlog(
-      gclog.debug,
-      "[{}] setting max collectible offset {}, prev offset {}",
-      config().ntp(),
-      o,
-      _max_collectible_offset);
-    _max_collectible_offset = std::max(_max_collectible_offset, o);
+// TODO: Remove this function once mem_log_impl is gone
+void disk_log_impl::set_collectible_offset(model::offset) {
+    vassert(false, "set_collectible_offset called on disk_log_impl");
 }
 
 bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
@@ -315,34 +310,8 @@ ss::future<model::offset> disk_log_impl::garbage_collect_segments(
         _eviction_monitor->promise.set_value(max_offset);
         _eviction_monitor.reset();
 
-        co_return max_offset;
+        co_return model::next_offset(max_offset);
     }
-
-    // This is dead code. A subsequent commit removes it.
-
-    // Max collectible offset can be overriden from multiple places
-    // (unfortunately). We take the min.
-    max_offset = std::min(
-      cfg.max_collectible_offset,
-      std::min(max_offset, _max_collectible_offset));
-    auto* as = cfg.asrc;
-    co_await ss::do_until(
-      [this, as, max_offset] {
-          return _segs.size() <= 1 || as->abort_requested()
-                 || _segs.front()->offsets().committed_offset > max_offset;
-      },
-      [this, ctx] {
-          auto ptr = _segs.front();
-          return update_start_offset(
-                   ptr->offsets().dirty_offset + model::offset(1))
-            .then([this, ptr, ctx](bool /*updated*/) {
-                if (!is_front_segment(ptr)) {
-                    return ss::now();
-                }
-                _segs.pop_front();
-                return remove_segment_permanently(ptr, ctx);
-            });
-      });
 
     co_return _start_offset;
 }
@@ -1705,10 +1674,9 @@ storage_resources& disk_log_impl::resources() { return _manager.resources(); }
 std::ostream& disk_log_impl::print(std::ostream& o) const {
     fmt::print(
       o,
-      "{{offsets: {}, max_collectible_offset: {}, is_closed: {}, segments: "
+      "{{offsets: {}, is_closed: {}, segments: "
       "[{}], config: {}}}",
       offsets(),
-      _max_collectible_offset,
       _closed,
       _segs,
       config());
