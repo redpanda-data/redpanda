@@ -39,12 +39,17 @@ spec:
             port: 8081
           initialDelaySeconds: 15
           periodSeconds: 20
+          timeoutSeconds: 10
         readinessProbe:
           httpGet:
             path: /readyz
             port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
+          timeoutSeconds: 10
+        ports:
+          - containerPort: 8081
+            protocol: TCP
         resources:
           limits:
             cpu: 100m
@@ -52,4 +57,9 @@ spec:
           requests:
             cpu: 100m
             memory: 100Mi
+        env:
+          - name: CONTROLLER_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
       terminationGracePeriodSeconds: 10

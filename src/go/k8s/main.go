@@ -102,9 +102,7 @@ func main() {
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&clusterDomain, "cluster-domain", "cluster.local", "Set the Kubernetes local domain (Kubelet's --cluster-domain)")
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
-		"Enable leader election for controller manager. "+
-			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "Enable webhook Manager")
 	flag.StringVar(&configuratorBaseImage, "configurator-base-image", defaultConfiguratorContainerImage, "Set the configurator base image")
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
@@ -125,6 +123,11 @@ func main() {
 
 	ctrl.SetLogger(logger.NewLogger(logOptions))
 
+	// We will be creating a controller per namespace moving forward. We will not be allowing a
+	// controller to manage all namespaces, however we can do so by setting up a flag
+	// TODO create a flag that allows for clusterscope to be turned on
+	ns := os.Getenv("CONTROLLER_NAMESPACE")
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
@@ -132,6 +135,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "aa9fc693.vectorized.io",
+		Namespace:              ns,
 	})
 	if err != nil {
 		setupLog.Error(err, "Unable to start manager")
@@ -233,6 +237,8 @@ func main() {
 		Metrics:                 metricsH,
 		Storage:                 storage,
 		EventRecorder:           mgr.GetEventRecorderFor("HelmChartReconciler"),
+		ControllerName:          "HelmChartReconciler",
+		TTL:                     15 * time.Minute,
 	}
 	if err = helmChart.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "HelmChart")
@@ -258,6 +264,7 @@ func main() {
 		// to handle that.
 		<-mgr.Elected()
 
+		// TODO consider whether to attach a PV or not
 		redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, setupLog)
 	}()
 
@@ -273,12 +280,12 @@ func main() {
 
 	//+kubebuilder:scaffold:builder
 
-	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "Unable to set up health check")
 		os.Exit(1)
 	}
 
-	if err := mgr.AddReadyzCheck("check", healthz.Ping); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "Unable to set up ready check")
 		os.Exit(1)
 	}
