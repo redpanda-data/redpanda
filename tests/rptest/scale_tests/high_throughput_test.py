@@ -7,31 +7,29 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import re
-import time
 import itertools
 import math
+import re
+import time
 
 from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
-
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
 from rptest.services.failure_injector import FailureInjector, FailureSpec
-from rptest.utils.si_utils import nodes_report_cloud_segments
-from rptest.utils.node_operations import NodeDecommissionWaiter
-from rptest.tests.prealloc_nodes import PreallocNodesTest
-from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
-                                      SISettings)
 from rptest.services.kgo_verifier_services import (KgoVerifierProducer,
                                                    KgoVerifierRandomConsumer)
+from rptest.services.metrics_check import MetricCheck
+from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
+from rptest.services.openmessaging_benchmark_configs import \
+    OMBSampleConfigurations
+from rptest.services.redpanda import (RESTART_LOG_ALLOW_LIST, MetricsEndpoint,
+                                      SISettings)
+from rptest.services.rpk_consumer import RpkConsumer
+from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import firewall_blocked
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
-from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.metrics_check import MetricCheck
-from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
-from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
 
 class HighThroughputTest(PreallocNodesTest):
@@ -339,6 +337,7 @@ class HighThroughputTest(PreallocNodesTest):
 
     def stage_decommission_and_add(self):
         node, node_id, node_str = self.get_node(1)
+
         def topic_partitions_on_node():
             try:
                 parts = self.redpanda.partitions(self.topic_name)
@@ -350,7 +349,7 @@ class HighThroughputTest(PreallocNodesTest):
             ])
             self.logger.debug(f"Partitions in the node-topic: {n}")
             return n
-        
+
         nt_partitions_before = topic_partitions_on_node()
 
         self.logger.info(
@@ -365,7 +364,7 @@ class HighThroughputTest(PreallocNodesTest):
                                         progress_timeout=120)
         waiter.wait_for_removal()
         self.redpanda.stop_node(node)
-        assert topic_partitions_on_node()==0
+        assert topic_partitions_on_node() == 0
         decomm_time = time.monotonic() - decomm_time
 
         self.logger.info(f"Adding a node")
@@ -381,9 +380,10 @@ class HighThroughputTest(PreallocNodesTest):
         self.logger.info(
             f"Node added, new node_id: {new_node_id}, waiting for {int(nt_partitions_before/2)} partitions to move there in {int(decomm_time)} s"
         )
-        wait_until(lambda: topic_partitions_on_node() > nt_partitions_before / 2,
-                   timeout_sec=max(60, decomm_time),
-                   backoff_sec=2)
+        wait_until(
+            lambda: topic_partitions_on_node() > nt_partitions_before / 2,
+            timeout_sec=max(60, decomm_time),
+            backoff_sec=2)
         self.logger.info(f"{topic_partitions_on_node()} partitions moved")
 
     @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
