@@ -256,6 +256,17 @@ public:
 
     model::offset get_latest_configuration_offset() const;
     model::offset committed_offset() const { return _commit_index; }
+    model::offset flushed_offset() const { return _flushed_offset; }
+    model::offset last_quorum_replicated_index() const {
+        return _last_quorum_replicated_index;
+    }
+    model::offset majority_replicated_index() const {
+        return _majority_replicated_index;
+    }
+    model::offset visibility_upper_bound_index() const {
+        return _visibility_upper_bound_index;
+    }
+    model::term_id confirmed_term() const { return _confirmed_term; }
 
     /**
      * Last visible index is an offset that is safe to be fetched by the
@@ -313,6 +324,12 @@ public:
     timequery(storage::timequery_config cfg);
 
     model::offset last_snapshot_index() const { return _last_snapshot_index; }
+    model::term_id last_snapshot_term() const { return _last_snapshot_term; }
+    model::offset received_snapshot_index() const {
+        return _received_snapshot_index;
+    }
+    size_t received_snapshot_bytes() const { return _received_snapshot_bytes; }
+    bool has_pending_flushes() const { return _has_pending_flushes; }
 
     model::offset start_offset() const {
         return model::next_offset(_last_snapshot_index);
@@ -410,6 +427,8 @@ public:
      * Allow the current node to become a leader for this group.
      */
     void unblock_new_leadership() { _node_priority_override.reset(); }
+
+    const follower_stats& get_follower_stats() const { return _fstats; }
 
 private:
     friend replicate_entries_stm;
