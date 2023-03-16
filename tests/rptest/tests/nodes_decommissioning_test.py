@@ -158,7 +158,9 @@ class NodesDecommissioningTest(EndToEndTest):
         # A decom can look like a restart in terms of logs from peers dropping
         # connections with it
         log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_decommissioning_working_node(self):
+    @parametrize(delete_topic=True)
+    @parametrize(delete_topic=False)
+    def test_decommissioning_working_node(self, delete_topic):
         self.start_redpanda(num_nodes=4)
         self._create_topics()
 
@@ -170,6 +172,8 @@ class NodesDecommissioningTest(EndToEndTest):
         to_decommission_id = self.redpanda.idx(to_decommission)
         self.logger.info(f"decommissioning node: {to_decommission_id}", )
         admin.decommission_broker(to_decommission_id)
+        if delete_topic:
+            self.client().delete_topic(self.topic)
         self._wait_for_node_removed(to_decommission_id)
 
         # Stop the decommissioned node, because redpanda internally does not
@@ -179,7 +183,9 @@ class NodesDecommissioningTest(EndToEndTest):
         # from responding to client Kafka requests.
         self.redpanda.stop_node(to_decommission)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+        if not delete_topic:
+            self.run_validation(enable_idempotence=False,
+                                consumer_timeout_sec=45)
 
     @cluster(num_nodes=6, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     def test_decommissioning_crashed_node(self):
@@ -327,7 +333,6 @@ class NodesDecommissioningTest(EndToEndTest):
 
         self._wait_until_status(to_decommission, 'draining')
         self._set_recovery_rate(1024 * 1024 * 1024)
-
         self._wait_for_node_removed(to_decommission)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
@@ -492,7 +497,10 @@ class NodesDecommissioningTest(EndToEndTest):
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_decommissioning_finishes_after_manual_cancellation(self):
+    @parametrize(delete_topic=True)
+    @parametrize(delete_topic=False)
+    def test_decommissioning_finishes_after_manual_cancellation(
+            self, delete_topic):
 
         self.start_redpanda(num_nodes=4)
         self._create_topics(replication_factors=[3])
@@ -516,10 +524,16 @@ class NodesDecommissioningTest(EndToEndTest):
                    backoff_sec=1)
         # cancel all reconfigurations
         admin.cancel_all_reconfigurations()
+
+        if delete_topic:
+            self.client().delete_topic(self.topic)
+
         self._set_recovery_rate(2 << 30)
         self._wait_for_node_removed(node_id)
 
-        self.run_validation(enable_idempotence=False, consumer_timeout_sec=240)
+        if not delete_topic:
+            self.run_validation(enable_idempotence=False,
+                                consumer_timeout_sec=240)
 
     @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @parametrize(node_is_alive=True)

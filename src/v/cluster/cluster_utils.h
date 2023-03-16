@@ -289,6 +289,28 @@ inline std::vector<model::broker_shard> subtract_replica_sets(
     return ret;
 }
 
+inline std::vector<model::broker_shard> union_replica_sets(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    std::vector<model::broker_shard> ret;
+    // Inefficient but constant time for small replica sets.
+    std::copy_if(
+      lhs.begin(),
+      lhs.end(),
+      std::back_inserter(ret),
+      [&ret](const model::broker_shard& bs) {
+          return std::find(ret.begin(), ret.end(), bs) == ret.end();
+      });
+    std::copy_if(
+      rhs.begin(),
+      rhs.end(),
+      std::back_inserter(ret),
+      [&ret](const model::broker_shard& bs) {
+          return std::find(ret.begin(), ret.end(), bs) == ret.end();
+      });
+    return ret;
+}
+
 /**
  * Subtracts second replica set from the first one. Result contains only brokers
  * that node_ids are present in the first list but not the other one

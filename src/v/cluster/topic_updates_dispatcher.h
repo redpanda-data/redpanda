@@ -89,6 +89,7 @@ private:
       std::vector<partition_assignment>, partition_allocation_domain);
 
     void deallocate_topic(
+      const model::topic_namespace&,
       const assignments_set&,
       const in_progress_map&,
       partition_allocation_domain);
