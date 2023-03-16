@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: retrive-schema
+spec:
+  template:
+    spec:
+      containers:
+        - name: rpk
+          image: localhost/redpanda:dev
+          env:
+            - name: SCRAM_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: schema-registry-schema-registry-sasl
+                  key: username
+            - name: SCRAM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: schema-registry-schema-registry-sasl
+                  key: password
+          command:
+            - curl
+          args:
+            - --silent
+            - -X
+            - GET
+            - -u
+            - "$SCRAM_USERNAME:$SCRAM_PASSWORD"
+            - http://schema-registry-cluster:8081/subjects/Kafka-value/versions/1
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

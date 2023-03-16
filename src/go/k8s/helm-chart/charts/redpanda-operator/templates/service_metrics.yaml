@@ -1,0 +1,25 @@
+{{/*
+Copyright 2020 Redpanda Data, Inc.
+
+Use of this software is governed by the Business Source License
+included in the file licenses/BSL.md
+
+As of the Change Date specified in that file, in accordance with
+the Business Source License, use of this software will be governed
+by the Apache License, Version 2.0
+*/}}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redpanda-operator.name" . }}-metrics-service
+  labels:
+{{ include "redpanda-operator.labels" . | indent 4 }}
+spec:
+  ports:
+  - name: https
+    port: 8443
+    targetPort: https
+  selector:
+    app.kubernetes.io/name: {{ include "redpanda-operator.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}

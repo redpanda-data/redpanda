@@ -1,0 +1,25 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: up-img
+spec:
+  image: "vectorized/redpanda"
+  version: "v22.1.11"
+  replicas: 3
+  resources:
+    requests:
+      cpu: 1
+      memory: 1Gi
+    limits:
+      cpu: 1
+      memory: 1Gi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+    - port: 9092
+    adminApi:
+    - port: 9644
+      tls:
+        enabled: true
+    developerMode: true

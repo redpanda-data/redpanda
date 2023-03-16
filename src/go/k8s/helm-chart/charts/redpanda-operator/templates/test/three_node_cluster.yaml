@@ -1,0 +1,30 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-tls
+  annotations:
+    "helm.sh/hook": test
+spec:
+  image: "vectorized/redpanda"
+  version: "latest"
+  replicas: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 1.2Gi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+      - port: 9092
+        tls:
+          enabled: true
+          requireClientAuth: true
+    adminApi:
+    - port: 9644
+    pandaproxyApi:
+    - port: 8082
+    developerMode: true

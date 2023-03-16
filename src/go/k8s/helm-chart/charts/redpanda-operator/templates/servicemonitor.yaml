@@ -1,0 +1,33 @@
+{{/*
+Copyright 2020 Redpanda Data, Inc.
+
+Use of this software is governed by the Business Source License
+included in the file licenses/BSL.md
+
+As of the Change Date specified in that file, in accordance with
+the Business Source License, use of this software will be governed
+by the Apache License, Version 2.0
+*/}}
+
+{{- if .Values.monitoring.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "redpanda-operator.name" . }}-metrics-monitor
+  labels:
+{{ include "redpanda-operator.labels" . | indent 4 }}
+spec:
+  endpoints:
+  - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    path: /metrics
+    port: https
+    scheme: https
+    tlsConfig:
+      insecureSkipVerify: true
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+  selector:
+    matchLabels:
+{{ include "redpanda-operator.labels" . | indent 6 }}
+{{- end -}}

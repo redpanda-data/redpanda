@@ -1,0 +1,39 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: endpoint-template
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  replicas: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 100Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    adminApi:
+      - port: 9644
+    kafkaApi:
+    - port: 9092
+    - external:
+        enabled: true
+        subdomain: example.com
+        endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-kafka"
+      tls:
+        enabled: true
+        requireClientAuth: true
+    pandaproxyApi:
+     - port: 8082
+     - external:
+         enabled: true
+         subdomain: example.com
+         endpointTemplate: "{{.Index}}-{{.HostIP | sha256sum | substr 0 10}}-pandaproxy"
+       tls:
+         enabled: true
+         requireClientAuth: true
+    developerMode: true
