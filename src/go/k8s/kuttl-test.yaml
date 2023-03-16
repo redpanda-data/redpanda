@@ -1,6 +1,7 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestSuite
 startKIND: true
+namespace: redpanda-system
 kindContainers:
   - localhost/redpanda-operator:dev
   - localhost/configurator:dev
