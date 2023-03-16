@@ -683,48 +683,6 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
     }
 }
 
-ss::future<checked<cluster::tm_transaction, tx_errc>>
-tx_gateway_frontend::do_commit_tm_tx(
-  ss::shared_ptr<cluster::tm_stm> stm,
-  kafka::transactional_id tx_id,
-  model::producer_identity pid,
-  model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
-    auto term_opt = co_await stm->sync();
-    if (!term_opt.has_value()) {
-        if (term_opt.error() == tm_stm::op_status::not_leader) {
-            co_return tx_errc::not_coordinator;
-        }
-        co_return tx_errc::invalid_txn_state;
-    }
-    auto term = term_opt.value();
-    auto tx_opt = co_await stm->get_tx(tx_id);
-    if (!tx_opt.has_value()) {
-        auto status = tx_opt.error();
-        tx_errc err = tx_errc::invalid_txn_state;
-        if (status == tm_stm::op_status::not_leader) {
-            err = tx_errc::leader_not_found;
-        } else if (status == tm_stm::op_status::unknown) {
-            err = tx_errc::unknown_server_error;
-        } else if (status == tm_stm::op_status::timeout) {
-            err = tx_errc::timeout;
-        }
-        co_return err;
-    }
-    auto tx = tx_opt.value();
-    if (tx.pid != pid) {
-        co_return tx_errc::invalid_txn_state;
-    }
-    if (tx.tx_seq != tx_seq) {
-        co_return tx_errc::invalid_txn_state;
-    }
-    if (tx.status != tm_transaction::tx_status::preparing) {
-        co_return tx_errc::invalid_txn_state;
-    }
-    co_return co_await do_commit_tm_tx(
-      term, stm, tx, timeout, ss::make_lw_shared<available_promise<tx_errc>>());
-}
-
 ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
@@ -2689,7 +2647,7 @@ tx_gateway_frontend::get_ongoing_tx(
         } else if (tx.status != tm_transaction::tx_status::ready) {
             vassert(false, "unexpected tx status {}", tx.status);
         }
-        auto ongoing_tx = co_await stm->reset_tx_ongoing(tx.id, term);
+        auto ongoing_tx = co_await stm->mark_tx_ongoing(term, tx.id);
         if (!ongoing_tx.has_value()) {
             vlog(
               txlog.warn,
