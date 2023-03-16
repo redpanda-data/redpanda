@@ -34,16 +34,20 @@ type ChartRef struct {
 type RedpandaSpec struct {
 	// ChartRef defines chart details including repository
 	ChartRef ChartRef `json:"chartRef"`
-	// ChartVersion defines the helm chart version to use
-	ChartVersion string `json:"chartVersion,omitempty"`
 	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
 	HelmRepositoryName string `json:"helmRepositoryName,omitempty"`
 	// ClusterSpec defines the values to use in the cluster
-	ClusterSpec RedpandaClusterSpec `json:"clusterSpec,omitempty"`
+	ClusterSpec *RedpandaClusterSpec `json:"clusterSpec,omitempty"`
 }
 
 // RedpandaStatus defines the observed state of Redpanda
 type RedpandaStatus struct {
+	// ObservedGeneration is the last observed generation.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	meta.ReconcileRequestStatus `json:",inline"`
+
 	// Conditions holds the conditions for the Redpanda.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -64,6 +68,11 @@ type RedpandaStatus struct {
 
 	// +optional
 	UpgradeFailures int64 `json:"upgradeFailures,omitempty"`
+
+	// Failures is the reconciliation failure count against the latest desired
+	// state. It is reset after a successful reconciliation.
+	// +optional
+	Failures int64 `json:"failures,omitempty"`
 
 	// +optional
 	InstallFailures int64 `json:"installFailures,omitempty"`
@@ -131,6 +140,33 @@ func RedpandaReady(rp Redpanda) Redpanda {
 	}
 	apimeta.SetStatusCondition(rp.GetConditions(), newCondition)
 	rp.Status.LastAppliedRevision = rp.Status.LastAttemptedRevision
+	return rp
+}
+
+// RedpandaNotReady registers a failed reconciliation of the given Redpanda.
+func RedpandaNotReady(rp Redpanda, reason, message string) Redpanda {
+	newCondition := metav1.Condition{
+		Type:    meta.ReadyCondition,
+		Status:  metav1.ConditionFalse,
+		Reason:  reason,
+		Message: message,
+	}
+	apimeta.SetStatusCondition(rp.GetConditions(), newCondition)
+	return rp
+}
+
+// RedpandaProgressing resets any failures and registers progress toward
+// reconciling the given Redpanda by setting the meta.ReadyCondition to
+// 'Unknown' for meta.ProgressingReason.
+func RedpandaProgressing(rp Redpanda) Redpanda {
+	rp.Status.Conditions = []metav1.Condition{}
+	newCondition := metav1.Condition{
+		Type:    meta.ReadyCondition,
+		Status:  metav1.ConditionUnknown,
+		Reason:  meta.ProgressingReason,
+		Message: "Reconciliation in progress",
+	}
+	apimeta.SetStatusCondition(rp.GetConditions(), newCondition)
 	return rp
 }
 
