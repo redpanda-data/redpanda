@@ -12,6 +12,7 @@ import time
 import itertools
 import math
 
+from ducktape.mark import ok_to_fail
 from ducktape.utils.util import wait_until
 
 from rptest.clients.rpk import RpkTool
@@ -33,7 +34,7 @@ from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
 
 
-class TieredStorageWithLoadTest(PreallocNodesTest):
+class HighThroughputTest(PreallocNodesTest):
     # Redpanda is responsible for bounding its own startup time via
     # STORAGE_TARGET_REPLAY_BYTES.  The resulting walltime for startup
     # depends on the speed of the disk.  60 seconds is long enough
@@ -59,7 +60,7 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
 
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
-        super(TieredStorageWithLoadTest, self).__init__(
+        super(HighThroughputTest, self).__init__(
             test_ctx,
             *args,
             num_brokers=self.num_brokers,
@@ -157,8 +158,19 @@ class TieredStorageWithLoadTest(PreallocNodesTest):
         node_str = f"{node.account.hostname} (node_id: {node_id})"
         return node, node_id, node_str
 
+    @ok_to_fail
     @cluster(num_nodes=5, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_restarts(self):
+    def test_combo_preloaded(self):
+        """
+        Preloads cluster with large number of messages/segments that are also
+        replicated to the cloud, and then run various different test stages
+        on the cluster:
+        - rolling restart
+        - stop and start single node, various scenarios
+        - isolate and restore a node
+        - decommission a node
+        - add a new node to the cluster
+        """
         self.setup_cluster(segment_bytes=self.small_segment_size,
                            retention_local_bytes=2 * self.small_segment_size)
         # Generate a realistic number of segments per partition.
