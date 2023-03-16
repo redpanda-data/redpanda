@@ -2810,7 +2810,379 @@ tx_gateway_frontend::reabort_tm_tx(
     co_return tx;
 }
 
-// get_tx must be called under stm->get_tx_lock
+ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::bump_etag(
+  model::term_id term,
+  ss::shared_ptr<cluster::tm_stm> stm,
+  cluster::tm_transaction tx,
+  model::timeout_clock::duration timeout) {
+    checked<tm_transaction, tx_errc> r1(tx_errc::unknown_server_error);
+    if (tx.status == tm_transaction::tx_status::prepared) {
+        r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
+    } else if (
+      tx.status == tm_transaction::tx_status::aborting
+      || tx.status == tm_transaction::tx_status::killed) {
+        r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
+    } else {
+        r1 = tx;
+    }
+    if (!r1.has_value()) {
+        vlog(
+          txlog.warn,
+          "got error {} on rolling previous tx.id={} with status={}",
+          r1.error(),
+          tx.id,
+          tx.status);
+        // until any decision is made it's ok to ask user retry
+        co_return tx_errc::not_coordinator;
+    }
+
+    if (tx.etag != term) {
+        tx.etag = term;
+        auto r2 = co_await stm->update_tx(tx, term);
+        if (!r2) {
+            vlog(
+              txlog.info,
+              "got {} on bumping etag on reading {}",
+              r1.error(),
+              tx.id);
+            co_return tx_errc::not_coordinator;
+        }
+        co_return r2.value();
+    }
+
+    co_return tx;
+}
+
+ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::forget_tx(
+  model::term_id term,
+  ss::shared_ptr<cluster::tm_stm> stm,
+  cluster::tm_transaction tx,
+  model::timeout_clock::duration timeout) {
+    checked<tm_transaction, tx_errc> r1(tx_errc::unknown_server_error);
+    if (tx.status == tm_transaction::tx_status::prepared) {
+        r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
+    } else if (tx.status == tm_transaction::tx_status::aborting) {
+        r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
+    } else {
+        r1 = tx;
+    }
+
+    if (!r1.has_value()) {
+        vlog(
+          txlog.warn,
+          "got error {} on rolling previous tx.id={} with status={}",
+          r1.error(),
+          tx.id,
+          tx.status);
+        // until any decision is made it's ok to ask user retry
+        co_return tx_errc::not_coordinator;
+    }
+
+    // TODO: check result
+    co_await stm->expire_tx(tx.id);
+
+    // just wrote a tombstone
+    co_return tx_errc::tx_not_found;
+}
+
+ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
+  model::term_id term,
+  ss::shared_ptr<tm_stm> stm,
+  kafka::transactional_id tid,
+  model::timeout_clock::duration timeout) {
+    auto tx_opt = co_await stm->get_tx(tid);
+    if (!tx_opt.has_value()) {
+        if (tx_opt.error() == tm_stm::op_status::not_found) {
+            co_return tx_errc::tx_not_found;
+        } else {
+            vlog(
+              txlog.warn,
+              "got error {} on lookin up tx.id={}",
+              tx_opt.error(),
+              tid);
+            // any error on lookin up a tx is a retriable error
+            co_return tx_errc::not_coordinator;
+        }
+    }
+
+    auto tx = tx_opt.value();
+    if (term == tx.etag) {
+        // rolling forward if tx is in transient state
+        co_return co_await bump_etag(term, stm, tx, timeout);
+    }
+
+    if (tx.etag > term) {
+        // tx was written by a future leader meaning current
+        // node can't be a leader
+        co_return tx_errc::not_coordinator;
+    }
+
+    // tombstone & killed are terminal tx states
+    // preparing isn't supported since ga
+    if (
+      tx.status == tm_transaction::tx_status::tombstone
+      || tx.status == tm_transaction::tx_status::preparing
+      || tx.status == tm_transaction::tx_status::killed) {
+        co_return co_await bump_etag(term, stm, tx, timeout);
+    }
+
+    // TODO: support transferring
+
+    if (!is_fetch_tx_supported()) {
+        co_return tx;
+    }
+
+    auto r1 = co_await fetch_tx(tx.id, tx.etag);
+    if (!r1) {
+        vlog(
+          txlog.warn,
+          "Can't fetch cached state of the persisted tx (pid:{} etag:{} "
+          "tx_seq:{} status:{}); true state is unknown, terminating session to "
+          "avoid data loss",
+          tx.pid,
+          tx.etag,
+          tx.tx_seq,
+          tx.status);
+        co_return co_await forget_tx(term, stm, tx, timeout);
+    }
+
+    auto old_tx = r1.value();
+
+    if (tx.status == tm_transaction::tx_status::ready) {
+        if (old_tx.tx_seq < tx.tx_seq) {
+            // previous leader attempted to write ready;
+            // the write erred but passed; tx is the freshest
+            // state
+            old_tx = tx;
+        } else {
+            if (old_tx.pid != tx.pid) {
+                vlog(
+                  txlog.warn,
+                  "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) of "
+                  "the persisted (pid:{} etag:{} tx_seq:{} status:{}) should "
+                  "have same pid; terminating session",
+                  old_tx.id,
+                  old_tx.pid,
+                  old_tx.etag,
+                  old_tx.tx_seq,
+                  old_tx.status,
+                  tx.pid,
+                  tx.etag,
+                  tx.tx_seq,
+                  tx.status);
+                co_return co_await forget_tx(term, stm, tx, timeout);
+            }
+            if (old_tx.tx_seq > tx.tx_seq) {
+                // old leader has fresher data which aren't in the log
+                // we don't save ongoing to log so it must be it
+                if (old_tx.status != tm_transaction::tx_status::ongoing) {
+                    vlog(
+                      txlog.warn,
+                      "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "of the persisted (pid:{} etag:{} tx_seq:{} status:{}) "
+                      "may be in the tx seq future only if it's ongoing; "
+                      "terminating session",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      old_tx.status,
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq,
+                      tx.status);
+                    co_return co_await forget_tx(term, stm, tx, timeout);
+                }
+            } else {
+                if (old_tx.status != tx.status) {
+                    vlog(
+                      txlog.warn,
+                      "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "of the persisted (pid:{} etag:{} tx_seq:{} status:{}) "
+                      "with the same tx seq must have same status; terminating "
+                      "session",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      old_tx.status,
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq,
+                      tx.status);
+                    co_return co_await forget_tx(term, stm, tx, timeout);
+                }
+            }
+        }
+        co_return co_await bump_etag(term, stm, old_tx, timeout);
+    }
+
+    if (old_tx.pid != tx.pid) {
+        vlog(
+          txlog.warn,
+          "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) of the "
+          "persisted (pid:{} etag:{} tx_seq:{} status:{}) should have same "
+          "pid; terminating session",
+          old_tx.id,
+          old_tx.pid,
+          old_tx.etag,
+          old_tx.tx_seq,
+          old_tx.status,
+          tx.pid,
+          tx.etag,
+          tx.tx_seq,
+          tx.status);
+        co_return co_await forget_tx(term, stm, tx, timeout);
+    }
+
+    if (tx.status == tm_transaction::tx_status::aborting) {
+        if (old_tx.tx_seq < tx.tx_seq) {
+            // previous leader attempted to write abort;
+            // the write erred but passed; tx is the freshest
+            // state
+            old_tx = tx;
+        } else {
+            if (old_tx.tx_seq > tx.tx_seq) {
+                // old leader has fresher data which aren't in the log
+                // we don't save ongoing to log so it must be it
+                if (old_tx.status != tm_transaction::tx_status::ongoing) {
+                    vlog(
+                      txlog.warn,
+                      "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "of the persisted (pid:{} etag:{} tx_seq:{} status:{}) "
+                      "may be in the tx seq future only if it's ongoing; "
+                      "terminating session",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      old_tx.status,
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq,
+                      tx.status);
+                    co_return co_await forget_tx(term, stm, tx, timeout);
+                }
+            } else {
+                // either writing aborting erred but passed (same txseq, status
+                // is ongoing) or it passed (same txseq, status is aborting)
+                if (
+                  old_tx.status != tm_transaction::tx_status::ongoing
+                  && old_tx.status != tm_transaction::tx_status::aborting) {
+                    vlog(
+                      txlog.warn,
+                      "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "of the persisted (pid:{} etag:{} tx_seq:{} status:{}) "
+                      "with the same tx seq must have either ongoing or "
+                      "aborting status; terminating session",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq);
+                    co_return co_await forget_tx(term, stm, tx, timeout);
+                }
+                old_tx = tx;
+            }
+        }
+        co_return co_await bump_etag(term, stm, old_tx, timeout);
+    }
+
+    if (tx.status == tm_transaction::tx_status::prepared) {
+        if (old_tx.tx_seq < tx.tx_seq) {
+            // previous leader attempted to write prepared;
+            // the write erred but passed; tx is the freshest
+            // state
+            old_tx = tx;
+        } else {
+            if (old_tx.tx_seq > tx.tx_seq) {
+                // old leader has fresher data which aren't in the log
+                // we don't save ongoing to log so it must be it
+                if (old_tx.status != tm_transaction::tx_status::ongoing) {
+                    vlog(
+                      txlog.warn,
+                      "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "of the persisted (pid:{} etag:{} tx_seq:{} status:{}) "
+                      "may be in the tx seq future only if it's ongoing; "
+                      "terminating session",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      old_tx.status,
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq,
+                      tx.status);
+                    co_return co_await forget_tx(term, stm, tx, timeout);
+                }
+            } else {
+                // either writing prepared erred but passed (same txseq, status
+                // is ongoing) or it passed (same txseq, status is prepared)
+                if (
+                  old_tx.status != tm_transaction::tx_status::ongoing
+                  && old_tx.status != tm_transaction::tx_status::prepared) {
+                    vlog(
+                      txlog.warn,
+                      "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "of the persisted (pid:{} etag:{} tx_seq:{} status:{}) "
+                      "with the same tx seq must have either ongoing or "
+                      "prepared status; terminating session",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq);
+                    co_return co_await forget_tx(term, stm, tx, timeout);
+                }
+                old_tx = tx;
+            }
+        }
+        co_return co_await bump_etag(term, stm, old_tx, timeout);
+    }
+
+    if (tx.status == tm_transaction::tx_status::ongoing) {
+        if (old_tx.tx_seq != tx.tx_seq || old_tx.status != tx.status) {
+            // when redpanda saves ongoing to disk it also
+            // keeps it in memory so fetching should return
+            // the same
+            vlog(
+              txlog.warn,
+              "A cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) of the "
+              "persisted (pid:{} etag:{} tx_seq:{} status:{}) should have same "
+              "txseq and status; terminating session",
+              old_tx.id,
+              old_tx.pid,
+              old_tx.etag,
+              old_tx.tx_seq,
+              old_tx.status,
+              tx.pid,
+              tx.etag,
+              tx.tx_seq,
+              tx.status);
+            co_return co_await forget_tx(term, stm, tx, timeout);
+        }
+        // an old leader could have updated a tx after saving it so picking
+        // its version
+        co_return co_await bump_etag(term, stm, old_tx, timeout);
+    }
+
+    vlog(
+      txlog.warn,
+      "A persisted tx (pid:{} etag:{} tx_seq:{} status:{}) has unexpected "
+      "status",
+      tx.pid,
+      tx.etag,
+      tx.tx_seq,
+      tx.status);
+
+    co_return tx_errc::unknown_server_error;
+}
+
 ss::future<checked<tm_transaction, tx_errc>>
 tx_gateway_frontend::get_ongoing_tx(
   model::term_id expected_term,
