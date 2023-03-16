@@ -1614,13 +1614,14 @@ tx_gateway_frontend::do_end_txn(
     }
     auto term = term_opt.value();
 
-    auto r0 = co_await get_tx(term, stm, request.transactional_id, timeout);
+    auto r0 = co_await get_latest_tx(
+      term, stm, pid, request.transactional_id, timeout);
     if (!r0.has_value()) {
         auto err = r0.error();
         if (err == tx_errc::tx_not_found) {
             vlog(
               txlog.warn,
-              "can't find an ongoing tx:{} pid:{} to commit",
+              "can't find an ongoing tx:{} pid:{} to commit / abort",
               request.transactional_id,
               pid);
             err = tx_errc::unknown_server_error;
@@ -1629,52 +1630,6 @@ tx_gateway_frontend::do_end_txn(
         co_return err;
     }
     auto tx = r0.value();
-
-    if (term != tx.etag) {
-        // very unlikely situation happens only when !is_fetch_tx_supported()
-        // all we can do is to finish tx and give up
-        checked<tm_transaction, tx_errc> r1(tx);
-        if (tx.status == tm_transaction::tx_status::prepared) {
-            r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::aborting) {
-            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::killed) {
-            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
-        }
-        if (!r1.has_value()) {
-            vlog(
-              txlog.warn,
-              "got error {} on rolling previous tx.id={} with status={}",
-              r1.error(),
-              tx.id,
-              tx.status);
-            // until any decision is made it's ok to ask user retry
-            co_return tx_errc::not_coordinator;
-        }
-        co_return tx_errc::unknown_server_error;
-    }
-
-    if (tx.pid != pid) {
-        if (tx.pid.id == pid.id && tx.pid.epoch > pid.epoch) {
-            vlog(
-              txlog.info,
-              "request {} with pid:{} is fenced by {}",
-              request.transactional_id,
-              pid,
-              tx.pid);
-            outcome->set_value(tx_errc::fenced);
-            co_return tx_errc::fenced;
-        }
-
-        vlog(
-          txlog.info,
-          "request {} with pid:{} doesn't match {}",
-          request.transactional_id,
-          pid,
-          tx.pid);
-        outcome->set_value(tx_errc::invalid_producer_id_mapping);
-        co_return tx_errc::invalid_producer_id_mapping;
-    }
 
     checked<cluster::tm_transaction, tx_errc> r(tx_errc::unknown_server_error);
     if (request.committed) {
@@ -2383,7 +2338,25 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
     // TODO: support transferring
 
     if (!is_fetch_tx_supported()) {
-        co_return tx;
+        checked<tm_transaction, tx_errc> r1(tx);
+        if (tx.status == tm_transaction::tx_status::prepared) {
+            r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
+        } else if (tx.status == tm_transaction::tx_status::aborting) {
+            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
+        } else if (tx.status == tm_transaction::tx_status::killed) {
+            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
+        }
+        if (!r1.has_value()) {
+            vlog(
+              txlog.warn,
+              "got error {} on rolling previous tx.id={} with status={}",
+              r1.error(),
+              tx.id,
+              tx.status);
+            // until any decision is made it's ok to ask user retry
+            co_return tx_errc::not_coordinator;
+        }
+        co_return r1.value();
     }
 
     auto r1 = co_await fetch_tx(tx.id, tx.etag);
@@ -2637,8 +2610,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
     co_return tx_errc::unknown_server_error;
 }
 
-ss::future<checked<tm_transaction, tx_errc>>
-tx_gateway_frontend::get_ongoing_tx(
+ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_latest_tx(
   model::term_id term,
   ss::shared_ptr<tm_stm> stm,
   model::producer_identity pid,
@@ -2653,25 +2625,7 @@ tx_gateway_frontend::get_ongoing_tx(
 
     if (term != tx.etag) {
         // very unlikely situation happens only when !is_fetch_tx_supported()
-        // all we can do is to finish tx and give up
-        checked<tm_transaction, tx_errc> r1(tx);
-        if (tx.status == tm_transaction::tx_status::prepared) {
-            r1 = co_await recommit_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::aborting) {
-            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::killed) {
-            r1 = co_await reabort_tm_tx(stm, term, tx, timeout);
-        }
-        if (!r1.has_value()) {
-            vlog(
-              txlog.warn,
-              "got error {} on rolling previous tx.id={} with status={}",
-              r1.error(),
-              tx.id,
-              tx.status);
-            // until any decision is made it's ok to ask user retry
-            co_return tx_errc::not_coordinator;
-        }
+        // all we can do is to give up
         co_return tx_errc::unknown_server_error;
     }
 
@@ -2689,6 +2643,22 @@ tx_gateway_frontend::get_ongoing_tx(
         vlog(txlog.info, "tx:{} is mapped to {} not {}", tx_id, tx.pid, pid);
         co_return tx_errc::invalid_producer_id_mapping;
     }
+
+    co_return tx;
+}
+
+ss::future<checked<tm_transaction, tx_errc>>
+tx_gateway_frontend::get_ongoing_tx(
+  model::term_id term,
+  ss::shared_ptr<tm_stm> stm,
+  model::producer_identity pid,
+  kafka::transactional_id tx_id,
+  model::timeout_clock::duration timeout) {
+    auto r0 = co_await get_latest_tx(term, stm, pid, tx_id, timeout);
+    if (!r0.has_value()) {
+        co_return r0.error();
+    }
+    auto tx = r0.value();
 
     if (tx.status == tm_transaction::tx_status::ongoing) {
         co_return tx;
