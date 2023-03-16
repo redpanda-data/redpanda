@@ -133,56 +133,7 @@ tm_stm::get_tx(kafka::transactional_id tx_id) {
     if (!tx_opt) {
         co_return tm_stm::op_status::not_found;
     }
-
-    auto tx = tx_opt.value();
-    // Check if transferring.
-    // We have 4 combinations here for
-    // transferring and etag/term match.
-    //
-    // transferring = tx->transferring
-    // term match = tx.etag == _insync_term
-    // +-------------------------+------+-------+
-    // | transferring/term match | True | False |
-    // +-------------------------+------+-------+
-    // | True                    |    1 |     2 |
-    // | False                   |    3 |     4 |
-    // +-------------------------+------+-------+
-
-    // case 1 - Unlikely, just reset the transferring flag.
-    // case 2 - Valid, txn is getting transferred from previous term.
-    // case 3 - Valid, the current term has already reset etag, so just return.
-    // case 4 - Invalid, just return and wait for it to fail in the next term
-    // check.
-    if (tx.transferring) {
-        vlog(
-          txlog.trace,
-          "observed a transferring tx:{} pid:{} etag:{} tx_seq:{} in term:{}",
-          tx_id,
-          tx.pid,
-          tx.etag,
-          tx.tx_seq,
-          _insync_term);
-        if (tx.etag == _insync_term) {
-            // case 1
-            vlog(
-              txlog.warn,
-              "tx: {} transferring within same term: {}, resetting.",
-              tx_id,
-              tx.etag);
-        }
-        // case 2
-        tx.etag = _insync_term;
-        tx.transferring = false;
-        auto r = co_await update_tx(tx, tx.etag);
-        if (!r.has_value()) {
-            co_return r;
-        }
-        tx = r.value();
-        _cache.local().set_mem(tx.etag, tx_id, tx);
-        co_return tx;
-    }
-    // case 3, 4
-    co_return tx;
+    co_return tx_opt.value();
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
@@ -442,6 +393,45 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_killed(
     tx.status = cluster::tm_transaction::tx_status::killed;
     tx.last_update_ts = clock_type::now();
     co_return co_await update_tx(std::move(tx), expected_term);
+}
+
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::reset_transferring(model::term_id term, kafka::transactional_id tx_id) {
+    auto ptx = co_await get_tx(tx_id);
+    if (!ptx.has_value()) {
+        co_return ptx;
+    }
+    auto tx = ptx.value();
+    // Check if transferring.
+    if (!tx.transferring) {
+        co_return tm_stm::op_status::conflict;
+    }
+    vlog(
+      txlog.trace,
+      "observed a transferring tx:{} pid:{} etag:{} tx_seq:{} in term:{}",
+      tx_id,
+      tx.pid,
+      tx.etag,
+      tx.tx_seq,
+      term);
+    if (tx.etag == term) {
+        // case 1 - Unlikely, just reset the transferring flag.
+        vlog(
+          txlog.warn,
+          "tx: {} transferring within same term: {}, resetting.",
+          tx_id,
+          tx.etag);
+    }
+    // case 2 - Valid, txn is getting transferred from previous term.
+    tx.etag = term;
+    tx.transferring = false;
+    auto r = co_await update_tx(tx, tx.etag);
+    if (!r.has_value()) {
+        co_return r;
+    }
+    tx = r.value();
+    _cache.local().set_mem(tx.etag, tx_id, tx);
+    co_return tx;
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
