@@ -13,6 +13,7 @@
 
 #include "seastarx.h"
 #include "tristate.h"
+#include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -33,6 +34,14 @@ template<typename T, template<typename...> class C>
 inline constexpr bool is_specialization_of_v
   = is_specialization_of<T, C>::value;
 
+template<class T, template<class, size_t> class C>
+struct is_specialization_of_sized : std::false_type {};
+template<template<class, size_t> class C, class T, size_t N>
+struct is_specialization_of_sized<C<T, N>, C> : std::true_type {};
+template<typename T, template<class, size_t> class C>
+inline constexpr bool is_specialization_of_sized_v
+  = is_specialization_of_sized<T, C>::value;
+
 template<class T>
 struct is_std_array_t : std::false_type {};
 template<class T, std::size_t N>
@@ -44,6 +53,10 @@ namespace reflection {
 
 template<typename T>
 concept is_std_vector = ::detail::is_specialization_of_v<T, std::vector>;
+
+template<typename T>
+concept is_fragmented_vector
+  = ::detail::is_specialization_of_sized_v<T, fragmented_vector>;
 
 template<typename T>
 concept is_std_array = ::detail::is_std_array_t<T>::value;
