@@ -2605,6 +2605,12 @@ tx_gateway_frontend::get_ongoing_tx(
   model::timeout_clock::duration timeout) {
     auto r0 = co_await get_latest_tx(term, stm, pid, tx_id, timeout);
     if (!r0.has_value()) {
+        if (r0.error() == tx_errc::tx_not_found) {
+            // tx doesn't exist when it was expected
+            // if tx doesn't exist then the tx.id -> pid mapping doesn't
+            // exist either meaning any provided mapping is wrong
+            co_return tx_errc::invalid_producer_id_mapping;
+        }
         co_return r0.error();
     }
     auto tx = r0.value();
