@@ -49,16 +49,12 @@
 
 #include <exception>
 
-namespace {
+namespace cloud_storage {
 
 std::filesystem::path
-generate_index_path(const cloud_storage::remote_segment_path& p) {
-    return fmt::format("{}.index", p());
+generate_remote_index_path(const cloud_storage::remote_segment_path& p) {
+    return fmt::format("{}.index", p().native());
 }
-
-} // namespace
-
-namespace cloud_storage {
 
 using namespace std::chrono_literals;
 
@@ -321,7 +317,7 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
     }
     if (index_prepared) {
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
-        co_await _cache.put(generate_index_path(_path), index_stream);
+        co_await _cache.put(generate_remote_index_path(_path), index_stream);
         _index = std::move(tmpidx);
     }
     co_return size_bytes;
@@ -389,7 +385,7 @@ ss::future<> remote_segment::do_hydrate_index() {
       0,
       remote_segment_sampling_step_bytes);
 
-    auto index_path = generate_index_path(_path);
+    auto index_path = generate_remote_index_path(_path);
     auto result = co_await _api.download_index(
       _bucket, remote_segment_path{index_path}, ix, local_rtc);
 
@@ -545,7 +541,7 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
     }
 
     ss::gate::holder guard(_gate);
-    auto path = generate_index_path(_path);
+    auto path = generate_remote_index_path(_path);
     offset_index ix(
       _base_rp_offset,
       _base_rp_offset - _base_offset_delta,
@@ -654,7 +650,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
       _sname_format != segment_name_format::v1
       && _sname_format != segment_name_format::v2) {
         hydration.add_request(
-          generate_index_path(_path),
+          generate_remote_index_path(_path),
           [this] { return do_hydrate_index(); },
           [this] { return maybe_materialize_index(); },
           hydration_request::kind::index);

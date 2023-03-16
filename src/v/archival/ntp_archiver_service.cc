@@ -1045,6 +1045,10 @@ ntp_archiver::make_segment_index(
     co_return ix;
 }
 
+static ss::sstring make_index_path(const remote_segment_path& segment_path) {
+    return fmt::format("{}.index", segment_path().native());
+}
+
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment_index(
   upload_candidate candidate,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
@@ -1060,9 +1064,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment_index(
       &rtc.get());
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
 
-    auto index_path = fmt::format(
-      "{}.index", segment_path_for_candidate(candidate)());
-
+    auto index_path = make_index_path(segment_path_for_candidate(candidate));
     auto ix = co_await make_segment_index(candidate, ctxlog, index_path);
     if (!ix) {
         co_return cloud_storage::upload_result::cancelled;
@@ -1846,8 +1848,9 @@ ss::future<cloud_storage::upload_result>
 ntp_archiver::delete_segment(const remote_segment_path& path) {
     _as.check();
 
+    size_t entities_deleted = 3;
     retry_chain_node fib(
-      _conf->manifest_upload_timeout,
+      _conf->manifest_upload_timeout * entities_deleted,
       _conf->cloud_storage_initial_backoff,
       &_rtcnode);
 
@@ -1855,12 +1858,30 @@ ntp_archiver::delete_segment(const remote_segment_path& path) {
       get_bucket_name(), cloud_storage_clients::object_key{path}, fib);
 
     if (res == cloud_storage::upload_result::success) {
-        auto tx_range_manifest_path
-          = cloud_storage::tx_range_manifest(path).get_manifest_path();
-        co_await _remote.delete_object(
-          _conf->bucket_name,
-          cloud_storage_clients::object_key{tx_range_manifest_path},
-          fib);
+        if (auto delete_tx_res = co_await _remote.delete_object(
+              _conf->bucket_name,
+              cloud_storage_clients::object_key{
+                cloud_storage::generate_remote_tx_path(path)},
+              fib);
+            delete_tx_res != cloud_storage::upload_result::success) {
+            vlog(
+              _rtclog.warn,
+              "failed to delete transaction manifest: {}, result: {}",
+              cloud_storage::generate_remote_tx_path(path),
+              delete_tx_res);
+        }
+
+        if (auto delete_index_res = co_await _remote.delete_object(
+              _conf->bucket_name,
+              cloud_storage_clients::object_key{make_index_path(path)},
+              fib);
+            delete_index_res != cloud_storage::upload_result::success) {
+            vlog(
+              _rtclog.warn,
+              "failed to delete index file: {}, result: {}",
+              make_index_path(path),
+              delete_index_res);
+        }
     }
 
     co_return res;

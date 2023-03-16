@@ -1095,13 +1095,16 @@ ss::future<> remote_partition::erase(
         std::vector<cloud_storage_clients::object_key> tx_batch_keys;
         tx_batch_keys.reserve(batch_size);
 
+        std::vector<cloud_storage_clients::object_key> index_keys;
+        index_keys.reserve(batch_size);
+
         for (size_t k = 0; k < batch_size && segment_i != manifest.end(); ++k) {
             auto segment_path = manifest.generate_segment_path(
               segment_i->second);
-            batch_keys.push_back(
-              cloud_storage_clients::object_key(segment_path));
-            tx_batch_keys.push_back(cloud_storage_clients::object_key(
-              tx_range_manifest(segment_path).get_manifest_path()));
+            batch_keys.emplace_back(segment_path);
+            tx_batch_keys.emplace_back(
+              tx_range_manifest(segment_path).get_manifest_path());
+            index_keys.emplace_back(generate_remote_index_path(segment_path));
             segment_i++;
         }
 
@@ -1118,6 +1121,11 @@ ss::future<> remote_partition::erase(
 
         if (co_await tolerant_delete_objects(
               _bucket, std::move(tx_batch_keys), local_rtc)) {
+            co_return;
+        }
+
+        if (co_await tolerant_delete_objects(
+              _bucket, std::move(index_keys), local_rtc)) {
             co_return;
         }
     }

@@ -754,6 +754,11 @@ class ArchivalTest(RedpandaTest):
         md5fails = 0
         lookup_fails = 0
         for path, csum in remote.items():
+
+            # Skip index files, these are only present on cloud storage
+            if path.endswith('.index'):
+                continue
+
             adjusted = gen_local_path_from_remote(path)
             self.logger.info(
                 f"checking remote path: {path} csum: {csum} adjusted: {adjusted}"
