@@ -2799,13 +2799,12 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
         co_return;
     }
     auto term = term_opt.value();
-    auto tx_opt = co_await stm->get_tx(tx_id);
-    if (!tx_opt) {
+    auto r0 = co_await get_tx(term, stm, tx_id, timeout);
+    if (!r0.has_value()) {
         // either timeout or already expired
         co_return;
     }
-
-    auto tx = tx_opt.value();
+    auto tx = r0.value();
     if (!stm->is_expired(tx)) {
         co_return;
     }
@@ -2820,24 +2819,11 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
       tx.tx_seq,
       tx.status);
 
-    if (tx.status == tm_transaction::tx_status::ready) {
-        // already in a good state, we don't need to do anything
-    } else if (tx.status == tm_transaction::tx_status::ongoing) {
+    if (tx.status == tm_transaction::tx_status::ongoing) {
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
     } else if (tx.status == tm_transaction::tx_status::preparing) {
         r = co_await do_abort_tm_tx(term, stm, tx, timeout);
-    } else {
-        if (tx.status == tm_transaction::tx_status::prepared) {
-            r = co_await recommit_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::aborting) {
-            r = co_await reabort_tm_tx(stm, term, tx, timeout);
-        } else if (tx.status == tm_transaction::tx_status::killed) {
-            r = co_await reabort_tm_tx(stm, term, tx, timeout);
-        } else {
-            vassert(false, "unexpected tx status {}", tx.status);
-        }
     }
-
     if (!r.has_value()) {
         co_return;
     }
