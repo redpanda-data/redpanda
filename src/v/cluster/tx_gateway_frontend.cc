@@ -597,7 +597,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
-  model::term_id expected_term,
+  model::term_id term,
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
   model::producer_identity pid,
@@ -607,12 +607,12 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
     if (!term_opt.has_value()) {
         co_return try_abort_reply{tx_errc::unknown_server_error};
     }
-    if (term_opt.value() != expected_term) {
+    if (term_opt.value() != term) {
         co_return try_abort_reply{tx_errc::unknown_server_error};
     }
-    auto tx_opt = co_await stm->get_tx(tx_id);
-    if (!tx_opt) {
-        if (tx_opt.error() == tm_stm::op_status::not_found) {
+    auto r0 = co_await get_tx(term, stm, tx_id, timeout);
+    if (!r0.has_value()) {
+        if (r0.error() == tx_errc::tx_not_found) {
             vlog(
               txlog.trace,
               "can't find a tx by id:{} (pid:{} tx_seq:{}) considering it "
@@ -624,7 +624,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         }
         co_return try_abort_reply{tx_errc::unknown_server_error};
     }
-    auto tx = tx_opt.value();
+    auto tx = r0.value();
     if (tx.pid != pid || tx.tx_seq != tx_seq) {
         vlog(
           txlog.trace,
@@ -660,27 +660,16 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
         // when it's ready it means in-memory state was lost
         // so can't be comitted and it's save to aborted
         co_return try_abort_reply::make_aborted();
-    } else if (tx.status == tm_transaction::tx_status::preparing) {
-        ssx::spawn_with_gate(_gate, [this, stm, tx, timeout] {
-            return with(
-                     stm,
-                     tx.id,
-                     "try_abort:commit",
-                     [this, stm, tx, timeout]() {
-                         return do_commit_tm_tx(
-                           stm, tx.id, tx.pid, tx.tx_seq, timeout);
-                     })
-              .discard_result();
-        });
-        co_return try_abort_reply{tx_errc::none};
-    } else if (tx.status == tm_transaction::tx_status::ongoing) {
+    } else if (
+      tx.status == tm_transaction::tx_status::preparing
+      || tx.status == tm_transaction::tx_status::ongoing) {
         vlog(
           txlog.trace,
           "tx id:{} pid:{} tx_seq:{} is ongoing => forcing it to be aborted",
           tx_id,
           tx.pid,
           tx.tx_seq);
-        auto killed_tx = co_await stm->mark_tx_killed(expected_term, tx.id);
+        auto killed_tx = co_await stm->mark_tx_killed(term, tx.id);
         if (!killed_tx.has_value()) {
             if (killed_tx.error() == tm_stm::op_status::not_leader) {
                 co_return try_abort_reply{tx_errc::not_coordinator};
