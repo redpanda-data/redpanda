@@ -2290,6 +2290,21 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
     }
 
     auto tx = tx_opt.value();
+
+    if (tx.transferring) {
+        tx_opt = co_await stm->reset_transferring(term, tid);
+        if (!tx_opt.has_value()) {
+            vlog(
+              txlog.warn,
+              "got error {} on rehydrating tx.id={}",
+              tx_opt.error(),
+              tid);
+            // any error on lookin up a tx is a retriable error
+            co_return tx_errc::not_coordinator;
+        }
+        tx = tx_opt.value();
+    }
+
     if (term == tx.etag) {
         // rolling forward if tx is in transient state
         co_return co_await bump_etag(term, stm, tx, timeout);
@@ -2309,8 +2324,6 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
       || tx.status == tm_transaction::tx_status::killed) {
         co_return co_await bump_etag(term, stm, tx, timeout);
     }
-
-    // TODO: support transferring
 
     if (!is_fetch_tx_supported()) {
         checked<tm_transaction, tx_errc> r1(tx);
