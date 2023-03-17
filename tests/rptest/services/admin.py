@@ -872,3 +872,7 @@ class Admin:
     def get_raft_state(self, namespace, topic, partition):
         path = f"debug/raft/{namespace}/{topic}/{partition}"
         return self._request("GET", path).json()
+
+    def get_local_partition_state(self, namespace, topic, partition, node):
+        path = f"debug/partition/{namespace}/{topic}/{partition}"
+        return self._request("GET", path, node=node).json()

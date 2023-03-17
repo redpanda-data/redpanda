@@ -14,7 +14,9 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.cluster import cluster
 from rptest.util import wait_until_result
 from rptest.util import wait_until
+import confluent_kafka as ck
 import requests
+import time
 
 # Errors we should tolerate right after start Redpanda
 NOT_LEADER_LOG_ERRORS = [
@@ -106,3 +108,42 @@ class AdminApiRaftStateTest(RedpandaTest):
             timeout_sec=60,
             backoff_sec=1,
             err_msg=f"Followers can not sync with leader for controller")
+
+    @cluster(num_nodes=3)
+    def local_request_test(self):
+        self.topic_name = self.topics[0].name
+
+        producer = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+        })
+
+        for i in range(10):
+            producer.produce(self.topic_name, str(i), str(i), 0)
+        producer.flush()
+
+        def wait_all_followers_sync():
+            committed_offset = None
+            for node in self.redpanda.nodes:
+                info = self.admin.get_local_partition_state("kafka", self.topic_name, 0, node)
+                if not committed_offset:
+                    committed_offset = info["committed_offset"]
+                
+                if committed_offset != info["committed_offset"] or committed_offset == 0:
+                    return False
+            return True
+
+        wait_until(
+            wait_all_followers_sync,
+            timeout_sec=60,
+            backoff_sec=1,
+            err_msg=f"Followers can not sync with leader for topic: {self.topic_name}")
+
+        info = None
+        for node in self.redpanda.nodes:
+            if not info:
+                info = self.admin.get_local_partition_state("kafka", self.topic_name, 0, node)
+            assert info == self.admin.get_local_partition_state("kafka", self.topic_name, 0, node)
+        
+        assert info["is_read_replica_mode_enabled"] == False
+        assert info["is_remote_fetch_enabled"] == False
+        assert info["is_cloud_data_available"] == False
