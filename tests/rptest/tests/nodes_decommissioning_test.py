@@ -9,8 +9,8 @@
 
 import random
 from rptest.clients.kafka_cat import KafkaCat
-from time import sleep
 from rptest.clients.default import DefaultClient
+from requests.exceptions import HTTPError
 
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.clients.rpk import RpkTool
@@ -22,6 +22,25 @@ from rptest.tests.end_to_end import EndToEndTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import CHAOS_LOG_ALLOW_LIST, RESTART_LOG_ALLOW_LIST, RedpandaService
 from rptest.utils.node_operations import NodeDecommissionWaiter
+
+
+def in_maintenance(node, admin):
+    """
+    Use the given Admin to check if the given node is in maintenance mode.
+    """
+    status = admin.maintenance_status(node)
+    if "finished" in status and status["finished"]:
+        return True
+    return status["draining"]
+
+
+def wait_for_maintenance(node, admin):
+    """
+    Use the given Admin to wait until the given node is in maintenance mode.
+    """
+    wait_until(lambda: in_maintenance(node, admin),
+               timeout_sec=10,
+               backoff_sec=1)
 
 
 class NodesDecommissioningTest(EndToEndTest):
@@ -152,6 +171,111 @@ class NodesDecommissioningTest(EndToEndTest):
         waiter.wait_for_removal()
 
         self._check_state_consistent(decommissioned_id)
+
+    @cluster(num_nodes=6, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_maintenance_decommissioning_node(self):
+        self.start_redpanda(num_nodes=4)
+        self._create_topics()
+        admin = self.redpanda._admin
+
+        # Start a workload so partition movement takes some amount of time.
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        to_decommission = random.choice(self.redpanda.nodes)
+        to_decommission_id = self.redpanda.node_id(to_decommission)
+        survivor_node = self._not_decommissioned_node(to_decommission_id)
+
+        # Throttle recovery so the node isn't immediately removed, allowing us
+        # to put it into maintenance mode as it's decommissioning.
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+
+        admin.decommission_broker(to_decommission_id)
+        self._wait_until_status(to_decommission_id, 'draining')
+
+        admin.maintenance_start(to_decommission)
+        wait_for_maintenance(to_decommission, admin)
+
+        # Restore the recovery rate so we can finish decommissioning.
+        rpk.cluster_config_set("raft_learner_recovery_rate", str(2 << 30))
+        wait_until(
+            lambda: self._node_removed(to_decommission_id, survivor_node),
+            timeout_sec=120,
+            backoff_sec=2)
+
+        # We should be able to place another node in maintenance mode.
+        admin.maintenance_start(survivor_node)
+        wait_for_maintenance(survivor_node, admin)
+
+    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_decommissioning_maintenance_node(self):
+        self.start_redpanda(num_nodes=4)
+        self._create_topics()
+        admin = self.redpanda._admin
+
+        to_decommission = random.choice(self.redpanda.nodes)
+        to_decommission_id = self.redpanda.node_id(to_decommission)
+        survivor_node = self._not_decommissioned_node(to_decommission_id)
+
+        admin.maintenance_start(to_decommission)
+        wait_for_maintenance(to_decommission, admin)
+
+        admin.decommission_broker(to_decommission_id)
+        wait_until(
+            lambda: self._node_removed(to_decommission_id, survivor_node),
+            timeout_sec=120,
+            backoff_sec=2)
+
+        # We should be unable to run further maintenance commands on the
+        # removed node.
+        try:
+            admin.maintenance_stop(to_decommission)
+            assert False, f"Excepted 404 for node {to_decommission_id}"
+        except HTTPError as e:
+            assert "404 Client Error" in repr(e)
+
+        # We should be able to start maintenance on another node, even if we
+        # didn't explicitly stop maintenance on 'to_decommission'.
+        admin.maintenance_start(survivor_node)
+        wait_for_maintenance(survivor_node, admin)
+        assert in_maintenance(to_decommission, admin)
+
+    @cluster(num_nodes=6)
+    def test_recommissioning_maintenance_node(self):
+        self.start_redpanda(num_nodes=4)
+        self._create_topics()
+        admin = self.redpanda._admin
+
+        # Start a workload so partition movement takes some amount of time.
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+
+        to_decommission = random.choice(self.redpanda.nodes)
+        to_decommission_id = self.redpanda.node_id(to_decommission)
+
+        admin.maintenance_start(to_decommission)
+        wait_for_maintenance(to_decommission, admin)
+
+        # Throttle recovery so the node doesn't move its replicas away so
+        # quickly, allowing us to recommission.
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("raft_learner_recovery_rate", str(1))
+
+        admin.decommission_broker(to_decommission_id)
+        self._wait_until_status(to_decommission_id, 'draining')
+
+        # Recommission the broker. Maintenance state should be unaffected.
+        admin.recommission_broker(to_decommission_id)
+        self._wait_until_status(to_decommission_id, 'active')
+        assert in_maintenance(to_decommission, admin)
+
+        # One last sanity check that partitions aren't moving.
+        wait_until(lambda: self._partitions_not_moving(),
+                   timeout_sec=15,
+                   backoff_sec=1)
 
     @cluster(
         num_nodes=6,

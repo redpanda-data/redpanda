@@ -133,15 +133,10 @@ struct broker_endpoint final
  *            replicas from given node, node is no longer accepting new
  *            partitions, but can still handle Kafka requests
  *
- * removed - after node is drained and it has no replicas assigned it is finally
- *           marked as removed, at the same time the node is no longer cluster
- *           member and can be shut down.
- *
- * TODO: keep removed nodes in members_state. Currently we keep brokers in raft0
- * configuration and it is our source of information about cluster members,
- * basing on configuration updates we build `cluster::members_table`. It would
- * be ideal to migrate brokers out of the raft configuration and manage them in
- * cluster layer, this way Raft can operate solely on node ids.
+ * removed - DEPRECATED: in older versions, node state was kept around even
+ *           after the node had all its replicas removed and the node was
+ *           removed from cluster, marked with this 'removed' state. Now the
+ *           node is simply removed from in-memory structures.
  */
 enum class membership_state : int8_t { active, draining, removed };
 
