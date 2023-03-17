@@ -225,6 +225,19 @@ topic_table_delta::topic_table_delta(
   , previous_replica_set(std::move(previous))
   , replica_revisions(std::move(replica_revisions)) {}
 
+model::revision_id
+topic_table_delta::get_replica_revision(model::node_id replica) const {
+    vassert(
+      replica_revisions, "ntp {}: replica_revisions map must be present", ntp);
+    auto rev_it = replica_revisions->find(replica);
+    vassert(
+      rev_it != replica_revisions->end(),
+      "ntp {}: node {} must be present in the replica_revisions map",
+      ntp,
+      replica);
+    return rev_it->second;
+}
+
 ntp_reconciliation_state::ntp_reconciliation_state(
   model::ntp ntp,
   std::vector<backend_operation> ops,
