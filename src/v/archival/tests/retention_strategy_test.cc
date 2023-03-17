@@ -131,3 +131,46 @@ SEASTAR_THREAD_TEST_CASE(test_retention_strategies) {
         }
     };
 }
+
+// Test that emulates what happens when we truncate but don't GC (e.g. if we
+// apply retention but change leadership before removing the segments).
+// Regression test for #9286
+SEASTAR_THREAD_TEST_CASE(test_retention_after_truncation) {
+    temporary_dir tmp_dir("retention_strategy_test");
+    auto data_path = tmp_dir.get_path();
+    cloud_storage::partition_manifest m;
+    populate_manifest(m, {{0, 10, 1024}});
+
+    // Set retention policy to truncate the first segment.
+    ntp_config config{{"test_ns", "test_topic", 0}, {data_path}};
+    config.set_overrides(
+      {.retention_bytes = tristate<size_t>{1023},
+       .retention_time = tristate<std::chrono::milliseconds>{}});
+
+    // Simulates an iteration of the archival loop that applies retention.
+    // Returns the new start_offset to truncate to.
+    const auto calculate_next_truncated_offset = [&]() -> model::offset {
+        auto retention_calculator = retention_calculator::factory(m, config);
+        BOOST_REQUIRE(retention_calculator.has_value());
+        auto next_start_offset = retention_calculator->next_start_offset();
+        BOOST_REQUIRE(next_start_offset.has_value());
+        BOOST_REQUIRE_NE(*next_start_offset, model::offset{});
+        return *next_start_offset;
+    };
+
+    // Go through the motion of truncating.
+    auto first_truncated_offset = calculate_next_truncated_offset();
+    vlog(test_log.info, "Truncating to {}", first_truncated_offset);
+    BOOST_REQUIRE(m.advance_start_offset(first_truncated_offset));
+
+    // Add another segment without GCing the segments. This may happen if
+    // leadership is transferred in between truncation and GC.
+    populate_manifest(m, {{11, 20, 1024}});
+
+    // Attempting to apply retention should move the start offset past the
+    // one we already moved ot.
+    auto second_truncated_offset = calculate_next_truncated_offset();
+    BOOST_REQUIRE_GT(second_truncated_offset, first_truncated_offset);
+    vlog(test_log.info, "Truncating to {}", second_truncated_offset);
+    BOOST_REQUIRE(m.advance_start_offset(second_truncated_offset));
+}
