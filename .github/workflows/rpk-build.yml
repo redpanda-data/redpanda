@@ -75,6 +75,7 @@ jobs:
           QUILL_NOTARY_KEY: ${{ secrets.QUILL_NOTARY_KEY_BASE64 }}
           QUILL_NOTARY_ISSUER: ${{ secrets.QUILL_NOTARY_ISSUER }}
           GITHUB_TOKEN: ${{ secrets.VBOT_GITHUB_API_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
         with:
           distribution: goreleaser
           version: ${{ env.GITHUB_REF_NAME }}
