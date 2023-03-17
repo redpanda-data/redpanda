@@ -871,3 +871,8 @@ class Admin:
         return int(
             self._request(
                 "GET", "debug/cloud_storage_usage?retries_allowed=10").json())
+
+    def get_usage(self, node, include_open: bool = True):
+        return self._request("GET",
+                             f"usage?include_open_bucket={str(include_open)}",
+                             node=node).json()

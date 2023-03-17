@@ -120,6 +120,7 @@ public:
           app.quota_mgr,
           app.snc_quota_mgr,
           app.group_router,
+          app.usage_manager,
           app.shard_table,
           app.partition_manager,
           app.fetch_session_cache,

@@ -1,0 +1,58 @@
+{
+    "apiVersion": "0.0.1",
+    "swaggerVersion": "1.2",
+    "basePath": "/v1",
+    "resourcePath": "/usage",
+    "produces": [
+        "application/json"
+    ],
+    "apis": [
+        {
+            "path": "/v1/usage",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get Redpanda usage metrics",
+                    "type": "usage_response",
+                    "nickname": "get_usage",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        }
+    ],
+    "models": {
+        "usage_response": {
+            "id": "usage_response",
+            "description": "Kafka & cloud storage usage metrics for this node",
+            "properties": {
+                "begin_timestamp": {
+                    "type": "long",
+                    "description": "Timestamp when bucket had opened"
+                },
+                "end_timestamp": {
+                    "type": "long",
+                    "description": "Timestamp when bucket was closed"
+                },
+                "open": {
+                    "type": "boolean",
+                    "description": "If this result contains results from window that is not yet closed"
+                },
+                "kafka_bytes_sent_count": {
+                    "type": "long",
+                    "description": "Number of bytes sent to client via the kafka api"
+                },
+                "kafka_bytes_received_count": {
+                    "type": "long",
+                    "description": "Number of bytes received by redpanda via the kafka api"
+                },
+                "cloud_storage_bytes_gauge": {
+                    "type": "long",
+                    "description": "Number of bytes resting in cloud storage at window close"
+                }
+            }
+        }
+    }
+}

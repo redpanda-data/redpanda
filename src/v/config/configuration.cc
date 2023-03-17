@@ -260,6 +260,41 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       512_KiB,
       {.min = 128, .max = 5_MiB})
+  , enable_usage(
+      *this,
+      "enable_usage",
+      "Enables the usage tracking mechanism, storing windowed history of "
+      "kafka/cloud_storage metrics over time",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      false)
+  , usage_num_windows(
+      *this,
+      "usage_num_windows",
+      "The number of windows to persist in memory and disk",
+      {.needs_restart = needs_restart::no,
+       .example = "24",
+       .visibility = visibility::tunable},
+      24,
+      {.min = 2, .max = 86400})
+  , usage_window_width_interval_sec(
+      *this,
+      "usage_window_width_interval_sec",
+      "The width of a usage window, tracking cloud and kafka ingress/egress "
+      "traffic each interval",
+      {.needs_restart = needs_restart::no,
+       .example = "3600",
+       .visibility = visibility::tunable},
+      std::chrono::seconds(3600),
+      {.min = std::chrono::seconds(1)})
+  , usage_disk_persistance_interval_sec(
+      *this,
+      "usage_disk_persistance_interval_sec",
+      "The interval in which all usage stats are written to disk",
+      {.needs_restart = needs_restart::no,
+       .example = "300",
+       .visibility = visibility::tunable},
+      std::chrono::seconds(60 * 5),
+      {.min = std::chrono::seconds(1)})
   , use_scheduling_groups(*this, "use_scheduling_groups")
   , enable_admin_api(*this, "enable_admin_api")
   , default_num_windows(

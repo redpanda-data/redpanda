@@ -51,6 +51,7 @@
 #include "json/stringbuffer.h"
 #include "json/validator.h"
 #include "json/writer.h"
+#include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -75,6 +76,7 @@
 #include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
 #include "redpanda/admin/api-doc/transaction.json.h"
+#include "redpanda/admin/api-doc/usage.json.h"
 #include "rpc/errc.h"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
@@ -126,6 +128,7 @@ admin_server::admin_server(
   ss::sharded<rpc::connection_cache>& connection_cache,
   ss::sharded<cluster::node_status_table>& node_status_table,
   ss::sharded<cluster::self_test_frontend>& self_test_frontend,
+  ss::sharded<kafka::usage_manager>& usage_manager,
   pandaproxy::rest::api* http_proxy,
   pandaproxy::schema_registry::api* schema_registry,
   ss::sharded<cloud_storage::topic_recovery_service>& topic_recovery_svc,
@@ -143,6 +146,7 @@ admin_server::admin_server(
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
   , _node_status_table(node_status_table)
   , _self_test_frontend(self_test_frontend)
+  , _usage_manager(usage_manager)
   , _http_proxy(http_proxy)
   , _schema_registry(schema_registry)
   , _topic_recovery_service(topic_recovery_svc)
@@ -220,6 +224,7 @@ void admin_server::configure_admin_routes() {
     register_hbadger_routes();
     register_transaction_routes();
     register_debug_routes();
+    register_usage_routes();
     register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
@@ -3389,6 +3394,59 @@ admin_server::cloud_storage_usage_handler(
                       "Please retry."),
           ss::httpd::reply::status_type::service_unavailable);
     }
+}
+
+static ss::json::json_return_type raw_data_to_usage_response(
+  const std::vector<kafka::usage_window>& total_usage, bool include_open) {
+    std::vector<ss::httpd::usage_json::usage_response> resp;
+    resp.reserve(total_usage.size());
+    for (size_t i = (include_open ? 0 : 1); i < total_usage.size(); ++i) {
+        resp.emplace_back();
+        const auto& e = total_usage[i];
+        resp.back().begin_timestamp = e.begin;
+        resp.back().end_timestamp = e.end;
+        resp.back().open = e.is_open();
+        resp.back().kafka_bytes_received_count = e.u.bytes_received;
+        resp.back().kafka_bytes_sent_count = e.u.bytes_sent;
+        resp.back().cloud_storage_bytes_gauge = e.u.bytes_cloud_storage;
+    }
+    if (include_open && !resp.empty()) {
+        /// Handle case where client does not want to observe
+        /// value of 0 for open buckets end timestamp
+        auto& e = resp.at(0);
+        vassert(e.open(), "Bucket not open when expecting to be");
+        e.end_timestamp = std::chrono::duration_cast<std::chrono::seconds>(
+                            ss::lowres_system_clock::now().time_since_epoch())
+                            .count();
+    }
+    return resp;
+}
+
+void admin_server::register_usage_routes() {
+    register_route<user>(
+      ss::httpd::usage_json::get_usage,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          if (!config::shard_local_cfg().enable_usage()) {
+              throw ss::httpd::bad_request_exception(
+                "Usage tracking is not enabled");
+          }
+          bool include_open = false;
+          auto include_open_str = req->get_query_param("include_open_bucket");
+          vlog(
+            logger.info,
+            "Request to observe usage info, include_open_bucket={}",
+            include_open_str);
+          if (!include_open_str.empty()) {
+              include_open = str_to_bool(include_open_str);
+          }
+          return _usage_manager
+            .invoke_on(
+              kafka::usage_manager::usage_manager_main_shard,
+              [](kafka::usage_manager& um) { return um.get_usage_stats(); })
+            .then([include_open](auto total_usage) {
+                return raw_data_to_usage_response(total_usage, include_open);
+            });
+      });
 }
 
 void admin_server::register_debug_routes() {

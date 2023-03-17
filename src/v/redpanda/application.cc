@@ -68,6 +68,7 @@
 #include "kafka/server/rm_group_frontend.h"
 #include "kafka/server/server.h"
 #include "kafka/server/snc_quota_manager.h"
+#include "kafka/server/usage_manager.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "net/server.h"
@@ -827,6 +828,7 @@ void application::configure_admin_server() {
       std::ref(_connection_cache),
       std::ref(node_status_table),
       std::ref(self_test_frontend),
+      std::ref(usage_manager),
       _proxy.get(),
       _schema_registry.get(),
       std::ref(topic_recovery_service),
@@ -1340,6 +1342,9 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       controller.get())
       .get();
 
+    syschecks::systemd_message("Creating kafka usage manager frontend").get();
+    construct_service(usage_manager, std::ref(storage)).get();
+
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed
     // from different cores without precautionary measures like foreign
@@ -1490,6 +1495,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
         std::ref(quota_mgr),
         std::ref(snc_quota_mgr),
         std::ref(group_router),
+        std::ref(usage_manager),
         std::ref(shard_table),
         std::ref(partition_manager),
         std::ref(fetch_session_cache),
@@ -2022,6 +2028,7 @@ void application::start_runtime_services(
 
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
     snc_quota_mgr.invoke_on_all(&kafka::snc_quota_manager::start).get();
+    usage_manager.invoke_on_all(&kafka::usage_manager::start).get();
 
     if (!config::node().admin().empty()) {
         _admin.invoke_on_all(&admin_server::start).get0();
