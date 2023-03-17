@@ -195,13 +195,25 @@ ss::future<std::optional<ss::sstring>> disk_log_impl::close() {
     co_return std::nullopt;
 }
 
-model::offset disk_log_impl::size_based_gc_max_offset(size_t max_size) {
+std::optional<model::offset>
+disk_log_impl::size_based_gc_max_offset(compaction_config cfg) {
+    if (!cfg.max_bytes.has_value()) {
+        return std::nullopt;
+    }
+
+    auto max_size = cfg.max_bytes.value();
+    vlog(
+      gclog.debug,
+      "[{}] retention max bytes: {}, current partition size: {}",
+      config().ntp(),
+      max_size,
+      _probe.partition_size());
+    if (_segs.empty() || _probe.partition_size() <= max_size) {
+        return std::nullopt;
+    }
+
     size_t reclaimed_size = 0;
     model::offset ret;
-    // do nothing
-    if (_probe.partition_size() <= max_size) {
-        return ret;
-    }
 
     for (const auto& segment : _segs) {
         reclaimed_size += segment->size_bytes();
@@ -213,7 +225,8 @@ model::offset disk_log_impl::size_based_gc_max_offset(size_t max_size) {
     return ret;
 }
 
-model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
+std::optional<model::offset>
+disk_log_impl::time_based_gc_max_offset(compaction_config cfg) {
     // The following compaction has a Kafka behavior compatibility bug. for
     // which we defer do nothing at the moment, possibly crashing the machine
     // and running out of disk. Kafka uses the same logic below as of
@@ -229,6 +242,14 @@ model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
 
     // if the segment max timestamp is bigger than now plus threshold we
     // will report the segment max timestamp as bogus timestamp
+    vlog(
+      gclog.debug,
+      "[{}] time retention timestamp: {}, first segment max timestamp: {}",
+      config().ntp(),
+      cfg.eviction_time,
+      _segs.empty() ? model::timestamp::min()
+                    : _segs.front()->index().max_timestamp());
+
     static constexpr auto const_threshold = 1min;
     auto bogus_threshold = model::timestamp(
       model::timestamp::now().value() + const_threshold / 1ms);
@@ -236,7 +257,8 @@ model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
     auto it = std::find_if(
       std::cbegin(_segs),
       std::cend(_segs),
-      [this, time, bogus_threshold](const ss::lw_shared_ptr<segment>& s) {
+      [this, time = cfg.eviction_time, bogus_threshold](
+        const ss::lw_shared_ptr<segment>& s) {
           auto max_ts = s->index().max_timestamp();
           // first that is not going to be collected
           if (max_ts > bogus_threshold) {
@@ -252,7 +274,7 @@ model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
       });
 
     if (it == _segs.cbegin()) {
-        return model::offset{};
+        return std::nullopt;
     }
 
     it = std::prev(it);
@@ -293,13 +315,12 @@ bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
            && ptr->reader().filename() == (*_segs.begin())->reader().filename();
 }
 
-ss::future<model::offset> disk_log_impl::garbage_collect_segments(
-  compaction_config cfg, model::offset max_offset, std::string_view ctx) {
+ss::future<model::offset>
+disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
     vlog(
       gclog.debug,
-      "[{}] {} requested to remove segments up to {} offset",
+      "[{}] requested eviction of segments up to {} offset",
       config().ntp(),
-      ctx,
       max_offset);
     // we only notify eviction monitor if there are segments to evict
     auto have_segments_to_evict = _segs.size() > 1
@@ -314,40 +335,6 @@ ss::future<model::offset> disk_log_impl::garbage_collect_segments(
     }
 
     co_return _start_offset;
-}
-
-ss::future<model::offset>
-disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
-    if (!cfg.max_bytes.has_value()) {
-        co_return _start_offset;
-    }
-    auto max = cfg.max_bytes.value();
-    vlog(
-      gclog.debug,
-      "[{}] retention max bytes: {}, current partition size: {}",
-      config().ntp(),
-      max,
-      _probe.partition_size());
-    if (_segs.empty() || _probe.partition_size() <= max) {
-        co_return _start_offset;
-    }
-    model::offset max_offset = size_based_gc_max_offset(cfg.max_bytes.value());
-    co_return co_await garbage_collect_segments(
-      cfg, max_offset, "gc[size_based_retention]");
-}
-
-ss::future<model::offset>
-disk_log_impl::garbage_collect_oldest_segments(compaction_config cfg) {
-    vlog(
-      gclog.debug,
-      "[{}] time retention timestamp: {}, first segment max timestamp: {}",
-      config().ntp(),
-      cfg.eviction_time,
-      _segs.empty() ? model::timestamp::min()
-                    : _segs.front()->index().max_timestamp());
-    model::offset max_offset = time_based_gc_max_offset(cfg.eviction_time);
-    return garbage_collect_segments(
-      cfg, max_offset, "gc[time_based_retention]");
 }
 
 ss::future<> disk_log_impl::do_compact(
@@ -787,12 +774,17 @@ disk_log_impl::gc(compaction_config cfg) {
           config().ntp());
         co_return std::nullopt;
     }
-    auto size_retention_new_start = co_await garbage_collect_max_partition_size(
-      cfg);
-    auto time_retention_new_start = co_await garbage_collect_oldest_segments(
-      cfg);
 
-    co_return std::max(size_retention_new_start, time_retention_new_start);
+    auto max_offset_by_size = size_based_gc_max_offset(cfg);
+    auto max_offset_by_time = time_based_gc_max_offset(cfg);
+
+    auto max_offset = std::max(max_offset_by_size, max_offset_by_time);
+
+    if (max_offset) {
+        co_return co_await request_eviction_until_offset(*max_offset);
+    }
+
+    co_return std::nullopt;
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
