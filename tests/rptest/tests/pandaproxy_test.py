@@ -433,8 +433,8 @@ class PandaProxyEndpoints(RedpandaTest):
         self.logger.debug("Restart the http proxy")
         admin = Admin(self.redpanda)
         for node in self.redpanda.nodes:
-            result_raw = admin.redpanda_services_restart(
-                rp_service='http-proxy', node=node)
+            result_raw = admin.restart_service(rp_service='http-proxy',
+                                               node=node)
             check_service_restart(self.redpanda, "Restarting the http proxy")
             self.logger.debug(result_raw)
             assert result_raw.status_code == requests.codes.ok
