@@ -18,6 +18,8 @@
 
 #include <absl/container/node_hash_map.h>
 
+#include <vector>
+
 namespace cluster {
 
 /// Class containing information about cluster members. The members class is
@@ -81,6 +83,17 @@ public:
 
     void unregister_members_updated_notification(notification_id_type);
 
+    std::optional<model::node_assignment>
+      get_node_assignment(model::node_id) const;
+
+    // returns all node_ids assigned to a region
+    std::vector<model::node_id> node_ids_in(const model::region_id&) const;
+    // returns all node_ids assigned to region-less rack
+    std::vector<model::node_id> node_ids_in(const model::rack_id&) const;
+    // returns all node_ids assigned to a certain region and rack
+    std::vector<model::node_id>
+    node_ids_in(const model::region_id&, const model::rack_id&) const;
+
 private:
     cache_t _nodes;
 
@@ -104,5 +117,16 @@ private:
       notify_maintenance_state_change(model::node_id, model::maintenance_state);
 
     void notify_members_updated();
+
+    template<typename Predicate>
+    std::vector<model::node_id> node_ids_matching(Predicate&& p) const {
+        std::vector<model::node_id> nodes;
+        for (const auto& [id, m] : _nodes) {
+            if (p(m)) {
+                nodes.push_back(id);
+            }
+        }
+        return nodes;
+    }
 };
 } // namespace cluster
