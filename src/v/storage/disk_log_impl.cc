@@ -51,6 +51,25 @@
 
 using namespace std::literals::chrono_literals;
 
+namespace {
+/*
+ * Some logs must be exempt from the cleanup=delete policy such that their full
+ * history is retained. This function explicitly protects against any accidental
+ * configuration changes that might violate that constraint. Examples include
+ * the controller and internal kafka topics, with the exception of the
+ * transaction manager topic.
+ *
+ * Once controller snapshots are enabled this rule will relaxed accordingly.
+ */
+bool deletion_exempt(const model::ntp& ntp) {
+    bool is_internal_namespace = ntp.ns() == model::redpanda_ns
+                                 || ntp.ns() == model::kafka_internal_namespace;
+    bool is_tx_manager_ntp = ntp.ns == model::kafka_internal_namespace
+                             && ntp.tp.topic == model::tx_manager_topic;
+    return !is_tx_manager_ntp && is_internal_namespace;
+}
+} // namespace
+
 namespace storage {
 
 disk_log_impl::disk_log_impl(
@@ -324,8 +343,21 @@ ss::future<> disk_log_impl::garbage_collect_segments(
 
 ss::future<>
 disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
+    if (!cfg.max_bytes.has_value()) {
+        co_return;
+    }
+    auto max = cfg.max_bytes.value();
+    vlog(
+      gclog.debug,
+      "[{}] retention max bytes: {}, current partition size: {}",
+      config().ntp(),
+      max,
+      _probe.partition_size());
+    if (_segs.empty() || _probe.partition_size() <= max) {
+        co_return;
+    }
     model::offset max_offset = size_based_gc_max_offset(cfg.max_bytes.value());
-    return garbage_collect_segments(
+    co_await garbage_collect_segments(
       cfg, max_offset, "gc[size_based_retention]");
 }
 
@@ -758,39 +790,15 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
       "[{}] applying 'deletion' log cleanup policy with config: {}",
       config().ntp(),
       cfg);
-    if (unlikely(cfg.asrc->abort_requested())) {
-        return ss::make_ready_future<>();
-    }
-    // TODO: this a workaround until we have raft-snapshotting in the the
-    // controller so that we can still evict older data. At the moment we keep
-    // the full history.
-    bool is_internal_namespace = config().ntp().ns() == model::redpanda_ns
-                                 || config().ntp().ns()
-                                      == model::kafka_internal_namespace;
-    bool is_tx_manager_ntp = config().ntp().ns
-                               == model::kafka_internal_namespace
-                             && config().ntp().tp.topic
-                                  == model::tx_manager_topic;
-    if (!is_tx_manager_ntp && is_internal_namespace) {
+    if (deletion_exempt(config().ntp())) {
         vlog(
           gclog.trace,
-          "[{}] skipped log deletion, internal topic",
+          "[{}] skipped log deletion, exempt topic",
           config().ntp());
-        return ss::make_ready_future<>();
+        co_return;
     }
-    if (cfg.max_bytes) {
-        size_t max = cfg.max_bytes.value();
-        vlog(
-          gclog.debug,
-          "[{}] retention max bytes: {}, current partition size: {}",
-          config().ntp(),
-          max,
-          _probe.partition_size());
-        if (!_segs.empty() && _probe.partition_size() > max) {
-            return garbage_collect_max_partition_size(cfg);
-        }
-    }
-    return garbage_collect_oldest_segments(cfg);
+    co_await garbage_collect_max_partition_size(cfg);
+    co_await garbage_collect_oldest_segments(cfg);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {

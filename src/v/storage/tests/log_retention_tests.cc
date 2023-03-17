@@ -84,6 +84,106 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
 }
 
+/*
+ * test that both time and size are applied. the test works like this:
+ *
+ * Three segments
+ * - active segment (1mb, ignored)
+ * - third segment (1mb)
+ * - second segment (1mb)
+ * - first segment (2mb)
+ * - all records have "last week" timestamp
+ * - retention size is set to 4 mb
+ *
+ * When gc is run size based retention will remove the first segment which will
+ * satisfy size based retention goals. however, time based retention was trigger
+ * for all batches. so we expect that all segments except the active segment to
+ * be removed.
+ */
+FIXTURE_TEST(retention_test_size_time, gc_fixture) {
+    const auto last_week = model::to_timestamp(
+      model::timestamp_clock::now() - std::chrono::days(7));
+
+    const auto yesterday = model::to_timestamp(
+      model::timestamp_clock::now() - std::chrono::days(1));
+
+    const size_t num_records = 10;
+    const auto part_size = [this] {
+        return builder.get_disk_log_impl().get_probe().partition_size();
+    };
+
+    // first segment
+    model::offset offset{0};
+    builder | storage::start() | storage::add_segment(offset);
+    size_t start_size = part_size();
+    while ((part_size() - start_size) < 2_MiB) {
+        builder
+          | storage::add_random_batch(
+            offset,
+            num_records,
+            storage::maybe_compress_batches::no,
+            model::record_batch_type::raft_data,
+            storage::append_config(),
+            storage::disk_log_builder::should_flush_after::no,
+            last_week);
+        offset += model::offset(num_records);
+    }
+
+    // second segment
+    builder | storage::add_segment(offset);
+    start_size = part_size();
+    while ((part_size() - start_size) < 1_MiB) {
+        builder
+          | storage::add_random_batch(
+            offset,
+            num_records,
+            storage::maybe_compress_batches::no,
+            model::record_batch_type::raft_data,
+            storage::append_config(),
+            storage::disk_log_builder::should_flush_after::no,
+            last_week);
+        offset += model::offset(num_records);
+    }
+
+    // third segment
+    builder | storage::add_segment(offset);
+    start_size = part_size();
+    while ((part_size() - start_size) < 1_MiB) {
+        builder
+          | storage::add_random_batch(
+            offset,
+            num_records,
+            storage::maybe_compress_batches::no,
+            model::record_batch_type::raft_data,
+            storage::append_config(),
+            storage::disk_log_builder::should_flush_after::no,
+            last_week);
+        offset += model::offset(num_records);
+    }
+
+    // active segment
+    builder | storage::add_segment(offset);
+    start_size = part_size();
+    while ((part_size() - start_size) < 1_MiB) {
+        builder
+          | storage::add_random_batch(
+            offset,
+            num_records,
+            storage::maybe_compress_batches::no,
+            model::record_batch_type::raft_data,
+            storage::append_config(),
+            storage::disk_log_builder::should_flush_after::no,
+            last_week);
+        offset += model::offset(num_records);
+    }
+
+    builder.get_log().set_collectible_offset(
+      builder.get_log().offsets().dirty_offset);
+
+    builder | storage::garbage_collect(yesterday, 4_MiB) | storage::stop();
+
+    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
+}
 FIXTURE_TEST(retention_test_after_truncation, gc_fixture) {
     BOOST_TEST_MESSAGE("Should be safe to garbage collect after truncation");
     builder | storage::start() | storage::add_segment(0)
