@@ -30,7 +30,8 @@ static bool is_id_allocator_topic(model::ntp ntp) {
 }
 
 static bool is_tx_manager_topic(const model::ntp& ntp) {
-    return ntp == model::tx_manager_ntp;
+    return ntp.ns == model::kafka_internal_namespace
+           && ntp.tp.topic == model::tx_manager_topic;
 }
 
 partition::partition(
