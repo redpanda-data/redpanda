@@ -32,7 +32,7 @@ class UsageTest(RedpandaTest):
     def __init__(self, test_context):
         extra_conf = {
             'enable_usage': True,
-            'usage_num_windows': 60,
+            'usage_num_windows': 30,
             'usage_window_width_interval_sec': 1,
             'usage_disk_persistance_interval_sec': 5
         }
@@ -103,7 +103,7 @@ class UsageTest(RedpandaTest):
         consumer.stop()
         return total_produced
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=3)
     def test_usage_metrics_collection(self):
         # Assert windows are closing
         time.sleep(2)
@@ -115,13 +115,29 @@ class UsageTest(RedpandaTest):
         total_data = self._calculate_total_usage()
         assert total_data < 4096, f"More then 4k traffic observed: {total_data}"
 
-        # Produce / consume test data, should observe usage numbers increase
-        total_produced = self._produce_and_consume_data()
+        iterations = 1
+        prev_usage = self._get_all_usage()
+        producer = KafkaCliTools(self.redpanda)
+        while iterations < 37:
+            producer.produce(self.topic, (512 * iterations), 512, acks=1)
+            time.sleep(1)
 
-        # Assert that more then data the data produced has been recorded, responses
-        # and the initial non 0 recorded data are also included in the total recorded amt
-        total_data = self._calculate_total_usage()
-        assert total_data > total_produced, f"Expected {total_produced} observed: {total_data}"
+            usage = self._get_all_usage()
+
+            # 3 node cluster * 30 max windows == 90 windows total
+            assert len(usage) <= 90, f"iterations: {iterations}"
+            if len(usage) == len(prev_usage):
+                # Theres been no new window closed
+                pass
+            else:
+                # Assert that more then data the data produced has been recorded, responses
+                # and the initial non 0 recorded data are also included in the total recorded amt
+                total_data = self._calculate_total_usage(usage)
+                total_prev = self._calculate_total_usage(prev_usage)
+                assert total_data > total_prev, f"Expected {total_data} > {total_prev} itr: {iterations}"
+
+            prev_usage = usage
+            iterations += 1
 
     @cluster(num_nodes=4)
     def test_usage_collection_restart(self):
