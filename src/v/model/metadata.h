@@ -81,6 +81,15 @@ using initial_revision_id
  */
 using region_id = named_type<ss::sstring, struct region_id_model_type>;
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
+
+/**
+ * Class defining node placement in the cluster
+ */
+struct node_assignment {
+    std::optional<model::region_id> region;
+    std::optional<model::rack_id> rack;
+};
+
 struct broker_properties
   : serde::
       envelope<broker_properties, serde::version<0>, serde::compat_version<0>> {
@@ -226,6 +235,10 @@ public:
     const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<rack_id>& rack() const { return _rack; }
     const std::optional<region_id>& region() const { return _region; }
+
+    node_assignment node_assignment() const {
+        return {.region = _region, .rack = _rack};
+    }
 
     void replace_unassigned_node_id(const node_id id) {
         vassert(
