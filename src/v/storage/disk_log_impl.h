@@ -156,14 +156,17 @@ private:
     ss::future<> do_truncate_prefix(truncate_prefix_config);
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
-    ss::future<model::offset>
-    garbage_collect_max_partition_size(compaction_config cfg);
-    ss::future<model::offset>
-    garbage_collect_oldest_segments(compaction_config cfg);
-    ss::future<model::offset> garbage_collect_segments(
-      compaction_config cfg, model::offset, std::string_view);
-    model::offset size_based_gc_max_offset(size_t);
-    model::offset time_based_gc_max_offset(model::timestamp);
+    // Propagate a request to the Raft layer to evict segments up until the
+    // specified offest.
+    //
+    // Returns the new start offset of the log.
+    ss::future<model::offset> request_eviction_until_offset(model::offset);
+
+    // These methods search the log for the offset to evict at such that
+    // the retention policy is satisfied. If no such offset is found
+    // std::nullopt is returned.
+    std::optional<model::offset> size_based_gc_max_offset(compaction_config);
+    std::optional<model::offset> time_based_gc_max_offset(compaction_config);
 
     bool is_front_segment(const segment_set::type&) const;
 
