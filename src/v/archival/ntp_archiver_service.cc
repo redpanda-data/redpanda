@@ -1531,7 +1531,8 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::apply_retention() {
     }
 
     auto next_start_offset = retention_calculator->next_start_offset();
-    if (next_start_offset) {
+    auto current_start_offset = manifest().get_start_offset();
+    if (next_start_offset && next_start_offset > current_start_offset) {
         vlog(
           _rtclog.debug,
           "{} Advancing start offset to {} satisfy retention policy",

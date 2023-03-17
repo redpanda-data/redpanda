@@ -451,6 +451,17 @@ bool partition_manifest::contains(const segment_name& name) const {
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
+    if (new_start_offset <= _start_offset) {
+        vlog(
+          cst_log.error,
+          "[{}] New start offest is not greater than current start offset: {} "
+          "<= {}. Skipping truncation.",
+          _ntp,
+          new_start_offset,
+          _start_offset);
+        return false;
+    }
+
     if (new_start_offset > _start_offset && !_segments.empty()) {
         auto it = _segments.upper_bound(new_start_offset);
         if (it == _segments.begin()) {
