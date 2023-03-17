@@ -142,7 +142,7 @@ function install_kcl() {
 function install_kgo_verifier() {
   git -C /opt clone https://github.com/redpanda-data/kgo-verifier.git
   cd /opt/kgo-verifier
-  git reset --hard 53d4c21aa86e179aa4b79aeee592e4687d08b569
+  git reset --hard 9f1c7d0a0d9a2137e4c729c40d9477c5d77b1704
   go mod tidy
   make
 }
