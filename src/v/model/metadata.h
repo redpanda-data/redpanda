@@ -180,7 +180,7 @@ std::ostream& operator<<(std::ostream&, maintenance_state);
 
 class broker
   : public serde::
-      envelope<broker, serde::version<0>, serde::compat_version<0>> {
+      envelope<broker, serde::version<1>, serde::compat_version<0>> {
 public:
     broker() noexcept = default;
 
@@ -189,11 +189,13 @@ public:
       std::vector<broker_endpoint> kafka_advertised_listeners,
       net::unresolved_address rpc_address,
       std::optional<rack_id> rack,
+      std::optional<region_id> region,
       broker_properties props) noexcept
       : _id(id)
       , _kafka_advertised_listeners(std::move(kafka_advertised_listeners))
       , _rpc_address(std::move(rpc_address))
       , _rack(std::move(rack))
+      , _region(std::move(region))
       , _properties(std::move(props)) {}
 
     broker(
@@ -201,12 +203,14 @@ public:
       net::unresolved_address kafka_advertised_listener,
       net::unresolved_address rpc_address,
       std::optional<rack_id> rack,
+      std::optional<region_id> region,
       broker_properties props) noexcept
       : broker(
         id,
         {broker_endpoint(std::move(kafka_advertised_listener))},
         std::move(rpc_address),
         std::move(rack),
+        std::move(region),
         std::move(props)) {}
 
     broker(broker&&) noexcept = default;
@@ -221,6 +225,7 @@ public:
     }
     const net::unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<rack_id>& rack() const { return _rack; }
+    const std::optional<region_id>& region() const { return _region; }
 
     void replace_unassigned_node_id(const node_id id) {
         vassert(
@@ -234,7 +239,12 @@ public:
 
     auto serde_fields() {
         return std::tie(
-          _id, _kafka_advertised_listeners, _rpc_address, _rack, _properties);
+          _id,
+          _kafka_advertised_listeners,
+          _rpc_address,
+          _rack,
+          _properties,
+          _region);
     }
 
 private:
@@ -242,6 +252,7 @@ private:
     std::vector<broker_endpoint> _kafka_advertised_listeners;
     net::unresolved_address _rpc_address;
     std::optional<rack_id> _rack;
+    std::optional<region_id> _region;
     broker_properties _properties;
 
     friend std::ostream& operator<<(std::ostream&, const broker&);
@@ -485,7 +496,7 @@ struct broker_v0 {
     model::broker_properties properties;
 
     model::broker to_v3() const {
-        return model::broker(id, kafka_address, rpc_address, rack, properties);
+        return {id, kafka_address, rpc_address, rack, std::nullopt, properties};
     }
 };
 

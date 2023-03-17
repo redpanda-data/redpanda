@@ -22,6 +22,10 @@
 #include <absl/container/flat_hash_set.h>
 #include <boost/test/tools/old/interface.hpp>
 
+#include <optional>
+
+using model::broker;
+
 void validate_replica_set_diversity(
   const std::vector<cluster::partition_assignment> assignments) {
     for (const auto& assignment : assignments) {
@@ -50,12 +54,14 @@ FIXTURE_TEST(register_node, partition_allocator_fixture) {
 model::broker create_broker(
   int node_id,
   uint32_t core_count,
-  std::optional<model::rack_id> rack = std::nullopt) {
-    return model::broker(
+  std::optional<model::rack_id> rack = std::nullopt,
+  std::optional<model::region_id> region = std::nullopt) {
+    return broker(
       model::node_id(node_id),
       net::unresolved_address("localhost", 1024),
       net::unresolved_address("localhost", 1024),
       std::move(rack),
+      std::move(region),
       model::broker_properties{.cores = core_count});
 }
 

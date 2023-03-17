@@ -24,6 +24,7 @@ model::broker create_broker(int32_t id) {
       net::unresolved_address("127.0.0.1", 9002),
       net::unresolved_address("127.0.0.1", 1234),
       std::nullopt,
+      std::nullopt,
       model::broker_properties{});
 }
 

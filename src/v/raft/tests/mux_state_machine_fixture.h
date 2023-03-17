@@ -155,6 +155,7 @@ struct mux_state_machine_fixture {
           net::unresolved_address("localhost", 9092),
           net::unresolved_address("localhost", 35543),
           std::nullopt,
+          std::nullopt,
           model::broker_properties{});
     }
 

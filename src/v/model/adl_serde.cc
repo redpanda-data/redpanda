@@ -125,7 +125,8 @@ model::broker adl<model::broker>::from(iobuf_parser& in) {
     auto rpc_adrs = adl<net::unresolved_address>{}.from(in);
     auto rack = adl<std::optional<model::rack_id>>{}.from(in);
     auto etc_props = adl<model::broker_properties>{}.from(in);
-    return model::broker{id, std::move(kafka_adrs), rpc_adrs, rack, etc_props};
+    return model::broker{
+      id, std::move(kafka_adrs), rpc_adrs, rack, std::nullopt, etc_props};
 }
 
 void adl<model::internal::broker_v0>::to(

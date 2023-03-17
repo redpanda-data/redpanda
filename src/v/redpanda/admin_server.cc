@@ -755,6 +755,9 @@ get_brokers(cluster::controller* const controller) {
               if (nm.broker.rack()) {
                   b.rack = *nm.broker.rack();
               }
+              if (nm.broker.region()) {
+                  b.region = *nm.broker.region();
+              }
               b.membership_status = fmt::format(
                 "{}", nm.state.get_membership_state());
 
@@ -2080,6 +2083,9 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
     ret.num_cores = node_meta->broker.properties().cores;
     if (node_meta->broker.rack()) {
         ret.rack = node_meta->broker.rack().value();
+    }
+    if (node_meta->broker.region()) {
+        ret.region = node_meta->broker.region().value();
     }
     ret.membership_status = fmt::format(
       "{}", node_meta->state.get_membership_state());

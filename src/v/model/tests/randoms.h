@@ -19,6 +19,8 @@
 #include "random/generators.h"
 #include "test_utils/randoms.h"
 
+#include <optional>
+
 namespace model {
 inline model::topic_namespace random_topic_namespace() {
     return {
@@ -116,12 +118,17 @@ inline model::broker random_broker(model::node_id node_id) {
     if (tests::random_bool()) {
         rack = tests::random_named_string<model::rack_id>();
     }
+    std::optional<model::region_id> region;
+    if (tests::random_bool()) {
+        region = tests::random_named_string<model::region_id>();
+    }
 
     return {
       node_id,
       std::move(kafka_advertised_listeners),
       tests::random_net_address(),
       rack,
+      region,
       random_broker_properties(),
     };
 }

@@ -16,6 +16,7 @@
 #include "json/document.h"
 #include "json/json.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "net/unresolved_address.h"
 #include "security/acl.h"
 #include "utils/base64.h"
@@ -333,6 +334,8 @@ rjson_serialize(json::Writer<json::StringBuffer>& w, const model::broker& b) {
     rjson_serialize(w, b.rpc_address());
     w.Key("rack");
     rjson_serialize(w, b.rack());
+    w.Key("region");
+    rjson_serialize(w, b.region());
     w.Key("properties");
     rjson_serialize(w, b.properties());
     w.EndObject();
@@ -343,12 +346,14 @@ inline void read_value(json::Value const& rd, model::broker& obj) {
     std::vector<model::broker_endpoint> kafka_advertised_listeners;
     net::unresolved_address rpc_address;
     std::optional<model::rack_id> rack;
+    std::optional<model::region_id> region;
     model::broker_properties properties;
 
     read_member(rd, "id", id);
     read_member(rd, "kafka_advertised_listeners", kafka_advertised_listeners);
     read_member(rd, "rpc_address", rpc_address);
     read_member(rd, "rack", rack);
+    read_member(rd, "region", region);
     read_member(rd, "properties", properties);
 
     obj = model::broker(
@@ -356,6 +361,7 @@ inline void read_value(json::Value const& rd, model::broker& obj) {
       std::move(kafka_advertised_listeners),
       std::move(rpc_address),
       std::move(rack),
+      std::move(region),
       std::move(properties));
 }
 

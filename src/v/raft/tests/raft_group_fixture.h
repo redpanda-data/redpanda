@@ -50,6 +50,7 @@
 #include <fmt/core.h>
 
 #include <chrono>
+#include <optional>
 #include <vector>
 
 inline ss::logger tstlog("raft_test");
@@ -393,6 +394,7 @@ struct raft_group {
           model::node_id(id),
           net::unresolved_address("localhost", 9092),
           net::unresolved_address("localhost", base_port + id),
+          std::nullopt,
           std::nullopt,
           model::broker_properties{
             .cores = 1,

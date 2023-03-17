@@ -120,6 +120,7 @@ model::broker create_test_broker() {
       net::unresolved_address(
         "127.0.0.1", random_generators::get_int(10000, 20000)), // rpc address
       model::rack_id("some_rack"),
+      model::region_id("some_region"),
       model::broker_properties{
         .cores = 8 // cores
       });
@@ -494,17 +495,13 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_metadata_backward_compatibility) {
-    auto n1 = model::random_broker(0, 100);
-    auto n2 = model::random_broker(0, 100);
-    auto n3 = model::random_broker(0, 100);
-    std::vector<model::broker> nodes{n1, n2, n3};
-    raft::group_nodes current{
-      .voters
-      = {raft::vnode(n1.id(), model::revision_id(1)), raft::vnode(n3.id(), model::revision_id(3))},
-      .learners = {raft::vnode(n2.id(), model::revision_id(1))}};
+    raft::vnode n1(model::node_id(0), model::revision_id(100));
+    raft::vnode n2(model::node_id(1), model::revision_id(100));
+    raft::vnode n3(model::node_id(2), model::revision_id(100));
+    std::vector<raft::vnode> nodes{n1, n2, n3};
+    raft::group_nodes current{.voters = {n1, n3}, .learners = {n2}};
 
-    raft::group_configuration cfg(
-      nodes, current, model::revision_id(0), std::nullopt);
+    raft::group_configuration cfg(current, model::revision_id(0), std::nullopt);
     auto c = cfg;
     auto ct = ss::lowres_clock::now();
     // serialize using old format (no version included)
