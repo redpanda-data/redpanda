@@ -3537,6 +3537,72 @@ admin_server::get_raft_state_handler(std::unique_ptr<ss::httpd::request> req) {
     }
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_partition_state_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    const model::ntp ntp = parse_ntp_from_request(req->param);
+    const bool is_controller = ntp == model::controller_ntp;
+
+    if (!is_controller && !_metadata_cache.local().contains(ntp)) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("Could not find ntp: {}", ntp));
+    }
+
+    if (is_controller) {
+        co_return ss::json::json_void();
+    }
+
+    auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::server_error_exception(fmt_with_ctx(
+          fmt::format, "Can not find shard for partition {}", ntp.tp));
+    }
+
+    co_return co_await _partition_manager.invoke_on(
+      shard.value(),
+      [ntp](const cluster::partition_manager& partition_manager) {
+          auto partition_ptr = partition_manager.get(ntp);
+
+          ss::httpd::debug_json::partition_state state;
+          state.committed_offset = partition_ptr->committed_offset();
+          state.dirty_offset = partition_ptr->dirty_offset();
+          state.last_stable_offset = partition_ptr->last_stable_offset();
+          state.latest_configuration_offset
+            = partition_ptr->get_latest_configuration_offset();
+          state.start_offset = partition_ptr->start_offset();
+          state.high_watermark = partition_ptr->high_watermark();
+          state.term = partition_ptr->term();
+          state.revision_id = partition_ptr->get_revision_id();
+          state.log_size_bytes = partition_ptr->size_bytes();
+          state.non_log_disk_size_bytes
+            = partition_ptr->non_log_disk_size_bytes();
+
+          if (partition_ptr->is_read_replica_mode_enabled()) {
+              state.is_read_replica_mode_enabled = true;
+              state.read_replica_bucket
+                = partition_ptr->get_read_replica_bucket();
+          } else {
+              state.is_read_replica_mode_enabled = false;
+              state.read_replica_bucket = "";
+          }
+
+          state.is_remote_fetch_enabled
+            = partition_ptr->is_remote_fetch_enabled();
+
+          if (partition_ptr->cloud_data_available()) {
+              state.is_cloud_data_available = true;
+              state.start_cloud_offset = partition_ptr->start_cloud_offset();
+              state.last_cloud_offset = partition_ptr->last_cloud_offset();
+          } else {
+              state.is_cloud_data_available = false;
+              state.start_cloud_offset = -1;
+              state.last_cloud_offset = -1;
+          }
+
+          return ss::make_ready_future<ss::json::json_return_type>(state);
+      });
+}
+
 void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
@@ -3632,6 +3698,13 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           return get_raft_state_handler(std::move(req));
+      });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_partition_state,
+      [this](std::unique_ptr<ss::httpd::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_partition_state_handler(std::move(req));
       });
 }
 ss::future<ss::json::json_return_type>
