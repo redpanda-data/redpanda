@@ -80,7 +80,7 @@ jobs:
           distribution: goreleaser
           version: ${{ env.GITHUB_REF_NAME }}
           workdir: src/go/rpk/
-          args: release --rm-dist --release-notes /tmp/empty_notes
+          args: release --clean --release-notes /tmp/empty_notes
 
       - name: Archive quill output
         if: failure()
