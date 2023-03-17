@@ -33,6 +33,7 @@ public:
     property<std::optional<model::node_id>> node_id;
 
     property<std::optional<model::rack_id>> rack;
+    property<std::optional<model::region_id>> region;
     property<std::vector<seed_server>> seed_servers;
     property<bool> empty_seed_starts_cluster;
 

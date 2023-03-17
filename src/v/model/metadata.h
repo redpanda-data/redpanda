@@ -54,7 +54,32 @@ using revision_id = named_type<int64_t, struct revision_id_model_type>;
 using initial_revision_id
   = named_type<int64_t, struct initial_revision_id_model_type>;
 
-/// Rack id type
+/**
+ * Rack and region defines a node place in a cluster topology.
+ *
+ * By default nodes are placed in the region and racks.
+ *
+ * All together the two labels allow to define a hierarchical topology of the
+ * cluster.
+ *
+ * We allow nodes to have only rack configured but if they have a region
+ * assigned this implies that the rack is also defined.
+ *
+ *
+ *                                   ┌─────────┐
+ *                   ┌───────────────┤ cluster ├───────────────┐
+ *                   │               └────┬────┘               │
+ *                   │                    │                    │
+ *             ┌─────┴─────┐        ┌─────┴─────┐        ┌─────┴─────┐
+ *           ┌─┤ region_a1 ├─┐      │ region_b1 │      ┌─┤ region_c1 ├─┐
+ *           │ └───────────┘ │      └─────┬─────┘      │ └───────────┘ │
+ *           │               │            │            │               │
+ *      ┌────┴────┐     ┌────┴────┐  ┌────┴────┐  ┌────┴────┐     ┌────┴────┐
+ *      │ rack_10 │     │ rack_11 │  │ rack_1b │  │ rack_10 │     │ rack_20 │
+ *      └─────────┘     └─────────┘  └─────────┘  └─────────┘     └─────────┘
+ *
+ */
+using region_id = named_type<ss::sstring, struct region_id_model_type>;
 using rack_id = named_type<ss::sstring, struct rack_id_model_type>;
 struct broker_properties
   : serde::

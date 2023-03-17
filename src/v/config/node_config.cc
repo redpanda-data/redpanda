@@ -45,6 +45,12 @@ node_config::node_config() noexcept
       "Rack identifier",
       {.visibility = visibility::user},
       std::nullopt)
+  , region(
+      *this,
+      "region",
+      "Region identifier",
+      {.visibility = visibility::user},
+      std::nullopt)
   , seed_servers(
       *this,
       "seed_servers",
@@ -191,6 +197,17 @@ void validate_multi_node_property_config(
                         to_string_view(*authn_method)));
                 }
             }
+        }
+    }
+    if (cfg.region().has_value()) {
+        // do not allow node to have region assigned without specifying rack_id
+        if (!cfg.rack().has_value()) {
+            errors.emplace(
+              "rack",
+              ssx::sformat(
+                "When node region is configured it must have rack assigned. "
+                "Currently only region {} is configured for the node.",
+                cfg.region()));
         }
     }
 }
