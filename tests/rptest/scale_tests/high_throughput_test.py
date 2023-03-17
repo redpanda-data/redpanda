@@ -31,6 +31,12 @@ from rptest.util import firewall_blocked
 from rptest.utils.node_operations import NodeDecommissionWaiter
 from rptest.utils.si_utils import nodes_report_cloud_segments
 
+KiB = 1024
+MiB = KiB * KiB
+GiB = MiB * KiB
+minutes = 60
+hours = 60 * minutes
+
 
 class HighThroughputTest(PreallocNodesTest):
     # Redpanda is responsible for bounding its own startup time via
@@ -41,7 +47,7 @@ class HighThroughputTest(PreallocNodesTest):
 
     LEADER_BALANCER_PERIOD_MS = 30000
     topic_name = "tiered_storage_topic"
-    small_segment_size = 4 * 1024
+    small_segment_size = 4 * KiB
     regular_segment_size = 512 * 1024 * 1024
     unscaled_data_bps = int(1.7 * 1024 * 1024 * 1024)
     unscaled_num_partitions = 1024
@@ -54,7 +60,7 @@ class HighThroughputTest(PreallocNodesTest):
     num_segments_per_partition = 1000
     unavailable_timeout = 60
     memory_per_broker_bytes = 96 * 1024 * 1024 * 1024  # 96 GiB
-    msg_size = 128 * 1024
+    msg_size = 128 * KiB
 
     def __init__(self, test_ctx, *args, **kwargs):
         self._ctx = test_ctx
@@ -97,7 +103,7 @@ class HighThroughputTest(PreallocNodesTest):
                 'partition_autobalancing_node_availability_timeout_sec':
                 self.unavailable_timeout,
                 'partition_autobalancing_mode': 'continuous',
-                'raft_learner_recovery_rate': 10 * 1024 * 1024 * 1024,
+                'raft_learner_recovery_rate': 10 * GiB,
             } | extra_cluster_props)
         topic_config = {
             # Use a tiny segment size so we can generate many cloud segments
@@ -283,8 +289,8 @@ class HighThroughputTest(PreallocNodesTest):
                 self.test_context,
                 self.redpanda,
                 self.topic_name,
-                msg_size=128 * 1024,
-                msg_count=5 * 1024 * 1024 * 1024 * 1024,
+                msg_size=128 * KiB,
+                msg_count=5_000_000_000_000,
                 rate_limit_bps=self.scaled_data_bps,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
@@ -461,7 +467,7 @@ class HighThroughputTest(PreallocNodesTest):
                 self.redpanda,
                 self.topic_name,
                 msg_size=self.msg_size,
-                msg_count=5 * 1024 * 1024 * 1024 * 1024,
+                msg_count=5_000_000_000_000,
                 rate_limit_bps=self.scaled_data_bps,
                 custom_node=[self.preallocated_nodes[0]])
             producer.start()
@@ -687,8 +693,8 @@ class HighThroughputTest(PreallocNodesTest):
             "subscriptions_per_topic": 1,
             "consumer_per_subscription": 2,
             "producers_per_topic": 2,
-            "producer_rate": int(produce_bps / (4 * 1024)),
-            "message_size": 4 * 1024,
+            "producer_rate": int(produce_bps / (4 * KiB)),
+            "message_size": 4 * KiB,
             "payload_file": "payload/payload-4Kb.data",
             "consumer_backlog_size_GB": 0,
             "test_duration_minutes": 3,
@@ -716,8 +722,8 @@ class HighThroughputTest(PreallocNodesTest):
 
         self.logger.info(f"Starting stage_tiered_storage_consuming")
 
-        segment_size = 128 * 1024 * 1024  # 128 MiB
-        consume_rate = 1 * 1024 * 1024 * 1024  # 1 GiB/s
+        segment_size = 128 * MiB  # 128 MiB
+        consume_rate = 1 * GiB  # 1 GiB/s
 
         # create a new topic with low local retention.
         config = {
@@ -728,7 +734,7 @@ class HighThroughputTest(PreallocNodesTest):
             'partition_autobalancing_node_availability_timeout_sec':
             self.unavailable_timeout,
             'partition_autobalancing_mode': 'continuous',
-            'raft_learner_recovery_rate': 10 * 1024 * 1024 * 1024,
+            'raft_learner_recovery_rate': 10 * GiB,
         }
         self.rpk.create_topic(self.topic_name,
                               partitions=self.scaled_num_partitions,
