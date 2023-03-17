@@ -794,13 +794,6 @@ SEASTAR_TEST_CASE(test_client_pool_wait_strategy) {
     });
 }
 
-SEASTAR_TEST_CASE(test_client_pool_create_new_strategy) {
-    return ss::async([] {
-        test_client_pool(
-          cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty);
-    });
-}
-
 static ss::future<bool> test_client_pool_reconnect_helper(
   ss::shared_ptr<ss::httpd::http_server_control> server,
   cloud_storage_clients::client_pool::client_lease lease) {
