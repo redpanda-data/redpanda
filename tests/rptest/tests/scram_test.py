@@ -23,17 +23,12 @@ from rptest.clients.python_librdkafka import PythonLibrdkafka
 from rptest.services.admin import Admin
 from rptest.services.redpanda import SecurityConfig, SaslCredentials, SecurityConfig
 from rptest.util import expect_http_error
+from rptest.utils.utf8 import CONTROL_CHARS, CONTROL_CHARS_MAP
 
 
-class ScramTest(RedpandaTest):
-    def __init__(self, test_context):
-        security = SecurityConfig()
-        security.enable_sasl = True
-        super(ScramTest,
-              self).__init__(test_context,
-                             num_brokers=3,
-                             security=security,
-                             extra_node_conf={'developer_mode': True})
+class BaseScramTest(RedpandaTest):
+    def __init__(self, test_context, **kwargs):
+        super(BaseScramTest, self).__init__(test_context, **kwargs)
 
     def update_user(self, username):
         def gen(length):
@@ -67,12 +62,18 @@ class ScramTest(RedpandaTest):
         assert res.status_code == 200
         return res.json()
 
-    def create_user(self, username, algorithm):
+    def create_user(self,
+                    username,
+                    algorithm,
+                    password=None,
+                    expected_status_code=200,
+                    err_msg=None):
         def gen(length):
             return "".join(
                 random.choice(string.ascii_letters) for _ in range(length))
 
-        password = gen(15)
+        if password is None:
+            password = gen(15)
 
         controller = self.redpanda.nodes[0]
         url = f"http://{controller.account.hostname}:9644/v1/security/users"
@@ -81,8 +82,13 @@ class ScramTest(RedpandaTest):
             password=password,
             algorithm=algorithm,
         )
+        self.logger.debug(f"User Creation Arguments: {data}")
         res = requests.post(url, json=data)
-        assert res.status_code == 200
+
+        assert res.status_code == expected_status_code
+
+        if err_msg is not None:
+            assert res.json()['message'] == err_msg
 
         return password
 
@@ -93,6 +99,17 @@ class ScramTest(RedpandaTest):
                                 username=username,
                                 password=password,
                                 algorithm=algorithm)
+
+
+class ScramTest(BaseScramTest):
+    def __init__(self, test_context):
+        security = SecurityConfig()
+        security.enable_sasl = True
+        super(ScramTest,
+              self).__init__(test_context,
+                             num_brokers=3,
+                             security=security,
+                             extra_node_conf={'developer_mode': True})
 
     @cluster(num_nodes=3)
     @parametrize(alternate_listener=False)
@@ -389,3 +406,70 @@ class ScramBootstrapUserTest(RedpandaTest):
         # by other means.
         self.redpanda.restart_nodes(self.redpanda.nodes)
         admin.list_users()
+
+
+class InvalidNewUserStrings(BaseScramTest):
+    """
+    Tests used to validate that strings with control characters are rejected
+    when attempting to create users
+    """
+    def __init__(self, test_context):
+        security = SecurityConfig()
+        security.enable_sasl = False
+        super(InvalidNewUserStrings,
+              self).__init__(test_context,
+                             num_brokers=3,
+                             security=security,
+                             extra_node_conf={'developer_mode': True})
+
+    @staticmethod
+    def generate_string_with_control_character(length: int):
+        rv = ''.join(
+            random.choices(string.ascii_letters + CONTROL_CHARS, k=length))
+        if not any(char in rv for char in CONTROL_CHARS):
+            rv = ''.join(
+                random.choices(string.ascii_letters + CONTROL_CHARS, k=length))
+        return rv
+
+    @cluster(num_nodes=3)
+    def test_invalid_user_name(self):
+        """
+        Validates that usernames that contain control characters are properly rejected
+        """
+        username = self.generate_string_with_control_character(15)
+
+        self.create_user(
+            username=username,
+            algorithm='SCRAM-SHA-256',
+            expected_status_code=400,
+            err_msg=
+            f'Parameter contained invalid control characters: {username.translate(CONTROL_CHARS_MAP)}'
+        )
+
+    @cluster(num_nodes=3)
+    def test_invalid_alg(self):
+        """
+        Validates that algorithms that contain control characters are properly rejected
+        """
+        algorithm = self.generate_string_with_control_character(10)
+
+        self.create_user(
+            username="test",
+            algorithm=algorithm,
+            expected_status_code=400,
+            err_msg=
+            f'Parameter contained invalid control characters: {algorithm.translate(CONTROL_CHARS_MAP)}'
+        )
+
+    @cluster(num_nodes=3)
+    def test_invalid_password(self):
+        """
+        Validates that passwords that contain control characters are properly rejected
+        """
+        password = self.generate_string_with_control_character(15)
+        self.create_user(
+            username="test",
+            algorithm="SCRAM-SHA-256",
+            password=password,
+            expected_status_code=400,
+            err_msg='Parameter contained invalid control characters: PASSWORD')
