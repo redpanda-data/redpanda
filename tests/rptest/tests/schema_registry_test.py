@@ -1321,8 +1321,7 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         check_subjects(list(subjects.keys()))
 
         self.logger.debug("Restart the schema registry")
-        result_raw = admin.redpanda_services_restart(
-            rp_service='schema-registry')
+        result_raw = admin.restart_service(rp_service='schema-registry')
         check_service_restart(self.redpanda, "Restarting the schema registry")
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok

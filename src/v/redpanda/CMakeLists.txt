@@ -12,8 +12,7 @@ set(swags
   cluster
   debug
   usage
-  shadow_indexing
-  redpanda_services_restart)
+  shadow_indexing)
 
 set(swag_files)
 foreach(swag ${swags})
