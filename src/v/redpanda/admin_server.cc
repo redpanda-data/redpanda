@@ -1055,70 +1055,6 @@ void admin_server::register_config_routes() {
           return ss::make_ready_future<ss::json::json_return_type>(
             ss::json::json_void());
       });
-
-    register_route<superuser>(
-      ss::httpd::config_json::blocked_reactor_notify_ms,
-      [this](std::unique_ptr<ss::httpd::request> req) {
-          ss::sstring timeout_str;
-          if (!ss::httpd::connection::url_decode(
-                req->param["timeout"], timeout_str)) {
-              throw ss::httpd::bad_param_exception(
-                fmt::format("Required parameter 'timeout' is not set"));
-          }
-
-          std::chrono::milliseconds ms;
-          try {
-              ms = std::clamp(
-                std::chrono::milliseconds(
-                  boost::lexical_cast<long long>(timeout_str)),
-                1ms,
-                _default_blocked_reactor_notify);
-          } catch (const boost::bad_lexical_cast&) {
-              throw ss::httpd::bad_param_exception(fmt::format(
-                "Invalid parameter 'timeout' value {{{}}}", timeout_str));
-          }
-
-          std::optional<std::chrono::seconds> expires;
-          static constexpr std::chrono::seconds max_expire_time_sec
-            = std::chrono::minutes(30);
-          if (auto e = req->get_query_param("expires"); !e.empty()) {
-              try {
-                  expires = std::clamp(
-                    std::chrono::seconds(boost::lexical_cast<long long>(e)),
-                    1s,
-                    max_expire_time_sec);
-              } catch (const boost::bad_lexical_cast&) {
-                  throw ss::httpd::bad_param_exception(
-                    fmt::format("Invalid parameter 'expires' value {{{}}}", e));
-              }
-          }
-
-          // This value is used when the expiration time is not set explicitly
-          static constexpr std::chrono::seconds default_expiration_time
-            = std::chrono::minutes(5);
-          auto curr = ss::engine().get_blocked_reactor_notify_ms();
-
-          vlog(
-            logger.info,
-            "Setting blocked_reactor_notify_ms from {} to {} for {} "
-            "(default={})",
-            curr,
-            ms.count(),
-            expires.value_or(default_expiration_time),
-            _default_blocked_reactor_notify);
-
-          return ss::smp::invoke_on_all(
-                   [ms] { ss::engine().update_blocked_reactor_notify_ms(ms); })
-            .then([] {
-                return ss::make_ready_future<ss::json::json_return_type>(
-                  ss::json::json_void());
-            })
-            .finally([this, expires] {
-                _blocked_reactor_notify_reset_timer.rearm(
-                  ss::steady_clock_type::now()
-                  + expires.value_or(default_expiration_time));
-            });
-      });
 }
 
 static json::validator make_cluster_config_validator() {
@@ -3543,6 +3479,66 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::httpd::request> req)
         -> ss::future<ss::json::json_return_type> {
           return cloud_storage_usage_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::blocked_reactor_notify_ms,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          std::chrono::milliseconds timeout;
+          if (auto e = req->get_query_param("timeout"); !e.empty()) {
+              try {
+                  timeout = std::clamp(
+                    std::chrono::milliseconds(
+                      boost::lexical_cast<long long>(e)),
+                    1ms,
+                    _default_blocked_reactor_notify);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid parameter 'timeout' value {{{}}}", e));
+              }
+          }
+
+          std::optional<std::chrono::seconds> expires;
+          static constexpr std::chrono::seconds max_expire_time_sec
+            = std::chrono::minutes(30);
+          if (auto e = req->get_query_param("expires"); !e.empty()) {
+              try {
+                  expires = std::clamp(
+                    std::chrono::seconds(boost::lexical_cast<long long>(e)),
+                    1s,
+                    max_expire_time_sec);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid parameter 'expires' value {{{}}}", e));
+              }
+          }
+
+          // This value is used when the expiration time is not set explicitly
+          static constexpr std::chrono::seconds default_expiration_time
+            = std::chrono::minutes(5);
+          auto curr = ss::engine().get_blocked_reactor_notify_ms();
+
+          vlog(
+            logger.info,
+            "Setting blocked_reactor_notify_ms from {} to {} for {} "
+            "(default={})",
+            curr,
+            timeout.count(),
+            expires.value_or(default_expiration_time),
+            _default_blocked_reactor_notify);
+
+          return ss::smp::invoke_on_all([timeout] {
+                     ss::engine().update_blocked_reactor_notify_ms(timeout);
+                 })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            })
+            .finally([this, expires] {
+                _blocked_reactor_notify_reset_timer.rearm(
+                  ss::steady_clock_type::now()
+                  + expires.value_or(default_expiration_time));
+            });
       });
 }
 ss::future<ss::json::json_return_type>
