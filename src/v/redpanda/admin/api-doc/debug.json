@@ -209,6 +209,40 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/partition/{namespace}/{topic}/{partition}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get partition state for current node",
+                    "type": "partition_state",
+                    "nickname": "get_partition_state",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "partition",
+                            "in": "path",
+                            "required": true,
+                            "type": "integer"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -451,6 +485,76 @@
                 "ms_since_last_heartbeat": {
                     "type": "long",
                     "description": "Ms since last heartbeat"
+                }
+            }
+        },
+        "partition_state": {
+            "id": "partition_state",
+            "description": "Partition state",
+            "properties": {
+                "start_offset": {
+                    "type": "long",
+                    "description": "Start offset"
+                },
+                "committed_offset": {
+                    "type": "long",
+                    "description": "Commmited offset"
+                },
+                "last_stable_offset": {
+                    "type": "long",
+                    "description": "Last stable offset"
+                },
+                "high_watermark": {
+                    "type": "long",
+                    "description": "High watermark"
+                },
+                "dirty_offset": {
+                    "type": "long",
+                    "description": "Dirty offset"
+                },
+                "latest_configuration_offset": {
+                    "type": "long",
+                    "description": "Get latest configuration offset"
+                },
+                "term": {
+                    "type": "long",
+                    "description": "Raft term"
+                },
+                "revision_id": {
+                    "type": "long",
+                    "description": "Revision id"
+                },
+                "log_size_bytes": {
+                    "type": "long",
+                    "description": "Log size bytes"
+                },
+                "non_log_disk_size_bytes": {
+                    "type": "long",
+                    "description": "Non log disk size bytes"
+                },
+                "is_read_replica_mode_enabled": {
+                    "type": "boolean",
+                    "description": "Is read replica mode enabled"
+                },
+                "read_replica_bucket": {
+                    "type": "string",
+                    "description": "Read replica bucket"
+                },
+                "is_remote_fetch_enabled": {
+                    "type": "boolean",
+                    "description": "Is remote fetch enabled"
+                },
+                "is_cloud_data_available": {
+                    "type": "boolean",
+                    "description": "Is cloud data available"
+                },
+                "start_cloud_offset": {
+                    "type": "long",
+                    "description": "Start cloud offset"
+                },
+                "last_cloud_offset": {
+                    "type": "long",
+                    "description": "Last cloud offset"
                 }
             }
         }
