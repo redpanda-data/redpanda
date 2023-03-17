@@ -416,13 +416,15 @@ static_assert(serde::has_serde_async_write<test_snapshot_header>);
 
 ss::future<> test_snapshot_header::serde_async_read(
   iobuf_parser& in, serde::header const h) {
-    ns_ = serde::read_nested<decltype(ns_)>(in, h._bytes_left_limit);
-    header_crc = serde::read_nested<decltype(header_crc)>(
+    ns_ = co_await serde::read_async_nested<decltype(ns_)>(
       in, h._bytes_left_limit);
-    metadata_crc = serde::read_nested<decltype(metadata_crc)>(
+    header_crc = co_await serde::read_async_nested<decltype(header_crc)>(
       in, h._bytes_left_limit);
-    version = serde::read_nested<decltype(version)>(in, h._bytes_left_limit);
-    metadata_size = serde::read_nested<decltype(metadata_size)>(
+    metadata_crc = co_await serde::read_async_nested<decltype(metadata_crc)>(
+      in, h._bytes_left_limit);
+    version = co_await serde::read_async_nested<decltype(version)>(
+      in, h._bytes_left_limit);
+    metadata_size = co_await serde::read_async_nested<decltype(metadata_size)>(
       in, h._bytes_left_limit);
 
     vassert(metadata_size >= 0, "Invalid metadata size {}", metadata_size);
@@ -433,41 +435,53 @@ ss::future<> test_snapshot_header::serde_async_read(
     crc.extend(ss::cpu_to_le(metadata_size));
 
     if (header_crc != crc.value()) {
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
+        throw std::runtime_error(fmt::format(
           "Corrupt snapshot. Failed to verify header crc: {} != "
           "{}: path?",
           crc.value(),
-          header_crc)));
+          header_crc));
     }
-
-    return ss::make_ready_future<>();
 }
 
 ss::future<> test_snapshot_header::serde_async_write(iobuf& out) const {
-    serde::write(out, ns_);
-    serde::write(out, header_crc);
-    serde::write(out, metadata_crc);
-    serde::write(out, version);
-    serde::write(out, metadata_size);
-    return ss::make_ready_future<>();
+    co_await serde::write_async(out, ns_);
+    co_await serde::write_async(out, header_crc);
+    co_await serde::write_async(out, metadata_crc);
+    co_await serde::write_async(out, version);
+    co_await serde::write_async(out, metadata_size);
 }
 
 SEASTAR_THREAD_TEST_CASE(snapshot_test) {
-    auto b = iobuf();
-    auto write_future = serde::write_async(
-      b,
-      test_snapshot_header{
-        .header_crc = 1, .metadata_crc = 2, .version = 3, .metadata_size = 4});
-    write_future.wait();
-    auto parser = iobuf_parser{std::move(b)};
-    auto read_future = serde::read_async<test_snapshot_header>(parser);
-    read_future.wait();
-    BOOST_CHECK(read_future.failed());
-    try {
-        std::rethrow_exception(read_future.get_exception());
-    } catch (std::exception const& e) {
+    {
+        auto obj = test_snapshot_header{
+          .metadata_crc = 2, .version = 3, .metadata_size = 4};
+        crc::crc32c header_crc;
+        header_crc.extend(ss::cpu_to_le(obj.metadata_crc));
+        header_crc.extend(ss::cpu_to_le(obj.version));
+        header_crc.extend(ss::cpu_to_le(obj.metadata_size));
+        obj.header_crc = header_crc.value();
+
+        auto b = iobuf();
+        serde::write_async(b, obj).get();
+
+        auto parser = iobuf_parser{std::move(b)};
         BOOST_CHECK(
-          std::string_view{e.what()}.starts_with("Corrupt snapshot."));
+          obj == serde::read_async<test_snapshot_header>(parser).get());
+    }
+
+    {
+        auto obj_with_bad_crc = test_snapshot_header{
+          .header_crc = 1, .metadata_crc = 2, .version = 3, .metadata_size = 4};
+        auto b = iobuf();
+        serde::write_async(b, obj_with_bad_crc).get();
+
+        auto parser = iobuf_parser{std::move(b)};
+        try {
+            serde::read_async<test_snapshot_header>(parser).get();
+        } catch (std::exception const& e) {
+            BOOST_CHECK(
+              std::string_view{e.what()}.starts_with("Corrupt snapshot."));
+        }
     }
 }
 
@@ -966,4 +980,69 @@ SEASTAR_THREAD_TEST_CASE(no_default_ctor_vector_test) {
     BOOST_CHECK_EQUAL(
       serde_input(std::vector<no_default_ctor>({no_default_ctor(37)})).at(0).x,
       37);
+}
+
+struct async_checksummed
+  : public serde::checksum_envelope<
+      async_checksummed,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    test_msg0 msg;
+    ss::sstring str;
+
+    bool operator==(const async_checksummed&) const = default;
+
+    ss::future<> serde_async_read(iobuf_parser& in, serde::header const h) {
+        msg = co_await serde::read_async_nested<decltype(msg)>(
+          in, h._bytes_left_limit);
+        str = co_await serde::read_async_nested<decltype(str)>(
+          in, h._bytes_left_limit);
+    }
+
+    ss::future<> serde_async_write(iobuf& out) const {
+        co_await serde::write_async(out, msg);
+        co_await serde::write_async(out, str);
+    }
+};
+
+static_assert(serde::is_envelope<async_checksummed>);
+static_assert(serde::is_checksum_envelope<async_checksummed>);
+static_assert(serde::has_serde_async_read<async_checksummed>);
+static_assert(serde::has_serde_async_write<async_checksummed>);
+
+SEASTAR_THREAD_TEST_CASE(test_async_checksummed) {
+    auto obj = async_checksummed{
+        .msg = test_msg0{
+            ._i = 12,
+            ._j = 34,
+        },
+        .str = "hello",
+    };
+
+    {
+        auto b = iobuf{};
+        serde::write_async(b, obj).get();
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK(obj == serde::read_async<async_checksummed>(parser).get());
+    }
+
+    {
+        auto b = iobuf{};
+        serde::write_async(b, obj).get();
+
+        // corrupt the buffer
+        BOOST_REQUIRE(b.size_bytes() > 0);
+        auto& last_frag = *b.rbegin();
+        BOOST_REQUIRE(last_frag.size() > 0);
+        last_frag.get_write()[last_frag.size() - 1] += 1;
+
+        auto parser = iobuf_parser{std::move(b)};
+        BOOST_CHECK_EXCEPTION(
+          serde::read_async<async_checksummed>(parser).get(),
+          serde::serde_exception,
+          [](const serde::serde_exception& ex) {
+              return std::string_view{ex.what()}.find("bad checksum")
+                     != std::string_view::npos;
+          });
+    }
 }
