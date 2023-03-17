@@ -431,7 +431,7 @@ class HighThroughputTest(PreallocNodesTest):
 
     def stage_block_node_traffic(self):
         node, node_id, node_str = self.get_node(0)
-        self.logger.info("Isolating node {node_str}")
+        self.logger.info(f"Isolating node {node_str}")
         with FailureInjector(self.redpanda) as fi:
             fi.inject_failure(FailureSpec(FailureSpec.FAILURE_ISOLATE, node))
             try:
