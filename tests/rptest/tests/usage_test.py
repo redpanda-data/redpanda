@@ -42,8 +42,31 @@ class UsageTest(RedpandaTest):
         self._admin = Admin(self.redpanda)
 
     def _get_all_usage(self, include_open=True):
-        return flat_map(lambda x: self._admin.get_usage(x, include_open),
-                        self.redpanda.nodes)
+        """
+        Performs an additional check that results are correctly ordered
+        """
+        def validate(node_response):
+            prev_begin = datetime.now()
+            prev_end = datetime.now()
+            for e in node_response:
+                begin = datetime.fromtimestamp(e['begin_timestamp'])
+                if e['open'] is True:
+                    # Open windows have a value of 0 for end timestamp
+                    prev_begin = begin
+                    continue
+                end = datetime.fromtimestamp(e['end_timestamp'])
+                assert begin < end, f"Begin: {begin}, End: {end}"
+                assert begin < prev_begin, f"Begin: {begin}, PrevBegin: {prev_begin}"
+                assert end < prev_end, f"End: {end}, PrevEnd: {prev_end}"
+                prev_begin = begin
+                prev_end = end
+
+            return node_response
+
+        # validate() checks results are ordered newest to oldest
+        return flat_map(
+            lambda x: validate(self._admin.get_usage(x, include_open)),
+            self.redpanda.nodes)
 
     def _calculate_total_usage(self, results=None):
         # Total number of ingress/egress bytes across entire cluster
