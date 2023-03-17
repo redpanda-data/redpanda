@@ -175,6 +175,42 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/restart_service",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Restart a redpanda service",
+                    "type": "void",
+                    "nickname": "restart_service",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                        "name": "service",
+                        "in": "query",
+                        "required": true,
+                        "type": "string"
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Restart success"
+                        },
+                        "400": {
+                            "description": "Service name is required"
+                        },
+                        "404": {
+                            "description": "Service not found"
+                        },
+                        "500": {
+                            "description": "Internal Server error"
+                        }
+                    }
+                }
+            ]
         }
     ],
     "models": {

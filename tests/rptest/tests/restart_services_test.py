@@ -49,21 +49,22 @@ class RestartServicesTest(RedpandaTest):
         # Failure checks
         self.logger.debug("Check restart with no service name")
         try:
-            admin.redpanda_services_restart()
+            admin.restart_service()
+            assert False
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex)
             assert ex.response.status_code == requests.codes.bad_request
 
         self.logger.debug("Check restart with invalid service name")
         try:
-            admin.redpanda_services_restart(rp_service='foobar')
+            admin.restart_service(rp_service='foobar')
+            assert False
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex)
             assert ex.response.status_code == requests.codes.not_found
 
         self.logger.debug("Check schema registry restart")
-        result_raw = admin.redpanda_services_restart(
-            rp_service='schema-registry')
+        result_raw = admin.restart_service(rp_service='schema-registry')
         check_service_restart(self.redpanda, "Restarting the schema registry")
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
