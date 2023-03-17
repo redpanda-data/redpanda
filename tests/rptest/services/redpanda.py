@@ -2797,3 +2797,36 @@ class RedpandaService(Service):
 
         # Fall through, match on all nodes
         return True
+
+    def controller_start_offset(self, node):
+        metrics = list(self.metrics(node))
+        for family in metrics:
+            if family.name == 'vectorized_cluster_partition_start_offset':
+                for s in family.samples:
+                    if s.labels['namespace'] == 'redpanda' and s.labels[
+                            'topic'] == 'controller':
+                        return int(s.value)
+        return 0
+
+    def wait_for_controller_snapshot(self,
+                                     node,
+                                     prev_mtime=0,
+                                     prev_start_offset=0):
+        def check():
+            storage = self.node_storage(node)
+            controller = storage.partitions('redpanda', 'controller')
+            assert len(controller) == 1
+            controller = controller[0]
+
+            mtime = 0
+            if 'snapshot' in controller.files:
+                mtime = controller.get_mtime('snapshot')
+
+            so = self.controller_start_offset(node)
+            self.logger.info(
+                f"node {node.account.hostname}: "
+                f"controller start offset: {so}, snapshot mtime: {mtime}")
+
+            return (mtime > prev_mtime and so > prev_start_offset, (mtime, so))
+
+        return wait_until_result(check, timeout_sec=30, backoff_sec=1)
