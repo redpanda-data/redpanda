@@ -117,6 +117,5 @@ require (
 
 replace (
 	github.com/pkg/sftp => github.com/pkg/sftp v1.13.5
-	github.com/redpanda-data/redpanda/src/go/rpk => ../rpk
 	golang.org/x/net => golang.org/x/net v0.5.0
 )
