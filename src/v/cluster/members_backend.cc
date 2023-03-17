@@ -261,7 +261,7 @@ void members_backend::reallocations_for_even_partition_count(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
     size_t prev_reallocations_count = meta.partition_reallocations.size();
     calculate_reallocations_batch(meta, domain);
-    auto current_error = calculate_unevenness_error(domain);
+    auto current_error = calculate_unevenness_error(meta, domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
     const auto min_improvement
       = std::max<size_t>(
@@ -467,14 +467,28 @@ size_t members_backend::calculate_total_replicas(
  **/
 members_backend::unevenness_error_info
 members_backend::calculate_unevenness_error(
-  partition_allocation_domain domain) const {
+  const update_meta& update, partition_allocation_domain domain) const {
     static const std::vector<partition_allocation_domain> domains{
       partition_allocation_domains::consumer_offsets,
       partition_allocation_domains::common};
 
     const auto node_cnt = _allocator.local().state().available_nodes();
 
-    const auto node_replicas = calculate_replicas_per_node(domain);
+    auto node_replicas = calculate_replicas_per_node(domain);
+    /**
+     * adjust per node replicas with the replicas that are going to be removed
+     * from the node after successful reallocation
+     */
+    for (const auto& r : update.partition_reallocations) {
+        if (r.allocation_units) {
+            for (const auto& to_remove : r.replicas_to_remove) {
+                auto it = node_replicas.find(to_remove);
+                if (it != node_replicas.end()) {
+                    it->second.allocated_replicas--;
+                }
+            }
+        }
+    }
     const auto total_replicas = calculate_total_replicas(node_replicas);
 
     if (total_replicas == 0) {
