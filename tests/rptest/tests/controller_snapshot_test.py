@@ -28,39 +28,6 @@ class ControllerSnapshotTest(RedpandaTest):
         # start the nodes manually
         pass
 
-    def _controller_start_offset(self, node):
-        metrics = list(self.redpanda.metrics(node))
-        for family in metrics:
-            if family.name == 'vectorized_cluster_partition_start_offset':
-                for s in family.samples:
-                    if s.labels['namespace'] == 'redpanda' and s.labels[
-                            'topic'] == 'controller':
-                        return int(s.value)
-        return 0
-
-    def _wait_for_controller_snapshot(self,
-                                      node,
-                                      prev_mtime=0,
-                                      prev_start_offset=0):
-        def check():
-            storage = self.redpanda.node_storage(node)
-            controller = storage.partitions('redpanda', 'controller')
-            assert len(controller) == 1
-            controller = controller[0]
-
-            mtime = 0
-            if 'snapshot' in controller.files:
-                mtime = controller.get_mtime('snapshot')
-
-            so = self._controller_start_offset(node)
-            self.logger.info(
-                f"node {node.account.hostname}: "
-                f"controller start offset: {so}, snapshot mtime: {mtime}")
-
-            return (mtime > prev_mtime and so > prev_start_offset, (mtime, so))
-
-        return wait_until_result(check, timeout_sec=30, backoff_sec=1)
-
     @cluster(num_nodes=3)
     def test_snapshotting_policy(self):
         """
@@ -68,16 +35,16 @@ class ControllerSnapshotTest(RedpandaTest):
         """
         self.redpanda.start()
         node = self.redpanda.nodes[0]
-        assert self._controller_start_offset(node) == 0
+        assert self.redpanda.controller_start_offset(node) == 0
 
         admin = Admin(self.redpanda)
         admin.put_feature("controller_snapshots", {"state": "active"})
 
         # first snapshot will be triggered by the feature_update command
-        (mtime1, start_offset1) = self._wait_for_controller_snapshot(node)
+        (mtime1,
+         start_offset1) = self.redpanda.wait_for_controller_snapshot(node)
 
         # second snapshot will be triggered by the topic creation
         RpkTool(self.redpanda).create_topic('test')
-        self._wait_for_controller_snapshot(node,
-                                           prev_mtime=mtime1,
-                                           prev_start_offset=start_offset1)
+        self.redpanda.wait_for_controller_snapshot(
+            node, prev_mtime=mtime1, prev_start_offset=start_offset1)
