@@ -677,11 +677,11 @@ class NodesDecommissioningTest(EndToEndTest):
 
         survivor_node = self._not_decommissioned_node(node_id)
 
+        self._set_recovery_rate(1)
         for i in range(1, 10):
-            self.logger.info(f"decommissioning node: {node_id}")
             # set recovery rate to small value to prevent node
             # from finishing decommission operation
-            self._set_recovery_rate(1)
+            self.logger.info(f"decommissioning node: {node_id}")
             self._decommission(node_id)
             wait_until(lambda: self._partitions_moving(node=survivor_node) or
                        self._node_removed(node_id, survivor_node),
@@ -691,8 +691,8 @@ class NodesDecommissioningTest(EndToEndTest):
                 break
             self.logger.info(f"recommissioning node: {node_id}", )
             self._recommission(node_id)
-            self._set_recovery_rate(100 * 1024 * 1024)
 
+        self._set_recovery_rate(100 * 1024 * 1024)
         if not self._node_removed(node_id, survivor_node):
             # finally decommission node
             self.logger.info(f"decommissioning node: {node_id}", )
