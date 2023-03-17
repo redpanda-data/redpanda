@@ -164,7 +164,7 @@ private:
     ss::future<bool> do_materialize_txrange();
 
     /// Load segment index from file (if available)
-    ss::future<> maybe_materialize_index();
+    ss::future<bool> maybe_materialize_index();
 
     ss::gate _gate;
     remote& _api;
@@ -312,6 +312,69 @@ private:
     /// Units for limiting concurrently-instantiated readers, they belong
     /// to materialized_segments.
     ssx::semaphore_units _units;
+};
+
+struct hydration_request {
+    enum class kind {
+        segment = 0,
+        tx = 1,
+        index = 2,
+    };
+
+    using hydrate_action_t = ss::noncopyable_function<ss::future<>()>;
+
+    using materialize_action_t = ss::noncopyable_function<ss::future<bool>()>;
+
+    std::filesystem::path path;
+    cache_element_status current_status;
+    bool was_cached{false};
+
+    hydrate_action_t hydrate_action;
+    materialize_action_t materialize_action;
+
+    kind path_kind;
+};
+
+std::ostream& operator<<(std::ostream&, hydration_request::kind);
+
+struct hydration_loop_state {
+    using hydrate_action_t = hydration_request::hydrate_action_t;
+    using materialize_action_t = hydration_request::materialize_action_t;
+
+    explicit hydration_loop_state(
+      cache& c, remote_segment_path root, retry_chain_logger& ctxlog);
+
+    // Add request for hydration for a path. The actions supplied are used to
+    // hydrate and materialize the path.
+    void add_request(
+      const std::filesystem::path& p,
+      hydrate_action_t h,
+      materialize_action_t m,
+      hydration_request::kind path_kind);
+
+    ss::future<> update_current_path_states();
+
+    ss::future<bool> is_cache_thrashing();
+
+    // Hydrate all registered paths. If any path is in progress an assertion is
+    // triggered. If any path is already available it will be skipped.
+    ss::future<> hydrate(size_t wait_list_size);
+
+    // Call materialize actions for all registered paths. Called after
+    // hydration. If there was an exception thrown during hydration,
+    // materialization is skipped.
+    ss::future<> materialize();
+
+    // Returns the last error seen during hydration. Reset during each hydration
+    // request.
+    std::exception_ptr current_error();
+
+private:
+    cache& _cache;
+    remote_segment_path _root;
+    retry_chain_logger& _ctxlog;
+    std::vector<hydration_request> _states;
+    std::exception_ptr _current_error;
 };
 
 } // namespace cloud_storage
