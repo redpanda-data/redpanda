@@ -24,7 +24,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.restart_services_test import check_service_restart
+from rptest.util import search_logs_with_timeout
 from rptest.services.admin import Admin
 from rptest.services.redpanda import ResourceSettings, SecurityConfig, LoggingConfig, PandaproxyConfig, SchemaRegistryConfig
 from rptest.tests.pandaproxy_test import User, PandaProxyTLSProvider
@@ -1322,7 +1322,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
 
         self.logger.debug("Restart the schema registry")
         result_raw = admin.restart_service(rp_service='schema-registry')
-        check_service_restart(self.redpanda, "Restarting the schema registry")
+        search_logs_with_timeout(self.redpanda,
+                                 "Restarting the schema registry")
         self.logger.debug(result_raw)
         assert result_raw.status_code == requests.codes.ok
 
