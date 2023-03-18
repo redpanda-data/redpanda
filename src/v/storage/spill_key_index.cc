@@ -25,6 +25,8 @@
 #include <seastar/core/future-util.hh>
 
 #include <fmt/ostream.h>
+
+#include <exception>
 using namespace std::chrono_literals;
 
 namespace storage::internal {
@@ -339,7 +341,7 @@ ss::future<> spill_key_index::close() {
         // index can detect invalid content and regenerate.
         _midx.clear();
 
-        throw ex;
+        std::rethrow_exception(ex);
     }
 }
 
