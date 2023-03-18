@@ -160,6 +160,7 @@ public:
     ss::future<ss::rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
+    ss::future<> remove_persistent_state(std::filesystem::path);
     ss::future<> remove_persistent_state();
 
     generation_id get_generation_id() const { return _generation_id; }

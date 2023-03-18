@@ -97,6 +97,22 @@ ss::future<> segment::close() {
     co_await remove_tombstones();
 }
 
+ss::future<> segment::remove_persistent_state(std::filesystem::path path) {
+    try {
+        co_await ss::remove_file(path.c_str());
+        vlog(stlog.debug, "removed: {}", path);
+    } catch (const std::filesystem::filesystem_error& e) {
+        if (e.code() == std::errc::no_such_file_or_directory) {
+            vlog(stlog.trace, "error removing {}: {}", path, e);
+            // ignore, we want to make deletes idempotent
+            co_return;
+        }
+        vlog(stlog.info, "error removing {}: {}", path, e);
+    } catch (const std::exception& e) {
+        vlog(stlog.info, "error removing {}: {}", path, e);
+    }
+}
+
 ss::future<> segment::remove_persistent_state() {
     vassert(is_closed(), "Cannot clear state from unclosed segment");
 
@@ -107,25 +123,10 @@ ss::future<> segment::remove_persistent_state() {
     if (is_compacted_segment()) {
         rm.push_back(reader().path().to_compacted_index());
     }
-    vlog(stlog.debug, "removing: {}", rm);
-    return ss::do_with(
-      std::move(rm), [](const std::vector<std::filesystem::path>& to_remove) {
-          return ss::do_for_each(
-            to_remove, [](const std::filesystem::path& name) {
-                return ss::remove_file(name.c_str())
-                  .handle_exception_type(
-                    [name](std::filesystem::filesystem_error& e) {
-                        if (e.code() == std::errc::no_such_file_or_directory) {
-                            // ignore, we want to make deletes idempotent
-                            return;
-                        }
-                        vlog(stlog.info, "error removing {}: {}", name, e);
-                    })
-                  .handle_exception([name](std::exception_ptr e) {
-                      vlog(stlog.info, "error removing {}: {}", name, e);
-                  });
-            });
-      });
+
+    co_await ss::parallel_for_each(rm, [this](std::filesystem::path path) {
+        return remove_persistent_state(std::move(path));
+    });
 }
 
 ss::future<> segment::remove_tombstones() {
