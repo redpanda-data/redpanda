@@ -791,7 +791,6 @@ ss::future<> tm_stm::apply(model::record_batch b) {
           tx.etag,
           _insync_term);
         _cache.local().erase_mem(tx.id);
-        _tx_locks.erase(tx.id);
         _pid_tx_id.erase(tx.pid);
         return ss::now();
     }
