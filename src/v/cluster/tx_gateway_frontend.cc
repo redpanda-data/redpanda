@@ -1951,11 +1951,12 @@ tx_gateway_frontend::recommit_tm_tx(
               rm.ntp, tx.pid, tx.tx_seq, timeout));
         }
         auto ok = true;
-        auto fail = false;
+        auto failed = false;
+        auto rejected = false;
         auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
         for (const auto& r : grs) {
             if (r.ec == tx_errc::request_rejected) {
-                fail = true;
+                rejected = true;
                 vlog(
                   txlog.warn,
                   "commit_tx on consumer groups tx:{} etag:{} pid:{} tx_seq:{} "
@@ -1967,6 +1968,7 @@ tx_gateway_frontend::recommit_tm_tx(
                   tx.status,
                   expected_term);
             } else if (r.ec != tx_errc::none) {
+                failed = true;
                 vlog(
                   txlog.trace,
                   "commit_tx on consumer groups tx:{} etag:{} pid:{} tx_seq:{} "
@@ -1984,7 +1986,7 @@ tx_gateway_frontend::recommit_tm_tx(
         auto crs = co_await when_all_succeed(cfs.begin(), cfs.end());
         for (const auto& r : crs) {
             if (r.ec == tx_errc::request_rejected) {
-                fail = true;
+                rejected = true;
                 vlog(
                   txlog.warn,
                   "commit_tx on data partition tx:{} etag:{} pid:{} tx_seq:{} "
@@ -1996,6 +1998,7 @@ tx_gateway_frontend::recommit_tm_tx(
                   tx.status,
                   expected_term);
             } else if (r.ec != tx_errc::none) {
+                failed = true;
                 vlog(
                   txlog.trace,
                   "commit_tx on data partition tx:{} etag:{} pid:{} "
@@ -2010,15 +2013,28 @@ tx_gateway_frontend::recommit_tm_tx(
             }
             ok = ok && (r.ec == tx_errc::none);
         }
-        if (fail) {
-            tx = co_await remove_deleted_partitions_from_tx(
-              stm, expected_term, tx);
-            break;
-        }
         if (ok) {
             done = true;
             break;
         }
+        if (rejected && !failed) {
+            // per partition commits either passed or was rejected;
+            // no need to try deleting partition because we have a
+            // positive confirmation it exists
+            // request_rejected means *I have state* indicating this
+            // request won't be ever processed
+            vlog(
+              txlog.warn,
+              "remote commit of tx:{} etag:{} pid:{} tx_seq:{} in term:{} "
+              "is rejected",
+              tx.id,
+              tx.etag,
+              tx.pid,
+              tx.tx_seq,
+              expected_term);
+            co_return tx_errc::request_rejected;
+        }
+
         tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
         if (co_await sleep_abortable(delay_ms, _as)) {
             vlog(txlog.trace, "retrying re-commit pid:{}", tx.pid);
@@ -2066,10 +2082,11 @@ tx_gateway_frontend::reabort_tm_tx(
         auto prs = co_await when_all_succeed(pfs.begin(), pfs.end());
         auto grs = co_await when_all_succeed(gfs.begin(), gfs.end());
         auto ok = true;
-        auto fail = false;
+        auto failed = false;
+        auto rejected = false;
         for (const auto& r : prs) {
             if (r.ec == tx_errc::request_rejected) {
-                fail = true;
+                rejected = true;
                 vlog(
                   txlog.warn,
                   "abort_tx on data partition tx:{} etag:{} pid:{} "
@@ -2081,6 +2098,7 @@ tx_gateway_frontend::reabort_tm_tx(
                   tx.status,
                   expected_term);
             } else if (r.ec != tx_errc::none) {
+                failed = true;
                 vlog(
                   txlog.trace,
                   "abort_tx on data partition tx:{} etag:{} pid:{} "
@@ -2097,7 +2115,7 @@ tx_gateway_frontend::reabort_tm_tx(
         }
         for (const auto& r : grs) {
             if (r.ec == tx_errc::request_rejected) {
-                fail = true;
+                rejected = true;
                 vlog(
                   txlog.warn,
                   "abort_tx on consumer groups tx:{} etag:{} pid:{} "
@@ -2109,6 +2127,7 @@ tx_gateway_frontend::reabort_tm_tx(
                   tx.status,
                   expected_term);
             } else if (r.ec != tx_errc::none) {
+                failed = true;
                 vlog(
                   txlog.trace,
                   "abort_tx on consumer groups tx:{} etag:{} pid:{} "
@@ -2123,14 +2142,21 @@ tx_gateway_frontend::reabort_tm_tx(
             }
             ok = ok && (r.ec == tx_errc::none);
         }
-        if (fail) {
-            tx = co_await remove_deleted_partitions_from_tx(
-              stm, expected_term, tx);
-            break;
-        }
         if (ok) {
             done = true;
             break;
+        }
+        if (rejected && !failed) {
+            vlog(
+              txlog.warn,
+              "remote abort of tx:{} etag:{} pid:{} tx_seq:{} in term:{} "
+              "was rejected",
+              tx.id,
+              tx.etag,
+              tx.pid,
+              tx.tx_seq,
+              expected_term);
+            co_return tx_errc::request_rejected;
         }
         tx = co_await remove_deleted_partitions_from_tx(stm, expected_term, tx);
         if (!co_await sleep_abortable(delay_ms, _as)) {
@@ -2168,6 +2194,17 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::bump_etag(
         r1 = tx;
     }
     if (!r1.has_value()) {
+        // we invoke bump when we have the most up-to-date info
+        // so reject isn't possible
+        if (r1.error() == tx_errc::request_rejected) {
+            vlog(
+              txlog.error,
+              "got error {} on rolling previous tx.id={} with status={}",
+              r1.error(),
+              tx.id,
+              tx.status);
+            co_return tx_errc::invalid_txn_state;
+        }
         vlog(
           txlog.warn,
           "got error {} on rolling previous tx.id={} with status={}",
@@ -2209,13 +2246,17 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::forget_tx(
         r1 = tx;
     }
 
-    if (!r1.has_value()) {
+    // rolling forward is best effort it's ok to ignore if it can't
+    // happen; the reason by it's rejected (write from the future)
+    // will be aborted on its own via try_abort
+    if (!r1.has_value() && r1.error() != tx_errc::request_rejected) {
         vlog(
           txlog.warn,
           "got error {} on rolling previous tx.id={} with status={}",
           r1.error(),
           tx.id,
           tx.status);
+
         // until any decision is made it's ok to ask user retry
         co_return tx_errc::not_coordinator;
     }
@@ -2267,7 +2308,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
     }
 
     if (term == tx.etag) {
-        // rolling forward if tx is in transient state
+        // we have the most up-to-date info => reject can't happen
         co_return co_await bump_etag(term, stm, tx, timeout);
     }
 
@@ -2283,6 +2324,8 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
       tx.status == tm_transaction::tx_status::tombstone
       || tx.status == tm_transaction::tx_status::preparing
       || tx.status == tm_transaction::tx_status::killed) {
+        // tombstone & killed are terminal so we know that we're
+        // we have the most up-to-date info => reject can't happen
         co_return co_await bump_etag(term, stm, tx, timeout);
     }
 
@@ -2390,6 +2433,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
                 }
             }
         }
+        // retry & ongoing don't retry => reject isn't expected
         co_return co_await bump_etag(term, stm, old_tx, timeout);
     }
 
@@ -2463,6 +2507,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
                 old_tx = tx;
             }
         }
+        // we have the most up-to-date info => reject can't happen
         co_return co_await bump_etag(term, stm, old_tx, timeout);
     }
 
@@ -2518,6 +2563,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
                 old_tx = tx;
             }
         }
+        // we have the most up-to-date info => reject can't happen
         co_return co_await bump_etag(term, stm, old_tx, timeout);
     }
 
@@ -2543,7 +2589,8 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
             co_return co_await forget_tx(term, stm, tx, timeout);
         }
         // an old leader could have updated a tx after saving it so picking
-        // its version
+        // its version;
+        // we have the most up-to-date info => reject can't happen
         co_return co_await bump_etag(term, stm, old_tx, timeout);
     }
 
