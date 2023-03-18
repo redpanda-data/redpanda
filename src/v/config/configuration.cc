@@ -1884,7 +1884,20 @@ configuration::configuration()
       "Max time that will pass before we make an attempt to create a "
       "controller snapshot, after a new controller command appears",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      60s) {}
+      60s)
+  , legacy_permit_unsafe_log_operation(
+      *this,
+      "legacy_permit_unsafe_log_operation",
+      "Permits the use of strings that may induct log injection/modification",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      true)
+  , legacy_unsafe_log_warning_interval_sec(
+      *this,
+      "legacy_unsafe_log_warning_interval_sec",
+      "Interval, in seconds, of how often a message informing the operator "
+      "that unsafe strings are permitted",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      300s) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
