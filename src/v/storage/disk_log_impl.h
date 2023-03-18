@@ -135,7 +135,8 @@ private:
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
     find_compaction_range(const compaction_config&);
-    ss::future<> gc(compaction_config);
+
+    ss::future<size_t> gc(compaction_config, dry_run dry_run = dry_run::no);
 
     ss::future<> remove_empty_segments();
 
@@ -157,8 +158,8 @@ private:
     ss::future<> do_truncate_prefix(truncate_prefix_config);
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
-    ss::future<> garbage_collect_max_partition_size(compaction_config cfg);
-    ss::future<> garbage_collect_oldest_segments(compaction_config cfg);
+    std::optional<model::offset> size_retention_offset(compaction_config cfg);
+    std::optional<model::offset> time_retention_offset(compaction_config cfg);
 
     /*
      * when dry_run is requested then an estimate of the number of bytes that

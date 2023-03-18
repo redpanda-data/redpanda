@@ -380,38 +380,25 @@ ss::future<size_t> disk_log_impl::garbage_collect_segments(
     co_return removed;
 }
 
-ss::future<>
-disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
+std::optional<model::offset>
+disk_log_impl::size_retention_offset(compaction_config cfg) {
     if (!cfg.max_bytes.has_value()) {
-        co_return;
+        return std::nullopt;
     }
     auto max = cfg.max_bytes.value();
-    vlog(
-      gclog.debug,
-      "[{}] retention max bytes: {}, current partition size: {}",
-      config().ntp(),
-      max,
-      _probe.partition_size());
     if (_segs.empty() || _probe.partition_size() <= max) {
-        co_return;
+        return std::nullopt;
     }
-    model::offset max_offset = size_based_gc_max_offset(cfg.max_bytes.value());
-    co_await garbage_collect_segments(
-      cfg, max_offset, "gc[size_based_retention]", dry_run::no);
+    return size_based_gc_max_offset(cfg.max_bytes.value());
 }
 
-ss::future<>
-disk_log_impl::garbage_collect_oldest_segments(compaction_config cfg) {
-    vlog(
-      gclog.debug,
-      "[{}] time retention timestamp: {}, first segment max timestamp: {}",
-      config().ntp(),
-      cfg.eviction_time,
-      _segs.empty() ? model::timestamp::min()
-                    : _segs.front()->index().max_timestamp());
-    model::offset max_offset = time_based_gc_max_offset(cfg.eviction_time);
-    co_await garbage_collect_segments(
-      cfg, max_offset, "gc[time_based_retention]", dry_run::no);
+std::optional<model::offset>
+disk_log_impl::time_retention_offset(compaction_config cfg) {
+    const auto offset = time_based_gc_max_offset(cfg.eviction_time);
+    if (offset == model::offset{}) {
+        return std::nullopt;
+    }
+    return offset;
 }
 
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
@@ -813,7 +800,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
           cfg = apply_overrides(cfg);
           ss::future<> f = ss::now();
           if (config().is_collectable()) {
-              f = gc(cfg);
+              f = gc(cfg).discard_result();
           }
           if (config().is_compacted() && !_segs.empty()) {
               f = f.then([this, cfg] { return do_compact(cfg); });
@@ -823,7 +810,7 @@ ss::future<> disk_log_impl::compact(compaction_config cfg) {
       });
 }
 
-ss::future<> disk_log_impl::gc(compaction_config cfg) {
+ss::future<size_t> disk_log_impl::gc(compaction_config cfg, dry_run dry_run) {
     vassert(!_closed, "gc on closed log - {}", *this);
     vlog(
       gclog.trace,
@@ -835,10 +822,42 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
           gclog.trace,
           "[{}] skipped log deletion, exempt topic",
           config().ntp());
-        co_return;
+        co_return 0;
     }
-    co_await garbage_collect_max_partition_size(cfg);
-    co_await garbage_collect_oldest_segments(cfg);
+
+    /*
+     * kafka semantics is to remove data for either size or time based
+     * retention. so if we have both then we select the maximum offset.
+     */
+    const auto size_offset = size_retention_offset(cfg);
+    const auto time_offset = time_retention_offset(cfg);
+    const auto collect_at = std::max(size_offset, time_offset);
+
+    if (!collect_at.has_value()) {
+        vlog(
+          gclog.debug,
+          "[{}] skipping reclaim. neither time nor size retention policy "
+          "applies.",
+          config().ntp());
+        co_return 0;
+    }
+
+    vlog(
+      gclog.debug,
+      "[{}] reclaim at {} (size {} time {}) max bytes {} partition size {} "
+      "timestamp {} partition timestamp {}",
+      config().ntp(),
+      collect_at,
+      size_offset,
+      time_offset,
+      cfg.max_bytes,
+      _probe.partition_size(),
+      cfg.eviction_time,
+      _segs.empty() ? model::timestamp::min()
+                    : _segs.front()->index().max_timestamp());
+
+    co_return co_await garbage_collect_segments(
+      cfg, collect_at.value(), "gc[retention]", dry_run);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
