@@ -362,17 +362,22 @@ class HighThroughputTest(PreallocNodesTest):
                    timeout_sec=restart_timeout,
                    backoff_sec=1)
 
-    @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
+    @cluster(log_allow_list=NOS3_LOG_ALLOW_LIST)
     def test_disrupt_cloud_storage(self):
         """
         Make segments replicate to the cloud, then disrupt S3 connectivity
         and restore it
         """
+        initial_upload_timeout = 2 * minutes
+        # try to hydrate the first segment in each partition in 30 secs (1/4th of the timeout)
+        # to make them roll and begin hitting the cloud
+        segment_bytes = int(self.config.ingress_rate_scaled *
+                            initial_upload_timeout / 4 /
+                            self.config.partitions_max_scaled)
+        self.logger.info(f"Segment size: {segment_bytes}")
         self.setup_cluster(
-            # Segments should go into the cloud at a reasonable rate,
-            # that's why it is smaller than it should be
-            segment_bytes=int(self.config.segment_size_scaled / 2),
-            retention_local_bytes=2 * self.config.segment_size_scaled,
+            segment_bytes=segment_bytes,
+            retention_local_bytes=2 * segment_bytes,
         )
 
         try:
@@ -380,21 +385,37 @@ class HighThroughputTest(PreallocNodesTest):
                 self.test_context,
                 self.redpanda,
                 self.topic_name,
-                msg_size=128 * KiB,
+                msg_size=self.msg_size,
                 msg_count=5_000_000_000_000,
                 rate_limit_bps=self.config.ingress_rate_scaled,
                 custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: producer.produce_status.acked > 10000,
-                       timeout_sec=60,
-                       backoff_sec=1.0)
+            try:
+                producer.start()
+                wait_until(lambda: producer.produce_status.acked > 10000,
+                           timeout_sec=60,
+                           backoff_sec=1.0)
+                self.logger.info(
+                    f"Getting the first {self.config.partitions_max_scaled} segments into the cloud"
+                )
+                # wait until a segment from each partition hits the cloud
+                wait_until(lambda: nodes_report_cloud_segments(
+                    self.redpanda, self.config.partitions_max_scaled, self.
+                    logger),
+                           timeout_sec=initial_upload_timeout,
+                           backoff_sec=5)
+                producer.wait_for_offset_map()
 
-            # S3 up -> down -> up
-            self.stage_block_s3()
+                # S3 up -> down -> up
+                self.stage_block_s3()
 
+                # Exhaust cloud cache with multiple consumers
+                # reading at random offsets
+                self.stage_cloud_cache_thrash()
+
+            finally:
+                producer.stop()
+                producer.wait(timeout_sec=600)
         finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
             self.free_preallocated_nodes()
 
     def _cloud_storage_no_new_errors(self, redpanda, logger=None):
@@ -410,11 +431,11 @@ class HighThroughputTest(PreallocNodesTest):
             )
         return increase == 0
 
+    def _cloud_storage_log_segments_active(self):
+        return self.redpanda.metric_sum(
+            "vectorized_storage_log_log_segments_active")
+
     def stage_block_s3(self):
-        self.logger.info(f"Getting the first 100 segments into the cloud")
-        wait_until(lambda: nodes_report_cloud_segments(self.redpanda, 100),
-                   timeout_sec=120,
-                   backoff_sec=5)
         self.logger.info(f"Blocking S3 traffic for all nodes")
         self.last_num_errors = 0
         with firewall_blocked(self.redpanda.nodes, self.s3_port):
@@ -424,13 +445,24 @@ class HighThroughputTest(PreallocNodesTest):
                        timeout_sec=600,
                        backoff_sec=10)
             time.sleep(60)
-        # make sure nothing is crashed
+        # make sure nothing has crashed
         wait_until(self.redpanda.healthy, timeout_sec=60, backoff_sec=1)
         self.logger.info(f"Waiting for S3 errors to cease")
         wait_until(lambda: self._cloud_storage_no_new_errors(
             self.redpanda, self.logger),
                    timeout_sec=600,
                    backoff_sec=20)
+        # make sure log_segment_acitve drops at least by 30%
+        # as the result of restored cloud backup
+        max_active_segments = self._cloud_storage_log_segments_active()
+        target_active_segments = int(0.7 * max_active_segments)
+        self.logger.info(f"Waiting for active segments to decrease from "
+                         f"{max_active_segments} to {target_active_segments}")
+        wait_until(lambda: self._cloud_storage_log_segments_active() <=
+                   target_active_segments,
+                   timeout_sec=600,
+                   backoff_sec=20)
+        self.logger.info(f"Stage done")
 
     def stage_decommission_and_add(self):
         node, node_id, node_str = self.get_node(1)
@@ -483,48 +515,6 @@ class HighThroughputTest(PreallocNodesTest):
             backoff_sec=2)
         self.logger.info(f"{topic_partitions_on_node()} partitions moved")
 
-    @cluster(num_nodes=5, log_allow_list=NOS3_LOG_ALLOW_LIST)
-    def test_cloud_cache_thrash(self):
-        """
-        Try to exhaust cloud cache by reading at random offsets with many
-        consumers
-        """
-        segment_size = int(self.config.segment_size_scaled / 8)
-        self.setup_cluster(segment_bytes=segment_size,
-                           retention_local_bytes=2 * segment_size,
-                           extra_cluster_props={
-                               'cloud_storage_max_readers_per_shard': 256,
-                           })
-
-        try:
-            producer = KgoVerifierProducer(
-                self.test_context,
-                self.redpanda,
-                self.topic_name,
-                msg_size=self.msg_size,
-                msg_count=5_000_000_000_000,
-                rate_limit_bps=self.config.ingress_rate_scaled,
-                custom_node=[self.preallocated_nodes[0]])
-            producer.start()
-            wait_until(lambda: producer.produce_status.acked > 5000,
-                       timeout_sec=60,
-                       backoff_sec=1.0)
-            target_cloud_segments = 10 * self.config.partitions_max_scaled
-            wait_until(lambda: nodes_report_cloud_segments(
-                self.redpanda, target_cloud_segments),
-                       timeout_sec=600,
-                       backoff_sec=5)
-            producer.wait_for_offset_map()
-
-            # Exhaust cloud cache with multiple consumers
-            # reading at random offsets
-            self.stage_cloud_cache_thrash()
-
-        finally:
-            producer.stop()
-            producer.wait(timeout_sec=600)
-            self.free_preallocated_nodes()
-
     def stage_cloud_cache_thrash(self):
         self.logger.info(f"Starting consumers")
         consumer = KgoVerifierRandomConsumer(
@@ -533,7 +523,7 @@ class HighThroughputTest(PreallocNodesTest):
             self.topic_name,
             msg_size=self.msg_size,
             rand_read_msgs=1,
-            parallel=4,
+            parallel=16,
             nodes=[self.preallocated_nodes[0]],
             debug_logs=True,
         )
