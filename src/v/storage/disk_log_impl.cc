@@ -415,6 +415,7 @@ ss::future<> disk_log_impl::do_compact(
           segment->reader().filename(),
           result);
         if (result.did_compact()) {
+            segment->invalidate_compaction_index_size();
             _compaction_ratio.update(result.compaction_ratio());
             co_return;
         }
