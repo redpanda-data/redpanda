@@ -390,6 +390,9 @@ struct configuration final : public config_store {
     bounded_property<int64_t> node_isolation_heartbeat_timeout;
 
     property<std::chrono::seconds> controller_snapshot_max_age_sec;
+    // security controls
+    property<bool> legacy_permit_unsafe_log_operation;
+    property<std::chrono::seconds> legacy_unsafe_log_warning_interval_sec;
 
     configuration();
 
