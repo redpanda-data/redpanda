@@ -96,13 +96,48 @@ ss::future<> segment::close() {
     co_await do_close();
 
     if (is_tombstone()) {
-        auto size = co_await remove_persistent_state();
+        _removed_persistent_size = co_await remove_persistent_state();
         vlog(
           stlog.debug,
           "Removed {} bytes for tombstone segment {}",
-          size,
+          _removed_persistent_size.value(),
           *this);
     }
+}
+
+ss::future<size_t> segment::persistent_size() {
+    /*
+     * this segment has been fully removed, and we can report the total amount
+     * of bytes that were removed from disk.
+     */
+    if (_removed_persistent_size.has_value()) {
+        co_return _removed_persistent_size.value();
+    }
+
+    /*
+     * accumulate the size of the segment file and each index.
+     */
+    const auto segment_size = file_size();
+    auto total = segment_size + segment_index::estimate_size(segment_size);
+
+    /*
+     * lazy load and cache the compaction index size. we could track this
+     * continually at relevant segments event like open, roll, and compact.
+     * however, we pay for that stat() with no guarantee that the information
+     * will be used.
+     */
+    if (_compaction_index_size.has_value()) {
+        total += _compaction_index_size.value();
+    } else {
+        auto path = reader().path().to_compacted_index();
+        try {
+            _compaction_index_size = co_await ss::file_size(path.string());
+            total += _compaction_index_size.value();
+        } catch (...) {
+        }
+    }
+
+    co_return total;
 }
 
 ss::future<size_t>
