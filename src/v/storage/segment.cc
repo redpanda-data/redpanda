@@ -116,13 +116,16 @@ ss::future<> segment::remove_persistent_state(std::filesystem::path path) {
 ss::future<> segment::remove_persistent_state() {
     vassert(is_closed(), "Cannot clear state from unclosed segment");
 
-    std::vector<std::filesystem::path> rm;
-    rm.reserve(3);
-    rm.emplace_back(reader().filename().c_str());
-    rm.emplace_back(index().path().string());
-    if (is_compacted_segment()) {
-        rm.push_back(reader().path().to_compacted_index());
-    }
+    /*
+     * the compaction index is included in the removal list, even if the topic
+     * isn't compactible, because compaction can be enabled or disabled at
+     * runtime. if the index doesn't exist, it's silently ignored.
+     */
+    const auto rm = std::to_array<std::filesystem::path>({
+      reader().path(),
+      index().path(),
+      reader().path().to_compacted_index(),
+    });
 
     co_await ss::parallel_for_each(rm, [this](std::filesystem::path path) {
         return remove_persistent_state(std::move(path));
