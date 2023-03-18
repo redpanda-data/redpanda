@@ -364,12 +364,42 @@ private:
     /// \param candidate is an upload candidate
     /// \param segment_read_locks protects the underlying segment(s) from being
     ///        deleted while the upload is in flight.
-    /// \param source_rtc is a retry_chain_node of the caller, if it's set
+    /// \param stream is a stream to the segment used for the initial upload. If
+    /// the upload is retried, the segment will be read again.
+    /// \param source_rtc
+    /// is a retry_chain_node of the caller, if it's set
     ///        to nullopt own retry chain of the ntp_archiver is used
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_segment(
       upload_candidate candidate,
       std::vector<ss::rwlock::holder> segment_read_locks,
+      ss::input_stream<char> stream,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
+      = std::nullopt);
+
+    /// Holds a stream reference, and conditionally closes the stream if
+    /// possible. This structure is useful where a stream is passed to another
+    /// function by reference, which may or may not close the stream at the end.
+    /// This wrapper has a close method which tracks whether the wrapped stream
+    /// has been moved out, and if the stream is still held it can be closed.
+    struct stream_reference {
+        using stream_ref_t
+          = std::optional<std::reference_wrapper<ss::input_stream<char>>>;
+        stream_ref_t stream_ref;
+
+        /// Closes the wrapped stream if it has not been moved out
+        ///
+        /// \param result after close this result is returned
+        ss::future<cloud_storage::upload_result>
+        close_on_cleanup_with_res(cloud_storage::upload_result result);
+    };
+
+    /// Isolates segment upload and accepts a stream reference, so that if the
+    /// upload fails the exception can be handled in the caller and the stream
+    /// can be closed.
+    ss::future<cloud_storage::upload_result> do_upload_segment(
+      upload_candidate candidate,
+      stream_reference& stream_state,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
@@ -391,10 +421,23 @@ private:
     ss::future<std::optional<cloud_storage::offset_index>> make_segment_index(
       const upload_candidate& candidate,
       retry_chain_logger& ctxlog,
-      std::string_view index_path);
+      std::string_view index_path,
+      ss::input_stream<char> stream);
 
+    /// Isolates segment index upload and accepts a stream reference, so that if
+    /// the upload fails the exception can be handled in the caller and the
+    /// stream can be closed.
+    ss::future<cloud_storage::upload_result> do_upload_segment_index(
+      upload_candidate candidate,
+      stream_reference& stream_state,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
+      = std::nullopt);
+
+    /// Uploads the index for a segment. The index is generated in memory using
+    /// the stream. The resulting iobuf is then uploaded to the cloud.
     ss::future<cloud_storage::upload_result> upload_segment_index(
       upload_candidate candidate,
+      ss::input_stream<char> stream,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 

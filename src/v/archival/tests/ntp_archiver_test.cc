@@ -727,7 +727,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     for (auto req : get_requests()) {
         vlog(test_log.info, "{} {}", req.method, req.url);
     }
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
     cloud_storage::partition_manifest manifest;
     {
@@ -931,7 +931,7 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test.log_requests();
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 2);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 3);
 
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
@@ -971,7 +971,7 @@ static void test_partial_upload_impl(
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     test.log_requests();
-    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 4);
+    BOOST_REQUIRE_EQUAL(test.get_requests().size(), 6);
     {
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);

@@ -513,7 +513,7 @@ archival::remote_segment_path get_segment_index_path(
   const cloud_storage::partition_manifest& manifest,
   const archival::segment_name& name) {
     return archival::remote_segment_path{
-      fmt::format("{}.index", get_segment_path(manifest, name))};
+      fmt::format("{}.index", get_segment_path(manifest, name)().native())};
 }
 
 void populate_log(storage::disk_log_builder& b, const log_spec& spec) {

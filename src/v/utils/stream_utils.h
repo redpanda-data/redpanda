@@ -80,6 +80,7 @@ public:
     ss::future<> stop() {
         _pcond.broadcast();
         co_await _gate.close();
+        co_await _in.close();
     }
 
     /// Detach client with 'index' from the fanout
