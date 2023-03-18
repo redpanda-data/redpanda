@@ -71,6 +71,23 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&);
 
+    void try_rm_lock(kafka::transactional_id tid) {
+        auto tx_opt = _cache.local().find_mem(tid);
+        if (tx_opt) {
+            return;
+        }
+        tx_opt = _cache.local().find_log(tid);
+        if (tx_opt) {
+            return;
+        }
+        if (_tx_locks.contains(tid)) {
+            auto lock = _tx_locks[tid];
+            if (lock->ready()) {
+                _tx_locks.erase(tid);
+            }
+        }
+    };
+
     ss::gate& gate() { return _gate; }
 
     ss::future<> start() override;

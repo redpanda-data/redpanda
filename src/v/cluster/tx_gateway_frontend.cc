@@ -46,15 +46,16 @@ static auto with(
   kafka::transactional_id tx_id,
   const std::string_view name,
   Func&& func) noexcept {
-    return stm->get_tx_lock(tx_id)->with(
-      [name, tx_id, func = std::forward<Func>(func)]() mutable {
+    return stm->get_tx_lock(tx_id)
+      ->with([name, tx_id, func = std::forward<Func>(func)]() mutable {
           vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
           return ss::futurize_invoke(std::forward<Func>(func))
             .finally([name, tx_id]() {
                 vlog(
                   txlog.trace, "released_lock name:{}, tx_id:{}", name, tx_id);
             });
-      });
+      })
+      .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
 }
 
 template<typename Func>
@@ -64,15 +65,21 @@ static auto with(
   const std::string_view name,
   model::timeout_clock::duration timeout,
   Func&& func) noexcept {
-    return stm->get_tx_lock(tx_id)->with(
-      timeout, [name, tx_id, func = std::forward<Func>(func)]() mutable {
-          vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
-          return ss::futurize_invoke(std::forward<Func>(func))
-            .finally([name, tx_id]() {
-                vlog(
-                  txlog.trace, "released_lock name:{}, tx_id:{}", name, tx_id);
-            });
-      });
+    return stm->get_tx_lock(tx_id)
+      ->with(
+        timeout,
+        [name, tx_id, func = std::forward<Func>(func)]() mutable {
+            vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
+            return ss::futurize_invoke(std::forward<Func>(func))
+              .finally([name, tx_id]() {
+                  vlog(
+                    txlog.trace,
+                    "released_lock name:{}, tx_id:{}",
+                    name,
+                    tx_id);
+              });
+        })
+      .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
 }
 
 static tm_transaction as_tx(
