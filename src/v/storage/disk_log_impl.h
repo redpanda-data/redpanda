@@ -115,6 +115,8 @@ private:
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
+    using dry_run = ss::bool_class<struct dry_run>;
+
     ss::future<model::record_batch_reader>
       make_unchecked_reader(log_reader_config);
 
@@ -157,8 +159,14 @@ private:
 
     ss::future<> garbage_collect_max_partition_size(compaction_config cfg);
     ss::future<> garbage_collect_oldest_segments(compaction_config cfg);
-    ss::future<> garbage_collect_segments(
-      compaction_config cfg, model::offset, std::string_view);
+
+    /*
+     * when dry_run is requested then an estimate of the number of bytes that
+     * would be removed from a non-dry run is returned.
+     */
+    ss::future<size_t> garbage_collect_segments(
+      compaction_config cfg, model::offset, std::string_view, dry_run);
+
     model::offset size_based_gc_max_offset(size_t);
     model::offset time_based_gc_max_offset(model::timestamp);
 

@@ -298,10 +298,11 @@ bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
            && ptr->reader().filename() == (*_segs.begin())->reader().filename();
 }
 
-ss::future<> disk_log_impl::garbage_collect_segments(
+ss::future<size_t> disk_log_impl::garbage_collect_segments(
   compaction_config cfg,
   model::offset max_offset_wanted,
-  std::string_view ctx) {
+  std::string_view ctx,
+  dry_run dry_run) {
     const auto eligible_segments = [this, &cfg](auto max_offset) {
         return _segs.size() > 1 && !cfg.asrc->abort_requested()
                && _segs.front()->offsets().committed_offset <= max_offset;
@@ -313,7 +314,7 @@ ss::future<> disk_log_impl::garbage_collect_segments(
      * that the monitor will make progress--it is involved in calculating the
      * max collectible offset and feeding it back into storage layer.
      */
-    if (_eviction_monitor && eligible_segments(max_offset_wanted)) {
+    if (!dry_run && _eviction_monitor && eligible_segments(max_offset_wanted)) {
         _eviction_monitor->promise.set_value(max_offset_wanted);
         _eviction_monitor.reset();
     }
@@ -328,6 +329,29 @@ ss::future<> disk_log_impl::garbage_collect_segments(
       cfg.max_collectible_offset,
       std::min(max_offset_wanted, _max_collectible_offset));
 
+    if (dry_run) {
+        fragmented_vector<segment_set::type> segs;
+        for (const auto& seg : _segs) {
+            if (seg == _segs.back()) {
+                // do not consider the active segment
+                break;
+            }
+            if (seg->offsets().committed_offset <= max_offset) {
+                segs.push_back(seg);
+            } else {
+                break;
+            }
+        }
+        if (segs.empty()) {
+            co_return 0;
+        }
+        co_return co_await ss::map_reduce(
+          segs,
+          [](const segment_set::type& seg) { return seg->persistent_size(); },
+          size_t(0),
+          std::plus<>());
+    }
+
     vlog(
       gclog.debug,
       "[{}] {} requested to remove segments up to {} offset adjusted to {}",
@@ -340,6 +364,7 @@ ss::future<> disk_log_impl::garbage_collect_segments(
      * delete segments from the front of the log, in order of lowest to highest
      * offset, until we have reached as close to the target offset as possible.
      */
+    size_t removed = 0;
     while (eligible_segments(max_offset)) {
         auto seg = _segs.front();
         co_await update_start_offset(
@@ -349,7 +374,10 @@ ss::future<> disk_log_impl::garbage_collect_segments(
         }
         _segs.pop_front();
         co_await remove_segment_permanently(seg, ctx);
+        removed += co_await seg->persistent_size();
     }
+
+    co_return removed;
 }
 
 ss::future<>
@@ -369,7 +397,7 @@ disk_log_impl::garbage_collect_max_partition_size(compaction_config cfg) {
     }
     model::offset max_offset = size_based_gc_max_offset(cfg.max_bytes.value());
     co_await garbage_collect_segments(
-      cfg, max_offset, "gc[size_based_retention]");
+      cfg, max_offset, "gc[size_based_retention]", dry_run::no);
 }
 
 ss::future<>
@@ -382,8 +410,8 @@ disk_log_impl::garbage_collect_oldest_segments(compaction_config cfg) {
       _segs.empty() ? model::timestamp::min()
                     : _segs.front()->index().max_timestamp());
     model::offset max_offset = time_based_gc_max_offset(cfg.eviction_time);
-    return garbage_collect_segments(
-      cfg, max_offset, "gc[time_based_retention]");
+    co_await garbage_collect_segments(
+      cfg, max_offset, "gc[time_based_retention]", dry_run::no);
 }
 
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
