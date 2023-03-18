@@ -853,6 +853,7 @@ ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
     from_path = from_path.to_compacted_index();
     auto to_path = to->reader().path().to_compacted_index();
     co_await ss::rename_file(from_path.string(), to_path.string());
+    to->invalidate_compaction_index_size();
 
     // clean up replacement segment
     co_await from->remove_persistent_state();
