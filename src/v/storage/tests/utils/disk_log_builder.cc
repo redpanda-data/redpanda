@@ -121,6 +121,20 @@ ss::future<> disk_log_builder::gc(
       _abort_source));
 }
 
+ss::future<size_t> disk_log_builder::gc_retention(
+  model::timestamp collection_upper_bound,
+  std::optional<size_t> max_partition_retention_size,
+  bool dry_run) {
+    return get_disk_log_impl().testing_only_gc(
+      compaction_config(
+        collection_upper_bound,
+        max_partition_retention_size,
+        model::offset::max(),
+        ss::default_priority_class(),
+        _abort_source),
+      disk_log_impl::dry_run(dry_run));
+}
+
 ss::future<> disk_log_builder::stop() {
     return _storage.stop().then([this]() { return _feature_table.stop(); });
 }

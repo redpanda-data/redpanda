@@ -303,6 +303,10 @@ public:
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
+    ss::future<size_t> gc_retention(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size,
+      bool dry_run);
     ss::future<> add_batch(
       model::record_batch batch,
       log_append_config config = append_config(),

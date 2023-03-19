@@ -129,6 +129,13 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
         offset += model::offset(num_records);
     }
 
+    builder.get_log().set_collectible_offset(
+      builder.get_log().offsets().dirty_offset);
+
+    // there is only an active segment. nothing should be reclaimable
+    BOOST_CHECK_EQUAL(
+      builder.gc_retention(model::timestamp::now(), 0, true).get(), 0);
+
     // second segment
     builder | storage::add_segment(offset);
     start_size = part_size();
@@ -145,6 +152,14 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
         offset += model::offset(num_records);
     }
 
+    builder.get_log().set_collectible_offset(
+      builder.get_log().offsets().dirty_offset);
+
+    // the first segment is now eligible for reclaim
+    BOOST_CHECK_LT(
+      (builder.gc_retention(model::timestamp::now(), 0, true).get() - 2_MiB),
+      10_KiB);
+
     // third segment
     builder | storage::add_segment(offset);
     start_size = part_size();
@@ -160,6 +175,14 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
             last_week);
         offset += model::offset(num_records);
     }
+
+    builder.get_log().set_collectible_offset(
+      builder.get_log().offsets().dirty_offset);
+
+    // the first,second segment is now eligible for reclaim
+    BOOST_CHECK_LT(
+      (builder.gc_retention(model::timestamp::now(), 0, true).get() - 3_MiB),
+      10_KiB);
 
     // active segment
     builder | storage::add_segment(offset);
@@ -180,7 +203,18 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     builder.get_log().set_collectible_offset(
       builder.get_log().offsets().dirty_offset);
 
-    builder | storage::garbage_collect(yesterday, 4_MiB) | storage::stop();
+    // the first,second segment is now eligible for reclaim
+    BOOST_CHECK_LT(
+      (builder.gc_retention(model::timestamp::now(), 0, true).get() - 4_MiB),
+      10_KiB);
+
+    builder | storage::garbage_collect(yesterday, 4_MiB);
+
+    // now there is only an active segment. nothing should be reclaimable
+    BOOST_CHECK_EQUAL(
+      builder.gc_retention(model::timestamp::now(), 0, true).get(), 0);
+
+    builder | storage::stop();
 
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
 }

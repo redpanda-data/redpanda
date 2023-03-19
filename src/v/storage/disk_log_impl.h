@@ -138,6 +138,19 @@ private:
 
     ss::future<size_t> gc(compaction_config, dry_run dry_run = dry_run::no);
 
+    /*
+     * a private, temporary, testing only interface called from the friendly
+     * disk log builder to interact with retention gc dry run mode. this will be
+     * removed as we surface more of the api for disk space management.
+     */
+    ss::future<size_t> testing_only_gc(compaction_config cfg, dry_run dry_run) {
+        cfg = apply_overrides(cfg);
+        if (config().is_collectable()) {
+            co_return co_await gc(cfg, dry_run);
+        }
+        co_return 0;
+    }
+
     ss::future<> remove_empty_segments();
 
     ss::future<> remove_segment_permanently(
