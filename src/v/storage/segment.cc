@@ -102,12 +102,11 @@ ss::future<> segment::remove_persistent_state(std::filesystem::path path) {
         co_await ss::remove_file(path.c_str());
         vlog(stlog.debug, "removed: {}", path);
     } catch (const std::filesystem::filesystem_error& e) {
-        if (e.code() == std::errc::no_such_file_or_directory) {
-            vlog(stlog.trace, "error removing {}: {}", path, e);
-            // ignore, we want to make deletes idempotent
-            co_return;
-        }
-        vlog(stlog.info, "error removing {}: {}", path, e);
+        // be quiet about ENOENT, we want idempotent deletes
+        const auto level = e.code() == std::errc::no_such_file_or_directory
+                             ? ss::log_level::trace
+                             : ss::log_level::info;
+        vlogl(stlog, level, "error removing {}: {}", path, e);
     } catch (const std::exception& e) {
         vlog(stlog.info, "error removing {}: {}", path, e);
     }
