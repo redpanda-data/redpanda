@@ -160,8 +160,7 @@ public:
     ss::future<ss::rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
-    ss::future<> remove_persistent_state(std::filesystem::path);
-    ss::future<> remove_persistent_state();
+    ss::future<size_t> remove_persistent_state();
 
     generation_id get_generation_id() const { return _generation_id; }
     void advance_generation() { _generation_id++; }
@@ -193,10 +192,11 @@ private:
       segment_appender_ptr,
       std::optional<batch_cache_index>,
       std::optional<compacted_index_writer>);
-    ss::future<> remove_tombstones();
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
     void release_appender_in_background(readers_cache* readers_cache);
+
+    ss::future<size_t> remove_persistent_state(std::filesystem::path);
 
     struct appender_callbacks : segment_appender::callbacks {
         explicit appender_callbacks(segment* segment)

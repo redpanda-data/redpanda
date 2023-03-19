@@ -94,13 +94,34 @@ ss::future<> segment::close() {
 
     co_await do_flush();
     co_await do_close();
-    co_await remove_tombstones();
+
+    if (is_tombstone()) {
+        auto size = co_await remove_persistent_state();
+        vlog(
+          stlog.debug,
+          "Removed {} bytes for tombstone segment {}",
+          size,
+          *this);
+    }
 }
 
-ss::future<> segment::remove_persistent_state(std::filesystem::path path) {
+ss::future<size_t>
+segment::remove_persistent_state(std::filesystem::path path) {
+    size_t file_size = 0;
+    try {
+        file_size = co_await ss::file_size(path.c_str());
+    } catch (...) {
+        /*
+         * the worst case ignoring this exception is under reporting size
+         * removed. but we don't want to hold up removal below, which will
+         * likely throw anyway and log a helpful error.
+         */
+    }
+
     try {
         co_await ss::remove_file(path.c_str());
-        vlog(stlog.debug, "removed: {}", path);
+        vlog(stlog.debug, "removed: {} size {}", path, file_size);
+        co_return file_size;
     } catch (const std::filesystem::filesystem_error& e) {
         // be quiet about ENOENT, we want idempotent deletes
         const auto level = e.code() == std::errc::no_such_file_or_directory
@@ -110,9 +131,11 @@ ss::future<> segment::remove_persistent_state(std::filesystem::path path) {
     } catch (const std::exception& e) {
         vlog(stlog.info, "error removing {}: {}", path, e);
     }
+
+    co_return 0;
 }
 
-ss::future<> segment::remove_persistent_state() {
+ss::future<size_t> segment::remove_persistent_state() {
     vassert(is_closed(), "Cannot clear state from unclosed segment");
 
     /*
@@ -126,16 +149,13 @@ ss::future<> segment::remove_persistent_state() {
       reader().path().to_compacted_index(),
     });
 
-    co_await ss::parallel_for_each(rm, [this](std::filesystem::path path) {
-        return remove_persistent_state(std::move(path));
-    });
-}
-
-ss::future<> segment::remove_tombstones() {
-    if (!is_tombstone()) {
-        return ss::make_ready_future<>();
-    }
-    return remove_persistent_state();
+    co_return co_await ss::map_reduce(
+      rm,
+      [this](std::filesystem::path path) {
+          return remove_persistent_state(std::move(path));
+      },
+      size_t(0),
+      std::plus<>());
 }
 
 ss::future<> segment::do_close() {
