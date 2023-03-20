@@ -13,6 +13,8 @@
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/tests/util.h"
 
+#include <seastar/core/lowres_clock.hh>
+
 #include <random>
 
 using namespace cloud_storage;
@@ -27,6 +29,7 @@ scan_remote_partition_incrementally_with_reuploads(
   std::vector<in_memory_segment> segments,
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0) {
+    ss::lowres_clock::update();
     auto conf = fixt.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
