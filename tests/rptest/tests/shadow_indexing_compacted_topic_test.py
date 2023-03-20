@@ -3,12 +3,12 @@ import pprint
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, RedpandaService, LoggingConfig
+from rptest.services.redpanda import CloudStorageType, SISettings, RedpandaService, LoggingConfig, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.util import wait_until_segments, wait_for_removal_of_n_segments
 from rptest.utils.si_utils import BucketView
 from ducktape.utils.util import wait_until
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 
 
 class ShadowIndexingCompactedTopicTest(EndToEndTest):
@@ -47,8 +47,7 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
                 })
 
     @cluster(num_nodes=4)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_upload(self, cloud_storage_type):
         # Set compaction to happen infrequently initially, so we have several log segments.
         self._rpk_client.cluster_config_set("log_compaction_interval_ms",

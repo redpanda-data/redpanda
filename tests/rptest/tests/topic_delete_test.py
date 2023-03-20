@@ -23,7 +23,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.metrics_check import MetricCheck
-from rptest.services.redpanda import CloudStorageType, SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
 from rptest.util import wait_for_local_storage_truncate, firewall_blocked
 from rptest.services.admin import Admin
 
@@ -279,8 +279,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         log_allow_list=[
             'exception while executing partition operation: {type: deletion'
         ])
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def topic_delete_unavailable_test(self, cloud_storage_type):
         """
         Test deleting while the S3 backend is unavailable: we should see
@@ -361,7 +360,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=3)
     @matrix(disable_delete=[False, True],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     def topic_delete_cloud_storage_test(self, disable_delete,
                                         cloud_storage_type):
         if disable_delete:
@@ -413,8 +412,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=4)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def partition_movement_test(self, cloud_storage_type):
         """
         The unwary programmer might do S3 deletion from the

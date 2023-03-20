@@ -11,7 +11,7 @@ from rptest.services.cluster import cluster
 from ducktape.mark import matrix
 from ducktape.cluster.cluster_spec import ClusterSpec
 from rptest.clients.types import TopicSpec
-from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings
+from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings, get_cloud_storage_type
 from rptest.util import Scale, segments_count, wait_for_local_storage_truncate
 from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
@@ -146,8 +146,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         return False
 
     @cluster(num_nodes=4)
-    @matrix(num_messages=[2],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    @matrix(num_messages=[2], cloud_storage_type=get_cloud_storage_type())
     def test_restore_with_config_batches(self, num_messages,
                                          cloud_storage_type):
         """related to issue 6413: force the creation of remote segments containing only configuration batches,
@@ -196,7 +195,7 @@ class EndToEndTopicRecovery(RedpandaTest):
             recovery_overrides=[{}, {
                 'retention.local.target.bytes': 1024
             }],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     def test_restore(self, message_size, num_messages, recovery_overrides,
                      cloud_storage_type):
         """Write some data. Remove local data then restore
@@ -243,7 +242,7 @@ class EndToEndTopicRecovery(RedpandaTest):
         'redpanda.remote.write': True,
         'redpanda.remote.read': True,
     }],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode
     def test_restore_with_aborted_tx(self, recovery_overrides,
                                      cloud_storage_type):

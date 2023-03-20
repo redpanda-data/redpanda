@@ -17,7 +17,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoint
+from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoint, get_cloud_storage_type
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_local_storage_truncate, segments_count,
@@ -54,7 +54,7 @@ class RetentionPolicyTest(RedpandaTest):
         TopicSpec.PROPERTY_RETENTION_TIME, TopicSpec.PROPERTY_RETENTION_BYTES
     ],
             acks=[1, -1],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     def test_changing_topic_retention(self, property, acks,
                                       cloud_storage_type):
         """
@@ -92,8 +92,7 @@ class RetentionPolicyTest(RedpandaTest):
                        timeout_sec=120)
 
     @cluster(num_nodes=3)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_changing_topic_retention_with_restart(self, cloud_storage_type):
         """
         Test changing topic retention duration for topics with data produced
@@ -164,7 +163,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
     @cluster(num_nodes=1)
     @matrix(cluster_remote_write=[True, False],
             topic_remote_write=["true", "false", "-1"],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     def test_shadow_indexing_default_local_retention(self,
                                                      cluster_remote_write,
                                                      topic_remote_write,
@@ -220,8 +219,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
                            backoff_sec=1)
 
     @cluster(num_nodes=1)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_shadow_indexing_non_default_local_retention(
             self, cloud_storage_type):
         """
@@ -256,7 +254,7 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
 
     @cluster(num_nodes=1)
     @matrix(local_retention_ms=[3600000, -1],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     def test_local_time_based_retention_is_overridden(self, local_retention_ms,
                                                       cloud_storage_type):
         """
@@ -311,8 +309,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         self.s3_bucket_name = si_settings.cloud_storage_bucket
 
     @cluster(num_nodes=3)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_cloud_retention_deleted_segments_count(self, cloud_storage_type):
         """
         Test that retention deletes the right number of segments. The test sets the
@@ -361,8 +358,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                    err_msg=f"Segments were not removed from the cloud")
 
     @cluster(num_nodes=3)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_cloud_size_based_retention(self, cloud_storage_type):
         """
         Test that retention is enforced in the cloud log by checking
@@ -420,8 +416,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                    err_msg=f"Too many bytes in the cloud")
 
     @cluster(num_nodes=3)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_cloud_time_based_retention(self, cloud_storage_type):
         """
         Test that retention is enforced in the cloud log by checking
@@ -490,8 +485,7 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                    err_msg=f"Not all segments were removed from the cloud")
 
     @cluster(num_nodes=1)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_cloud_size_based_retention_application(self, cloud_storage_type):
         """
         Test that retention is enforced when applied to topics that initially

@@ -9,7 +9,7 @@
 import re
 
 import requests
-from ducktape.mark import parametrize
+from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -17,7 +17,7 @@ from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import CloudStorageType, SISettings
+from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     produce_until_segments,
@@ -78,8 +78,7 @@ class SIAdminApiTest(RedpandaTest):
         super().tearDown()
 
     @cluster(num_nodes=3, log_allow_list=CONNECTION_ERROR_LOGS)
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_bucket_validation(self, cloud_storage_type):
         """
         The test produces to the partition and waits untils the

@@ -154,8 +154,6 @@ class CloudStorageType(IntEnum):
     S3 = 1
     # Use Azure ABS on dedicated nodes, or azurite in docker
     ABS = 2
-    # Auto-select the cloud's storage service on dedicated nodes, or use minio+S3 on docker
-    AUTO = 3
 
 
 def one_or_many(value):
@@ -167,6 +165,46 @@ def one_or_many(value):
         return value[0]
     else:
         return value
+
+
+def get_cloud_storage_type(applies_only_on: list(CloudStorageType) = None,
+                           docker_use_arbitrary=False):
+    """
+    Returns a list(CloudStorageType) based on the "CLOUD_PROVIDER"
+    environment variable. For example:
+    CLOUD_PROVIDER=docker => returns: [CloudStorageType.S3, CloudStorageType.ABS]
+    CLOUD_PROVIDER=aws => returns: [CloudStorageType.S3]
+
+    :env "CLOUD_PROVIDER": one of "aws", "gcp", "azure" or "docker"
+    :param applies_only_on: optional list(CloudStorageType)
+    that is the allow-list of the cloud storage type for a
+    test.
+    If it's set the function will return the inresection
+    of:
+        * <cloud_storage_type>: discovered based on the CLOUD_PROVIDER env
+        * <applies_only_on>: param provided
+    :param docker_use_arbitrary: optional bool to use arbitrary backend when
+    the cloud provider is docker.
+    """
+
+    if applies_only_on is None:
+        applies_only_on = []
+
+    cloud_provider = os.getenv("CLOUD_PROVIDER", "docker")
+    if cloud_provider == "docker":
+        if docker_use_arbitrary:
+            cloud_storage_type = [CloudStorageType.S3]
+        else:
+            cloud_storage_type = [CloudStorageType.S3, CloudStorageType.ABS]
+    elif cloud_provider in ("aws", "gcp"):
+        cloud_storage_type = [CloudStorageType.S3]
+    elif cloud_provider == "azure":
+        cloud_storage_type = [CloudStorageType.ABS]
+
+    if applies_only_on:
+        cloud_storage_type = list(
+            set(applies_only_on).intersection(cloud_storage_type))
+    return cloud_storage_type
 
 
 class ResourceSettings:
@@ -279,8 +317,6 @@ class SISettings:
     GLOBAL_ABS_SHARED_KEY = "abs_shared_key"
     GLOBAL_CLOUD_PROVIDER = "cloud_provider"
 
-    DEDICATED_NODE_KEY = "dedicated_nodes"
-
     # The account and key to use with local Azurite testing.
     # These are the default Azurite (Azure emulator) storage account and shared key.
     # Both are readily available in the docs.
@@ -316,29 +352,12 @@ class SISettings:
                              quickly when they wait for uploads to complete.
         """
 
-        self.cloud_storage_type = CloudStorageType.AUTO
+        self.cloud_storage_type = get_cloud_storage_type()[0]
         if hasattr(test_context, 'injected_args') \
         and test_context.injected_args is not None \
         and 'cloud_storage_type' in test_context.injected_args:
             self.cloud_storage_type = test_context.injected_args[
                 'cloud_storage_type']
-
-        if self.cloud_storage_type == CloudStorageType.AUTO:
-            dedicated_nodes = test_context.globals.get(self.DEDICATED_NODE_KEY,
-                                                       False)
-            if dedicated_nodes:
-                abs_shared_key = test_context.globals.get(
-                    self.GLOBAL_ABS_SHARED_KEY, None)
-                s3_region = test_context.globals.get(self.GLOBAL_S3_REGION_KEY,
-                                                     None)
-                if abs_shared_key is not None:
-                    self.cloud_storage_type = CloudStorageType.ABS
-                elif s3_region is not None:
-                    self.cloud_storage_type = CloudStorageType.S3
-                else:
-                    raise RuntimeError("Cannot autodetect cloud storage")
-            else:
-                self.cloud_storage_type = CloudStorageType.S3
 
         if self.cloud_storage_type == CloudStorageType.S3:
             self.cloud_storage_credentials_source = cloud_storage_credentials_source
@@ -398,14 +417,6 @@ class SISettings:
             self.endpoint_url = None
             self.cloud_storage_disable_tls = False
             self.cloud_storage_api_endpoint_port = 443
-        if test_context.globals.get(self.GLOBAL_S3_SECRET_KEY, None):
-            test_context.ok_to_fail = True
-
-            msg = (
-                "Test requested ABS cloud storage, but provided globals for Azure."
-                " Stopping and marking as OFAIL.")
-            logger.info(msg)
-            raise Exception(msg)
         else:
             logger.debug("Running in Dockerised env against Azurite. "
                          "Using Azurite defualt credentials.")
@@ -445,17 +456,7 @@ class SISettings:
             self.cloud_storage_region = cloud_storage_region
             self.cloud_storage_api_endpoint_port = 443
         else:
-            if test_context.globals.get(self.GLOBAL_ABS_SHARED_KEY, None):
-                test_context.ok_to_fail = True
-
-                msg = (
-                    "Test requested S3 cloud storage, but provided globals for Azure."
-                    " Stopping and marking as OFAIL.")
-                logger.info(msg)
-                raise Exception(msg)
-            else:
-                logger.info(
-                    'No AWS credentials supplied, assuming minio defaults')
+            logger.info('No AWS credentials supplied, assuming minio defaults')
 
     @property
     def cloud_storage_bucket(self):

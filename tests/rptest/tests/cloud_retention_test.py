@@ -16,7 +16,7 @@ from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
-from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoint, CloudStorageType, CHAOS_LOG_ALLOW_LIST
+from rptest.services.redpanda import CloudStorageType, SISettings, MetricsEndpoint, CloudStorageType, CHAOS_LOG_ALLOW_LIST, get_cloud_storage_type
 from rptest.services.kgo_verifier_services import (
     KgoVerifierConsumerGroupConsumer, KgoVerifierProducer)
 from rptest.utils.mode_checks import skip_debug_mode
@@ -40,7 +40,7 @@ class CloudRetentionTest(PreallocNodesTest):
 
     @cluster(num_nodes=4)
     @matrix(max_consume_rate_mb=[20, None],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode
     def test_cloud_retention(self, max_consume_rate_mb, cloud_storage_type):
         """
@@ -156,7 +156,7 @@ class CloudRetentionTest(PreallocNodesTest):
 
     @cluster(num_nodes=4)
     @skip_debug_mode
-    @matrix(cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_gc_entire_manifest(self, cloud_storage_type):
         """
         Regression test for #8945, where GCing all cloud segments could prevent
@@ -279,8 +279,7 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
 
     @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @skip_debug_mode
-    @parametrize(cloud_storage_type=CloudStorageType.ABS)
-    @parametrize(cloud_storage_type=CloudStorageType.S3)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_retention_with_node_failures(self, cloud_storage_type):
         max_overshoot_percentage = 100
         runtime = 120

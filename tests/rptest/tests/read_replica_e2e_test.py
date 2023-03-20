@@ -18,7 +18,7 @@ from rptest.util import expect_exception
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 
-from rptest.services.redpanda import CloudStorageType, RedpandaService
+from rptest.services.redpanda import CloudStorageType, RedpandaService, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.utils.expect_rate import ExpectRate, RateTarget
 from rptest.services.verifiable_producer import VerifiableProducer, is_int_with_prefix
@@ -194,8 +194,7 @@ class TestReadReplicaService(EndToEndTest):
             return None
 
     @cluster(num_nodes=7, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
-    @matrix(partition_count=[10],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    @matrix(partition_count=[10], cloud_storage_type=get_cloud_storage_type())
     def test_writes_forbidden(self, partition_count: int,
                               cloud_storage_type: CloudStorageType) -> None:
         """
@@ -233,7 +232,7 @@ class TestReadReplicaService(EndToEndTest):
     @cluster(num_nodes=9, log_allow_list=READ_REPLICA_LOG_ALLOW_LIST)
     @matrix(partition_count=[10],
             min_records=[10000],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+            cloud_storage_type=get_cloud_storage_type())
     def test_simple_end_to_end(self, partition_count: int, min_records: int,
                                cloud_storage_type: CloudStorageType) -> None:
 

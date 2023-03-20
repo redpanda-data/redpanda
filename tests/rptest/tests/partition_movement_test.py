@@ -28,7 +28,7 @@ from rptest.services.honey_badger import HoneyBadger
 from rptest.services.rpk_producer import RpkProducer
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.rpk_consumer import RpkConsumer
-from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, SISettings
+from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST, CloudStorageType, SISettings, get_cloud_storage_type
 
 # Errors we should tolerate when moving partitions around
 PARTITION_MOVEMENT_LOG_ERRORS = [
@@ -811,8 +811,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     # TODO(vlad): This @ignore can be removed once v23.1 becomes
     # the "previous version".
     @ignore(num_to_upgrade=2, cloud_storage_type=CloudStorageType.ABS)
-    @matrix(num_to_upgrade=[0, 2],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    @matrix(num_to_upgrade=[0, 2], cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
     def test_shadow_indexing(self, num_to_upgrade, cloud_storage_type):
         """
@@ -859,8 +858,7 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     # TODO(vlad): This @ignore can be removed once v23.1 becomes
     # the "previous version".
     @ignore(num_to_upgrade=2, cloud_storage_type=CloudStorageType.ABS)
-    @matrix(num_to_upgrade=[0, 2],
-            cloud_storage_type=[CloudStorageType.ABS, CloudStorageType.S3])
+    @matrix(num_to_upgrade=[0, 2], cloud_storage_type=get_cloud_storage_type())
     @skip_debug_mode  # rolling restarts require more reliable recovery that a slow debug mode cluster can provide
     def test_cross_shard(self, num_to_upgrade, cloud_storage_type):
         """
