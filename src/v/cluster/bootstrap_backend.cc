@@ -183,20 +183,20 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
         }
     }
 
-    // Apply cluster_uuid
-    co_await _storage.invoke_on_all(
-      [&new_cluster_uuid = cmd.value.uuid](storage::api& storage) {
-          storage.set_cluster_uuid(new_cluster_uuid);
-          return ss::make_ready_future();
-      });
-    co_await _storage.local().kvs().put(
-      cluster_uuid_key_space,
-      cluster_uuid_key,
-      serde::to_iobuf(cmd.value.uuid));
-    _cluster_uuid_applied = cmd.value.uuid;
-    vlog(clusterlog.debug, "Cluster UUID initialized {}", cmd.value.uuid);
+    co_await apply_cluster_uuid(cmd.value.uuid);
 
     co_return errc::success;
+}
+
+ss::future<> bootstrap_backend::apply_cluster_uuid(model::cluster_uuid uuid) {
+    co_await _storage.invoke_on_all(
+      [&new_cluster_uuid = uuid](storage::api& storage) {
+          storage.set_cluster_uuid(new_cluster_uuid);
+      });
+    co_await _storage.local().kvs().put(
+      cluster_uuid_key_space, cluster_uuid_key, serde::to_iobuf(uuid));
+    _cluster_uuid_applied = uuid;
+    vlog(clusterlog.debug, "Cluster UUID initialized {}", uuid);
 }
 
 ss::future<> bootstrap_backend::fill_snapshot(controller_snapshot&) const {
