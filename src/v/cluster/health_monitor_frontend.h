@@ -102,6 +102,6 @@ private:
 
     void disk_health_tick();
     ss::future<> update_other_shards(const storage::disk_space_alert);
-    ss::future<> update_disk_health_cache();
+    ss::future<> update_frontend_and_backend_cache();
 };
 } // namespace cluster
