@@ -7,11 +7,6 @@
     ],
     "methods": [
         {
-            "name": "join",
-            "input_type": "join_request",
-            "output_type": "join_reply"
-        },
-        {
             "name": "join_node",
             "input_type": "join_node_request",
             "output_type": "join_node_reply"

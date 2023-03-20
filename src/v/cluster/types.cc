@@ -1098,18 +1098,6 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     return cfg;
 }
 
-void adl<cluster::join_request>::to(iobuf& out, cluster::join_request&& r) {
-    adl<model::broker>().to(out, std::move(r.node));
-}
-
-cluster::join_request adl<cluster::join_request>::from(iobuf io) {
-    return reflection::from_iobuf<cluster::join_request>(std::move(io));
-}
-
-cluster::join_request adl<cluster::join_request>::from(iobuf_parser& in) {
-    return cluster::join_request(adl<model::broker>().from(in));
-}
-
 void adl<cluster::join_node_request>::to(
   iobuf& out, cluster::join_node_request&& r) {
     adl<uint8_t>().to(out, r.current_version);
