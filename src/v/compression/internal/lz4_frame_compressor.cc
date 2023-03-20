@@ -128,75 +128,91 @@ static iobuf do_uncompressed(const char* src, const size_t src_size) {
     size_t in_sz = src_size;
     LZ4F_errorCode_t code = LZ4F_getFrameInfo(ctx, &fi, src, &in_sz);
     check_lz4_error("lz4f_getframeinfo error: {}", code);
-    size_t estimated_output_size = compute_frame_uncompressed_size(
+    size_t this_chunk_size = compute_frame_uncompressed_size(
       fi.contentSize, src_size);
-    ss::temporary_buffer<char> obuf(estimated_output_size);
-    char* out = obuf.get_write();
-    /* Decompress input buffer t o output buffer until input is exhausted. */
 
-    size_t bytes_remaining = in_sz;
-    size_t consumed_bytes = 0;
-    while (bytes_remaining < src_size) {
-        size_t step_output_bytes = estimated_output_size - consumed_bytes;
-        size_t step_remaining_bytes = src_size - bytes_remaining;
+    size_t max_chunk = 128_KiB;
+    this_chunk_size = std::min(this_chunk_size, max_chunk);
+
+    // We will decompress into temporary_buffers, and each time
+    // we spill past estimated_output_size, push the
+    ss::temporary_buffer<char> obuf(this_chunk_size);
+    char* out = obuf.get_write();
+
+    // Offset in `src` buffer
+    size_t src_offset = in_sz;
+
+    // Offset in `out` buffer
+    size_t output_this_chunk{0};
+
+    // Compose fragmented result from a series of `obuf` temporary buffers
+    iobuf ret;
+
+    while (src_offset < src_size) {
+        // These variables at as an input to LZ4F_decompress to specify
+        // buffer size, and then as an output for how many bytes the
+        // buffers advanced.
+        size_t consumed_this_iteration = src_size - src_offset;
+        size_t output_this_iteration = this_chunk_size - output_this_chunk;
+
         code = LZ4F_decompress(
           ctx,
           // NOLINTNEXTLINE
-          out + consumed_bytes,
-          &step_output_bytes,
+          out + output_this_chunk,
+          &output_this_iteration,
           // NOLINTNEXTLINE
-          src + bytes_remaining,
-          &step_remaining_bytes,
+          src + src_offset,
+          &consumed_this_iteration,
           nullptr);
-        check_lz4_error("lz4f_decompress error: {}", code);
+
+        output_this_chunk += output_this_iteration;
+        src_offset += consumed_this_iteration;
+
         vassert(
-          consumed_bytes + step_output_bytes <= estimated_output_size,
-          "Appended more bytes that allowed. Max:{}, consumed:{}",
-          estimated_output_size,
-          consumed_bytes + step_output_bytes);
+          output_this_chunk <= this_chunk_size,
+          "Appended more bytes that allowed. Max:{}, consumed:{} ({} this "
+          "iteration)",
+          this_chunk_size,
+          output_this_chunk,
+          output_this_iteration);
+
         vassert(
-          bytes_remaining <= src_size,
-          "Consumed more bytes than input. Max:{}, consumed:{}",
+          src_offset <= src_size,
+          "Consumed more bytes than in input buffer (size {}, consumed {})",
           src_size,
-          bytes_remaining);
-        consumed_bytes += step_output_bytes;
-        bytes_remaining += step_remaining_bytes;
+          src_offset);
+
+        check_lz4_error("lz4f_decompress error: {}", code);
+
         if (code == 0) {
             break;
         }
-        /* Need to grow output buffer, this shouldn't happen if
-         * contentSize was properly set. Happens all of the time with the
-         * console producer 2.3.1 and below*/
-        if (consumed_bytes == estimated_output_size) {
-            // TODO: add probes for re-growth
-            const size_t next_size = 1_KiB /*slack*/
-                                     + ((estimated_output_size * 3) + 1) / 2;
-            vlog(
-              complog.trace,
-              "Consumed bytes:{} has reached preallocated size. Growing to "
-              "size:{}",
-              consumed_bytes,
-              next_size);
-            ss::temporary_buffer<char> tmpo(next_size);
-            std::copy_n(obuf.get(), consumed_bytes, tmpo.get_write());
-            obuf = std::move(tmpo);
-            // update the pointer back to the original position
+
+        if (output_this_chunk == this_chunk_size && src_offset < src_size) {
+            ret.append(std::move(obuf));
+
+            // If we were using a smaller-than-max chunk, grow it
+            this_chunk_size = std::min(max_chunk, this_chunk_size * 2);
+
+            obuf = ss::temporary_buffer<char>(this_chunk_size);
             out = obuf.get_write();
-            estimated_output_size = next_size;
+            output_this_chunk = 0;
         }
     }
 
-    if (unlikely(bytes_remaining < src_size)) {
+    if (unlikely(src_offset < src_size)) {
         throw std::runtime_error(fmt::format(
           "lz4 error. could not consume all input bytes in decompression. "
           "Input:{}, consumed:{}",
           src_size,
-          bytes_remaining));
+          src_offset));
     }
 
-    obuf.trim(consumed_bytes);
-    iobuf ret;
-    ret.append(std::move(obuf));
+    if (output_this_chunk > 0) {
+        obuf.trim(output_this_chunk);
+        ret.append(std::move(obuf));
+    }
+
     return ret;
 }
 
