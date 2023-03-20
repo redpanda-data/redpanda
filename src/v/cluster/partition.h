@@ -33,6 +33,7 @@
 #include "raft/types.h"
 #include "storage/translating_reader.h"
 #include "storage/types.h"
+#include "utils/fragmented_vector.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -211,11 +212,11 @@ public:
 
     ss::shared_ptr<cluster::tm_stm> tm_stm() { return _tm_stm; }
 
-    ss::future<std::vector<rm_stm::tx_range>>
+    ss::future<fragmented_vector<rm_stm::tx_range>>
     aborted_transactions(model::offset from, model::offset to) {
         if (!_rm_stm) {
-            return ss::make_ready_future<std::vector<rm_stm::tx_range>>(
-              std::vector<rm_stm::tx_range>());
+            return ss::make_ready_future<fragmented_vector<rm_stm::tx_range>>(
+              fragmented_vector<rm_stm::tx_range>());
         }
         return _rm_stm->aborted_transactions(from, to);
     }

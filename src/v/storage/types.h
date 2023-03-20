@@ -71,7 +71,7 @@ public:
 
     // Only valid for state machines maintaining transactional state.
     // Returns aborted transactions in range [from, to] offsets.
-    virtual ss::future<std::vector<model::tx_range>>
+    virtual ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) = 0;
 
     virtual model::control_record_type
@@ -133,9 +133,9 @@ public:
 
     model::offset max_collectible_offset();
 
-    ss::future<std::vector<model::tx_range>>
+    ss::future<fragmented_vector<model::tx_range>>
     aborted_tx_ranges(model::offset to, model::offset from) {
-        std::vector<model::tx_range> r;
+        fragmented_vector<model::tx_range> r;
         if (_tx_stm) {
             r = co_await _tx_stm->aborted_tx_ranges(to, from);
         }

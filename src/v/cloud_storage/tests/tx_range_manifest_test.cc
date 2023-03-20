@@ -78,7 +78,9 @@ SEASTAR_THREAD_TEST_CASE(empty_serialization_roundtrip_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(serialization_roundtrip_test) {
-    tx_range_manifest m(segment_path, ranges);
+    fragmented_vector<tx_range_t> tx_ranges;
+    tx_ranges = ranges;
+    tx_range_manifest m(segment_path, std::move(tx_ranges));
     auto [is, size] = m.serialize().get();
     iobuf buf;
     auto os = make_iobuf_ref_output_stream(buf);
