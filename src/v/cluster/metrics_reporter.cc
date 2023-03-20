@@ -255,6 +255,12 @@ metrics_reporter::build_metrics_snapshot() {
       config::shard_local_cfg().sasl_mechanisms(),
       [](auto const& mech) { return mech == "GSSAPI"; });
 
+    auto env_value = std::getenv("REDPANDA_ENVIRONMENT");
+    if (env_value) {
+        snapshot.redpanda_environment = ss::sstring(env_value).substr(
+          0, metrics_snapshot::max_size_for_rp_env);
+    }
+
     co_return snapshot;
 }
 
@@ -477,6 +483,10 @@ void rjson_serialize(
 
     w.Key("config");
     config::shard_local_cfg().to_json_for_metrics(w);
+
+    w.Key("redpanda_environment");
+    w.String(snapshot.redpanda_environment);
+
     w.EndObject();
 }
 
