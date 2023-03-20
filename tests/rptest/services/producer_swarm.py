@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.services.service import Service
+from typing import Optional
 
 
 class ProducerSwarm(Service):
@@ -24,7 +25,12 @@ class ProducerSwarm(Service):
                  records_per_producer: int,
                  log_level="DEBUG",
                  properties={},
-                 timeout_ms: int = 1000):
+                 timeout_ms: int = 1000,
+                 compression_type: Optional[str] = None,
+                 compressible_payload: Optional[bool] = None,
+                 min_record_size: Optional[int] = None,
+                 max_record_size: Optional[int] = None,
+                 keys: Optional[int] = None):
         super(ProducerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -33,9 +39,14 @@ class ProducerSwarm(Service):
         self._log_level = log_level
         self._properties = properties
         self._timeout_ms = timeout_ms
+        self._compression_type = compression_type
+        self._compressible_payload = compressible_payload
+        self._min_record_size = min_record_size
+        self._max_record_size = max_record_size
+        self._keys = keys
 
     def clean_node(self, node):
-        self.redpanda.logger.debug(f"{self.__class__.__name__}.clean_node")
+        self._redpanda.logger.debug(f"{self.__class__.__name__}.clean_node")
         node.account.kill_process(self.EXE, clean_shutdown=False)
         if node.account.exists(self.LOG_PATH):
             node.account.remove(self.LOG_PATH)
@@ -49,6 +60,22 @@ class ProducerSwarm(Service):
         cmd += f" --timeout-ms {self._timeout_ms}"
         for k, v in self._properties.items():
             cmd += f" --properties {k}={v}"
+
+        if self._compressible_payload:
+            cmd += f" --compressible-payload"
+
+        if self._compression_type is not None:
+            cmd += f" --compression-type={self._compression_type}"
+
+        if self._min_record_size is not None:
+            cmd += f" --min-record-size={self._min_record_size}"
+
+        if self._max_record_size is not None:
+            cmd += f" --max-record-size={self._max_record_size}"
+
+        if self._keys is not None:
+            cmd += f" --keys={self._keys}"
+
         cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
         node.account.ssh(cmd)
         self._redpanda.wait_until(
