@@ -18,6 +18,7 @@
 #include "cloud_storage/tests/common_def.h"
 #include "model/record_batch_types.h"
 
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/test/unit_test.hpp>
@@ -543,7 +544,7 @@ partition_manifest hydrate_manifest(
     static ss::abort_source never_abort;
 
     partition_manifest m(manifest_ntp, manifest_revision);
-    retry_chain_node rtc(never_abort, 1s, 200ms);
+    retry_chain_node rtc(never_abort, 30s, 200ms);
     auto key = m.get_manifest_path();
     auto res = api.download_manifest(bucket, key, m, rtc).get();
     BOOST_REQUIRE(res == cloud_storage::download_result::success);
@@ -559,6 +560,11 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
   size_t maybe_max_bytes = 0,
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0) {
+    // The lowres clock could become stale after reactor stall. In this
+    // case, if the reactor stall was longer than 1s and the next the next
+    // call to ss::lowres_clock::now() will result in a sudden jump forward
+    // in time and the timeout for the next operation will be computed
+    // incorrectly.
     ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
@@ -630,6 +636,11 @@ std::vector<model::record_batch_header> scan_remote_partition(
   model::offset max = model::offset::max(),
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0) {
+    // The lowres clock could become stale after reactor stall. In this
+    // case, if the reactor stall was longer than 1s and the next the next
+    // call to ss::lowres_clock::now() will result in a sudden jump forward
+    // in time and the timeout for the next operation will be computed
+    // incorrectly.
     ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
