@@ -7,8 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.wasm.topic import get_source_topic, is_materialized_topic
-
 from functools import reduce
 
 from kafka import TopicPartition
@@ -103,92 +101,3 @@ class TopicsResultSet:
                 self.rset[tp] = records
             else:
                 rs += records
-
-
-CmpErr = Enum('CmpErr', 'Success NonEqKeys NonEqRecords CmpFailed DataInvalid')
-
-
-def cmp_err_to_str(cmp_err):
-    if cmp_err == CmpErr.NonEqKeys:
-        return 'Mismatch in number of keys'
-    elif cmp_err == CmpErr.NonEqRecords:
-        return 'Mistmatch in number of records'
-    elif cmp_err == CmpErr.CmpFailed:
-        return 'Mismatch in expected topic data'
-    elif cmp_err == CmpErr.DataInvalid:
-        return 'Unexpected non-materialized record in output set'
-    else:
-        raise Exception('Unimplemented enum case')
-
-
-def _materialized_topic_set_compare(a, b, comparator):
-    for tp, records in b.rset.items():
-        if not is_materialized_topic(tp.topic):
-            return CmpErr.DataInvalid
-        input_data = a.rset.get(
-            TopicPartition(topic=get_source_topic(tp.topic),
-                           partition=tp.partition))
-        if input_data is None or not comparator(input_data, records):
-            return CmpErr.CmpFailed
-    return CmpErr.Success
-
-
-def materialized_result_set_compare(oset, materialized_set):
-    """
-    Compares the actual data (keys, values) between two result sets. 'oset'
-    must contain normal topics, while 'materaizlied_set' contains
-    materialized_topics
-    """
-    if len(oset.rset.keys()) != len(materialized_set.rset.keys()):
-        return CmpErr.NonEqKeys
-    if oset.num_records() != materialized_set.num_records():
-        return CmpErr.NonEqRecords
-
-    def strip_topic(bkr):
-        bkr.topic = None
-        return bkr
-
-    def strict_cmp(input_data, records):
-        """ 1:1 direct comparison between all records across ntp """
-        mat_records = [strip_topic(x) for x in records]
-        src_recs = [strip_topic(x) for x in input_data]
-        return mat_records == src_recs
-
-    return _materialized_topic_set_compare(oset, materialized_set, strict_cmp)
-
-
-def materialized_at_least_once_compare(oset, materialized_set):
-    """
-    Performs the same checks as 'materialized_result_set_compare' but removes
-    duplicate records from the 'materialized_set', as they are expected to exist in the
-    case of failures.
-
-    'oset' remains unchanged because duplicates are not expected since records were
-    produced with idempotency enabled
-    """
-    def strip_offset(r):
-        return BasicKafkaRecord(topic=r.topic,
-                                partition=r.partition,
-                                key=r.key,
-                                value=r.value,
-                                offset=0)
-
-    deduplicated = materialized_set.deduplicate()
-    return materialized_result_set_compare(oset.map(strip_offset),
-                                           deduplicated.map(strip_offset))
-
-
-def group_fan_in_verifier(topics, input_results, output_results):
-    """
-    A materialized topic will contain Nx the input records where N is the number
-    of scripts deployed. Since it cannot be determined which script came from what
-    coprocessor (in order to split into distinct result sets and compare) just compare
-    totals for now
-    """
-    def compare(topic):
-        iis = input_results.filter(lambda x: x.topic == topic)
-        oos = output_results.filter(
-            lambda x: get_source_topic(x.topic) == topic)
-        return iis.num_records() == oos.num_records()
-
-    return all(compare(topic) for topic in topics)

@@ -652,13 +652,10 @@ class RedpandaService(Service):
     TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
-    WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
-                                              "wasm_engine.log")
     COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
                                             "redpanda.profraw")
 
     DEFAULT_NODE_READY_TIMEOUT_SEC = 20
-    WASM_READY_TIMEOUT_SEC = 10
 
     DEDICATED_NODE_KEY = "dedicated_nodes"
 
@@ -705,10 +702,6 @@ class RedpandaService(Service):
     logs = {
         "redpanda_start_stdout_stderr": {
             "path": STDOUT_STDERR_CAPTURE,
-            "collect_default": True
-        },
-        "wasm_engine_start_stdout_stderr": {
-            "path": WASM_STDOUT_STDERR_CAPTURE,
             "collect_default": True
         },
         "code_coverage_profraw_file": {
@@ -1418,9 +1411,6 @@ class RedpandaService(Service):
         if timeout is None:
             timeout = self.node_ready_timeout_s
 
-        if self.coproc_enabled():
-            self.start_wasm_engine(node)
-
         if self.dedicated_nodes:
             # When running on dedicated nodes, we should always be running on XFS.  If we
             # aren't, it's probably an accident that can easily cause spurious failures
@@ -1533,59 +1523,6 @@ class RedpandaService(Service):
             )
             self._log_node_process_state(node)
             raise
-
-    def coproc_enabled(self):
-        coproc = self._extra_rp_conf.get('enable_coproc')
-        dev_mode = self._extra_node_conf.get('developer_mode', True)
-        return coproc is True and dev_mode is True
-
-    def start_wasm_engine(self, node):
-        wcmd = (f"nohup {self.find_binary('node')}"
-                f" {self.find_wasm_root()}/main.js"
-                f" {RedpandaService.NODE_CONFIG_FILE} "
-                f" >> {RedpandaService.WASM_STDOUT_STDERR_CAPTURE} 2>&1 &")
-
-        self.logger.info(
-            f"Starting wasm engine on {node.account} with command: {wcmd}")
-
-        # wait until the wasm engine has finished booting up
-        wasm_port = 43189
-        conf_value = self._extra_node_conf[node].get(
-            'coproc_supervisor_server')
-        if conf_value is not None:
-            wasm_port = conf_value['port']
-
-        up_re = re.compile(f'.*:{wasm_port}')
-
-        def wasm_service_up():
-            def is_up(line):
-                self.logger.debug(line.strip())
-                return up_re.search(line) is not None
-
-            nsr = node.account.ssh_capture("netstat -ant")
-            return any([is_up(line) for line in nsr])
-
-        if wasm_service_up() is True:
-            self.logger.warn(f"Waiting for {wasm_port} to be available")
-            wait_until(
-                lambda: not wasm_service_up(),
-                timeout_sec=RedpandaService.WASM_READY_TIMEOUT_SEC,
-                err_msg=
-                f"Wasm engine server shutdown within {RedpandaService.WASM_READY_TIMEOUT_SEC}s timeout",
-                retry_on_exc=True)
-
-        def start_wasm_service():
-            node.account.ssh(wcmd)
-
-            wait_until(
-                wasm_service_up,
-                timeout_sec=RedpandaService.WASM_READY_TIMEOUT_SEC,
-                err_msg=
-                f"Wasm engine server startup within {RedpandaService.WASM_READY_TIMEOUT_SEC}s timeout",
-                retry_on_exc=True)
-
-        self.logger.debug(f"Node status prior to wasm_engine startup:")
-        self.start_service(node, start_wasm_service)
 
     def start_si(self):
         if self._si_settings.cloud_storage_type == CloudStorageType.S3:
@@ -1936,10 +1873,6 @@ class RedpandaService(Service):
             return "/opt/redpanda"
         return self._context.globals.get("rp_install_path_root", None)
 
-    def find_wasm_root(self):
-        rp_install_path_root = self.rp_install_path()
-        return f"{rp_install_path_root}/opt/wasm"
-
     def find_binary(self, name):
         rp_install_path_root = self.rp_install_path()
         return f"{rp_install_path_root}/bin/{name}"
@@ -2131,10 +2064,9 @@ class RedpandaService(Service):
         """
         Return process ids for the following processes on the given node:
         * 'redpanda' started in 'start_redpanda'
-        * 'node' started in 'start_wasm_engine' (only when coproc is enabled)
         """
         try:
-            proc_name_regex = "redpanda\|/bin/node"
+            proc_name_regex = "redpanda"
             cmd = f"ps ax | grep -i '{proc_name_regex}' | grep -v grep | awk '{{print $1}}'"
             pid_arr = [
                 pid for pid in node.account.ssh_capture(
