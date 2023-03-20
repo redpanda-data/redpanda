@@ -108,7 +108,7 @@ ss::future<> health_monitor_frontend::update_other_shards(
       [dsa](health_monitor_frontend& fe) { fe._cluster_disk_health = dsa; });
 }
 
-ss::future<> health_monitor_frontend::update_disk_health_cache() {
+ss::future<> health_monitor_frontend::update_frontend_and_backend_cache() {
     auto deadline = model::time_from_now(default_timeout);
     auto disk_health = co_await dispatch_to_backend(
       [deadline](health_monitor_backend& be) {
@@ -132,7 +132,7 @@ void health_monitor_frontend::disk_health_tick() {
     }
     ssx::spawn_with_gate(_refresh_gate, [this]() {
         // Ensure that this node's cluster health data is not too stale.
-        return update_disk_health_cache()
+        return update_frontend_and_backend_cache()
           .handle_exception([](const std::exception_ptr& e) {
               vlog(
                 clusterlog.warn, "failed to update disk health cache: {}", e);
@@ -154,7 +154,7 @@ ss::future<> health_monitor_frontend::refresh_info() {
     co_await container().invoke_on(
       refresher_shard, [](health_monitor_frontend& fe) {
           return ssx::spawn_with_gate_then(fe._refresh_gate, [&fe]() {
-              return fe.update_disk_health_cache();
+              return fe.update_frontend_and_backend_cache();
           });
       });
 }
