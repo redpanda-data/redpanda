@@ -245,12 +245,8 @@ public:
 
     /// \brief randomizes the configuration options
     storage::log_config default_log_config(ss::sstring test_dir) {
-        auto i = random_generators::get_int(0, 100);
-        auto stype = i > 50 ? storage::log_config::storage_type::disk
-                            : storage::log_config::storage_type::memory;
-
-        auto cache = i > 50 ? storage::with_cache::yes
-                            : storage::with_cache::no;
+        auto stype = storage::log_config::storage_type::disk;
+        auto cache = storage::with_cache::yes;
         auto cfg = storage::log_config(
           stype,
           std::move(test_dir),

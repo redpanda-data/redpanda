@@ -336,17 +336,6 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
     vassert(
       _logs.find(cfg.ntp()) == _logs.end(), "cannot double register same ntp");
 
-    if (_config.stype == log_config::storage_type::memory) {
-        auto path = cfg.work_directory();
-        auto l = storage::make_memory_backed_log(std::move(cfg));
-        auto [it, _] = _logs.emplace(
-          l.config().ntp(), std::make_unique<log_housekeeping_meta>(l));
-        _logs_list.push_back(*it->second);
-        // in-memory needs to write vote_for configuration
-        co_await ss::recursive_touch_directory(path);
-        co_return l;
-    }
-
     std::optional<ss::sstring> last_clean_segment;
     auto clean_iobuf = _kvstore.get(
       kvstore::key_space::storage, internal::clean_segment_key(cfg.ntp()));
@@ -491,8 +480,6 @@ int64_t log_manager::compaction_backlog() const {
 
 std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
     switch (t) {
-    case log_config::storage_type::memory:
-        return o << "{memory}";
     case log_config::storage_type::disk:
         return o << "{disk}";
     }
