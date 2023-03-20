@@ -40,6 +40,19 @@ void segment_collector::collect_segments(segment_collector_mode mode) {
         return;
     }
 
+    // start_offset < log start due to eviction of segments before
+    // they could be uploaded, skip forward to log start.
+    if (_begin_inclusive < _log.offsets().start_offset) {
+        vlog(
+          archival_log.debug,
+          "Provided start offset is below the start offset of the local log: "
+          "{} < {} for ntp {}. Advancing to the beginning of the local log.",
+          _begin_inclusive,
+          _log.offsets().start_offset,
+          _manifest.get_ntp());
+        _begin_inclusive = _log.offsets().start_offset;
+    }
+
     align_begin_offset_to_manifest();
 
     if (_begin_inclusive >= _manifest.get_last_offset()) {
@@ -175,21 +188,21 @@ void segment_collector::align_end_offset_to_manifest(
 
 segment_collector::lookup_result segment_collector::find_next_segment(
   model::offset start_offset, segment_collector_mode mode) {
-    const auto& segment_set = _log.segments();
-    auto it = segment_set.lower_bound(start_offset);
-    // start_offset < log start due to eviction of segments before
-    // they could be uploaded, skip forward to log start.
+    // 'start_offset' should always be above the start offset of the local log
+    // as we skip to it in the calling code (`collect_segments`).
     if (start_offset < _log.offsets().start_offset) {
         vlog(
-          archival_log.debug,
-          "Finding next segment for {}: start_offset: {} behind log "
-          "start: {}, skipping forward",
+          archival_log.warn,
+          "Finding next segment for {}: can't find segments below the local "
+          "log start offset ({} < {})",
           _manifest.get_ntp(),
           start_offset,
           _log.offsets().start_offset);
-        it = segment_set.begin();
+        return {};
     }
 
+    const auto& segment_set = _log.segments();
+    auto it = segment_set.lower_bound(start_offset);
     if (it == segment_set.end()) {
         vlog(
           archival_log.debug,
