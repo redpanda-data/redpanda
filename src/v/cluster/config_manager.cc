@@ -743,16 +743,6 @@ void config_manager::merge_apply_result(
 ss::future<> config_manager::store_delta(
   config_version const& delta_version,
   cluster_config_delta_cmd_data const& data) {
-    _seen_version = delta_version;
-
-    // version_shard is chosen to match controller_stm_shard, so
-    // our raft0 stm apply operations do not need a core jump to
-    // update the frontend version state.
-    vassert(
-      ss::this_shard_id() == config_frontend::version_shard,
-      "Must be called on frontend version_shard");
-    _frontend.local().set_next_version(_seen_version + config_version{1});
-
     for (const auto& u : data.upsert) {
         _raw_values[u.key] = u.value;
     }
@@ -821,6 +811,14 @@ config_manager::apply_delta(cluster_config_delta_cmd&& cmd_in) {
           _seen_version);
         co_return errc::success;
     }
+    _seen_version = delta_version;
+    // version_shard is chosen to match controller_stm_shard, so
+    // our raft0 stm apply operations do not need a core jump to
+    // update the frontend version state.
+    vassert(
+      ss::this_shard_id() == config_frontend::version_shard,
+      "Must be called on frontend version_shard");
+    _frontend.local().set_next_version(_seen_version + config_version{1});
 
     const cluster_config_delta_cmd_data& data = cmd.value;
     vlog(
