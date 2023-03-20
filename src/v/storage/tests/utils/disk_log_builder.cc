@@ -113,12 +113,43 @@ ss::future<> disk_log_builder::truncate(model::offset o) {
 ss::future<> disk_log_builder::gc(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
-    return get_log().compact(compaction_config(
-      collection_upper_bound,
-      max_partition_retention_size,
-      model::offset::max(),
-      ss::default_priority_class(),
-      _abort_source));
+    ss::abort_source as;
+    auto eviction_future = get_log().monitor_eviction(as);
+
+    get_log()
+      .compact(compaction_config(
+        collection_upper_bound,
+        max_partition_retention_size,
+        model::offset::max(),
+        ss::default_priority_class(),
+        _abort_source))
+      .get();
+
+    if (eviction_future.available()) {
+        auto evict_until = eviction_future.get();
+        return get_log().truncate_prefix(storage::truncate_prefix_config{
+          model::next_offset(evict_until), ss::default_priority_class()});
+    } else {
+        as.request_abort();
+        eviction_future.ignore_ready_future();
+    }
+
+    return ss::make_ready_future<>();
+}
+
+ss::future<std::optional<model::offset>>
+disk_log_builder::apply_retention(compaction_config cfg) {
+    return get_disk_log_impl().gc(cfg);
+}
+
+ss::future<> disk_log_builder::apply_compaction(
+  compaction_config cfg, std::optional<model::offset> new_start_offset) {
+    return get_disk_log_impl().do_compact(cfg, new_start_offset);
+}
+
+ss::future<bool>
+disk_log_builder::update_start_offset(model::offset start_offset) {
+    return get_disk_log_impl().update_start_offset(start_offset);
 }
 
 ss::future<> disk_log_builder::stop() {

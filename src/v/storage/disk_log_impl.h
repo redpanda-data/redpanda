@@ -127,13 +127,14 @@ private:
     // Returns if the update actually took place.
     ss::future<bool> update_start_offset(model::offset o);
 
-    ss::future<> do_compact(compaction_config);
+    ss::future<> do_compact(
+      compaction_config, std::optional<model::offset> = std::nullopt);
     ss::future<compaction_result> compact_adjacent_segments(
       std::pair<segment_set::iterator, segment_set::iterator>,
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
     find_compaction_range(const compaction_config&);
-    ss::future<> gc(compaction_config);
+    ss::future<std::optional<model::offset>> gc(compaction_config);
 
     ss::future<> remove_empty_segments();
 
@@ -155,12 +156,17 @@ private:
     ss::future<> do_truncate_prefix(truncate_prefix_config);
     ss::future<> remove_prefix_full_segments(truncate_prefix_config);
 
-    ss::future<> garbage_collect_max_partition_size(compaction_config cfg);
-    ss::future<> garbage_collect_oldest_segments(compaction_config cfg);
-    ss::future<> garbage_collect_segments(
-      compaction_config cfg, model::offset, std::string_view);
-    model::offset size_based_gc_max_offset(size_t);
-    model::offset time_based_gc_max_offset(model::timestamp);
+    // Propagate a request to the Raft layer to evict segments up until the
+    // specified offest.
+    //
+    // Returns the new start offset of the log.
+    ss::future<model::offset> request_eviction_until_offset(model::offset);
+
+    // These methods search the log for the offset to evict at such that
+    // the retention policy is satisfied. If no such offset is found
+    // std::nullopt is returned.
+    std::optional<model::offset> size_based_gc_max_offset(compaction_config);
+    std::optional<model::offset> time_based_gc_max_offset(compaction_config);
 
     bool is_front_segment(const segment_set::type&) const;
 
@@ -199,7 +205,6 @@ private:
     storage::probe _probe;
     failure_probes _failure_probes;
     std::optional<eviction_monitor> _eviction_monitor;
-    model::offset _max_collectible_offset;
     size_t _max_segment_size;
     std::unique_ptr<readers_cache> _readers_cache;
     // average ratio of segment sizes after segment size before compaction

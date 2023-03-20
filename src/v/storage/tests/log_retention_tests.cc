@@ -33,8 +33,6 @@ FIXTURE_TEST(retention_test_time, gc_fixture) {
       | storage::add_segment(102)
       | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(104) | storage::add_random_batches(104, 3);
-    builder.get_log().set_collectible_offset(
-      builder.get_log().offsets().dirty_offset);
     BOOST_TEST_MESSAGE(
       "Should not collect segments with timestamp older than 1");
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
@@ -64,8 +62,6 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
       | storage::add_segment(102)
       | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(104) | storage::add_random_batches(104, 3);
-    builder.get_log().set_collectible_offset(
-      builder.get_log().offsets().dirty_offset);
     BOOST_TEST_MESSAGE("Should not collect segments because size equal to "
                        "current partition size");
     builder
@@ -75,13 +71,12 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
           builder.get_disk_log_impl().get_probe().partition_size()));
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
 
-    BOOST_TEST_MESSAGE(
-      "Should collect all inactive segments, leaving an active one");
+    BOOST_TEST_MESSAGE("Should collect all segments");
     builder
       | storage::garbage_collect(model::timestamp(1), std::optional<size_t>(0))
       | storage::stop();
 
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
+    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
 }
 
 /*
@@ -177,12 +172,9 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
         offset += model::offset(num_records);
     }
 
-    builder.get_log().set_collectible_offset(
-      builder.get_log().offsets().dirty_offset);
-
     builder | storage::garbage_collect(yesterday, 4_MiB) | storage::stop();
 
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
+    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
 }
 FIXTURE_TEST(retention_test_after_truncation, gc_fixture) {
     BOOST_TEST_MESSAGE("Should be safe to garbage collect after truncation");
@@ -191,8 +183,6 @@ FIXTURE_TEST(retention_test_after_truncation, gc_fixture) {
       | storage::truncate_log(model::offset(0))
       | storage::garbage_collect(model::timestamp::now(), std::nullopt)
       | storage::stop();
-    builder.get_log().set_collectible_offset(
-      builder.get_log().offsets().dirty_offset);
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
     BOOST_CHECK_EQUAL(
       builder.get_disk_log_impl().get_probe().partition_size(), 0);
@@ -240,9 +230,6 @@ FIXTURE_TEST(retention_by_size_with_remote_write, gc_fixture) {
         ++dirty_offset;
         partition_size
           = builder.get_disk_log_impl().get_probe().partition_size();
-
-        builder.get_log().set_collectible_offset(
-          builder.get_log().offsets().dirty_offset);
 
         auto segment_count_before_gc = builder.get_log().segment_count();
         builder
@@ -307,9 +294,6 @@ FIXTURE_TEST(retention_by_time_with_remote_write, gc_fixture) {
         storage::disk_log_builder::should_flush_after::yes,
         log_creation_time);
 
-    builder.get_log().set_collectible_offset(
-      builder.get_log().offsets().dirty_offset);
-
     // Try to garbage collet the segments. None should get collected
     // because we are currently using the default local target retention.
     builder | storage::garbage_collect(model::timestamp{1}, std::nullopt);
@@ -322,8 +306,8 @@ FIXTURE_TEST(retention_by_time_with_remote_write, gc_fixture) {
       = tristate<std::chrono::milliseconds>{0ms};
     builder.update_configuration(time_override).get();
 
-    // Collect again. One segment should be removed this time.
+    // Collect again. All segments should be removed this time.
     builder | storage::garbage_collect(model::timestamp{1}, std::nullopt)
       | storage::stop();
-    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 1);
+    BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
 }
