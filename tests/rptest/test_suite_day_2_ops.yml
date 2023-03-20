@@ -1,0 +1,3 @@
+day_2_ops:
+  included:
+    - scale_tests/random_node_operations_scale_test.py

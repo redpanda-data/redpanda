@@ -14,3 +14,4 @@ ec2:
     - tests/wasm_partition_movement_test.py # no wasm
     - tests/e2e_iam_role_test.py # use static credentials
     - tests/consumer_group_recovery_tool_test.py # use script available in dockerfile
+    - tests/rptest/scale_tests/random_node_operations_scale_test.py # Run in a separate buildkite job
