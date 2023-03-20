@@ -8,10 +8,14 @@
 # by the Apache License, Version 2.0
 
 import ducktape.errors
+import requests.exceptions
+import urllib.parse
 
+from ducktape.utils.util import wait_until
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
+from rptest.utils.utf8 import CONTROL_CHARS_MAP
 
 
 class LogLevelTest(RedpandaTest):
@@ -89,3 +93,20 @@ class LogLevelTest(RedpandaTest):
                 timeout_sec=10,
                 backoff_sec=1,
                 err_msg="Never saw message")
+
+    @cluster(num_nodes=3)
+    def test_invalid_logger_name(self):
+        admin = Admin(self.redpanda)
+        logger = 'test\nlog'
+
+        def check_log_for_invalid_parameter(val: str):
+            pattern = f'Parameter contained invalid control characters: {val}'
+            wait_until(lambda: self.redpanda.search_log_any(pattern),
+                       timeout_sec=5)
+
+        try:
+            admin.set_log_level(urllib.parse.quote(logger), "debug")
+            assert False, "Call should fail"
+        except requests.exceptions.HTTPError:
+            check_log_for_invalid_parameter(
+                logger.translate(CONTROL_CHARS_MAP))

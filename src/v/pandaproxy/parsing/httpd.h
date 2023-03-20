@@ -41,7 +41,11 @@ T parse_param(std::string_view type, std::string_view key, ss::sstring value) {
     if (res.has_error()) {
         throw error(
           error_code::invalid_param,
-          fmt::format("Invalid {} '{}' got '{}'", type, key, value));
+          fmt::format(
+            "Invalid {} '{}' got '{}'",
+            type,
+            key,
+            replace_control_chars_in_string(value)));
     }
     return res.value();
 }
