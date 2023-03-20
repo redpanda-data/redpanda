@@ -44,7 +44,9 @@ class KgoRepeaterService(Service):
                  use_transactions: bool = False,
                  transaction_abort_rate: Optional[float] = None,
                  rate_limit_bps: Optional[int] = None,
-                 msgs_per_transaction: Optional[int] = None):
+                 msgs_per_transaction: Optional[int] = None,
+                 compression_type: Optional[str] = None,
+                 compressible_payload: Optional[bool] = None):
         """
         :param rate_limit_bps: Total rate for all nodes: each node will get an equal share.
         """
@@ -84,6 +86,9 @@ class KgoRepeaterService(Service):
         self.transaction_abort_rate = transaction_abort_rate
         self.msgs_per_transaction = msgs_per_transaction
 
+        self.compression_type = compression_type
+        self.compressible_payload = compressible_payload
+
         self._stopped = False
 
     def clean_node(self, node):
@@ -122,6 +127,12 @@ class KgoRepeaterService(Service):
 
             if self.msgs_per_transaction is not None:
                 cmd += f" -msgs-per-transaction={self.msgs_per_transaction}"
+
+        if self.compression_type is not None:
+            cmd += f" -compression-type={self.compression_type}"
+
+        if self.compressible_payload is not None:
+            cmd += f" -compressible-payload={'true' if self.compressible_payload else 'false'}"
 
         cmd = f"nohup {cmd} >> {self.LOG_PATH} 2>&1 &"
 
