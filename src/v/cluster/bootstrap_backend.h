@@ -58,6 +58,7 @@ public:
 
 private:
     ss::future<std::error_code> apply(bootstrap_cluster_cmd);
+    ss::future<> apply_cluster_uuid(model::cluster_uuid);
 
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<storage::api>& _storage;
