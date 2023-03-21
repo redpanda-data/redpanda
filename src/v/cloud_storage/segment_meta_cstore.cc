@@ -24,19 +24,19 @@ namespace cloud_storage {
 
 using int64_delta_alg = details::delta_delta<int64_t>;
 using int64_xor_alg = details::delta_xor;
-// Column for monotonically increaseing data
+// Column for monotonically increasing data
 using counter_col_t = segment_meta_column<int64_t, int64_delta_alg>;
 // Column for varying data
 using gauge_col_t = segment_meta_column<int64_t, int64_xor_alg>;
 
-/// Samping rate of the indexer inside the column store, if
-/// sampling_rate == 1 every row is indexed, 2 - every secod row, etc
+/// Sampling rate of the indexer inside the column store, if
+/// sampling_rate == 1 every row is indexed, 2 - every second row, etc
 /// The value 8 with max_frame_size set to 64 will give us 8 hints per
-/// frame (frame has 64 rows). There is no measureable difference between
+/// frame (frame has 64 rows). There is no measurable difference between
 /// value 8 and smaller values.
 static constexpr uint32_t sampling_rate = 8;
 
-// Sampling rate shold be proportional to max_frame_size so we will
+// Sampling rate should be proportional to max_frame_size so we will
 // sample first row of every frame.
 static_assert(
   gauge_col_t::max_frame_size % sampling_rate == 0, "Invalid sampling rate");
@@ -86,7 +86,7 @@ void increment_all(std::tuple<Args...>& tup) {
 }
 
 /// The iters tuple is a tuple of std::optional<iterator-type>. The method
-/// checks if the optoinal referenced by index is not none and dereferences.
+/// checks if the optional referenced by index is not none and dereferences.
 template<segment_meta_ix ix, class T, class... Args>
 void value_or(const std::tuple<Args...>& iters, T& res) {
     const auto& it = std::get<static_cast<size_t>(ix)>(iters);
@@ -268,7 +268,7 @@ public:
           ix
             % static_cast<uint32_t>(::details::FOR_buffer_depth * sampling_rate)
           == 0) {
-            // At the begining of every row we need to collect
+            // At the beginning of every row we need to collect
             // a set of hints to speed up the subsequent random
             // reads.
             auto base_offset_hint = _base_offset.get_current_stream_pos();
