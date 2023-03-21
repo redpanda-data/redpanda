@@ -92,6 +92,9 @@ private:
     uint32_t _size{0};
 };
 
+struct share_frame_t {};
+inline constexpr auto share_frame = share_frame_t{};
+
 template<class value_t, auto delta_alg_instance = details::delta_xor{}>
 class segment_meta_column_frame
   : public serde::envelope<
@@ -116,6 +119,23 @@ private:
     using self_t = segment_meta_column_frame<value_t, delta_alg_instance>;
 
 public:
+    segment_meta_column_frame() = default;
+
+    // constructor that will share the underlying buffer of src
+    segment_meta_column_frame(
+      share_frame_t, segment_meta_column_frame& src) noexcept
+      : _head{src._head}
+      , _tail{[&] {
+          if (src._tail.has_value()) {
+              // invoke share constructor by passing a pointer to encoder_t
+              return std::optional<encoder_t>{
+                std::in_place, &(src._tail.value())};
+          }
+          return std::optional<encoder_t>{};
+      }()}
+      , _size{src._size}
+      , _last_row{src._last_row} {}
+
     using const_iterator
       = segment_meta_frame_const_iterator<value_t, decoder_t>;
 
@@ -454,6 +474,18 @@ class segment_meta_column_impl
 
     using self_t = segment_meta_column_impl<value_t, delta_alg, Derived>;
 
+    // this friendship is used to access frame_t and _frames
+    friend class column_store;
+
+    // constructor that will share all the frames from the source range
+    segment_meta_column_impl(
+      share_frame_t, auto&& frame_iterator, auto&& frame_iterator_end) {
+        for (; frame_iterator != frame_iterator_end; ++frame_iterator) {
+            // this target the constructor that will share the underlying buffer
+            _frames.emplace_back(share_frame, *frame_iterator);
+        }
+    }
+
 public:
     /// Position in the column, can be used by
     /// index lookup operations
@@ -462,6 +494,11 @@ public:
     static constexpr size_t max_frame_size = 0x400;
     using const_iterator
       = segment_meta_column_const_iterator<value_t, delta_alg>;
+
+    segment_meta_column_impl() = default;
+
+    segment_meta_column_impl(segment_meta_column_impl&&) = default;
+    segment_meta_column_impl& operator=(segment_meta_column_impl&&) = default;
 
     void append(value_t value) {
         if (_frames.empty() || _frames.back().size() == max_frame_size) {
@@ -688,6 +725,17 @@ protected:
           value);
     }
 
+    auto get_frame_iterator_by_element_index(size_t ix) {
+        return std::find_if(
+          _frames.begin(), _frames.end(), [ix](frame_t const& f) mutable {
+              if (f.size() > ix) {
+                  return true;
+              }
+              ix -= f.size();
+              return false;
+          });
+    }
+
     std::list<frame_t> _frames;
 };
 
@@ -711,6 +759,7 @@ class segment_meta_column<value_t, details::delta_xor>
 
 public:
     using delta_alg = details::delta_xor;
+    using base_t::base_t;
     using typename base_t::const_iterator;
 
     template<class PredT>
@@ -745,6 +794,7 @@ class segment_meta_column<value_t, details::delta_delta<value_t>>
 
 public:
     using delta_alg = details::delta_delta<value_t>;
+    using base_t::base_t;
     using typename base_t::const_iterator;
 
     template<class PredT>
