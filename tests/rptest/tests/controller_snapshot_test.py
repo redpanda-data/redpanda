@@ -150,3 +150,82 @@ class ControllerSnapshotTest(RedpandaTest):
         check_and_save_node_ids(self.redpanda.nodes)
 
         self.logger.info("cluster restarted successfully")
+
+    @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_join_restart(self):
+        seed_nodes = self.redpanda.nodes[0:3]
+        joiner = self.redpanda.nodes[3]
+        self.redpanda.set_seed_servers(seed_nodes)
+
+        # Start first three nodes
+        self.redpanda.start(seed_nodes)
+        admin = Admin(self.redpanda, default_node=seed_nodes[0])
+
+        # change controller state
+
+        admin.put_feature("controller_snapshots", {"state": "active"})
+
+        # could be any non-default value for any property
+        self.redpanda.set_cluster_config(
+            {'controller_snapshot_max_age_sec': 10})
+
+        # wait for controller snapshots
+        for n in seed_nodes:
+            self.redpanda.wait_for_controller_snapshot(n)
+
+        # record expected values
+
+        def get_features_map(features_response):
+            return dict((f['name'], f) for f in features_response['features'])
+
+        initial_features = admin.get_features()
+        initial_features_map = get_features_map(initial_features)
+        assert initial_features_map['controller_snapshots'][
+            'state'] == 'active'
+
+        initial_config_resp = admin.get_cluster_config()
+        assert initial_config_resp['controller_snapshot_max_age_sec'] == 10
+
+        def check_features_response(features):
+            for k, v in initial_features.items():
+                if k == 'features':
+                    continue
+                new_v = features.get(k)
+                assert new_v == v, \
+                    f"features response mismatch (key: {k}): got {new_v}, expected {v}"
+
+            features_map = get_features_map(features)
+            for f, v in initial_features_map.items():
+                new_v = features_map.get(f)
+                assert new_v == v, \
+                    f"features map mismatch (feature: {f}): got {new_v}, expected {v}"
+
+        def check_config_response(config_resp):
+            def to_set(resp):
+                return set((k, (v if not isinstance(v, list) else tuple(v)))
+                           for k, v in resp.items())
+
+            symdiff = to_set(initial_config_resp) ^ to_set(config_resp)
+            assert len(
+                symdiff) == 0, f"config responses differ, symdiff: {symdiff}"
+
+        def check(node):
+            check_features_response(admin.get_features(node=node))
+            check_config_response(admin.get_cluster_config(node=node))
+
+        # make a node join and check it
+
+        self.redpanda.start_node(joiner)
+        wait_until(lambda: self.redpanda.registered(joiner),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        check(joiner)
+
+        # restart and check
+
+        self.redpanda.restart_nodes(self.redpanda.nodes)
+        self.redpanda.wait_for_membership(first_start=False)
+
+        for n in self.redpanda.nodes:
+            check(n)
