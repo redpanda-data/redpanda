@@ -26,6 +26,7 @@
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/condition-variable.hh>
 #include <seastar/core/loop.hh>
@@ -48,6 +49,7 @@ using storage_t = model::record_batch_reader::storage_t;
 
 remote_partition::iterator
 remote_partition::materialize_segment(const segment_meta& meta) {
+    _as.check();
     auto base_kafka_offset = meta.base_offset - meta.delta_offset;
     auto units = materialized().get_segment_units();
     auto st = std::make_unique<materialized_segment_state>(
@@ -295,6 +297,10 @@ public:
             vlog(
               _ctxlog.debug,
               "gate_closed_exception while reading from remote_partition");
+        } catch (const ss::abort_requested_exception&) {
+            vlog(
+              _ctxlog.debug,
+              "abort_requested_exception while reading from remote_partition");
         } catch (const std::exception& e) {
             vlog(
               _ctxlog.warn,
@@ -418,7 +424,7 @@ private:
               _reader->max_rp_offset(),
               _reader->is_eof(),
               _next_segment_base_offset);
-            _partition->materialized().evict_reader(std::move(_reader));
+            _partition->evict_reader(std::move(_reader));
             vlog(
               _ctxlog.debug,
               "initializing new segment reader {}, next offset",
@@ -484,7 +490,39 @@ remote_partition::remote_partition(
   , _bucket(std::move(bucket))
   , _probe(m.get_ntp()) {}
 
-ss::future<> remote_partition::start() { co_return; }
+ss::future<> remote_partition::start() {
+    // Fiber that consumers from _eviction_list and calls stop on items before
+    // destroying them.
+    ssx::spawn_with_gate(_gate, [this] { return run_eviction_loop(); });
+    co_return;
+}
+
+void remote_partition::evict_reader(
+  std::unique_ptr<remote_segment_batch_reader> reader) {
+    _eviction_pending.push_back(std::move(reader));
+    _has_evictions_cvar.signal();
+}
+
+void remote_partition::evict_segment(
+  ss::lw_shared_ptr<remote_segment> segment) {
+    _eviction_pending.push_back(std::move(segment));
+    _has_evictions_cvar.signal();
+}
+
+ss::future<> remote_partition::run_eviction_loop() {
+    // Evict readers asynchronously.
+    // NOTE: exits when the condition variable is broken.
+    while (true) {
+        co_await _has_evictions_cvar.wait(
+          [this] { return !_eviction_pending.empty(); });
+        auto eviction_in_flight = std::exchange(_eviction_pending, {});
+        co_await ss::max_concurrent_for_each(
+          eviction_in_flight, 200, [](auto&& rs_variant) {
+              return std::visit(
+                [](auto&& rs) { return rs->stop(); }, rs_variant);
+          });
+    }
+}
 
 kafka::offset remote_partition::first_uploaded_offset() {
     vassert(
@@ -594,7 +632,12 @@ remote_partition::aborted_transactions(offset_range offsets) {
 ss::future<> remote_partition::stop() {
     vlog(_ctxlog.debug, "remote partition stop {} segments", _segments.size());
 
+    // Prevent further segment materialization, readers, etc.
     _as.request_abort();
+
+    // Signal to the eviction loop that it should terminate.
+    _has_evictions_cvar.broken();
+
     co_await _gate.close();
     // Remove materialized_segment_state from the list that contains it, to
     // avoid it getting registered for eviction and stop.
@@ -618,13 +661,20 @@ ss::future<> remote_partition::stop() {
           return segment->stop();
       });
 
-    // We may have some segment or reader objects enqueued for stop in
-    // the shared eviction queue: must flush it, or they can outlive
-    // us and trigger assertion in retry_chain_node destructor.
-    // This waits for all evictions, not just ours, but that's okay because
-    // stopping readers is fast, the queue is not usually long, and destroying
-    // partitions is relatively infrequent.
-    co_await materialized().flush_evicted();
+    // Do the last pass over the eviction list to stop remaining items returned
+    // from readers after the eviction loop stopped.
+    for (auto& rs : _eviction_pending) {
+        co_await std::visit(
+          [](auto&& rs) {
+              if (!rs->is_stopped()) {
+                  return rs->stop();
+              } else {
+                  return ss::make_ready_future<>();
+              }
+          },
+          rs);
+    }
+
     vlog(_ctxlog.debug, "remote partition stopped");
 }
 
@@ -640,7 +690,7 @@ void remote_partition::return_reader(
         // which 'it' points to belongs to the new segment.
         it->second->return_reader(std::move(reader));
     } else {
-        materialized().evict_reader(std::move(reader));
+        evict_reader(std::move(reader));
     }
 }
 

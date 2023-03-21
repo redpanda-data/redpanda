@@ -20,9 +20,9 @@ namespace cloud_storage {
 void materialized_segment_state::offload(remote_partition* partition) {
     _hook.unlink();
     for (auto&& rs : readers) {
-        partition->materialized().evict_reader(std::move(rs));
+        partition->evict_reader(std::move(rs));
     }
-    partition->materialized().evict_segment(std::move(segment));
+    partition->evict_segment(std::move(segment));
     partition->_probe.segment_offloaded();
 }
 
