@@ -106,11 +106,7 @@ class TxAbortSnapshotTest(RedpandaTest):
                     segments[node.account.hostname].append(m.group(1))
         return segments
 
-    # FIXME: once issue https://github.com/redpanda-data/redpanda/issues/9091 is resolved, remove
-    # the log_allow_list entry for snapshot removal race.
-    @cluster(num_nodes=3,
-             log_allow_list=RESTART_LOG_ALLOW_LIST +
-             ["Raced removing snapshot abort.idx"])
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
     def test_index_removal(self) -> None:
         self.fill_idx(self.topics[0].name)
         segments = self.find_segments(self.topics[0].name)
