@@ -24,6 +24,7 @@
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/noncopyable_function.hh>
 
 #include <functional>
 #include <system_error>
@@ -59,6 +60,12 @@ public:
     command_batch_builder& mark_clean(model::offset);
     /// Add truncate command to the batch
     command_batch_builder& truncate(model::offset start_rp_offset);
+    /// Add spillover command to the batch
+    command_batch_builder& spillover(model::offset start_rp_offset);
+    /// Add truncate-archive-init command to the batch
+    command_batch_builder& truncate_archive_init(model::offset start_rp_offset);
+    /// Add truncate-archive-commit command to the batch
+    command_batch_builder& cleanup_archive(model::offset start_rp_offset);
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
@@ -96,7 +103,7 @@ public:
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
-    /// Truncate local snapshot
+    /// Truncate local snapshot by moving start_offset forward
     ///
     /// This method doesn't actually delete the entries from the snapshot
     /// but advances the start offset stored inside it. After that the segments
@@ -107,8 +114,34 @@ public:
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
+    /// Truncate local snapshot
+    ///
+    /// This method removes entries from the local snapshot and moves
+    /// start_rp_offset forward. The entries are supposed to be moved to archive
+    /// by the caller.
+    ss::future<std::error_code> spillover(
+      model::offset start_rp_offset,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
+    /// Truncate archive area
+    ///
+    /// This method moves archive_start_offset forward. If start_rp_offset is
+    /// above the start_offset of the local snapshot the command is converted
+    /// to 'update_start_offset_cmd'.
+    ss::future<std::error_code> truncate_archive_init(
+      model::offset start_rp_offset,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
     /// Removes replaced and truncated segments from the snapshot
     ss::future<std::error_code> cleanup_metadata(
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+
+    /// Propagates archive_clean_offset forward
+    ss::future<std::error_code> cleanup_archive(
+      model::offset start_rp_offset,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
@@ -151,6 +184,8 @@ public:
 
     model::offset get_start_offset() const;
     model::offset get_last_offset() const;
+    model::offset get_archive_start_offset() const;
+    model::offset get_archive_clean_offset() const;
 
     // Return list of all segments that has to be
     // removed from S3.
@@ -188,17 +223,6 @@ private:
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>>);
 
-    ss::future<std::error_code> do_truncate(
-      model::offset,
-      ss::lowres_clock::time_point,
-      std::optional<std::reference_wrapper<ss::abort_source>>);
-
-    ss::future<std::error_code> do_cleanup_metadata(
-      ss::lowres_clock::time_point,
-      std::optional<std::reference_wrapper<ss::abort_source>>);
-
-    /// NOTE: no deadline provided, as it is expected further updates to the
-    /// archiver will depend on all record batches having been applied.
     ss::future<std::error_code> do_replicate_commands(
       model::record_batch,
       std::optional<std::reference_wrapper<ss::abort_source>>);
@@ -217,6 +241,8 @@ private:
     struct update_start_offset_cmd;
     struct cleanup_metadata_cmd;
     struct mark_clean_cmd;
+    struct truncate_archive_init_cmd;
+    struct truncate_archive_commit_cmd;
     struct snapshot;
 
     friend segment segment_from_meta(const cloud_storage::segment_meta& meta);
@@ -232,6 +258,8 @@ private:
     void apply_cleanup_metadata();
     void apply_mark_clean(model::offset);
     void apply_update_start_offset(const start_offset& so);
+    void apply_truncate_archive_init(const start_offset& so);
+    void apply_truncate_archive_commit(const start_offset& so);
 
 private:
     prefix_logger _logger;
