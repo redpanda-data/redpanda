@@ -116,8 +116,7 @@ void usage_window::reset(ss::lowres_system_clock::time_point now) {
 usage usage::operator+(const usage& other) const {
     return usage{
       .bytes_sent = bytes_sent + other.bytes_sent,
-      .bytes_received = bytes_received + other.bytes_received,
-      .bytes_cloud_storage = bytes_cloud_storage + other.bytes_cloud_storage};
+      .bytes_received = bytes_received + other.bytes_received};
 }
 
 usage_manager::accounting_fiber::accounting_fiber(
@@ -298,6 +297,18 @@ ss::future<> usage_manager::accounting_fiber::async_data_fetch(
       [](const usage& acc, const usage& x) { return acc + x; });
     if (!is_bucket_stale()) {
         _buckets[index].u = kafka_stats;
+    }
+
+    /// Grab cloud storage stats via health monitor
+    const auto expiry = std::min<std::chrono::seconds>(
+      (_usage_window_width_interval * _usage_num_windows),
+      std::chrono::seconds(10));
+    co_await _health_monitor.maybe_refresh_cloud_health_stats();
+    auto health_overview = co_await _health_monitor.get_cluster_health_overview(
+      ss::lowres_clock::now() + expiry);
+    if (!is_bucket_stale()) {
+        _buckets[index].u.bytes_cloud_storage
+          = health_overview.bytes_in_cloud_storage;
     }
 }
 

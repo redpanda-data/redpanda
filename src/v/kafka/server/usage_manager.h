@@ -28,7 +28,7 @@ struct usage
   : serde::envelope<usage, serde::version<0>, serde::compat_version<0>> {
     uint64_t bytes_sent{0};
     uint64_t bytes_received{0};
-    uint64_t bytes_cloud_storage{0};
+    std::optional<uint64_t> bytes_cloud_storage;
     usage operator+(const usage&) const;
     auto serde_fields() {
         return std::tie(bytes_sent, bytes_received, bytes_cloud_storage);
