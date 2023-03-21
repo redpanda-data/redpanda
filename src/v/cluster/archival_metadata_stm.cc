@@ -11,6 +11,7 @@
 
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/types.h"
 #include "cluster/errc.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
@@ -756,6 +757,47 @@ archival_metadata_stm::get_segments_to_cleanup() const {
     // Include replaced segments to the backlog
     using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
     std::vector<lw_segment_meta> backlog = _manifest->lw_replaced_segments();
+
+    // Make sure that 'replaced' list doesn't have any references to active
+    // segments. This is a protection from the data loss. This should not
+    // happen, but protects us from data loss in cases where bugs elsewhere.
+    auto backlog_size = backlog.size();
+    backlog.erase(
+      std::remove_if(
+        backlog.begin(),
+        backlog.end(),
+        [this](const lw_segment_meta& m) {
+            auto it = _manifest->find(m.base_offset);
+            if (it == _manifest->end()) {
+                return false;
+            }
+            const auto& s = it->second;
+            auto m_name = _manifest->generate_remote_segment_name(
+              cloud_storage::partition_manifest::lw_segment_meta::convert(m));
+            auto s_name = _manifest->generate_remote_segment_name(s);
+            // The segment will have the same path as the one we have in
+            // manifest in S3 so if we will delete it the data will be lost.
+            if (m_name == s_name) {
+                vlog(
+                  _logger.warn,
+                  "The replaced segment name {} collides with the segment {} "
+                  "in the manifest. It will be removed to prevent the data "
+                  "loss.",
+                  m_name,
+                  s_name);
+                return true;
+            }
+            return false;
+        }),
+      backlog.end());
+
+    if (backlog.size() < backlog_size) {
+        vlog(
+          _logger.warn,
+          "{} segments will not be removed from the bucket because they're "
+          "available in the manifest",
+          backlog_size - backlog.size());
+    }
 
     auto so = _manifest->get_start_offset().value_or(model::offset(0));
     for (const auto& m : *_manifest) {

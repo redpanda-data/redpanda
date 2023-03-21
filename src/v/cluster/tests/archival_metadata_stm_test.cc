@@ -474,7 +474,8 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
       .base_offset = model::offset(0),
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(2),
-      .segment_term = model::term_id(1)});
+      .segment_term = model::term_id(1),
+      .sname_format = cloud_storage::segment_name_format::v2});
     // Replicate add_segment_cmd command that adds segment with offset 0
     auto batcher = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
     batcher.add_segments(m);
