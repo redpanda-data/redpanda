@@ -222,7 +222,8 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .base_offset = model::offset(0),
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(1),
-      .segment_term = model::term_id(1)});
+      .segment_term = model::term_id(1),
+      .sname_format = cloud_storage::segment_name_format::v2});
     archival_stm->add_segments(m2, std::nullopt, ss::lowres_clock::now() + 10s)
       .get();
     archival_stm->sync(10s).get();
@@ -519,6 +520,7 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
     wait_for_confirmed_leader();
     std::vector<cloud_storage::segment_meta> m;
     m.push_back(segment_meta{
+      .size_bytes = 200,
       .base_offset = model::offset(0),
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(1),
@@ -529,6 +531,7 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1)});
     m.push_back(segment_meta{
+      .size_bytes = 100,
       .base_offset = model::offset(0),
       .committed_offset = model::offset(999),
       .archiver_term = model::term_id(2),
