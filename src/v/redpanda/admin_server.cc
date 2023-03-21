@@ -3829,6 +3829,12 @@ void admin_server::register_cluster_routes() {
                 } else {
                     ret.controller_id = -1;
                 }
+                if (health_overview.bytes_in_cloud_storage) {
+                    ret.bytes_in_cloud_storage
+                      = health_overview.bytes_in_cloud_storage.value();
+                } else {
+                    ret.bytes_in_cloud_storage = -1;
+                }
 
                 return ss::json::json_return_type(ret);
             });
