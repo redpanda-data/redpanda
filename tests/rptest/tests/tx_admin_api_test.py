@@ -33,6 +33,7 @@ class TxAdminTest(RedpandaTest):
         super(TxAdminTest,
               self).__init__(test_context=test_context,
                              num_brokers=3,
+                             log_level="trace",
                              extra_rp_conf={
                                  "tx_timeout_delay_ms": 10000000,
                                  "abort_timed_out_transactions_interval_ms":
