@@ -742,65 +742,127 @@ class segment_meta_cstore::impl
       segment_meta_cstore::impl,
       serde::version<0>,
       serde::compat_version<0>> {
+    // TODO tunable?
+    constexpr static auto max_buffer_entries = 1024u;
+
 public:
     void append(const segment_meta& meta) { _col.append(meta); }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl> begin() const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.begin());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl> end() const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.end());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     find(model::offset o) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.find(o()));
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     lower_bound(model::offset o) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.lower_bound(o()));
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     upper_bound(model::offset o) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.upper_bound(o()));
     }
 
     std::optional<segment_meta> last_segment() const {
+        if (!_write_buffer.empty()) {
+            auto last_committed_offset = _col.last_committed_offset().value_or(
+              model::offset::min());
+
+            auto& buffer_last_seg = _write_buffer.crbegin()->second;
+            if (likely(
+                  buffer_last_seg.committed_offset >= last_committed_offset)) {
+                // return last one in _write_buffer
+                return buffer_last_seg;
+            }
+            // fallthrough
+        }
         return _col.last_segment();
     }
 
-    void insert(const segment_meta& m) { _col.append(m); }
+    void insert(const segment_meta& m) {
+        auto [m_it, _] = _write_buffer.insert_or_assign(m.base_offset, m);
+        // the new segment_meta could be a replacement for subsequent entries in
+        // the buffer, so do a pass to clean them
+        if (_write_buffer.size() > 1) {
+            //
+            auto not_replaced_segment = std::find_if(
+              std::next(m_it), _write_buffer.end(), [&](auto& kv) {
+                  return kv.first > m.committed_offset;
+              });
+            // if(next(m_it) == not_replaced_segment) there is nothing to erase,
+            // _write_buffer.erase would do nothing
+            _write_buffer.erase(std::next(m_it), not_replaced_segment);
+        }
 
-    auto inflated_actual_size() const { return _col.inflated_actual_size(); }
+        if (_write_buffer.size() > max_buffer_entries) {
+            flush_write_buffer();
+        }
+    }
 
-    size_t size() const { return _col.size(); }
+    auto inflated_actual_size() const {
+        // TODO how to deal with write_buffer? is it ok to return an approx
+        // value by not flushing?
+        return _col.inflated_actual_size();
+    }
 
-    bool empty() const { return _col.empty(); }
+    size_t size() const {
+        flush_write_buffer();
+        return _col.size();
+    }
 
-    bool contains(model::offset o) { return _col.contains(o()); }
+    bool empty() const { return _write_buffer.empty() && _col.empty(); }
+
+    bool contains(model::offset o) {
+        return _write_buffer.contains(o) || _col.contains(o());
+    }
 
     void prefix_truncate(model::offset new_start_offset) {
+        auto new_begin = _write_buffer.lower_bound(new_start_offset);
+        _write_buffer.erase(_write_buffer.begin(), new_begin);
         _col.prefix_truncate(new_start_offset());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     at_index(size_t ix) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.at_index(ix));
     }
 
-    auto serde_fields() { return std::tie(_col); }
+    auto serde_fields() {
+        flush_write_buffer();
+        return std::tie(_col);
+    }
 
 private:
-    column_store _col;
+    void flush_write_buffer() const {
+        if (_write_buffer.empty()) {
+            return;
+        }
+        _col.insert_entries(_write_buffer.begin(), _write_buffer.end());
+        _write_buffer.clear();
+    }
+
+    mutable absl::btree_map<model::offset, segment_meta> _write_buffer{};
+    mutable column_store _col{};
 };
 
 segment_meta_cstore::segment_meta_cstore()
