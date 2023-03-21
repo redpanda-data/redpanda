@@ -113,7 +113,8 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
   kafka::group_id group_id,
   model::producer_identity pid,
   model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  model::partition_id tm) {
     auto ntp_opt = _group_router.local().coordinator_mapper().local().ntp_for(
       group_id);
     if (!ntp_opt) {
@@ -180,7 +181,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
     auto _self = _controller->self();
 
     if (leader == _self) {
-        cluster::begin_group_tx_request req{group_id, pid, tx_seq, timeout};
+        cluster::begin_group_tx_request req{group_id, pid, tx_seq, timeout, tm};
         co_return co_await begin_group_tx_locally(std::move(req));
     }
 
@@ -195,7 +196,7 @@ ss::future<cluster::begin_group_tx_reply> rm_group_frontend::begin_group_tx(
       _self,
       leader);
     auto reply = co_await dispatch_begin_group_tx(
-      leader, group_id, pid, tx_seq, timeout);
+      leader, group_id, pid, tx_seq, timeout, tm);
     vlog(
       cluster::txlog.trace,
       "received name:begin_group_tx, group_id:{}, pid:{}, tx_seq:{}, ec:{}, "
@@ -214,17 +215,19 @@ rm_group_frontend::dispatch_begin_group_tx(
   kafka::group_id group_id,
   model::producer_identity pid,
   model::tx_seq tx_seq,
-  model::timeout_clock::duration timeout) {
+  model::timeout_clock::duration timeout,
+  model::partition_id tm) {
     return _connection_cache.local()
       .with_node_client<cluster::tx_gateway_client_protocol>(
         _controller->self(),
         ss::this_shard_id(),
         leader,
         timeout,
-        [group_id, pid, tx_seq, timeout](
+        [group_id, pid, tx_seq, timeout, tm](
           cluster::tx_gateway_client_protocol cp) {
             return cp.begin_group_tx(
-              cluster::begin_group_tx_request{group_id, pid, tx_seq, timeout},
+              cluster::begin_group_tx_request{
+                group_id, pid, tx_seq, timeout, tm},
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<cluster::begin_group_tx_reply>)

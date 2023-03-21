@@ -156,6 +156,15 @@ void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
         auto cmd = reflection::adl<group_log_fencing_v0>{}.from(val_reader);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
         group_it->second.try_set_fence(bid.pid.get_id(), bid.pid.get_epoch());
+    } else if (fence_version == group::fence_control_record_v1_version) {
+        auto cmd = reflection::adl<group_log_fencing_v1>{}.from(val_reader);
+        auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
+        group_it->second.try_set_fence(
+          bid.pid.get_id(),
+          bid.pid.get_epoch(),
+          cmd.tx_seq,
+          cmd.transaction_timeout_ms,
+          model::partition_id(0));
     } else if (fence_version == group::fence_control_record_version) {
         auto cmd = reflection::adl<group_log_fencing>{}.from(val_reader);
         auto [group_it, _] = _state.groups.try_emplace(cmd.group_id);
@@ -163,7 +172,8 @@ void group_recovery_consumer::apply_tx_fence(model::record_batch&& batch) {
           bid.pid.get_id(),
           bid.pid.get_epoch(),
           cmd.tx_seq,
-          cmd.transaction_timeout_ms);
+          cmd.transaction_timeout_ms,
+          cmd.tm_partition);
     } else {
         vassert(
           false,

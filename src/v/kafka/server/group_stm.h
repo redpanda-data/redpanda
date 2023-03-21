@@ -35,10 +35,17 @@ struct group_log_fencing_v0 {
     kafka::group_id group_id;
 };
 
+struct group_log_fencing_v1 {
+    kafka::group_id group_id;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration transaction_timeout_ms;
+};
+
 struct group_log_fencing {
     kafka::group_id group_id;
     model::tx_seq tx_seq;
     model::timeout_clock::duration transaction_timeout_ms;
+    model::partition_id tm_partition;
 };
 
 struct group_log_prepared_tx {
@@ -65,6 +72,11 @@ public:
         offset_metadata_value metadata;
     };
 
+    struct tx_info {
+        model::tx_seq tx_seq;
+        model::partition_id tm_partition;
+    };
+
     void overwrite_metadata(group_metadata_value&&);
     void remove() {
         _offsets.clear();
@@ -88,12 +100,13 @@ public:
       model::producer_id id,
       model::producer_epoch epoch,
       model::tx_seq txseq,
-      model::timeout_clock::duration transaction_timeout_ms) {
+      model::timeout_clock::duration transaction_timeout_ms,
+      model::partition_id tm_partition) {
         auto [fence_it, _] = _fence_pid_epoch.try_emplace(id, epoch);
         if (fence_it->second <= epoch) {
             fence_it->second = epoch;
             model::producer_identity pid(id(), epoch());
-            _tx_seqs[pid] = txseq;
+            _tx_data[pid] = tx_info{txseq, tm_partition};
             _timeouts[pid] = transaction_timeout_ms;
         }
     }
@@ -117,9 +130,9 @@ public:
         return _fence_pid_epoch;
     }
 
-    const absl::node_hash_map<model::producer_identity, model::tx_seq>&
-    tx_seqs() const {
-        return _tx_seqs;
+    const absl::node_hash_map<model::producer_identity, tx_info>&
+    tx_data() const {
+        return _tx_data;
     }
 
     const absl::
@@ -137,7 +150,7 @@ private:
     absl::node_hash_map<model::producer_id, group::prepared_tx> _prepared_txs;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
-    absl::node_hash_map<model::producer_identity, model::tx_seq> _tx_seqs;
+    absl::node_hash_map<model::producer_identity, tx_info> _tx_data;
     absl::
       node_hash_map<model::producer_identity, model::timeout_clock::duration>
         _timeouts;

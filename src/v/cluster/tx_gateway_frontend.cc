@@ -1480,7 +1480,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     auto tx = r.value();
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
-      request.group_id, pid, tx.tx_seq, tx.timeout_ms);
+      request.group_id, pid, tx.tx_seq, tx.timeout_ms, 0);
     if (group_info.ec != tx_errc::none) {
         vlog(txlog.warn, "error on begining group tx: {}", group_info.ec);
         co_return add_offsets_tx_reply{.error_code = group_info.ec};

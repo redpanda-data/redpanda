@@ -30,7 +30,8 @@ public:
       kafka::group_id,
       model::producer_identity,
       model::tx_seq,
-      model::timeout_clock::duration)
+      model::timeout_clock::duration,
+      model::partition_id)
       = 0;
 
     virtual ss::future<begin_group_tx_reply>
