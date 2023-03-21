@@ -768,24 +768,30 @@ disk_log_impl::gc(compaction_config cfg) {
       "[{}] applying 'deletion' log cleanup policy with config: {}",
       config().ntp(),
       cfg);
-    if (deletion_exempt(config().ntp())) {
-        vlog(
-          gclog.trace,
-          "[{}] skipped log deletion, exempt topic",
-          config().ntp());
-        co_return std::nullopt;
-    }
 
-    auto max_offset_by_size = size_based_gc_max_offset(cfg);
-    auto max_offset_by_time = time_based_gc_max_offset(cfg);
-
-    auto max_offset = std::max(max_offset_by_size, max_offset_by_time);
+    auto max_offset = retention_offset(cfg);
 
     if (max_offset) {
         co_return co_await request_eviction_until_offset(*max_offset);
     }
 
     co_return std::nullopt;
+}
+
+std::optional<model::offset>
+disk_log_impl::retention_offset(compaction_config cfg) {
+    if (deletion_exempt(config().ntp())) {
+        vlog(
+          gclog.trace,
+          "[{}] skipped log deletion, exempt topic",
+          config().ntp());
+        return std::nullopt;
+    }
+
+    auto max_offset_by_size = size_based_gc_max_offset(cfg);
+    auto max_offset_by_time = time_based_gc_max_offset(cfg);
+
+    return std::max(max_offset_by_size, max_offset_by_time);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {

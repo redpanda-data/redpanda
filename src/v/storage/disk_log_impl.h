@@ -180,6 +180,8 @@ private:
 
     bool is_cloud_retention_active() const;
 
+    std::optional<model::offset> retention_offset(compaction_config);
+
 private:
     size_t max_segment_size() const;
     // Computes the segment size based on the latest max_segment_size
