@@ -11,6 +11,7 @@
 
 #include "kafka/server/usage_manager.h"
 
+#include "cluster/health_monitor_frontend.h"
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
 #include "storage/api.h"
@@ -120,6 +121,7 @@ usage usage::operator+(const usage& other) const {
 
 usage_manager::accounting_fiber::accounting_fiber(
   ss::sharded<usage_manager>& um,
+  ss::sharded<cluster::health_monitor_frontend>& health_monitor,
   ss::sharded<storage::api>& storage,
   size_t usage_num_windows,
   std::chrono::seconds usage_window_width_interval,
@@ -127,6 +129,7 @@ usage_manager::accounting_fiber::accounting_fiber(
   : _usage_num_windows(usage_num_windows)
   , _usage_window_width_interval(usage_window_width_interval)
   , _usage_disk_persistance_interval(usage_disk_persistance_interval)
+  , _health_monitor(health_monitor.local())
   , _kvstore(storage.local().kvs())
   , _um(um) {
     vlog(
@@ -302,13 +305,16 @@ std::chrono::seconds usage_manager::accounting_fiber::reset_state(
     return last_window_delta;
 }
 
-usage_manager::usage_manager(ss::sharded<storage::api>& storage)
+usage_manager::usage_manager(
+  ss::sharded<cluster::health_monitor_frontend>& health_monitor,
+  ss::sharded<storage::api>& storage)
   : _usage_enabled(config::shard_local_cfg().enable_usage.bind())
   , _usage_num_windows(config::shard_local_cfg().usage_num_windows.bind())
   , _usage_window_width_interval(
       config::shard_local_cfg().usage_window_width_interval_sec.bind())
   , _usage_disk_persistance_interval(
       config::shard_local_cfg().usage_disk_persistance_interval_sec.bind())
+  , _health_monitor(health_monitor)
   , _storage(storage) {}
 
 ss::future<> usage_manager::reset() {
@@ -338,6 +344,7 @@ ss::future<> usage_manager::start_accounting_fiber() {
     }
     _accounting_fiber = std::make_unique<accounting_fiber>(
       this->container(),
+      _health_monitor,
       _storage,
       _usage_num_windows(),
       _usage_window_width_interval(),
