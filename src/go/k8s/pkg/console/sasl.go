@@ -140,6 +140,7 @@ func (k *KafkaSA) Cleanup(ctx context.Context) error {
 	if !controllerutil.ContainsFinalizer(k.consoleobj, ConsoleSAFinalizer) {
 		return nil
 	}
+	k.log.Info("cleaning up SA resources and removing finalizer")
 
 	adminAPI, err := NewAdminAPI(ctx, k.Client, k.scheme, k.clusterobj, k.clusterDomain, k.adminAPI, k.log)
 	if err != nil {

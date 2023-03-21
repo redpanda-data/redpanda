@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -27,6 +28,7 @@ var validHostnameSegment = regexp.MustCompile(`^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0
 type ConsoleValidator struct {
 	Client  client.Client
 	decoder *admission.Decoder
+	Logger  logr.Logger
 }
 
 // Handle processes admission for Console
@@ -42,6 +44,7 @@ func (v *ConsoleValidator) Handle(
 	}
 
 	if console.DeletionTimestamp != nil {
+		v.Logger.Info("console is deleting, any change is allowed in webhook")
 		return admission.Allowed("")
 	}
 
@@ -111,6 +114,7 @@ func (v *ConsoleValidator) InjectDecoder(d *admission.Decoder) error {
 type ConsoleDefaulter struct {
 	Client  client.Client
 	decoder *admission.Decoder
+	Logger  logr.Logger
 }
 
 // Handle processes admission for Console

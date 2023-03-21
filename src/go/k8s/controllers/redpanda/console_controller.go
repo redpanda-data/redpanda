@@ -118,6 +118,7 @@ func (r *ConsoleReconciler) Reconcile(
 	var s state
 	switch {
 	case !console.GetDeletionTimestamp().IsZero():
+		r.Log.Info("console is in state deleting", "console", console.Name)
 		s = &Deleting{r}
 	case !console.GenerationMatchesObserved():
 		if err := r.handleSpecChange(ctx, console); err != nil {
@@ -125,6 +126,7 @@ func (r *ConsoleReconciler) Reconcile(
 		}
 		fallthrough
 	default:
+		r.Log.Info("console is in state reconciling", "console", console.Name)
 		s = &Reconciling{r}
 	}
 
