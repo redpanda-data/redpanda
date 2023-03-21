@@ -10,6 +10,7 @@
  */
 #include "cluster/health_monitor_backend.h"
 
+#include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -553,6 +554,26 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     }
 
     return res;
+}
+
+ss::future<> health_monitor_backend::maybe_refresh_cloud_health_stats() {
+    auto holder = _gate.hold();
+    auto units = co_await _refresh_mutex.get_units();
+    auto leader_id = _raft0->get_leader_id();
+    if (!leader_id || leader_id != _raft0->self().id()) {
+        co_return;
+    }
+    vlog(clusterlog.debug, "collecting cloud health statistics");
+
+    cluster::cloud_storage_size_reducer reducer(
+      _topic_table,
+      _members,
+      _partition_leaders_table,
+      _connections,
+      topic_table_partition_generator::default_batch_size,
+      cloud_storage_size_reducer::default_retries_allowed);
+
+    _bytes_in_cloud_storage = co_await reducer.reduce();
 }
 
 ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
