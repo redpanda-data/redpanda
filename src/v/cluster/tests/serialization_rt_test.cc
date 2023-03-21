@@ -1028,7 +1028,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
           random_producer_identity(),
           tests::random_named_int<model::tx_seq>(),
           std::chrono::duration_cast<std::chrono::milliseconds>(
-            random_timeout_clock_duration())};
+            random_timeout_clock_duration()),
+          tests::random_named_int<model::partition_id>()};
 
         roundtrip_test(data);
     }

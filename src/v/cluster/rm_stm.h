@@ -177,7 +177,10 @@ public:
       config::binding<uint64_t> max_concurrent_producer_ids);
 
     ss::future<checked<model::term_id, tx_errc>> begin_tx(
-      model::producer_identity, model::tx_seq, std::chrono::milliseconds);
+      model::producer_identity,
+      model::tx_seq,
+      std::chrono::milliseconds,
+      model::partition_id);
     ss::future<tx_errc> prepare_tx(
       model::term_id,
       model::partition_id,
@@ -313,7 +316,10 @@ private:
       std::chrono::milliseconds,
       model::partition_id);
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
-      model::producer_identity, model::tx_seq, std::chrono::milliseconds);
+      model::producer_identity,
+      model::tx_seq,
+      std::chrono::milliseconds,
+      model::partition_id);
     ss::future<tx_errc> do_prepare_tx(
       model::term_id,
       model::partition_id,

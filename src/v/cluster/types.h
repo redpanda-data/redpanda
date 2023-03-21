@@ -465,11 +465,12 @@ struct fetch_tx_reply
 
 struct begin_tx_request
   : serde::
-      envelope<begin_tx_request, serde::version<0>, serde::compat_version<0>> {
+      envelope<begin_tx_request, serde::version<1>, serde::compat_version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
     std::chrono::milliseconds transaction_timeout_ms{};
+    model::partition_id tm_partition{0};
 
     begin_tx_request() noexcept = default;
 
@@ -477,11 +478,13 @@ struct begin_tx_request
       model::ntp ntp,
       model::producer_identity pid,
       model::tx_seq tx_seq,
-      std::chrono::milliseconds transaction_timeout_ms)
+      std::chrono::milliseconds transaction_timeout_ms,
+      model::partition_id tm_partition)
       : ntp(std::move(ntp))
       , pid(pid)
       , tx_seq(tx_seq)
-      , transaction_timeout_ms(transaction_timeout_ms) {}
+      , transaction_timeout_ms(transaction_timeout_ms)
+      , tm_partition(tm_partition) {}
 
     friend bool operator==(const begin_tx_request&, const begin_tx_request&)
       = default;
@@ -489,7 +492,7 @@ struct begin_tx_request
     friend std::ostream& operator<<(std::ostream& o, const begin_tx_request& r);
 
     auto serde_fields() {
-        return std::tie(ntp, pid, tx_seq, transaction_timeout_ms);
+        return std::tie(ntp, pid, tx_seq, transaction_timeout_ms, tm_partition);
     }
 };
 
@@ -3762,14 +3765,20 @@ template<>
 struct adl<cluster::begin_tx_request> {
     void to(iobuf& out, cluster::begin_tx_request&& r) {
         serialize(
-          out, std::move(r.ntp), r.pid, r.tx_seq, r.transaction_timeout_ms);
+          out,
+          std::move(r.ntp),
+          r.pid,
+          r.tx_seq,
+          r.transaction_timeout_ms,
+          r.tm_partition);
     }
     cluster::begin_tx_request from(iobuf_parser& in) {
         auto ntp = adl<model::ntp>{}.from(in);
         auto pid = adl<model::producer_identity>{}.from(in);
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<std::chrono::milliseconds>{}.from(in);
-        return {std::move(ntp), pid, tx_seq, timeout};
+        auto tm_partition = adl<model::partition_id>{}.from(in);
+        return {std::move(ntp), pid, tx_seq, timeout, tm_partition};
     }
 };
 

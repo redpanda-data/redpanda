@@ -420,13 +420,14 @@ rm_stm::rm_stm(
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms) {
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm) {
     return _state_lock.hold_read_lock().then(
-      [this, pid, tx_seq, transaction_timeout_ms](
+      [this, pid, tx_seq, transaction_timeout_ms, tm](
         ss::basic_rwlock<>::holder unit) mutable {
           return get_tx_lock(pid.get_id())
-            ->with([this, pid, tx_seq, transaction_timeout_ms]() {
-                return do_begin_tx(pid, tx_seq, transaction_timeout_ms);
+            ->with([this, pid, tx_seq, transaction_timeout_ms, tm]() {
+                return do_begin_tx(pid, tx_seq, transaction_timeout_ms, tm);
             })
             .finally([u = std::move(unit)] {});
       });
@@ -449,7 +450,8 @@ model::record_batch rm_stm::make_fence_batch(
 ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms) {
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm) {
     if (!check_tx_permitted()) {
         co_return tx_errc::request_rejected;
     }
@@ -457,32 +459,38 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     if (!_c->is_leader()) {
         vlog(
           _ctx_log.trace,
-          "processing name:begin_tx pid:{} tx_seq:{} timeout:{} => not a "
-          "leader",
+          "processing name:begin_tx pid:{}, tx_seq:{}, "
+          "timeout:{}, coordinator:{} => not "
+          "a leader",
           pid,
           tx_seq,
-          transaction_timeout_ms);
+          transaction_timeout_ms,
+          tm);
         co_return tx_errc::leader_not_found;
     }
 
     if (!co_await sync(_sync_timeout)) {
         vlog(
           _ctx_log.trace,
-          "processing name:begin_tx pid:{} tx_seq:{} timeout:{} => stale "
-          "leader",
+          "processing name:begin_tx pid:{}, tx_seq:{}, "
+          "timeout:{}, coordinator:{} => "
+          "stale leader",
           pid,
           tx_seq,
-          transaction_timeout_ms);
+          transaction_timeout_ms,
+          tm);
         co_return tx_errc::stale;
     }
     auto synced_term = _insync_term;
 
     vlog(
       _ctx_log.trace,
-      "processing name:begin_tx pid:{} tx_seq:{} timeout:{} in term:{}",
+      "processing name:begin_tx pid:{}, tx_seq:{}, timeout:{}, coordinator:{}  "
+      "in term:{}",
       pid,
       tx_seq,
       transaction_timeout_ms,
+      tm,
       synced_term);
     // checking / setting pid fencing
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
@@ -557,7 +565,7 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     }
 
     model::record_batch batch = make_fence_batch(
-      pid, tx_seq, transaction_timeout_ms, model::partition_id(0));
+      pid, tx_seq, transaction_timeout_ms, tm);
 
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(

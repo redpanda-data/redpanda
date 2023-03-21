@@ -1318,7 +1318,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         bfs.reserve(new_partitions.size());
         for (auto& ntp : new_partitions) {
             bfs.push_back(_rm_partition_frontend.local().begin_tx(
-              ntp, tx.pid, tx.tx_seq, tx.timeout_ms, timeout));
+              ntp,
+              tx.pid,
+              tx.tx_seq,
+              tx.timeout_ms,
+              timeout,
+              model::tx_manager_ntp.tp.partition));
         }
         brs = co_await when_all_succeed(bfs.begin(), bfs.end());
         for (auto& br : brs) {

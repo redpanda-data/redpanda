@@ -421,7 +421,13 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
 }
 
 std::ostream& operator<<(std::ostream& o, const begin_tx_request& r) {
-    fmt::print(o, "{{ ntp: {}, pid: {}, tx_seq: {} }}", r.ntp, r.pid, r.tx_seq);
+    fmt::print(
+      o,
+      "{{ ntp: {}, pid: {}, tx_seq: {}, tm_partition: {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.tm_partition);
     return o;
 }
 
