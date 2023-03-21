@@ -52,17 +52,9 @@ public:
 
     void register_segment(materialized_segment_state& s);
 
-    /// Put reader into the eviction list which will
-    /// eventually lead to it being closed and deallocated
-    void evict_reader(std::unique_ptr<remote_segment_batch_reader> reader);
-    void evict_segment(ss::lw_shared_ptr<remote_segment> segment);
-
     ssx::semaphore_units get_reader_units();
 
     ssx::semaphore_units get_segment_units();
-
-    /// Wait until any evicted items in the _eviction_list have been removed.
-    ss::future<> flush_evicted();
 
 private:
     /// Timer use to periodically evict stale readers
@@ -82,33 +74,6 @@ private:
     /// How many materialized_segment_state instances exist
     size_t current_segments() const;
 
-    /// Special item in eviction_list that holds a promise and sets it
-    /// when the eviction fiber calls stop() (see flush_evicted)
-    struct eviction_barrier {
-        ss::promise<> promise;
-
-        ss::future<> stop() {
-            promise.set_value();
-            stopped = true;
-            return ss::now();
-        }
-
-        bool stopped{false};
-
-        bool is_stopped() const { return stopped; }
-    };
-
-    using evicted_resource_t = std::variant<
-      std::unique_ptr<remote_segment_batch_reader>,
-      ss::lw_shared_ptr<remote_segment>,
-      ss::lw_shared_ptr<eviction_barrier>>;
-    using eviction_list_t = std::deque<evicted_resource_t>;
-
-    /// List of segments and readers waiting to have their stop() method
-    /// called before destruction
-    eviction_list_t _eviction_pending;
-    eviction_list_t _eviction_in_flight;
-
     // We need to quickly look up readers by segment, to find any readers
     // for a segment that is targeted by a read.  Within those readers,
     // we may do a linear scan to find if any of those readers matches
@@ -117,9 +82,6 @@ private:
       materialized_segment_state,
       &materialized_segment_state::_hook>
       _materialized;
-
-    /// Kick this condition variable when appending to eviction_list
-    ss::condition_variable _cvar;
 
     /// Gate for background eviction
     ss::gate _gate;
