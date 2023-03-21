@@ -360,6 +360,19 @@ segment_collector::make_upload_candidate(
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
+    // Take the locks before opening any readers on the segments.
+    auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
+    std::vector<ss::future<ss::rwlock::holder>> locks;
+    locks.reserve(_segments.size());
+    std::transform(
+      _segments.begin(),
+      _segments.end(),
+      std::back_inserter(locks),
+      [&deadline](auto& seg) { return seg->read_lock(deadline); });
+
+    auto locks_resolved = co_await ss::when_all_succeed(
+      locks.begin(), locks.end());
+
     auto first = _segments.front();
     auto head_seek_result = co_await storage::convert_begin_offset_to_file_pos(
       _begin_inclusive,
@@ -385,18 +398,6 @@ segment_collector::make_upload_candidate(
     size_t content_length = _collected_size
                             - (head_seek.bytes + last->size_bytes());
     content_length += tail_seek.bytes;
-
-    auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
-    std::vector<ss::future<ss::rwlock::holder>> locks;
-    locks.reserve(_segments.size());
-    std::transform(
-      _segments.begin(),
-      _segments.end(),
-      std::back_inserter(locks),
-      [&deadline](auto& seg) { return seg->read_lock(deadline); });
-
-    auto locks_resolved = co_await ss::when_all_succeed(
-      locks.begin(), locks.end());
 
     auto starting_offset = head_seek.offset;
     if (starting_offset != _begin_inclusive) {
