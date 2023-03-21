@@ -1451,7 +1451,8 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=[
-                 r"abs - .* Received .* AuthorizationFailure error response"
+                 r"abs - .* Received .* AuthorizationFailure error response",
+                 r"abs - .* Received .* AuthenticationFailed error response"
              ])
     @matrix(cloud_storage_type=get_cloud_storage_type(
         applies_only_on=[CloudStorageType.ABS]))
