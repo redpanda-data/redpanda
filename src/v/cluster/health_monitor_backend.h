@@ -81,6 +81,8 @@ public:
 
     bool does_raft0_have_leader();
 
+    ss::future<> maybe_refresh_cloud_health_stats();
+
 private:
     /**
      * Struct used to track pending refresh request, it gives ability
@@ -163,6 +165,7 @@ private:
     storage::disk_space_alert _reports_disk_health
       = storage::disk_space_alert::ok;
     last_reply_cache_t _last_replies;
+    std::optional<size_t> _bytes_in_cloud_storage;
 
     ss::gate _gate;
     mutex _refresh_mutex;
