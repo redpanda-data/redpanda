@@ -63,6 +63,7 @@ public:
     public:
         accounting_fiber(
           ss::sharded<usage_manager>& um,
+          ss::sharded<cluster::health_monitor_frontend>& health_monitor,
           ss::sharded<storage::api>& storage,
           size_t usage_num_windows,
           std::chrono::seconds usage_window_width_interval,
@@ -95,6 +96,7 @@ public:
         ss::gate _gate;
         size_t _current_window{0};
         fragmented_vector<usage_window> _buckets;
+        cluster::health_monitor_frontend& _health_monitor;
         storage::kvstore& _kvstore;
         ss::sharded<usage_manager>& _um;
     };
@@ -103,7 +105,9 @@ public:
     ///
     /// Context is to be in a sharded service, will grab \ref usage_num_windows
     /// and \ref usage_window_sec configuration parameters from cluster config
-    explicit usage_manager(ss::sharded<storage::api>& storage);
+    explicit usage_manager(
+      ss::sharded<cluster::health_monitor_frontend>& health_monitor,
+      ss::sharded<storage::api>& storage);
 
     /// Allocates and starts the accounting fiber
     ss::future<> start();
@@ -150,6 +154,7 @@ private:
     config::binding<std::chrono::seconds> _usage_window_width_interval;
     config::binding<std::chrono::seconds> _usage_disk_persistance_interval;
 
+    ss::sharded<cluster::health_monitor_frontend>& _health_monitor;
     ss::sharded<storage::api>& _storage;
 
     /// Per-core metric, shard-0 aggregates these values across shards
