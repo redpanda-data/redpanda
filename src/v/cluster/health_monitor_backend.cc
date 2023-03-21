@@ -57,7 +57,9 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<ss::abort_source>& as,
   ss::sharded<node::local_monitor>& local_monitor,
   ss::sharded<drain_manager>& drain_manager,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<partition_leaders_table>& partition_leaders_table,
+  ss::sharded<topic_table>& topic_table)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -66,6 +68,8 @@ health_monitor_backend::health_monitor_backend(
   , _as(as)
   , _drain_manager(drain_manager)
   , _feature_table(feature_table)
+  , _partition_leaders_table(partition_leaders_table)
+  , _topic_table(topic_table)
   , _local_monitor(local_monitor) {
     _leadership_notification_handle
       = _raft_manager.local().register_leadership_notification(

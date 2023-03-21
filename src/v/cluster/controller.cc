@@ -441,7 +441,9 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_as),
             std::ref(_local_monitor),
             std::ref(_drain_manager),
-            std::ref(_feature_table));
+            std::ref(_feature_table),
+            std::ref(_partition_leaders),
+            std::ref(_tp_state));
       })
       .then([this] { return _hm_frontend.start(std::ref(_hm_backend)); })
       .then([this] {
