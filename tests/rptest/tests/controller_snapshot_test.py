@@ -17,7 +17,7 @@ from rptest.util import wait_until_result
 from ducktape.utils.util import wait_until
 
 
-class ControllerSnapshotTest(RedpandaTest):
+class ControllerSnapshotPolicyTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args,
                          num_brokers=3,
@@ -34,17 +34,24 @@ class ControllerSnapshotTest(RedpandaTest):
         Test that Redpanda creates a controller snapshot some time after controller commands appear.
         """
         self.redpanda.start()
-        node = self.redpanda.nodes[0]
-        assert self.redpanda.controller_start_offset(node) == 0
+
+        for n in self.redpanda.nodes:
+            assert self.redpanda.controller_start_offset(n) == 0
 
         admin = Admin(self.redpanda)
         admin.put_feature("controller_snapshots", {"state": "active"})
 
         # first snapshot will be triggered by the feature_update command
-        (mtime1,
-         start_offset1) = self.redpanda.wait_for_controller_snapshot(node)
+        # check that snapshot is created both on the leader and on followers
+        node_idx2snapshot_info = {}
+        for n in self.redpanda.nodes:
+            idx = self.redpanda.idx(n)
+            snap_info = self.redpanda.wait_for_controller_snapshot(n)
+            node_idx2snapshot_info[idx] = snap_info
 
         # second snapshot will be triggered by the topic creation
         RpkTool(self.redpanda).create_topic('test')
-        self.redpanda.wait_for_controller_snapshot(
-            node, prev_mtime=mtime1, prev_start_offset=start_offset1)
+        for n in self.redpanda.nodes:
+            mtime, start_offset = node_idx2snapshot_info[self.redpanda.idx(n)]
+            self.redpanda.wait_for_controller_snapshot(
+                n, prev_mtime=mtime, prev_start_offset=start_offset)
