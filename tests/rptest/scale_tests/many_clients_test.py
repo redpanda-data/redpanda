@@ -14,6 +14,7 @@ from rptest.services.cluster import cluster
 from rptest.services.rpk_consumer import RpkConsumer
 
 from rptest.services.producer_swarm import ProducerSwarm
+from ducktape.mark import matrix
 
 resource_settings = ResourceSettings(
     num_cpus=2,
@@ -55,7 +56,8 @@ class ManyClientsTest(RedpandaTest):
         super().__init__(*args, **kwargs)
 
     @cluster(num_nodes=7)
-    def test_many_clients(self):
+    @matrix(compacted=[True, False])
+    def test_many_clients(self, compacted):
         """
         Check that redpanda remains stable under higher numbers of clients
         than usual.
@@ -64,20 +66,32 @@ class ManyClientsTest(RedpandaTest):
         # Scale tests are not run on debug builds
         assert not self.debug_mode
 
-        PARTITION_COUNT = 100
+        partition_count = 100
+        producer_count = self.PRODUCER_COUNT
+
+        if not self.redpanda.dedicated_nodes:
+            # This mode is handy for developers on their workstations
+            producer_count //= 10
+            self.logger.info(
+                f"Running at reduced scale ({producer_count} producers)")
+
+            partition_count = 16
+
         PRODUCER_TIMEOUT_MS = 5000
         TOPIC_NAME = "manyclients"
-        RECORDS_PER_PRODUCER = 1000
 
         # Realistic conditions: 128MB is the segment size in the cloud
         segment_size = 128 * 1024 * 1024
         retention_size = 8 * segment_size
 
+        cleanup_policy = "compact" if compacted else "delete"
+
         self.client().create_topic(
             TopicSpec(name=TOPIC_NAME,
-                      partition_count=PARTITION_COUNT,
+                      partition_count=partition_count,
                       retention_bytes=retention_size,
-                      segment_bytes=segment_size))
+                      segment_bytes=segment_size,
+                      cleanup_policy=cleanup_policy))
 
         # Three consumers, just so that we are at least touching consumer
         # group functionality, if not stressing the overall number of consumers.
@@ -99,12 +113,33 @@ class ManyClientsTest(RedpandaTest):
                                  group="testgroup",
                                  save_msgs=False)
 
+        key_space = 10
+        records_per_producer = 1000
+
+        producer_kwargs = {}
+        if compacted:
+            # Compaction is much more stressful when the clients sends compacted
+            # data, because the server must decompress it to index it.
+            producer_kwargs['compression_type'] = 'mixed'
+
+            # Use large compressible payloads, to stress memory consumption: a
+            # compressed batch will be accepted by the Kafka API, but
+            producer_kwargs['compressible_payload'] = True,
+            producer_kwargs['min_record_size'] = 16 * 1024 * 1024
+            producer_kwargs['max_record_size'] = 32 * 1024 * 1024
+            producer_kwargs['keys'] = key_space
+
+            # Clients have to do the compression work on these larger messages,
+            # so curb our expectations about how many we may run concurrently.
+            producer_count = producer_count // 10
+
         producer = ProducerSwarm(self.test_context,
                                  self.redpanda,
                                  TOPIC_NAME,
-                                 self.PRODUCER_COUNT,
-                                 RECORDS_PER_PRODUCER,
-                                 timeout_ms=PRODUCER_TIMEOUT_MS)
+                                 producer_count,
+                                 records_per_producer,
+                                 timeout_ms=PRODUCER_TIMEOUT_MS,
+                                 **producer_kwargs)
         producer.start()
         consumer_a.start()
         consumer_b.start()
@@ -112,8 +147,13 @@ class ManyClientsTest(RedpandaTest):
 
         producer.wait()
 
+        expect = producer_count * records_per_producer
+        if compacted:
+            # When using compaction, we may well not see all the original messages, as
+            # they could have been compacted away before we read them.
+            expect = min(partition_count * key_space, expect)
+
         def complete():
-            expect = self.PRODUCER_COUNT * RECORDS_PER_PRODUCER
             self.logger.info(
                 f"Message counts: {consumer_a.message_count} {consumer_b.message_count} {consumer_c.message_count} (vs {expect})"
             )
