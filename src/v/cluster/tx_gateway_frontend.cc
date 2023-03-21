@@ -59,27 +59,32 @@ static auto with(
 }
 
 template<typename Func>
-static auto with(
+static auto with_free(
   ss::shared_ptr<tm_stm> stm,
   kafka::transactional_id tx_id,
   const std::string_view name,
-  model::timeout_clock::duration timeout,
   Func&& func) noexcept {
-    return stm->get_tx_lock(tx_id)
-      ->with(
-        timeout,
-        [name, tx_id, func = std::forward<Func>(func)]() mutable {
-            vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
-            return ss::futurize_invoke(std::forward<Func>(func))
-              .finally([name, tx_id]() {
-                  vlog(
-                    txlog.trace,
-                    "released_lock name:{}, tx_id:{}",
-                    name,
-                    tx_id);
-              });
-        })
-      .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
+    auto f = ss::now();
+    auto lock = stm->get_tx_lock(tx_id);
+    if (!lock->ready()) {
+        f = ss::make_exception_future(ss::semaphore_timed_out());
+    }
+    return f.then(
+      [lock, stm, name, tx_id, func = std::forward<Func>(func)]() mutable {
+          return lock
+            ->with([name, tx_id, func = std::forward<Func>(func)]() mutable {
+                vlog(txlog.trace, "got_lock name:{}, tx_id:{}", name, tx_id);
+                return ss::futurize_invoke(std::forward<Func>(func))
+                  .finally([name, tx_id]() {
+                      vlog(
+                        txlog.trace,
+                        "released_lock name:{}, tx_id:{}",
+                        name,
+                        tx_id);
+                  });
+            })
+            .finally([tx_id, stm]() { stm->try_rm_lock(tx_id); });
+      });
 }
 
 static tm_transaction as_tx(
@@ -586,11 +591,10 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
                 }
                 auto tx_id = tx_id_opt.value();
 
-                return with(
+                return with_free(
                          stm,
                          tx_id,
                          "try_abort",
-                         timeout,
                          [this, stm, term, tx_id, pid, tx_seq, timeout]() {
                              return do_try_abort(
                                term, stm, tx_id, pid, tx_seq, timeout);
