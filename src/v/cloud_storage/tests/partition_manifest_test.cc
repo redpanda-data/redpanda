@@ -897,7 +897,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
       segment_name("20-1-v1.log"),
       {.base_offset = model::offset{20},
        .committed_offset = model::offset{29},
-       .sname_format = segment_name_format::v2});
+       .sname_format = segment_name_format::v1});
     m.add(
       segment_name("30-1-v1.log"),
       {.base_offset = model::offset{30},
@@ -1918,7 +1918,8 @@ SEASTAR_THREAD_TEST_CASE(test_cloud_log_size_updates) {
       .is_compacted = false,
       .size_bytes = 2000,
       .base_offset = model::offset(0),
-      .committed_offset = model::offset(20)};
+      .committed_offset = model::offset(20),
+      .sname_format = segment_name_format::v2};
 
     manifest.add(
       segment_name(fmt::format("{}-1-v1.log", model::offset(0))), merged_seg);
@@ -1930,7 +1931,8 @@ SEASTAR_THREAD_TEST_CASE(test_cloud_log_size_updates) {
       .is_compacted = true,
       .size_bytes = 100,
       .base_offset = model::offset(0),
-      .committed_offset = model::offset(20)};
+      .committed_offset = model::offset(20),
+      .sname_format = segment_name_format::v2};
 
     manifest.add(
       segment_name(fmt::format("{}-1-v1.log", model::offset(0))),
@@ -1996,4 +1998,24 @@ SEASTAR_THREAD_TEST_CASE(test_deserialize_v1_manifest) {
     manifest.update(make_manifest_stream(v1_manifest_json)).get();
 
     BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 11264);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_readd_protection) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(1));
+    segment_meta s{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(111222),
+      .committed_offset = model::offset(222333),
+      .delta_offset = model::offset_delta(42),
+      .ntp_revision = model::initial_revision_id(1),
+      .delta_offset_end = model::offset_delta(24),
+      .sname_format = segment_name_format::v2,
+    };
+    BOOST_REQUIRE(m.add(s.base_offset, s));
+    auto size = m.cloud_log_size();
+    BOOST_REQUIRE(m.add(s.base_offset, s) == false);
+    BOOST_REQUIRE(m.cloud_log_size() == size);
+    auto backlog = m.replaced_segments();
+    BOOST_REQUIRE(backlog.empty());
 }
