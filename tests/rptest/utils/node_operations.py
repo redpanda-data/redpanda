@@ -192,13 +192,14 @@ class NodeDecommissionWaiter():
             )
             # check if node bytes left changed
             if self.last_replicas_left is None or replicas_left < self.last_replicas_left:
-                self.last_replicas_left = replicas_left
                 self.last_update = time.time()
             if partitions_bytes_left is not None and partitions_bytes_left > 0:
                 # check if currently moving partitions bytes left changed
                 if self.last_partitions_bytes_left is None or partitions_bytes_left < self.last_partitions_bytes_left:
-                    self.last_partitions_bytes_left = partitions_bytes_left
                     self.last_update = time.time()
+
+            self.last_replicas_left = replicas_left
+            self.last_partitions_bytes_left = partitions_bytes_left
 
             if decommission_status["finished"] == True:
                 break
