@@ -3464,7 +3464,11 @@ static ss::json::json_return_type raw_data_to_usage_response(
         resp.back().open = e.is_open();
         resp.back().kafka_bytes_received_count = e.u.bytes_received;
         resp.back().kafka_bytes_sent_count = e.u.bytes_sent;
-        resp.back().cloud_storage_bytes_gauge = e.u.bytes_cloud_storage;
+        if (e.u.bytes_cloud_storage) {
+            resp.back().cloud_storage_bytes_gauge = *e.u.bytes_cloud_storage;
+        } else {
+            resp.back().cloud_storage_bytes_gauge = -1;
+        }
     }
     if (include_open && !resp.empty()) {
         /// Handle case where client does not want to observe
