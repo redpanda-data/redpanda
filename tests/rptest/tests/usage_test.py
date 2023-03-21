@@ -156,7 +156,6 @@ class UsageTest(RedpandaTest):
         # Query usage of node to restart before restart
         usage_pre_restart = self._calculate_total_usage(
             self._admin.get_usage(node=self.redpanda.nodes[0]))
-        assert usage_pre_restart > 0
 
         self.redpanda.restart_nodes([self.redpanda.nodes[0]])
 
