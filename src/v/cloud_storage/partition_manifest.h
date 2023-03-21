@@ -299,7 +299,9 @@ private:
 
     /// Move segments from _segments to _replaced
     void move_aligned_offset_range(
-      model::offset begin_inclusive, model::offset end_inclusive);
+      model::offset begin_inclusive,
+      model::offset end_inclusive,
+      const segment_meta& replacing_segment);
 
     model::ntp _ntp;
     model::initial_revision_id _rev;
