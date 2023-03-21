@@ -451,17 +451,44 @@ class S3Snapshot:
 
         return len(manifest['segments'])
 
+    def _cloud_log_size_from_ntp_manifest(self,
+                                          manifest,
+                                          include_below_start_offset=True
+                                          ) -> int:
+        if 'segments' not in manifest:
+            return 0
+
+        start_offset = 0
+        if not include_below_start_offset:
+            start_offset = manifest['start_offset']
+
+        res = sum(seg_meta['size_bytes']
+                  for seg_meta in manifest['segments'].values()
+                  if seg_meta['base_offset'] >= start_offset)
+
+        self.logger.info(
+            f'topic={manifest["topic"]} pid={manifest["partition"]} usage={res}'
+        )
+        return res
+
+    def total_cloud_log_size(self) -> int:
+        total = 0
+        for pm in self.partition_manifests.values():
+            total += self._cloud_log_size_from_ntp_manifest(
+                pm, include_below_start_offset=False)
+
+        return total
+
     def cloud_log_size_for_ntp(self,
                                topic: str,
                                partition: int,
                                ns: str = 'kafka') -> int:
-        manifest = self.manifest_for_ntp(topic, partition, ns)
-
-        if 'segments' not in manifest:
+        try:
+            manifest = self.manifest_for_ntp(topic, partition, ns)
+        except KeyError:
             return 0
-
-        return sum(seg_meta['size_bytes']
-                   for seg_meta in manifest['segments'].values())
+        else:
+            return self._cloud_log_size_from_ntp_manifest(manifest)
 
     def assert_at_least_n_uploaded_segments_compacted(self,
                                                       topic: str,

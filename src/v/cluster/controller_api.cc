@@ -447,4 +447,9 @@ controller_api::shard_for(const raft::group_id& group) const {
     }
 }
 
+std::optional<ss::shard_id>
+controller_api::shard_for(const model::ntp& ntp) const {
+    return _shard_table.local().shard_for(ntp);
+}
+
 } // namespace cluster

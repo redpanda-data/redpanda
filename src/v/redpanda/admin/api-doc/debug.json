@@ -147,6 +147,34 @@
                     "parameters": []
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/cloud_storage_usage",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the sum of the cloud storage log for all partitions in the cluster",
+                    "type": "long",
+                    "nickname": "get_cloud_storage_usage",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "retries_allowed",
+                            "in": "query",
+                            "required": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "batch_size",
+                            "in": "query",
+                            "required": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
         }
     ],
     "models": {

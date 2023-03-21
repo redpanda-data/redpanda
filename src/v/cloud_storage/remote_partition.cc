@@ -518,6 +518,10 @@ bool remote_partition::is_data_available() const {
                 != _manifest.end();
 }
 
+uint64_t remote_partition::cloud_log_size() const {
+    return _manifest.cloud_log_size();
+}
+
 // returns term last kafka offset
 std::optional<kafka::offset>
 remote_partition::get_term_last_offset(model::term_id term) const {

@@ -77,6 +77,7 @@ public:
         model::node_id, model::timeout_clock::time_point);
 
     std::optional<ss::shard_id> shard_for(const raft::group_id& group) const;
+    std::optional<ss::shard_id> shard_for(const model::ntp& ntp) const;
 
 private:
     ss::future<result<bool>> are_ntps_ready(
