@@ -55,7 +55,9 @@ public:
       ss::sharded<ss::abort_source>&,
       ss::sharded<node::local_monitor>&,
       ss::sharded<drain_manager>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<partition_leaders_table>&,
+      ss::sharded<topic_table>&);
 
     ss::future<> stop();
 
@@ -149,6 +151,8 @@ private:
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<drain_manager>& _drain_manager;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<partition_leaders_table>& _partition_leaders_table;
+    ss::sharded<topic_table>& _topic_table;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
