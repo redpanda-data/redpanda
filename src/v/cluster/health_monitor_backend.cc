@@ -844,6 +844,8 @@ health_monitor_backend::get_cluster_health_overview(
                      && ret.under_replicated_partitions.empty()
                      && ret.controller_id && !ec;
 
+    ret.bytes_in_cloud_storage = _bytes_in_cloud_storage;
+
     co_return ret;
 }
 

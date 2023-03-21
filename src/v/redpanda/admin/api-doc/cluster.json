@@ -108,6 +108,10 @@
                         "type": "string"
                     },
                     "description": "list of partitions where one or more replicas has not replicated all data"
+                },
+                "bytes_in_cloud_storage": {
+                    "type": "long",
+                    "description": "total amount of bytes in cloud storage or -1 if unable to obtain data"
                 }
             }
         },
