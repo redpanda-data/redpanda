@@ -754,6 +754,11 @@ private:
     template<class T>
     void fill_snapshot_wo_seqs(T&);
 
+    bool is_transaction_partitioning() const {
+        return _feature_table.local().is_active(
+          features::feature::transaction_partitioning);
+    }
+
     bool is_transaction_ga() const {
         return _feature_table.local().is_active(
           features::feature::transaction_ga);
