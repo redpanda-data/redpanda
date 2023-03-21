@@ -1343,7 +1343,11 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       .get();
 
     syschecks::systemd_message("Creating kafka usage manager frontend").get();
-    construct_service(usage_manager, std::ref(storage)).get();
+    construct_service(
+      usage_manager,
+      std::ref(controller->get_health_monitor()),
+      std::ref(storage))
+      .get();
 
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed
