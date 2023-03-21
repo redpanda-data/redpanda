@@ -93,6 +93,35 @@ void value_or(const std::tuple<Args...>& iters, T& res) {
     res = T(*it);
 }
 
+/// zip first_tuple with second_tuple, calls map_fn on each pair of elements,
+/// collect results in a tuple if map_fn produces a result
+template<typename Fn>
+auto tuple_map(Fn&& map_fn, auto&& first_tuple, auto&& second_tuple) {
+    return std::apply(
+      [&]<typename... Ts>(Ts&&... first_param) {
+          return std::apply(
+            [&]<typename... Us>(Us&&... second_param) {
+                if constexpr (std::is_void_v<std::invoke_result_t<
+                                Fn&&,
+                                decltype(std::get<0>(first_tuple)),
+                                decltype(std::get<0>(second_tuple))>>) {
+                    (std::invoke(
+                       map_fn,
+                       std::forward<Ts>(first_param),
+                       std::forward<Us>(second_param)),
+                     ...);
+                } else {
+                    return std::tuple{std::invoke(
+                      map_fn,
+                      std::forward<Ts>(first_param),
+                      std::forward<Us>(second_param))...};
+                }
+            },
+            second_tuple);
+      },
+      first_tuple);
+}
+
 } // namespace details
 
 /// The aggregated columnar storage for segment_meta.
@@ -154,6 +183,50 @@ class column_store
           _sname_format);
     }
 
+    // projections from segment_meta to value_t used by the columns. the order
+    // is the same of columns()
+    constexpr static auto segment_meta_accessors = std::tuple{
+      [](segment_meta const& s) {
+          return static_cast<int64_t>(s.is_compacted);
+      },
+      [](segment_meta const& s) { return static_cast<int64_t>(s.size_bytes); },
+      [](segment_meta const& s) { return s.base_offset(); },
+      [](segment_meta const& s) { return s.committed_offset(); },
+      [](segment_meta const& s) { return s.base_timestamp(); },
+      [](segment_meta const& s) { return s.max_timestamp(); },
+      [](segment_meta const& s) { return s.delta_offset(); },
+      [](segment_meta const& s) { return s.ntp_revision(); },
+      [](segment_meta const& s) { return s.archiver_term(); },
+      [](segment_meta const& s) { return s.segment_term(); },
+      [](segment_meta const& s) { return s.delta_offset_end(); },
+      [](segment_meta const& s) {
+          return static_cast<std::underlying_type_t<segment_name_format>>(
+            s.sname_format);
+      },
+    };
+
+    /**
+     * private constructor used to create a store that share the underlying
+     * buffers with another store
+     * @param cols_iterators tuple<<begin,end>...> of
+     * std::list<frame_t>::iterators for each column
+     * @param hints_begin start of hints map
+     * @param hints_end end of hints map
+     */
+    column_store(
+      share_frame_t,
+      auto cols_iterators,
+      hint_map_t::const_iterator hints_begin,
+      hint_map_t::const_iterator hints_end)
+      : _hints{hints_begin, hints_end} {
+        details::tuple_map(
+          [](auto& col, auto& it_pair) {
+              col = {share_frame, std::get<0>(it_pair), std::get<1>(it_pair)};
+          },
+          columns(),
+          cols_iterators);
+    }
+
 public:
     using iterators_t = std::tuple<
       gauge_col_t::const_iterator,
@@ -184,19 +257,12 @@ public:
         // committing them. If any 'append_tx' call will throw no column will be
         // updated and all transactions will be aborted. Because of that the
         // update is all or nothing even in presence of bad_alloc exceptions.
-        details::commit_all(std::make_tuple(
-          _is_compacted.append_tx(static_cast<int64_t>(meta.is_compacted)),
-          _size_bytes.append_tx(static_cast<int64_t>(meta.size_bytes)),
-          _base_offset.append_tx(meta.base_offset()),
-          _committed_offset.append_tx(meta.committed_offset()),
-          _base_timestamp.append_tx(meta.base_timestamp.value()),
-          _max_timestamp.append_tx(meta.max_timestamp.value()),
-          _delta_offset.append_tx(meta.delta_offset()),
-          _ntp_revision.append_tx(meta.ntp_revision()),
-          _archiver_term.append_tx(meta.archiver_term()),
-          _segment_term.append_tx(meta.segment_term()),
-          _delta_offset_end.append_tx(meta.delta_offset_end()),
-          _sname_format.append_tx(static_cast<int64_t>(meta.sname_format))));
+        details::commit_all(details::tuple_map(
+          [&](auto& col, auto accessor) {
+              return col.append_tx(std::invoke(accessor, meta));
+          },
+          columns(),
+          segment_meta_accessors));
 
         if (
           ix
