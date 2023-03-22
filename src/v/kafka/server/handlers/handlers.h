@@ -49,6 +49,7 @@
 #include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/handlers/sync_group.h"
 #include "kafka/server/handlers/txn_offset_commit.h"
+#include "kafka/server/handlers/write_txn_markers.h"
 
 namespace kafka {
 template<typename... Ts>
@@ -98,7 +99,9 @@ using request_types = make_request_types<
   list_partition_reassignments_handler,
   describe_producers_handler,
   describe_transactions_handler,
-  list_transactions_handler>;
+  list_transactions_handler,
+  write_txn_markers_handler,
+  offset_for_leader_epoch_handler>;
 
 template<typename... RequestTypes>
 static constexpr size_t max_api_key(type_list<RequestTypes...>) {
