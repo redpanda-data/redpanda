@@ -429,7 +429,7 @@ public:
       = absl::btree_map<model::producer_identity, rm_stm::transaction_info>;
     ss::future<result<transaction_set>> get_transactions();
 
-    ss::future<std::error_code> mark_expired(model::producer_identity pid);
+    ss::future<tx_errc> mark_expired(model::producer_identity pid);
 
     ss::future<> remove_persistent_state() override;
 
@@ -508,7 +508,7 @@ private:
     ss::future<tx_errc> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
 
-    ss::future<std::error_code> do_mark_expired(model::producer_identity pid);
+    ss::future<tx_errc> do_mark_expired(model::producer_identity pid);
 
     bool is_known_session(model::producer_identity pid) const {
         auto is_known = false;

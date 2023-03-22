@@ -2760,7 +2760,7 @@ admin_server::mark_transaction_expired_handler(
 
           return rm_stm_ptr->mark_expired(pid).then(
             [this, ntp, req = std::move(req)](auto res) {
-                return throw_on_error(*req, res, ntp).then([] {
+                return throw_on_error(*req, std::error_code(res), ntp).then([] {
                     return ss::json::json_return_type(ss::json::json_void());
                 });
             });
