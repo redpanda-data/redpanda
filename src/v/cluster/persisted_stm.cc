@@ -15,6 +15,7 @@
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
 

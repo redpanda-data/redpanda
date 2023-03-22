@@ -21,6 +21,7 @@
 #include "model/record_batch_types.h"
 #include "model/record_utils.h"
 #include "raft/consensus.h"
+#include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "serde/envelope.h"
 #include "serde/serde.h"
@@ -548,6 +549,9 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
 ss::future<> archival_metadata_stm::apply(model::record_batch b) {
     // Block manifest serialization during mutation of the
     // manifest since it's asynchronous.
+    if (random_generators::get_int(2) == 0) {
+        co_await ss::sleep(random_generators::get_int(3, 6) * 1s);
+    }
     auto units = co_await _manifest_lock.get_units();
     if (b.header().type != model::record_batch_type::archival_metadata) {
         _insync_offset = b.last_offset();

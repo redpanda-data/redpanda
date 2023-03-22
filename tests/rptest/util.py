@@ -109,12 +109,12 @@ def produce_total_bytes(redpanda,
     def done():
         nonlocal bytes_to_produce
 
-        kafka_tools.produce(topic, 10000, 1024, acks=acks)
-        bytes_to_produce -= 10000 * 1024
+        kafka_tools.produce(topic, 1000, 1024, acks=acks)
+        bytes_to_produce -= 1000 * 1024
         return bytes_to_produce < 0
 
     wait_until(done,
-               timeout_sec=60,
+               timeout_sec=300,
                backoff_sec=1,
                err_msg="f{bytes_to_produce} bytes still left to produce")
 

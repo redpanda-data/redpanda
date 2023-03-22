@@ -22,7 +22,7 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (produce_until_segments, produce_total_bytes,
                          wait_for_local_storage_truncate, segments_count,
                          expect_exception)
-from rptest.utils.si_utils import BucketView
+from rptest.utils.si_utils import BucketView, NTP
 
 
 def bytes_for_segments(want_segments, segment_size):
@@ -295,10 +295,17 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
     topic_name = "si_test_topic"
 
     def __init__(self, test_context):
-        extra_rp_conf = dict(log_compaction_interval_ms=1000)
+        extra_rp_conf = dict(log_compaction_interval_ms=1000,
+                             cloud_storage_enable_segment_merging=False,
+                             # Set relatively low timeouts for the archival
+                             # STM.
+                             cloud_storage_metadata_sync_timeout_ms=4000,
+                             cloud_storage_manifest_upload_timeout_ms=4000)
 
         si_settings = SISettings(test_context,
-                                 log_segment_size=self.segment_size)
+                                 log_segment_size=self.segment_size,
+                                 # Encourage garbage collection.
+                                 cloud_storage_housekeeping_interval_ms=100)
         super(ShadowIndexingCloudRetentionTest,
               self).__init__(test_context=test_context,
                              si_settings=si_settings,
@@ -307,6 +314,61 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         self.rpk = RpkTool(self.redpanda)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
+
+    @cluster(num_nodes=3)
+    def test_key_not_found(self):
+        """
+        Attempt to repro.
+        The goal is to encourage a race between an archival persisted_stm
+        timeout and the archival upload loop to get Redpanda to add a segment
+        twice with the same name, and accidentally delete one as a result.
+        """
+        self.rpk.create_topic(topic=self.topic_name,
+                              partitions=5,
+                              replicas=3,
+                              config={
+                                  "cleanup.policy": TopicSpec.CLEANUP_DELETE,
+                                  "retention.bytes": -1,
+                                  "retention.ms": -1,
+                                  "retention.local.target.bytes": -1,
+                                  "retention.local.target.ms": -1,
+                              })
+
+        # Produce to the topics and ensure we have some data.
+        produce_total_bytes(self.redpanda,
+                            topic=self.topic_name,
+                            partition_index=0,
+                            bytes_to_produce=int(3 * 5 * self.segment_size))
+        topic = TopicSpec(name=self.topic_name,
+                          partition_count=5,
+                          replication_factor=3,
+                          cleanup_policy=TopicSpec.CLEANUP_DELETE)
+
+        def view_has_segments():
+            view = BucketView(self.redpanda, (topic, ))
+            manifest = view.partition_manifests[NTP("kafka", self.topic_name,
+                                                    0)]
+            return "segments" in manifest and len(manifest["segments"]) > 1
+
+        wait_until(view_has_segments, timeout_sec=30, backoff_sec=0.5)
+
+        def deleted_segments_count() -> int:
+            metrics = self.redpanda.metrics_sample(
+                "deleted_segments",
+                metrics_endpoint=MetricsEndpoint.PUBLIC_METRICS)
+
+            assert metrics, "Deleted segments metric is missing"
+
+            deleted = sum([int(metrics.samples[i].value) for i in range(len(metrics.samples))])
+            self.logger.debug(f"Samples: {metrics.samples}")
+            self.logger.debug(f"Deleted {deleted} segments from the cloud")
+            return deleted
+
+        # Wait for a while to allow time for would-be races between additions
+        # of segments.
+        sleep(10)
+        deleted = deleted_segments_count()
+        assert deleted == 0, deleted
 
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=get_cloud_storage_type())

@@ -1271,7 +1271,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           && error != cluster::errc::not_leader) {
             vlog(
               _rtclog.warn,
-              "archival metadata STM update failed: {}",
+              "archival metadata STM add_segments failed: {}",
               error.message());
         } else {
             // We have flushed projected clean offset if it was set
@@ -1452,7 +1452,7 @@ ntp_archiver::maybe_truncate_manifest() {
         if (error != cluster::errc::success) {
             vlog(
               ctxlog.warn,
-              "archival metadata STM update failed: {}",
+              "archival metadata STM truncate failed: {}",
               error.message());
             throw std::system_error(error);
         } else {
@@ -1827,7 +1827,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
     if (error != cluster::errc::success && error != cluster::errc::not_leader) {
         vlog(
           _rtclog.warn,
-          "archival metadata STM update failed: {}",
+          "archival metadata STM add_segments failed: {}",
           error.message());
         co_return false;
     }
