@@ -195,9 +195,10 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
     auto defer = ss::defer([&b] { b.stop().get(); });
 
     // segment [12-14] lies inside manifest segment [10-19]. start offset 1 is
-    // adjusted to start of manifest 10. one segment is collected, then start
-    // offset is readjusted to 20 to avoid overlap with manifest segment. The
-    // begin offset is > end offset, so replacement query is false.
+    // adjusted to start of the local log 12. Since this offset is in the middle
+    // of a manifest segment, advance it again to the beginning of the next
+    // manifest segment: 20. There's no local segment containing that offset, so
+    // no segments are collected.
     populate_log(
       b,
       {.segment_starts = {12},
@@ -210,7 +211,7 @@ SEASTAR_THREAD_TEST_CASE(test_short_compacted_segment_inside_manifest_segment) {
     collector.collect_segments();
 
     BOOST_REQUIRE_EQUAL(false, collector.should_replace_manifest_segment());
-    BOOST_REQUIRE_EQUAL(collector.segments().size(), 1);
+    BOOST_REQUIRE_EQUAL(collector.segments().size(), 0);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_compacted_segment_aligned_with_manifest_segment) {
@@ -911,5 +912,65 @@ SEASTAR_THREAD_TEST_CASE(test_same_size_reupload_skipped) {
         BOOST_REQUIRE_EQUAL(
           collector.collected_size(), first_seg_size + second_seg_size);
         BOOST_REQUIRE(collector.should_replace_manifest_segment());
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_do_not_reupload_self_concatenated) {
+    auto ntp = model::ntp{"test_ns", "test_tpc", 0};
+    temporary_dir tmp_dir("concat_segment_read");
+    auto data_path = tmp_dir.get_path();
+    using namespace storage;
+
+    auto b = make_log_builder(data_path.string());
+
+    auto o = std::make_unique<ntp_config::default_overrides>();
+    o->cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    b | start(ntp_config{ntp, {data_path}, std::move(o)});
+    auto defer = ss::defer([&b] { b.stop().get(); });
+
+    b | storage::add_segment(1000) | storage::add_random_batch(1000, 1000)
+      | storage::add_segment(2000) | storage::add_random_batch(2000, 1000)
+      | storage::add_segment(3000) | storage::add_random_batch(3000, 1000);
+
+    auto seg_size = b.get_segment(0).size_bytes();
+    cloud_storage::partition_manifest m(ntp, model::initial_revision_id{1});
+    m.add(
+      segment_name("1000-1999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(1000),
+        .committed_offset = model::offset(1999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+    m.add(
+      segment_name("2000-2999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(2000),
+        .committed_offset = model::offset(2999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+    m.add(
+      segment_name("3000-3999-v1.log"),
+      cloud_storage::segment_meta{
+        .is_compacted = false,
+        .size_bytes = seg_size,
+        .base_offset = model::offset(3000),
+        .committed_offset = model::offset(3999),
+        .delta_offset = model::offset_delta(0),
+        .delta_offset_end = model::offset_delta(0)});
+
+    b.update_start_offset(model::offset{3000}).get();
+    b.get_segment(0).mark_as_finished_self_compaction();
+
+    {
+        archival::segment_collector collector{
+          model::offset{0}, m, b.get_disk_log_impl(), seg_size * 10};
+
+        collector.collect_segments();
+        BOOST_REQUIRE_EQUAL(collector.segments().size(), 0);
+        BOOST_REQUIRE(!collector.should_replace_manifest_segment());
     }
 }
