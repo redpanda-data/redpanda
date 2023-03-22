@@ -282,7 +282,10 @@ ss::future<> cache::trim() {
             // Skip the accesstime file, we should never delete this.
             if (
               file_stat.path
-              == (_cache_dir / access_time_tracker_file_name).string()) {
+                == (_cache_dir / access_time_tracker_file_name).string()
+              || file_stat.path
+                   == (_cache_dir / access_time_tracker_file_name_tmp)
+                        .string()) {
                 candidate_i++;
                 continue;
             }
