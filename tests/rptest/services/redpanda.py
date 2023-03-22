@@ -16,6 +16,7 @@ import signal
 import tempfile
 import shutil
 import requests
+import json
 import random
 import threading
 import collections
@@ -38,6 +39,7 @@ from prometheus_client.parser import text_string_to_metric_families
 from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
 
+from rptest.archival.abs_client import build_connection_string
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
@@ -60,6 +62,11 @@ SaslCredentials = collections.namedtuple("SaslCredentials",
                                          ["username", "password", "algorithm"])
 # Map of path -> (checksum, size)
 FileToChecksumSize = dict[str, Tuple[str, int]]
+
+# The endpoint info for the azurite (Azure ABS emulator )container that
+# is used when running tests in a docker environment.
+AZURITE_HOSTNAME = 'azurite'
+AZURITE_PORT = 10000
 
 DEFAULT_LOG_ALLOW_LIST = [
     # Tests currently don't run on XFS, although in future they should.
@@ -377,7 +384,7 @@ class SISettings:
 
             self._cloud_storage_azure_container = f'panda-container-{uuid.uuid1()}'
             self.cloud_storage_api_endpoint = f'{self.cloud_storage_azure_storage_account}.blob.localhost'
-            self.cloud_storage_api_endpoint_port = 10000
+            self.cloud_storage_api_endpoint_port = AZURITE_PORT
         else:
             assert False, f"Unexpected value provided for 'cloud_storage_type' injected arg: {self.cloud_storage_type}"
 
@@ -1023,7 +1030,7 @@ class RedpandaService(Service):
         with docker/podman is unstable, as it isn't consistent across operating
         systems.  Instead do it more crudely but robustly, but editing /etc/hosts.
         """
-        azurite_ip = socket.gethostbyname("azurite")
+        azurite_ip = socket.gethostbyname(AZURITE_HOSTNAME)
         azurite_dns = f"{self._si_settings.cloud_storage_azure_storage_account}.blob.localhost"
 
         def update_hosts_file(node_name, path):
@@ -2828,3 +2835,100 @@ class RedpandaService(Service):
             return (mtime > prev_mtime and so > prev_start_offset, (mtime, so))
 
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
+
+    def stop_and_scrub_object_storage(self):
+        # We stop because the scrubbing routine would otherwise interpret
+        # ongoing uploads as inconsistency.  In future, we may replace this
+        # stop with a flush, when Redpanda gets an admin API for explicitly
+        # flushing data to remote storage.
+        self.stop()
+
+        vars = {}
+        backend = ""
+        if self.si_settings.cloud_storage_type == CloudStorageType.S3:
+            backend = "aws"
+            vars["AWS_REGION"] = self.si_settings.cloud_storage_region
+            if self.si_settings.endpoint_url:
+                vars["AWS_ENDPOINT"] = self.si_settings.endpoint_url
+                if self.si_settings.endpoint_url.startswith("http://"):
+                    vars["AWS_ALLOW_HTTP"] = "true"
+
+            if self.si_settings.cloud_storage_access_key is not None:
+                vars[
+                    "AWS_ACCESS_KEY_ID"] = self.si_settings.cloud_storage_access_key
+                vars[
+                    "AWS_SECRET_ACCESS_KEY"] = self.si_settings.cloud_storage_secret_key
+        elif self.si_settings.cloud_storage_type == CloudStorageType.ABS:
+            backend = "azure"
+            if self.si_settings.cloud_storage_azure_storage_account == SISettings.ABS_AZURITE_ACCOUNT:
+                vars["AZURE_STORAGE_USE_EMULATOR"] = "true"
+                # We do not use the SISettings.endpoint_url, because that includes the account
+                # name in the URL, and the `object_store` crate used in the scanning tool
+                # assumes that when the emulator is used, the account name should always
+                # appear in the path.
+                vars[
+                    "AZURITE_BLOB_STORAGE_URL"] = f"http://{AZURITE_HOSTNAME}:{AZURITE_PORT}"
+            else:
+                vars[
+                    "AZURE_STORAGE_CONNECTION_STRING"] = self.cloud_storage_client.conn_str
+                vars[
+                    "AZURE_STORAGE_ACCOUNT_KEY"] = self.si_settings.cloud_storage_azure_shared_key
+                vars[
+                    "AZURE_STORAGE_ACCOUNT_NAME"] = self.si_settings.cloud_storage_azure_storage_account
+
+        # Pick an arbitrary node to run the scrub from
+        node = self.nodes[0]
+
+        bucket = self.si_settings.cloud_storage_bucket
+        environment = ' '.join(f'{k}=\"{v}\"' for k, v in vars.items())
+        output = node.account.ssh_output(
+            f"{environment} segments --backend {backend} scan --source {bucket}",
+            combine_stderr=False,
+            allow_fail=True)
+
+        try:
+            report = json.loads(output)
+        except:
+            self.logger.error(f"Error running bucket scrub: {output}")
+            raise
+
+        # Example of a report:
+        # {"malformed_manifests":[],
+        #  "malformed_topic_manifests":[]
+        #  "missing_segments":[
+        #    "db0df8df/kafka/test/58_57/0-6-895-1-v1.log.2",
+        #    "5c34266a/kafka/test/52_57/0-6-895-1-v1.log.2"
+        #  ],
+        #  "ntpr_no_manifest":[],
+        #  "ntr_no_topic_manifest":[],
+        #  "segments_outside_manifest":[],
+        #  "unknown_keys":[]}
+
+        # It is legal for tiered storage to leak objects under
+        # certain circumstances: this will remain the case until
+        # we implement background scrub + modify test code to
+        # insist on Redpanda completing its own scrub before
+        # we externally validate
+        # (https://github.com/redpanda-data/redpanda/issues/9072)
+        permitted_anomalies = {"segments_outside_manifest"}
+
+        # Whether any anomalies were found
+        any_anomalies = any(len(v) for v in report.values())
+
+        # List of fatal anomalies found
+        fatal_anomalies = set(k for k, v in report.items()
+                              if len(v) and k not in permitted_anomalies)
+
+        if not any_anomalies:
+            self.logger.info(f"No anomalies in object storage scrub")
+        elif not fatal_anomalies:
+            self.logger.warn(
+                f"Non-fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
+            )
+        else:
+            self.logger.error(
+                f"Fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
+            )
+            raise RuntimeError(
+                f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
+            )
