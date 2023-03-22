@@ -90,6 +90,17 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                             redpanda.cloud_storage_diagnostics()
                             raise
 
+                if self.redpanda.si_settings is not None:
+                    try:
+                        self.redpanda.stop_and_scrub_object_storage()
+                    except:
+                        self.redpanda.cloud_storage_diagnostics()
+                        raise
+
+                # Finally, if the test passed and all post-test checks
+                # also passed, we may trim the logs to INFO level to
+                # save space.
+                for redpanda in all_redpandas(self):
                     redpanda.trim_logs()
 
                 return r
