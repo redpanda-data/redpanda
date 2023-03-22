@@ -14,6 +14,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
+	"reflect"
 	"time"
 
 	helmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
@@ -179,6 +180,10 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 }
 
 func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp v1alpha1.Redpanda) (v1alpha1.Redpanda, *helmv2beta1.HelmRelease, error) {
+	log := ctrl.LoggerFrom(ctx)
+	rpKey := types.NamespacedName{Namespace: rp.Namespace, Name: rp.Name}
+	log.WithValues("redpanda", rpKey)
+
 	// Check if HelmRelease exists or create it
 	hr := &helmv2beta1.HelmRelease{}
 
@@ -202,6 +207,29 @@ func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp v1alph
 				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' created ", rp.Namespace, rp.GetHelmReleaseName()))
 			}
 			return rp, hr, fmt.Errorf("failed to get HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
+		} else {
+			// should we update the helmRelease here, this will enable the update process
+			// check if we need to first
+
+			// templated version:
+			hrTemplate, errTemplated := r.createHelmReleaseFromTemplate(ctx, rp)
+			if errTemplated != nil {
+				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, errTemplated.Error())
+				return rp, hr, errTemplated
+			}
+
+			if r.helmReleaseRequiresUpdate(hr, hrTemplate) {
+				hr.Spec = hrTemplate.Spec
+				if err = r.Client.Update(ctx, hr); err != nil {
+					r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
+					return rp, hr, err
+				}
+				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' updated", rp.Namespace, rp.GetHelmReleaseName()))
+				rp.Status.HelmRelease = rp.GetHelmReleaseName()
+			}
+
+			rp.Status.HelmRelease = rp.GetHelmReleaseName()
+			return rp, hr, nil
 		}
 		// ok found the release, let's just move on
 	} else {
@@ -370,4 +398,40 @@ func (r *RedpandaReconciler) event(rp *v1alpha1.Redpanda, revision, severity, ms
 		eventType = "Warning"
 	}
 	r.EventRecorder.AnnotatedEventf(rp, meta, eventType, severity, msg)
+}
+
+func (r *RedpandaReconciler) helmReleaseRequiresUpdate(hr *helmv2beta1.HelmRelease, hrTemplate *helmv2beta1.HelmRelease) bool {
+	log := ctrl.LoggerFrom(context.Background())
+	log.WithValues("redpanda", hr.Name)
+
+	switch {
+	case !reflect.DeepEqual(hr.Spec.Values, hrTemplate.Spec.Values):
+		log.Info("values found different")
+		return true
+	case helmChartRequiresUpdate(&hr.Spec.Chart, &hrTemplate.Spec.Chart):
+		log.Info("chartTemplate found different")
+		return true
+	case hr.Spec.Interval != hrTemplate.Spec.Interval:
+		log.Info("interval found different")
+		return true
+	default:
+		return false
+	}
+}
+
+// helmChartRequiresUpdate compares the v2beta1.HelmChartTemplate of the
+// v2beta1.HelmRelease to the given v1beta2.HelmChart to determine if an
+// update is required.
+func helmChartRequiresUpdate(template *helmv2beta1.HelmChartTemplate, chart *helmv2beta1.HelmChartTemplate) bool {
+	switch {
+	case template.Spec.Chart != chart.Spec.Chart:
+		fmt.Println("chart is different")
+		return true
+	case template.Spec.Version == "" && chart.Spec.Version != "*",
+		template.Spec.Version != "" && template.Spec.Version != chart.Spec.Version:
+		fmt.Println("spec version is different")
+		return true
+	default:
+		return false
+	}
 }
