@@ -115,6 +115,7 @@ public:
     ss::sharded<cluster::self_test_frontend> self_test_frontend;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<cluster::tm_stm_cache> tm_stm_cache;
+    ss::sharded<kafka::coordinator_ntp_mapper> tx_coordinator_ntp_mapper;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
     ss::sharded<coproc::partition_manager> cp_partition_manager;
