@@ -67,9 +67,9 @@ constexpr auto set_accumulator =
 
 } // namespace
 
-ss::future<> sharded_store::start(ss::smp_service_group sg) {
+ss::future<> sharded_store::start(is_mutable mut, ss::smp_service_group sg) {
     _smp_opts = ss::smp_submit_to_options{sg};
-    return _store.start();
+    return _store.start(mut);
 }
 
 ss::future<> sharded_store::stop() { return _store.stop(); }
@@ -677,6 +677,10 @@ ss::future<bool> sharded_store::is_compatible(
         }
     }
     co_return is_compat;
+}
+
+void sharded_store::check_mode_mutability(force f) const {
+    _store.local().check_mode_mutability(f).value();
 }
 
 ss::future<bool> sharded_store::has_version(

@@ -83,7 +83,7 @@ inline model::record_batch make_delete_subject_permanently_batch(
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store) {
     pps::sharded_store s;
-    s.start(ss::default_smp_service_group()).get();
+    s.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
     // This kafka client will not be used by the sequencer
@@ -202,7 +202,7 @@ model::record_batch as_record_batch(Key key) {
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store_after_compaction) {
     pps::sharded_store s;
-    s.start(ss::default_smp_service_group()).get();
+    s.start(pps::is_mutable::no, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
     // This kafka client will not be used by the sequencer

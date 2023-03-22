@@ -24,7 +24,7 @@ SEASTAR_THREAD_TEST_CASE(test_avro_basic_backwards_store_compat) {
     // used to read the data written in the previous schema.
 
     pps::sharded_store s;
-    s.start(ss::default_smp_service_group()).get();
+    s.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
     pps::seq_marker dummy_marker;
