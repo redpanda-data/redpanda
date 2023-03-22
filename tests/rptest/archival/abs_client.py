@@ -94,6 +94,23 @@ class ABSClient:
 
         return []
 
+    def move_object(self,
+                    bucket: str,
+                    src: str,
+                    dst: str,
+                    validate: bool = False,
+                    validation_timeout_sec=30):
+        # `validate` and `validation_timeout_sec` are unused, only present
+        # for compatibility with S3Client
+        container_client = ContainerClient.from_connection_string(
+            self.conn_str, container_name=bucket)
+
+        # There is no server-side "move" in ABS: this is a crude implementation,
+        # but good enough for tiny objects
+        content = container_client.download_blob(src).readall()
+        container_client.upload_blob(dst, content)
+        container_client.delete_blob(src)
+
     def delete_object(self, bucket: str, key: str, verify=False):
         blob_client = BlobClient.from_connection_string(self.conn_str,
                                                         container_name=bucket,

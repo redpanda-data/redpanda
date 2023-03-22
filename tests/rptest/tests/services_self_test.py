@@ -16,7 +16,11 @@ from rptest.clients.types import TopicSpec
 from rptest.services.openmessaging_benchmark import OpenMessagingBenchmark
 from rptest.services.kgo_repeater_service import repeater_traffic
 from rptest.services.kgo_verifier_services import KgoVerifierRandomConsumer, KgoVerifierSeqConsumer, KgoVerifierConsumerGroupConsumer, KgoVerifierProducer
+from rptest.services.redpanda import SISettings, CloudStorageType, get_cloud_storage_type
 from rptest.tests.prealloc_nodes import PreallocNodesTest
+from rptest.utils.si_utils import BucketView
+from rptest.util import expect_exception
+from rptest.utils.mode_checks import skip_debug_mode
 
 
 class OpenBenchmarkSelfTest(RedpandaTest):
@@ -129,3 +133,99 @@ class KgoVerifierSelfTest(PreallocNodesTest):
         rand_consumer.wait(timeout_sec=60)
         group_consumer.wait(timeout_sec=60)
         seq_consumer.wait(timeout_sec=60)
+
+
+class BucketScrubSelfTest(RedpandaTest):
+    """
+    Verify that if we erase an object from tiered storage,
+    the bucket validation will fail.
+    """
+    def __init__(self, test_context, *args, **kwargs):
+        super().__init__(test_context,
+                         *args,
+                         num_brokers=3,
+                         si_settings=SISettings(test_context),
+                         **kwargs)
+
+    @skip_debug_mode  # We wait for a decent amount of traffic
+    @cluster(num_nodes=4)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_missing_segment(self, cloud_storage_type):
+        topic = 'test'
+
+        partition_count = 16
+        segment_size = 1024 * 1024
+        msg_size = 16384
+
+        self.client().create_topic(
+            TopicSpec(name=topic,
+                      partition_count=partition_count,
+                      retention_bytes=16 * segment_size,
+                      segment_bytes=segment_size))
+
+        total_write_bytes = segment_size * partition_count * 4
+
+        with repeater_traffic(context=self.test_context,
+                              redpanda=self.redpanda,
+                              topic=topic,
+                              msg_size=msg_size,
+                              workers=1) as repeater:
+            repeater.await_group_ready()
+            repeater.await_progress(total_write_bytes // msg_size,
+                                    timeout_sec=120)
+
+        def all_partitions_have_segments():
+            view = BucketView(self.redpanda)
+            for p in range(0, partition_count):
+                if view.cloud_log_segment_count_for_ntp(topic, p) == 0:
+                    return False
+
+            return True
+
+        self.redpanda.wait_until(all_partitions_have_segments,
+                                 timeout_sec=60,
+                                 backoff_sec=5)
+
+        # Initially a bucket scrub should pass
+        self.logger.info(f"Running baseline scrub")
+        self.redpanda.stop_and_scrub_object_storage()
+        self.redpanda._for_nodes(
+            self.redpanda.nodes,
+            lambda n: self.redpanda.start_node(n, first_start=False),
+            parallel=True)
+
+        # Go delete a segment: pick one arbitrarily, but it must be one
+        # that is linked into a manifest to constitute a corruption.
+        view = BucketView(self.redpanda)
+        segment_key = None
+        for o in self.redpanda.cloud_storage_client.list_objects(
+                self.si_settings.cloud_storage_bucket):
+            if ".log" in o.key and view.is_segment_part_of_a_manifest(o):
+                segment_key = o.key
+                break
+
+        assert segment_key is not None
+
+        tmp_location = f"tmp_{segment_key}_tmp"
+        self.logger.info(f"Simulating loss of segment {segment_key}")
+        self.redpanda.cloud_storage_client.move_object(
+            self.si_settings.cloud_storage_bucket,
+            segment_key,
+            tmp_location,
+            validate=True)
+
+        self.logger.info(f"Running scrub that should discover issue")
+        with expect_exception(RuntimeError, lambda e: "fatal" in str(e)):
+            self.redpanda.stop_and_scrub_object_storage()
+
+        # Avoid tripping exception during shutdown: reinstate the object
+        self.redpanda.cloud_storage_client.move_object(
+            self.si_settings.cloud_storage_bucket,
+            tmp_location,
+            segment_key,
+            validate=True)
+
+        self.redpanda._for_nodes(
+            self.redpanda.nodes,
+            lambda n: self.redpanda.start_node(n, first_start=False),
+            parallel=True)
