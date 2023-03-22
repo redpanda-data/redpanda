@@ -497,6 +497,43 @@ ss::future<bool> sharded_store::delete_subject_version(
       });
 }
 
+ss::future<mode> sharded_store::get_mode() {
+    co_return _store.local().get_mode().value();
+}
+
+ss::future<mode>
+sharded_store::get_mode(subject sub, default_to_global fallback) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, [sub{std::move(sub)}, fallback](store& s) {
+          return s.get_mode(sub, fallback).value();
+      });
+}
+
+ss::future<bool> sharded_store::set_mode(mode m, force f) {
+    auto map = [m, f](store& s) { return s.set_mode(m, f).value(); };
+    auto reduce = std::logical_and<>{};
+    co_return co_await _store.map_reduce0(map, true, reduce);
+}
+
+ss::future<bool>
+sharded_store::set_mode(seq_marker marker, subject sub, mode m, force f) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, _smp_opts, [marker, sub{std::move(sub)}, m, f](store& s) {
+          return s.set_mode(marker, sub, m, f).value();
+      });
+}
+
+ss::future<bool>
+sharded_store::clear_mode(seq_marker marker, subject sub, force f) {
+    auto sub_shard{shard_for(sub)};
+    co_return co_await _store.invoke_on(
+      sub_shard, _smp_opts, [marker, sub{std::move(sub)}, f](store& s) {
+          return s.clear_mode(marker, sub, f).value();
+      });
+}
+
 ss::future<compatibility_level> sharded_store::get_compatibility() {
     co_return _store.local().get_compatibility().value();
 }
