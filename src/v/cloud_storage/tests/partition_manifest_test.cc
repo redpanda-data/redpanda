@@ -818,7 +818,7 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_replaced) {
       segment_name("20-1-v1.log"),
       {.base_offset = model::offset{20},
        .committed_offset = model::offset{29},
-       .sname_format = segment_name_format::v2});
+       .sname_format = segment_name_format::v1});
     m.add(
       segment_name("30-1-v1.log"),
       {.base_offset = model::offset{30},
@@ -1804,4 +1804,22 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_readd_protection) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(1));
+    segment_meta s{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(111222),
+      .committed_offset = model::offset(222333),
+      .delta_offset = model::offset_delta(42),
+      .ntp_revision = model::initial_revision_id(1),
+      .delta_offset_end = model::offset_delta(24),
+      .sname_format = segment_name_format::v2,
+    };
+    BOOST_REQUIRE(m.add(s.base_offset, s));
+    BOOST_REQUIRE(m.add(s.base_offset, s) == false);
+    auto backlog = m.replaced_segments();
+    BOOST_REQUIRE(backlog.empty());
 }
