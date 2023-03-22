@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-test-topic
+spec:
+  template:
+    spec:
+      containers:
+      - name: rpk
+        image: localhost/redpanda:dev
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        command:
+        - /bin/bash
+        - -c
+        - -ex
+        args:
+        # Create a topic.
+        - 'rpk topic create my_topic --partitions=3 --replicas=1 --brokers cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:9092'
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

@@ -111,7 +111,7 @@ func CreateIfNotExists(
 		Name:      obj.GetName(),
 	}, actual)
 	if err != nil && !errors.IsNotFound(err) {
-		return false, fmt.Errorf("error while fetching %s resource: %w", obj.GetName(), err)
+		return false, fmt.Errorf("error while fetching %s resource kind %+v: %w", obj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
 	if errors.IsNotFound(err) {
 		// not exists, going to create it

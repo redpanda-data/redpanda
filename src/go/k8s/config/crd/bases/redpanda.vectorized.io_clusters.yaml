@@ -496,6 +496,53 @@ spec:
                         tls:
                           description: Configuration of TLS for Pandaproxy API
                           properties:
+                            clientCACertRef:
+                              description: 'If provided and RequireClientAuth is true,
+                                the operator uses the certificate in this secret instead
+                                of issuing client certificates. The secret is expected
+                                to provide the following keys: ''ca.crt''. If ClientCACertRef
+                                points to a secret in a different namespace, the operator
+                                will create a secret in the same namespace as the
+                                cluster CR. The secret contains the trusted CA certificates
+                                including the one pointed by ClientCACertRef.'
+                              properties:
+                                apiVersion:
+                                  description: API version of the referent.
+                                  type: string
+                                fieldPath:
+                                  description: 'If referring to a piece of an object
+                                    instead of an entire object, this string should
+                                    contain a valid JSON/Go field access statement,
+                                    such as desiredState.manifest.containers[2]. For
+                                    example, if the object reference is to a container
+                                    within a pod, this would take on a value like:
+                                    "spec.containers{name}" (where "name" refers to
+                                    the name of the container that triggered the event)
+                                    or if no container name is specified "spec.containers[2]"
+                                    (container with index 2 in this pod). This syntax
+                                    is chosen only to have some well-defined way of
+                                    referencing a part of an object. TODO: this design
+                                    is not final and this field is subject to change
+                                    in the future.'
+                                  type: string
+                                kind:
+                                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                                  type: string
+                                name:
+                                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                  type: string
+                                namespace:
+                                  description: 'Namespace of the referent. More info:
+                                    https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                                  type: string
+                                resourceVersion:
+                                  description: 'Specific resourceVersion to which
+                                    this reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                                  type: string
+                                uid:
+                                  description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                                  type: string
+                              type: object
                             enabled:
                               type: boolean
                             issuerRef:
@@ -665,6 +712,52 @@ spec:
                       tls:
                         description: TLS is the configuration for schema registry
                         properties:
+                          clientCACertRef:
+                            description: 'If provided and RequireClientAuth is true,
+                              the operator uses the certificate in this secret instead
+                              of issuing client certificates. The secret is expected
+                              to provide the following keys: ''ca.crt''. If ClientCACertRef
+                              points to a secret in a different namespace, the operator
+                              will create a secret in the same namespace as the cluster
+                              CR. The secret contains the trusted CA certificates
+                              including the one pointed by ClientCACertRef.'
+                            properties:
+                              apiVersion:
+                                description: API version of the referent.
+                                type: string
+                              fieldPath:
+                                description: 'If referring to a piece of an object
+                                  instead of an entire object, this string should
+                                  contain a valid JSON/Go field access statement,
+                                  such as desiredState.manifest.containers[2]. For
+                                  example, if the object reference is to a container
+                                  within a pod, this would take on a value like: "spec.containers{name}"
+                                  (where "name" refers to the name of the container
+                                  that triggered the event) or if no container name
+                                  is specified "spec.containers[2]" (container with
+                                  index 2 in this pod). This syntax is chosen only
+                                  to have some well-defined way of referencing a part
+                                  of an object. TODO: this design is not final and
+                                  this field is subject to change in the future.'
+                                type: string
+                              kind:
+                                description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                                type: string
+                              namespace:
+                                description: 'Namespace of the referent. More info:
+                                  https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                                type: string
+                              resourceVersion:
+                                description: 'Specific resourceVersion to which this
+                                  reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                                type: string
+                              uid:
+                                description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                                type: string
+                            type: object
                           enabled:
                             type: boolean
                           issuerRef:
@@ -831,6 +924,26 @@ spec:
                   amount of resources assigned to these containers will be required
                   on the cluster on top of the resources defined here
                 properties:
+                  claims:
+                    description: "Claims lists the names of resources, defined in
+                      spec.resourceClaims, that are used by this container. \n This
+                      is an alpha field and requires enabling the DynamicResourceAllocation
+                      feature gate. \n This field is immutable."
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: Name must match the name of one entry in pod.spec.resourceClaims
+                            of the Pod where this field is used. It makes that resource
+                            available inside a container.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   limits:
                     additionalProperties:
                       anyOf:
@@ -910,6 +1023,28 @@ spec:
                           for the container running this sidecar. For the default
                           sidecars this is defaulted
                         properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
                           limits:
                             additionalProperties:
                               anyOf:

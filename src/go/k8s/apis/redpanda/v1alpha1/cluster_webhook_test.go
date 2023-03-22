@@ -10,7 +10,9 @@
 package v1alpha1_test
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -26,7 +28,11 @@ import (
 	"k8s.io/utils/pointer"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+
+	fake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+var fakeK8sClient = fake.NewClientBuilder().Build()
 
 //nolint:funlen // this is ok for a test
 func TestDefault(t *testing.T) {
@@ -1047,6 +1053,74 @@ func TestCreation(t *testing.T) {
 		err := tls.ValidateCreate()
 		assert.Error(t, err)
 	})
+
+	t.Run("pandaproxy mtls with external ca set by clientCACertRef: success", func(t *testing.T) {
+		v1alpha1.SetK8sClient(fakeK8sClient)
+
+		caCertSecret := &corev1.Secret{}
+		caCertName := "pandaproxy-client-valid-ca-cert"
+		ns := "test"
+		caCertSecret.SetName(caCertName)
+		caCertSecret.SetNamespace(ns)
+		certData, err := os.ReadFile("./testdata/ca.crt.pem")
+		assert.NoError(t, err)
+
+		caCertSecret.Data = map[string][]byte{"ca.crt": certData}
+		err = fakeK8sClient.Create(context.TODO(), caCertSecret)
+		assert.NoError(t, err)
+
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.PandaproxyAPI = []v1alpha1.PandaproxyAPI{
+			{
+				Port: 1234,
+				TLS: v1alpha1.PandaproxyAPITLS{
+					Enabled:           true,
+					RequireClientAuth: true,
+					ClientCACertRef: &corev1.ObjectReference{
+						Name:      caCertName,
+						Kind:      "secret",
+						Namespace: ns,
+					},
+				},
+			},
+		}
+		err = tls.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	// More failure test cases are covered by those for Schema Registry since the common validation function is called.
+	t.Run("pandaproxy mtls with external ca set by clientCACertRef: invalid certificate", func(t *testing.T) {
+		v1alpha1.SetK8sClient(fakeK8sClient)
+
+		caCertSecret := &corev1.Secret{}
+		caCertName := "pandaproxy-client-not-ca-cert"
+		ns := "test"
+		caCertSecret.SetName(caCertName)
+		caCertSecret.SetNamespace(ns)
+		caCertSecret.Data = map[string][]byte{"ca.crt": []byte("invalid cert")}
+		err := fakeK8sClient.Create(context.TODO(), caCertSecret)
+		assert.NoError(t, err)
+
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.PandaproxyAPI = []v1alpha1.PandaproxyAPI{
+			{
+				Port: 1234,
+				TLS: v1alpha1.PandaproxyAPITLS{
+					Enabled:           true,
+					RequireClientAuth: true,
+					ClientCACertRef: &corev1.ObjectReference{
+						Name:      caCertName,
+						Kind:      "secret",
+						Namespace: ns,
+					},
+				},
+			},
+		}
+
+		err = tls.ValidateCreate()
+		assert.Error(t, err)
+	})
+
 	t.Run("kafka external subdomain is provided along with preferred address type", func(t *testing.T) {
 		rp := redpandaCluster.DeepCopy()
 		rp.Spec.Configuration.KafkaAPI = append(rp.Spec.Configuration.KafkaAPI,
@@ -1392,6 +1466,155 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		}
 
 		err := schemaReg.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("if schema registry mTLS enabled and clientCACertRef is set, name must be provided in clientCACertRef", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+				ClientCACertRef:   &corev1.ObjectReference{},
+			},
+		}
+
+		err := schemaReg.ValidateCreate()
+		assert.Error(t, err)
+		err = schemaReg.ValidateUpdate(schemaReg)
+		assert.Error(t, err)
+	})
+
+	t.Run("if schema registry mTLS enabled and clientCACertRef is set, kind must be set to secret in clientCACertRef", func(t *testing.T) {
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+				ClientCACertRef: &corev1.ObjectReference{
+					Name: "test",
+					Kind: "configmap",
+				},
+			},
+		}
+
+		err := schemaReg.ValidateCreate()
+		assert.Error(t, err)
+		err = schemaReg.ValidateUpdate(schemaReg)
+		assert.Error(t, err)
+	})
+
+	t.Run("if schema registry mTLS enabled and clientCACertRef is set, the CA certificate secret must exist", func(t *testing.T) {
+		v1alpha1.SetK8sClient(fakeK8sClient)
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+				ClientCACertRef: &corev1.ObjectReference{
+					Name: "does-not-exist",
+					Kind: "secret",
+				},
+			},
+		}
+
+		err := schemaReg.ValidateCreate()
+		assert.Error(t, err)
+		err = schemaReg.ValidateUpdate(schemaReg)
+		assert.Error(t, err)
+	})
+
+	t.Run("if schema registry mTLS enabled and clientCACertRef is set, the CA certificate secret must provide ca.crt", func(t *testing.T) {
+		v1alpha1.SetK8sClient(fakeK8sClient)
+		caCertSecret := &corev1.Secret{}
+		caCertName := "schema-registry-client-ca-cert-no-ca-crt"
+		ns := "test"
+		caCertSecret.SetName(caCertName)
+		caCertSecret.SetNamespace(ns)
+		caCertSecret.Data = map[string][]byte{"no.ca.crt": []byte("no.ca.crt")}
+		err := fakeK8sClient.Create(context.TODO(), caCertSecret)
+		assert.NoError(t, err)
+
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+				ClientCACertRef: &corev1.ObjectReference{
+					Name:      caCertName,
+					Kind:      "secret",
+					Namespace: ns,
+				},
+			},
+		}
+
+		err = schemaReg.ValidateCreate()
+		assert.Error(t, err)
+		err = schemaReg.ValidateUpdate(schemaReg)
+		assert.Error(t, err)
+	})
+
+	t.Run("if schema registry mTLS enabled and clientCACertRef is set, the CA certificate secret must be in PEM", func(t *testing.T) {
+		v1alpha1.SetK8sClient(fakeK8sClient)
+		caCertSecret := &corev1.Secret{}
+		caCertName := "schema-registry-client-ca-cert-invalid-pem"
+		ns := "test"
+		caCertSecret.SetName(caCertName)
+		caCertSecret.SetNamespace(ns)
+		caCertSecret.Data = map[string][]byte{"ca.crt": []byte("not-in-pem")}
+		err := fakeK8sClient.Create(context.TODO(), caCertSecret)
+		assert.NoError(t, err)
+
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+				ClientCACertRef: &corev1.ObjectReference{
+					Name:      caCertName,
+					Kind:      "secret",
+					Namespace: ns,
+				},
+			},
+		}
+
+		err = schemaReg.ValidateCreate()
+		assert.Error(t, err)
+		err = schemaReg.ValidateUpdate(schemaReg)
+		assert.Error(t, err)
+	})
+
+	t.Run("if schema registry mTLS enabled and clientCACertRef is set, the certificate secret must be valid x509 certificate", func(t *testing.T) {
+		v1alpha1.SetK8sClient(fakeK8sClient)
+
+		caCertSecret := &corev1.Secret{}
+		caCertName := "schema-registry-client-ca-cert-not-ca-cert"
+		ns := "test"
+		caCertSecret.SetName(caCertName)
+		caCertSecret.SetNamespace(ns)
+		certData, err := os.ReadFile("./testdata/not.ca.crt.pem")
+		assert.NoError(t, err)
+
+		caCertSecret.Data = map[string][]byte{"ca.crt": certData}
+		err = fakeK8sClient.Create(context.TODO(), caCertSecret)
+		assert.NoError(t, err)
+
+		schemaReg := redpandaCluster.DeepCopy()
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+				ClientCACertRef: &corev1.ObjectReference{
+					Name:      caCertName,
+					Kind:      "secret",
+					Namespace: ns,
+				},
+			},
+		}
+
+		err = schemaReg.ValidateCreate()
+		assert.Error(t, err)
+		err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
 }

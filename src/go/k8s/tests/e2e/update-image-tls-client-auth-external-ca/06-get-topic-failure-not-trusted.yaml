@@ -1,0 +1,25 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: get-topic-failure-update-img-external-client-ca
+spec:
+  template:
+    spec:
+      containers:
+      - name: rpk
+        image: localhost/redpanda:dev
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        command:
+        - /bin/bash
+        - -c
+        - -ex
+        args:
+        - 'curl -vvv -k --sslv2 --http2 -H "Content-Type: application/vnd.kafka.v2+json" https://update-img-external-client-ca-0.update-img-external-client-ca.$POD_NAMESPACE.svc.cluster.local:8082/topics'
+      restartPolicy: Never
+  backoffLimit: 2
+  parallelism: 1
+  completions: 1
