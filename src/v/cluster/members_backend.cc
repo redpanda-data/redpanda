@@ -7,6 +7,7 @@
 #include "cluster/members_frontend.h"
 #include "cluster/members_manager.h"
 #include "cluster/members_table.h"
+#include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
@@ -264,6 +265,7 @@ members_backend::members_backend(
   , _members_manager(members_manager)
   , _members_frontend(members_frontend)
   , _features(features)
+  , _reallocation_strategy(std::make_unique<default_reallocation_strategy>())
   , _raft0(raft0)
   , _as(as)
   , _retry_timeout(config::shard_local_cfg().members_backend_retry_ms())
@@ -460,10 +462,25 @@ ss::future<> members_backend::calculate_reallocations(update_meta& meta) {
 
 void members_backend::reallocations_for_even_partition_count(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
+    _reallocation_strategy->reallocations_for_even_partition_count(
+      _max_concurrent_reallocations(),
+      _allocator.local(),
+      _topics.local(),
+      meta,
+      domain);
+}
+
+void members_backend::default_reallocation_strategy::
+  reallocations_for_even_partition_count(
+    size_t max_batch_size,
+    partition_allocator& allocator,
+    topic_table& topics,
+    members_backend::update_meta& meta,
+    partition_allocation_domain domain) {
     size_t prev_reallocations_count = meta.partition_reallocations.size();
-    calculate_reallocations_batch(meta, domain);
-    auto current_error = calculate_unevenness_error(
-      _allocator.local(), meta, domain);
+    calculate_reallocations_batch(
+      max_batch_size, allocator, topics, meta, domain);
+    auto current_error = calculate_unevenness_error(allocator, meta, domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
     const auto min_improvement
       = std::max<size_t>(
@@ -571,16 +588,20 @@ bool is_reassigned_to_node(
       node_id);
 }
 
-void members_backend::calculate_reallocations_batch(
-  members_backend::update_meta& meta, partition_allocation_domain domain) {
+void members_backend::default_reallocation_strategy::
+  calculate_reallocations_batch(
+    size_t max_batch_size,
+    partition_allocator& allocator,
+    topic_table& topics,
+    members_backend::update_meta& meta,
+    partition_allocation_domain domain) {
     // 1. count current node allocations
-    auto node_replicas = calculate_replicas_per_node(
-      _allocator.local(), domain);
+    auto node_replicas = calculate_replicas_per_node(allocator, domain);
     auto total_replicas = calculate_total_replicas(node_replicas);
     // 2. calculate number of replicas per node leading to even replica per
     // node distribution
-    auto target_replicas_per_node
-      = total_replicas / _allocator.local().state().available_nodes();
+    auto target_replicas_per_node = total_replicas
+                                    / allocator.state().available_nodes();
     vlog(
       clusterlog.info,
       "[update: {}] there are {} replicas in {} domain, requested to assign {} "
@@ -625,10 +646,9 @@ void members_backend::calculate_reallocations_batch(
         }
     }
     auto [idx_it, _] = meta.last_ntp_index.try_emplace(domain, 0);
-    auto& topics = _topics.local().topics_map();
     size_t current_idx = 0;
     // 4. Pass over all partition metadata
-    for (auto& [tp_ns, metadata] : topics) {
+    for (auto& [tp_ns, metadata] : topics.topics_map()) {
         // skip partitions outside of current domain
         if (get_allocation_domain(tp_ns) != domain) {
             continue;
@@ -697,7 +717,7 @@ void members_backend::calculate_reallocations_batch(
                     reallocation.replicas_to_remove.emplace(to_move.id);
                     auto current_assignment = p;
                     reassign_replicas(
-                      _allocator.local(), current_assignment, reallocation);
+                      allocator, current_assignment, reallocation);
                     // skip if partition was reassigned to the same node
                     if (is_reassigned_to_node(reallocation, to_move.id)) {
                         continue;
@@ -708,9 +728,7 @@ void members_backend::calculate_reallocations_batch(
                       std::move(reallocation));
                     to_move.left_to_move--;
                     // reached max concurrent reallocations, yield
-                    if (
-                      meta.partition_reallocations.size()
-                      >= _max_concurrent_reallocations()) {
+                    if (meta.partition_reallocations.size() >= max_batch_size) {
                         vlog(
                           clusterlog.info,
                           "reached limit of max concurrent reallocations: {}",

@@ -79,6 +79,40 @@ public:
         absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
     };
 
+    struct reallocation_strategy {
+        reallocation_strategy() = default;
+        reallocation_strategy(const reallocation_strategy&) = default;
+        reallocation_strategy(reallocation_strategy&&) = default;
+        reallocation_strategy& operator=(const reallocation_strategy&)
+          = default;
+        reallocation_strategy& operator=(reallocation_strategy&&) = default;
+        virtual ~reallocation_strategy() = default;
+        virtual void reallocations_for_even_partition_count(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain)
+          = 0;
+    };
+
+    class default_reallocation_strategy : public reallocation_strategy {
+        void reallocations_for_even_partition_count(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain) final;
+
+    private:
+        void calculate_reallocations_batch(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain);
+    };
+
     members_backend(
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::topic_table>&,
@@ -112,10 +146,9 @@ private:
     void stop_node_decommissioning(model::node_id);
     void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
-    void
-    calculate_reallocations_batch(update_meta&, partition_allocation_domain);
     void reallocations_for_even_partition_count(
       update_meta&, partition_allocation_domain);
+
     ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
@@ -143,6 +176,7 @@ private:
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<members_frontend>& _members_frontend;
     ss::sharded<features::feature_table>& _features;
+    std::unique_ptr<reallocation_strategy> _reallocation_strategy;
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
