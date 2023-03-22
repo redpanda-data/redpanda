@@ -27,6 +27,7 @@
 #include <seastar/util/later.hh>
 #include <seastar/util/optimized_optional.hh>
 
+#include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 #include <fmt/ostream.h>
 
@@ -49,10 +50,7 @@ struct node_replicas {
     size_t allocated_replicas;
     size_t max_capacity;
 };
-struct unevenness_error_info {
-    double e;
-    double e_step;
-};
+
 using node_replicas_map_t = absl::node_hash_map<model::node_id, node_replicas>;
 static absl::node_hash_map<model::node_id, node_replicas>
 calculate_replicas_per_node(
@@ -88,14 +86,8 @@ calculate_total_replicas(const node_replicas_map_t& node_replicas) {
 
 void reassign_replicas(
   partition_allocator& allocator,
-  partition_assignment& current_assignment,
+  partition_assignment current_assignment,
   members_backend::partition_reallocation& reallocation) {
-    vlog(
-      clusterlog.debug,
-      "[ntp: {}, {} -> -]  trying to reassign partition replicas",
-      reallocation.ntp,
-      current_assignment.replicas);
-
     // remove nodes that are going to be reassigned from current assignment.
     std::erase_if(
       current_assignment.replicas,
@@ -161,23 +153,8 @@ void reassign_replicas(
  *                               e
  *                                max
  *
- *
- * Since the improvement depends on the number of replicas moved in a single
- * batch we need to calculate the improvement that would moving a single
- * partition replica introduce. Since single move requested by a balancer moves
- * partition from node A->B (where A has more than requested number of replicas
- * per nd B should have less than requested number of replicas) we can calculate
- * the error improvement introduced by single move as:
- *
- *                                     2
- *                           e     = ─────
- *                            step   N ⋅ T
- *
- * Single step error must be normalized as well. We stop if the improvement is
- * less than the equivalent of the improvement made by 1/10th of the number of
- * moves in a batch (or 1 move if that is bigger)
  **/
-unevenness_error_info calculate_unevenness_error(
+double calculate_unevenness_error(
   const partition_allocator& allocator,
   const members_backend::update_meta& update,
   partition_allocation_domain domain) {
@@ -205,7 +182,7 @@ unevenness_error_info calculate_unevenness_error(
     const auto total_replicas = calculate_total_replicas(node_replicas);
 
     if (total_replicas == 0) {
-        return {.e = 0.0, .e_step = 0.0};
+        return 0.0;
     }
 
     const auto target_replicas_per_node = total_replicas
@@ -226,22 +203,19 @@ unevenness_error_info calculate_unevenness_error(
 
         vlog(
           clusterlog.trace,
-          "node {} has {} replicas allocated, requested replicas per node "
-          "{}, difference: {}",
+          "node {} has {} replicas allocated in domain {}, requested replicas "
+          "per node {}, difference: {}",
           id,
           allocation_info.allocated_replicas,
+          domain,
           target_replicas_per_node,
           diff);
         err += std::abs(diff);
     }
     err /= (static_cast<double>(total_replicas) * node_cnt);
 
-    double e_step
-      = 2.0
-        / (static_cast<double>(total_replicas) * static_cast<double>(node_cnt) * max_err);
-
     // normalize error to stay in range (0,1)
-    return {.e = err / max_err, .e_step = e_step};
+    return err / max_err;
 }
 
 } // namespace
@@ -482,27 +456,20 @@ void members_backend::default_reallocation_strategy::
       max_batch_size, allocator, topics, meta, domain);
     auto current_error = calculate_unevenness_error(allocator, meta, domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
-    const auto min_improvement
-      = std::max<size_t>(
-          (meta.partition_reallocations.size() - prev_reallocations_count) / 10,
-          1)
-        * current_error.e_step;
 
-    auto improvement = it->second - current_error.e;
+    auto improvement = it->second - current_error;
     vlog(
       clusterlog.info,
-      "[update: {}] unevenness error: {}, previous error: {}, "
-      "improvement: {}, min improvement: {}",
+      "[update: {}] unevenness error: {}, previous error: {}, improvement: {}",
       meta.update,
-      current_error.e,
+      current_error,
       it->second,
-      improvement,
-      min_improvement);
+      improvement);
 
-    it->second = current_error.e;
+    it->second = current_error;
 
     // drop all reallocations if there is no improvement
-    if (improvement < min_improvement) {
+    if (improvement <= 0) {
         meta.partition_reallocations.erase(
           std::next(
             meta.partition_reallocations.begin(),
@@ -611,26 +578,16 @@ void members_backend::default_reallocation_strategy::
       domain,
       target_replicas_per_node);
     // 3. calculate how many replicas have to be moved from each node
-    std::vector<replicas_to_move> to_move_from_node;
+    absl::flat_hash_map<model::node_id, size_t> to_move_from_node;
+
     for (auto& [id, info] : node_replicas) {
         auto to_move = info.allocated_replicas
                        - std::min(
                          target_replicas_per_node, info.allocated_replicas);
-        to_move_from_node.emplace_back(id, to_move);
+        if (to_move > 0) {
+            to_move_from_node.emplace(id, to_move);
+        }
     }
-
-    auto all_empty = std::all_of(
-      to_move_from_node.begin(),
-      to_move_from_node.end(),
-      [](const replicas_to_move& m) { return m.left_to_move == 0; });
-    // nothing to do, exit early
-    if (all_empty) {
-        return;
-    }
-
-    auto cmp = [](const replicas_to_move& lhs, const replicas_to_move& rhs) {
-        return lhs.left_to_move < rhs.left_to_move;
-    };
 
     if (clusterlog.is_enabled(ss::log_level::info)) {
         for (const auto& [id, cnt] : to_move_from_node) {
@@ -645,105 +602,153 @@ void members_backend::default_reallocation_strategy::
               node_replicas[id].allocated_replicas);
         }
     }
-    auto [idx_it, _] = meta.last_ntp_index.try_emplace(domain, 0);
-    size_t current_idx = 0;
-    // 4. Pass over all partition metadata
-    for (auto& [tp_ns, metadata] : topics.topics_map()) {
-        // skip partitions outside of current domain
-        if (get_allocation_domain(tp_ns) != domain) {
-            continue;
+
+    if (to_move_from_node.empty()) {
+        return;
+    }
+
+    auto to_move_it = to_move_from_node.begin();
+    absl::node_hash_set<model::ntp> scheduled_moves;
+    while (to_move_it != to_move_from_node.end()) {
+        std::vector<partition_reallocation> reallocations;
+        auto& [id, to_move] = *to_move_it;
+
+        size_t effective_batch_size = std::min<size_t>(
+          to_move, max_batch_size - meta.partition_reallocations.size());
+
+        if (effective_batch_size <= 0) {
+            return;
         }
-        // do not try to move internal partitions
-        if (
-          tp_ns.ns == model::kafka_internal_namespace
-          || tp_ns.ns == model::redpanda_ns) {
-            continue;
-        }
-        if (!metadata.is_topic_replicable()) {
-            continue;
-        }
-        // do not move topics that were created after node was added, they are
-        // allocated with new cluster capacity
-        if (meta.update) {
-            if (metadata.get_revision() > meta.update->offset()) {
-                vlog(
-                  clusterlog.debug,
-                  "skipping reallocating topic {}, its revision {} is greater "
-                  "than "
-                  "node update {}",
-                  tp_ns,
-                  metadata.get_revision(),
-                  meta.update->offset);
+        reallocations.reserve(effective_batch_size);
+
+        size_t idx = 0;
+        for (auto& [tp_ns, metadata] : topics.topics_map()) {
+            // skip partitions outside of current domain
+            if (get_allocation_domain(tp_ns) != domain) {
                 continue;
             }
-        }
-        size_t rand_idx = 0;
-        /**
-         * We use 64 bit field initialized with random number to sample topic
-         * partitions to move, every time the bitfield is exhausted we
-         * reinitialize it and reset counter. This way we chose random
-         * partitions to move without iterating multiple times over the topic
-         * set
-         */
-        std::bitset<sizeof(uint64_t)> sampling_bytes;
-        for (const auto& p : metadata.get_assignments()) {
-            if (idx_it->second > current_idx++) {
+            // do not try to move internal partitions
+            if (
+              tp_ns.ns == model::kafka_internal_namespace
+              || tp_ns.ns == model::redpanda_ns) {
                 continue;
             }
-
-            if (rand_idx % sizeof(uint64_t) == 0) {
-                sampling_bytes = random_generators::get_int(
-                  std::numeric_limits<uint64_t>::max());
-                rand_idx = 0;
-            }
-
-            idx_it->second++;
-
-            if (sampling_bytes.test(rand_idx++)) {
+            if (!metadata.is_topic_replicable()) {
                 continue;
             }
+            // do not move topics that were created after node was added, they
+            // are allocated with new cluster capacity
+            if (meta.update) {
+                if (metadata.get_revision() > meta.update->offset()) {
+                    vlog(
+                      clusterlog.debug,
+                      "skipping reallocating topic {}, its revision {} is "
+                      "greater than node update {}",
+                      tp_ns,
+                      metadata.get_revision(),
+                      meta.update->offset);
+                    continue;
+                }
+            }
 
-            std::erase_if(to_move_from_node, [](const replicas_to_move& v) {
-                return v.left_to_move == 0;
-            });
-
-            std::sort(to_move_from_node.begin(), to_move_from_node.end(), cmp);
-            for (auto& to_move : to_move_from_node) {
-                if (
-                  is_in_replica_set(p.replicas, to_move.id)
-                  && to_move.left_to_move > 0) {
+            for (const auto& p : metadata.get_assignments()) {
+                if (is_in_replica_set(p.replicas, id)) {
                     partition_reallocation reallocation(
                       model::ntp(tp_ns.ns, tp_ns.tp, p.id), p.replicas.size());
-                    reallocation.replicas_to_remove.emplace(to_move.id);
-                    auto current_assignment = p;
-                    reassign_replicas(
-                      allocator, current_assignment, reallocation);
-                    // skip if partition was reassigned to the same node
-                    if (is_reassigned_to_node(reallocation, to_move.id)) {
+                    if (scheduled_moves.contains(reallocation.ntp)) {
                         continue;
                     }
+                    reallocation.replicas_to_remove.emplace(id);
+                    reassign_replicas(allocator, p, reallocation);
+
+                    if (!reallocation.allocation_units.has_value()) {
+                        continue;
+                    }
+                    const auto& new_assignment = reallocation.allocation_units
+                                                   .value()
+                                                   .get_assignments()
+                                                   .begin()
+                                                   ->replicas;
+                    // skip if partition was reassigned to the same node
+                    if (is_reassigned_to_node(reallocation, id)) {
+                        continue;
+                    }
+                    const auto added_replicas = subtract_replica_sets(
+                      new_assignment, p.replicas);
+                    const auto not_improving_move = std::any_of(
+                      added_replicas.begin(),
+                      added_replicas.end(),
+                      [&to_move_from_node](const model::broker_shard& bs) {
+                          auto it = to_move_from_node.find(bs.node_id);
+                          return it != to_move_from_node.end()
+                                 && it->second > 0;
+                      });
+                    vlog(
+                      clusterlog.trace,
+                      "ntp {} move from {} -> {} skipping: {}",
+                      reallocation.ntp,
+                      p.replicas,
+                      new_assignment,
+                      not_improving_move);
+
+                    /**
+                     * If there is no error improvement, skip this reallocation
+                     */
+                    if (not_improving_move) {
+                        continue;
+                    }
+
+                    idx++;
                     reallocation.current_replica_set = p.replicas;
                     reallocation.state = reallocation_state::reassigned;
-                    meta.partition_reallocations.push_back(
-                      std::move(reallocation));
-                    to_move.left_to_move--;
-                    // reached max concurrent reallocations, yield
-                    if (meta.partition_reallocations.size() >= max_batch_size) {
-                        vlog(
-                          clusterlog.info,
-                          "reached limit of max concurrent reallocations: {}",
-                          meta.partition_reallocations.size());
-                        return;
+                    /**
+                     * Reservoir sampling part, after we have at least required
+                     * number of moves replace one of the reallocations with
+                     * decreasing probability.
+                     */
+
+                    if (reallocations.size() < effective_batch_size) {
+                        to_move--;
+                        reallocations.push_back(std::move(reallocation));
+                    } else {
+                        auto r_idx = random_generators::get_int<size_t>(
+                          0, idx - 1);
+                        if (r_idx < reallocations.size()) {
+                            to_move--;
+                            std::swap(reallocations[r_idx], reallocation);
+                            // update to move as we replaced one of the entries
+                            for (const auto node_id :
+                                 reallocation.replicas_to_remove) {
+                                auto [it, _] = to_move_from_node.try_emplace(
+                                  node_id, 0);
+                                it->second++;
+                            }
+                        }
                     }
-                    break;
                 }
             }
         }
+        ++to_move_it;
+
+        for (auto& r : reallocations) {
+            scheduled_moves.emplace(r.ntp);
+        }
+
+        std::move(
+          reallocations.begin(),
+          reallocations.end(),
+          std::back_inserter(meta.partition_reallocations));
     }
-    // reset after moving over all the partitions, the only case if the idx
-    // iterator is not reset is the case when we reached max concurrent
-    // reallocations.
-    idx_it->second = 0;
+    if (clusterlog.is_enabled(ss::log_level::debug)) {
+        for (auto& r : meta.partition_reallocations) {
+            vlog(
+              clusterlog.debug,
+              "{} moving {} -> {}",
+              r.ntp,
+              *r.replicas_to_remove.begin(),
+              subtract_replica_sets(r.new_replica_set, r.current_replica_set));
+        }
+    }
 }
 
 std::vector<model::ntp> members_backend::ntps_moving_from_node_older_than(
@@ -777,7 +782,8 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
       "recommissioning rebalance must be related with node update");
     vassert(
       meta.update->decommission_update_revision,
-      "Decommission update revision must be present for recommission update "
+      "Decommission update revision must be present for recommission "
+      "update "
       "metadata");
 
     auto ntps = ntps_moving_from_node_older_than(
@@ -837,7 +843,8 @@ ss::future<std::error_code> members_backend::reconcile() {
         } else {
             vlog(
               clusterlog.trace,
-              "waiting for all raft0 updates to be applied - barrier offset: "
+              "waiting for all raft0 updates to be applied - barrier "
+              "offset: "
               "{}, raft_0 dirty offset: {}",
               barrier_result.value(),
               _raft0->dirty_offset());
@@ -995,8 +1002,8 @@ ss::future<std::error_code> members_backend::do_remove_node(model::node_id id) {
 
 bool members_backend::should_stop_rebalancing_update(
   const members_backend::update_meta& meta) const {
-    // do not finish decommissioning and recommissioning updates as they have
-    // strict stop conditions
+    // do not finish decommissioning and recommissioning updates as they
+    // have strict stop conditions
     using update_t = node_update_type;
     if (
       meta.update
@@ -1022,14 +1029,14 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
             reallocation.state = reallocation_state::finished;
         }
     }
-    // we do not have to check if all reallocations are finished, we will finish
-    // the update when node will be removed
+    // we do not have to check if all reallocations are finished, we will
+    // finish the update when node will be removed
     if (meta.update && meta.update->type == node_update_type::decommissioned) {
         co_return;
     }
 
-    // if all reallocations are propagate reallocation finished event and mark
-    // update as finished
+    // if all reallocations are propagate reallocation finished event and
+    // mark update as finished
     const auto all_reallocations_finished = std::all_of(
       meta.partition_reallocations.begin(),
       meta.partition_reallocations.end(),
@@ -1067,7 +1074,8 @@ ss::future<> members_backend::reallocate_replica_set(
         meta.current_replica_set = current_assignment->replicas;
         // initial state, try to reassign partition replicas
 
-        reassign_replicas(_allocator.local(), *current_assignment, meta);
+        reassign_replicas(
+          _allocator.local(), std::move(*current_assignment), meta);
         if (meta.new_replica_set.empty()) {
             // if partition allocator failed to reassign partitions return
             // and wait for next retry
@@ -1125,7 +1133,8 @@ ss::future<> members_backend::reallocate_replica_set(
           = co_await _api.local().get_reconciliation_state(meta.ntp);
         vlog(
           clusterlog.info,
-          "[ntp: {}, {} -> {}] reconciliation state: {}, pending operations: "
+          "[ntp: {}, {} -> {}] reconciliation state: {}, pending "
+          "operations: "
           "{}",
           meta.ntp,
           meta.current_replica_set,
@@ -1169,7 +1178,8 @@ ss::future<> members_backend::reallocate_replica_set(
           = co_await _api.local().get_reconciliation_state(meta.ntp);
         vlog(
           clusterlog.info,
-          "[ntp: {}, {} -> {}] reconciliation state: {}, pending operations: "
+          "[ntp: {}, {} -> {}] reconciliation state: {}, pending "
+          "operations: "
           "{}",
           meta.ntp,
           meta.current_replica_set,
@@ -1210,12 +1220,12 @@ void members_backend::stop_node_addition_and_ondemand_rebalance(
         if (!current.update || current.update->type == update_t::added) {
             /**
              * Clear current reallocations related with node addition or on
-             * demand rebalancing, scheduled reallocations may never finish as
-             * the target node may be the one that is decommissioned.
+             * demand rebalancing, scheduled reallocations may never finish
+             * as the target node may be the one that is decommissioned.
              *
-             * Clearing reallocations will force recalculation of reallocations
-             * when the update will be processed again, after finishing
-             * decommission.
+             * Clearing reallocations will force recalculation of
+             * reallocations when the update will be processed again, after
+             * finishing decommission.
              */
 
             _updates.front().partition_reallocations.clear();
