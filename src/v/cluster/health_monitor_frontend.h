@@ -44,6 +44,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
+    ss::future<> refresh_info();
 
     // Reports cluster health. Cluster health is based on the cluster health
     // state that is cached on current node. If force_refresh flag is set. It
@@ -101,6 +102,6 @@ private:
 
     void disk_health_tick();
     ss::future<> update_other_shards(const storage::disk_space_alert);
-    ss::future<> update_disk_health_cache();
+    ss::future<> update_frontend_and_backend_cache();
 };
 } // namespace cluster

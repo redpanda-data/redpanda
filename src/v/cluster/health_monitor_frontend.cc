@@ -108,7 +108,7 @@ ss::future<> health_monitor_frontend::update_other_shards(
       [dsa](health_monitor_frontend& fe) { fe._cluster_disk_health = dsa; });
 }
 
-ss::future<> health_monitor_frontend::update_disk_health_cache() {
+ss::future<> health_monitor_frontend::update_frontend_and_backend_cache() {
     auto deadline = model::time_from_now(default_timeout);
     auto disk_health = co_await dispatch_to_backend(
       [deadline](health_monitor_backend& be) {
@@ -132,7 +132,7 @@ void health_monitor_frontend::disk_health_tick() {
     }
     ssx::spawn_with_gate(_refresh_gate, [this]() {
         // Ensure that this node's cluster health data is not too stale.
-        return update_disk_health_cache()
+        return update_frontend_and_backend_cache()
           .handle_exception([](const std::exception_ptr& e) {
               vlog(
                 clusterlog.warn, "failed to update disk health cache: {}", e);
@@ -145,6 +145,18 @@ void health_monitor_frontend::disk_health_tick() {
 ss::future<bool> health_monitor_frontend::does_raft0_have_leader() {
     return dispatch_to_backend(
       [](health_monitor_backend& be) { return be.does_raft0_have_leader(); });
+}
+
+ss::future<> health_monitor_frontend::refresh_info() {
+    // start() checks that the refresh timer is run on the refresher_shard, so
+    // invoke a refresh on that shard
+    vlog(clusterlog.info, "Refreshing disk health info");
+    co_await container().invoke_on(
+      refresher_shard, [](health_monitor_frontend& fe) {
+          return ssx::spawn_with_gate_then(fe._refresh_gate, [&fe]() {
+              return fe.update_frontend_and_backend_cache();
+          });
+      });
 }
 
 } // namespace cluster

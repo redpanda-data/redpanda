@@ -876,3 +876,11 @@ class Admin:
         return self._request("GET",
                              f"usage?include_open_bucket={str(include_open)}",
                              node=node).json()
+
+    def refresh_disk_health_info(self, node: Optional[ClusterNode] = None):
+        """
+        Reset info for cluster health on node
+        """
+        return self._request("post",
+                             "debug/refresh_disk_health_info",
+                             node=node)
