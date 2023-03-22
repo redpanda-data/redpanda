@@ -32,7 +32,7 @@ remote_manifest_path generate_remote_tx_path(const remote_segment_path& path) {
 }
 
 tx_range_manifest::tx_range_manifest(
-  remote_segment_path spath, fragmented_vector<model::tx_range>&& range)
+  remote_segment_path spath, fragmented_vector<model::tx_range> range)
   : _path(std::move(spath))
   , _ranges(std::move(range)) {}
 

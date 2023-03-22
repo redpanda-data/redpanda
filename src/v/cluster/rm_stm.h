@@ -318,7 +318,7 @@ private:
     ss::future<> apply_snapshot(stm_snapshot_header, iobuf&&) override;
     ss::future<stm_snapshot> take_snapshot() override;
     ss::future<std::optional<abort_snapshot>> load_abort_snapshot(abort_index);
-    ss::future<> save_abort_snapshot(abort_snapshot&&);
+    ss::future<> save_abort_snapshot(abort_snapshot);
 
     bool check_seq(model::batch_identity, model::term_id);
     std::optional<kafka::offset> known_seq(model::batch_identity) const;
