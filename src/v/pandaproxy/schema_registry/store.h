@@ -479,6 +479,46 @@ public:
         return true;
     }
 
+    ///\brief Get the global mode.
+    result<mode> get_mode() const { return _mode; }
+
+    ///\brief Get the mode for a subject, or fallback to global.
+    result<mode>
+    get_mode(const subject& sub, default_to_global fallback) const {
+        auto sub_it = get_subject_iter(sub, include_deleted::yes);
+        if (sub_it && (sub_it.assume_value())->second.mode.has_value()) {
+            return (sub_it.assume_value())->second.mode.value();
+        } else if (fallback) {
+            return _mode;
+        }
+        return mode_not_found(sub);
+    }
+
+    ///\brief Set the global mode.
+    result<bool> set_mode(mode m, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        return std::exchange(_mode, m) != m;
+    }
+
+    ///\brief Set the mode for a subject.
+    result<bool>
+    set_mode(seq_marker marker, const subject& sub, mode m, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        auto& sub_entry = _subjects[sub];
+        sub_entry.written_at.push_back(marker);
+        return std::exchange(sub_entry.mode, m) != m;
+    }
+
+    ///\brief Clear the mode for a subject.
+    result<bool>
+    clear_mode(const seq_marker& marker, const subject& sub, force f) {
+        BOOST_OUTCOME_TRYX(check_mode_mutability(f));
+        auto sub_it = BOOST_OUTCOME_TRYX(
+          get_subject_iter(sub, include_deleted::yes));
+        std::erase(sub_it->second.written_at, marker);
+        return std::exchange(sub_it->second.mode, std::nullopt) != std::nullopt;
+    }
+
     ///\brief Get the global compatibility level.
     result<compatibility_level> get_compatibility() const {
         return _compatibility;
@@ -634,6 +674,7 @@ private:
 
     struct subject_entry {
         std::optional<compatibility_level> compatibility;
+        std::optional<mode> mode;
         std::vector<subject_version_entry> versions;
         is_deleted deleted{false};
 
@@ -698,6 +739,7 @@ private:
     schema_map _schemas;
     subject_map _subjects;
     compatibility_level _compatibility{compatibility_level::backward};
+    mode _mode{mode::read_write};
     is_mutable _mutable{is_mutable::no};
 };
 

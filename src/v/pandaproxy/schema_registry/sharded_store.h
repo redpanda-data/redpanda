@@ -127,6 +127,24 @@ public:
     ss::future<bool> delete_subject_version(
       subject sub, schema_version version, force f = force::no);
 
+    ///\brief Get the global mode.
+    ss::future<mode> get_mode();
+
+    ///\brief Get the mode for a subject, or fallback to global.
+    ss::future<mode> get_mode(subject sub, default_to_global fallback);
+
+    ///\brief Set the global mode.
+    /// \param force Override checks, always apply action
+    ss::future<bool> set_mode(mode m, force f);
+
+    ///\brief Set the mode for a subject.
+    /// \param force Override checks, always apply action
+    ss::future<bool> set_mode(seq_marker marker, subject sub, mode m, force f);
+
+    ///\brief Clear the mode for a subject.
+    /// \param force Override checks, always apply action
+    ss::future<bool> clear_mode(seq_marker marker, subject sub, force f);
+
     ///\brief Get the global compatibility level.
     ss::future<compatibility_level> get_compatibility();
 

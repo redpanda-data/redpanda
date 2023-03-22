@@ -163,4 +163,17 @@ inline error_info compatibility_not_found(const subject& sub) {
         sub())};
 }
 
+inline error_info mode_not_found(const subject& sub) {
+    return error_info{
+      error_code::mode_not_found,
+      fmt::format(
+        "Subject '{}' does not have subject-level mode configured", sub())};
+}
+
+inline error_info mode_not_readwrite(const subject& sub) {
+    return error_info{
+      error_code::subject_version_operaton_not_permitted,
+      fmt::format("Subject {} is not in read-write mode", sub())};
+}
+
 } // namespace pandaproxy::schema_registry
