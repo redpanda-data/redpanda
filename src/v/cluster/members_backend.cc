@@ -42,6 +42,207 @@
 #include <vector>
 
 namespace cluster {
+namespace {
+struct node_replicas {
+    size_t allocated_replicas;
+    size_t max_capacity;
+};
+struct unevenness_error_info {
+    double e;
+    double e_step;
+};
+using node_replicas_map_t = absl::node_hash_map<model::node_id, node_replicas>;
+static absl::node_hash_map<model::node_id, node_replicas>
+calculate_replicas_per_node(
+  const partition_allocator& allocator, partition_allocation_domain domain) {
+    node_replicas_map_t ret;
+    ret.reserve(allocator.state().allocation_nodes().size());
+
+    for (const auto& [id, n] : allocator.state().allocation_nodes()) {
+        if (!n->is_active()) {
+            continue;
+        }
+        auto [it, _] = ret.try_emplace(
+          id,
+          node_replicas{
+            .allocated_replicas = 0,
+            .max_capacity = n->domain_partition_capacity(domain),
+          });
+
+        const auto domain_allocated = n->domain_allocated_partitions(domain);
+        it->second.allocated_replicas += domain_allocated;
+    }
+    return ret;
+}
+
+static size_t
+calculate_total_replicas(const node_replicas_map_t& node_replicas) {
+    size_t total_replicas = 0;
+    for (auto& [_, replicas] : node_replicas) {
+        total_replicas += replicas.allocated_replicas;
+    }
+    return total_replicas;
+}
+
+void reassign_replicas(
+  partition_allocator& allocator,
+  partition_assignment& current_assignment,
+  members_backend::partition_reallocation& reallocation) {
+    vlog(
+      clusterlog.debug,
+      "[ntp: {}, {} -> -]  trying to reassign partition replicas",
+      reallocation.ntp,
+      current_assignment.replicas);
+
+    // remove nodes that are going to be reassigned from current assignment.
+    std::erase_if(
+      current_assignment.replicas,
+      [&reallocation](const model::broker_shard& bs) {
+          return reallocation.replicas_to_remove.contains(bs.node_id);
+      });
+
+    auto res = allocator.reallocate_partition(
+      reallocation.constraints.value(),
+      current_assignment,
+      get_allocation_domain(reallocation.ntp));
+    if (res.has_value()) {
+        reallocation.set_new_replicas(std::move(res.value()));
+    }
+}
+
+/**
+ * The new replicas placement optimization stop condition is based on evenness
+ * error.
+ *
+ * When there is no improvement of unevenness error after requesting partition
+ * rebalancing the rebalancing stops.
+ *
+ * Error is calculated as:
+ *
+ *                                    N
+ *                                   ___
+ *                                   ╲    |R - r |
+ *                                   ╱    |     n|
+ *                                   ‾‾‾
+ *                                  n = 0
+ *                           e    = ──────────────
+ *                            raw        T ⋅ N
+ *
+ *
+ *                               T
+ *                           R = ─
+ *                               N
+ *
+ * Where:
+ *
+ * T - total number or replicas in cluster
+ * R - requested replicas per node
+ * N - number of nodes in the cluster
+ * r_n - number of replicas on the node n
+ *
+ *
+ * then the error is normalized to be in range [0,1].
+ * To do this we calculate the maximum error:
+ *                                              N
+ *                                             ___
+ *                                             ╲
+ *                                  (T - R) +  ╱    R
+ *                                             ‾‾‾
+ *                                            n = 1
+ *                           e    = ─────────────────
+ *                            max         T ⋅ N
+ *
+ * normalized error is equal to:
+ *
+ *                                 e
+ *                           e = ────
+ *                               e
+ *                                max
+ *
+ *
+ * Since the improvement depends on the number of replicas moved in a single
+ * batch we need to calculate the improvement that would moving a single
+ * partition replica introduce. Since single move requested by a balancer moves
+ * partition from node A->B (where A has more than requested number of replicas
+ * per nd B should have less than requested number of replicas) we can calculate
+ * the error improvement introduced by single move as:
+ *
+ *                                     2
+ *                           e     = ─────
+ *                            step   N ⋅ T
+ *
+ * Single step error must be normalized as well. We stop if the improvement is
+ * less than the equivalent of the improvement made by 1/10th of the number of
+ * moves in a batch (or 1 move if that is bigger)
+ **/
+unevenness_error_info calculate_unevenness_error(
+  const partition_allocator& allocator,
+  const members_backend::update_meta& update,
+  partition_allocation_domain domain) {
+    static const std::vector<partition_allocation_domain> domains{
+      partition_allocation_domains::consumer_offsets,
+      partition_allocation_domains::common};
+
+    const auto node_cnt = allocator.state().available_nodes();
+
+    auto node_replicas = calculate_replicas_per_node(allocator, domain);
+    /**
+     * adjust per node replicas with the replicas that are going to be removed
+     * from the node after successful reallocation
+     */
+    for (const auto& r : update.partition_reallocations) {
+        if (r.allocation_units) {
+            for (const auto& to_remove : r.replicas_to_remove) {
+                auto it = node_replicas.find(to_remove);
+                if (it != node_replicas.end()) {
+                    it->second.allocated_replicas--;
+                }
+            }
+        }
+    }
+    const auto total_replicas = calculate_total_replicas(node_replicas);
+
+    if (total_replicas == 0) {
+        return {.e = 0.0, .e_step = 0.0};
+    }
+
+    const auto target_replicas_per_node = total_replicas
+                                          / allocator.state().available_nodes();
+    // max error is an error calculated when all replicas are allocated on
+    // the same node
+    double max_err = (total_replicas - target_replicas_per_node)
+                     + target_replicas_per_node * (node_cnt - 1);
+    // divide by total replicas and node count to make the error independent
+    // from number of nodes and number of replicas.
+    max_err /= static_cast<double>(total_replicas);
+    max_err /= static_cast<double>(node_cnt);
+
+    double err = 0;
+    for (auto& [id, allocation_info] : node_replicas) {
+        double diff = static_cast<double>(target_replicas_per_node)
+                      - static_cast<double>(allocation_info.allocated_replicas);
+
+        vlog(
+          clusterlog.trace,
+          "node {} has {} replicas allocated, requested replicas per node "
+          "{}, difference: {}",
+          id,
+          allocation_info.allocated_replicas,
+          target_replicas_per_node,
+          diff);
+        err += std::abs(diff);
+    }
+    err /= (static_cast<double>(total_replicas) * node_cnt);
+
+    double e_step
+      = 2.0
+        / (static_cast<double>(total_replicas) * static_cast<double>(node_cnt) * max_err);
+
+    // normalize error to stay in range (0,1)
+    return {.e = err / max_err, .e_step = e_step};
+}
+
+} // namespace
 
 members_backend::members_backend(
   ss::sharded<cluster::topics_frontend>& topics_frontend,
@@ -246,7 +447,8 @@ void members_backend::reallocations_for_even_partition_count(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
     size_t prev_reallocations_count = meta.partition_reallocations.size();
     calculate_reallocations_batch(meta, domain);
-    auto current_error = calculate_unevenness_error(meta, domain);
+    auto current_error = calculate_unevenness_error(
+      _allocator.local(), meta, domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
     const auto min_improvement
       = std::max<size_t>(
@@ -353,173 +555,12 @@ bool is_reassigned_to_node(
       reallocation.allocation_units->get_assignments().front().replicas,
       node_id);
 }
-absl::node_hash_map<model::node_id, members_backend::node_replicas>
-members_backend::calculate_replicas_per_node(
-  partition_allocation_domain domain) const {
-    absl::node_hash_map<model::node_id, members_backend::node_replicas> ret;
-    ret.reserve(_allocator.local().state().allocation_nodes().size());
-
-    for (const auto& [id, n] : _allocator.local().state().allocation_nodes()) {
-        if (!n->is_active()) {
-            continue;
-        }
-        auto [it, _] = ret.try_emplace(
-          id,
-          node_replicas{
-            .allocated_replicas = 0,
-            .max_capacity = n->domain_partition_capacity(domain),
-          });
-
-        const auto domain_allocated = n->domain_allocated_partitions(domain);
-        it->second.allocated_replicas += domain_allocated;
-    }
-    return ret;
-}
-
-size_t members_backend::calculate_total_replicas(
-  const node_replicas_map_t& node_replicas) {
-    size_t total_replicas = 0;
-    for (auto& [_, replicas] : node_replicas) {
-        total_replicas += replicas.allocated_replicas;
-    }
-    return total_replicas;
-}
-
-/**
- * The new replicas placement optimization stop condition is based on evenness
- * error.
- *
- * When there is no improvement of unevenness error after requesting partition
- * rebalancing the rebalancing stops.
- *
- * Error is calculated as:
- *
- *                                    N
- *                                   ___
- *                                   ╲    |R - r |
- *                                   ╱    |     n|
- *                                   ‾‾‾
- *                                  n = 0
- *                           e    = ──────────────
- *                            raw        T ⋅ N
- *
- *
- *                               T
- *                           R = ─
- *                               N
- *
- * Where:
- *
- * T - total number or replicas in cluster
- * R - requested replicas per node
- * N - number of nodes in the cluster
- * r_n - number of replicas on the node n
- *
- *
- * then the error is normalized to be in range [0,1].
- * To do this we calculate the maximum error:
- *                                              N
- *                                             ___
- *                                             ╲
- *                                  (T - R) +  ╱    R
- *                                             ‾‾‾
- *                                            n = 1
- *                           e    = ─────────────────
- *                            max         T ⋅ N
- *
- * normalized error is equal to:
- *
- *                                 e
- *                           e = ────
- *                               e
- *                                max
- *
- *
- * Since the improvement depends on the number of replicas moved in a single
- * batch we need to calculate the improvement that would moving a single
- * partition replica introduce. Since single move requested by a balancer moves
- * partition from node A->B (where A has more than requested number of replicas
- * per nd B should have less than requested number of replicas) we can calculate
- * the error improvement introduced by single move as:
- *
- *                                     2
- *                           e     = ─────
- *                            step   N ⋅ T
- *
- * Single step error must be normalized as well. We stop if the improvement is
- * less than the equivalent of the improvement made by 1/10th of the number of
- * moves in a batch (or 1 move if that is bigger)
- **/
-members_backend::unevenness_error_info
-members_backend::calculate_unevenness_error(
-  const update_meta& update, partition_allocation_domain domain) const {
-    static const std::vector<partition_allocation_domain> domains{
-      partition_allocation_domains::consumer_offsets,
-      partition_allocation_domains::common};
-
-    const auto node_cnt = _allocator.local().state().available_nodes();
-
-    auto node_replicas = calculate_replicas_per_node(domain);
-    /**
-     * adjust per node replicas with the replicas that are going to be removed
-     * from the node after successful reallocation
-     */
-    for (const auto& r : update.partition_reallocations) {
-        if (r.allocation_units) {
-            for (const auto& to_remove : r.replicas_to_remove) {
-                auto it = node_replicas.find(to_remove);
-                if (it != node_replicas.end()) {
-                    it->second.allocated_replicas--;
-                }
-            }
-        }
-    }
-    const auto total_replicas = calculate_total_replicas(node_replicas);
-
-    if (total_replicas == 0) {
-        return {.e = 0.0, .e_step = 0.0};
-    }
-
-    const auto target_replicas_per_node
-      = total_replicas / _allocator.local().state().available_nodes();
-    // max error is an error calculated when all replicas are allocated on
-    // the same node
-    double max_err = (total_replicas - target_replicas_per_node)
-                     + target_replicas_per_node * (node_cnt - 1);
-    // divide by total replicas and node count to make the error independent
-    // from number of nodes and number of replicas.
-    max_err /= static_cast<double>(total_replicas);
-    max_err /= static_cast<double>(node_cnt);
-
-    double err = 0;
-    for (auto& [id, allocation_info] : node_replicas) {
-        double diff = static_cast<double>(target_replicas_per_node)
-                      - static_cast<double>(allocation_info.allocated_replicas);
-
-        vlog(
-          clusterlog.trace,
-          "node {} has {} replicas allocated, requested replicas per node "
-          "{}, difference: {}",
-          id,
-          allocation_info.allocated_replicas,
-          target_replicas_per_node,
-          diff);
-        err += std::abs(diff);
-    }
-    err /= (static_cast<double>(total_replicas) * node_cnt);
-
-    double e_step
-      = 2.0
-        / (static_cast<double>(total_replicas) * static_cast<double>(node_cnt) * max_err);
-
-    // normalize error to stay in range (0,1)
-    return {.e = err / max_err, .e_step = e_step};
-}
 
 void members_backend::calculate_reallocations_batch(
   members_backend::update_meta& meta, partition_allocation_domain domain) {
     // 1. count current node allocations
-    auto node_replicas = calculate_replicas_per_node(domain);
+    auto node_replicas = calculate_replicas_per_node(
+      _allocator.local(), domain);
     auto total_replicas = calculate_total_replicas(node_replicas);
     // 2. calculate number of replicas per node leading to even replica per
     // node distribution
@@ -640,7 +681,8 @@ void members_backend::calculate_reallocations_batch(
                       model::ntp(tp_ns.ns, tp_ns.tp, p.id), p.replicas.size());
                     reallocation.replicas_to_remove.emplace(to_move.id);
                     auto current_assignment = p;
-                    reassign_replicas(current_assignment, reallocation);
+                    reassign_replicas(
+                      _allocator.local(), current_assignment, reallocation);
                     // skip if partition was reassigned to the same node
                     if (is_reassigned_to_node(reallocation, to_move.id)) {
                         continue;
@@ -979,31 +1021,6 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
     }
 }
 
-void members_backend::reassign_replicas(
-  partition_assignment& current_assignment,
-  partition_reallocation& reallocation) {
-    vlog(
-      clusterlog.debug,
-      "[ntp: {}, {} -> -]  trying to reassign partition replicas",
-      reallocation.ntp,
-      current_assignment.replicas);
-
-    // remove nodes that are going to be reassigned from current assignment.
-    std::erase_if(
-      current_assignment.replicas,
-      [&reallocation](const model::broker_shard& bs) {
-          return reallocation.replicas_to_remove.contains(bs.node_id);
-      });
-
-    auto res = _allocator.local().reallocate_partition(
-      reallocation.constraints.value(),
-      current_assignment,
-      get_allocation_domain(reallocation.ntp));
-    if (res.has_value()) {
-        reallocation.set_new_replicas(std::move(res.value()));
-    }
-}
-
 ss::future<> members_backend::reallocate_replica_set(
   members_backend::partition_reallocation& meta) {
     auto current_assignment = _topics.local().get_partition_assignment(
@@ -1019,7 +1036,7 @@ ss::future<> members_backend::reallocate_replica_set(
         meta.current_replica_set = current_assignment->replicas;
         // initial state, try to reassign partition replicas
 
-        reassign_replicas(*current_assignment, meta);
+        reassign_replicas(_allocator.local(), *current_assignment, meta);
         if (meta.new_replica_set.empty()) {
             // if partition allocator failed to reassign partitions return
             // and wait for next retry
