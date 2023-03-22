@@ -1533,7 +1533,7 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::apply_retention() {
     auto next_start_offset = retention_calculator->next_start_offset();
     if (next_start_offset) {
         vlog(
-          _rtclog.debug,
+          _rtclog.info,
           "{} Advancing start offset to {} satisfy retention policy",
           retention_calculator->strategy_name(),
           *next_start_offset);
