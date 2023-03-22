@@ -327,6 +327,7 @@ struct configuration final : public config_store {
     property<size_t> partition_autobalancing_concurrent_moves;
 
     property<bool> enable_leader_balancer;
+    enum_property<model::leader_balancer_mode> leader_balancer_mode;
     property<std::chrono::milliseconds> leader_balancer_idle_timeout;
     property<std::chrono::milliseconds> leader_balancer_mute_timeout;
     property<std::chrono::milliseconds> leader_balancer_node_mute_timeout;
