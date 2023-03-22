@@ -1922,7 +1922,7 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
             continue;
         }
         if (_log_state.last_abort_snapshot.match(idx)) {
-            auto& opt = _log_state.last_abort_snapshot;
+            const auto& opt = _log_state.last_abort_snapshot;
             filter_intersecting(result, opt.aborted, from, to);
         } else {
             intersecting_idxes.push_back(idx);
@@ -2825,7 +2825,7 @@ uint64_t rm_stm::get_snapshot_size() const {
     return persisted_stm::get_snapshot_size() + abort_snapshots_size;
 }
 
-ss::future<> rm_stm::save_abort_snapshot(abort_snapshot&& snapshot) {
+ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
     auto first_offset = snapshot.first;
     auto last_offset = snapshot.last;
     auto filename = abort_idx_name(first_offset, last_offset);
