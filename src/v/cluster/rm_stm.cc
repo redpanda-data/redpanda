@@ -1214,9 +1214,12 @@ ss::future<result<rm_stm::transaction_set>> rm_stm::get_transactions() {
 }
 
 ss::future<std::error_code> rm_stm::mark_expired(model::producer_identity pid) {
-    return get_tx_lock(pid.get_id())->with([this, pid]() {
-        return do_mark_expired(pid);
-    });
+    return _state_lock.hold_read_lock().then(
+      [this, pid](ss::basic_rwlock<>::holder unit) mutable {
+          return get_tx_lock(pid.get_id())
+            ->with([this, pid]() { return do_mark_expired(pid); })
+            .finally([u = std::move(unit)] {});
+      });
 }
 
 ss::future<std::error_code>
