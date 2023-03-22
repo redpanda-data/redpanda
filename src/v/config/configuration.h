@@ -138,6 +138,7 @@ struct configuration final : public config_store {
     bounded_property<int16_t> default_topic_replication;
     deprecated_property transaction_coordinator_replication;
     deprecated_property id_allocator_replication;
+    property<int32_t> transaction_coordinator_partitions;
     property<model::cleanup_policy_bitflags>
       transaction_coordinator_cleanup_policy;
     property<std::chrono::milliseconds>
