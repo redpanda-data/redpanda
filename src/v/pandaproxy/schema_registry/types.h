@@ -39,6 +39,28 @@ template<typename E>
 std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
   from_string_view(std::string_view);
 
+enum class mode { import = 0, read_only, read_write };
+
+constexpr std::string_view to_string_view(mode e) {
+    switch (e) {
+    case mode::import:
+        return "IMPORT";
+    case mode::read_only:
+        return "READONLY";
+    case mode::read_write:
+        return "READWRITE";
+    }
+    return "{invalid}";
+}
+template<>
+constexpr std::optional<mode> from_string_view<mode>(std::string_view sv) {
+    return string_switch<std::optional<mode>>(sv)
+      .match(to_string_view(mode::import), mode::import)
+      .match(to_string_view(mode::read_only), mode::read_only)
+      .match(to_string_view(mode::read_write), mode::read_write)
+      .default_match(std::nullopt);
+}
+
 enum class schema_type { avro = 0, json, protobuf };
 
 constexpr std::string_view to_string_view(schema_type e) {
