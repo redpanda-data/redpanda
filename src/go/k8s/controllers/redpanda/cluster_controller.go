@@ -51,6 +51,8 @@ import (
 const (
 	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
 	FinalizerKey           = "operator.redpanda.com/finalizer"
+
+	SecretAnnotationExternalCAKey = "operator.redpanda.com/external-ca"
 )
 
 var (
@@ -143,6 +145,7 @@ func (r *ClusterReconciler) Reconcile(
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{}, nil
 	}
+
 	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
 		return ctrl.Result{}, nil
 	}
@@ -338,6 +341,11 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&source.Kind{Type: &corev1.Pod{}},
 			handler.EnqueueRequestsFromMapFunc(r.reconcileClusterForPods),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Watches(
+			&source.Kind{Type: &corev1.Secret{}},
+			handler.EnqueueRequestsFromMapFunc(r.reconcileClusterForExternalCASecret),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		Complete(r)
@@ -718,6 +726,46 @@ func (r *ClusterReconciler) reconcileClusterForPods(pod client.Object) []reconci
 			},
 		},
 	}
+}
+
+func (r *ClusterReconciler) reconcileClusterForExternalCASecret(s client.Object) []reconcile.Request {
+	hasExternalCA, found := s.GetAnnotations()[SecretAnnotationExternalCAKey]
+	if !found || hasExternalCA != "true" {
+		return nil
+	}
+
+	clusterName, found := s.GetLabels()[labels.InstanceKey]
+	if !found {
+		return nil
+	}
+
+	clusterList := &redpandav1alpha1.ClusterList{}
+	err := retry.OnError(retry.DefaultRetry,
+		func(err error) bool {
+			return err != nil
+		},
+		func() error {
+			return r.List(context.TODO(), clusterList)
+		})
+	if err != nil {
+		r.Log.Error(err, "failed to list cluster resources")
+		return nil
+	}
+
+	req := []reconcile.Request{}
+	for _, cluster := range clusterList.Items {
+		if cluster.GetName() == clusterName {
+			req = append(req,
+				reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: cluster.GetNamespace(),
+						Name:      clusterName,
+					},
+				})
+		}
+	}
+
+	return req
 }
 
 // WithConfiguratorSettings set the configurator image settings
