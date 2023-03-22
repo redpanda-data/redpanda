@@ -28,7 +28,7 @@
  */
 namespace cluster {
 
-class greedy_balanced_shards final : private leader_balancer_strategy {
+class greedy_balanced_shards final : public leader_balancer_strategy {
 public:
     explicit greedy_balanced_shards(
       index_type cores, absl::flat_hash_set<model::node_id> muted_nodes)
