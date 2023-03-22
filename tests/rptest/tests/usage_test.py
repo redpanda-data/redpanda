@@ -8,11 +8,15 @@
 # by the Apache License, Version 2.0
 
 import time
+import random
+from rptest.clients.rpk import RpkTool
 from requests.exceptions import HTTPError
 from rptest.services.cluster import cluster
+from rptest.services.redpanda import SISettings
 from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.services.rpk_consumer import RpkConsumer
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 
 from datetime import datetime
 from functools import reduce
@@ -192,3 +196,107 @@ class UsageTest(RedpandaTest):
             end = datetime.fromtimestamp(r['end_timestamp'])
             total = end - begin
             assert total.seconds == 2 or total.seconds == 3, total.seconds
+
+
+class UsageTestCloudStorageMetrics(RedpandaTest):
+    message_size = 32 * 1024  # 32KiB
+    log_segment_size = 256 * 1024  # 256KiB
+    produce_byte_rate_per_ntp = 512 * 1024  # 512 KiB
+    target_runtime = 20  # seconds
+    check_interval = 5  # seconds
+
+    topics = [
+        TopicSpec(name="test-topic-1",
+                  partition_count=3,
+                  replication_factor=3,
+                  retention_bytes=3 * log_segment_size),
+        TopicSpec(name="test-topic-2",
+                  partition_count=1,
+                  replication_factor=1,
+                  retention_bytes=3 * log_segment_size,
+                  cleanup_policy=TopicSpec.CLEANUP_COMPACT)
+    ]
+
+    def __init__(self, test_context):
+        self.si_settings = SISettings(
+            test_context,
+            log_segment_size=self.log_segment_size,
+            cloud_storage_housekeeping_interval_ms=2000)
+
+        # Parameters to ensure timely reporting of cloud usage stats via
+        # the kafka::usage_manager
+        extra_rp_conf = dict(health_monitor_max_metadata_age=2000,
+                             enable_usage=True,
+                             usage_num_windows=30,
+                             usage_window_width_interval_sec=1,
+                             log_compaction_interval_ms=2000,
+                             compacted_log_segment_size=self.log_segment_size)
+
+        super(UsageTestCloudStorageMetrics,
+              self).__init__(test_context=test_context,
+                             extra_rp_conf=extra_rp_conf,
+                             si_settings=self.si_settings)
+
+        self.rpk = RpkTool(self.redpanda)
+        self.admin = Admin(self.redpanda)
+        self.s3_port = self.si_settings.cloud_storage_api_endpoint_port
+
+    def _create_producers(self) -> list[KgoVerifierProducer]:
+        producers = []
+
+        for topic in self.topics:
+            bps = self.produce_byte_rate_per_ntp * topic.partition_count
+            bytes_count = bps * self.target_runtime
+            msg_count = bytes_count // self.message_size
+
+            self.logger.info(f"Will produce {bytes_count / 1024}KiB at"
+                             f"{bps / 1024}KiB/s on topic={topic.name}")
+            producers.append(
+                KgoVerifierProducer(self.test_context,
+                                    self.redpanda,
+                                    topic,
+                                    msg_size=self.message_size,
+                                    msg_count=msg_count,
+                                    rate_limit_bps=bps))
+
+        return producers
+
+    @cluster(num_nodes=5)
+    def test_usage_manager_cloud_storage(self):
+        """
+        """
+        assert self.admin.cloud_storage_usage() == 0
+
+        # Produce some data to a cloud_storage enabled topic
+        producers = self._create_producers()
+        for p in producers:
+            p.start()
+
+        wait_until(lambda: all([p.is_complete() for p in producers]),
+                   timeout_sec=30,
+                   backoff_sec=1)
+        for p in producers:
+            p.wait()
+
+        def check_usage():
+            # Check that the usage reporting system has reported correct values
+            manifest_usage = self.admin.cloud_storage_usage()
+            reported_usage = self.admin.get_usage(
+                random.choice(self.redpanda.nodes))
+            reported_usage = max(
+                [x['cloud_storage_bytes_gauge'] for x in reported_usage])
+
+            self.logger.info(
+                f"Expected {manifest_usage} bytes of cloud storage usage")
+            self.logger.info(
+                f"Max reported usages via kafka/usage_manager: {reported_usage}"
+            )
+            return reported_usage == manifest_usage
+
+        wait_until(
+            check_usage,
+            timeout_sec=30,
+            backoff_sec=1,
+            err_msg=
+            "Reported cloud storage usage (via usage endpoint) did not match the manifest inferred usage"
+        )
