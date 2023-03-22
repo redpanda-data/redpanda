@@ -108,6 +108,92 @@ class LeadershipTransferTest(RedpandaTest):
                                                     leader)
 
 
+class MultiTopicAutomaticLeadershipBalancingTest(RedpandaTest):
+    topics = (
+        TopicSpec(partition_count=61, replication_factor=3),
+        TopicSpec(partition_count=151, replication_factor=3),
+        TopicSpec(partition_count=263, replication_factor=3),
+    )
+
+    def __init__(self, test_context):
+        extra_rp_conf = dict(leader_balancer_idle_timeout=20000,
+                             leader_balancer_mode="random_hill_climbing")
+
+        super(MultiTopicAutomaticLeadershipBalancingTest,
+              self).__init__(test_context=test_context,
+                             extra_rp_conf=extra_rp_conf)
+
+    @cluster(num_nodes=3, log_allow_list=RESTART_LOG_ALLOW_LIST)
+    def test_topic_aware_rebalance(self):
+        def all_partitions_present(nodes: int):
+            for t in self.topics:
+                tps = self.redpanda.partitions(t.name)
+                total_leaders = sum(1 if t.leader else 0 for t in tps)
+                total_nodes = set(t.leader for t in tps if t.leader)
+
+                if len(total_nodes) < nodes:
+                    return False
+
+                if total_leaders != t.partition_count:
+                    return False
+
+            return True
+
+        def has_leader_count(topic_name: str, min_per_node: int,
+                             nodes: int) -> bool:
+            tps = self.redpanda.partitions(topic_name)
+            leaders = [p.leader for p in tps if p.leader]
+
+            if len(set(leaders)) < nodes:
+                return False
+
+            leaders_per_node = dict(zip(leaders, [0] * len(leaders)))
+            for l in leaders:
+                leaders_per_node[l] += 1
+
+            self.logger.info(
+                f"{topic_name} has dist {leaders_per_node.values()}")
+            return all(leader_cnt >= min_per_node
+                       for leader_cnt in leaders_per_node.values())
+
+        def topic_leadership_evenly_distributed():
+            for t in self.topics:
+                expected_leaders_per_node = int(0.8 * (t.partition_count / 3))
+                self.logger.info(
+                    f"for topic {t} expecting {expected_leaders_per_node} leaders"
+                )
+
+                if not has_leader_count(t.name, expected_leaders_per_node, 3):
+                    return False
+
+            return True
+
+        self.logger.info("initial stabilization")
+        wait_until(lambda: all_partitions_present(3),
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Leadership did not stablize")
+
+        node = self.redpanda.nodes[0]
+        self.redpanda.stop_node(node)
+        self.logger.info("stabilization post stop")
+        wait_until(lambda: all_partitions_present(2),
+                   timeout_sec=30,
+                   backoff_sec=2,
+                   err_msg="Leadership did not stablize")
+
+        # sleep for a bit to avoid triggering any of the sticky leaderhsip
+        # optimizations
+        time.sleep(60)
+
+        self.redpanda.start_node(node)
+        self.logger.info("stabilization post start")
+        wait_until(lambda: topic_leadership_evenly_distributed(),
+                   timeout_sec=300,
+                   backoff_sec=10,
+                   err_msg="Leadership did not stablize")
+
+
 class AutomaticLeadershipBalancingTest(RedpandaTest):
     # number cores = 3 (default)
     # number nodes = 3 (default)
