@@ -1459,7 +1459,8 @@ class ClusterConfigAzureSharedKey(RedpandaTest):
 
     @cluster(num_nodes=3,
              log_allow_list=[
-                 r"abs - .* Received .* AuthorizationFailure error response"
+                 r"abs - .* Received .* AuthorizationFailure error response",
+                 r"abs - .* Received .* AuthenticationFailed error response"
              ])
     @parametrize(cloud_storage_type=CloudStorageType.ABS)
     def test_live_shared_key_change(self, cloud_storage_type):
