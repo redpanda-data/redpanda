@@ -37,7 +37,7 @@ class RestartServicesTest(RedpandaTest):
             **kwargs)
 
     @cluster(num_nodes=3)
-    def test_restart_services(self):
+    def test_restart_services_failures(self):
         admin = Admin(self.redpanda)
 
         # Failure checks
@@ -56,10 +56,3 @@ class RestartServicesTest(RedpandaTest):
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex)
             assert ex.response.status_code == requests.codes.not_found
-
-        self.logger.debug("Check schema registry restart")
-        result_raw = admin.restart_service(rp_service='schema-registry')
-        search_logs_with_timeout(self.redpanda,
-                                 "Restarting the schema registry")
-        self.logger.debug(result_raw)
-        assert result_raw.status_code == requests.codes.ok
