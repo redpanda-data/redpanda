@@ -1234,8 +1234,7 @@ rm_stm::do_mark_expired(model::producer_identity pid) {
     // We should delete information about expiration for pid, because inside
     // try_abort_old_tx it checks is tx expired or not.
     _log_state.expiration.erase(pid);
-    co_await do_try_abort_old_tx(pid);
-    co_return std::error_code(tx_errc::none);
+    co_return std::error_code(co_await do_try_abort_old_tx(pid));
 }
 
 bool rm_stm::check_seq(model::batch_identity bid, model::term_id term) {
@@ -2087,31 +2086,31 @@ ss::future<> rm_stm::do_abort_old_txes() {
 
 ss::future<> rm_stm::try_abort_old_tx(model::producer_identity pid) {
     return get_tx_lock(pid.get_id())->with([this, pid]() {
-        return do_try_abort_old_tx(pid);
+        return do_try_abort_old_tx(pid).discard_result();
     });
 }
 
-ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
+ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     if (!co_await sync(_sync_timeout)) {
-        co_return;
+        co_return tx_errc::leader_not_found;
     }
     auto synced_term = _insync_term;
     // catching up with all previous end_tx operations (commit | abort)
     // to avoid writing the same commit | abort marker twice
     if (_mem_state.last_end_tx >= model::offset{0}) {
         if (!co_await wait_no_throw(_mem_state.last_end_tx, _sync_timeout)) {
-            co_return;
+            co_return tx_errc::timeout;
         }
     }
 
     if (!is_known_session(pid)) {
-        co_return;
+        co_return tx_errc::pid_not_found;
     }
 
     auto expiration_it = _log_state.expiration.find(pid);
     if (expiration_it != _log_state.expiration.end()) {
         if (!expiration_it->second.is_expired(clock_type::now())) {
-            co_return;
+            co_return tx_errc::stale;
         }
     }
 
@@ -2165,20 +2164,28 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   raft::replicate_options(raft::consistency_level::quorum_ack));
                 if (!cr) {
                     vlog(
-                      _ctx_log.trace,
-                      "Error \"{}\" on replicating pid:{} autoabort/commit "
-                      "batch",
+                      _ctx_log.warn,
+                      "Error \"{}\" on replicating pid:{} tx_seq:{} "
+                      "autoabort/commit batch",
                       cr.error(),
-                      pid);
-                    co_return;
+                      pid,
+                      tx_seq);
+                    co_return tx_errc::unknown_server_error;
                 }
                 if (_mem_state.last_end_tx < cr.value().last_offset) {
                     _mem_state.last_end_tx = cr.value().last_offset;
                 }
                 if (!co_await wait_no_throw(
                       cr.value().last_offset, _sync_timeout)) {
-                    co_return;
+                    vlog(
+                      _ctx_log.warn,
+                      "Timed out on waiting for the commit marker to be "
+                      "applied pid:{} tx_seq:{}",
+                      pid,
+                      tx_seq);
+                    co_return tx_errc::timeout;
                 }
+                co_return tx_errc::none;
             } else if (r.aborted) {
                 vlog(
                   _ctx_log.trace, "pid:{} tx_seq:{} is aborted", pid, tx_seq);
@@ -2192,28 +2199,40 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                   raft::replicate_options(raft::consistency_level::quorum_ack));
                 if (!cr) {
                     vlog(
-                      _ctx_log.trace,
-                      "Error \"{}\" on replicating pid:{} autoabort/abort "
+                      _ctx_log.warn,
+                      "Error \"{}\" on replicating pid:{} tx_seq:{} "
+                      "autoabort/abort "
                       "batch",
                       cr.error(),
-                      pid);
-                    co_return;
+                      pid,
+                      tx_seq);
+                    co_return tx_errc::unknown_server_error;
                 }
                 if (_mem_state.last_end_tx < cr.value().last_offset) {
                     _mem_state.last_end_tx = cr.value().last_offset;
                 }
                 if (!co_await wait_no_throw(
                       cr.value().last_offset, _sync_timeout)) {
-                    co_return;
+                    vlog(
+                      _ctx_log.warn,
+                      "Timed out on waiting for the abort marker to be applied "
+                      "pid:{} tx_seq:{}",
+                      pid,
+                      tx_seq);
+                    co_return tx_errc::timeout;
                 }
+                co_return tx_errc::none;
+            } else {
+                co_return tx_errc::timeout;
             }
         } else {
             vlog(
-              _ctx_log.trace,
+              _ctx_log.warn,
               "state of pid:{} tx_seq:{} is unknown:{}",
               pid,
               tx_seq,
               r.ec);
+            co_return tx_errc::timeout;
         }
     } else {
         vlog(_ctx_log.trace, "expiring pid:{}", pid);
@@ -2226,15 +2245,16 @@ ss::future<> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
           raft::replicate_options(raft::consistency_level::quorum_ack));
         if (!cr) {
             vlog(
-              _ctx_log.error,
+              _ctx_log.warn,
               "Error \"{}\" on replicating pid:{} autoabort/abort batch",
               cr.error(),
               pid);
-            co_return;
+            co_return tx_errc::unknown_server_error;
         }
         if (_mem_state.last_end_tx < cr.value().last_offset) {
             _mem_state.last_end_tx = cr.value().last_offset;
         }
+        co_return tx_errc::none;
     }
 }
 
