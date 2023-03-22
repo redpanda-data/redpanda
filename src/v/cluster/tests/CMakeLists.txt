@@ -26,6 +26,7 @@ set(srcs
     topic_configuration_compat_test.cc
     local_monitor_test.cc
     tx_compaction_tests.cc
+
     )
 
 foreach(cluster_test_src ${srcs})
@@ -50,6 +51,7 @@ set(srcs
         ephemeral_credential_test.cc
         health_monitor_test.cc
         metadata_dissemination_test.cc
+        backend_reallocation_strategy_test.cc
         replicas_rebalancing_tests.cc)
 
 foreach(cluster_test_src ${srcs})
