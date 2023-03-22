@@ -16,9 +16,11 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/scheduling/leader_balancer_greedy.h"
 #include "cluster/scheduling/leader_balancer_random.h"
+#include "cluster/scheduling/leader_balancer_strategy.h"
 #include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
+#include "model/metadata.h"
 #include "model/namespace.h"
 #include "raft/rpc_client_protocol.h"
 #include "random/generators.h"
@@ -39,6 +41,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <memory>
 
 namespace cluster {
 
@@ -391,12 +394,29 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
         co_return ss::stop_iteration::no;
     }
 
-    leader_balancer_types::random_hill_climbing_strategy strategy{
-      std::move(index),
-      std::move(group_id_to_topic),
-      leader_balancer_types::muted_index{muted_nodes(), {}}};
+    auto mode = config::shard_local_cfg().leader_balancer_mode();
+    std::unique_ptr<leader_balancer_strategy> strategy;
 
-    auto cores = strategy.stats();
+    switch (mode) {
+    case model::leader_balancer_mode::random_hill_climbing:
+        vlog(clusterlog.debug, "using random_hill_climbing");
+        strategy = std::make_unique<
+          leader_balancer_types::random_hill_climbing_strategy>(
+          std::move(index),
+          std::move(group_id_to_topic),
+          leader_balancer_types::muted_index{muted_nodes(), {}});
+        break;
+    case model::leader_balancer_mode::greedy_balanced_shards:
+        vlog(clusterlog.debug, "using greedy_balanced_shards");
+        strategy = std::make_unique<greedy_balanced_shards>(
+          std::move(index), muted_nodes());
+        break;
+    default:
+        vlog(clusterlog.error, "unexpected mode value: {}", mode);
+        co_return ss::stop_iteration::no;
+    }
+
+    auto cores = strategy->stats();
 
     if (clusterlog.is_enabled(ss::log_level::trace)) {
         for (const auto& core : cores) {
@@ -463,13 +483,13 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
             co_return ss::stop_iteration::yes;
         }
 
-        auto transfer = strategy.find_movement(muted_groups());
+        auto transfer = strategy->find_movement(muted_groups());
         if (!transfer) {
             vlog(
               clusterlog.debug,
               "No leadership balance improvements found with total delta {}, "
               "number of muted groups {}",
-              strategy.error(),
+              strategy->error(),
               _muted.size());
             if (!_timer.armed()) {
                 _timer.arm(_idle_timeout());
@@ -509,7 +529,7 @@ ss::future<ss::stop_iteration> leader_balancer::balance() {
 
         } else {
             _probe.leader_transfer_succeeded();
-            strategy.apply_movement(*transfer);
+            strategy->apply_movement(*transfer);
         }
 
         /*
