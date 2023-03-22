@@ -20,7 +20,7 @@ namespace archival {
  */
 class time_based_strategy final : public retention_strategy {
 public:
-    static constexpr auto strat_name = "size_based_retention";
+    static constexpr auto strat_name = "time_based_retention";
 
     explicit time_based_strategy(model::timestamp);
 
