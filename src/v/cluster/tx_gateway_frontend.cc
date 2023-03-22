@@ -566,45 +566,72 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    return stm->read_lock().then(
-      [this, stm, pid, tx_seq, timeout](ss::basic_rwlock<>::holder unit) {
-          return stm->barrier()
-            .then([this, stm, pid, tx_seq, timeout](
-                    checked<model::term_id, tm_stm::op_status> term_opt) {
-                if (!term_opt.has_value()) {
-                    if (term_opt.error() == tm_stm::op_status::not_leader) {
-                        return ss::make_ready_future<try_abort_reply>(
-                          try_abort_reply{tx_errc::not_coordinator});
-                    }
-                    return ss::make_ready_future<try_abort_reply>(
-                      try_abort_reply{tx_errc::unknown_server_error});
-                }
-                auto term = term_opt.value();
-                auto tx_id_opt = stm->get_id_by_pid(pid);
-                if (!tx_id_opt) {
-                    vlog(
-                      txlog.trace,
-                      "can't find tx by pid:{} considering it aborted",
-                      pid);
-                    return ss::make_ready_future<try_abort_reply>(
-                      try_abort_reply::make_aborted());
-                }
-                auto tx_id = tx_id_opt.value();
+    return stm->read_lock().then([this, stm, pid, tx_seq, timeout](
+                                   ss::basic_rwlock<>::holder unit) {
+        return stm->barrier()
+          .then([this, stm, pid, tx_seq, timeout](
+                  checked<model::term_id, tm_stm::op_status> term_opt) {
+              if (!term_opt.has_value()) {
+                  if (term_opt.error() == tm_stm::op_status::not_leader) {
+                      return ss::make_ready_future<try_abort_reply>(
+                        try_abort_reply{tx_errc::not_coordinator});
+                  }
+                  return ss::make_ready_future<try_abort_reply>(
+                    try_abort_reply{tx_errc::unknown_server_error});
+              }
+              auto term = term_opt.value();
+              auto tx_id_opt = stm->get_id_by_pid(pid);
+              if (!tx_id_opt) {
+                  vlog(
+                    txlog.trace,
+                    "can't find tx by pid:{} considering it aborted",
+                    pid);
+                  return ss::make_ready_future<try_abort_reply>(
+                    try_abort_reply::make_aborted());
+              }
+              auto tx_id = tx_id_opt.value();
 
-                return with_free(
-                         stm,
-                         tx_id,
-                         "try_abort",
-                         [this, stm, term, tx_id, pid, tx_seq, timeout]() {
-                             return do_try_abort(
-                               term, stm, tx_id, pid, tx_seq, timeout);
-                         })
-                  .handle_exception_type([](const ss::semaphore_timed_out&) {
-                      return try_abort_reply{tx_errc::unknown_server_error};
-                  });
-            })
-            .finally([u = std::move(unit)] {});
-      });
+              return with_free(
+                       stm,
+                       tx_id,
+                       "try_abort",
+                       [this, stm, term, tx_id, pid, tx_seq, timeout]() {
+                           return do_try_abort(
+                             term, stm, tx_id, pid, tx_seq, timeout);
+                       })
+                .handle_exception_type([](const ss::semaphore_timed_out&) {
+                    return try_abort_reply{tx_errc::unknown_server_error};
+                })
+                .then([this, stm, tx_id, term, timeout](auto reply) {
+                    if (reply.ec == tx_errc::none) {
+                        ssx::spawn_with_gate(
+                          _gate, [this, stm, tx_id, timeout, term]() mutable {
+                              return stm->read_lock()
+                                .then(
+                                  [this, stm, tx_id, timeout, term](
+                                    ss::basic_rwlock<>::holder unit) mutable {
+                                      return with(
+                                               stm,
+                                               tx_id,
+                                               "try_abort:get_tx",
+                                               [this,
+                                                stm,
+                                                tx_id,
+                                                timeout,
+                                                term]() mutable {
+                                                   return get_tx(
+                                                     term, stm, tx_id, timeout);
+                                               })
+                                        .finally([u = std::move(unit)] {});
+                                  })
+                                .discard_result();
+                          });
+                    }
+                    return reply;
+                });
+          })
+          .finally([u = std::move(unit)] {});
+    });
 }
 
 ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
@@ -615,15 +642,30 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     auto term_opt = co_await stm->sync();
+
     if (!term_opt.has_value()) {
-        co_return try_abort_reply{tx_errc::unknown_server_error};
+        if (term_opt.error() == tm_stm::op_status::not_leader) {
+            vlog(
+              txlog.trace,
+              "this node isn't a leader for tx:{} coordinator",
+              tx_id);
+            co_return try_abort_reply{tx_errc::not_coordinator};
+        }
+        vlog(
+          txlog.warn,
+          "got error {} on sync'ing in-memory state",
+          term_opt.error(),
+          tx_id);
+        co_return try_abort_reply{tx_errc::timeout};
     }
+
     if (term_opt.value() != term) {
-        co_return try_abort_reply{tx_errc::unknown_server_error};
+        co_return try_abort_reply{tx_errc::not_coordinator};
     }
-    auto r0 = co_await get_tx(term, stm, tx_id, timeout);
-    if (!r0.has_value()) {
-        if (r0.error() == tx_errc::tx_not_found) {
+
+    auto tx_opt = co_await stm->get_tx(tx_id);
+    if (!tx_opt.has_value()) {
+        if (tx_opt.error() == tm_stm::op_status::not_found) {
             vlog(
               txlog.trace,
               "can't find a tx by id:{} (pid:{} tx_seq:{}) considering it "
@@ -632,10 +674,59 @@ ss::future<try_abort_reply> tx_gateway_frontend::do_try_abort(
               pid,
               tx_seq);
             co_return try_abort_reply::make_aborted();
+        } else {
+            vlog(
+              txlog.warn,
+              "got error {} on lookin up tx:{}",
+              tx_opt.error(),
+              tx_id);
+            co_return try_abort_reply{tx_errc::unknown_server_error};
         }
-        co_return try_abort_reply{tx_errc::unknown_server_error};
     }
-    auto tx = r0.value();
+
+    auto tx = tx_opt.value();
+
+    if (tx.transferring) {
+        tx_opt = co_await stm->reset_transferring(term, tx_id);
+        if (!tx_opt.has_value()) {
+            vlog(
+              txlog.warn,
+              "got error {} on rehydrating tx:{}",
+              tx_opt.error(),
+              tx_id);
+            // any error on lookin up a tx is a retriable error
+            co_return try_abort_reply{tx_errc::not_coordinator};
+        }
+        tx = tx_opt.value();
+    }
+
+    if (tx.etag > term) {
+        // tx was written by a future leader meaning current
+        // node can't be a leader
+        co_return try_abort_reply{tx_errc::not_coordinator};
+    }
+
+    if (tx.etag < term) {
+        // old tx indicates that we need to use fetch_tx to discover an
+        // in-memory state of the ongoing tx from previous leader and
+        // adopt it but this process may require finishing a tx (recommit
+        // or reabort) which may cause a deadlock:
+        //   1) data partition takes tx.id lock and invokes try_abort on
+        //      txn coordinator
+        //   2) txn coordinator takes tx.id lock and invokes recommit
+        //   3) recommit reaches out to data partition and attempts to
+        //      take tx.id lock (deadlock!)
+        //
+        // to solve the problem we:
+        //   - return unknown status to data partition (it will release to
+        //     lock and retry the request later within tx_timeout_delay_ms)
+        //   - run a background fiber executing get_tx to fetch in-mem
+        //     state
+        //   - by the time try_abort is retried the tx state should be
+        //     up-to-date
+        co_return try_abort_reply{tx_errc::none};
+    }
+
     if (tx.pid != pid || tx.tx_seq != tx_seq) {
         vlog(
           txlog.trace,
