@@ -456,10 +456,14 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
                                         timeout_sec=30)
 
         # Restart 2/3 nodes, leave last node on old version
+        new_version_nodes = self.redpanda.nodes[:-1]
         self.installer.install(self.redpanda.nodes, RedpandaInstaller.HEAD)
-        self.redpanda.rolling_restart_nodes(self.redpanda.nodes[:-1],
+        self.redpanda.rolling_restart_nodes(new_version_nodes,
                                             start_timeout=90,
                                             stop_timeout=90)
+
+        new_version_node = self.redpanda.nodes[0]
+        old_node = self.redpanda.nodes[-1]
 
         # Verify all data readable
         verify()
@@ -469,7 +473,7 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
 
         # There might not be any partitions with leadership on new version
         # node yet, so just transfer one there.
-        new_version_node = self.redpanda.nodes[0]
+
         admin.transfer_leadership_to(
             namespace="kafka",
             topic=topic,
@@ -480,13 +484,31 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
         # cause the old node to try and read them to check that compatibility.
         n_records = 10
         produce(newdata_p, n_records)
-        if initial_version < Version("22.3.0"):
-            # When we upgrade from 22.2 to 22.3, S3 PUTs are blocked during upgrade:
-            # sleep a little to give the upload a chance, then assert that it didn't
-            # happen.
+
+        # Certain version jumps block tiered storage uploads during the upgrade:
+        #  22.2.x -> 22.3.x (when compaction/retention etc was added)
+        #  23.1.x -> 23.2.x (when infinite retention was added + other improvements)
+        block_uploads_during_upgrade = (
+            initial_version < Version("22.3.0")
+            or initial_version > Version("23.1.0")
+            and initial_version < Version("23.2.0"))
+
+        if block_uploads_during_upgrade:
+            # If uploads are blocked during upgrade, we expect the new
+            # nodes not to be able to trim their local logs.
             time.sleep(10)
-            for p in segments_count(self.redpanda, topic, newdata_p):
-                assert p > 2
+
+            storage = self.redpanda.storage()
+            topic_partitions = storage.partitions("kafka", topic)
+            for p in topic_partitions:
+                if p.num != newdata_p:
+                    # We are only checking our test NTP
+                    continue
+
+                if p.node in new_version_nodes:
+                    # Only new nodes should have paused uploads, and
+                    # therefore accumulated local segments
+                    assert len(p.segments) > 2
         else:
             # In the general case, S3 PUTs are permitted during upgrade, so we should
             # see local storage getting truncated
@@ -499,7 +521,6 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
 
         # Move leadership to the old version node and check the partition is readable
         # from there.
-        old_node = self.redpanda.nodes[-1]
         admin.transfer_leadership_to(namespace="kafka",
                                      topic=topic,
                                      partition=newdata_p,
