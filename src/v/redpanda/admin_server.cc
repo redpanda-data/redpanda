@@ -3357,11 +3357,6 @@ admin_server::cloud_storage_usage_handler(
         }
     }
 
-    vlog(
-      logger.info,
-      "Members table at: {}",
-      static_cast<void*>(&(_controller->get_members_table())));
-
     cluster::cloud_storage_size_reducer reducer(
       _controller->get_topics_state(),
       _controller->get_members_table(),
