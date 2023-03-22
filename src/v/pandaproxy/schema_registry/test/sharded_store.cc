@@ -25,7 +25,7 @@ namespace pps = pp::schema_registry;
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
     pps::sharded_store store;
-    store.start(ss::default_smp_service_group()).get();
+    store.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store]() { store.stop().get(); });
 
     const pps::schema_version ver1{1};
@@ -97,7 +97,7 @@ SEASTAR_THREAD_TEST_CASE(test_sharded_store_referenced_by) {
 
 SEASTAR_THREAD_TEST_CASE(test_sharded_store_find_unordered) {
     pps::sharded_store store;
-    store.start(ss::default_smp_service_group()).get();
+    store.start(pps::is_mutable::no, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&store]() { store.stop().get(); });
 
     pps::unparsed_schema array_unsanitized{

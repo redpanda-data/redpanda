@@ -58,7 +58,7 @@ constexpr std::string_view del_sub_value_0{
 
 SEASTAR_THREAD_TEST_CASE(test_consume_to_store_3rdparty) {
     pps::sharded_store s;
-    s.start(ss::default_smp_service_group()).get();
+    s.start(pps::is_mutable::yes, ss::default_smp_service_group()).get();
     auto stop_store = ss::defer([&s]() { s.stop().get(); });
 
     // This kafka client will not be used by the sequencer

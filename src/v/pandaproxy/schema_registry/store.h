@@ -58,6 +58,11 @@ class store {
 public:
     using schema_id_set = absl::btree_set<schema_id>;
 
+    explicit store() = default;
+
+    explicit store(is_mutable mut)
+      : _mutable(mut) {}
+
     struct insert_result {
         schema_version version;
         schema_id id;
@@ -598,6 +603,16 @@ public:
         return !found;
     }
 
+    //// \brief Return error if the store is not mutable
+    result<void> check_mode_mutability(force f) const {
+        if (!_mutable && !f) {
+            return error_info{
+              error_code::subject_version_operaton_not_permitted,
+              "Mode changes are not allowed"};
+        }
+        return outcome::success();
+    }
+
 private:
     struct schema_entry {
         explicit schema_entry(canonical_schema_definition definition)
@@ -672,6 +687,7 @@ private:
     schema_map _schemas;
     subject_map _subjects;
     compatibility_level _compatibility{compatibility_level::backward};
+    is_mutable _mutable{is_mutable::no};
 };
 
 } // namespace pandaproxy::schema_registry

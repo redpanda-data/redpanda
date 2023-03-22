@@ -24,7 +24,7 @@ class store;
 /// subject or schema_id
 class sharded_store {
 public:
-    ss::future<> start(ss::smp_service_group sg);
+    ss::future<> start(is_mutable mut, ss::smp_service_group sg);
     ss::future<> stop();
 
     ///\brief Make the canonical form of the schema
@@ -149,6 +149,9 @@ public:
     is_compatible(schema_version version, canonical_schema new_schema);
 
     ss::future<bool> has_version(const subject&, schema_id, include_deleted);
+
+    //// \brief Throw if the store is not mutable
+    void check_mode_mutability(force f) const;
 
 private:
     ss::future<bool>
