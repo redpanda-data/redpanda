@@ -391,6 +391,20 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             tx[info_key[i]] = tx_info
         return tx
 
+    def abort_transaction(self, producer_id, epoch, topic, partition):
+        self._redpanda.logger.debug(
+            "Abort transaction for producer_id %s epoch %s", producer_id, epoch)
+        cmd = [self._script("kafka-transactions.sh")]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        cmd += ["abort"]
+        cmd += ["--topic", topic]
+        cmd += ["--partition", str(partition)]
+        cmd += ["--producer-id", str(producer_id)]
+        cmd += ["--producer-epoch", str(epoch)]
+        cmd += ["--coordinator-epoch", "0"]
+        res = self._execute(cmd)
+        return res
+
     def _run(self, script, args, classname=None):
         cmd = [self._script(script)]
         if classname is not None:

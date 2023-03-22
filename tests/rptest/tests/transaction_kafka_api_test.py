@@ -10,6 +10,7 @@
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 import confluent_kafka as ck
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -134,3 +135,72 @@ class TxKafkaApiTest(RedpandaTest):
             tx_info = self.kafka_cli.describe_transaction(
                 tx["TransactionalId"])
             assert int(tx_info["ProducerId"]) == int(tx["ProducerId"])
+
+    @cluster(num_nodes=3)
+    def test_abort_transaction(self):
+        producer1 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+        })
+
+        producer1.init_transactions()
+        producer1.begin_transaction()
+
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer1.produce(topic.name, '0', '0', partition)
+
+        producer1.flush()
+
+        producer = self.kafka_cli.describe_producers(self.topics[0].name, 0)[0]
+        txs_info = self.kafka_cli.abort_transaction(producer["ProducerId"], producer["ProducerEpoch"], topic.name, 0)
+
+        try:
+            producer1.commit_transaction()
+        except Exception as e:
+            pass
+
+        producer1 = ck.Producer({
+            'bootstrap.servers': self.redpanda.brokers(),
+            'transactional.id': '0',
+        })
+
+        producer1.init_transactions()
+
+        producer1.begin_transaction()
+        for topic in self.topics:
+            for partition in range(topic.partition_count):
+                producer1.produce(topic.name, '1', '1', partition)
+
+        producer1.flush()
+
+        producer1.commit_transaction()
+
+        def consume_records():
+            consumer = ck.Consumer({
+                'bootstrap.servers': self.redpanda.brokers(),
+                'group.id': "test",
+                'auto.offset.reset': 'earliest',
+                'enable.auto.commit': False,
+            })
+
+            consumer.subscribe([self.topics[0]])
+            records = consumer.consume(1, 10)
+
+            if (records != None) and (len(records) != 0):
+                return True, records
+            else:
+                False
+
+        record = wait_until_result(consume_records,
+                                   timeout_sec=30,
+                                   backoff_sec=2,
+                                   err_msg="Can not consume data")
+        
+        assert len(record) == 1
+        assert int(record[0].key()) == 1
+
+        
+
+        
+
