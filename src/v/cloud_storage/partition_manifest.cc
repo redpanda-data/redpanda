@@ -513,15 +513,28 @@ size_t partition_manifest::replaced_segments_count() const {
 }
 
 size_t partition_manifest::move_aligned_offset_range(
-  model::offset begin_inclusive, model::offset end_inclusive) {
+  model::offset begin_inclusive,
+  model::offset end_inclusive,
+  const segment_meta& replacing_segment) {
     size_t total_replaced_size = 0;
-
+    auto replacing_path = generate_remote_segment_name(replacing_segment);
     auto it = _segments.lower_bound(begin_inclusive);
     while (it != _segments.end()
            // The segment is considered replaced only if all its
            // offsets are covered by new segment's offset range
            && it->second.base_offset >= begin_inclusive
            && it->second.committed_offset <= end_inclusive) {
+        if (generate_remote_segment_name(it->second) == replacing_path) {
+            // The replacing segment shouldn't be exactly the same as the
+            // one that we already have in the manifest. Attempt to re-add
+            // same segment twice leads to data loss.
+            vlog(
+              cst_log.warn,
+              "{} segment is already added {}",
+              _ntp,
+              replacing_segment);
+            break;
+        }
         _replaced.push_back(lw_segment_meta::convert(it->second));
         total_replaced_size += it->second.size_bytes;
         it = _segments.erase(it);
@@ -538,7 +551,7 @@ bool partition_manifest::add(
         _start_offset = meta.base_offset;
     }
     const auto total_replaced_size = move_aligned_offset_range(
-      meta.base_offset, meta.committed_offset);
+      meta.base_offset, meta.committed_offset, meta);
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
@@ -550,7 +563,12 @@ bool partition_manifest::add(
     }
 
     subtract_from_cloud_log_size(total_replaced_size);
-    _cloud_log_size_bytes += meta.size_bytes;
+    if (ok) {
+        // If the segment does not replace the one that we have we will
+        // fail to insert it into the map. In this case we shouldn't
+        // modify the total cloud size.
+        _cloud_log_size_bytes += meta.size_bytes;
+    }
 
     return ok;
 }

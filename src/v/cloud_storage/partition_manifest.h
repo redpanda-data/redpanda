@@ -327,7 +327,9 @@ private:
     /// Move segments from _segments to _replaced
     /// Returns the total size in bytes of the replaced segments
     size_t move_aligned_offset_range(
-      model::offset begin_inclusive, model::offset end_inclusive);
+      model::offset begin_inclusive,
+      model::offset end_inclusive,
+      const segment_meta& replacing_segment);
 
     friend class serialization_cursor_data_source;
 
