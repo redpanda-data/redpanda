@@ -28,6 +28,7 @@
 
 namespace pandaproxy::schema_registry {
 
+using is_mutable = ss::bool_class<struct is_mutable_tag>;
 using permanent_delete = ss::bool_class<struct delete_tag>;
 using include_deleted = ss::bool_class<struct include_deleted_tag>;
 using is_deleted = ss::bool_class<struct is_deleted_tag>;
