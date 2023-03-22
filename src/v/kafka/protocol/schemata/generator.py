@@ -552,6 +552,11 @@ STRUCT_TYPES = [
     "DescribeTransactionState",
     "TopicData",
     "ListTransactionState",
+    "WritableTxnMarker",
+    "WritableTxnMarkerTopic",
+    "WritableTxnMarkerResult",
+    "WritableTxnMarkerTopicResult",
+    "WritableTxnMarkerPartitionResult",
 ]
 
 # a list of struct types which are ineligible to have default-generated
