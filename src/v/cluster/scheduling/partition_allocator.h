@@ -93,6 +93,7 @@ public:
     bool is_rack_awareness_enabled() const { return _enable_rack_awareness(); }
 
     allocation_state& state() { return *_state; }
+    const allocation_state& state() const { return *_state; }
 
 private:
     template<typename T>
