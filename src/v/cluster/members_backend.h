@@ -98,16 +98,7 @@ public:
 
 private:
     static constexpr model::revision_id raft0_revision{0};
-    struct node_replicas {
-        size_t allocated_replicas;
-        size_t max_capacity;
-    };
-    struct unevenness_error_info {
-        double e;
-        double e_step;
-    };
-    using node_replicas_map_t
-      = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
+
     void start_reconciliation_loop();
     ss::future<> reconciliation_loop();
     ss::future<std::error_code> reconcile();
@@ -121,7 +112,6 @@ private:
     void stop_node_decommissioning(model::node_id);
     void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
-    void reassign_replicas(partition_assignment&, partition_reallocation&);
     void
     calculate_reallocations_batch(update_meta&, partition_allocation_domain);
     void reallocations_for_even_partition_count(
@@ -131,14 +121,9 @@ private:
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;
     void setup_metrics();
-    absl::node_hash_map<model::node_id, node_replicas>
-      calculate_replicas_per_node(partition_allocation_domain) const;
 
-    unevenness_error_info calculate_unevenness_error(
-      const update_meta&, partition_allocation_domain) const;
     bool should_stop_rebalancing_update(const update_meta&) const;
 
-    static size_t calculate_total_replicas(const node_replicas_map_t&);
     ss::future<std::error_code>
     update_raft0_configuration(const members_manager::node_update&);
 
