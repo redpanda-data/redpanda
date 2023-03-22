@@ -66,7 +66,7 @@ ENV PATH="${PATH}:/usr/local/go/bin"
 # Compile and install rust-based workload generator.
 # Install & remove compiler in the same step, to avoid bulking
 # out the resulting container image.
-RUN /opt/ducktape-deps.sh install_client_swarm /root
+RUN /opt/ducktape-deps.sh install_rust_tools /root
 
 # Install golang dependencies for kafka clients such as sarama
 RUN /opt/ducktape-deps.sh install_sarama_examples
