@@ -39,11 +39,9 @@ struct ftable_struct {
 };
 
 struct tm_cache_struct {
-    tm_cache_struct() { cache.start().get(); }
+    tm_cache_struct() { cache = ss::make_lw_shared<cluster::tm_stm_cache>(); }
 
-    ~tm_cache_struct() { cache.stop().get(); }
-
-    ss::sharded<cluster::tm_stm_cache> cache;
+    ss::lw_shared_ptr<cluster::tm_stm_cache> cache;
 };
 
 using op_status = cluster::tm_stm::op_status;

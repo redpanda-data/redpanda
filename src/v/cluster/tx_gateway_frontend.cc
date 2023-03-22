@@ -21,6 +21,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/tm_stm.h"
 #include "cluster/tm_stm_cache.h"
+#include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_helpers.h"
@@ -195,7 +196,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache>& tm_stm_cache)
+  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -207,7 +208,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _rm_group_proxy(group_proxy)
   , _rm_partition_frontend(rm_partition_frontend)
   , _feature_table(feature_table)
-  , _tm_stm_cache(tm_stm_cache)
+  , _tm_stm_cache_manager(tm_stm_cache_manager)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
@@ -248,7 +249,7 @@ ss::future<> tx_gateway_frontend::stop() {
 }
 
 ss::future<std::optional<model::node_id>>
-tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
+tx_gateway_frontend::find_coordinator(kafka::transactional_id id) {
     if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
         if (!co_await try_create_tx_topic()) {
             co_return std::nullopt;
@@ -260,13 +261,16 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
 
 ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
   kafka::transactional_id tx_id, model::term_id term) {
-    auto map = [tx_id, term](tm_stm_cache& cache) {
-        return cache.find(term, tx_id);
+    auto map =
+      [tx_id, term](
+        tm_stm_cache_manager& cache_manager) -> std::optional<tm_transaction> {
+        auto cache = cache_manager.get(model::partition_id(0));
+        return cache->find(term, tx_id);
     };
     auto reduce = [](
                     std::optional<tm_transaction> a,
                     std::optional<tm_transaction> b) { return a ? a : b; };
-    auto tx_opt = co_await _tm_stm_cache.map_reduce0(
+    auto tx_opt = co_await _tm_stm_cache_manager.map_reduce0(
       map, std::optional<tm_transaction>{}, reduce);
 
     if (!tx_opt) {

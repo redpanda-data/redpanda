@@ -37,7 +37,7 @@ public:
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache>&);
+      ss::sharded<cluster::tm_stm_cache_manager>&);
 
     ss::future<std::optional<model::node_id>>
       find_coordinator(kafka::transactional_id);
@@ -95,7 +95,7 @@ private:
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
+    ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
