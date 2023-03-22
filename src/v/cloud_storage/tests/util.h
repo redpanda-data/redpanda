@@ -559,6 +559,7 @@ std::vector<model::record_batch_header> scan_remote_partition_incrementally(
   size_t maybe_max_bytes = 0,
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0) {
+    ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
@@ -632,6 +633,7 @@ std::vector<model::record_batch_header> scan_remote_partition(
   model::offset max = model::offset::max(),
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0) {
+    ss::lowres_clock::update();
     auto conf = imposter.get_configuration();
     static auto bucket = cloud_storage_clients::bucket_name("bucket");
     if (maybe_max_segments) {
@@ -674,6 +676,7 @@ void reupload_compacted_segments(
   const std::vector<in_memory_segment>& segments,
   cloud_storage::remote& api,
   bool truncate_segments = false) {
+    ss::lowres_clock::update();
     static ss::abort_source never_abort;
 
     model::offset delta{0};
