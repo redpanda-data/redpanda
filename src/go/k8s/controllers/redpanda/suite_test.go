@@ -11,19 +11,16 @@ package redpanda_test
 
 import (
 	"context"
-	"net/http"
 	"path/filepath"
 	"testing"
 	"time"
 
 	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	helmControllerAPIV2 "github.com/fluxcd/helm-controller/api/v2beta1"
-	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
-
 	helmController "github.com/fluxcd/helm-controller/controllers"
 	helper "github.com/fluxcd/pkg/runtime/controller"
+	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
 	helmSourceController "github.com/fluxcd/source-controller/controllers"
-	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
@@ -225,7 +222,7 @@ var _ = BeforeSuite(func(done Done) {
 		// to handle that.
 		<-k8sManager.Elected()
 
-		startFileServer(storage.BasePath, storageAddr, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
+		redpandacontrollers.StartFileServer(storage.BasePath, storageAddr, ctrl.Log.WithName("controllers").WithName("core").WithName("Redpanda"))
 	}()
 
 	err = (&redpandacontrollers.RedpandaReconciler{
@@ -274,14 +271,3 @@ var _ = AfterSuite(func() {
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
-
-func startFileServer(path string, address string, l logr.Logger) {
-	l.Info("starting file server")
-	fs := http.FileServer(http.Dir(path))
-	mux := http.NewServeMux()
-	mux.Handle("/", fs)
-	err := http.ListenAndServe(address, mux)
-	if err != nil {
-		l.Error(err, "file server error")
-	}
-}

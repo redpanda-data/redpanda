@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"k8s.io/utils/pointer"
+
 	"github.com/fluxcd/source-controller/controllers"
 	"github.com/go-logr/logr"
 	"helm.sh/helm/v3/pkg/registry"
@@ -22,21 +24,7 @@ func ClientGenerator(isLogin bool) (*registry.Client, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-
-		var errs []error
-		rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptCredentialsFile(credentialsFile.Name()))
-		if err != nil {
-			errs = append(errs, err)
-			// attempt to delete the temporary file
-			if credentialsFile != nil {
-				err := os.Remove(credentialsFile.Name())
-				if err != nil {
-					errs = append(errs, err)
-				}
-			}
-			return nil, "", errors.NewAggregate(errs)
-		}
-		return rClient, credentialsFile.Name(), nil
+		return tryCreateNewClient(credentialsFile)
 	}
 
 	rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard))
@@ -46,16 +34,35 @@ func ClientGenerator(isLogin bool) (*registry.Client, string, error) {
 	return rClient, "", nil
 }
 
-func MustInitStorage(path string, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) *controllers.Storage {
+func tryCreateNewClient(credentialsFile *os.File) (*registry.Client, string, error) {
+	var errs []error
+	rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptCredentialsFile(credentialsFile.Name()))
+	if err != nil {
+		errs = append(errs, err)
+		// attempt to delete the temporary file
+		if credentialsFile != nil {
+			if removeErr := os.Remove(credentialsFile.Name()); removeErr != nil {
+				errs = append(errs, removeErr)
+			}
+		}
+		return nil, "", errors.NewAggregate(errs)
+	}
+	return rClient, credentialsFile.Name(), nil
+}
+
+func MustInitStorage(path, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) *controllers.Storage {
 	if path == "" {
 		p, _ := os.Getwd()
 		path = filepath.Join(p, "bin")
-		os.MkdirAll(path, 0o700)
+		err := os.MkdirAll(path, 0o700)
+		if err != nil {
+			l.Error(err, "unable make directory with right permissions")
+		}
 	}
 
 	storage, err := controllers.NewStorage(path, storageAdvAddr, artifactRetentionTTL, artifactRetentionRecords)
 	if err != nil {
-		l.Error(err, "unable to initialise storage")
+		l.Error(err, "unable to initialize storage")
 		os.Exit(1)
 	}
 
@@ -85,13 +92,18 @@ func DetermineAdvStorageAddr(storageAddr string, l logr.Logger) string {
 	return net.JoinHostPort(host, port)
 }
 
-func StartFileServer(path string, address string, l logr.Logger) {
+func StartFileServer(path, address string, l logr.Logger) {
 	l.Info("starting file server")
 	fs := http.FileServer(http.Dir(path))
 	mux := http.NewServeMux()
 	mux.Handle("/", fs)
+	//nolint:gosec // we are aware there are no timeouts supported
 	err := http.ListenAndServe(address, mux)
 	if err != nil {
 		l.Error(err, "file server error")
 	}
+}
+
+func IsBoolPointerNILorEqual(a *bool, b bool) bool {
+	return a == nil || pointer.BoolEqual(a, pointer.Bool(b))
 }

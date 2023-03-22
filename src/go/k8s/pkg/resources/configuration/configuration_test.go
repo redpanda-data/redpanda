@@ -109,6 +109,7 @@ func TestStringSliceProperties(t *testing.T) {
 		configuration.GlobalConfigurationModeCentralized,
 		configuration.GlobalConfigurationModeMixed,
 	}
+
 	for i, mode := range tests {
 		func(m configuration.GlobalConfigurationMode) bool {
 			return t.Run(fmt.Sprintf("test property slices %d", i), func(t *testing.T) {

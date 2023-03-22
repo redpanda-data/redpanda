@@ -44,7 +44,31 @@ rules:
 - apiGroups:
   - apps
   resources:
+  - replicasets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
   - statefulsets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
   verbs:
   - create
   - delete
@@ -261,7 +285,7 @@ rules:
 - apiGroups:
   - redpanda.vectorized.io
   resources:
-  - redpanda
+  - redpandas
   verbs:
   - create
   - delete
@@ -273,13 +297,13 @@ rules:
 - apiGroups:
   - redpanda.vectorized.io
   resources:
-  - redpanda/finalizers
+  - redpandas/finalizers
   verbs:
   - update
 - apiGroups:
   - redpanda.vectorized.io
   resources:
-  - redpanda/status
+  - redpandas/status
   verbs:
   - get
   - patch

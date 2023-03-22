@@ -28,6 +28,12 @@ type ChartRef struct {
 	ChartVersion string `json:"chartVersion,omitempty"`
 	// HelmRepositoryName defines the repository to use, defaults to redpanda if not defined
 	HelmRepositoryName string `json:"helmRepositoryName,omitempty"`
+	// Timeout is the time to wait for any individual Kubernetes operation (like Jobs
+	// for hooks) during the performance of a Helm action. Defaults to '10m0s'.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+	// +optional
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }
 
 // RedpandaSpec defines the desired state of Redpanda
@@ -64,7 +70,13 @@ type RedpandaStatus struct {
 	HelmRelease string `json:"helmRelease,omitempty"`
 
 	// +optional
+	HelmReleaseReady *bool `json:"helmReleaseReady,omitempty"`
+
+	// +optional
 	HelmRepository string `json:"helmRepository,omitempty"`
+
+	// +optional
+	HelmRepositoryReady *bool `json:"helmRepositoryReady,omitempty"`
 
 	// +optional
 	UpgradeFailures int64 `json:"upgradeFailures,omitempty"`
@@ -78,10 +90,12 @@ type RedpandaStatus struct {
 	InstallFailures int64 `json:"installFailures,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-
 // Redpanda is the Schema for the redpanda API
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=rp
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].status",description=""
+// +kubebuilder:printcolumn:name="Status",type="string",JSONPath=".status.conditions[?(@.type==\"Ready\")].message",description=""
 type Redpanda struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -90,9 +104,8 @@ type Redpanda struct {
 	Status RedpandaStatus `json:"status,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-
 // RedpandaList contains a list of Redpanda
+// +kubebuilder:object:root=true
 type RedpandaList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -120,10 +133,10 @@ func (in *Redpanda) GetHelmRepositoryName() string {
 	return helmRepository
 }
 
-func (in *Redpanda) GetValuesJson() (*apiextensionsv1.JSON, error) {
+func (in *Redpanda) ValuesJSON() (*apiextensionsv1.JSON, error) {
 	vyaml, err := json.Marshal(in.Spec.ClusterSpec)
 	if err != nil {
-		return nil, fmt.Errorf("could not convert spec to yaml: %s", err)
+		return nil, fmt.Errorf("could not convert spec to yaml: %w", err)
 	}
 	values := &apiextensionsv1.JSON{Raw: vyaml}
 
@@ -131,7 +144,7 @@ func (in *Redpanda) GetValuesJson() (*apiextensionsv1.JSON, error) {
 }
 
 // RedpandaReady registers a successful reconciliation of the given HelmRelease.
-func RedpandaReady(rp Redpanda) Redpanda {
+func RedpandaReady(rp *Redpanda) *Redpanda {
 	newCondition := metav1.Condition{
 		Type:    meta.ReadyCondition,
 		Status:  metav1.ConditionTrue,
@@ -144,7 +157,7 @@ func RedpandaReady(rp Redpanda) Redpanda {
 }
 
 // RedpandaNotReady registers a failed reconciliation of the given Redpanda.
-func RedpandaNotReady(rp Redpanda, reason, message string) Redpanda {
+func RedpandaNotReady(rp *Redpanda, reason, message string) *Redpanda {
 	newCondition := metav1.Condition{
 		Type:    meta.ReadyCondition,
 		Status:  metav1.ConditionFalse,
@@ -158,7 +171,7 @@ func RedpandaNotReady(rp Redpanda, reason, message string) Redpanda {
 // RedpandaProgressing resets any failures and registers progress toward
 // reconciling the given Redpanda by setting the meta.ReadyCondition to
 // 'Unknown' for meta.ProgressingReason.
-func RedpandaProgressing(rp Redpanda) Redpanda {
+func RedpandaProgressing(rp *Redpanda) *Redpanda {
 	rp.Status.Conditions = []metav1.Condition{}
 	newCondition := metav1.Condition{
 		Type:    meta.ReadyCondition,
@@ -173,4 +186,13 @@ func RedpandaProgressing(rp Redpanda) Redpanda {
 // GetConditions returns the status conditions of the object.
 func (in *Redpanda) GetConditions() *[]metav1.Condition {
 	return &in.Status.Conditions
+}
+
+func (in *Redpanda) OwnerShipRefObj() metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: in.APIVersion,
+		Kind:       in.Kind,
+		Name:       in.Name,
+		UID:        in.UID,
+	}
 }
