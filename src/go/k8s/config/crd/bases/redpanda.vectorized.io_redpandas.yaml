@@ -13,10 +13,19 @@ spec:
     kind: Redpanda
     listKind: RedpandaList
     plural: redpandas
+    shortNames:
+    - rp
     singular: redpanda
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].message
+      name: Status
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: Redpanda is the Schema for the redpanda API
@@ -48,6 +57,12 @@ spec:
                   helmRepositoryName:
                     description: HelmRepositoryName defines the repository to use,
                       defaults to redpanda if not defined
+                    type: string
+                  timeout:
+                    description: Timeout is the time to wait for any individual Kubernetes
+                      operation (like Jobs for hooks) during the performance of a
+                      Helm action. Defaults to '10m0s'.
+                    pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
                     type: string
                 type: object
               clusterSpec:

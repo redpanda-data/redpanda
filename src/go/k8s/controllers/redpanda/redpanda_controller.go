@@ -341,6 +341,11 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 	r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("values file successfully parsed; %s", sha))
 	log.Info(fmt.Sprintf("values file to use: %s", values))
 
+	timeout := rp.Spec.ChartRef.Timeout
+	if timeout == nil {
+		timeout = &metav1.Duration{Duration: 10 * time.Minute}
+	}
+
 	return &helmv2beta1.HelmRelease{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      rp.GetHelmReleaseName(),
@@ -361,6 +366,7 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 			},
 			Values:   values,
 			Interval: metav1.Duration{Duration: 30 * time.Second},
+			Timeout:  timeout,
 		},
 	}, nil
 }
@@ -427,8 +433,7 @@ func helmChartRequiresUpdate(template *helmv2beta1.HelmChartTemplate, chart *hel
 	case template.Spec.Chart != chart.Spec.Chart:
 		fmt.Println("chart is different")
 		return true
-	case template.Spec.Version == "" && chart.Spec.Version != "*",
-		template.Spec.Version != "" && template.Spec.Version != chart.Spec.Version:
+	case template.Spec.Version != "" && template.Spec.Version != chart.Spec.Version:
 		fmt.Println("spec version is different")
 		return true
 	default:
