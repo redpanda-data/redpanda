@@ -55,13 +55,11 @@ concept ExceptionThrower = requires(T obj) {
     obj.conversion_error();
 };
 
-namespace {
-struct default_thrower {
+struct default_utf8_thrower {
     [[noreturn]] [[gnu::cold]] void conversion_error() {
         throw std::runtime_error("Cannot decode string as UTF8");
     }
 };
-} // namespace
 
 struct default_control_character_thrower {
     explicit default_control_character_thrower(
@@ -106,5 +104,5 @@ inline void validate_utf8(std::string_view s, Thrower&& thrower) {
 }
 
 inline void validate_utf8(std::string_view s) {
-    validate_utf8(s, default_thrower{});
+    validate_utf8(s, default_utf8_thrower{});
 }
