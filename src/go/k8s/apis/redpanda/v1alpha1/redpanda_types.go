@@ -70,7 +70,13 @@ type RedpandaStatus struct {
 	HelmRelease string `json:"helmRelease,omitempty"`
 
 	// +optional
+	HelmReleaseReady *bool `json:"helmReleaseReady,omitempty"`
+
+	// +optional
 	HelmRepository string `json:"helmRepository,omitempty"`
+
+	// +optional
+	HelmRepositoryReady *bool `json:"helmRepositoryReady,omitempty"`
 
 	// +optional
 	UpgradeFailures int64 `json:"upgradeFailures,omitempty"`
@@ -180,4 +186,13 @@ func RedpandaProgressing(rp Redpanda) Redpanda {
 // GetConditions returns the status conditions of the object.
 func (in *Redpanda) GetConditions() *[]metav1.Condition {
 	return &in.Status.Conditions
+}
+
+func (in *Redpanda) OwnerShipRefObj() metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: in.APIVersion,
+		Kind:       in.Kind,
+		Name:       in.Name,
+		UID:        in.UID,
+	}
 }

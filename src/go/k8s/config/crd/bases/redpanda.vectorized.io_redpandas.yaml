@@ -845,8 +845,12 @@ spec:
                 type: integer
               helmRelease:
                 type: string
+              helmReleaseReady:
+                type: boolean
               helmRepository:
                 type: string
+              helmRepositoryReady:
+                type: boolean
               installFailures:
                 format: int64
                 type: integer
