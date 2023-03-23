@@ -36,6 +36,7 @@
 #include "pandaproxy/schema_registry/fwd.h"
 #include "raft/fwd.h"
 #include "redpanda/admin_server.h"
+#include "redpanda/monitor_unsafe_log_flag.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/scheduling_groups_probe.h"
@@ -244,6 +245,7 @@ private:
     ss::sharded<archival::upload_controller> _archival_upload_controller;
     ss::sharded<archival::upload_housekeeping_service>
       _archival_upload_housekeeping;
+    std::unique_ptr<monitor_unsafe_log_flag> _monitor_unsafe_log_flag;
 
     ss::metrics::metric_groups _metrics;
     ss::sharded<ssx::metrics::public_metrics_group> _public_metrics;
