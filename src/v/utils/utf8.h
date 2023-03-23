@@ -20,6 +20,19 @@
 #include <string_view>
 #include <vector>
 
+/*
+ * Used to access/modify the flag that permits/prevents reporting an error
+ * if a control character is found within a string
+ */
+class permit_unsafe_log_operation {
+public:
+    static bool get() { return _flag; }
+    static void set(bool flag) { _flag = flag; }
+
+private:
+    static thread_local bool _flag;
+};
+
 constexpr bool is_lower_control_char(char c) { return 0x00 <= c && c <= 0x1f; }
 
 constexpr bool is_high_control_char(char c) { return c == 0x7f; };
@@ -85,7 +98,9 @@ inline bool contains_control_character(std::string_view v) {
 }
 
 void validate_no_control(std::string_view s, ExceptionThrower auto thrower) {
-    if (unlikely(contains_control_character(s))) {
+    if (
+      !permit_unsafe_log_operation::get()
+      && unlikely(contains_control_character(s))) {
         thrower.conversion_error();
     }
 }
