@@ -737,18 +737,7 @@ ss::future<bool> ntp_archiver::maybe_upload_manifest() {
       upload_insync_offset);
 
     auto result = co_await upload_manifest();
-    if (result == cloud_storage::upload_result::success) {
-        _last_manifest_upload_time = ss::lowres_clock::now();
-        _projected_manifest_clean_at = upload_insync_offset;
-
-        co_return true;
-    } else {
-        // It is not necessary to retry: we are called from within the main
-        // upload_until_term_change loop, and will get another chance to
-        // upload the manifest eventually from there.
-        vlog(_rtclog.warn, "Failed to upload partition manifest: {}", result);
-        co_return false;
-    }
+    co_return result == cloud_storage::upload_result::success;
 }
 
 ss::future<> ntp_archiver::maybe_flush_manifest_clean_offset() {
@@ -803,8 +792,28 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
       "Uploading manifest, path: {}",
       manifest().get_manifest_path());
     auto units = co_await _parent.archival_meta_stm()->acquire_manifest_lock();
-    co_return co_await _remote.upload_manifest(
+
+    auto upload_insync_offset
+      = _parent.archival_meta_stm()->get_insync_offset();
+    vlog(
+      _rtclog.debug,
+      "Uploading partition manifest, insync_offset={}",
+      upload_insync_offset);
+
+    auto result = co_await _remote.upload_manifest(
       get_bucket_name(), manifest(), fib, _manifest_tags);
+
+    if (result == cloud_storage::upload_result::success) {
+        _last_manifest_upload_time = ss::lowres_clock::now();
+        _projected_manifest_clean_at = upload_insync_offset;
+    } else {
+        // It is not necessary to retry: we are called from within the main
+        // upload_until_term_change loop, and will get another chance to
+        // upload the manifest eventually from there.
+        vlog(_rtclog.warn, "Failed to upload partition manifest: {}", result);
+    }
+
+    co_return result;
 }
 
 remote_segment_path
