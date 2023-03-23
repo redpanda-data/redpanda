@@ -146,6 +146,7 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 	if err != nil {
 		return rp, ctrl.Result{}, err
 	}
+
 	if repo.Generation != repo.Status.ObservedGeneration || !apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition) {
 		msg := fmt.Sprintf("HelmRepository '%s/%s' is not ready", repo.GetNamespace(), repo.GetName())
 		r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRepository '%s/%s' is not ready", repo.GetNamespace(), repo.GetName()))
@@ -153,6 +154,7 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 		// Do not requeue immediately.
 		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msg), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
 	}
+
 	r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRepository '%s/%s' is ready!", repo.GetNamespace(), repo.GetName()))
 
 	// Check if HelmRelease exists or create it also
@@ -208,10 +210,7 @@ func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp v1alph
 			}
 			return rp, hr, fmt.Errorf("failed to get HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
 		} else {
-			// should we update the helmRelease here, this will enable the update process
-			// check if we need to first
-
-			// templated version:
+			// Check if we need to update here
 			hrTemplate, errTemplated := r.createHelmReleaseFromTemplate(ctx, rp)
 			if errTemplated != nil {
 				r.event(&rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, errTemplated.Error())
@@ -372,10 +371,12 @@ func (r *RedpandaReconciler) createHelmReleaseFromTemplate(ctx context.Context, 
 }
 
 func (r *RedpandaReconciler) createHelmRepositoryFromTemplate(rp v1alpha1.Redpanda) (*sourcev1.HelmRepository, error) {
+	owner := r.createOwnerShipRefObj(&rp)
 	return &sourcev1.HelmRepository{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      rp.GetHelmRepositoryName(),
-			Namespace: rp.Namespace,
+			Name:            rp.GetHelmRepositoryName(),
+			Namespace:       rp.Namespace,
+			OwnerReferences: []metav1.OwnerReference{owner},
 		},
 		Spec: sourcev1.HelmRepositorySpec{
 			Interval: metav1.Duration{Duration: 30 * time.Second},
@@ -438,5 +439,14 @@ func helmChartRequiresUpdate(template *helmv2beta1.HelmChartTemplate, chart *hel
 		return true
 	default:
 		return false
+	}
+}
+
+func (r *RedpandaReconciler) createOwnerShipRefObj(rp *v1alpha1.Redpanda) metav1.OwnerReference {
+	return metav1.OwnerReference{
+		APIVersion: rp.APIVersion,
+		Kind:       rp.Kind,
+		Name:       rp.Name,
+		UID:        rp.UID,
 	}
 }
