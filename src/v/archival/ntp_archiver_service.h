@@ -248,6 +248,21 @@ public:
     void complete_transfer_leadership();
 
 private:
+    // Labels for contexts in which manifest uploads occur. Used for logging.
+    static constexpr const char* housekeeping_ctx_label = "housekeeping";
+    static constexpr const char* sync_local_state_ctx_label
+      = "sync_local_state";
+    static constexpr const char* post_add_segs_ctx_label
+      = "made_dirty_post_add_segments";
+    static constexpr const char* concurrent_with_segs_ctx_label
+      = "was_dirty_concurrent_with_segments";
+    static constexpr const char* upload_loop_epilogue_ctx_label
+      = "upload_loop_epilogue";
+    static constexpr const char* upload_loop_prologue_ctx_label
+      = "upload_loop_prologue";
+    static constexpr const char* segment_merger_ctx_label
+      = "adjacent_segment_merger";
+
     ss::future<bool> do_upload_local(
       upload_candidate_with_locks candidate,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc);
@@ -359,7 +374,7 @@ private:
     /// in the expectation that we will be called again in the main upload loop.
     /// Returns true if something was uploaded (_projected_manifest_clean_at
     /// will have been updated if so)
-    ss::future<bool> maybe_upload_manifest();
+    ss::future<bool> maybe_upload_manifest(const char* upload_ctx);
 
     /// If we have a projected manifest clean offset, then flush it to
     /// the persistent stm clean offset.
@@ -367,6 +382,7 @@ private:
 
     /// Upload manifest to the pre-defined S3 location
     ss::future<cloud_storage::upload_result> upload_manifest(
+      const char* upload_ctx,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
