@@ -415,6 +415,7 @@ ss::future<> disk_log_impl::do_compact(
           segment->reader().filename(),
           result);
         if (result.did_compact()) {
+            segment->invalidate_compaction_index_size();
             _compaction_ratio.update(result.compaction_ratio());
             co_return;
         }
@@ -767,24 +768,30 @@ disk_log_impl::gc(compaction_config cfg) {
       "[{}] applying 'deletion' log cleanup policy with config: {}",
       config().ntp(),
       cfg);
-    if (deletion_exempt(config().ntp())) {
-        vlog(
-          gclog.trace,
-          "[{}] skipped log deletion, exempt topic",
-          config().ntp());
-        co_return std::nullopt;
-    }
 
-    auto max_offset_by_size = size_based_gc_max_offset(cfg);
-    auto max_offset_by_time = time_based_gc_max_offset(cfg);
-
-    auto max_offset = std::max(max_offset_by_size, max_offset_by_time);
+    auto max_offset = retention_offset(cfg);
 
     if (max_offset) {
         co_return co_await request_eviction_until_offset(*max_offset);
     }
 
     co_return std::nullopt;
+}
+
+std::optional<model::offset>
+disk_log_impl::retention_offset(compaction_config cfg) {
+    if (deletion_exempt(config().ntp())) {
+        vlog(
+          gclog.trace,
+          "[{}] skipped log deletion, exempt topic",
+          config().ntp());
+        return std::nullopt;
+    }
+
+    auto max_offset_by_size = size_based_gc_max_offset(cfg);
+    auto max_offset_by_time = time_based_gc_max_offset(cfg);
+
+    return std::max(max_offset_by_size, max_offset_by_time);
 }
 
 ss::future<> disk_log_impl::remove_empty_segments() {
@@ -1688,6 +1695,76 @@ log make_disk_backed_log(
     auto ptr = ss::make_shared<disk_log_impl>(
       std::move(cfg), manager, std::move(segs), kvstore, feature_table);
     return log(ptr);
+}
+
+ss::future<reclaim_size_limits>
+disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
+    if (!config().is_collectable()) {
+        co_return reclaim_size_limits();
+    }
+
+    cfg = apply_overrides(cfg);
+
+    auto max_offset = retention_offset(cfg);
+    if (!max_offset.has_value()) {
+        co_return reclaim_size_limits();
+    }
+
+    /*
+     * evicting data based on the retention policy is a coordinated effort
+     * between disk_log_impl housekeeping and the raft/eviction_stm. it works
+     * roughly as follows:
+     *
+     * 1. log computes ideal target offset for reclaim: max_offset computed by
+     *    the call to retention_offset(cfg).
+     *
+     * 2. log notifies the eviction stm which computes: min(max_offset, clamp)
+     *    where clamp is any additional restrictions, such as what has been
+     *    uploaded to cloud storage.
+     *
+     * 3. raft attempts to prefix truncate the log at the clamped offset after
+     *    it has prepared and taken any necessary snapshots.
+     *
+     * Because this effort is split between the log, raft, and eviction_stm we
+     * end up having to duplicate some of the logic here, such as handling the
+     * max collectible offset from stm. A future refactoring may consider moving
+     * more of the retention controls into a higher level location.
+     */
+    const auto max_collectible = stm_manager()->max_collectible_offset();
+    const auto retention_offset = std::min(max_offset.value(), max_collectible);
+
+    /*
+     * truncate_prefix() dry run
+     */
+    fragmented_vector<segment_set::type> retention_segments;
+    fragmented_vector<segment_set::type> available_segments;
+    for (auto& seg : _segs) {
+        if (seg->offsets().dirty_offset <= retention_offset) {
+            retention_segments.push_back(seg);
+        } else if (seg->offsets().dirty_offset <= max_collectible) {
+            available_segments.push_back(seg);
+        } else {
+            break;
+        }
+    }
+
+    auto ret = co_await ss::when_all_succeed(
+      // reduce segment subject to retention policy
+      ss::map_reduce(
+        retention_segments,
+        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        size_t(0),
+        std::plus<>()),
+
+      // reduce segments available for reclaim
+      ss::map_reduce(
+        available_segments,
+        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        size_t(0),
+        std::plus<>()));
+
+    co_return reclaim_size_limits{
+      .retention = std::get<0>(ret), .available = std::get<1>(ret)};
 }
 
 } // namespace storage

@@ -94,45 +94,103 @@ ss::future<> segment::close() {
 
     co_await do_flush();
     co_await do_close();
-    co_await remove_tombstones();
+
+    if (is_tombstone()) {
+        _removed_persistent_size = co_await remove_persistent_state();
+        vlog(
+          stlog.debug,
+          "Removed {} bytes for tombstone segment {}",
+          _removed_persistent_size.value(),
+          *this);
+    }
 }
 
-ss::future<> segment::remove_persistent_state() {
+ss::future<size_t> segment::persistent_size() {
+    /*
+     * this segment has been fully removed, and we can report the total amount
+     * of bytes that were removed from disk.
+     */
+    if (_removed_persistent_size.has_value()) {
+        co_return _removed_persistent_size.value();
+    }
+
+    /*
+     * accumulate the size of the segment file and each index.
+     */
+    const auto segment_size = file_size();
+    auto total = segment_size + segment_index::estimate_size(segment_size);
+
+    /*
+     * lazy load and cache the compaction index size. we could track this
+     * continually at relevant segments event like open, roll, and compact.
+     * however, we pay for that stat() with no guarantee that the information
+     * will be used.
+     */
+    if (_compaction_index_size.has_value()) {
+        total += _compaction_index_size.value();
+    } else {
+        auto path = reader().path().to_compacted_index();
+        try {
+            _compaction_index_size = co_await ss::file_size(path.string());
+            total += _compaction_index_size.value();
+        } catch (...) {
+        }
+    }
+
+    co_return total;
+}
+
+ss::future<size_t>
+segment::remove_persistent_state(std::filesystem::path path) {
+    size_t file_size = 0;
+    try {
+        file_size = co_await ss::file_size(path.c_str());
+    } catch (...) {
+        /*
+         * the worst case ignoring this exception is under reporting size
+         * removed. but we don't want to hold up removal below, which will
+         * likely throw anyway and log a helpful error.
+         */
+    }
+
+    try {
+        co_await ss::remove_file(path.c_str());
+        vlog(stlog.debug, "removed: {} size {}", path, file_size);
+        co_return file_size;
+    } catch (const std::filesystem::filesystem_error& e) {
+        // be quiet about ENOENT, we want idempotent deletes
+        const auto level = e.code() == std::errc::no_such_file_or_directory
+                             ? ss::log_level::trace
+                             : ss::log_level::info;
+        vlogl(stlog, level, "error removing {}: {}", path, e);
+    } catch (const std::exception& e) {
+        vlog(stlog.info, "error removing {}: {}", path, e);
+    }
+
+    co_return 0;
+}
+
+ss::future<size_t> segment::remove_persistent_state() {
     vassert(is_closed(), "Cannot clear state from unclosed segment");
 
-    std::vector<std::filesystem::path> rm;
-    rm.reserve(3);
-    rm.emplace_back(reader().filename().c_str());
-    rm.emplace_back(index().path().string());
-    if (is_compacted_segment()) {
-        rm.push_back(reader().path().to_compacted_index());
-    }
-    vlog(stlog.debug, "removing: {}", rm);
-    return ss::do_with(
-      std::move(rm), [](const std::vector<std::filesystem::path>& to_remove) {
-          return ss::do_for_each(
-            to_remove, [](const std::filesystem::path& name) {
-                return ss::remove_file(name.c_str())
-                  .handle_exception_type(
-                    [name](std::filesystem::filesystem_error& e) {
-                        if (e.code() == std::errc::no_such_file_or_directory) {
-                            // ignore, we want to make deletes idempotent
-                            return;
-                        }
-                        vlog(stlog.info, "error removing {}: {}", name, e);
-                    })
-                  .handle_exception([name](std::exception_ptr e) {
-                      vlog(stlog.info, "error removing {}: {}", name, e);
-                  });
-            });
-      });
-}
+    /*
+     * the compaction index is included in the removal list, even if the topic
+     * isn't compactible, because compaction can be enabled or disabled at
+     * runtime. if the index doesn't exist, it's silently ignored.
+     */
+    const auto rm = std::to_array<std::filesystem::path>({
+      reader().path(),
+      index().path(),
+      reader().path().to_compacted_index(),
+    });
 
-ss::future<> segment::remove_tombstones() {
-    if (!is_tombstone()) {
-        return ss::make_ready_future<>();
-    }
-    return remove_persistent_state();
+    co_return co_await ss::map_reduce(
+      rm,
+      [this](std::filesystem::path path) {
+          return remove_persistent_state(std::move(path));
+      },
+      size_t(0),
+      std::plus<>());
 }
 
 ss::future<> segment::do_close() {

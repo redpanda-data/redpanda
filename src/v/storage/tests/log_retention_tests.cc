@@ -124,6 +124,10 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
         offset += model::offset(num_records);
     }
 
+    BOOST_CHECK_LT(
+      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 2_MiB),
+      10_KiB);
+
     // second segment
     builder | storage::add_segment(offset);
     start_size = part_size();
@@ -139,6 +143,11 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
             last_week);
         offset += model::offset(num_records);
     }
+
+    // the first segment is now eligible for reclaim
+    BOOST_CHECK_LT(
+      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 3_MiB),
+      10_KiB);
 
     // third segment
     builder | storage::add_segment(offset);
@@ -156,6 +165,11 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
         offset += model::offset(num_records);
     }
 
+    // the first,second segment is now eligible for reclaim
+    BOOST_CHECK_LT(
+      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 4_MiB),
+      10_KiB);
+
     // active segment
     builder | storage::add_segment(offset);
     start_size = part_size();
@@ -172,7 +186,18 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
         offset += model::offset(num_records);
     }
 
-    builder | storage::garbage_collect(yesterday, 4_MiB) | storage::stop();
+    // the first,second segment is now eligible for reclaim
+    BOOST_CHECK_LT(
+      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 5_MiB),
+      10_KiB);
+
+    builder | storage::garbage_collect(yesterday, 4_MiB);
+
+    // right after gc runs there shouldn't be anything reclaimable
+    BOOST_CHECK_EQUAL(
+      builder.gc_estimate(model::timestamp::now(), 0).get().retention, 0);
+
+    builder | storage::stop();
 
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
 }

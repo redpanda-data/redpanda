@@ -160,7 +160,18 @@ public:
     ss::future<ss::rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
-    ss::future<> remove_persistent_state();
+    /*
+     * return an estimate of how much data on disk is associated with this
+     * segment (e.g. the data file, indices, etc...). if the segment has been
+     * removed already (i.e. marked as a tombstone and closed) then the total
+     * amount of bytes actually removed from disk is reported.
+     */
+    ss::future<size_t> persistent_size();
+
+    /*
+     * return the number of bytes removed from disk.
+     */
+    ss::future<size_t> remove_persistent_state();
 
     generation_id get_generation_id() const { return _generation_id; }
     void advance_generation() { _generation_id++; }
@@ -178,6 +189,10 @@ public:
         return _first_write;
     }
 
+    void invalidate_compaction_index_size() {
+        _compaction_index_size = std::nullopt;
+    }
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);
@@ -192,10 +207,17 @@ private:
       segment_appender_ptr,
       std::optional<batch_cache_index>,
       std::optional<compacted_index_writer>);
-    ss::future<> remove_tombstones();
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
     void release_appender_in_background(readers_cache* readers_cache);
+
+    /*
+     * _removed_persistent_size is the total number of bytes removed when this
+     * segment is deleted. it is set once, after the segment is marked as a
+     * tombstone and closed.
+     */
+    std::optional<size_t> _removed_persistent_size;
+    ss::future<size_t> remove_persistent_state(std::filesystem::path);
 
     struct appender_callbacks : segment_appender::callbacks {
         explicit appender_callbacks(segment* segment)
@@ -231,7 +253,13 @@ private:
     segment_index _idx;
     bitflags _flags{bitflags::none};
     segment_appender_ptr _appender;
+
+    // compaction index size should be cleared whenever the size might change
+    // (e.g. after compaction). when cleared it will reset the next time the
+    // size of the compaction index is needed (e.g. estimating total seg size).
+    std::optional<size_t> _compaction_index_size;
     std::optional<compacted_index_writer> _compaction_index;
+
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
     ss::gate _gate;

@@ -303,6 +303,9 @@ public:
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
+    ss::future<reclaim_size_limits> gc_estimate(
+      model::timestamp collection_upper_bound,
+      std::optional<size_t> max_partition_retention_size);
     ss::future<std::optional<model::offset>>
     apply_retention(compaction_config cfg);
     ss::future<> apply_compaction(
