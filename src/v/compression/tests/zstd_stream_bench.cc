@@ -8,6 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "compression/async_stream_zstd.h"
+#include "compression/internal/gzip_compressor.h"
+#include "compression/internal/lz4_frame_compressor.h"
 #include "compression/stream_zstd.h"
 #include "random/generators.h"
 #include "units.h"
@@ -76,6 +78,71 @@ PERF_TEST(streaming_zstd_1mb, compress) { compress_test(1 << 20); }
 PERF_TEST(streaming_zstd_1mb, uncompress) { return uncompress_test(1 << 20); }
 PERF_TEST(streaming_zstd_10mb, compress) { compress_test(10 << 20); }
 PERF_TEST(streaming_zstd_10mb, uncompress) { return uncompress_test(10 << 20); }
+
+template<typename CompressFunc>
+inline void compress_fn_test(CompressFunc&& comp_fn, size_t data_size) {
+    auto o = gen(data_size);
+    perf_tests::start_measuring_time();
+    perf_tests::do_not_optimize(comp_fn(o));
+    perf_tests::stop_measuring_time();
+}
+
+template<typename CompressFunc, typename UncompressFunc>
+inline void uncompress_fn_test(
+  CompressFunc&& comp_fn, UncompressFunc&& uncomp_fn, size_t data_size) {
+    auto o = comp_fn(gen(data_size));
+    perf_tests::start_measuring_time();
+    perf_tests::do_not_optimize(uncomp_fn(o));
+    perf_tests::stop_measuring_time();
+}
+
+PERF_TEST(lz4_1mb, compress) {
+    return compress_fn_test(
+      compression::internal::lz4_frame_compressor::compress, 1 << 20);
+}
+
+PERF_TEST(lz4_10mb, compress) {
+    return compress_fn_test(
+      compression::internal::lz4_frame_compressor::compress, 10 << 20);
+}
+
+PERF_TEST(lz4_1mb, uncompress) {
+    return uncompress_fn_test(
+      compression::internal::lz4_frame_compressor::compress,
+      compression::internal::lz4_frame_compressor::uncompress,
+      1 << 20);
+}
+
+PERF_TEST(lz4_10mb, uncompress) {
+    return uncompress_fn_test(
+      compression::internal::lz4_frame_compressor::compress,
+      compression::internal::lz4_frame_compressor::uncompress,
+      10 << 20);
+}
+
+PERF_TEST(gzip_1mb, compress) {
+    return compress_fn_test(
+      compression::internal::gzip_compressor::compress, 1 << 20);
+}
+
+PERF_TEST(gzip_10mb, compress) {
+    return compress_fn_test(
+      compression::internal::gzip_compressor::compress, 10 << 20);
+}
+
+PERF_TEST(gzip_1mb, uncompress) {
+    return uncompress_fn_test(
+      compression::internal::gzip_compressor::compress,
+      compression::internal::gzip_compressor::uncompress,
+      1 << 20);
+}
+
+PERF_TEST(gzip_10mb, uncompress) {
+    return uncompress_fn_test(
+      compression::internal::gzip_compressor::compress,
+      compression::internal::gzip_compressor::uncompress,
+      10 << 20);
+}
 
 struct async_stream_zstd {};
 PERF_TEST_C(async_stream_zstd, 1mb_compress) {
