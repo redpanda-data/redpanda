@@ -180,7 +180,7 @@ class tx_reducer : public compaction_reducer {
 public:
     explicit tx_reducer(
       ss::lw_shared_ptr<storage::stm_manager> stm_mgr,
-      std::vector<model::tx_range>&& txs,
+      fragmented_vector<model::tx_range>&& txs,
       compacted_index_writer* w) noexcept
       : _delegate(index_rebuilder_reducer(w))
       , _aborted_txs(model::tx_range_cmp(), std::move(txs))
@@ -227,7 +227,7 @@ private:
     // A min heap of aborted transactions based on begin offset.
     using underlying_t = std::priority_queue<
       model::tx_range,
-      std::vector<model::tx_range>,
+      fragmented_vector<model::tx_range>,
       model::tx_range_cmp>;
     underlying_t _aborted_txs;
     // Current list of aborted transactions maintained up to the

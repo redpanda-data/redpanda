@@ -126,13 +126,13 @@ public:
     struct tx_snapshot {
         static constexpr uint8_t version = 3;
 
-        std::vector<model::producer_identity> fenced;
-        std::vector<tx_range> ongoing;
-        std::vector<prepare_marker> prepared;
-        std::vector<tx_range> aborted;
-        std::vector<abort_index> abort_indexes;
+        fragmented_vector<model::producer_identity> fenced;
+        fragmented_vector<tx_range> ongoing;
+        fragmented_vector<prepare_marker> prepared;
+        fragmented_vector<tx_range> aborted;
+        fragmented_vector<abort_index> abort_indexes;
         model::offset offset;
-        std::vector<seq_entry> seqs;
+        fragmented_vector<seq_entry> seqs;
 
         struct tx_seqs_snapshot {
             model::producer_identity pid;
@@ -144,14 +144,14 @@ public:
             duration_type timeout;
         };
 
-        std::vector<tx_seqs_snapshot> tx_seqs;
-        std::vector<expiration_snapshot> expiration;
+        fragmented_vector<tx_seqs_snapshot> tx_seqs;
+        fragmented_vector<expiration_snapshot> expiration;
     };
 
     struct abort_snapshot {
         model::offset first;
         model::offset last;
-        std::vector<tx_range> aborted;
+        fragmented_vector<tx_range> aborted;
 
         bool match(abort_index idx) {
             return idx.first == first && idx.last == last;
@@ -184,7 +184,7 @@ public:
       model::producer_identity, model::tx_seq, model::timeout_clock::duration);
 
     model::offset last_stable_offset();
-    ss::future<std::vector<rm_stm::tx_range>>
+    ss::future<fragmented_vector<rm_stm::tx_range>>
       aborted_transactions(model::offset, model::offset);
 
     model::offset max_collectible_offset() override {
@@ -195,7 +195,7 @@ public:
         return storage::stm_type::transactional;
     }
 
-    ss::future<std::vector<model::tx_range>>
+    ss::future<fragmented_vector<model::tx_range>>
     aborted_tx_ranges(model::offset from, model::offset to) override {
         return aborted_transactions(from, to);
     }
@@ -290,7 +290,7 @@ protected:
 
 private:
     ss::future<> do_remove_persistent_state();
-    ss::future<std::vector<rm_stm::tx_range>>
+    ss::future<fragmented_vector<rm_stm::tx_range>>
       do_aborted_transactions(model::offset, model::offset);
     ss::future<checked<model::term_id, tx_errc>> do_begin_tx(
       model::producer_identity, model::tx_seq, std::chrono::milliseconds);
@@ -415,8 +415,8 @@ private:
         // a heap of the first offsets of the ongoing transactions
         absl::btree_set<model::offset> ongoing_set;
         absl::flat_hash_map<model::producer_identity, prepare_marker> prepared;
-        std::vector<tx_range> aborted;
-        std::vector<abort_index> abort_indexes;
+        fragmented_vector<tx_range> aborted;
+        fragmented_vector<abort_index> abort_indexes;
         abort_snapshot last_abort_snapshot{.last = model::offset(-1)};
         // the only piece of data which we update on replay and before
         // replicating the command. we use the highest seq number to resolve
@@ -528,7 +528,8 @@ private:
         int32_t last_seq{-1};
         result<kafka_result> r = errc::success;
         bool is_processing;
-        std::vector<ss::lw_shared_ptr<available_promise<result<kafka_result>>>>
+        fragmented_vector<
+          ss::lw_shared_ptr<available_promise<result<kafka_result>>>>
           parked;
     };
 

@@ -565,7 +565,7 @@ ntp_archiver::upload_tx(upload_candidate candidate) {
 
     auto path = segment_path_for_candidate(candidate);
 
-    cloud_storage::tx_range_manifest manifest(path, tx_range);
+    cloud_storage::tx_range_manifest manifest(path, std::move(tx_range));
 
     co_return co_await _remote.upload_manifest(
       _bucket, manifest, fib, _tx_tags);
