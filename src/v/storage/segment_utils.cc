@@ -507,7 +507,7 @@ ss::future<std::optional<size_t>> do_self_compact_segment(
 ss::future<> rebuild_compaction_index(
   model::record_batch_reader rdr,
   ss::lw_shared_ptr<storage::stm_manager> stm_manager,
-  std::vector<model::tx_range>&& aborted_txs,
+  fragmented_vector<model::tx_range>&& aborted_txs,
   segment_full_path p,
   compaction_config cfg,
   storage_resources& resources) {

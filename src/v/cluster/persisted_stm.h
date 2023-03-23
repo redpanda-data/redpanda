@@ -22,6 +22,7 @@
 #include "storage/snapshot.h"
 #include "storage/types.h"
 #include "utils/expiring_promise.h"
+#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -88,7 +89,7 @@ public:
     void make_snapshot_in_background() final;
     ss::future<> ensure_snapshot_exists(model::offset) final;
     model::offset max_collectible_offset() override;
-    ss::future<std::vector<model::tx_range>>
+    ss::future<fragmented_vector<model::tx_range>>
       aborted_tx_ranges(model::offset, model::offset) override;
     const ss::sstring& name() override { return _snapshot_mgr.name(); }
 
