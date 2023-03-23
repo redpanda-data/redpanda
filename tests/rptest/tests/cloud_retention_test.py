@@ -68,7 +68,8 @@ class CloudRetentionTest(PreallocNodesTest):
             max_read_msgs = 2000
 
         si_settings = SISettings(self.test_context,
-                                 log_segment_size=segment_size)
+                                 log_segment_size=segment_size,
+                                 fast_uploads=True)
         self.redpanda.set_si_settings(si_settings)
 
         extra_rp_conf = dict(retention_local_target_bytes_default=self.
@@ -165,7 +166,8 @@ class CloudRetentionTest(PreallocNodesTest):
         small_segment_size = 1024 * 1024
         num_partitions = 16
         si_settings = SISettings(self.test_context,
-                                 log_segment_size=small_segment_size)
+                                 log_segment_size=small_segment_size,
+                                 fast_uploads=True)
         self.redpanda.set_si_settings(si_settings)
         extra_rp_conf = dict(retention_local_target_bytes_default=self.
                              default_retention_segments * small_segment_size,
@@ -270,7 +272,8 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
 
     def __init__(self, test_context):
         si_settings = SISettings(test_context,
-                                 log_segment_size=self.segment_size)
+                                 log_segment_size=self.segment_size,
+                                 fast_uploads=True)
         self.s3_bucket_name = si_settings.cloud_storage_bucket
         super().__init__(
             test_context,
