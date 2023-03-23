@@ -986,6 +986,8 @@ void application::wire_up_runtime_services(model::node_id node_id) {
           *_schema_reg_config,
           std::reference_wrapper(controller));
     }
+    construct_single_service(_monitor_unsafe_log_flag, std::ref(feature_table));
+
     configure_admin_server();
 }
 
@@ -1862,6 +1864,7 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
     start_kafka(node_id, app_signal);
     controller->set_ready().get();
     _admin.invoke_on_all([](admin_server& admin) { admin.set_ready(); }).get();
+    _monitor_unsafe_log_flag->start().get();
 
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();
