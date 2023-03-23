@@ -1586,6 +1586,11 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
     const auto to_remove
       = _parent.archival_meta_stm()->get_segments_to_cleanup();
 
+    // Avoid replicating 'cleanup_metadata_cmd' if there's nothing to remove.
+    if (to_remove.size() == 0) {
+        co_return updated;
+    }
+
     size_t successful_deletes{0};
     co_await ss::max_concurrent_for_each(
       to_remove,
