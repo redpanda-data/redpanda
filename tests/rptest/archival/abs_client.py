@@ -2,13 +2,12 @@ from rptest.archival.s3_client import ObjectMetadata
 from rptest.archival.shared_client_utils import key_to_topic
 
 from azure.storage.blob import BlobClient, BlobServiceClient, BlobType, ContainerClient
-from itertools import chain, islice
+from itertools import islice
 
 import time
 import datetime
 from logging import Logger
-from typing import Iterator, NamedTuple, Optional
-from base64 import standard_b64decode
+from typing import Iterator, Optional
 
 
 def build_connection_string(proto: str, endpoint: Optional[str],
