@@ -265,7 +265,7 @@ func main() {
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		EventRecorder:   mgr.GetEventRecorderFor("RedpandaReconciler"),
-		RequeueHelmDeps: 30 * time.Second,
+		RequeueHelmDeps: 10 * time.Second,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Redpanda")
 		os.Exit(1)
