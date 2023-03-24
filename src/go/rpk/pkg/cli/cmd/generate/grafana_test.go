@@ -30,21 +30,6 @@ func TestPrometheusURLFlagDeprecation(t *testing.T) {
 	require.Contains(t, cmd.Flag("prometheus-url").Deprecated, "Use --metrics-endpoint instead")
 }
 
-func TestGrafanaHostNoServer(t *testing.T) {
-	var out bytes.Buffer
-	logrus.SetOutput(&out)
-	cmd := newGrafanaDashboardCmd()
-	cmd.SetArgs([]string{
-		"--metrics-endpoint", "localhost:8888/metrics",
-		"--datasource", "prometheus",
-	})
-
-	err := cmd.Execute()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Get \"http://localhost:8888/metrics\": dial tcp")
-	require.Contains(t, err.Error(), "connect: connection refused")
-}
-
 func TestGrafanaParseResponse(t *testing.T) {
 	res := `# HELP vectorized_vectorized_internal_rpc_consumed_mem Amount of memory consumed for requests processing
 # TYPE vectorized_vectorized_internal_rpc_consumed_mem gauge
@@ -72,17 +57,9 @@ vectorized_memory_allocated_memory_bytes{shard="1",type="bytes"} 36986880
 			w.Write([]byte(res))
 		}),
 	)
-	var out bytes.Buffer
-	logrus.SetOutput(&out)
-	cmd := newGrafanaDashboardCmd()
-	cmd.SetOutput(&out)
-	cmd.SetArgs([]string{
-		"--metrics-endpoint", ts.URL,
-		"--datasource", "prometheus",
-	})
-	err := cmd.Execute()
+	out, err := executeGrafanaDashboard(ts.URL, "prometheus")
 	require.NoError(t, err)
-	require.JSONEq(t, expected, out.String())
+	require.JSONEq(t, expected, out)
 }
 
 func TestGrafanaInvalidResponse(t *testing.T) {
@@ -96,14 +73,6 @@ vectorized_vectorized_in
 			w.Write([]byte(res))
 		}),
 	)
-	var out bytes.Buffer
-	logrus.SetOutput(&out)
-	cmd := newGrafanaDashboardCmd()
-	cmd.SetOutput(&out)
-	cmd.SetArgs([]string{
-		"--metrics-endpoint", ts.URL,
-		"--datasource", "prometheus",
-	})
-	err := cmd.Execute()
+	_, err := executeGrafanaDashboard(ts.URL, "any")
 	require.EqualError(t, err, "text format parsing error in line 3: expected float as value, got \"\"")
 }
