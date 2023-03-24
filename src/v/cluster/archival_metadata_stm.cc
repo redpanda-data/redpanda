@@ -491,13 +491,10 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
           meta.base_offset, meta.segment_term);
         vlog(
           _logger.info,
-          "new remote segment added (name: {}, base_offset: {} "
-          "last_offset: "
-          "{}), "
+          "new remote segment added (name: {}, meta: {}"
           "remote start_offset: {}, last_offset: {}",
           name,
-          meta.base_offset,
-          meta.committed_offset,
+          meta,
           get_start_offset(),
           get_last_offset());
     }
@@ -717,10 +714,11 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     vlog(
       _logger.debug,
       "Add segment command applied with {}, new start offset: {}, new last "
-      "offset: {}",
+      "offset: {}, meta: {}",
       segment.name,
       get_start_offset(),
-      get_last_offset());
+      get_last_offset(),
+      segment.meta);
 
     if (meta.committed_offset > get_last_offset()) {
         if (meta.base_offset > model::next_offset(get_last_offset())) {
