@@ -850,6 +850,7 @@ ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
 // from offset to offset (by record batch boundary)
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
   upload_candidate candidate,
+  std::vector<ss::rwlock::holder> segment_read_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     vassert(
       candidate.remote_sources.empty(),
@@ -888,6 +889,30 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
       fib,
       lazy_abort_source,
       _segment_tags);
+
+    // Note on segment locks:
+    //
+    // We've successfully uploaded the segment. Before we replicate an update
+    // with the archival STM, drop any segment locks that may be held. It's
+    // possible these locks are blocking other fibers from taking write locks,
+    // which in turn, may prevent further read locks from being held.
+    // Replicating and waiting on archival batches to be applied may require
+    // taking read locks on these segments.
+    //
+    // Specifically, we want to avoid a series of events like:
+    // 1. This fiber holds the uploaded segment's read lock
+    // 2. Another fiber attempts to write lock the segment (e.g. during a
+    //    segment roll), but can't. Instead, it prevents other read locks from
+    //    being taken as it waits.
+    // 3. This fiber attempts to replicate an archival batch, which
+    //    subsequently waits for all prior ops to be applied, which may require
+    //    consuming from this segment. In doing so, we attempt to read lock a
+    //    locked segment.
+    //
+    // To avoid this, simply drop the locks here, now that we're done with
+    // them. There's no concern that the underlying offsets will disappear
+    // since the archival STM pins offsets until they are recorded in the
+    // manifest.
 }
 
 std::optional<ss::sstring> ntp_archiver::upload_should_abort() {
@@ -1008,7 +1033,6 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
           .name = std::nullopt,
           .delta = std::nullopt,
           .stop = ss::stop_iteration::yes,
-          .segment_read_locks = {},
         };
     }
 
@@ -1022,7 +1046,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
 
     // The upload is successful only if both segment and tx_range are uploaded.
     std::vector<ss::future<cloud_storage::upload_result>> all_uploads;
-    all_uploads.emplace_back(upload_segment(upload));
+    all_uploads.emplace_back(upload_segment(upload, std::move(locks)));
     if (upload_ctx.upload_kind == segment_upload_kind::non_compacted) {
         all_uploads.emplace_back(upload_tx(upload));
     }
@@ -1050,7 +1074,6 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
-      .segment_read_locks = std::move(locks),
     };
 }
 
@@ -1815,7 +1838,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
 
     // Upload segments and tx-manifest in parallel
     std::vector<ss::future<cloud_storage::upload_result>> futures;
-    futures.emplace_back(upload_segment(upload, source_rtc));
+    futures.emplace_back(upload_segment(upload, std::move(locks), source_rtc));
     futures.emplace_back(upload_tx(upload, source_rtc));
     auto upl_res = co_await aggregate_upload_results(std::move(futures));
 
