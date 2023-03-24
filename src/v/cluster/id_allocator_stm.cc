@@ -203,6 +203,7 @@ ss::future<> id_allocator_stm::handle_eviction() {
     _next_snapshot = _c->start_offset();
     _processed = 0;
     set_next(_next_snapshot);
+    _insync_offset = model::prev_offset(_next_snapshot);
     return ss::now();
 }
 
