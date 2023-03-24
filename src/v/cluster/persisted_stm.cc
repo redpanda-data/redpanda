@@ -60,7 +60,7 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
 
     if (version == snapshot_version_v0) {
         vlog(
-          clusterlog.warn,
+          _log.warn,
           "Skipping snapshot {} due to old format",
           _snapshot_mgr.snapshot_path());
 
@@ -222,7 +222,7 @@ ss::future<bool> persisted_stm::do_sync(
             co_return false;
         } catch (...) {
             vlog(
-              clusterlog.error,
+              _log.error,
               "sync error: wait_offset_committed on {} failed with {}; "
               "offsets: "
               "dirty={}, committed={}; ntp={}",
@@ -250,7 +250,7 @@ ss::future<bool> persisted_stm::do_sync(
             co_return false;
         } catch (const ss::timed_out_error&) {
             vlog(
-              clusterlog.warn,
+              _log.warn,
               "sync timeout: waiting for {} offset={}; committed "
               "offset={}; ntp={}",
               name(),
@@ -260,7 +260,7 @@ ss::future<bool> persisted_stm::do_sync(
             co_return false;
         } catch (...) {
             vlog(
-              clusterlog.error,
+              _log.error,
               "sync error: waiting for {} offset={} failed with {}; committed "
               "offset={}; ntp={}",
               name(),
@@ -338,7 +338,7 @@ ss::future<bool> persisted_stm::wait_no_throw(
       .handle_exception_type(
         [this, offset, ntp = _c->ntp()](const ss::timed_out_error&) {
             vlog(
-              clusterlog.warn,
+              _log.warn,
               "timed out while waiting for {} offset: {}, ntp: {}",
               name(),
               offset,
@@ -347,7 +347,7 @@ ss::future<bool> persisted_stm::wait_no_throw(
         })
       .handle_exception([this, offset, ntp = _c->ntp()](std::exception_ptr e) {
           vlog(
-            clusterlog.error,
+            _log.error,
             "An error {} happened during waiting for {} offset: {}, ntp: {}",
             e,
             name(),
@@ -375,7 +375,7 @@ ss::future<> persisted_stm::start() {
         auto next_offset = model::next_offset(snapshot.header.offset);
         if (next_offset >= _c->start_offset()) {
             vlog(
-              clusterlog.debug,
+              _log.debug,
               "{} start with applied snapshot, set_next {}",
               name(),
               next_offset);
@@ -388,11 +388,11 @@ ss::future<> persisted_stm::start() {
             // continue. The stm will later detect this situation and deal with
             // it in the apply fiber by calling handle_eviction.
             vlog(
-              clusterlog.warn,
+              _log.warn,
               "Skipping snapshot {} since it's out of sync with the log",
               _snapshot_mgr.snapshot_path());
             vlog(
-              clusterlog.debug,
+              _log.debug,
               "{} start with non-applied snapshot, set_next {}",
               name(),
               next_offset);
@@ -404,7 +404,7 @@ ss::future<> persisted_stm::start() {
     } else {
         auto offset = _c->start_offset();
         vlog(
-          clusterlog.debug,
+          _log.debug,
           "{} start without snapshot, maybe set_next {}",
           name(),
           offset);
