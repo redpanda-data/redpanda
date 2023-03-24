@@ -159,7 +159,9 @@ class ControllerSnapshotTest(RedpandaTest):
 
         # Start first three nodes
         self.redpanda.start(seed_nodes)
+
         admin = Admin(self.redpanda, default_node=seed_nodes[0])
+        rpk = RpkTool(self.redpanda)
 
         # change controller state
 
@@ -168,6 +170,8 @@ class ControllerSnapshotTest(RedpandaTest):
         # could be any non-default value for any property
         self.redpanda.set_cluster_config(
             {'controller_snapshot_max_age_sec': 10})
+
+        rpk.create_topic('test_topic')
 
         # wait for controller snapshots
         for n in seed_nodes:
@@ -209,9 +213,22 @@ class ControllerSnapshotTest(RedpandaTest):
             assert len(
                 symdiff) == 0, f"config responses differ, symdiff: {symdiff}"
 
+        initial_topics = set(rpk.list_topics())
+        assert initial_topics == set(['test_topic'])
+
         def check(node):
+            node_id = self.redpanda.node_id(node)
+            admin.transfer_leadership_to(namespace='redpanda',
+                                         topic='controller',
+                                         partition=0,
+                                         target_id=node_id)
+            admin.await_stable_leader(namespace='redpanda',
+                                      topic='controller',
+                                      check=lambda id: id == node_id)
+
             check_features_response(admin.get_features(node=node))
             check_config_response(admin.get_cluster_config(node=node))
+            assert set(rpk.list_topics()) == set(['test_topic'])
 
         # make a node join and check it
 
