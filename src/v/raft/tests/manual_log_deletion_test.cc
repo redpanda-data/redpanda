@@ -33,7 +33,6 @@ struct manual_deletion_fixture : public raft_test_fixture {
       : gr(
         raft::group_id(0),
         3,
-        storage::log_config::storage_type::disk,
         model::cleanup_policy_bitflags::deletion,
         1_KiB) {
         config::shard_local_cfg().log_segment_size_min.set_value(

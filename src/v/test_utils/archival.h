@@ -24,7 +24,6 @@ inline ss::input_stream<char> make_manifest_stream(std::string_view json) {
 
 inline storage::disk_log_builder make_log_builder(std::string_view data_path) {
     return storage::disk_log_builder{storage::log_config{
-      storage::log_config::storage_type::disk,
       {data_path.data(), data_path.size()},
       4_KiB,
       storage::debug_sanitize_files::yes,

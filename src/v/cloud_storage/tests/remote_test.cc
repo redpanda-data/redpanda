@@ -409,7 +409,6 @@ FIXTURE_TEST(test_concat_segment_upload, s3_imposter_fixture) {
 
     model::ntp test_ntp{"test_ns", "test_tpc", 0};
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       1024,
       debug_sanitize_files::yes,

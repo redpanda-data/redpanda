@@ -69,7 +69,6 @@ struct base_fixture {
 
     storage::log_config make_log_cfg() const {
         return storage::log_config(
-          storage::log_config::storage_type::disk,
           _test_dir,
           100_MiB,
           storage::debug_sanitize_files::yes);

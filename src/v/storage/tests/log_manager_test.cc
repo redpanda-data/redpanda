@@ -45,7 +45,6 @@ void write_batches(ss::lw_shared_ptr<segment> seg) {
 
 log_config make_config() {
     return log_config{
-      log_config::storage_type::disk,
       "test.dir",
       1024,
       debug_sanitize_files::yes};
