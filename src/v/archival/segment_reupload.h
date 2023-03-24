@@ -37,11 +37,20 @@ class segment_collector {
 public:
     using segment_seq = std::vector<ss::lw_shared_ptr<storage::segment>>;
 
+    /// C-tor
+    ///
+    /// \param begin_inclusive is a first offset in range
+    /// \param manifest is a partition manifest
+    /// \param log is a partition log
+    /// \param max_uploaded_segment_size is a size limit for the offset range
+    /// \param end_inclusive is a target for the end offset (if not set the
+    ///        collector will try to match the size only)
     segment_collector(
       model::offset begin_inclusive,
       const cloud_storage::partition_manifest& manifest,
       const storage::disk_log_impl& log,
-      size_t max_uploaded_segment_size);
+      size_t max_uploaded_segment_size,
+      std::optional<model::offset> end_inclusive = std::nullopt);
 
     /// Collect segments
     ///
@@ -119,6 +128,7 @@ private:
     bool _can_replace_manifest_segment{false};
 
     size_t _max_uploaded_segment_size;
+    std::optional<model::offset> _target_end_inclusive;
     size_t _collected_size;
 };
 
