@@ -59,13 +59,11 @@ namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
 log_config::log_config(
-  storage_type type,
   ss::sstring directory,
   size_t segment_size,
   debug_sanitize_files should,
   ss::io_priority_class compaction_priority) noexcept
-  : stype(type)
-  , base_dir(std::move(directory))
+  : base_dir(std::move(directory))
   , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
   , segment_size_jitter(0) // For deterministic behavior in unit tests.
   , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
@@ -80,19 +78,17 @@ log_config::log_config(
         std::chrono::minutes(10080))) {}
 
 log_config::log_config(
-  storage_type type,
   ss::sstring directory,
   size_t segment_size,
   debug_sanitize_files should,
   ss::io_priority_class compaction_priority,
   with_cache with) noexcept
   : log_config(
-    type, std::move(directory), segment_size, should, compaction_priority) {
+    std::move(directory), segment_size, should, compaction_priority) {
     cache = with;
 }
 
 log_config::log_config(
-  storage_type type,
   ss::sstring directory,
   config::binding<size_t> segment_size,
   config::binding<size_t> compacted_segment_size,
@@ -107,8 +103,7 @@ log_config::log_config(
   batch_cache::reclaim_options recopts,
   std::chrono::milliseconds rdrs_cache_eviction_timeout,
   ss::scheduling_group compaction_sg) noexcept
-  : stype(type)
-  , base_dir(std::move(directory))
+  : base_dir(std::move(directory))
   , max_segment_size(std::move(segment_size))
   , segment_size_jitter(segment_size_jitter)
   , compacted_segment_size(std::move(compacted_segment_size))
@@ -478,16 +473,8 @@ int64_t log_manager::compaction_backlog() const {
       });
 }
 
-std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
-    switch (t) {
-    case log_config::storage_type::disk:
-        return o << "{disk}";
-    }
-    return o << "{unknown-storage-type}";
-}
-
 std::ostream& operator<<(std::ostream& o, const log_config& c) {
-    o << "{type:" << c.stype << ", base_dir:" << c.base_dir
+    o << "{base_dir:" << c.base_dir
       << ", max_segment.size:" << c.max_segment_size()
       << ", debug_sanitize_fileops:" << c.sanitize_fileops
       << ", retention_bytes:";

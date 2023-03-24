@@ -39,7 +39,6 @@ inline static ss::sstring random_dir() {
 
 inline static log_config log_builder_config() {
     return log_config(
-      log_config::storage_type::disk,
       random_dir(),
       100_MiB,
       debug_sanitize_files::yes);

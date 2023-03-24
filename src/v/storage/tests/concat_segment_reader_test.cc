@@ -47,7 +47,6 @@ SEASTAR_THREAD_TEST_CASE(
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
       debug_sanitize_files::yes,
@@ -141,7 +140,6 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_with_bounds) {
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
       debug_sanitize_files::yes,
@@ -170,7 +168,6 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_full) {
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
       debug_sanitize_files::yes,
@@ -197,7 +194,6 @@ SEASTAR_THREAD_TEST_CASE(test_multiple_segments_read_full) {
     using namespace storage;
 
     disk_log_builder b{log_config{
-      log_config::storage_type::disk,
       data_path.string(),
       segment_size,
       debug_sanitize_files::yes,

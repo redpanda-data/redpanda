@@ -422,7 +422,6 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
     raft_group gr = raft_group(
       raft::group_id(0),
       3,
-      storage::log_config::storage_type::disk,
       model::cleanup_policy_bitflags::compaction,
       10_MiB);
 
@@ -512,7 +511,6 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     raft_group gr = raft_group(
       raft::group_id(0),
       3,
-      storage::log_config::storage_type::disk,
       model::cleanup_policy_bitflags::deletion,
       1_KiB);
 

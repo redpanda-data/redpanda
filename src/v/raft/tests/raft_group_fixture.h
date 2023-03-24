@@ -92,7 +92,6 @@ struct raft_node {
       raft::group_configuration cfg,
       raft::timeout_jitter jit,
       ss::sstring storage_dir,
-      storage::log_config::storage_type storage_type,
       leader_clb_t l_clb,
       model::cleanup_policy_bitflags cleanup_policy,
       size_t segment_size)
@@ -122,9 +121,8 @@ struct raft_node {
                   storage_dir,
                   storage::debug_sanitize_files::yes);
             },
-            [storage_type, storage_dir, segment_size]() {
+            [storage_dir, segment_size]() {
                 return storage::log_config(
-                  storage_type,
                   storage_dir,
                   segment_size,
                   storage::debug_sanitize_files::yes);
@@ -368,13 +366,10 @@ struct raft_group {
     raft_group(
       raft::group_id id,
       int size,
-      storage::log_config::storage_type storage_type
-      = storage::log_config::storage_type::disk,
       model::cleanup_policy_bitflags cleanup_policy
       = model::cleanup_policy_bitflags::deletion,
       size_t segment_size = 100_MiB)
       : _id(id)
-      , _storage_type(storage_type)
       , _storage_dir("test.raft." + random_generators::gen_alphanum_string(6))
       , _cleanup_policy(cleanup_policy)
       , _segment_size(segment_size) {
@@ -411,7 +406,6 @@ struct raft_group {
           get_raft_cfg(),
           raft::timeout_jitter(heartbeat_interval * 10),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
-          _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
           },
@@ -437,7 +431,6 @@ struct raft_group {
             std::vector<raft::vnode>{}, model::revision_id(0)),
           raft::timeout_jitter(heartbeat_interval * 10),
           ssx::sformat("{}/{}", _storage_dir, node_id()),
-          _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
           },
@@ -551,7 +544,6 @@ private:
     ss::condition_variable _election_cond;
     std::optional<model::node_id> _leader_id;
     uint32_t _elections_count{0};
-    storage::log_config::storage_type _storage_type;
     ss::sstring _storage_dir;
     model::cleanup_policy_bitflags _cleanup_policy;
     size_t _segment_size;

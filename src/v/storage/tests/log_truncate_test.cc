@@ -332,7 +332,6 @@ FIXTURE_TEST(
   test_truncate_whole_log_when_logs_are_garbadge_collected,
   storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.stype = storage::log_config::storage_type::disk;
     storage::log_manager mgr = make_log_manager(cfg);
     info("config: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
@@ -426,7 +425,6 @@ FIXTURE_TEST(test_truncate, storage_test_fixture) {
 
 FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.stype = storage::log_config::storage_type::disk;
     auto ntp = model::ntp("default", "test", 0);
     std::vector<model::offset> truncate_offsets;
 
@@ -506,7 +504,6 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
 
 FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.stype = storage::log_config::storage_type::disk;
     storage::log_manager mgr = make_log_manager(cfg);
     info("config: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
@@ -642,7 +639,6 @@ FIXTURE_TEST(test_prefix_truncate_then_truncate_all, storage_test_fixture) {
 
 FIXTURE_TEST(test_index_max_timestamp_update, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
-    cfg.stype = storage::log_config::storage_type::disk;
     storage::log_manager mgr = make_log_manager(cfg);
     info("config: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });

@@ -210,7 +210,6 @@ archiver_fixture::get_started_log_builder(
       rev);
 
     auto conf = storage::log_config(
-      storage::log_config::storage_type::disk,
       config::node().data_directory().as_sstring(),
       1_MiB,
       storage::debug_sanitize_files::yes);

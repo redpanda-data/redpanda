@@ -56,7 +56,6 @@ struct foreign_entry_fixture {
         },
         [this]() {
             return storage::log_config(
-              storage::log_config::storage_type::disk,
               test_dir,
               1_GiB,
               storage::debug_sanitize_files::yes);

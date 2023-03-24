@@ -43,7 +43,6 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         },
         []() {
             return storage::log_config(
-              storage::log_config::storage_type::disk,
               "test.dir",
               1_GiB,
               storage::debug_sanitize_files::yes,

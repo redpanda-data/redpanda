@@ -440,7 +440,6 @@ public:
 
     storage::log_config make_default_config() {
         return storage::log_config(
-          storage::log_config::storage_type::disk,
           data_dir.string(),
           1_GiB,
           storage::debug_sanitize_files::yes);

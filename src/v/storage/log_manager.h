@@ -47,24 +47,19 @@ namespace storage {
 
 // class log_config {
 struct log_config {
-    enum class storage_type { disk };
-
     log_config(
-      storage_type type,
       ss::sstring directory,
       size_t segment_size,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority
       = ss::default_priority_class()) noexcept;
     log_config(
-      storage_type type,
       ss::sstring directory,
       size_t segment_size,
       debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
       with_cache with) noexcept;
     log_config(
-      storage_type type,
       ss::sstring directory,
       config::binding<size_t> segment_size,
       config::binding<size_t> compacted_segment_size,
@@ -88,7 +83,6 @@ struct log_config {
     log_config(log_config&&) noexcept = default;
     log_config& operator=(log_config&&) noexcept = default;
 
-    storage_type stype;
     ss::sstring base_dir;
     config::binding<size_t> max_segment_size;
 
@@ -244,5 +238,5 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
 };
-std::ostream& operator<<(std::ostream& o, log_config::storage_type t);
+
 } // namespace storage
