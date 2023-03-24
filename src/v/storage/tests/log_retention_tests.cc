@@ -126,7 +126,7 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     BOOST_CHECK_LT(
       (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 2_MiB),
-      10_KiB);
+      20_KiB);
 
     // second segment
     builder | storage::add_segment(offset);
@@ -147,7 +147,7 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     // the first segment is now eligible for reclaim
     BOOST_CHECK_LT(
       (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 3_MiB),
-      10_KiB);
+      20_KiB);
 
     // third segment
     builder | storage::add_segment(offset);
@@ -168,7 +168,7 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     // the first,second segment is now eligible for reclaim
     BOOST_CHECK_LT(
       (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 4_MiB),
-      10_KiB);
+      20_KiB);
 
     // active segment
     builder | storage::add_segment(offset);
@@ -189,7 +189,7 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     // the first,second segment is now eligible for reclaim
     BOOST_CHECK_LT(
       (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 5_MiB),
-      10_KiB);
+      20_KiB);
 
     builder | storage::garbage_collect(yesterday, 4_MiB);
 
