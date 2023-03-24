@@ -2913,6 +2913,7 @@ ss::future<> rm_stm::handle_eviction() {
           _log_state.reset();
           _mem_state = mem_state{_tx_root_tracker};
           set_next(_c->start_offset());
+          _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });
 }
