@@ -64,10 +64,10 @@ func newRowSet() *RowSet {
 
 func newGrafanaDashboardCmd() *cobra.Command {
 	var metricsEndpoint string
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "grafana-dashboard",
 		Short: "Generate a Grafana dashboard for redpanda metrics",
-		RunE: func(ccmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			if !(strings.HasPrefix(metricsEndpoint, "http://") ||
 				strings.HasPrefix(metricsEndpoint, "https://")) {
 				metricsEndpoint = fmt.Sprintf("http://%s", metricsEndpoint)
@@ -79,28 +79,16 @@ func newGrafanaDashboardCmd() *cobra.Command {
 	deprecatedPrometheusURLFlag := "prometheus-url"
 
 	for _, flag := range []string{metricsEndpointFlag, deprecatedPrometheusURLFlag} {
-		command.Flags().StringVar(
-			&metricsEndpoint,
-			flag,
-			"http://localhost:9644/metrics",
-			"The redpanda metrics endpoint where to get the metrics metadata. i.e. redpanda_host:9644/metrics")
+		cmd.Flags().StringVar(&metricsEndpoint, flag, "http://localhost:9644/metrics", "The redpanda metrics endpoint where to get the metrics metadata. i.e. redpanda_host:9644/metrics")
 	}
-
-	command.Flags().MarkDeprecated(deprecatedPrometheusURLFlag, fmt.Sprintf("Deprecated flag. Use --%v instead", metricsEndpointFlag))
+	cmd.Flags().MarkDeprecated(deprecatedPrometheusURLFlag, fmt.Sprintf("Deprecated flag. Use --%v instead", metricsEndpointFlag))
 
 	datasourceFlag := "datasource"
-	command.Flags().StringVar(
-		&datasource,
-		datasourceFlag,
-		"",
-		"The name of the Prometheus datasource as configured in your grafana instance.")
-	command.Flags().StringVar(
-		&jobName,
-		"job-name",
-		"redpanda",
-		"The prometheus job name by which to identify the redpanda nodes")
-	command.MarkFlagRequired(datasourceFlag)
-	return command
+	cmd.Flags().StringVar(&datasource, datasourceFlag, "", "The name of the Prometheus datasource as configured in your grafana instance.")
+	cmd.Flags().StringVar(&jobName, "job-name", "redpanda", "The prometheus job name by which to identify the redpanda nodes")
+	cmd.MarkFlagRequired(datasourceFlag)
+
+	return cmd
 }
 
 func executeGrafanaDashboard(metricsEndpoint string) error {
