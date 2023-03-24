@@ -562,11 +562,11 @@ bool partition_manifest::add(
           meta.committed_offset, _last_uploaded_compacted_offset);
     }
 
-    subtract_from_cloud_log_size(total_replaced_size);
     if (ok) {
         // If the segment does not replace the one that we have we will
         // fail to insert it into the map. In this case we shouldn't
         // modify the total cloud size.
+        subtract_from_cloud_log_size(total_replaced_size);
         _cloud_log_size_bytes += meta.size_bytes;
     }
 
