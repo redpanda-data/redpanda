@@ -68,14 +68,6 @@ class UsageTest(RedpandaTest):
         self.regions = ['region-a', 'region-b', 'region-c']
         self.racks = ['r-1', 'r-2', 'r-3']
 
-        # do not allow to start when region is set without a rack set
-        self.redpanda.start_node(self.redpanda.nodes[0],
-                                 override_cfg_params={
-                                     "region":
-                                     self.region_for(self.redpanda.nodes[0])
-                                 },
-                                 expect_fail=True)
-
         for n in self.redpanda.nodes:
             self.redpanda.start_node(n,
                                      override_cfg_params={
@@ -92,24 +84,24 @@ class UsageTest(RedpandaTest):
             assert self.rack_for(self.node_by_id(id)) == rack
             assert self.region_for(self.node_by_id(id)) == region
 
-    @cluster(num_nodes=3)
+    @cluster(
+        num_nodes=3,
+        log_allow_list=['.*Failure during startup: std::invalid_argument.*'])
     def test_incorrect_configuration(self):
-        self.regions = ['region-a', 'region-b', 'region-c']
+
         self.racks = ['r-1', 'r-2', 'r-3']
 
         # do not allow to start when region is set without a rack set
         self.redpanda.start_node(self.redpanda.nodes[0],
-                                 override_cfg_params={
-                                     "region":
-                                     self.region_for(self.redpanda.nodes[0])
-                                 },
+                                 override_cfg_params={"region": 'common'},
                                  expect_fail=True)
 
-        self.redpanda.start(n,
-                            override_cfg_params={
-                                "rack": self.rack_for(n),
-                                "region": self.region_for(n)
-                            })
+        for n in self.redpanda.nodes:
+            self.redpanda.start_node(n,
+                                     override_cfg_params={
+                                         "rack": self.rack_for(n),
+                                         "region": 'common'
+                                     })
 
         admin = Admin(self.redpanda)
         brokers = admin.get_brokers()
@@ -118,4 +110,4 @@ class UsageTest(RedpandaTest):
             rack = b['rack']
             region = b['region']
             assert self.rack_for(self.node_by_id(id)) == rack
-            assert self.region_for(self.node_by_id(id)) == region
+            assert region == 'common'
