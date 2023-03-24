@@ -2792,7 +2792,7 @@ class RedpandaService(Service):
             # Match not found
             if exit_status != 0:
                 self.logger.debug(
-                    f"Did not find {pattern} on node {node.name}: {line}")
+                    f"Did not find {pattern} on node {node.name}")
                 return False
 
         # Fall through, match on all nodes
