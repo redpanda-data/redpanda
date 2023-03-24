@@ -26,7 +26,7 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.restart_services_test import check_service_restart
+from rptest.util import search_logs_with_timeout
 from rptest.services.redpanda import SecurityConfig, LoggingConfig, ResourceSettings, PandaproxyConfig, TLSProvider
 from rptest.services.redpanda_installer import RedpandaInstaller, wait_for_num_versions
 from rptest.services.admin import Admin
@@ -433,9 +433,10 @@ class PandaProxyEndpoints(RedpandaTest):
         self.logger.debug("Restart the http proxy")
         admin = Admin(self.redpanda)
         for node in self.redpanda.nodes:
-            result_raw = admin.redpanda_services_restart(
-                rp_service='http-proxy', node=node)
-            check_service_restart(self.redpanda, "Restarting the http proxy")
+            result_raw = admin.restart_service(rp_service='http-proxy',
+                                               node=node)
+            search_logs_with_timeout(self.redpanda,
+                                     "Restarting the http proxy")
             self.logger.debug(result_raw)
             assert result_raw.status_code == requests.codes.ok
 

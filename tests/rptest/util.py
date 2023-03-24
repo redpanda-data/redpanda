@@ -361,3 +361,9 @@ class firewall_blocked:
         cmd = " && ".join(cmd)
         for node in self._nodes:
             node.account.ssh_output(cmd, allow_fail=False)
+
+
+def search_logs_with_timeout(redpanda, pattern: str, timeout_s: int = 5):
+    wait_until(lambda: redpanda.search_log_any(pattern),
+               timeout_sec=timeout_s,
+               err_msg=f"Failed to find pattern: {pattern}")

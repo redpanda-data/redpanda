@@ -25,7 +25,7 @@ from rptest.services.redpanda import LoggingConfig
 from rptest.services.storage import Topic
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.tests.restart_services_test import check_service_restart
+from rptest.util import search_logs_with_timeout
 from rptest.utils.full_disk import FullDiskHelper
 from rptest.utils.partition_metrics import PartitionMetrics
 from rptest.utils.expect_rate import ExpectRate, RateTarget
@@ -179,7 +179,8 @@ class WriteRejectTest(RedpandaTest):
         for node in self.redpanda.nodes:
             result_raw = self.admin.refresh_disk_health_info(node=node)
             self.logger.debug(result_raw)
-            check_service_restart(self.redpanda, "Refreshing disk health info")
+            search_logs_with_timeout(self.redpanda,
+                                     "Refreshing disk health info")
             assert result_raw.status_code == requests.codes.ok
 
         check_health_monitor_backend(
