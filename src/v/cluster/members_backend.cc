@@ -574,17 +574,22 @@ void members_backend::calculate_reallocations_batch(
     size_t current_idx = 0;
     // 4. Pass over all partition metadata
     for (auto& [tp_ns, metadata] : topics) {
+        vlog(
+          clusterlog.debug, "TESTTEST trying to reallocate topic: {}", tp_ns);
         // skip partitions outside of current domain
         if (get_allocation_domain(tp_ns) != domain) {
+            vlog(clusterlog.debug, "TESTTEST {} skip domain", tp_ns);
             continue;
         }
         // do not try to move internal partitions
         if (
           tp_ns.ns == model::kafka_internal_namespace
           || tp_ns.ns == model::redpanda_ns) {
+            vlog(clusterlog.debug, "TESTTEST {} skip internal", tp_ns);
             continue;
         }
         if (!metadata.is_topic_replicable()) {
+            vlog(clusterlog.debug, "TESTTEST {} skip replicable", tp_ns);
             continue;
         }
         // do not move topics that were created after node was added, they are
@@ -612,7 +617,14 @@ void members_backend::calculate_reallocations_batch(
          */
         std::bitset<sizeof(uint64_t)> sampling_bytes;
         for (const auto& p : metadata.get_assignments()) {
+            vlog(
+              clusterlog.debug,
+              "TESTTEST Trying to rallocate partition {}/{}",
+              tp_ns,
+              p.id);
             if (idx_it->second > current_idx++) {
+                vlog(
+                  clusterlog.debug, "TESTTEST {}/{} skiping idx", tp_ns, p.id);
                 continue;
             }
 
@@ -625,6 +637,11 @@ void members_backend::calculate_reallocations_batch(
             idx_it->second++;
 
             if (sampling_bytes.test(rand_idx++)) {
+                vlog(
+                  clusterlog.debug,
+                  "TESTTEST {}/{} skiping random",
+                  tp_ns,
+                  p.id);
                 continue;
             }
 
@@ -634,6 +651,12 @@ void members_backend::calculate_reallocations_batch(
 
             std::sort(to_move_from_node.begin(), to_move_from_node.end(), cmp);
             for (auto& to_move : to_move_from_node) {
+                vlog(
+                  clusterlog.debug,
+                  "TESTTEST Trying to reallocate {}/{} from {}",
+                  tp_ns,
+                  p.id,
+                  to_move);
                 if (
                   is_in_replica_set(p.replicas, to_move.id)
                   && to_move.left_to_move > 0) {
@@ -644,6 +667,13 @@ void members_backend::calculate_reallocations_batch(
                     reassign_replicas(current_assignment, reallocation);
                     // skip if partition was reassigned to the same node
                     if (is_reassigned_to_node(reallocation, to_move.id)) {
+                        vlog(
+                          clusterlog.debug,
+                          "TESTTEST reallocate {}/{} from {} skipping already "
+                          "reassigned",
+                          tp_ns,
+                          p.id,
+                          to_move);
                         continue;
                     }
                     reallocation.current_replica_set = p.replicas;
@@ -662,6 +692,14 @@ void members_backend::calculate_reallocations_batch(
                         return;
                     }
                     break;
+                } else {
+                    vlog(
+                      clusterlog.debug,
+                      "TESTTEST reallocate {}/{} from {} skipping not in "
+                      "replica set",
+                      tp_ns,
+                      p.id,
+                      to_move);
                 }
             }
         }
