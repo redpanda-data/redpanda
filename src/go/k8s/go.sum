@@ -790,6 +790,8 @@ github.com/prometheus/tsdb v0.7.1/go.mod h1:qhTCs0VvXwvX/y3TZrWD7rabWM+ijKTux40T
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524 h1:luFDvYrRmfF5UoNcjBWNtTMQ8J9p27Hph4v57ULnzNk=
 github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524/go.mod h1:eIkTpFJ4nRwkac3TNdJjTtZU0PsP2IRXkThfP8ALZ+E=
+github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230104182309-7698d02c437e h1:fHTmrBahDcGv2xD1Sl4uddvEo8guDzkexgz9HbB0Mvc=
+github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230104182309-7698d02c437e/go.mod h1:Z87WArT+Ds+3r5arB8FwlPBwa7MzvhE46pGYrJoeOpo=
 github.com/rhnvrm/simples3 v0.6.1/go.mod h1:Y+3vYm2V7Y4VijFoJHHTrja6OgPrJ2cBti8dPGkC3sA=
 github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af/go.mod h1:XWv6SoW27p1b0cqNHllgS5HIMJraePCO15w5zCzIWYg=
 github.com/rogpeppe/fastuuid v1.2.0/go.mod h1:jVj6XXZzXRy/MSR5jhDC/2q6DgLz+nrA6LYCDYWNEvQ=

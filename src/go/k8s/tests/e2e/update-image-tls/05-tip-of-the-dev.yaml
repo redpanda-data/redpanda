@@ -3,5 +3,5 @@ kind: Cluster
 metadata:
   name: up-img
 spec:
-  cloudStorage:
-    enabled: false
+  image: "localhost/redpanda"
+  version: "dev"

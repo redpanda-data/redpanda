@@ -15,20 +15,6 @@ spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -42,20 +28,6 @@ spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -69,20 +41,6 @@ spec:
   containers:
   - name: redpanda
     image: "localhost/redpanda:dev"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /scripts
-      name: hook-scripts-dir
-    - mountPath: /etc/tls/certs/admin
-      name: tlsadmincert
-    - mountPath: /etc/redpanda/.bootstrap.yaml
-      name: configmap-dir
-      subPath: .bootstrap.yaml
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
 status:
   phase: "Running"
 
@@ -92,7 +50,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-tls/step-5"
-  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-tls/step-5/pods.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-tls/step-5/pods.yaml"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-0 -- curl -sk https://up-img-0.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls/step-5/brokers-from-pod-0.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-1 -- curl -sk https://up-img-1.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls/step-5/brokers-from-pod-1.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-2 -- curl -sk https://up-img-2.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls/step-5/brokers-from-pod-2.json"
