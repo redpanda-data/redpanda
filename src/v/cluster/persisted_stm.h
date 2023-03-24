@@ -24,6 +24,7 @@
 #include "utils/expiring_promise.h"
 #include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
+#include "utils/prefix_logger.h"
 
 #include <absl/container/flat_hash_map.h>
 
@@ -158,7 +159,7 @@ protected:
     uint64_t _snapshot_size{0};
     raft::consensus* _c;
     storage::simple_snapshot_manager _snapshot_mgr;
-    ss::logger& _log;
+    prefix_logger _log;
 };
 
 } // namespace cluster

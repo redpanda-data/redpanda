@@ -15,6 +15,7 @@
 #include "raft/errc.h"
 #include "raft/offset_monitor.h"
 #include "raft/types.h"
+#include "ssx/sformat.h"
 #include "storage/record_batch_builder.h"
 #include "storage/snapshot.h"
 
@@ -33,7 +34,7 @@ persisted_stm::persisted_stm(
       std::filesystem::path(c->log_config().work_directory()),
       snapshot_mgr_name,
       ss::default_priority_class())
-  , _log(logger) {}
+  , _log(logger, ssx::sformat("[{} ({})]", _c->ntp(), name())) {}
 
 ss::future<> persisted_stm::remove_persistent_state() {
     _snapshot_size = 0;
@@ -223,10 +224,8 @@ ss::future<bool> persisted_stm::do_sync(
         } catch (...) {
             vlog(
               _log.error,
-              "sync error: wait_offset_committed on {} failed with {}; "
-              "offsets: "
-              "dirty={}, committed={}; ntp={}",
-              name(),
+              "sync error: wait_offset_committed failed with {}; "
+              "offsets: dirty={}, committed={}; ntp={}",
               std::current_exception(),
               offset,
               committed,
@@ -251,9 +250,8 @@ ss::future<bool> persisted_stm::do_sync(
         } catch (const ss::timed_out_error&) {
             vlog(
               _log.warn,
-              "sync timeout: waiting for {} offset={}; committed "
+              "sync timeout: waiting for offset={}; committed "
               "offset={}; ntp={}",
-              name(),
               offset,
               committed,
               ntp);
@@ -261,9 +259,8 @@ ss::future<bool> persisted_stm::do_sync(
         } catch (...) {
             vlog(
               _log.error,
-              "sync error: waiting for {} offset={} failed with {}; committed "
+              "sync error: waiting for offset={} failed with {}; committed "
               "offset={}; ntp={}",
-              name(),
               offset,
               std::current_exception(),
               committed,
@@ -339,8 +336,7 @@ ss::future<bool> persisted_stm::wait_no_throw(
         [this, offset, ntp = _c->ntp()](const ss::timed_out_error&) {
             vlog(
               _log.warn,
-              "timed out while waiting for {} offset: {}, ntp: {}",
-              name(),
+              "timed out while waiting for offset: {}, ntp: {}",
               offset,
               ntp);
             return false;
@@ -348,9 +344,8 @@ ss::future<bool> persisted_stm::wait_no_throw(
       .handle_exception([this, offset, ntp = _c->ntp()](std::exception_ptr e) {
           vlog(
             _log.error,
-            "An error {} happened during waiting for {} offset: {}, ntp: {}",
+            "An error {} happened during waiting for offset: {}, ntp: {}",
             e,
-            name(),
             offset,
             ntp);
           return false;
@@ -376,8 +371,7 @@ ss::future<> persisted_stm::start() {
         if (next_offset >= _c->start_offset()) {
             vlog(
               _log.debug,
-              "{} start with applied snapshot, set_next {}",
-              name(),
+              "start with applied snapshot, set_next {}",
               next_offset);
             co_await apply_snapshot(snapshot.header, std::move(snapshot.data));
             set_next(next_offset);
@@ -393,8 +387,7 @@ ss::future<> persisted_stm::start() {
               _snapshot_mgr.snapshot_path());
             vlog(
               _log.debug,
-              "{} start with non-applied snapshot, set_next {}",
-              name(),
+              "start with non-applied snapshot, set_next {}",
               next_offset);
             _insync_offset = model::prev_offset(next_offset);
             set_next(next_offset);
@@ -403,11 +396,8 @@ ss::future<> persisted_stm::start() {
         _resolved_when_snapshot_hydrated.set_value();
     } else {
         auto offset = _c->start_offset();
-        vlog(
-          _log.debug,
-          "{} start without snapshot, maybe set_next {}",
-          name(),
-          offset);
+        vlog(_log.debug, "start without snapshot, maybe set_next {}", offset);
+
         if (offset >= model::offset(0)) {
             _insync_offset = model::prev_offset(offset);
             set_next(offset);
