@@ -253,7 +253,8 @@ private:
     /// Information about started upload
     struct scheduled_upload {
         /// The future that will be ready when the segment will be fully
-        /// uploaded
+        /// uploaded.
+        /// NOTE: scheduled future may hold segment read locks.
         std::optional<ss::future<cloud_storage::upload_result>> result;
         /// Last offset of the uploaded segment or part
         model::offset inclusive_last_offset;
@@ -269,9 +270,6 @@ private:
         /// case the upload is not started but the method might be called
         /// again anyway.
         ss::stop_iteration stop;
-        /// Protects the underlying segment(s) from being deleted while the
-        /// upload is in flight.
-        std::vector<ss::rwlock::holder> segment_read_locks;
         segment_upload_kind upload_kind;
     };
 
@@ -337,12 +335,15 @@ private:
     /// Upload individual segment to S3.
     ///
     /// \param candidate is an upload candidate
+    /// \param segment_read_locks protects the underlying segment(s) from being
+    ///        deleted while the upload is in flight.
     /// \param source_rtc is a retry_chain_node of the caller, if it's set
     ///        to nullopt own retry chain of the ntp_archiver is used
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_segment(
       model::term_id archiver_term,
       upload_candidate candidate,
+      std::vector<ss::rwlock::holder> segment_read_locks,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
