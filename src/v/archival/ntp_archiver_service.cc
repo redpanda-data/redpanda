@@ -1775,6 +1775,15 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
             vlog(_rtclog.warn, "Failed to make upload candidate");
             co_return std::nullopt;
         }
+        if (candidate.candidate.content_length != run->meta.size_bytes) {
+            vlog(
+              _rtclog.error,
+              "Failed to make upload candidate with correct size, expected {}, "
+              "actual {}",
+              candidate.candidate,
+              run->meta);
+            co_return std::nullopt;
+        }
         co_return candidate;
     }
     // segment_name exposed_name;
