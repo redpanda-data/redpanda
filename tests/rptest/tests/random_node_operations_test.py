@@ -15,6 +15,7 @@ from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
+from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST, PREV_VERSION_LOG_ALLOW_LIST
 from rptest.services.redpanda_installer import RedpandaInstaller
 from rptest.tests.end_to_end import EndToEndTest
@@ -65,9 +66,15 @@ class RandomNodeOperationsTest(EndToEndTest):
              log_allow_list=CHAOS_LOG_ALLOW_LIST + PREV_VERSION_LOG_ALLOW_LIST)
     @matrix(enable_failures=[True, False],
             num_to_upgrade=[0, 3],
-            compacted_topics=[True, False])
-    def test_node_operations(self, enable_failures, num_to_upgrade,
-                             compacted_topics):
+            compacted_topics=[True, False],
+            enable_controller_snapshots=[True, False])
+    def test_node_operations(
+        self,
+        enable_failures,
+        num_to_upgrade,
+        compacted_topics,
+        enable_controller_snapshots,
+    ):
 
         lock = threading.Lock()
 
@@ -80,6 +87,8 @@ class RandomNodeOperationsTest(EndToEndTest):
             # not to emit spurious errors
             "raft_io_timeout_ms": 20000,
         }
+        if enable_controller_snapshots:
+            extra_rp_conf["controller_snapshot_max_age_sec"] = 1
 
         self.redpanda = RedpandaService(self.test_context,
                                         5,
@@ -88,6 +97,11 @@ class RandomNodeOperationsTest(EndToEndTest):
         # test setup
         self.producer_timeout = 180
         self.consumer_timeout = 180
+
+        if num_to_upgrade > 0 and enable_controller_snapshots:
+            # we can only enable controller snapshot if all nodes are the newest version
+            cleanup_on_early_exit(self)
+            return
 
         if self.redpanda.dedicated_nodes:
             # scale test setup
@@ -119,6 +133,13 @@ class RandomNodeOperationsTest(EndToEndTest):
         else:
             self.redpanda.start(auto_assign_node_id=True,
                                 omit_seeds_on_idx_one=False)
+
+        if enable_controller_snapshots:
+            admin = Admin(self.redpanda)
+            admin.put_feature("controller_snapshots", {"state": "active"})
+            self.redpanda.await_feature_active("controller_snapshots",
+                                               timeout_sec=30)
+
         # create some topics
         self._create_topics(10)
         # start workload
