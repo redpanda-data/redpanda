@@ -139,6 +139,10 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
       .consumed = run_quota_t(0),
       .remaining = quota,
     };
+    vlog(
+      _ctxlog.debug,
+      "Adjacent segment merger run begin, last offset is {}",
+      _last);
     for (int i = 0; i < max_reuploads_per_run; i++) {
         if (!_enabled || _as.abort_requested()) {
             co_return result;
@@ -146,7 +150,6 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
         if (result.remaining <= 0) {
             co_return result;
         }
-        vlog(_ctxlog.debug, "Adjacent segment merger run begin");
         auto scanner = [this](
                          model::offset local_start_offset,
                          const cloud_storage::partition_manifest& manifest) {
@@ -164,6 +167,13 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
           upl->candidate.exposed_name,
           upl->candidate.sources.size(),
           upl->candidate.final_offset);
+        for (const auto& src : upl->candidate.sources) {
+            vlog(
+              _ctxlog.debug,
+              "Local log segment {} found, size {}",
+              src->filename(),
+              src->size_bytes());
+        }
         auto uploaded = co_await _archiver.upload(
           std::move(*upl), std::ref(rtc));
         if (uploaded) {
@@ -174,11 +184,23 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
             result.metadata_syncs += 1;
             result.consumed = result.consumed + run_quota_t{1};
             result.remaining = result.remaining - run_quota_t{1};
+            vlog(
+              _ctxlog.debug,
+              "Successfuly uploaded segment, new last offfset is {}",
+              _last);
         } else {
             // Upload failed
             result.status = run_status::failed;
+            vlog(
+              _ctxlog.debug,
+              "Failed to upload segment, last offfset is {}",
+              _last);
         }
     }
+    vlog(
+      _ctxlog.debug,
+      "Adjacent segment merger run completed, last offset is {}",
+      _last);
     co_return result;
 }
 
