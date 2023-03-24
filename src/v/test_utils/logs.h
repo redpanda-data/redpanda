@@ -47,9 +47,7 @@ static inline ss::future<> persist_log_file(
           },
           [base_dir]() {
               return storage::log_config(
-                base_dir,
-                1_GiB,
-                storage::debug_sanitize_files::yes);
+                base_dir, 1_GiB, storage::debug_sanitize_files::yes);
           },
           feature_table);
         storage.start().get();
@@ -117,9 +115,7 @@ read_log_file(ss::sstring base_dir, model::ntp file_ntp) {
           },
           [base_dir]() {
               return storage::log_config(
-                base_dir,
-                1_GiB,
-                storage::debug_sanitize_files::yes);
+                base_dir, 1_GiB, storage::debug_sanitize_files::yes);
           },
           feature_table);
         storage.start().get();

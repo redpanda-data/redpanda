@@ -69,9 +69,7 @@ struct base_fixture {
 
     storage::log_config make_log_cfg() const {
         return storage::log_config(
-          _test_dir,
-          100_MiB,
-          storage::debug_sanitize_files::yes);
+          _test_dir, 100_MiB, storage::debug_sanitize_files::yes);
     }
 
     raft::offset_translator make_offset_translator() {

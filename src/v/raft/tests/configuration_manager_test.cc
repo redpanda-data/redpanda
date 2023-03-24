@@ -46,9 +46,7 @@ struct config_manager_fixture {
         },
         [this]() {
             return storage::log_config(
-              base_dir,
-              100_MiB,
-              storage::debug_sanitize_files::yes);
+              base_dir, 100_MiB, storage::debug_sanitize_files::yes);
         },
         _feature_table))
       , _logger(
