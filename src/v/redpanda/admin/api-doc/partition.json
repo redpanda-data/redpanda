@@ -12,7 +12,7 @@
             "operations": [
                 {
                     "method": "GET",
-                    "summary": "Get a list of partitions",
+                    "summary": "Get list of partition replicas hosted by current node. (IMPORTANT: this API returns only those partitions which replicas are present on the queried node, not all partitions in the cluster)",
                     "type": "array",
                     "items": {
                         "type": "partition_summary"
@@ -46,10 +46,7 @@
                 {
                     "method": "GET",
                     "summary": "Get detailed partition information",
-                    "type": "array",
-                    "items": {
-                        "type": "partition"
-                    },
+                    "type": "partition",
                     "nickname": "get_partition",
                     "produces": [
                         "application/json"
@@ -72,6 +69,37 @@
                             "in": "path",
                             "required": true,
                             "type": "integer"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/partitions/{namespace}/{topic}",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get topic partition information",
+                    "type": "array",
+                    "items": {
+                        "type": "partition"
+                    },
+                    "nickname": "get_topic_partitions",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "namespace",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "topic",
+                            "in": "path",
+                            "required": true,
+                            "type": "string"
                         }
                     ]
                 }
