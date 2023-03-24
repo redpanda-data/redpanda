@@ -440,9 +440,7 @@ public:
 
     storage::log_config make_default_config() {
         return storage::log_config(
-          data_dir.string(),
-          1_GiB,
-          storage::debug_sanitize_files::yes);
+          data_dir.string(), 1_GiB, storage::debug_sanitize_files::yes);
     }
 
     ss::future<> wait_for_topics(std::vector<cluster::topic_result> results) {

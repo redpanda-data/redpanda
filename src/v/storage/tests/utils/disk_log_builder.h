@@ -38,10 +38,7 @@ inline static ss::sstring random_dir() {
 }
 
 inline static log_config log_builder_config() {
-    return log_config(
-      random_dir(),
-      100_MiB,
-      debug_sanitize_files::yes);
+    return log_config(random_dir(), 100_MiB, debug_sanitize_files::yes);
 }
 
 inline static log_reader_config reader_config() {

@@ -420,10 +420,7 @@ FIXTURE_TEST(
  */
 FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
     raft_group gr = raft_group(
-      raft::group_id(0),
-      3,
-      model::cleanup_policy_bitflags::compaction,
-      10_MiB);
+      raft::group_id(0), 3, model::cleanup_policy_bitflags::compaction, 10_MiB);
 
     auto cfg = storage::log_builder_config();
     cfg.base_dir = ssx::sformat("{}/{}", gr.get_data_dir(), 0);
@@ -509,10 +506,7 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
  */
 FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     raft_group gr = raft_group(
-      raft::group_id(0),
-      3,
-      model::cleanup_policy_bitflags::deletion,
-      1_KiB);
+      raft::group_id(0), 3, model::cleanup_policy_bitflags::deletion, 1_KiB);
 
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
