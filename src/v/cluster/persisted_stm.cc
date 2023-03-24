@@ -55,7 +55,8 @@ ss::future<std::optional<stm_snapshot>> persisted_stm::load_snapshot() {
     auto version = reflection::adl<int8_t>{}.from(meta_parser);
     vassert(
       version == snapshot_version || version == snapshot_version_v0,
-      "Unsupported persisted_stm {} snapshot_version {}",
+      "[{} ({})] Unsupported persisted_stm snapshot_version {}",
+      _c->ntp(),
       name(),
       version);
 
@@ -171,8 +172,10 @@ persisted_stm::ensure_snapshot_exists(model::offset target_offset) {
               .then([this, target_offset]() {
                   vassert(
                     target_offset <= _insync_offset,
-                    "{}: after we waited for target_offset ({}) _insync_offset "
+                    "[{} ({})]  after we waited for target_offset ({}) "
+                    "_insync_offset "
                     "({}) should have matched it or bypassed",
+                    _c->ntp(),
                     name(),
                     target_offset,
                     _insync_offset);
@@ -225,11 +228,10 @@ ss::future<bool> persisted_stm::do_sync(
             vlog(
               _log.error,
               "sync error: wait_offset_committed failed with {}; "
-              "offsets: dirty={}, committed={}; ntp={}",
+              "offsets: dirty={}, committed={}",
               std::current_exception(),
               offset,
-              committed,
-              ntp);
+              committed);
             co_return false;
         }
     } else {
@@ -251,20 +253,18 @@ ss::future<bool> persisted_stm::do_sync(
             vlog(
               _log.warn,
               "sync timeout: waiting for offset={}; committed "
-              "offset={}; ntp={}",
+              "offset={}",
               offset,
-              committed,
-              ntp);
+              committed);
             co_return false;
         } catch (...) {
             vlog(
               _log.error,
               "sync error: waiting for offset={} failed with {}; committed "
-              "offset={}; ntp={}",
+              "offset={};",
               offset,
               std::current_exception(),
-              committed,
-              ntp);
+              committed);
             co_return false;
         }
         if (_c->term() == term) {
@@ -334,20 +334,15 @@ ss::future<bool> persisted_stm::wait_no_throw(
       })
       .handle_exception_type(
         [this, offset, ntp = _c->ntp()](const ss::timed_out_error&) {
-            vlog(
-              _log.warn,
-              "timed out while waiting for offset: {}, ntp: {}",
-              offset,
-              ntp);
+            vlog(_log.warn, "timed out while waiting for offset: {}", offset);
             return false;
         })
       .handle_exception([this, offset, ntp = _c->ntp()](std::exception_ptr e) {
           vlog(
             _log.error,
-            "An error {} happened during waiting for offset: {}, ntp: {}",
+            "An error {} happened during waiting for offset: {}",
             e,
-            offset,
-            ntp);
+            offset);
           return false;
       });
 }
@@ -359,7 +354,9 @@ ss::future<> persisted_stm::start() {
     } catch (...) {
         vassert(
           false,
-          "Can't load snapshot from '{}'. Got error: {}",
+          "[[{}] ({})]Can't load snapshot from '{}'. Got error: {}",
+          _c->ntp(),
+          name(),
           _snapshot_mgr.snapshot_path(),
           std::current_exception());
     }
