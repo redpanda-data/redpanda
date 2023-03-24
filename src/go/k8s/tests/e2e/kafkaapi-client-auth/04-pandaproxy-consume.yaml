@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: consume-message
+spec:
+  template:
+    spec:
+      containers:
+        - name: rpk
+          image: localhost/redpanda:dev
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/bash
+            - -c
+            - -ex
+          args:
+            - | 
+              curl -s -v http://cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:8082/topics/test/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000 \
+              -H "Accept: application/vnd.kafka.json.v2+json" | grep -v "error_code"
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

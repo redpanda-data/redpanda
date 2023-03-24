@@ -1,0 +1,54 @@
+# Redpanda Operator
+
+{{ template "chart.versionBadge" . }}{{ template "chart.typeBadge" . }}{{ template "chart.appVersionBadge" . }}
+
+## Installation
+
+### Prerequisite
+
+To deploy operator with webhooks (enabled by default) please install
+cert manager. Please follow
+[the installation guide](https://cert-manager.io/docs/installation/)
+
+The cert manager needs around 1 minute to be ready. The helm chart
+will create Issuer and Certificate custom resource. The
+webhook of cert-manager will prevent from creating mentioned
+resources. To verify that cert manager is ready please follow
+[the verifying the installation](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation)
+
+The operator by default exposes metrics endpoint. By leveraging prometheus
+operator ServiceMonitor custom resource metrics can be automatically
+discovered.
+
+1. Install Redpanda operator CRDs:
+
+```sh
+kubectl apply -k 'https://github.com/redpanda-data/redpanda/src/go/k8s/config/crd?ref={{ template "chart.appVersion" . }}'
+```
+
+> The CRDs are decoupled from helm chart, so that helm release can be
+> removed without cascading deletion of underling custom resources.
+> Other argument for decoupling is that helm cli can incorrectly
+> patch the Custom Resource Definition.
+
+### Helm installation
+
+1. Install the Redpanda operator:
+
+> The example command should be invoked from `src/go/k8s/helm-chart/charts`
+
+```sh
+helm install --namespace redpanda-system --create-namespace redpanda-operator ./redpanda-operator
+```
+
+Alternative installation with kube-prometheus-stack that includes prometheus operator CRD
+```sh
+helm install --dependency-update \
+--namespace redpanda-system \
+--set monitoring.enabled=true \
+--create-namespace redpanda-operator ./redpanda-operator
+```
+
+Other instruction will be visible after installation.
+
+{{ template "chart.valuesSection" . }}

@@ -1,0 +1,12 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: additional-configuration
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  additionalConfiguration:
+    redpanda.enable_idempotence: "true"
+    redpanda.internal_topic_replication_factor: "3" # this is a change
+    pandaproxy_client.retries: "11"
+    schema_registry.schema_registry_api: "[{'name':'external','address':'0.0.0.0','port':8081}]"

@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: check-version
+  namespace: console-admin-api
+spec:
+  template:
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+            - -ex
+          args:
+            - >
+              url=http://console.$POD_NAMESPACE.svc.cluster.local:8080/api/cluster
+              res=$(curl --silent -L $url | grep -o '\"kafkaVersion\":[^,}]*' | grep -o '[^:]*$') &&
+              echo $res > /dev/termination-log &&
+              if [[ "$res" != '"Redpanda v'* ]]; then
+                exit 1;
+              fi
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

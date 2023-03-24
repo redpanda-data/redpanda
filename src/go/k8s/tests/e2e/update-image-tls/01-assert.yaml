@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kminion
+status:
+  availableReplicas: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-tls/step-1"
+  - command: /bin/bash -c "kubectl get pod -o json -n $NAMESPACE > ../../_e2e_artifacts/update-image-tls/step-1/pods.json"
+  - command: /bin/bash -c "kubectl describe pod -n $NAMESPACE > ../../_e2e_artifacts/update-image-tls/step-1/describe-pods.txt"
+  - command: /bin/bash -c "kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=kminion > ../../_e2e_artifacts/update-image-tls/step-1/kminion-logs.txt"
