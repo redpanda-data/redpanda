@@ -1061,7 +1061,8 @@ class RedpandaService(Service):
               parallel: bool = True,
               expect_fail: bool = False,
               auto_assign_node_id: bool = False,
-              omit_seeds_on_idx_one: bool = True):
+              omit_seeds_on_idx_one: bool = True,
+              node_config_overrides={}):
         """
         Start the service on all nodes.
 
@@ -1116,12 +1117,15 @@ class RedpandaService(Service):
             self.write_bootstrap_cluster_config()
 
         def start_one(node):
+            node_overrides = node_config_overrides[
+                node] if node in node_config_overrides else {}
             self.logger.debug("%s: starting node" % self.who_am_i(node))
             self.start_node(node,
                             first_start=first_start,
                             expect_fail=expect_fail,
                             auto_assign_node_id=auto_assign_node_id,
-                            omit_seeds_on_idx_one=omit_seeds_on_idx_one)
+                            omit_seeds_on_idx_one=omit_seeds_on_idx_one,
+                            override_cfg_params=node_overrides)
 
         self._for_nodes(to_start, start_one, parallel=parallel)
 
