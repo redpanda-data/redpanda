@@ -1799,7 +1799,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
 
     if (upl_res != cloud_storage::upload_result::success) {
         vlog(
-          _rtclog.error,
+          _rtclog.warn,
           "Failed to upload segment: {}, error: {}",
           upload.exposed_name,
           upl_res);
