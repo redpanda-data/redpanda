@@ -141,7 +141,6 @@ struct mux_state_machine_fixture {
 
     storage::log_config default_log_cfg() {
         return storage::log_config(
-          storage::log_config::storage_type::disk,
           _data_dir,
           100_MiB,
           storage::debug_sanitize_files::yes,

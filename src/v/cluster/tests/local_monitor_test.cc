@@ -44,10 +44,7 @@ local_monitor_fixture::local_monitor_fixture()
     _storage_node_api.start_single().get0();
 
     auto log_conf = storage::log_config{
-      storage::log_config::storage_type::disk,
-      "test.dir",
-      1024,
-      storage::debug_sanitize_files::yes};
+      "test.dir", 1024, storage::debug_sanitize_files::yes};
 
     auto kvstore_conf = storage::kvstore_config(
       1_MiB,

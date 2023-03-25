@@ -17,7 +17,6 @@
 
 struct fixture {
     storage::disk_log_builder b{storage::log_config(
-      storage::log_config::storage_type::disk,
       storage::random_dir(),
       1_GiB,
       storage::debug_sanitize_files::yes,

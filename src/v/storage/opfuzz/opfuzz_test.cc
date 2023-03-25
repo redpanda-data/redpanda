@@ -34,7 +34,6 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
     // BLOCK on logging so that we can make sense of the logs
     std::cout.setf(std::ios::unitbuf);
     storage::log_manager mngr = make_log_manager(storage::log_config(
-      storage::log_config::storage_type::disk,
       std::move(test_dir),
       200_MiB,
       storage::debug_sanitize_files::no,
@@ -83,7 +82,6 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     // BLOCK on logging so that we can make sense of the logs
     std::cout.setf(std::ios::unitbuf);
     storage::log_manager mngr = make_log_manager(storage::log_config(
-      storage::log_config::storage_type::disk,
       std::move(test_dir),
       200_MiB,
       storage::debug_sanitize_files::no,

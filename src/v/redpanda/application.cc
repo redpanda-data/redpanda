@@ -857,7 +857,6 @@ static storage::kvstore_config kvstore_config_from_global_config() {
 static storage::log_config
 manager_config_from_global_config(scheduling_groups& sgs) {
     return storage::log_config(
-      storage::log_config::storage_type::disk,
       config::node().data_directory().as_sstring(),
       config::shard_local_cfg().log_segment_size.bind(),
       config::shard_local_cfg().compacted_log_segment_size.bind(),
