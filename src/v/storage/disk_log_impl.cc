@@ -1750,7 +1750,7 @@ disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
         }
     }
 
-    auto ret = co_await ss::when_all_succeed(
+    auto [retention, available] = co_await ss::when_all_succeed(
       // reduce segment subject to retention policy
       ss::map_reduce(
         retention_segments,
@@ -1766,7 +1766,9 @@ disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
         [](size_t acc, usage u) { return acc + u.total(); }));
 
     co_return reclaim_size_limits{
-      .retention = std::get<0>(ret), .available = std::get<1>(ret)};
+      .retention = retention,
+      .available = retention + available,
+    };
 }
 
 } // namespace storage
