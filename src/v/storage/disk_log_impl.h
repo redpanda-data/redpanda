@@ -34,22 +34,6 @@
 
 namespace storage {
 
-/*
- * Report number of bytes available for reclaim under different scenarios.
- *
- * retention: number of bytes that would be reclaimed by applying
- *            the log's retention policy.
- *
- * available: number of bytes that could be safely reclaimed if the
- *            retention policy was ignored. for example reclaiming
- *            past the retention limits if the data being reclaimed
- *            has been uploaded to cloud storage.
- */
-struct reclaim_size_limits {
-    size_t retention{0};
-    size_t available{0};
-};
-
 class disk_log_impl final : public log::impl {
 public:
     using failure_probes = storage::log_failure_probes;
@@ -198,7 +182,7 @@ private:
 
     std::optional<model::offset> retention_offset(compaction_config);
 
-    ss::future<reclaim_size_limits> estimate_reclaim_size(compaction_config);
+    ss::future<usage_report> disk_usage(compaction_config);
 
 private:
     size_t max_segment_size() const;

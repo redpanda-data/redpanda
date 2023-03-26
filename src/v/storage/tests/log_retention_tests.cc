@@ -125,7 +125,12 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     }
 
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 2_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 2_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 2_MiB),
       20_KiB);
 
     // second segment
@@ -146,7 +151,12 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     // the first segment is now eligible for reclaim
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 3_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 3_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 3_MiB),
       20_KiB);
 
     // third segment
@@ -167,7 +177,12 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     // the first,second segment is now eligible for reclaim
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 4_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 4_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 4_MiB),
       20_KiB);
 
     // active segment
@@ -188,14 +203,22 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     // the first,second segment is now eligible for reclaim
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 5_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 5_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 5_MiB),
       20_KiB);
 
     builder | storage::garbage_collect(yesterday, 4_MiB);
 
     // right after gc runs there shouldn't be anything reclaimable
     BOOST_CHECK_EQUAL(
-      builder.gc_estimate(model::timestamp::now(), 0).get().retention, 0);
+      builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention,
+      0);
+    BOOST_CHECK_EQUAL(
+      builder.disk_usage(model::timestamp::now(), 0).get().usage.total(), 0);
 
     builder | storage::stop();
 

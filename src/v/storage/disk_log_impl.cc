@@ -1699,8 +1699,7 @@ log make_disk_backed_log(
     return log(ptr);
 }
 
-ss::future<reclaim_size_limits>
-disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
+ss::future<usage_report> disk_log_impl::disk_usage(compaction_config cfg) {
     std::optional<model::offset> max_offset;
     if (config().is_collectable()) {
         cfg = apply_overrides(cfg);
@@ -1742,6 +1741,7 @@ disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
      */
     fragmented_vector<segment_set::type> retention_segments;
     fragmented_vector<segment_set::type> available_segments;
+    fragmented_vector<segment_set::type> remaining_segments;
     for (auto& seg : _segs) {
         if (
           retention_offset.has_value()
@@ -1750,28 +1750,50 @@ disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
         } else if (seg->offsets().dirty_offset <= max_collectible) {
             available_segments.push_back(seg);
         } else {
-            break;
+            remaining_segments.push_back(seg);
         }
     }
 
-    auto [retention, available] = co_await ss::when_all_succeed(
+    auto [retention, available, remaining] = co_await ss::when_all_succeed(
       // reduce segment subject to retention policy
       ss::map_reduce(
         retention_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
-        size_t(0),
-        [](size_t acc, usage u) { return acc + u.total(); }),
+        usage{},
+        [](usage acc, usage u) { return acc + u; }),
 
       // reduce segments available for reclaim
       ss::map_reduce(
         available_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
-        size_t(0),
-        [](size_t acc, usage u) { return acc + u.total(); }));
+        usage{},
+        [](usage acc, usage u) { return acc + u; }),
 
-    co_return reclaim_size_limits{
-      .retention = retention,
-      .available = retention + available,
+      // reduce segments not available for reclaim
+      ss::map_reduce(
+        remaining_segments,
+        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        usage{},
+        [](usage acc, usage u) { return acc + u; }));
+
+    /*
+     * usage is the persistent size of on disk segment components (e.g. data and
+     * indicies) accumulated across all segments.
+     */
+    usage usage = retention + available + remaining;
+
+    /*
+     * reclaim report contains total amount of data reclaimable by retention
+     * policy or available for reclaim due to being in cloud storage tier.
+     */
+    reclaim_size_limits reclaim{
+      .retention = retention.total(),
+      .available = retention.total() + available.total(),
+    };
+
+    co_return usage_report{
+      .usage = usage,
+      .reclaim = reclaim,
     };
 }
 
