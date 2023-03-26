@@ -98,10 +98,6 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
     const char* input = nullptr;
     size_t input_sz = 0;
     size_t input_cursor = 0;
-    if (frag_i != b.end()) {
-        input = frag_i->get();
-        input_sz = frag_i->size();
-    }
 
     // We do not consume entire input chunks at once, to avoid
     // max_chunk_size input chunks resulting in >max_chunk_size output
@@ -111,13 +107,12 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
 
     iobuf ret;
     while (input_cursor < input_sz || frag_i != b.end()) {
-        if ((input_sz - input_cursor) == 0 && frag_i != b.end()) {
+        while ((input_sz - input_cursor) == 0 && frag_i != b.end()) {
+            input = frag_i->get();
+            input_sz = frag_i->size();
+            input_cursor = 0;
+
             frag_i++;
-            if (frag_i != b.end()) {
-                input = frag_i->get();
-                input_sz = frag_i->size();
-                input_cursor = 0;
-            }
         }
 
         size_t input_chunk_size = std::min(
@@ -249,7 +244,7 @@ iobuf lz4_frame_compressor::uncompress(iobuf const& input) {
             break;
         }
 
-        if (read_this_chunk == frag_i->size()) {
+        while (frag_i != input.end() && read_this_chunk == frag_i->size()) {
             read_this_chunk = 0;
             frag_i++;
         }
