@@ -415,7 +415,7 @@ ss::future<> disk_log_impl::do_compact(
           segment->reader().filename(),
           result);
         if (result.did_compact()) {
-            segment->invalidate_compaction_index_size();
+            segment->clear_cached_disk_usage();
             _compaction_ratio.update(result.compaction_ratio());
             co_return;
         }
@@ -531,6 +531,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 
     // the segment which will be expanded to replace
     auto target = segments.front();
+
+    target->clear_cached_disk_usage();
 
     // concatenate segments from the compaction range into replacement segment
     // backed by a staging file. the process is completed while holding a read
@@ -1754,14 +1756,14 @@ disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
         retention_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
         size_t(0),
-        std::plus<>()),
+        [](size_t acc, usage u) { return acc + u.total(); }),
 
       // reduce segments available for reclaim
       ss::map_reduce(
         available_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
         size_t(0),
-        std::plus<>()));
+        [](size_t acc, usage u) { return acc + u.total(); }));
 
     co_return reclaim_size_limits{
       .retention = std::get<0>(ret), .available = std::get<1>(ret)};

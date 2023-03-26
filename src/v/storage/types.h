@@ -394,4 +394,19 @@ struct compaction_result {
     friend std::ostream& operator<<(std::ostream&, const compaction_result&);
 };
 
+/*
+ * disk usage
+ *
+ * data: segment data
+ * index: offset/time index
+ * compaction: compaction index
+ */
+struct usage {
+    size_t data{0};
+    size_t index{0};
+    size_t compaction{0};
+
+    size_t total() const { return data + index + compaction; }
+};
+
 } // namespace storage

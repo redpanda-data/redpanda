@@ -105,12 +105,24 @@ ss::future<> segment::close() {
     }
 }
 
-ss::future<size_t> segment::persistent_size() {
+ss::future<usage> segment::persistent_size() {
+    usage u;
+
     /*
      * accumulate the size of the segment file and each index.
      */
-    const auto segment_size = file_size();
-    auto total = segment_size + segment_index::estimate_size(segment_size);
+    if (_data_disk_usage_size.has_value()) {
+        u.data = _data_disk_usage_size.value();
+    } else {
+        try {
+            _data_disk_usage_size = co_await ss::file_size(
+              _reader.path().string());
+            u.data = _data_disk_usage_size.value();
+        } catch (...) {
+        }
+    }
+
+    u.index = co_await _idx.disk_usage();
 
     /*
      * lazy load and cache the compaction index size. we could track this
@@ -119,17 +131,17 @@ ss::future<size_t> segment::persistent_size() {
      * will be used.
      */
     if (_compaction_index_size.has_value()) {
-        total += _compaction_index_size.value();
+        u.compaction = _compaction_index_size.value();
     } else {
         auto path = reader().path().to_compacted_index();
         try {
             _compaction_index_size = co_await ss::file_size(path.string());
-            total += _compaction_index_size.value();
+            u.compaction = _compaction_index_size.value();
         } catch (...) {
         }
     }
 
-    co_return total;
+    co_return u;
 }
 
 ss::future<size_t>
@@ -162,8 +174,16 @@ segment::remove_persistent_state(std::filesystem::path path) {
     co_return 0;
 }
 
+void segment::clear_cached_disk_usage() {
+    _idx.clear_cached_disk_usage();
+    _data_disk_usage_size.reset();
+    _compaction_index_size.reset();
+}
+
 ss::future<size_t> segment::remove_persistent_state() {
     vassert(is_closed(), "Cannot clear state from unclosed segment");
+
+    clear_cached_disk_usage();
 
     /*
      * the compaction index is included in the removal list, even if the topic
@@ -211,10 +231,11 @@ ss::future<> segment::do_release_appender(
         std::optional<compacted_index_writer>& compacted_index) {
           return appender->close()
             .then([this] { return _idx.flush(); })
-            .then([&compacted_index] {
+            .then([this, &compacted_index] {
                 if (compacted_index) {
                     return compacted_index->close();
                 }
+                clear_cached_disk_usage();
                 return ss::now();
             });
       });
@@ -344,7 +365,7 @@ ss::future<> segment::truncate(
       [this, prev_last_offset, physical, new_max_timestamp](
         ss::rwlock::holder h) {
           return do_truncate(prev_last_offset, physical, new_max_timestamp)
-            .finally([h = std::move(h)] {});
+            .finally([this, h = std::move(h)] { clear_cached_disk_usage(); });
       });
 }
 
@@ -510,6 +531,7 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
           const bool index_append_failed = index_fut.failed()
                                            && has_compaction_index();
           const bool has_error = append_fut.failed() || index_append_failed;
+          clear_cached_disk_usage();
           if (!has_error) {
               if (
                 !this->_first_write.has_value()
