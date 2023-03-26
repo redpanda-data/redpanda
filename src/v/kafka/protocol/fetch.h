@@ -72,6 +72,9 @@ struct fetch_request final {
         return data.session_epoch == initial_fetch_session_epoch
                || data.session_epoch == final_fetch_session_epoch;
     }
+    // Indicates that the consumer has rack_id set, the rack being set express
+    // an intent to read from the closest replica, including follower
+    bool has_rack_id() const { return data.rack_id != model::rack_id{""}; }
 
     /*
      * iterator over request partitions. this adapter iterator is used because
