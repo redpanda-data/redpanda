@@ -162,9 +162,7 @@ public:
 
     /*
      * return an estimate of how much data on disk is associated with this
-     * segment (e.g. the data file, indices, etc...). if the segment has been
-     * removed already (i.e. marked as a tombstone and closed) then the total
-     * amount of bytes actually removed from disk is reported.
+     * segment (e.g. the data file, indices, etc...).
      */
     ss::future<size_t> persistent_size();
 
@@ -211,12 +209,6 @@ private:
     ss::future<> do_compaction_index_batch(const model::record_batch&);
     void release_appender_in_background(readers_cache* readers_cache);
 
-    /*
-     * _removed_persistent_size is the total number of bytes removed when this
-     * segment is deleted. it is set once, after the segment is marked as a
-     * tombstone and closed.
-     */
-    std::optional<size_t> _removed_persistent_size;
     ss::future<size_t> remove_persistent_state(std::filesystem::path);
 
     struct appender_callbacks : segment_appender::callbacks {

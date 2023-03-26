@@ -96,24 +96,16 @@ ss::future<> segment::close() {
     co_await do_close();
 
     if (is_tombstone()) {
-        _removed_persistent_size = co_await remove_persistent_state();
+        auto size = co_await remove_persistent_state();
         vlog(
           stlog.debug,
           "Removed {} bytes for tombstone segment {}",
-          _removed_persistent_size.value(),
+          size,
           *this);
     }
 }
 
 ss::future<size_t> segment::persistent_size() {
-    /*
-     * this segment has been fully removed, and we can report the total amount
-     * of bytes that were removed from disk.
-     */
-    if (_removed_persistent_size.has_value()) {
-        co_return _removed_persistent_size.value();
-    }
-
     /*
      * accumulate the size of the segment file and each index.
      */
