@@ -299,7 +299,7 @@ public:
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
-    ss::future<reclaim_size_limits> gc_estimate(
+    ss::future<usage_report> disk_usage(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
     ss::future<std::optional<model::offset>>
