@@ -109,6 +109,12 @@ public:
     bool needs_persistence() const { return _needs_persistence; }
     index_state release_index_state() && { return std::move(_state); }
 
+    /*
+     * Get the on-disk device usage size of the index.
+     */
+    ss::future<size_t> disk_usage();
+    void clear_cached_disk_usage() { _disk_usage_size.reset(); }
+
 private:
     ss::future<bool> materialize_index_from_file(ss::file);
     ss::future<> flush_to_file(ss::file);
@@ -120,6 +126,9 @@ private:
     bool _needs_persistence{false};
     index_state _state;
     debug_sanitize_files _sanitize;
+
+    // invalidate size cache when on-disk size may change
+    std::optional<size_t> _disk_usage_size;
 
     model::timestamp _last_batch_max_timestamp;
 
