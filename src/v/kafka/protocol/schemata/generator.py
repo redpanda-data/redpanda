@@ -263,6 +263,8 @@ path_type_map = {
     "FetchRequestData": {
         "MaxWaitMs": ("std::chrono::milliseconds", "int32"),
         "IsolationLevel": ("model::isolation_level", "int8"),
+        "ReplicaId": ("model::node_id", "int32"),
+        "RackId": ("model::rack_id", "string"),
         "Topics": {
             "FetchPartitions": {
                 "PartitionIndex": ("model::partition_id", "int32"),
@@ -279,6 +281,7 @@ path_type_map = {
                 "LastStableOffset": ("model::offset", "int64"),
                 "LogStartOffset": ("model::offset", "int64"),
                 "Records": ("kafka::batch_reader", "fetch_record_set"),
+                "PreferredReadReplica": ("model::node_id", "int32"),
             },
         },
     },
