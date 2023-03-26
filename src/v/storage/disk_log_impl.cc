@@ -1701,15 +1701,10 @@ log make_disk_backed_log(
 
 ss::future<reclaim_size_limits>
 disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
-    if (!config().is_collectable()) {
-        co_return reclaim_size_limits();
-    }
-
-    cfg = apply_overrides(cfg);
-
-    auto max_offset = retention_offset(cfg);
-    if (!max_offset.has_value()) {
-        co_return reclaim_size_limits();
+    std::optional<model::offset> max_offset;
+    if (config().is_collectable()) {
+        cfg = apply_overrides(cfg);
+        max_offset = retention_offset(cfg);
     }
 
     /*
@@ -1733,15 +1728,24 @@ disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
      * more of the retention controls into a higher level location.
      */
     const auto max_collectible = stm_manager()->max_collectible_offset();
-    const auto retention_offset = std::min(max_offset.value(), max_collectible);
+    const auto retention_offset = [&]() -> std::optional<model::offset> {
+        if (max_offset.has_value()) {
+            return std::min(max_offset.value(), max_collectible);
+        }
+        return std::nullopt;
+    }();
 
     /*
-     * truncate_prefix() dry run
+     * truncate_prefix() dry run. the available segments are tabulated even when
+     * retention is not enabled data may be available in cloud storage and
+     * still be subject to reclaim in low disk space situations.
      */
     fragmented_vector<segment_set::type> retention_segments;
     fragmented_vector<segment_set::type> available_segments;
     for (auto& seg : _segs) {
-        if (seg->offsets().dirty_offset <= retention_offset) {
+        if (
+          retention_offset.has_value()
+          && seg->offsets().dirty_offset <= retention_offset.value()) {
             retention_segments.push_back(seg);
         } else if (seg->offsets().dirty_offset <= max_collectible) {
             available_segments.push_back(seg);
