@@ -142,7 +142,9 @@ iobuf gzip_compressor::compress(const iobuf& b) {
     iobuf ret;
     auto frag_i = b.begin();
     while (true) {
-        if (strm.avail_in == 0 && frag_i != b.end()) {
+        // If our input fragment is empty and we have more fragments, consume
+        // advance until we find a non-empty fragment.
+        while (strm.avail_in == 0 && frag_i != b.end()) {
             strm.next_in = const_cast<unsigned char*>(
               reinterpret_cast<const unsigned char*>(frag_i->get()));
             strm.avail_in = frag_i->size();
@@ -199,7 +201,7 @@ iobuf gzip_decompression_codec::inflate_to_iobuf() {
         default: /*do nothing*/;
         }
 
-        if (_stream.avail_in == 0) {
+        while (_stream.avail_in == 0 && _input_chunk != _input.end()) {
             _input_chunk++;
             if (_input_chunk != _input.end()) {
                 _stream.next_in = const_cast<unsigned char*>(
