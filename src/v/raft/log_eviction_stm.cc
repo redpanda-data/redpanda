@@ -68,6 +68,10 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
       last_evicted,
       _raft->ntp());
 
+    // Store where the local storage layer has requested eviction up to,
+    // irrespective of whether we can actually evict up to this point yet.
+    _requested_eviction_offset = last_evicted;
+
     model::offset max_collectible_offset
       = _stm_manager->max_collectible_offset();
     if (last_evicted > max_collectible_offset) {
