@@ -287,7 +287,6 @@ private:
     void register_self_test_routes();
     void register_cluster_routes();
     void register_shadow_indexing_routes();
-    void register_redpanda_service_restart_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
       std::unique_ptr<ss::httpd::request>, const request_auth_result&);
@@ -378,12 +377,11 @@ private:
     ss::future<ss::json::json_return_type>
       self_test_get_results_handler(std::unique_ptr<ss::httpd::request>);
 
-    ss::future<ss::json::json_return_type>
-      redpanda_services_restart_handler(std::unique_ptr<ss::httpd::request>);
-
     // Debug routes
     ss::future<ss::json::json_return_type>
       cloud_storage_usage_handler(std::unique_ptr<ss::httpd::request>);
+    ss::future<ss::json::json_return_type>
+      restart_service_handler(std::unique_ptr<ss::httpd::request>);
 
     ss::future<> throw_on_error(
       ss::httpd::request& req,

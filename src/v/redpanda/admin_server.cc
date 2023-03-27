@@ -69,7 +69,6 @@
 #include "redpanda/admin/api-doc/hbadger.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
-#include "redpanda/admin/api-doc/redpanda_services_restart.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
 #include "redpanda/admin/api-doc/shadow_indexing.json.h"
 #include "redpanda/admin/api-doc/status.json.h"
@@ -203,8 +202,6 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "debug");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "cluster");
-    rb->register_function(_server._routes, insert_comma);
-    rb->register_api_file(_server._routes, "redpanda_services_restart");
     register_config_routes();
     register_cluster_config_routes();
     register_raft_routes();
@@ -220,7 +217,6 @@ void admin_server::configure_admin_routes() {
     register_self_test_routes();
     register_cluster_routes();
     register_shadow_indexing_routes();
-    register_redpanda_service_restart_routes();
 }
 
 static json::validator make_set_replicas_validator() {
@@ -3531,7 +3527,14 @@ void admin_server::register_debug_routes() {
         -> ss::future<ss::json::json_return_type> {
           return cloud_storage_usage_handler(std::move(req));
       });
+
+    register_route<user>(
+      ss::httpd::debug_json::restart_service,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return restart_service_handler(std::move(req));
+      });
 }
+
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_balancer_status_handler(
   std::unique_ptr<ss::httpd::request> req) {
@@ -3927,8 +3930,7 @@ ss::future<> admin_server::restart_redpanda_service(service_kind service) {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::redpanda_services_restart_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+admin_server::restart_service_handler(std::unique_ptr<ss::httpd::request> req) {
     auto service_param = req->get_query_param("service");
     std::optional<service_kind> service = from_string_view<service_kind>(
       service_param);
@@ -3940,12 +3942,4 @@ admin_server::redpanda_services_restart_handler(
     vlog(logger.info, "Restart redpanda service: {}", to_string_view(*service));
     co_await restart_redpanda_service(*service);
     co_return ss::json::json_return_type(ss::json::json_void());
-}
-
-void admin_server::register_redpanda_service_restart_routes() {
-    register_route<superuser>(
-      ss::httpd::redpanda_services_restart_json::redpanda_services_restart,
-      [this](std::unique_ptr<ss::httpd::request> req) {
-          return redpanda_services_restart_handler(std::move(req));
-      });
 }

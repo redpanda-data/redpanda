@@ -14,19 +14,13 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.admin import Admin
 from rptest.services.redpanda import RedpandaService, ResourceSettings, LoggingConfig, SchemaRegistryConfig
 from ducktape.utils.util import wait_until
+from rptest.util import search_logs_with_timeout
 
 log_config = LoggingConfig('info',
                            logger_levels={
                                'admin_api_server': 'trace',
                                'kafka/client': 'trace'
                            })
-
-
-def check_service_restart(redpanda: RedpandaService, pattern: str):
-    wait_until(
-        lambda: redpanda.search_log_any(pattern),
-        timeout_sec=5,
-        err_msg=f"Failed to restart service. Searched pattern: {pattern}")
 
 
 class RestartServicesTest(RedpandaTest):
@@ -43,27 +37,22 @@ class RestartServicesTest(RedpandaTest):
             **kwargs)
 
     @cluster(num_nodes=3)
-    def test_restart_services(self):
+    def test_restart_services_failures(self):
         admin = Admin(self.redpanda)
 
         # Failure checks
         self.logger.debug("Check restart with no service name")
         try:
-            admin.redpanda_services_restart()
+            admin.restart_service()
+            assert False
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex)
             assert ex.response.status_code == requests.codes.bad_request
 
         self.logger.debug("Check restart with invalid service name")
         try:
-            admin.redpanda_services_restart(rp_service='foobar')
+            admin.restart_service(rp_service='foobar')
+            assert False
         except requests.exceptions.HTTPError as ex:
             self.logger.debug(ex)
             assert ex.response.status_code == requests.codes.not_found
-
-        self.logger.debug("Check schema registry restart")
-        result_raw = admin.redpanda_services_restart(
-            rp_service='schema-registry')
-        check_service_restart(self.redpanda, "Restarting the schema registry")
-        self.logger.debug(result_raw)
-        assert result_raw.status_code == requests.codes.ok
