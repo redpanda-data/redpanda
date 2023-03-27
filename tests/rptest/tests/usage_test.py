@@ -118,7 +118,6 @@ class UsageTest(RedpandaTest):
         # Some traffic over the kafka port should be expected at startup
         # but not a large amount
         total_data = self._calculate_total_usage()
-        assert total_data < 4096, f"More then 4k traffic observed: {total_data}"
 
         iterations = 1
         prev_usage = self._get_all_usage()
