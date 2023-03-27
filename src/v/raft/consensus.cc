@@ -80,7 +80,8 @@ offset_translator_batch_types(const model::ntp& ntp) {
         return {
           model::record_batch_type::raft_configuration,
           model::record_batch_type::archival_metadata,
-          model::record_batch_type::version_fence};
+          model::record_batch_type::version_fence,
+          model::record_batch_type::prefix_truncate};
     } else {
         return {};
     }

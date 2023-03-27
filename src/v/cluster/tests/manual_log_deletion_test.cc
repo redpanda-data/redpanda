@@ -58,8 +58,9 @@ struct manual_deletion_fixture : public raft_test_fixture {
     void maybe_init_eviction_stm(model::node_id id) {
         auto& member = gr.get_member(id);
         if (member.log->config().is_collectable()) {
+            auto& kvstore = member.storage.local().kvs();
             auto eviction_stm = std::make_unique<cluster::log_eviction_stm>(
-              member.consensus.get(), tstlog, member._as);
+              member.consensus.get(), tstlog, member._as, kvstore);
             eviction_stm->start().get0();
             eviction_stms.emplace(id, std::move(eviction_stm));
             member.kill_eviction_stm_cb

@@ -53,6 +53,7 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
       ss::sharded<archival::upload_housekeeping_service>&,
+      storage::kvstore&,
       config::binding<uint64_t>,
       std::optional<cloud_storage_clients::bucket_name> read_replica_bucket
       = std::nullopt);
@@ -86,7 +87,12 @@ public:
         return _raft->make_reader(std::move(config), deadline);
     }
 
-    model::offset start_offset() const { return _raft->start_offset(); }
+    model::offset start_offset() const {
+        if (_log_eviction_stm) {
+            return _log_eviction_stm->effective_start_offset();
+        }
+        return _raft->start_offset();
+    }
 
     /**
      * The returned value of last committed offset should not be used to
@@ -404,6 +410,8 @@ private:
     std::unique_ptr<cluster::topic_configuration> _topic_cfg;
 
     ss::sharded<archival::upload_housekeeping_service>& _upload_housekeeping;
+
+    storage::kvstore& _kvstore;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };

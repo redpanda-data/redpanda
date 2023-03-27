@@ -48,6 +48,7 @@ partition::partition(
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
+  storage::kvstore& kvstore,
   config::binding<uint64_t> max_concurrent_producer_ids,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
   : _raft(r)
@@ -65,7 +66,8 @@ partition::partition(
   , _cloud_storage_cache(cloud_storage_cache)
   , _cloud_storage_probe(
       ss::make_shared<cloud_storage::partition_probe>(_raft->ntp()))
-  , _upload_housekeeping(upload_hks) {
+  , _upload_housekeeping(upload_hks)
+  , _kvstore(kvstore) {
     auto stm_manager = _raft->log().stm_manager();
 
     if (is_id_allocator_topic(_raft->ntp())) {
@@ -74,7 +76,7 @@ partition::partition(
     } else if (is_tx_manager_topic(_raft->ntp())) {
         if (_raft->log_config().is_collectable()) {
             _log_eviction_stm = ss::make_lw_shared<cluster::log_eviction_stm>(
-              _raft.get(), clusterlog, stm_manager, _as);
+              _raft.get(), clusterlog, _as, _kvstore);
         }
 
         if (_is_tx_enabled) {
@@ -87,7 +89,7 @@ partition::partition(
     } else {
         if (_raft->log_config().is_collectable()) {
             _log_eviction_stm = ss::make_lw_shared<cluster::log_eviction_stm>(
-              _raft.get(), clusterlog, stm_manager, _as);
+              _raft.get(), clusterlog, _as, _kvstore);
         }
         const model::topic_namespace tp_ns(
           _raft->ntp().ns, _raft->ntp().tp.topic);
@@ -864,6 +866,9 @@ ss::future<> partition::remove_persistent_state() {
     }
     if (_id_allocator_stm) {
         co_await _id_allocator_stm->remove_persistent_state();
+    }
+    if (_log_eviction_stm) {
+        co_await _log_eviction_stm->remove_persistent_state();
     }
 }
 
