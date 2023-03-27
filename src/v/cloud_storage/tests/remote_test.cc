@@ -774,3 +774,42 @@ FIXTURE_TEST(test_filter_lifetime_2, s3_imposter_fixture) { // NOLINT
     flt.reset();
     BOOST_REQUIRE_THROW(subscription.get(), ss::broken_promise);
 }
+
+BOOST_AUTO_TEST_CASE(test_failure_injector_ctrl_string_parsing) {
+    using namespace cloud_storage;
+    failure_injector injector0;
+    using svec = decltype(injector0.get_types());
+    injector0.load_from_string("100:none");
+    BOOST_REQUIRE_EQUAL(injector0.get_frequency(), 100);
+    BOOST_REQUIRE_EQUAL(injector0.get_types().size(), 1);
+    BOOST_REQUIRE(injector0.get_types() == svec{injected_failure_type::none});
+
+    failure_injector injector1;
+    injector1.load_from_string("1:none:throttle");
+    BOOST_REQUIRE_EQUAL(injector1.get_frequency(), 1);
+    BOOST_REQUIRE_EQUAL(injector1.get_types().size(), 2);
+    auto expected = svec{
+      injected_failure_type::none, injected_failure_type::throttle};
+    BOOST_REQUIRE(injector1.get_types() == expected);
+
+    failure_injector injector2;
+    injector2.load_from_string("2:none:throttle:failure");
+    BOOST_REQUIRE_EQUAL(injector2.get_frequency(), 2);
+    BOOST_REQUIRE_EQUAL(injector2.get_types().size(), 3);
+    expected = svec{
+      injected_failure_type::none,
+      injected_failure_type::throttle,
+      injected_failure_type::failure};
+    BOOST_REQUIRE(injector2.get_types() == expected);
+
+    failure_injector injector3;
+    injector3.load_from_string("3:none:throttle:failure:no_such_key");
+    BOOST_REQUIRE_EQUAL(injector3.get_frequency(), 3);
+    BOOST_REQUIRE_EQUAL(injector3.get_types().size(), 4);
+    expected = svec{
+      injected_failure_type::none,
+      injected_failure_type::throttle,
+      injected_failure_type::failure,
+      injected_failure_type::no_such_key};
+    BOOST_REQUIRE(injector3.get_types() == expected);
+}

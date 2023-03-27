@@ -18,6 +18,8 @@
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
 #include "model/metadata.h"
+#include "random/fast_prng.h"
+#include "random/generators.h"
 #include "random/simple_time_jitter.h"
 #include "storage/segment_reader.h"
 #include "utils/intrusive_list_helpers.h"
@@ -26,10 +28,59 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
+#include <seastar/core/lowres_clock.hh>
+
+#include <boost/container/small_vector.hpp>
 
 #include <utility>
 
 namespace cloud_storage {
+
+enum class injected_failure_type {
+    // any non-retriable error
+    failure,
+    // retriable error
+    throttle,
+    // key-not-found error (only on supported requests)
+    no_such_key,
+    // no error but sleep will be applied
+    none,
+};
+
+static constexpr unsigned num_injected_failure_types = 5;
+
+class failure_injector {
+public:
+    /// The failure combines the actual failure code with
+    /// sleep to emulate different conditions.
+    struct failure;
+
+    /// Create disabled failure injector
+    failure_injector() = default;
+
+    /// Initialize object based on control string.
+    /// The failure injector could become enabled after
+    /// that.
+    void load_from_string(const char* ctrl_string);
+
+    /// Generate next error with configured frequency
+    ///
+    /// \param max_sleep max interval to sleep on failure
+    /// \return failure object or nullptr
+    std::unique_ptr<failure>
+    maybe_inject_failure(ss::lowres_clock::duration max_sleep);
+
+    int32_t get_frequency() const { return _freq; }
+
+    auto get_types() const { return _types; }
+
+private:
+    int32_t _freq{-1};
+    boost::container::
+      small_vector<injected_failure_type, num_injected_failure_types>
+        _types;
+    fast_prng _rng;
+};
 
 class materialized_segments;
 
@@ -430,6 +481,8 @@ private:
     config::binding<std::optional<ss::sstring>> _azure_shared_key_binding;
 
     model::cloud_storage_backend _cloud_storage_backend;
+
+    failure_injector _injector;
 };
 
 } // namespace cloud_storage
