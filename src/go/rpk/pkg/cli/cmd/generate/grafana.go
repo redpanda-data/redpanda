@@ -74,28 +74,31 @@ func newGrafanaDashboardCmd() *cobra.Command {
 		dashboard       string
 		datasource      string
 		metricsEndpoint string
+		skipDownload    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "grafana-dashboard",
 		Short: "Generate a Grafana dashboard for redpanda metrics",
 		Run: func(cmd *cobra.Command, args []string) {
-			switch {
-			case dashboardMap[dashboard] != "":
-				jsonOut, err := tryFromGithub(cmd.Context(), dashboard)
-				if err == nil {
-					fmt.Println(jsonOut)
+			if !skipDownload {
+				switch {
+				case dashboardMap[dashboard] != "":
+					jsonOut, err := tryFromGithub(cmd.Context(), dashboard)
+					if err == nil {
+						fmt.Println(jsonOut)
+						return
+					}
+					fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; generating default dashboard...\n", err)
+				case dashboard == "help":
+					fmt.Println(dashboardHelp)
 					return
+				default:
+					out.Die("unrecognized dashboard type name: %q; use --dashboard help for more info", dashboard)
 				}
-				fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; generating default dashboard...\n", err)
-			case dashboard == "help":
-				fmt.Println(dashboardHelp)
-				return
-			default:
-				out.Die("unrecognized dashboard type name: %q; use --dashboard help for more info", dashboard)
 			}
 
-			// If downloading from GitHub failed, then we go with the automatic
-			// dashboard generation.
+			// If downloading from GitHub failed or skip-download is enabled,
+			// then we go with the automatic dashboard generation.
 			if datasource == "" {
 				out.Die(`Error: required flag "datasource" not set`)
 			}
@@ -118,6 +121,8 @@ func newGrafanaDashboardCmd() *cobra.Command {
 	cmd.Flags().StringVar(&jobName, "job-name", "redpanda", "The prometheus job name by which to identify the redpanda nodes")
 
 	cmd.Flags().StringVar(&dashboard, "dashboard", "operations", "The name of the dashboard you wish to download; use --dashboard help for more info")
+	cmd.Flags().BoolVar(&skipDownload, "skip-download", false, "Skips the recommended dashboard download from the Redpanda repository and generates the dashboard automatically")
+	cmd.MarkFlagsMutuallyExclusive("dashboard", "skip-download")
 	return cmd
 }
 
