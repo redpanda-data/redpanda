@@ -47,15 +47,32 @@ var (
 		"memory",
 		"raft",
 	}
-	dashboardMap = map[string]string{
-		"consumer-metrics": "Kafka-Consumer-Metrics.json",
-		"consumer-offsets": "Kafka-Consumer-Offsets.json",
-		"operations":       "Redpanda-Ops-Dashboard.json",
-		"topic-metrics":    "Kafka-Topic-Metrics.json",
+	dashboardMap = map[string]*dashboardSpec{
+		"consumer-metrics": {
+			"Kafka-Consumer-Metrics.json",
+			"Allows for monitoring of Java Kafka consumers, using the Prometheus JMX Exporter and the Kafka Sample Configuration.",
+		},
+		"consumer-offsets": {
+			"Kafka-Consumer-Offsets.json",
+			"Metrics and KPIs that provide details of topic consumers and how far they are lagging behind the end of the log.",
+		},
+		"operations": {
+			"Redpanda-Ops-Dashboard.json",
+			"Provides an overview of KPIs for a Redpanda cluster with health indicators. This is suitable for ops or SRE to monitor on a daily or continuous basis.",
+		},
+		"topic-metrics": {
+			"Kafka-Topic-Metrics.json",
+			"Provides throughput, read/write rates, and on-disk sizes of each/all topics.",
+		},
 	}
 )
 
 const panelHeight = 6
+
+type dashboardSpec struct {
+	Location    string // The dashboard location (GH or local path).
+	Description string // The dashboard Description.
+}
 
 type RowSet struct {
 	rowTitles   []string
@@ -82,7 +99,7 @@ func newGrafanaDashboardCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			if !skipDownload {
 				switch {
-				case dashboardMap[dashboard] != "":
+				case dashboardMap[dashboard] != nil:
 					jsonOut, err := tryFromGithub(cmd.Context(), dashboard)
 					if err == nil {
 						fmt.Println(jsonOut)
@@ -90,7 +107,7 @@ func newGrafanaDashboardCmd() *cobra.Command {
 					}
 					fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; generating default dashboard...\n", err)
 				case dashboard == "help":
-					fmt.Println(dashboardHelp)
+					printDashboardHelp(dashboardMap)
 					return
 				default:
 					out.Die("unrecognized dashboard type name: %q; use --dashboard help for more info", dashboard)
@@ -112,7 +129,7 @@ func newGrafanaDashboardCmd() *cobra.Command {
 	deprecatedPrometheusURLFlag := "prometheus-url"
 
 	for _, flag := range []string{metricsEndpointFlag, deprecatedPrometheusURLFlag} {
-		cmd.Flags().StringVar(&metricsEndpoint, flag, "http://localhost:9644/metrics", "The redpanda metrics endpoint where to get the metrics metadata. i.e. redpanda_host:9644/metrics")
+		cmd.Flags().StringVar(&metricsEndpoint, flag, "http://localhost:9644/metrics", "The redpanda metrics endpoint where rpk should get the metrics metadata. i.e. redpanda_host:9644/metrics")
 	}
 	cmd.Flags().MarkDeprecated(deprecatedPrometheusURLFlag, fmt.Sprintf("Deprecated flag. Use --%v instead", metricsEndpointFlag))
 
@@ -120,9 +137,24 @@ func newGrafanaDashboardCmd() *cobra.Command {
 	cmd.Flags().StringVar(&datasource, datasourceFlag, "", "The name of the Prometheus datasource as configured in your grafana instance.")
 	cmd.Flags().StringVar(&jobName, "job-name", "redpanda", "The prometheus job name by which to identify the redpanda nodes")
 
-	cmd.Flags().StringVar(&dashboard, "dashboard", "operations", "The name of the dashboard you wish to download; use --dashboard help for more info")
-	cmd.Flags().BoolVar(&skipDownload, "skip-download", false, "Skips the recommended dashboard download from the Redpanda repository and generates the dashboard automatically")
-	cmd.MarkFlagsMutuallyExclusive("dashboard", "skip-download")
+	dashboardFlag, skipDownloadFlag := "dashboard", "skip-download"
+	cmd.Flags().StringVar(&dashboard, dashboardFlag, "operations", "The name of the dashboard you wish to download; use --dashboard help for more info")
+	cmd.Flags().BoolVar(&skipDownload, skipDownloadFlag, false, "Skips the recommended dashboard download from the Redpanda repository and generates the dashboard automatically")
+	cmd.MarkFlagsMutuallyExclusive(dashboardFlag, skipDownloadFlag)
+
+	// This portion of code is to register the flag autocompletion.
+	cmd.RegisterFlagCompletionFunc(dashboardFlag, func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		opts := make([]string, 0, len(dashboardMap))
+		for k, v := range dashboardMap {
+			// Cobra provides support for completion descriptions:
+			//     flagName -- Description of flag
+			// to do so we must add a \t between the flag and the Description.
+			s := fmt.Sprintf("%v\t%v", k, v.Description)
+			opts = append(opts, s)
+		}
+		return opts, cobra.ShellCompDirectiveDefault
+	})
+
 	return cmd
 }
 
@@ -133,7 +165,7 @@ func tryFromGithub(ctx context.Context, dashboard string) (string, error) {
 	)
 
 	var jsonOut string
-	return jsonOut, cl.Get(ctx, dashboardMap[dashboard], nil, &jsonOut)
+	return jsonOut, cl.Get(ctx, dashboardMap[dashboard].Location, nil, &jsonOut)
 }
 
 func executeGrafanaDashboard(metricsEndpoint string, datasource string) (string, error) {
@@ -851,17 +883,76 @@ func htmlHeader(str string) string {
 	)
 }
 
-const dashboardHelp = `You can select one of the following dashboard types:
+// printDashboardHelp prints the dashboard flag options based on the given spec.
+func printDashboardHelp(spec map[string]*dashboardSpec) {
+	var (
+		lines       []string // Each line of the dashboard spec.
+		maxLen      int      // maxLen is the maximum length until we reach the placeholder.
+		placeholder = "\x00" // This placeholder will be replaced with spacing once the alignment is calculated.
+	)
 
-  consumer-metrics:  Allows for monitoring of Java Kafka consumers, using the 
-                     Prometheus JMX Exporter and the Kafka Sample Configuration.
-  consumer-offsets:  Metrics and KPIs that provide details of topic consumers 
-                     and how far they are lagging behind the end of the log.
-  operations:        Provides an overview of KPIs for a Redpanda cluster with 
-  (default)          health indicators. This is suitable for ops or SRE to 
-                     monitor on a daily or continuous basis.
-  topic-metrics:     Provides throughput, read/write rates, and on-disk sizes of 
-                     each/all topics.
+	// First we loop over the spec and put the placeholder and get the key with
+	// the higher length.
+	for k, v := range spec {
+		line := fmt.Sprintf("  - %s: %s", k, placeholder)
 
-To learn more about these dashboards you can visit: 
-  https://github.com/redpanda-data/observability`
+		if len(line) > maxLen {
+			maxLen = len(line)
+		}
+
+		line += v.Description
+		lines = append(lines, line)
+	}
+
+	// Then we replace the placeholder with spacing + wrap the text if its more
+	// than 80 columns.
+	for i, line := range lines {
+		spacing := " "
+		pidx := strings.Index(line, placeholder)
+
+		// Check if we need additional spacing:
+		if pidx < maxLen-1 {
+			spacing = strings.Repeat(" ", maxLen-pidx)
+		}
+		// Finally, we replace the placeholder with spacing and wrap the line at
+		// 80 cols.
+		lines[i] = fmt.Sprintf("%s%s%s", line[:pidx], spacing, wrap(line[pidx+1:], 80, maxLen))
+	}
+
+	fmt.Printf(`You can select one of the following dashboard types:
+
+%s
+
+To learn more about these dashboards you can visit:
+  https://github.com/redpanda-data/observability
+`, strings.Join(lines, "\n"))
+}
+
+// wrap auxiliary function that wraps the string s to the given width with a
+// leading indent.
+func wrap(s string, width, indent int) string {
+	var wrapped string
+
+	// Split the string into words
+	words := strings.Fields(s)
+
+	// Initialize the line length to the length of the indent
+	lineLength := indent
+
+	// Loop through each word
+	for _, word := range words {
+		// If the word doesn't fit on the current line, add a newline and the
+		// indent
+		if lineLength+len(word)+1 > width {
+			wrapped += "\n" + strings.Repeat(" ", indent)
+			lineLength = indent
+		}
+
+		// Add the word to the current line
+		wrapped += word + " "
+		lineLength += len(word) + 1
+	}
+
+	// Return the wrapped string
+	return wrapped
+}
