@@ -55,7 +55,9 @@ public:
       ss::sharded<ss::abort_source>&,
       ss::sharded<node::local_monitor>&,
       ss::sharded<drain_manager>&,
-      ss::sharded<features::feature_table>&);
+      ss::sharded<features::feature_table>&,
+      ss::sharded<partition_leaders_table>&,
+      ss::sharded<topic_table>&);
 
     ss::future<> stop();
 
@@ -78,6 +80,8 @@ public:
       get_cluster_health_overview(model::timeout_clock::time_point);
 
     bool does_raft0_have_leader();
+
+    ss::future<> maybe_refresh_cloud_health_stats();
 
 private:
     /**
@@ -149,6 +153,8 @@ private:
     ss::sharded<ss::abort_source>& _as;
     ss::sharded<drain_manager>& _drain_manager;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<partition_leaders_table>& _partition_leaders_table;
+    ss::sharded<topic_table>& _topic_table;
 
     ss::lowres_clock::time_point _last_refresh;
     ss::lw_shared_ptr<abortable_refresh_request> _refresh_request;
@@ -159,6 +165,7 @@ private:
     storage::disk_space_alert _reports_disk_health
       = storage::disk_space_alert::ok;
     last_reply_cache_t _last_replies;
+    std::optional<size_t> _bytes_in_cloud_storage;
 
     ss::gate _gate;
     mutex _refresh_mutex;

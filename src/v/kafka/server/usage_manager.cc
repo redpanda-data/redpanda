@@ -11,8 +11,10 @@
 
 #include "kafka/server/usage_manager.h"
 
+#include "cluster/health_monitor_frontend.h"
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
+#include "ssx/future-util.h"
 #include "storage/api.h"
 #include "vlog.h"
 
@@ -114,12 +116,12 @@ void usage_window::reset(ss::lowres_system_clock::time_point now) {
 usage usage::operator+(const usage& other) const {
     return usage{
       .bytes_sent = bytes_sent + other.bytes_sent,
-      .bytes_received = bytes_received + other.bytes_received,
-      .bytes_cloud_storage = bytes_cloud_storage + other.bytes_cloud_storage};
+      .bytes_received = bytes_received + other.bytes_received};
 }
 
 usage_manager::accounting_fiber::accounting_fiber(
   ss::sharded<usage_manager>& um,
+  ss::sharded<cluster::health_monitor_frontend>& health_monitor,
   ss::sharded<storage::api>& storage,
   size_t usage_num_windows,
   std::chrono::seconds usage_window_width_interval,
@@ -127,6 +129,7 @@ usage_manager::accounting_fiber::accounting_fiber(
   : _usage_num_windows(usage_num_windows)
   , _usage_window_width_interval(usage_window_width_interval)
   , _usage_disk_persistance_interval(usage_disk_persistance_interval)
+  , _health_monitor(health_monitor.local())
   , _kvstore(storage.local().kvs())
   , _um(um) {
     vlog(
@@ -253,15 +256,60 @@ ss::future<> usage_manager::accounting_fiber::stop() {
     }
 }
 
-ss::future<> usage_manager::accounting_fiber::close_window() {
+void usage_manager::accounting_fiber::close_window() {
     const auto now = ss::lowres_system_clock::now();
-    _buckets[_current_window].u = co_await _um.map_reduce0(
-      [](usage_manager& um) { return um.sample(); },
-      _buckets[_current_window].u,
-      [](const usage& acc, const usage& x) { return acc + x; });
-    _buckets[_current_window].end = epoch_time_secs(now);
+    const auto now_ts = epoch_time_secs(now);
+    const auto before_close_idx = _current_window;
+    _buckets[before_close_idx].end = now_ts;
     _current_window = (_current_window + 1) % _buckets.size();
     _buckets[_current_window].reset(now);
+    /// The timer must progress so subsequent windows may be closed, async work
+    /// may hold that up for a significant amount of time, therefore async work
+    /// will be dispatched in the background and the result set written to the
+    /// correct bucket when it is eventually computed
+    ssx::spawn_with_gate(_gate, [this, before_close_idx, now_ts] {
+        return async_data_fetch(before_close_idx, now_ts)
+          .handle_exception([](std::exception_ptr eptr) {
+              vlog(
+                klog.debug,
+                "usage_manager async job exception encountered: {}",
+                eptr);
+          });
+    });
+}
+
+ss::future<> usage_manager::accounting_fiber::async_data_fetch(
+  size_t index, uint64_t close_ts) {
+    /// Method to write response to correct bucket, the index to write should be
+    /// \ref index, however if enough time has passed that window has been
+    /// overwritten, therefore the data can be omitted
+    const auto is_bucket_stale = [this, index, close_ts]() {
+        /// Check is simple, close_ts should be what it was when the window
+        /// closed, if it isn't, then the window is stale and was re-used, data
+        /// was overwritten.
+        return _buckets[index].end != close_ts;
+    };
+
+    /// Collect all kafka ingress/egress stats across all cores
+    usage kafka_stats = co_await _um.map_reduce0(
+      [](usage_manager& um) { return um.sample(); },
+      usage{},
+      [](const usage& acc, const usage& x) { return acc + x; });
+    if (!is_bucket_stale()) {
+        _buckets[index].u = kafka_stats;
+    }
+
+    /// Grab cloud storage stats via health monitor
+    const auto expiry = std::min<std::chrono::seconds>(
+      (_usage_window_width_interval * _usage_num_windows),
+      std::chrono::seconds(10));
+    co_await _health_monitor.maybe_refresh_cloud_health_stats();
+    auto health_overview = co_await _health_monitor.get_cluster_health_overview(
+      ss::lowres_clock::now() + expiry);
+    if (!is_bucket_stale()) {
+        _buckets[index].u.bytes_cloud_storage
+          = health_overview.bytes_in_cloud_storage;
+    }
 }
 
 std::chrono::seconds usage_manager::accounting_fiber::reset_state(
@@ -302,13 +350,16 @@ std::chrono::seconds usage_manager::accounting_fiber::reset_state(
     return last_window_delta;
 }
 
-usage_manager::usage_manager(ss::sharded<storage::api>& storage)
+usage_manager::usage_manager(
+  ss::sharded<cluster::health_monitor_frontend>& health_monitor,
+  ss::sharded<storage::api>& storage)
   : _usage_enabled(config::shard_local_cfg().enable_usage.bind())
   , _usage_num_windows(config::shard_local_cfg().usage_num_windows.bind())
   , _usage_window_width_interval(
       config::shard_local_cfg().usage_window_width_interval_sec.bind())
   , _usage_disk_persistance_interval(
       config::shard_local_cfg().usage_disk_persistance_interval_sec.bind())
+  , _health_monitor(health_monitor)
   , _storage(storage) {}
 
 ss::future<> usage_manager::reset() {
@@ -338,6 +389,7 @@ ss::future<> usage_manager::start_accounting_fiber() {
     }
     _accounting_fiber = std::make_unique<accounting_fiber>(
       this->container(),
+      _health_monitor,
       _storage,
       _usage_num_windows(),
       _usage_window_width_interval(),
