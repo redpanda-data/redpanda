@@ -64,11 +64,14 @@ type RedpandaReconciler struct {
 // flux additional resources
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=buckets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=source.toolkit.fluxcd.io,resources=gitrepositories,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=replicasets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 
 // redpanda resources
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpanda,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpanda/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpanda/finalizers,verbs=update
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=redpandas/finalizers,verbs=update
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *RedpandaReconciler) SetupWithManager(mgr ctrl.Manager) error {
