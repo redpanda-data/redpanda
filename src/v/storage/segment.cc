@@ -286,16 +286,21 @@ void segment::release_appender_in_background(readers_cache* readers_cache) {
        i = std::move(i)]() mutable {
           return readers_cache
             ->evict_range(_tracker.base_offset, _tracker.dirty_offset)
-            .then([this, a = std::move(a), c = std::move(c), i = std::move(i)](
-                    readers_cache::range_lock_holder) mutable {
-                return write_lock().then(
-                  [this, a = std::move(a), c = std::move(c), i = std::move(i)](
-                    ss::rwlock::holder h) mutable {
-                      return do_release_appender(
-                               std::move(a), std::move(c), std::move(i))
-                        .finally([h = std::move(h)] {});
-                  });
-            });
+            .then(
+              [this, a = std::move(a), c = std::move(c), i = std::move(i)](
+                readers_cache::range_lock_holder readers_cache_lock) mutable {
+                  return ss::do_with(
+                           std::move(readers_cache_lock),
+                           [this](auto&) { return write_lock(); })
+                    .then([this,
+                           a = std::move(a),
+                           c = std::move(c),
+                           i = std::move(i)](ss::rwlock::holder h) mutable {
+                        return do_release_appender(
+                                 std::move(a), std::move(c), std::move(i))
+                          .finally([h = std::move(h)] {});
+                    });
+              });
       });
 }
 
