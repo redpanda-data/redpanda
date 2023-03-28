@@ -56,7 +56,9 @@ static std::unique_ptr<adjacent_segment_merger>
 maybe_make_adjacent_segment_merger(
   ntp_archiver& self, retry_chain_logger& log, const storage::ntp_config& cfg) {
     std::unique_ptr<adjacent_segment_merger> result = nullptr;
-    if (cfg.is_archival_enabled() && !cfg.is_compacted()) {
+    if (
+      cfg.is_archival_enabled() && !cfg.is_compacted()
+      && !cfg.is_read_replica_mode_enabled()) {
         result = std::make_unique<adjacent_segment_merger>(self, log, true);
         result->set_enabled(config::shard_local_cfg()
                               .cloud_storage_enable_segment_merging.value());
@@ -104,9 +106,7 @@ ntp_archiver::ntp_archiver(
     // Override bucket for read-replica
     if (_parent.is_read_replica_mode_enabled()) {
         _bucket_override = _parent.get_read_replica_bucket();
-    }
-
-    if (
+    } else if (
       parent.log().config().is_archival_enabled()
       && !parent.log().config().is_compacted()) {
         _segment_merging_enabled.watch([this] {
