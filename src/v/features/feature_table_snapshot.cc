@@ -38,12 +38,13 @@ feature_table_snapshot feature_table_snapshot::from(const feature_table& ft) {
 void feature_table_snapshot::apply(feature_table& ft) const {
     ft.set_active_version(version);
     ft._license = license;
-    for (auto& snap_state : ft._feature_state) {
+    for (auto& cur_state : ft._feature_state) {
+        const auto& spec = cur_state.spec;
         auto snap_state_iter = std::find_if(
           states.begin(),
           states.end(),
-          [&snap_state](feature_state_snapshot const& s) {
-              return s.name == snap_state.spec.name;
+          [&spec](feature_state_snapshot const& s) {
+              return s.name == spec.name;
           });
         if (snap_state_iter == states.end()) {
             // The feature table refers to a feature name that the snapshot
@@ -52,10 +53,22 @@ void feature_table_snapshot::apply(feature_table& ft) const {
             vlog(
               featureslog.debug,
               "No state for feature '{}' in snapshot, upgrade in progress?",
-              snap_state.spec.name);
+              spec.name);
             continue;
         } else {
-            snap_state._state = snap_state_iter->state;
+            if (
+              spec.require_version
+                <= feature_table::get_earliest_logical_version()
+              && spec.available_rule == feature_spec::available_policy::always
+              && snap_state_iter->state < feature_state::state::active) {
+                // It is possible in theory that the snapshot is so old that
+                // applying it will result in disabling features that we enabled
+                // by fast-forwarding the table to earliest_logical_version on
+                // the first start. We want to avoid that.
+                continue;
+            }
+
+            cur_state._state = snap_state_iter->state;
         }
     }
 
