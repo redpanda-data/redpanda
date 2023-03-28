@@ -262,6 +262,14 @@ def decode_topic_command_serde(k_rdr: Reader, rdr: Reader):
         cmd['topic'] = k_rdr.read_string()
         cmd['partition'] = k_rdr.read_int32()
         cmd |= rdr.read_envelope(lambda rdr, _: {'force': rdr.read_bool()})
+    elif cmd['type'] == 11:
+        cmd['type_string'] = 'force_partition_reconfiguration'
+        cmd['namespace'] = k_rdr.read_string()
+        cmd['topic'] = k_rdr.read_string()
+        cmd['partition'] = k_rdr.read_int32()
+        cmd |= rdr.read_envelope(
+            lambda rdr, _:
+            {'replicas': rdr.read_serde_vector(read_broker_shard)})
     return cmd
 
 
