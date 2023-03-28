@@ -14,6 +14,7 @@ v_cc_library(
     uuid.cc
     request_auth.cc
     bottomless_token_bucket.cc
+    utf8.cc
   DEPS
     Seastar::seastar
     Hdrhistogram::hdr_histogram
