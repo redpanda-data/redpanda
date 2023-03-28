@@ -247,6 +247,10 @@ public:
     /// it will resume uploads.
     void complete_transfer_leadership();
 
+    const storage::ntp_config& ntp_config() const {
+        return _parent.log().config();
+    }
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";
