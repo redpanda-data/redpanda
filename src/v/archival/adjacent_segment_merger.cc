@@ -43,7 +43,12 @@ adjacent_segment_merger::adjacent_segment_merger(
   , _target_segment_size(
       config::shard_local_cfg().cloud_storage_segment_size_target.bind())
   , _min_segment_size(
-      config::shard_local_cfg().cloud_storage_segment_size_min.bind()) {}
+      config::shard_local_cfg().cloud_storage_segment_size_min.bind()) {
+    vassert(
+      !_archiver.ntp_config().is_read_replica_mode_enabled(),
+      "Constructed adjacent segment merger on read replica {}",
+      _archiver.get_ntp());
+}
 
 ss::future<> adjacent_segment_merger::stop() { return _gate.close(); }
 

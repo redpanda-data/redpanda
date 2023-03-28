@@ -234,6 +234,10 @@ public:
     /// it will resume uploads.
     void complete_transfer_leadership();
 
+    const storage::ntp_config& ntp_config() const {
+        return _parent.log().config();
+    }
+
 private:
     ss::future<bool> do_upload_local(
       upload_candidate_with_locks candidate,
