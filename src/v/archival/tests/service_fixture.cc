@@ -384,7 +384,7 @@ void segment_matcher<Fixture>::verify_segments(
     storage::concat_segment_reader_view v{
       segments, 0, segments.back()->size_bytes(), ss::default_priority_class()};
 
-    auto expected_size = std::reduce(
+    auto expected_size = std::accumulate(
       segments.begin(),
       segments.end(),
       size_t{0},
