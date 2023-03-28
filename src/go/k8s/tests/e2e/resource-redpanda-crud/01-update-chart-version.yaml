@@ -6,6 +6,3 @@ metadata:
 spec:
   chartRef:
     chartVersion: "3.0.6"
-  clusterSpec:
-    statefulset:
-      replicas: 1
