@@ -480,6 +480,8 @@ bool partition_manifest::contains(const segment_name& name) const {
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
+    const auto previous_start_offset = _start_offset;
+
     if (new_start_offset > _start_offset && !_segments.empty()) {
         auto it = _segments.upper_bound(new_start_offset);
         if (it == _segments.begin()) {
@@ -491,14 +493,44 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
             new_head_segment = std::next(new_head_segment);
         }
 
-        if (new_head_segment == _segments.end()) {
-            _start_offset = new_start_offset;
-        } else {
-            _start_offset = new_head_segment->second.base_offset;
+        model::offset advanced_start_offset
+          = new_head_segment == end() ? new_start_offset
+                                      : new_head_segment->second.base_offset;
+
+        if (previous_start_offset > advanced_start_offset) {
+            vlog(
+              cst_log.error,
+              "Previous start offset is greater than the new one: "
+              "previous_start_offset={}, computed_new_start_offset={}, "
+              "requested_new_start_offset={}",
+              previous_start_offset,
+              advanced_start_offset,
+              new_start_offset);
+            return false;
         }
 
-        for (auto iter = _segments.begin(); iter != new_head_segment; ++iter) {
-            subtract_from_cloud_log_size(iter->second.size_bytes);
+        _start_offset = advanced_start_offset;
+
+        auto previous_head_segment = segment_containing(previous_start_offset);
+        if (previous_head_segment == end()) {
+            // This branch should never be taken. It indicates that the
+            // in-memory manifest may be is in some sort of inconsistent state.
+            vlog(
+              cst_log.error,
+              "Previous start offset is not within segment in "
+              "manifest for {}: previous_start_offset={}",
+              _ntp,
+              previous_start_offset);
+            previous_head_segment = _segments.begin();
+        }
+
+        // Note that we start subtracting from the cloud log size from the
+        // previous head segments. This is required in order to account for
+        // the case when two `truncate` commands are applied sequentially,
+        // without a `cleanup_metadata` command in between to trim the list of
+        // segments.
+        for (auto it = previous_head_segment; it != new_head_segment; ++it) {
+            subtract_from_cloud_log_size(it->second.size_bytes);
         }
 
         return true;

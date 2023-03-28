@@ -2032,6 +2032,30 @@ SEASTAR_THREAD_TEST_CASE(test_cloud_log_size_updates) {
     BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 100);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_cloud_log_size_truncate_twice) {
+    // This test advances the start offset of the manifest twice
+    // in a row, without cleaning up the metadata in between.
+    //
+    // This scenario can occur when a leadership transfer happens
+    // after houskeeping replicates the truncate command, but before
+    // it gets to replicate the cleanup_metadata command. When the next
+    // leader runs housekeeping, it might choose to advance the start offset
+    // even further.
+
+    partition_manifest manifest;
+    manifest.update(make_manifest_stream(complete_manifest_json)).get();
+
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 11264);
+
+    manifest.advance_start_offset(model::offset{30});
+
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 8192);
+
+    manifest.advance_start_offset(model::offset{40});
+
+    BOOST_REQUIRE_EQUAL(manifest.cloud_log_size(), 4096);
+}
+
 SEASTAR_THREAD_TEST_CASE(test_deserialize_v1_manifest) {
     // Test the deserialisation of v1 partition manifests (prior to v23.2).
 
