@@ -189,8 +189,13 @@ sharded_store::project_ids(subject_schema schema) {
           return s.project_version(sub, id);
       });
 
+    const bool is_new = v_id.has_value();
+    if (is_new && schema.version != invalid_schema_version) {
+        v_id = schema.version;
+    }
+
     co_return insert_result{
-      v_id.value_or(invalid_schema_version), s_id.value(), v_id.has_value()};
+      v_id.value_or(invalid_schema_version), s_id.value(), is_new};
 }
 
 ss::future<bool> sharded_store::upsert(
