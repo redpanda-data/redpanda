@@ -15,6 +15,7 @@ import time
 import itertools
 from typing import Optional
 from ducktape.utils.util import wait_until
+from rptest.utils.functional import flat_map
 
 KclPartitionOffset = namedtuple(
     'KclPartitionOffset',
@@ -34,6 +35,10 @@ KclCreatePartitionsRequestTopic = namedtuple('KclCreatePartitionsRequestTopic',
 KclListPartitionReassignmentsResponse = namedtuple(
     'KclListPartitionReassignmentsResponse',
     ['topic', 'partition', 'replicas', 'adding_replicas', 'removing_replicas'])
+
+KclDeleteRecordsResponse = namedtuple(
+    'KclDeleteRecordsResponse',
+    ['broker', 'topic', 'partition', 'new_low_watermark', 'error'])
 
 
 class KCL:
@@ -216,6 +221,51 @@ class KCL:
 
         cmd = ['group', 'offset-delete', "-j", group] + request_args_w_flags
         return json.loads(self._cmd(cmd, attempts=5))
+
+    def delete_records(self,
+                       topic_partitions_offsets: dict[str, dict[int, int]],
+                       timeout_ms=1000):
+        """
+        topic_partitions_offsets: mapping of topic -> mapping of
+          partition_id to desired truncation offset
+
+        kcl admin delete-records foo:p0,o120 foo:p1,o3888 ...
+        """
+        def unfold(x):
+            topic, partitions_offsets = x
+            return [
+                f"{topic}:p{partition},o{offset}"
+                for partition, offset in partitions_offsets.items()
+            ]
+
+        if len(topic_partitions_offsets) == 0:
+            return []
+
+        cmd = ['-X', f'timeout_ms={timeout_ms}', 'admin', 'delete-records'
+               ] + flat_map(unfold, topic_partitions_offsets.items())
+        # Theres no json output support for this command
+        results = self._cmd(cmd, attempts=5).splitlines()[1:]
+        results = [x for x in results if len(x) > 0]
+
+        def parse_line(line):
+            regex = re.compile(r"(\d+)\s+(.*)\s+(\d+)\s+(-?\d+)\s+(.*)")
+            error_regex = re.compile(r"(-?\d+)\s+(.*)")
+            matches = regex.match(line)
+            if matches is None:
+                err_matches = error_regex.match(line)
+                if err_matches is None:
+                    raise RuntimeError(f"unexpected kcl output: {line}")
+                return KclDeleteRecordsResponse(None, None, None,
+                                                int(err_matches.group(1)),
+                                                err_matches.group(2).strip())
+
+            return KclDeleteRecordsResponse(int(matches.group(1)),
+                                            matches.group(2).strip(),
+                                            int(matches.group(3)),
+                                            int(matches.group(4)),
+                                            matches.group(5).strip())
+
+        return [parse_line(x.strip()) for x in results]
 
     def get_user_credentials_cmd(self,
                                  user_cred: Optional[dict[str, str]] = None):
