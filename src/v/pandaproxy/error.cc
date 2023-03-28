@@ -62,6 +62,8 @@ struct reply_error_category final : std::error_category {
             return "Invalid schema version";
         case reply_error_code::compatibility_level_invalid:
             return "Invalid compatibility level";
+        case reply_error_code::subject_version_operaton_not_permitted:
+            return "Overwrite new schema is not permitted.";
         case reply_error_code::subject_version_has_references:
             return "One or more references exist to the schema";
         case reply_error_code::subject_version_schema_id_already_exists:
