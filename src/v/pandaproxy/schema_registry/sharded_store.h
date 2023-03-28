@@ -50,6 +50,7 @@ public:
       schema_version version,
       is_deleted deleted);
 
+    ss::future<bool> has_schema(schema_id id);
     ss::future<subject_schema> has_schema(canonical_schema schema);
 
     ///\brief Return a schema definition by id.
