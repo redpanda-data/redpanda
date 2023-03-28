@@ -212,6 +212,235 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(
+  schema_registry_post_subjects_subject_version_with_version_no_compat,
+  pandaproxy_test_fixture) {
+    using namespace std::chrono_literals;
+
+    info("Connecting client");
+    auto client = make_schema_reg_client();
+
+    const ss::sstring schema_string_v2{
+      R"({
+  "schema": "\"string\"",
+  "version": 2,
+  "schemaType": "AVRO"
+})"};
+
+    const ss::sstring schema_int_v2{
+      R"({
+  "schema": "\"int\"",
+  "version": 2,
+  "schemaType": "AVRO"
+})"};
+
+    const ss::sstring schema_int_v3{
+      R"({
+  "schema": "\"int\"",
+  "version": 3,
+  "schemaType": "AVRO"
+})"};
+
+    const pps::subject subject{"test-key"};
+    put_config(client, subject, pps::compatibility_level::none);
+
+    {
+        info("Post schema as v2 (higher than next_version)");
+        auto res = post_schema(client, subject, schema_string_v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{2}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Repost schema v2 (expect success, existing schema id)");
+        auto res = post_schema(client, subject, schema_string_v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":1})");
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{2}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Overwrite schema v2 (expect success, new schema id)");
+        auto res = post_schema(client, subject, schema_int_v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{2}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+
+        res = http_request(
+          client,
+          fmt::format("/subjects/{}/versions/2/schema", subject()),
+          boost::beast::http::verb::get,
+          ppj::serialization_format::schema_registry_v1_json,
+          ppj::serialization_format::schema_registry_v1_json);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"("int")");
+    }
+
+    {
+        info("Post existing schema as v3 (expect existing schema id, no new "
+             "version)");
+        auto res = post_schema(client, subject, schema_int_v3);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{2}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+}
+
+FIXTURE_TEST(
+  schema_registry_post_subjects_subject_version_with_version_with_compat,
+  pandaproxy_test_fixture) {
+    using namespace std::chrono_literals;
+
+    info("Connecting client");
+    auto client = make_schema_reg_client();
+
+    const ss::sstring schema_v2{
+      R"({
+  "schema": "{\"type\": \"record\", \"name\": \"r1\", \"fields\" : [{\"name\": \"f1\", \"type\": \"string\"}]}",
+  "version": 2,
+  "schemaType": "AVRO"
+})"};
+
+    const ss::sstring schema_v3_no_default{
+      R"({
+  "schema": "{\"type\": \"record\", \"name\": \"r1\", \"fields\" : [{\"name\": \"f1\", \"type\": \"string\"}, {\"name\": \"f2\", \"type\": \"string\"}]}",
+  "version": 3,
+  "schemaType": "AVRO"
+})"};
+
+    const ss::sstring schema_v3{
+      R"({
+  "schema": "{\"type\": \"record\", \"name\": \"r1\", \"fields\" : [{\"name\": \"f1\", \"type\": \"string\"}, {\"name\": \"f2\", \"type\": \"string\", \"default\": \"f2\"}]}",
+  "version": 3,
+  "schemaType": "AVRO"
+})"};
+
+    pps::subject subject{"in-version-order"};
+    put_config(client, subject, pps::compatibility_level::backward);
+
+    {
+        info("Post schema v2");
+        auto res = post_schema(client, subject, schema_v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{2}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post schema v3_no_default (expect conflict)");
+        auto res = post_schema(client, subject, schema_v3_no_default);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::conflict);
+    }
+
+    {
+        info("Post schema v3");
+        auto res = post_schema(client, subject, schema_v3);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{
+          pps::schema_version{2}, pps::schema_version{3}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    subject = pps::subject{"in-reverse-order"};
+    put_config(client, subject, pps::compatibility_level::backward);
+
+    {
+        info("Post schema v3_no_default");
+        auto res = post_schema(client, subject, schema_v3_no_default);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{3}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post schema v2 (expect success, despite incompatibility)");
+        auto res = post_schema(client, subject, schema_v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{
+          pps::schema_version{2}, pps::schema_version{3}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post schema v3 (expect success)");
+        auto res = post_schema(client, subject, schema_v3);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{
+          pps::schema_version{2}, pps::schema_version{3}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+}
+
+FIXTURE_TEST(
   schema_registry_post_subjects_subject_version_invalid_payload,
   pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
