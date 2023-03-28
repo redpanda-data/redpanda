@@ -1,0 +1,11 @@
+---
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Redpanda
+metadata:
+  name: redpanda
+spec:
+  chartRef:
+    chartVersion: "3.0.6"
+  clusterSpec:
+    statefulset:
+      replicas: 1

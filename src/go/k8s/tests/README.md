@@ -23,6 +23,9 @@ If set, do not delete the mocked control plane or kind cluster.
 --skip-delete
 If set, do not delete resources created during tests (helpful for debugging test failures, implies --skip-cluster-delete).
 To run a single e2e test and keep the kind cluster and the kutt
+
+--test=<test-directory-to-run> 
+If set, will run tests found in <test-directory-to-run>.
 ```
 
 For example:

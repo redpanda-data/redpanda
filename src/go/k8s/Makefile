@@ -6,7 +6,7 @@ CONFIGURATOR_IMG_LATEST ?= "localhost/configurator:dev"
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
 # default redpanda image to load
-REDPANDA_IMG ?= "localhost/redpanda:dev"
+REDPANDA_IMG ?= "localhost/redpand-operator:dev"
 
 ifeq (aarch64,$(uname -m))
 TARGETARCH = arm64
