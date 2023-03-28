@@ -41,7 +41,7 @@ public:
         bool inserted;
     };
 
-    ss::future<insert_result> project_ids(canonical_schema schema);
+    ss::future<insert_result> project_ids(subject_schema schema);
 
     ss::future<bool> upsert(
       seq_marker marker,
