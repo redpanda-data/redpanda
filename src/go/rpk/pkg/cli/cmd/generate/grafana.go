@@ -12,12 +12,14 @@ package generate
 import (
 	"bytes"
 	"context"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -33,6 +35,8 @@ import (
 )
 
 var (
+	//go:embed grafana-dashboards/*
+	dashFS       embed.FS
 	jobName      string
 	hClient      = http.Client{Timeout: 10 * time.Second}
 	metricGroups = []string{
@@ -105,7 +109,15 @@ func newGrafanaDashboardCmd() *cobra.Command {
 						fmt.Println(jsonOut)
 						return
 					}
-					fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; generating default dashboard...\n", err)
+
+					fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; using static file...\n", err)
+					file, err := dashFS.ReadFile(filepath.Join("grafana-dashboards", dashboardMap[dashboard].Location))
+					if err == nil {
+						fmt.Println(string(file))
+						return
+					}
+
+					fmt.Fprintf(os.Stderr, "unable to print the static file: %v; generating default dashboard...\n", err)
 				case dashboard == "help":
 					printDashboardHelp(dashboardMap)
 					return
