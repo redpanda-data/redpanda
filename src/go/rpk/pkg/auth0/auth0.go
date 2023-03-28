@@ -130,7 +130,15 @@ type tokenResponse struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"token_type"`
 	ExpiresIn   int    `json:"expires_in"`
-	Scope       string `json:"scope"`
+}
+
+type getAuthURLResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURL         string `json:"verification_uri"`
+	VerificationURLComplete string `json:"verification_uri_complete"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
 }
 
 // tokenResponseError is the error returned from 4xx responses.
@@ -159,4 +167,45 @@ func (cl *Client) GetToken(ctx context.Context, clientID, clientSecret string) (
 
 	var response tokenResponse
 	return response, cl.httpCl.PostForm(ctx, path, nil, form, &response)
+}
+
+func (cl *Client) GetDeviceToken(ctx context.Context, authAppClientID, deviceCode string) (token tokenResponse, err error) {
+	path := "/oauth/token"
+	body := struct {
+		ClientID   string `json:"client_id"`
+		DeviceCode string `json:"device_code"`
+		GrantType  string `json:"grant_type"`
+	}{authAppClientID, deviceCode, "urn:ietf:params:oauth:grant-type:device_code"}
+
+	var response tokenResponse
+	return response, cl.httpCl.Post(ctx, path, nil, "application/json", body, &response)
+}
+
+func (cl *Client) InitDeviceAuthorization(ctx context.Context, clientID string) (token getAuthURLResponse, err error) {
+	path := "/oauth/device/code"
+	body := struct {
+		ClientID string `json:"client_id"`
+	}{clientID}
+
+	var response getAuthURLResponse
+	return response, cl.httpCl.Post(ctx, path, nil, "application/json", body, &response)
+}
+
+func (cl *Client) WaitForToken(ctx context.Context, deviceCode string, authAppClientID string, interval int) (token string, err error) {
+	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		token, err := cl.GetDeviceToken(ctx, authAppClientID, deviceCode)
+		if err == nil {
+			return token.AccessToken, nil
+		}
+		if rte := (*tokenResponseError)(nil); errors.As(err, &rte) {
+			switch rte.Err {
+			case "authorization_pending", "slow_down":
+			default:
+				return "", fmt.Errorf("unable to request authorization token: %v, please try again or contact support", rte.Err)
+			}
+		}
+	}
+	return "", fmt.Errorf("unexpected error while waiting for token: %v", err)
 }
