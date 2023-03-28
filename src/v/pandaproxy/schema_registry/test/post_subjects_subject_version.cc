@@ -124,6 +124,13 @@ FIXTURE_TEST(
   "schemaType": "AVRO"
 })"};
 
+    const ss::sstring schema_2_as_4{
+      R"({
+  "schema": "\"string\"",
+  "id": 4,
+  "schemaType": "AVRO"
+})"};
+
     const ss::sstring schema_4{
       R"({
   "schema": "\"int\"",
@@ -155,6 +162,20 @@ FIXTURE_TEST(
         std::vector<pps::schema_version> expected{pps::schema_version{1}};
         auto versions = get_body_versions(res.body);
         BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post schema 4 as key with id 2 (expect error 42205)");
+        auto res = post_schema(client, subject, schema_2_as_4);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(),
+          boost::beast::http::status::unprocessable_entity);
+        auto eb = get_error_body(res.body);
+        BOOST_REQUIRE(
+          eb.ec
+          == pp::reply_error_code::subject_version_schema_id_already_exists);
+        BOOST_REQUIRE_EQUAL(
+          eb.message, R"(Overwrite new schema with id 4 is not permitted.)");
     }
 
     {
