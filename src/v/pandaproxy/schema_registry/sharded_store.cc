@@ -162,6 +162,13 @@ sharded_store::project_ids(subject_schema schema) {
                 "Schema already registered with id {} instead of input id {}",
                 s_id.value()(),
                 schema.id())));
+        } else if (co_await has_schema(schema.id)) {
+            // The supplied id already exists, but the schema is different
+            co_return ss::coroutine::return_exception(exception(
+              error_code::subject_version_schema_id_already_exists,
+              fmt::format(
+                "Overwrite new schema with id {} is not permitted.",
+                schema.id())));
         } else {
             // Use the supplied id
             s_id = schema.id;
@@ -201,6 +208,13 @@ ss::future<bool> sharded_store::upsert(
       version,
       id,
       deleted);
+}
+
+ss::future<bool> sharded_store::has_schema(schema_id id) {
+    co_return co_await _store.invoke_on(
+      shard_for(id), _smp_opts, [id](store& s) {
+          return s.get_schema_definition(id).has_value();
+      });
 }
 
 ss::future<subject_schema> sharded_store::has_schema(canonical_schema schema) {
