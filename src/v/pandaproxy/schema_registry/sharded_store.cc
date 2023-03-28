@@ -154,7 +154,20 @@ sharded_store::project_ids(subject_schema schema) {
     auto s_id = co_await _store.map_reduce0(
       map, std::optional<schema_id>{}, reduce);
 
-    if (!s_id) {
+    if (schema.id != invalid_schema_id) {
+        if (s_id.has_value() && s_id != schema.id) {
+            co_return ss::coroutine::return_exception(exception(
+              error_code::subject_version_schema_id_already_exists,
+              fmt::format(
+                "Schema already registered with id {} instead of input id {}",
+                s_id.value()(),
+                schema.id())));
+        } else {
+            // Use the supplied id
+            s_id = schema.id;
+            vlog(plog.debug, "project_ids: using supplied ID {}", s_id.value());
+        }
+    } else if (!s_id) {
         // New schema, project an ID for it.
         s_id = co_await project_schema_id();
         vlog(plog.debug, "project_ids: projected new ID {}", s_id.value());
