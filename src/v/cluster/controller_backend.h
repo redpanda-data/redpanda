@@ -270,6 +270,20 @@ private:
 
     // Topics
     ss::future<> bootstrap_controller_backend();
+    /**
+     * Function that will clean orphan topic files on redpanda startup
+     * Orphan topic files is files that left on disk after some node
+     * manipullations and redpanda doesn't know about these files, so it is
+     * impossible to remove them with default approach. Currently we may leave
+     * orphan topic files when we restart redpanda while partition deletion
+     * operation was evaluating but hasn't finished yet.
+     * We assume that we can leave orphan files only on redpanda restart
+     * so we run clean process on startup, after bootstrap when redpanda
+     * already knows about all topics that it should containt on disk
+     **/
+    ss::future<> clear_orphan_topic_files(
+      model::revision_id bootstrap_revision,
+      absl::flat_hash_map<model::ntp, model::revision_id> topic_table_snapshot);
     void start_topics_reconciliation_loop();
 
     ss::future<> fetch_deltas();
