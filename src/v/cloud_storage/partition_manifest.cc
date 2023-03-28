@@ -189,13 +189,24 @@ partition_manifest::lw_segment_meta::convert(const segment_meta& m) {
       .committed_offset = m.committed_offset,
       .archiver_term = m.archiver_term,
       .segment_term = m.segment_term,
-      .size_bytes = m.sname_format == segment_name_format::v2 ? m.size_bytes
-                                                              : 0,
+      .size_bytes = m.sname_format == segment_name_format::v1 ? 0
+                                                              : m.size_bytes,
+      .sname_format = m.sname_format,
     };
 }
 
 segment_meta partition_manifest::lw_segment_meta::convert(
   const partition_manifest::lw_segment_meta& lw) {
+    // default the name format to v1
+    auto sname_format = segment_name_format::v1;
+
+    // if we have an explicit format other than the default then use it,
+    // otherwise derive from size_bytes
+    if (lw.sname_format != segment_name_format::v1) {
+        sname_format = lw.sname_format;
+    } else if (lw.size_bytes != 0) {
+        sname_format = segment_name_format::v2;
+    }
     return segment_meta{
       .size_bytes = lw.size_bytes,
       .base_offset = lw.base_offset,
@@ -203,8 +214,7 @@ segment_meta partition_manifest::lw_segment_meta::convert(
       .ntp_revision = lw.ntp_revision,
       .archiver_term = lw.archiver_term,
       .segment_term = lw.segment_term,
-      .sname_format = lw.size_bytes == 0 ? segment_name_format::v1
-                                         : segment_name_format::v2,
+      .sname_format = sname_format,
     };
 }
 
@@ -363,6 +373,8 @@ segment_name partition_manifest::generate_remote_segment_name(
         return segment_name(
           ssx::sformat("{}-{}-v1.log", val.base_offset(), val.segment_term()));
     case segment_name_format::v2:
+        [[fallthrough]];
+    case segment_name_format::v3:
         // Use new stlyle format ".../base-committed-term-size-v1.log"
         return segment_name(ssx::sformat(
           "{}-{}-{}-{}-v1.log",
@@ -939,16 +951,15 @@ struct partition_manifest_handler
                 if (!_replaced) {
                     _replaced = std::make_unique<replaced_segments_list>();
                 }
-                // In lw_segment_meta the sname_format field is encoded using
-                // the size_bytes field. For v1 name format we don't need
-                // size_bytes so we can set it to 0 to represent the
-                // sname_format field. For v2 we actually need to use both
-                // size_bytes and committed_offset. This code uses segment_meta
-                // to represent decoded elements from both 'segments' and
-                // 'replaced' fields. Because of that we need to do this trick.
-                _meta.sname_format = _meta.size_bytes != 0
-                                       ? segment_name_format::v2
-                                       : segment_name_format::v1;
+
+                // Set version to v2 if not set explicitly and size_bytes is non
+                // zero.
+                if (
+                  _meta.sname_format == segment_name_format::v1
+                  && _meta.size_bytes != 0) {
+                    _meta.sname_format = segment_name_format::v2;
+                }
+
                 _replaced->push_back(
                   partition_manifest::lw_segment_meta::convert(_meta));
                 _state = state::expect_replaced_path;
@@ -1428,6 +1439,11 @@ void partition_manifest::serialize_removed_segment_meta(
     }
     w.Key("segment_term");
     w.Int64(meta.segment_term());
+
+    w.Key("sname_format");
+    using name_format_type = std::underlying_type<segment_name_format>::type;
+    w.Int64(static_cast<name_format_type>(meta.sname_format));
+
     w.EndObject();
 }
 

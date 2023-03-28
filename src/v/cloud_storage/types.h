@@ -48,7 +48,7 @@ using local_segment_path
 using connection_limit = named_type<size_t, struct archival_connection_limit_t>;
 
 /// Version of the segment name format
-enum class segment_name_format : int16_t { v1 = 1, v2 = 2 };
+enum class segment_name_format : int16_t { v1 = 1, v2 = 2, v3 = 3 };
 
 std::ostream& operator<<(std::ostream& o, const segment_name_format& r);
 

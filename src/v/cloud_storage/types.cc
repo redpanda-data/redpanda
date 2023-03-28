@@ -69,6 +69,8 @@ std::ostream& operator<<(std::ostream& o, const segment_name_format& r) {
     case segment_name_format::v2:
         o << "{v2}";
         break;
+    case segment_name_format::v3:
+        o << "{v3}";
     }
     return o;
 }

@@ -322,6 +322,93 @@ FIXTURE_TEST(test_snapshot_loading, archival_metadata_stm_base_fixture) {
     archival_stm.stop().get();
 }
 
+FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
+    start_raft();
+    auto& ntp_cfg = _raft->log_config();
+    partition_manifest m(ntp_cfg.ntp(), ntp_cfg.get_initial_revision());
+
+    // original segments
+    m.add(
+      segment_name("0-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .sname_format = cloud_storage::segment_name_format::v1,
+      });
+
+    m.add(
+      segment_name("100-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(100),
+        .committed_offset = model::offset(199),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .sname_format = cloud_storage::segment_name_format::v2,
+      });
+
+    m.add(
+      segment_name("200-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(200),
+        .committed_offset = model::offset(299),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .sname_format = cloud_storage::segment_name_format::v3,
+      });
+
+    // replaced segments
+    m.add(
+      segment_name("0-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(0),
+        .committed_offset = model::offset(99),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .sname_format = cloud_storage::segment_name_format::v1,
+      });
+
+    m.add(
+      segment_name("100-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(100),
+        .committed_offset = model::offset(199),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .sname_format = cloud_storage::segment_name_format::v2,
+      });
+
+    m.add(
+      segment_name("200-1-v1.log"),
+      segment_meta{
+        .base_offset = model::offset(200),
+        .committed_offset = model::offset(299),
+        .archiver_term = model::term_id(1),
+        .segment_term = model::term_id(1),
+        .sname_format = cloud_storage::segment_name_format::v3,
+      });
+
+    m.advance_insync_offset(model::offset{42});
+    cluster::archival_metadata_stm::make_snapshot(ntp_cfg, m, model::offset{42})
+      .get();
+
+    cluster::archival_metadata_stm archival_stm(
+      _raft.get(), cloud_api.local(), feature_table.local(), logger);
+
+    archival_stm.start().get();
+    auto action = ss::defer([&archival_stm] { archival_stm.stop().get(); });
+    wait_for_confirmed_leader();
+
+    auto replaced = archival_stm.manifest().replaced_segments();
+    BOOST_REQUIRE_EQUAL(
+      replaced[0].sname_format, cloud_storage::segment_name_format::v1);
+    BOOST_REQUIRE_EQUAL(
+      replaced[1].sname_format, cloud_storage::segment_name_format::v2);
+    BOOST_REQUIRE_EQUAL(
+      replaced[2].sname_format, cloud_storage::segment_name_format::v3);
+}
+
 FIXTURE_TEST(
   test_archival_stm_segment_truncate, archival_metadata_stm_fixture) {
     using lw_segment_meta = cloud_storage::partition_manifest::lw_segment_meta;
