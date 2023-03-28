@@ -187,6 +187,7 @@ ss::future<> ntp_archiver::upload_until_abort() {
           .handle_exception_type([](const ss::sleep_aborted&) {})
           .handle_exception_type([](const ss::gate_closed_exception&) {})
           .handle_exception_type([](const ss::broken_semaphore&) {})
+          .handle_exception_type([](const ss::broken_named_semaphore&) {})
           .handle_exception_type([this](const ss::semaphore_timed_out& e) {
               vlog(
                 _rtclog.warn,
@@ -240,6 +241,8 @@ ss::future<> ntp_archiver::sync_manifest_until_abort() {
             co_await sync_manifest_until_term_change()
               .handle_exception_type(
                 [](const ss::abort_requested_exception&) {})
+              .handle_exception_type([](const ss::broken_semaphore&) {})
+              .handle_exception_type([](const ss::broken_named_semaphore&) {})
               .handle_exception_type([](const ss::sleep_aborted&) {})
               .handle_exception_type([](const ss::gate_closed_exception&) {});
         } catch (const ss::semaphore_timed_out& e) {
