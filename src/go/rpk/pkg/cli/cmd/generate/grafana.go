@@ -141,7 +141,7 @@ func newGrafanaDashboardCmd() *cobra.Command {
 	deprecatedPrometheusURLFlag := "prometheus-url"
 
 	for _, flag := range []string{metricsEndpointFlag, deprecatedPrometheusURLFlag} {
-		cmd.Flags().StringVar(&metricsEndpoint, flag, "http://localhost:9644/metrics", "The redpanda metrics endpoint where rpk should get the metrics metadata. i.e. redpanda_host:9644/metrics")
+		cmd.Flags().StringVar(&metricsEndpoint, flag, "http://localhost:9644/public_metrics", "The redpanda metrics endpoint where rpk should get the metrics metadata. i.e. redpanda_host:9644/metrics")
 	}
 	cmd.Flags().MarkDeprecated(deprecatedPrometheusURLFlag, fmt.Sprintf("Deprecated flag. Use --%v instead", metricsEndpointFlag))
 
