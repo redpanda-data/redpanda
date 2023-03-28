@@ -28,6 +28,7 @@ const (
 	envAuthURL          = "RPK_CLOUD_AUTH_URL"
 	envAuthAudience     = "RPK_CLOUD_AUTH_AUDIENCE"
 	envCloudURL         = "RPK_CLOUD_URL"
+	envAuthAppClientId  = "RPK_AUTH_APP_CLIENT_ID"
 	envSkipVersionCheck = "RPK_CLOUD_SKIP_VERSION_CHECK"
 )
 
@@ -76,6 +77,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		{envAuthURL, "", &cfg.AuthURL},
 		{envAuthAudience, "", &cfg.AuthAudience},
 		{envCloudURL, "", &cfg.CloudURL},
+		{envAuthAppClientId, "", &cfg.AuthAppClientId},
 		{envSkipVersionCheck, "", &cfg.SkipVersionCheck},
 	} {
 		if v, ok := os.LookupEnv(override.env); ok && len(v) > 0 {

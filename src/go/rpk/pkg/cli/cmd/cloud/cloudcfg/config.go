@@ -39,6 +39,7 @@ type Config struct {
 	AuthURL          string `yaml:"-"`
 	AuthAudience     string `yaml:"-"`
 	CloudURL         string `yaml:"-"`
+	AuthAppClientId  string `yaml:"-"`
 	SkipVersionCheck string `yaml:"-"`
 }
 
