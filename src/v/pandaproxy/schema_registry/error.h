@@ -29,6 +29,7 @@ enum class error_code {
     subject_version_soft_deleted,
     subject_version_not_deleted,
     subject_version_has_references,
+    subject_version_schema_id_already_exists,
     subject_schema_invalid,
     write_collision,
     topic_parse_error,
