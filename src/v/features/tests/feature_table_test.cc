@@ -10,6 +10,7 @@
  */
 
 #include "features/feature_table.h"
+#include "features/feature_table_snapshot.h"
 #include "test_utils/fixture.h"
 #include "vlog.h"
 
@@ -301,4 +302,36 @@ FIXTURE_TEST(feature_table_bootstrap, feature_table_fixture) {
       ft.get_state(feature::cloud_retention).get_state()
       == feature_state::state::active);
     BOOST_REQUIRE(ft.is_active(feature::cloud_retention));
+}
+
+// Test that applying an old snapshot doesn't disable features that we
+// auto-enabled when fast-forwarding to the earliest_logical_version.
+FIXTURE_TEST(feature_table_old_snapshot, feature_table_fixture) {
+    bootstrap_active_version(
+      features::feature_table::get_earliest_logical_version());
+
+    features::feature_table_snapshot snapshot;
+    snapshot.version = features::feature_table::get_earliest_logical_version();
+    snapshot.states = {
+      features::feature_state_snapshot{
+        .name = "central_config",
+        .state = feature_state::state::available,
+      },
+      features::feature_state_snapshot{
+        .name = "mtls_authentication",
+        .state = feature_state::state::active,
+      },
+    };
+
+    snapshot.apply(ft);
+
+    // Fast-forwarded feature should still be active.
+    BOOST_CHECK(
+      ft.get_state(feature::central_config).get_state()
+      == feature_state::state::active);
+    // A feature with explicit available_policy should be activated by the
+    // snapshot.
+    BOOST_CHECK(
+      ft.get_state(feature::mtls_authentication).get_state()
+      == feature_state::state::active);
 }
