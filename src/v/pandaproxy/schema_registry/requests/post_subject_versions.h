@@ -34,6 +34,8 @@ class post_subject_versions_request_handler
         empty = 0,
         record,
         schema,
+        id,
+        version,
         schema_type,
         references,
         reference,
@@ -53,7 +55,11 @@ class post_subject_versions_request_handler
 
 public:
     using Ch = typename json::base_handler<Encoding>::Ch;
-    using rjson_parse_result = unparsed_schema;
+    struct rjson_parse_result {
+        unparsed_schema def;
+        std::optional<schema_id> id;
+        std::optional<schema_version> version;
+    };
     rjson_parse_result result;
 
     explicit post_subject_versions_request_handler(subject sub)
@@ -66,6 +72,8 @@ public:
         case state::record: {
             std::optional<state> s{string_switch<std::optional<state>>(sv)
                                      .match("schema", state::schema)
+                                     .match("id", state::id)
+                                     .match("version", state::version)
                                      .match("schemaType", state::schema_type)
                                      .match("references", state::references)
                                      .default_match(std::nullopt)};
@@ -87,6 +95,8 @@ public:
         }
         case state::empty:
         case state::schema:
+        case state::id:
+        case state::version:
         case state::schema_type:
         case state::references:
         case state::reference_name:
@@ -99,6 +109,16 @@ public:
 
     bool Uint(int i) {
         switch (_state) {
+        case state::id: {
+            result.id = schema_id{i};
+            _state = state::record;
+            return true;
+        }
+        case state::version: {
+            result.version = schema_version{i};
+            _state = state::record;
+            return true;
+        }
         case state::reference_version: {
             _schema.refs.back().version = schema_version{i};
             _state = state::reference;
@@ -146,6 +166,8 @@ public:
         }
         case state::empty:
         case state::record:
+        case state::id:
+        case state::version:
         case state::references:
         case state::reference:
         case state::reference_version:
@@ -167,6 +189,8 @@ public:
         }
         case state::record:
         case state::schema:
+        case state::id:
+        case state::version:
         case state::schema_type:
         case state::reference:
         case state::reference_name:
@@ -181,7 +205,7 @@ public:
         switch (_state) {
         case state::record: {
             _state = state::empty;
-            result = {
+            result.def = {
               std::move(_schema.sub),
               {std::move(_schema.def), _schema.type},
               std::move(_schema.refs)};
@@ -195,6 +219,8 @@ public:
         }
         case state::empty:
         case state::schema:
+        case state::id:
+        case state::version:
         case state::schema_type:
         case state::references:
         case state::reference_name:
