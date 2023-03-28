@@ -365,7 +365,7 @@ FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
         .base_offset = model::offset(0),
         .committed_offset = model::offset(99),
         .archiver_term = model::term_id(1),
-        .segment_term = model::term_id(1),
+        .segment_term = model::term_id(2),
         .sname_format = cloud_storage::segment_name_format::v1,
       });
 
@@ -375,7 +375,7 @@ FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
         .base_offset = model::offset(100),
         .committed_offset = model::offset(199),
         .archiver_term = model::term_id(1),
-        .segment_term = model::term_id(1),
+        .segment_term = model::term_id(2),
         .sname_format = cloud_storage::segment_name_format::v2,
       });
 
@@ -385,7 +385,7 @@ FIXTURE_TEST(test_sname_derivation, archival_metadata_stm_base_fixture) {
         .base_offset = model::offset(200),
         .committed_offset = model::offset(299),
         .archiver_term = model::term_id(1),
-        .segment_term = model::term_id(1),
+        .segment_term = model::term_id(2),
         .sname_format = cloud_storage::segment_name_format::v3,
       });
 

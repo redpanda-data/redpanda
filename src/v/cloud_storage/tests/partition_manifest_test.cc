@@ -994,6 +994,7 @@ SEASTAR_THREAD_TEST_CASE(test_replaced_sname_format_version) {
         .size_bytes = 0,
         .base_offset = model::offset{10},
         .committed_offset = model::offset{19},
+        .segment_term = model::term_id{3},
       });
     m.add(
       segment_name("20-1-v1.log"),
@@ -1001,6 +1002,7 @@ SEASTAR_THREAD_TEST_CASE(test_replaced_sname_format_version) {
         .size_bytes = 1,
         .base_offset = model::offset{20},
         .committed_offset = model::offset{29},
+        .segment_term = model::term_id{3},
       });
     m.add(
       segment_name("30-1-v1.log"),
@@ -1008,6 +1010,7 @@ SEASTAR_THREAD_TEST_CASE(test_replaced_sname_format_version) {
         .size_bytes = 0,
         .base_offset = model::offset{30},
         .committed_offset = model::offset{39},
+        .segment_term = model::term_id{3},
         .sname_format = segment_name_format::v2,
       });
     m.add(
@@ -1016,6 +1019,7 @@ SEASTAR_THREAD_TEST_CASE(test_replaced_sname_format_version) {
         .size_bytes = 0,
         .base_offset = model::offset{40},
         .committed_offset = model::offset{49},
+        .segment_term = model::term_id{3},
         .sname_format = segment_name_format::v3,
       });
 
