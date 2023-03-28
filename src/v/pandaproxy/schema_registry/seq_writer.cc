@@ -122,7 +122,7 @@ void seq_writer::advance_offset_inner(model::offset offset) {
 }
 
 ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
-  canonical_schema schema, model::offset write_at, seq_writer& seq) {
+  subject_schema schema, model::offset write_at, seq_writer& seq) {
     // Check if store already contains this data: if
     // so, we do no I/O and return the schema ID.
     auto projected = co_await seq._store.project_ids(schema);
@@ -138,17 +138,17 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
           "schema={} "
           "version={}",
           write_at,
-          schema.sub(),
+          schema.schema.sub(),
           projected.id,
           projected.version);
 
         auto key = schema_key{
           .seq{write_at},
           .node{seq._node_id},
-          .sub{schema.sub()},
+          .sub{schema.schema.sub()},
           .version{projected.version}};
         auto value = schema_value{
-          .schema{schema},
+          .schema{schema.schema},
           .version{projected.version},
           .id{projected.id},
           .deleted = is_deleted::no};
@@ -168,8 +168,7 @@ ss::future<std::optional<schema_id>> seq_writer::do_write_subject_version(
     }
 }
 
-ss::future<schema_id>
-seq_writer::write_subject_version(canonical_schema schema) {
+ss::future<schema_id> seq_writer::write_subject_version(subject_schema schema) {
     return sequenced_write([this, schema{std::move(schema)}](
                              model::offset write_at, seq_writer& seq) {
         return do_write_subject_version(schema, write_at, seq);
