@@ -7,12 +7,16 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "pandaproxy/error.h"
+#include "pandaproxy/json/error.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/schema_registry/test/avro_payloads.h"
 #include "pandaproxy/schema_registry/test/client_utils.h"
 #include "pandaproxy/schema_registry/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
+
+#include <array>
 
 namespace pp = pandaproxy;
 namespace ppj = pp::json;
@@ -102,6 +106,87 @@ FIXTURE_TEST(
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
           to_header_value(ppj::serialization_format::schema_registry_v1_json));
+    }
+}
+
+FIXTURE_TEST(
+  schema_registry_post_subjects_subject_version_with_id,
+  pandaproxy_test_fixture) {
+    using namespace std::chrono_literals;
+
+    info("Connecting client");
+    auto client = make_schema_reg_client();
+
+    const ss::sstring schema_2{
+      R"({
+  "schema": "\"string\"",
+  "id": 2,
+  "schemaType": "AVRO"
+})"};
+
+    const ss::sstring schema_4{
+      R"({
+  "schema": "\"int\"",
+  "id": 4,
+  "schemaType": "AVRO"
+})"};
+
+    const ss::sstring schema_4_as_2{
+      R"({
+  "schema": "\"int\"",
+  "id": 2,
+  "schemaType": "AVRO"
+})"};
+
+    const pps::subject subject{"test-key"};
+    put_config(client, subject, pps::compatibility_level::none);
+
+    {
+        info("Post schema 4 as key with id 4 (higher than next_id)");
+        auto res = post_schema(client, subject, schema_4);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":4})");
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{pps::schema_version{1}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post schema 2 as key with id 2 (lower than next id)");
+        auto res = post_schema(client, subject, schema_2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(res.body, R"({"id":2})");
+
+        res = get_subject_versions(client, subject);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        std::vector<pps::schema_version> expected{
+          pps::schema_version{1}, pps::schema_version{2}};
+        auto versions = get_body_versions(res.body);
+        BOOST_REQUIRE_EQUAL(versions, expected);
+    }
+
+    {
+        info("Post schema 4 as key with id 2 (expect error 42207)");
+        auto res = post_schema(client, subject, schema_4_as_2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(),
+          boost::beast::http::status::unprocessable_entity);
+        auto eb = get_error_body(res.body);
+        BOOST_REQUIRE(
+          eb.ec
+          == pp::reply_error_code::subject_version_schema_id_already_exists);
+        BOOST_REQUIRE_EQUAL(
+          eb.message,
+          R"(Schema already registered with id 4 instead of input id 2)");
     }
 }
 
