@@ -181,6 +181,9 @@ struct fetch_response final {
 
     fetch_response_data data;
 
+    // Used for usage/metering to relay this value back to the connection layer
+    size_t internal_topic_bytes{0};
+
     void encode(response_writer& writer, api_version version) {
         data.encode(writer, version);
     }

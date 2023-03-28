@@ -12,6 +12,7 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "cluster/security_frontend.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/fwd.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/types.h"
@@ -20,6 +21,7 @@
 #include "kafka/server/logger.h"
 #include "kafka/server/response.h"
 #include "kafka/server/server.h"
+#include "kafka/server/usage_manager.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 #include "security/fwd.h"
@@ -71,6 +73,7 @@ public:
       iobuf&& request,
       ss::lowres_clock::duration throttle_delay) noexcept
       : _conn(std::move(conn))
+      , _request_size(request.size_bytes())
       , _header(std::move(header))
       , _reader(std::move(request))
       , _throttle_delay(throttle_delay) {}
@@ -88,6 +91,10 @@ public:
     request_reader& reader() { return _reader; }
 
     latency_probe& probe() { return _conn->server().latency_probe(); }
+
+    kafka::usage_manager& usage_mgr() const {
+        return _conn->server().usage_mgr();
+    }
 
     const cluster::metadata_cache& metadata_cache() const {
         return _conn->server().metadata_cache();
@@ -196,6 +203,7 @@ public:
 
         auto resp = std::make_unique<response>(is_flexible);
         r.encode(resp->writer(), version);
+        update_usage_stats(r, resp->buf().size_bytes());
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }
 
@@ -228,7 +236,32 @@ public:
     }
 
 private:
+    template<typename ResponseType>
+    void update_usage_stats(const ResponseType& r, size_t response_size) {
+        size_t internal_bytes_recv = 0;
+        size_t internal_bytes_sent = 0;
+        if constexpr (std::is_same_v<ResponseType, produce_response>) {
+            internal_bytes_recv = r.internal_topic_bytes;
+        } else if constexpr (std::is_same_v<ResponseType, fetch_response>) {
+            internal_bytes_sent = r.internal_topic_bytes;
+        }
+        /// Bytes recieved by redpanda
+        vassert(
+          _request_size >= internal_bytes_recv,
+          "Observed bigger internal bytes accounting then entire request size");
+        usage_mgr().add_bytes_recv(_request_size - internal_bytes_recv);
+
+        /// Bytes sent to redpanda
+        vassert(
+          response_size >= internal_bytes_sent,
+          "Observed bigger internal bytes accounting then entire response "
+          "size");
+        usage_mgr().add_bytes_sent(response_size - internal_bytes_sent);
+    }
+
+private:
     ss::lw_shared_ptr<connection_context> _conn;
+    size_t _request_size;
     request_header _header;
     request_reader _reader;
     ss::lowres_clock::duration _throttle_delay;

@@ -82,6 +82,10 @@ struct configuration final : public config_store {
     bounded_property<std::optional<size_t>> raft_max_recovery_memory;
     bounded_property<size_t> raft_recovery_default_read_size;
     // Kafka
+    property<bool> enable_usage;
+    bounded_property<size_t> usage_num_windows;
+    bounded_property<std::chrono::seconds> usage_window_width_interval_sec;
+    bounded_property<std::chrono::seconds> usage_disk_persistance_interval_sec;
     deprecated_property use_scheduling_groups;
     deprecated_property enable_admin_api;
     bounded_property<int16_t> default_num_windows;

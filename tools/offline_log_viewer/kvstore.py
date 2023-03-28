@@ -82,6 +82,8 @@ class KvStoreRecordDecoder:
             return "cluster"
         elif ks == 4:
             return "offset_translator"
+        elif ks == 5:
+            return "usage"
         return "unknown"
 
     def decode(self):

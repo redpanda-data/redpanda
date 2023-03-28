@@ -45,6 +45,7 @@ public:
       ss::sharded<quota_manager>&,
       ss::sharded<snc_quota_manager>&,
       ss::sharded<kafka::group_router>&,
+      ss::sharded<kafka::usage_manager>&,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<fetch_session_cache>&,
@@ -102,6 +103,7 @@ public:
         return _fetch_session_cache.local();
     }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
+    usage_manager& usage_mgr() { return _usage_manager.local(); }
     snc_quota_manager& snc_quota_mgr() { return _snc_quota_mgr.local(); }
     bool is_idempotence_enabled() const { return _is_idempotence_enabled; }
     bool are_transactions_enabled() const { return _are_transactions_enabled; }
@@ -153,6 +155,7 @@ private:
     ss::sharded<quota_manager>& _quota_mgr;
     ss::sharded<snc_quota_manager>& _snc_quota_mgr;
     ss::sharded<kafka::group_router>& _group_router;
+    ss::sharded<kafka::usage_manager>& _usage_manager;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;

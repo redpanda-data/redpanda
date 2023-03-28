@@ -81,6 +81,9 @@ struct produce_response final {
 
     produce_response_data data;
 
+    // Used for usage/metering to relay this value back to the connection layer
+    size_t internal_topic_bytes{0};
+
     void encode(response_writer& writer, api_version version) {
         // normalize errors
         for (auto& r : data.responses) {
