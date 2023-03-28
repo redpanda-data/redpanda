@@ -289,7 +289,7 @@ post_subject(server::request_t rq, server::reply_t rp) {
         auto unparsed = ppj::rjson_parse(
           rq.req->content.data(), post_subject_versions_request_handler<>{sub});
         schema = co_await rq.service().schema_store().make_canonical_schema(
-          std::move(unparsed));
+          std::move(unparsed.def));
     } catch (const exception& e) {
         if (e.code() == error_code::schema_empty) {
             throw as_exception(invalid_subject_schema(sub));
@@ -326,9 +326,9 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
 
     subject_schema schema{
       co_await rq.service().schema_store().make_canonical_schema(
-        std::move(unparsed)),
-      invalid_schema_version,
-      invalid_schema_id,
+        std::move(unparsed.def)),
+      unparsed.version.value_or(invalid_schema_version),
+      unparsed.id.value_or(invalid_schema_id),
       is_deleted::no};
 
     auto schema_id = co_await rq.service().writer().write_subject_version(
@@ -495,14 +495,14 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     vlog(
       plog.info,
       "compatibility_subject_version: subject: {}, version: {}",
-      unparsed.sub(),
+      unparsed.def.sub(),
       ver);
     auto version = invalid_schema_version;
     if (ver == "latest") {
         auto versions = co_await rq.service().schema_store().get_versions(
-          unparsed.sub(), include_deleted::no);
+          unparsed.def.sub(), include_deleted::no);
         if (versions.empty()) {
-            throw as_exception(not_found(unparsed.sub(), version));
+            throw as_exception(not_found(unparsed.def.sub(), version));
         }
         version = versions.back();
     } else {
@@ -510,7 +510,7 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
     }
 
     auto schema = co_await rq.service().schema_store().make_canonical_schema(
-      std::move(unparsed));
+      std::move(unparsed.def));
     auto get_res = co_await get_or_load(rq, [&rq, &schema, version]() {
         return rq.service().schema_store().is_compatible(version, schema);
     });
