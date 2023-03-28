@@ -16,6 +16,7 @@
 #include "kafka/protocol/errors.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/schema_registry/avro.h"
+#include "pandaproxy/schema_registry/error.h"
 #include "pandaproxy/schema_registry/errors.h"
 #include "pandaproxy/schema_registry/exceptions.h"
 #include "pandaproxy/schema_registry/protobuf.h"
@@ -27,6 +28,9 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/std-coroutine.hh>
+#include <seastar/coroutine/exception.hh>
+
+#include <fmt/core.h>
 
 #include <functional>
 
@@ -114,33 +118,36 @@ sharded_store::make_valid_schema(canonical_schema schema) {
 }
 
 ss::future<sharded_store::insert_result>
-sharded_store::project_ids(canonical_schema schema) {
+sharded_store::project_ids(subject_schema schema) {
     // Validate the schema (may throw)
-    co_await validate_schema(schema);
+    co_await validate_schema(schema.schema);
 
     // Check compatibility
     std::vector<schema_version> versions;
     try {
-        versions = co_await get_versions(schema.sub(), include_deleted::no);
+        versions = co_await get_versions(
+          schema.schema.sub(), include_deleted::no);
     } catch (const exception& e) {
         if (e.code() != error_code::subject_not_found) {
             throw;
         }
     }
     if (!versions.empty()) {
-        auto compat = co_await is_compatible(versions.back(), schema);
+        auto compat = co_await is_compatible(versions.back(), schema.schema);
         if (!compat) {
             throw exception(
               error_code::schema_incompatible,
               fmt::format(
                 "Schema being registered is incompatible with an earlier "
                 "schema for subject \"{}\"",
-                schema.sub()));
+                schema.schema.sub()));
         }
     }
 
     // Figure out if the definition already exists
-    auto map = [&schema](store& s) { return s.get_schema_id(schema.def()); };
+    auto map = [&schema](store& s) {
+        return s.get_schema_id(schema.schema.def());
+    };
     auto reduce = [](
                     std::optional<schema_id> acc,
                     std::optional<schema_id> s_id) { return acc ? acc : s_id; };
@@ -155,9 +162,11 @@ sharded_store::project_ids(canonical_schema schema) {
         vlog(plog.debug, "project_ids: existing ID {}", s_id.value());
     }
 
-    auto sub_shard{shard_for(schema.sub())};
+    auto sub_shard{shard_for(schema.schema.sub())};
     auto v_id = co_await _store.invoke_on(
-      sub_shard, _smp_opts, [sub{schema.sub()}, id{s_id.value()}](store& s) {
+      sub_shard,
+      _smp_opts,
+      [sub{schema.schema.sub()}, id{s_id.value()}](store& s) {
           return s.project_version(sub, id);
       });
 

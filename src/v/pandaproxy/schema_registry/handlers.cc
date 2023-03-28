@@ -324,8 +324,13 @@ post_subject_versions(server::request_t rq, server::reply_t rp) {
       rq.req->content.data(), post_subject_versions_request_handler<>{sub});
     rq.req.reset();
 
-    auto schema = co_await rq.service().schema_store().make_canonical_schema(
-      std::move(unparsed));
+    subject_schema schema{
+      co_await rq.service().schema_store().make_canonical_schema(
+        std::move(unparsed)),
+      invalid_schema_version,
+      invalid_schema_id,
+      is_deleted::no};
+
     auto schema_id = co_await rq.service().writer().write_subject_version(
       std::move(schema));
 
