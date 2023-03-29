@@ -43,8 +43,6 @@ import (
 	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-
 const (
 	defaultConfiguratorContainerImage = "vectorized/configurator"
 )
