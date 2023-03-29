@@ -7,13 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-# Redpanda Queue configuration file
-
-# organization and cluster_id help Vectorized identify your system.
-organization: ""
-cluster_id: ""
-
-license_key: ""
+# Redpanda configuration file
 
 redpanda:
   # Data directory where all the files will be stored.
