@@ -524,15 +524,21 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 		if pod.Annotations == nil {
 			pod.Annotations = make(map[string]string)
 		}
-		if _, ok := pod.Annotations[PodAnnotationNodeIDKey]; ok {
-			continue
-		}
+		nodeIDStr, ok := pod.Annotations[PodAnnotationNodeIDKey]
+
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
 		if err != nil {
 			return fmt.Errorf("cannot fetch node id for node-id annotation: %w", err)
 		}
+
+		realNodeIDStr := fmt.Sprintf("%d", nodeID)
+
+		if ok && realNodeIDStr == nodeIDStr {
+			continue
+		}
+
 		log.WithValues("pod-name", pod.Name, "node-id", nodeID).Info("setting node-id annotation")
-		pod.Annotations[PodAnnotationNodeIDKey] = fmt.Sprintf("%d", nodeID)
+		pod.Annotations[PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
 		}
