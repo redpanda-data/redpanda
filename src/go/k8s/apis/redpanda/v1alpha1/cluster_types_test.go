@@ -13,13 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/pointer"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 )
 
 //nolint:funlen // this is ok for a test

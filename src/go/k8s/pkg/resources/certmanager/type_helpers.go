@@ -16,18 +16,19 @@ import (
 	"errors"
 	"fmt"
 
+	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	cmmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/go-logr/logr"
-	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 const (
