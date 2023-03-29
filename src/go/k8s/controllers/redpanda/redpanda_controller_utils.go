@@ -2,6 +2,7 @@ package redpanda
 
 import (
 	"io"
+	"k8s.io/utils/pointer"
 	"net"
 	"net/http"
 	"os"
@@ -97,4 +98,8 @@ func StartFileServer(path, address string, l logr.Logger) {
 	if err != nil {
 		l.Error(err, "file server error")
 	}
+}
+
+func IsBoolPointerNILorEqual(a *bool, b bool) bool {
+	return a == nil || pointer.BoolEqual(a, pointer.Bool(b))
 }

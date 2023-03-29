@@ -14,22 +14,21 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"github.com/go-logr/logr"
 	"reflect"
 	"time"
-
-	"k8s.io/utils/pointer"
 
 	helmv2beta1 "github.com/fluxcd/helm-controller/api/v2beta1"
 	"github.com/fluxcd/pkg/apis/meta"
 	"github.com/fluxcd/pkg/runtime/predicates"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	kuberecorder "k8s.io/client-go/tools/record"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,6 +39,14 @@ import (
 	v2 "sigs.k8s.io/controller-runtime/pkg/webhook/conversion/testdata/api/v2"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+)
+
+const (
+	resourceReadyStrFmt    = "%s '%s/%s' is ready"
+	resourceNotReadyStrFmt = "%s '%s/%s' is not ready"
+
+	resourceTypeHelmRepository = "HelmRepository"
+	resourceTypeHelmRelease    = "HelmRelease"
 )
 
 // RedpandaReconciler reconciles a Redpanda object
@@ -155,10 +162,10 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 
 	isGenerationCurrent := repo.Generation != repo.Status.ObservedGeneration
 	isStatusConditionReady := apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition)
-	msgNotReady := fmt.Sprintf("HelmRepository '%s/%s' is not ready", repo.GetNamespace(), repo.GetName())
-	msgReady := fmt.Sprintf("HelmRepository '%s/%s' is ready", repo.GetNamespace(), repo.GetName())
-	isStatusReadyNILorTRUE := rp.Status.HelmRepositoryReady == nil || pointer.BoolEqual(rp.Status.HelmRepositoryReady, pointer.Bool(true))
-	isStatusReadyNILorFALSE := rp.Status.HelmRepositoryReady == nil || pointer.BoolEqual(rp.Status.HelmRepositoryReady, pointer.Bool(false))
+	msgNotReady := fmt.Sprintf(resourceNotReadyStrFmt, repo.Kind, repo.GetNamespace(), repo.GetName())
+	msgReady := fmt.Sprintf(resourceReadyStrFmt, repo.Kind, repo.GetNamespace(), repo.GetName())
+	isStatusReadyNILorTRUE := IsBoolPointerNILorEqual(rp.Status.HelmRepositoryReady, true)
+	isStatusReadyNILorFALSE := IsBoolPointerNILorEqual(rp.Status.HelmRepositoryReady, false)
 
 	isResourceReady := r.checkIfResourceIsReady(log, msgNotReady, msgReady, repo.Kind, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
 	if !isResourceReady {
@@ -178,10 +185,10 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 
 	isGenerationCurrent = hr.Generation != hr.Status.ObservedGeneration
 	isStatusConditionReady = apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition)
-	msgNotReady = fmt.Sprintf("HelmRelease '%s/%s' is not ready", hr.GetNamespace(), hr.GetName())
-	msgReady = fmt.Sprintf("HelmRelease '%s/%s' is ready", hr.GetNamespace(), hr.GetName())
-	isStatusReadyNILorTRUE = rp.Status.HelmReleaseReady == nil || pointer.BoolEqual(rp.Status.HelmReleaseReady, pointer.Bool(true))
-	isStatusReadyNILorFALSE = rp.Status.HelmReleaseReady == nil || pointer.BoolEqual(rp.Status.HelmReleaseReady, pointer.Bool(false))
+	msgNotReady = fmt.Sprintf(resourceNotReadyStrFmt, hr.Kind, hr.GetNamespace(), hr.GetName())
+	msgReady = fmt.Sprintf(resourceReadyStrFmt, hr.Kind, hr.GetNamespace(), hr.GetName())
+	isStatusReadyNILorTRUE = IsBoolPointerNILorEqual(rp.Status.HelmReleaseReady, true)
+	isStatusReadyNILorFALSE = IsBoolPointerNILorEqual(rp.Status.HelmReleaseReady, false)
 
 	isResourceReady = r.checkIfResourceIsReady(log, msgNotReady, msgReady, hr.Kind, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
 	if !isResourceReady {
@@ -200,9 +207,9 @@ func (r *RedpandaReconciler) checkIfResourceIsReady(log logr.Logger, msgNotReady
 		}
 
 		switch kind {
-		case "HelmRepository":
+		case resourceTypeHelmRepository:
 			rp.Status.HelmRepositoryReady = pointer.Bool(false)
-		case "HelmRelease":
+		case resourceTypeHelmRelease:
 			rp.Status.HelmReleaseReady = pointer.Bool(false)
 		}
 
@@ -212,9 +219,9 @@ func (r *RedpandaReconciler) checkIfResourceIsReady(log logr.Logger, msgNotReady
 		// here since the condition should be true, we update the value to
 		// be true, and send an event
 		switch kind {
-		case "HelmRepository":
+		case resourceTypeHelmRepository:
 			rp.Status.HelmRepositoryReady = pointer.Bool(true)
-		case "HelmRelease":
+		case resourceTypeHelmRelease:
 			rp.Status.HelmReleaseReady = pointer.Bool(true)
 		}
 
