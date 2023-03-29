@@ -343,7 +343,8 @@ configuration::configuration()
       "cluster_id",
       "Cluster identifier",
       {.needs_restart = needs_restart::no},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , disable_metrics(
       *this,
       "disable_metrics",
@@ -939,7 +940,8 @@ configuration::configuration()
       "sasl_kerberos_principal",
       "The primary of the Kerberos Service Principal Name (SPN) for Redpanda",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      "redpanda")
+      "redpanda",
+      &validate_non_empty_string_opt)
   , sasl_kerberos_principal_mapping(
       *this,
       "sasl_kerberos_principal_mapping",
@@ -1000,14 +1002,16 @@ configuration::configuration()
       "kafka_nodelete_topics",
       "Prevents the topics in the list from being deleted via the kafka api",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      {"__audit", "__consumer_offsets", "__redpanda_e2e_probe", "_schemas"})
+      {"__audit", "__consumer_offsets", "__redpanda_e2e_probe", "_schemas"},
+      &validate_non_empty_string_vec)
   , kafka_noproduce_topics(
       *this,
       "kafka_noproduce_topics",
       "Prevents the topics in the list from having message produced to them "
       "via the kafka api",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      {"__audit"})
+      {"__audit"},
+      &validate_non_empty_string_vec)
   , compaction_ctrl_update_interval_ms(
       *this,
       "compaction_ctrl_update_interval_ms",
@@ -1153,31 +1157,36 @@ configuration::configuration()
       "cloud_storage_access_key",
       "AWS access key",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_secret_key(
       *this,
       "cloud_storage_secret_key",
       "AWS secret key",
       {.visibility = visibility::user, .secret = is_secret::yes},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_region(
       *this,
       "cloud_storage_region",
       "AWS region that houses the bucket used for storage",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_bucket(
       *this,
       "cloud_storage_bucket",
       "AWS bucket that should be used to store data",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_api_endpoint(
       *this,
       "cloud_storage_api_endpoint",
       "Optional API endpoint",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_credentials_source(
       *this,
       "cloud_storage_credentials_source",
@@ -1237,7 +1246,8 @@ configuration::configuration()
       "Path to certificate that should be used to validate server certificate "
       "during TLS handshake",
       {.visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_initial_backoff_ms(
       *this,
       "cloud_storage_initial_backoff_ms",
@@ -1374,14 +1384,16 @@ configuration::configuration()
       "cloud_storage_azure_storage_account",
       "The name of the Azure storage account to use with Tiered Storage",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_azure_container(
       *this,
       "cloud_storage_azure_container",
       "The name of the Azure container to use with Tiered Storage. Note that "
       "the container must belong to 'cloud_storage_azure_storage_account'",
       {.needs_restart = needs_restart::yes, .visibility = visibility::user},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_azure_shared_key(
       *this,
       "cloud_storage_azure_shared_key",
@@ -1392,7 +1404,8 @@ configuration::configuration()
       {.needs_restart = needs_restart::no,
        .visibility = visibility::user,
        .secret = is_secret::yes},
-      std::nullopt)
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
