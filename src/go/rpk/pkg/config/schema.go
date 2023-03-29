@@ -23,9 +23,6 @@ type Config struct {
 	rawFile      []byte
 
 	NodeUUID             string             `yaml:"node_uuid,omitempty" json:"node_uuid"`
-	Organization         string             `yaml:"organization,omitempty" json:"organization"`
-	LicenseKey           string             `yaml:"license_key,omitempty" json:"license_key"`
-	ClusterID            string             `yaml:"cluster_id,omitempty" json:"cluster_id"`
 	Redpanda             RedpandaNodeConfig `yaml:"redpanda,omitempty" json:"redpanda"`
 	Rpk                  RpkConfig          `yaml:"rpk,omitempty" json:"rpk"`
 	Pandaproxy           *Pandaproxy        `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
