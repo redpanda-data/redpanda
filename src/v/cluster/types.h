@@ -2071,7 +2071,8 @@ struct topic_table_delta {
     }
 
     bool is_reconfiguration_operation() const {
-        return type == op_type::update || type == op_type::cancel_update
+        return type == op_type::update || type == op_type::force_update
+               || type == op_type::cancel_update
                || type == op_type::force_abort_update;
     }
 
