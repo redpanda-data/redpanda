@@ -188,6 +188,12 @@ public:
         return _raft->replace_configuration(std::move(nodes), new_revision_id);
     }
 
+    ss::future<std::error_code> force_update_replica_set(
+      std::vector<raft::vnode> nodes, model::revision_id new_revision_id) {
+        return _raft->force_replace_configuration_locally(
+          std::move(nodes), new_revision_id);
+    }
+
     raft::group_configuration group_configuration() const {
         return _raft->config();
     }

@@ -1221,6 +1221,35 @@ consensus::abort_configuration_change(model::revision_id revision) {
     co_return errc::success;
 }
 
+ss::future<std::error_code> consensus::force_replace_configuration_locally(
+  std::vector<vnode> nodes, model::revision_id new_revision) {
+    try {
+        auto units = co_await _op_lock.get_units();
+        auto new_cfg = group_configuration(std::move(nodes), new_revision);
+        vlog(_ctxlog.info, "Force replacing configuration with: {}", new_cfg);
+        auto batches = details::serialize_configuration_as_batches(
+          std::move(new_cfg));
+        for (auto& b : batches) {
+            b.set_term(_term);
+        };
+
+        auto result = co_await disk_append(
+          model::make_memory_record_batch_reader(std::move(batches)),
+          update_last_quorum_index::yes);
+        vlog(
+          _ctxlog.debug,
+          "appended reconfiguration to force update replica "
+          "set at "
+          "offset {}",
+          result.base_offset);
+        co_await flush_log();
+
+    } catch (const ss::broken_semaphore&) {
+        co_return errc::shutting_down;
+    }
+    co_return errc::success;
+}
+
 ss::future<> consensus::start() {
     return ss::try_with_gate(_bg, [this] { return do_start(); });
 }
