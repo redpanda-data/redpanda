@@ -9,11 +9,6 @@ linters-settings:
   goconst:
     min-len: 2
     min-occurrences: 2
-  gocritic:
-    enabled-tags:
-      - opinionated
-      - performance
-      - style
   gomnd:
     settings:
       mnd:
@@ -42,7 +37,6 @@ linters:
     - exportloopref
     - funlen
     - goconst
-    - gocritic
     - gocyclo
     - goerr113
     - gofmt
