@@ -14,19 +14,20 @@ import (
 	"fmt"
 	"testing"
 
+	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	cmmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/go-logr/logr"
-	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
-	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 //nolint:funlen // the subtests might causes linter to complain

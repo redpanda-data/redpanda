@@ -13,17 +13,18 @@ import (
 	"context"
 	"fmt"
 
+	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
+	cmetav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/go-logr/logr"
-	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 )
 
 var _ resources.Resource = &IssuerResource{}
