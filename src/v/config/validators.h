@@ -35,4 +35,10 @@ validate_sasl_mechanisms(const std::vector<ss::sstring>& mechanisms);
 
 std::optional<ss::sstring> validate_0_to_1_ratio(const double d);
 
+std::optional<ss::sstring>
+validate_non_empty_string_vec(const std::vector<ss::sstring>&);
+
+std::optional<ss::sstring>
+validate_non_empty_string_opt(const std::optional<ss::sstring>&);
+
 }; // namespace config
