@@ -239,6 +239,7 @@ reconciliation_backend::process_update(model::ntp ntp, update_t delta) {
     }
     case op_t::add:
     case op_t::del:
+    case op_t::force_update:
     case op_t::cancel_update:
     case op_t::force_abort_update:
     case op_t::update_properties:

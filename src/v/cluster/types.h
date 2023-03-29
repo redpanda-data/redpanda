@@ -2041,6 +2041,7 @@ struct topic_table_delta {
         add,
         del,
         update,
+        force_update,
         update_finished,
         update_properties,
         add_non_replicable,

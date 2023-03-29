@@ -266,6 +266,7 @@ inline bool has_non_replicable_op_type(const topic_table_delta& d) {
     case op_t::del:
     case op_t::reset:
     case op_t::update:
+    case op_t::force_update:
     case op_t::update_finished:
     case op_t::update_properties:
     case op_t::cancel_update:

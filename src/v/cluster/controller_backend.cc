@@ -570,6 +570,7 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
         case op_t::reset:
             return has_local_replicas(self, delta.new_assignment.replicas);
         case op_t::update:
+        case op_t::force_update:
         case op_t::cancel_update:
         case op_t::force_abort_update:
             vassert(
@@ -646,6 +647,14 @@ ss::future<> controller_backend::fetch_deltas() {
                 }
             });
       });
+}
+
+ss::future<std::error_code> controller_backend::force_replica_set_update(
+  const model::ntp&,
+  const std::vector<model::broker_shard>&,
+  const replicas_revision_map&,
+  model::revision_id) {
+    co_return errc::success;
 }
 
 /**
@@ -996,6 +1005,7 @@ controller_backend::execute_partition_op(const delta_metadata& metadata) {
           *delta.replica_revisions,
           cmd_rev);
     case op_t::update:
+    case op_t::force_update:
     case op_t::force_abort_update:
     case op_t::cancel_update:
         vassert(
@@ -1452,6 +1462,9 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
     switch (type) {
     case topic_table_delta::op_type::update:
         co_return co_await update_partition_replica_set(
+          ntp, replica_set, replica_revisions, revision);
+    case topic_table_delta::op_type::force_update:
+        co_return co_await force_replica_set_update(
           ntp, replica_set, replica_revisions, revision);
     case topic_table_delta::op_type::cancel_update:
         co_return co_await cancel_replica_set_update(
