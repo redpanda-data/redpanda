@@ -322,7 +322,7 @@ func (r *ClusterReconciler) Reconcile(
 		var raErr *resources.RequeueAfterError
 		if errors.As(err, &raErr) {
 			log.Info(raErr.Error())
-			return ctrl.Result{RequeueAfter: requeueErr.RequeueAfter}, nil
+			return ctrl.Result{RequeueAfter: raErr.RequeueAfter}, nil
 		}
 		return ctrl.Result{}, err
 	}
