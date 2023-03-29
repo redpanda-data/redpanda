@@ -11,11 +11,13 @@ package generate
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -55,18 +57,22 @@ var (
 		"consumer-metrics": {
 			"Kafka-Consumer-Metrics.json",
 			"Allows for monitoring of Java Kafka consumers, using the Prometheus JMX Exporter and the Kafka Sample Configuration.",
+			"75c764e38cf52b11191833631c6b641e2e6ccdc42884aedbc655371cb768c08a",
 		},
 		"consumer-offsets": {
 			"Kafka-Consumer-Offsets.json",
 			"Metrics and KPIs that provide details of topic consumers and how far they are lagging behind the end of the log.",
+			"44a00385aa95cd7a531634ab7151d5f18c6057fdd48989c0e96d78a6f16eaae9",
 		},
 		"operations": {
 			"Redpanda-Ops-Dashboard.json",
 			"Provides an overview of KPIs for a Redpanda cluster with health indicators. This is suitable for ops or SRE to monitor on a daily or continuous basis.",
+			"2974e1fb0be8f428b84f28f9fa665302324b3b2cbb271a2876cafe0089fe55c9",
 		},
 		"topic-metrics": {
 			"Kafka-Topic-Metrics.json",
 			"Provides throughput, read/write rates, and on-disk sizes of each/all topics.",
+			"6cfbd0d7bb51e2ef0d9b699388ab1e10b1d6ee91176e52594ee196187c1d4ef5",
 		},
 	}
 )
@@ -76,6 +82,7 @@ const panelHeight = 6
 type dashboardSpec struct {
 	Location    string // The dashboard location (GH or local path).
 	Description string // The dashboard Description.
+	Hash        string // The SHA256 hash of the JSON dashboard file.
 }
 
 type RowSet struct {
@@ -111,9 +118,12 @@ func newGrafanaDashboardCmd() *cobra.Command {
 					}
 
 					fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; using static file...\n", err)
-					file, err := dashFS.ReadFile(filepath.Join("grafana-dashboards", dashboardMap[dashboard].Location))
+
+					// The embedded dashboard file is compressed, and located
+					// under grafana-dashboard dir:
+					path := filepath.Join("grafana-dashboards", dashboardMap[dashboard].Location+".gz")
+					err = decompressAndPrint(dashFS, path, os.Stdout)
 					if err == nil {
-						fmt.Println(string(file))
 						return
 					}
 
@@ -178,6 +188,23 @@ func tryFromGithub(ctx context.Context, dashboard string) (string, error) {
 
 	var jsonOut string
 	return jsonOut, cl.Get(ctx, dashboardMap[dashboard].Location, nil, &jsonOut)
+}
+
+func decompressAndPrint(fs fs.FS, path string, writer io.Writer) error {
+	file, err := fs.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	zr, err := gzip.NewReader(file)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(writer, zr); err != nil {
+		return err
+	}
+	return nil
 }
 
 func executeGrafanaDashboard(metricsEndpoint string, datasource string) (string, error) {
