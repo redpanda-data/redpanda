@@ -865,6 +865,23 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
       _stm, _features, _as, std::move(cmd), tout, term);
 }
 
+ss::future<std::error_code> topics_frontend::force_update_partition_replicas(
+  model::ntp ntp,
+  std::vector<model::broker_shard> new_replica_set,
+  model::timeout_clock::time_point tout,
+  std::optional<model::term_id> term) {
+    auto result = co_await stm_linearizable_barrier(tout);
+    if (!result) {
+        co_return result.error();
+    }
+    force_partition_reconfiguration_cmd cmd{
+      std::move(ntp),
+      force_partition_reconfiguration_cmd_data{std::move(new_replica_set)}};
+
+    co_return co_await replicate_and_wait(
+      _stm, _features, _as, std::move(cmd), tout, term);
+}
+
 ss::future<std::error_code> topics_frontend::cancel_moving_partition_replicas(
   model::ntp ntp,
   model::timeout_clock::time_point timeout,
