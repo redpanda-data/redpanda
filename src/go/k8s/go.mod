@@ -12,6 +12,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/json-iterator/go v1.1.12
 	github.com/moby/moby v20.10.23+incompatible
+	github.com/moby/sys/mountinfo v0.6.2
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.26.0
 	github.com/prometheus/client_golang v1.14.0
@@ -89,7 +90,7 @@ require (
 	golang.org/x/crypto v0.5.0 // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/oauth2 v0.5.0 // indirect
-	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/term v0.5.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
