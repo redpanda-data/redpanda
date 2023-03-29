@@ -237,7 +237,7 @@ def gen_segment_name_from_meta(meta: dict, key: Optional[str]) -> str:
     :return: adjusted path
     """
     version = meta.get('sname_format', 1)
-    if version == 2:
+    if version > 1:
         head = '-'.join([
             str(meta[k]) for k in ('base_offset', 'committed_offset',
                                    'size_bytes', 'segment_term')
