@@ -133,10 +133,10 @@ func (in *Redpanda) GetHelmRepositoryName() string {
 	return helmRepository
 }
 
-func (in *Redpanda) GetValuesJson() (*apiextensionsv1.JSON, error) {
+func (in *Redpanda) ValuesJSON() (*apiextensionsv1.JSON, error) {
 	vyaml, err := json.Marshal(in.Spec.ClusterSpec)
 	if err != nil {
-		return nil, fmt.Errorf("could not convert spec to yaml: %s", err)
+		return nil, fmt.Errorf("could not convert spec to yaml: %w", err)
 	}
 	values := &apiextensionsv1.JSON{Raw: vyaml}
 
@@ -144,7 +144,7 @@ func (in *Redpanda) GetValuesJson() (*apiextensionsv1.JSON, error) {
 }
 
 // RedpandaReady registers a successful reconciliation of the given HelmRelease.
-func RedpandaReady(rp Redpanda) Redpanda {
+func RedpandaReady(rp *Redpanda) *Redpanda {
 	newCondition := metav1.Condition{
 		Type:    meta.ReadyCondition,
 		Status:  metav1.ConditionTrue,
@@ -157,7 +157,7 @@ func RedpandaReady(rp Redpanda) Redpanda {
 }
 
 // RedpandaNotReady registers a failed reconciliation of the given Redpanda.
-func RedpandaNotReady(rp Redpanda, reason, message string) Redpanda {
+func RedpandaNotReady(rp *Redpanda, reason, message string) *Redpanda {
 	newCondition := metav1.Condition{
 		Type:    meta.ReadyCondition,
 		Status:  metav1.ConditionFalse,
@@ -171,7 +171,7 @@ func RedpandaNotReady(rp Redpanda, reason, message string) Redpanda {
 // RedpandaProgressing resets any failures and registers progress toward
 // reconciling the given Redpanda by setting the meta.ReadyCondition to
 // 'Unknown' for meta.ProgressingReason.
-func RedpandaProgressing(rp Redpanda) Redpanda {
+func RedpandaProgressing(rp *Redpanda) *Redpanda {
 	rp.Status.Conditions = []metav1.Condition{}
 	newCondition := metav1.Condition{
 		Type:    meta.ReadyCondition,

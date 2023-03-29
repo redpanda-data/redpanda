@@ -175,6 +175,14 @@ endef
 gofumpt:
 	go install mvdan.cc/gofumpt@latest
 
+.PHONY: goimports
+goimports:
+	go install golang.org/x/tools/cmd/goimports@latest
+
 .PHONY: lint-gofumpt
 lint-gofumpt: gofumpt
 	find . -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.19
+
+.PHONY: goimports-run
+goimports-run: goimports
+	goimports -w .
