@@ -69,6 +69,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET snc_quota_balancer_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/snc_quota_balancer_rpc.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/snc_quota_balancer_rpc_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -158,6 +165,9 @@ v_cc_library(
     topic_recovery_status_types.cc
     topic_table_partition_generator.cc
     cloud_storage_size_reducer.cc
+    snc_quota_balancer_service.cc
+    snc_quota_balancer_types.cc
+    snc_quota_balancer_frontend.cc
   DEPS
     Seastar::seastar
     bootstrap_rpc
@@ -177,6 +187,7 @@ v_cc_library(
     v::cloud_storage
     v::archival
     v::features
+    snc_quota_balancer_rpc
   )
 add_subdirectory(tests)
 add_subdirectory(self_test/tests)

@@ -60,6 +60,7 @@ class self_test_frontend;
 class topic_recovery_status_frontend;
 class node_isolation_watcher;
 struct controller_snapshot;
+class snc_quota_balancer_frontend;
 
 namespace node {
 class local_monitor;

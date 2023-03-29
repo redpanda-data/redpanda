@@ -1,0 +1,14 @@
+{
+    "namespace": "cluster",
+    "service_name": "snc_quota_balancer_rpc",
+    "includes": [
+        "cluster/snc_quota_balancer_types.h"
+    ],
+    "methods": [
+        {
+            "name": "snc_quota_balancer_lend",
+            "input_type": "snc_quota_balancer_lend_request",
+            "output_type": "struct snc_quota_balancer_lend_reply"
+        }
+    ]
+}
