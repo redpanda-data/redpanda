@@ -11,8 +11,12 @@ package generate
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -75,4 +79,39 @@ vectorized_vectorized_in
 	)
 	_, err := executeGrafanaDashboard(ts.URL, "any")
 	require.EqualError(t, err, "text format parsing error in line 3: expected float as value, got \"\"")
+}
+
+// Test_embeddedDecompressAndPrint tests that the embedded files are actually a
+// valid json files and can be decompressed.
+func Test_embeddedDecompressAndPrint(t *testing.T) {
+	type tt struct {
+		name    string
+		path    string
+		expHash string
+	}
+
+	var tests []tt
+	for k, v := range dashboardMap {
+		tests = append(tests, tt{
+			name:    fmt.Sprintf("parse %v correctly", k),
+			path:    filepath.Join("grafana-dashboards", v.Location+".gz"),
+			expHash: v.Hash,
+		})
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := &bytes.Buffer{}
+			err := decompressAndPrint(dashFS, tt.path, writer)
+			require.NoError(t, err)
+
+			b := writer.Bytes()
+
+			sum := sha256.Sum256(b)
+			require.Equal(t, tt.expHash, fmt.Sprintf("%x", sum))
+
+			var dash map[string]any
+			err = json.Unmarshal(b, &dash)
+			require.NoError(t, err)
+		})
+	}
 }
