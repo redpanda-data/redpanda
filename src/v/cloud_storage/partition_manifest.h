@@ -165,7 +165,12 @@ public:
               nm.name);
             nm.meta.segment_term = maybe_key->term;
             _segments.insert(std::make_pair(nm.meta.base_offset, nm.meta));
-            _cloud_log_size_bytes += nm.meta.size_bytes;
+
+            if (
+              nm.meta.base_offset >= _start_offset
+              && nm.meta.committed_offset <= _last_offset) {
+                _cloud_log_size_bytes += nm.meta.size_bytes;
+            }
         }
     }
 
