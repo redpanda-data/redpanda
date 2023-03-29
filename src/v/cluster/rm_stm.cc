@@ -146,7 +146,7 @@ fence_batch_data read_fence_batch(model::record_batch&& b) {
         transaction_timeout_ms
           = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
     }
-    model::partition_id tm{model::tx_manager_ntp.tp.partition};
+    model::partition_id tm{model::legacy_tm_ntp.tp.partition};
     if (version >= rm_stm::fence_control_record_version) {
         tm = reflection::adl<model::partition_id>{}.from(val_reader);
     }
@@ -2283,7 +2283,7 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         // and use the true partition_id here
         auto tx_data = _log_state.current_txes.find(pid);
         model::partition_id tm_partition{
-          model::partition_id(model::tx_manager_ntp.tp.partition)};
+          model::partition_id(model::legacy_tm_ntp.tp.partition)};
         if (tx_data != _log_state.current_txes.end()) {
             tm_partition = tx_data->second.tm_partition;
         }
@@ -2599,7 +2599,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
               .pid = entry.pid,
               .tx_seq = entry.tx_seq,
-              .tm = model::tx_manager_ntp.tp.partition});
+              .tm = model::legacy_tm_ntp.tp.partition});
         }
 
     } else if (hdr.version == tx_snapshot_v2::version) {
@@ -2611,7 +2611,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
               .pid = entry.pid,
               .tx_seq = entry.tx_seq,
-              .tm = model::tx_manager_ntp.tp.partition});
+              .tm = model::legacy_tm_ntp.tp.partition});
         }
     } else if (hdr.version == tx_snapshot_v1::version) {
         auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
@@ -2644,7 +2644,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
               .pid = entry.pid,
               .tx_seq = entry.tx_seq,
-              .tm = model::tx_manager_ntp.tp.partition});
+              .tm = model::legacy_tm_ntp.tp.partition});
         }
     } else if (hdr.version == tx_snapshot_v0::version) {
         auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
@@ -2661,7 +2661,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
               .pid = entry.pid,
               .tx_seq = entry.tx_seq,
-              .tm = model::tx_manager_ntp.tp.partition});
+              .tm = model::legacy_tm_ntp.tp.partition});
         }
     } else {
         vassert(

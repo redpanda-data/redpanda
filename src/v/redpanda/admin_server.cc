@@ -917,7 +917,7 @@ ss::future<> admin_server::throw_on_error(
               fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
         case cluster::tx_errc::partition_not_found: {
             ss::sstring error_msg;
-            if (ntp == model::tx_manager_ntp) {
+            if (ntp == model::legacy_tm_ntp) {
                 error_msg = fmt::format("Can not find ntp:{}", ntp);
             } else {
                 error_msg = fmt::format(
@@ -3182,8 +3182,8 @@ admin_server::get_all_transactions_handler(
         throw ss::httpd::bad_request_exception("Transaction are disabled");
     }
 
-    if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
+    if (need_redirect_to_leader(model::legacy_tm_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::legacy_tm_ntp);
     }
 
     auto& tx_frontend = _partition_manager.local().get_tx_frontend();
@@ -3193,7 +3193,7 @@ admin_server::get_all_transactions_handler(
 
     auto res = co_await tx_frontend.local().get_all_transactions();
     if (!res.has_value()) {
-        co_await throw_on_error(*req, res.error(), model::tx_manager_ntp);
+        co_await throw_on_error(*req, res.error(), model::legacy_tm_ntp);
     }
 
     using tx_info = ss::httpd::transaction_json::transaction_summary;
@@ -3254,8 +3254,8 @@ admin_server::get_all_transactions_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
-    if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
-        throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
+    if (need_redirect_to_leader(model::legacy_tm_ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, model::legacy_tm_ntp);
     }
 
     auto transaction_id = req->param["transactional_id"];

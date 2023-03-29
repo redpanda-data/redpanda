@@ -157,7 +157,7 @@ FIXTURE_TEST(test_tx_happy_tx, mux_state_machine_fixture) {
                        tx_seq,
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
-                       model::tx_manager_ntp.tp.partition)
+                       model::partition_id(0))
                      .get0();
     BOOST_REQUIRE((bool)term_op);
 
@@ -248,7 +248,7 @@ FIXTURE_TEST(test_tx_aborted_tx_1, mux_state_machine_fixture) {
                        tx_seq,
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
-                       model::tx_manager_ntp.tp.partition)
+                       model::partition_id(0))
                      .get0();
     BOOST_REQUIRE((bool)term_op);
 
@@ -343,7 +343,7 @@ FIXTURE_TEST(test_tx_aborted_tx_2, mux_state_machine_fixture) {
                        tx_seq,
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
-                       model::tx_manager_ntp.tp.partition)
+                       model::partition_id(0))
                      .get0();
     BOOST_REQUIRE((bool)term_op);
 
@@ -480,7 +480,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
                        tx_seq,
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
-                       model::tx_manager_ntp.tp.partition)
+                       model::partition_id(0))
                      .get0();
     BOOST_REQUIRE((bool)term_op);
 
@@ -491,7 +491,7 @@ FIXTURE_TEST(test_tx_begin_fences_produce, mux_state_machine_fixture) {
                   tx_seq,
                   std::chrono::milliseconds(
                     std::numeric_limits<int32_t>::max()),
-                  model::tx_manager_ntp.tp.partition)
+                  model::partition_id(0))
                 .get0();
     BOOST_REQUIRE((bool)term_op);
 
@@ -550,7 +550,7 @@ FIXTURE_TEST(test_tx_post_aborted_produce, mux_state_machine_fixture) {
                        tx_seq,
                        std::chrono::milliseconds(
                          std::numeric_limits<int32_t>::max()),
-                       model::tx_manager_ntp.tp.partition)
+                       model::partition_id(0))
                      .get0();
     BOOST_REQUIRE((bool)term_op);
 
@@ -650,8 +650,7 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     auto start_tx = [&]() {
         auto pid = model::producer_identity{pid_counter++, 0};
         BOOST_REQUIRE(
-          stm.begin_tx(pid, tx_seq, timeout, model::tx_manager_ntp.tp.partition)
-            .get0());
+          stm.begin_tx(pid, tx_seq, timeout, model::partition_id(0)).get0());
         auto rreader = make_rreader(pid, 0, 5, true);
         BOOST_REQUIRE(
           stm.replicate(rreader.id, std::move(rreader.reader), opts).get0());

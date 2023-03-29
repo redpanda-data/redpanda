@@ -49,7 +49,10 @@ inline const model::topic_partition coprocessor_internal_tp{
 inline const model::topic tx_manager_topic("tx");
 inline const model::topic_namespace
   tx_manager_nt(model::kafka_internal_namespace, tx_manager_topic);
-inline const model::ntp tx_manager_ntp(
+// Previously we had only one partition in tm.
+// Now we support multiple partitions.
+// legacy_tm_ntp exists to support previous behaviour
+inline const model::ntp legacy_tm_ntp(
   model::kafka_internal_namespace,
   model::tx_manager_topic,
   model::partition_id(0));

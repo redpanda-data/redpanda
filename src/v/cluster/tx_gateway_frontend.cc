@@ -137,10 +137,9 @@ static tm_transaction as_tx(
 
 template<typename Func>
 auto tx_gateway_frontend::with_stm(Func&& func) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+    auto partition = _partition_manager.local().get(model::legacy_tm_ntp);
     if (!partition) {
-        vlog(
-          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't get partition by {} ntp", model::legacy_tm_ntp);
         return func(tx_errc::partition_not_found);
     }
 
@@ -150,7 +149,7 @@ auto tx_gateway_frontend::with_stm(Func&& func) {
         vlog(
           txlog.warn,
           "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
+          model::legacy_tm_ntp);
         return func(tx_errc::stm_not_found);
     }
 
@@ -256,7 +255,7 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
         }
     }
 
-    co_return _metadata_cache.local().get_leader_id(model::tx_manager_ntp);
+    co_return _metadata_cache.local().get_leader_id(model::legacy_tm_ntp);
 }
 
 ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
@@ -435,23 +434,23 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
     if (!_metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
+          model::tx_manager_nt, model::legacy_tm_ntp.tp.partition)) {
         vlog(txlog.warn, "can't find {}/0 partition", model::tx_manager_nt);
         co_return try_abort_reply{tx_errc::partition_not_exists};
     }
 
-    auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+    auto leader_opt = _leaders.local().get_leader(model::legacy_tm_ntp);
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
     while (!aborted && !leader_opt && 0 < retries--) {
         aborted = !co_await sleep_abortable(delay_ms, _as);
-        leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+        leader_opt = _leaders.local().get_leader(model::legacy_tm_ntp);
     }
 
     if (!leader_opt) {
-        vlog(txlog.warn, "can't find a leader for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a leader for {}", model::legacy_tm_ntp);
         co_return try_abort_reply{tx_errc::leader_not_found};
     }
 
@@ -493,7 +492,7 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
     vlog(
       txlog.trace, "processing name:try_abort, pid:{}, tx_seq:{}", pid, tx_seq);
 
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     if (!shard) {
         vlog(
@@ -799,7 +798,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     auto aborted = false;
 
     auto has_metadata = _metadata_cache.local().contains(
-      model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
+      model::tx_manager_nt, model::legacy_tm_ntp.tp.partition);
     while (!aborted && !has_metadata && 0 < retries--) {
         vlog(
           txlog.trace,
@@ -808,7 +807,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
           retries);
         aborted = !co_await sleep_abortable(delay_ms, _as);
         has_metadata = _metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
+          model::tx_manager_nt, model::legacy_tm_ntp.tp.partition);
     }
     if (!has_metadata) {
         vlog(
@@ -820,21 +819,21 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
 
     retries = _metadata_dissemination_retries;
     aborted = false;
-    auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+    auto leader_opt = _leaders.local().get_leader(model::legacy_tm_ntp);
     while (!aborted && !leader_opt && 0 < retries--) {
         vlog(
           txlog.trace,
           "waiting for {} to fill leaders cache, retries left: {}",
-          model::tx_manager_ntp,
+          model::legacy_tm_ntp,
           retries);
         aborted = !co_await sleep_abortable(delay_ms, _as);
-        leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+        leader_opt = _leaders.local().get_leader(model::legacy_tm_ntp);
     }
     if (!leader_opt) {
         vlog(
           txlog.warn,
           "can't find {} in the leaders cache",
-          model::tx_manager_ntp);
+          model::legacy_tm_ntp);
         co_return cluster::init_tm_tx_reply{tx_errc::leader_not_found};
     }
 
@@ -881,14 +880,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
       tx_id,
       transaction_timeout_ms);
 
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
     while (!aborted && !shard && 0 < retries--) {
         aborted = !co_await sleep_abortable(delay_ms, _as);
-        shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+        shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
     }
 
     if (!shard) {
@@ -1198,10 +1197,10 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
 ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
   add_paritions_tx_request request, model::timeout_clock::duration timeout) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.trace, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.trace, "can't find a shard for {}", model::legacy_tm_ntp);
         return ss::make_ready_future<add_paritions_tx_reply>(
           make_add_partitions_error_response(
             request, tx_errc::coordinator_not_available));
@@ -1323,7 +1322,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
               tx.tx_seq,
               tx.timeout_ms,
               timeout,
-              model::tx_manager_ntp.tp.partition));
+              model::legacy_tm_ntp.tp.partition));
         }
         brs = co_await when_all_succeed(bfs.begin(), bfs.end());
         for (auto& br : brs) {
@@ -1405,10 +1404,10 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
 ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
   add_offsets_tx_request request, model::timeout_clock::duration timeout) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", model::legacy_tm_ntp);
         return ss::make_ready_future<add_offsets_tx_reply>(add_offsets_tx_reply{
           .error_code = tx_errc::coordinator_not_available});
     }
@@ -1500,10 +1499,10 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
 
 ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
   end_tx_request request, model::timeout_clock::duration timeout) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", model::legacy_tm_ntp);
         return ss::make_ready_future<end_tx_reply>(
           end_tx_reply{.error_code = tx_errc::coordinator_not_available});
     }
@@ -1922,7 +1921,7 @@ tx_gateway_frontend::do_commit_tm_tx(
                 pfs.push_back(_rm_partition_frontend.local().prepare_tx(
                   rm.ntp,
                   rm.etag,
-                  model::tx_manager_ntp.tp.partition,
+                  model::legacy_tm_ntp.tp.partition,
                   tx.pid,
                   tx.tx_seq,
                   timeout));
@@ -2867,7 +2866,7 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
 
 void tx_gateway_frontend::expire_old_txs() {
     ssx::spawn_with_gate(_gate, [this] {
-        auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+        auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
         if (shard == std::nullopt) {
             rearm_expire_timer();
@@ -2958,10 +2957,10 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
 
 ss::future<tx_gateway_frontend::return_all_txs_res>
 tx_gateway_frontend::get_all_transactions() {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     if (!shard.has_value()) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", model::legacy_tm_ntp);
         co_return tx_errc::shard_not_found;
     }
 
@@ -2971,12 +2970,12 @@ tx_gateway_frontend::get_all_transactions() {
       [](tx_gateway_frontend& self)
         -> ss::future<tx_gateway_frontend::return_all_txs_res> {
           auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
+            model::legacy_tm_ntp);
           if (!partition) {
               vlog(
                 txlog.warn,
                 "can't get partition by {} ntp",
-                model::tx_manager_ntp);
+                model::legacy_tm_ntp);
               co_return tx_errc::partition_not_found;
           }
 
@@ -2986,7 +2985,7 @@ tx_gateway_frontend::get_all_transactions() {
               vlog(
                 txlog.error,
                 "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
+                model::legacy_tm_ntp);
               co_return tx_errc::unknown_server_error;
           }
 
@@ -3007,10 +3006,10 @@ tx_gateway_frontend::get_all_transactions() {
 
 ss::future<result<tm_transaction, tx_errc>>
 tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     if (!shard.has_value()) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", model::legacy_tm_ntp);
         return ss::make_ready_future<result<tm_transaction, tx_errc>>(
           tx_errc::shard_not_found);
     }
@@ -3021,12 +3020,12 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
       [tid](tx_gateway_frontend& self)
         -> ss::future<result<tm_transaction, tx_errc>> {
           auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
+            model::legacy_tm_ntp);
           if (!partition) {
               vlog(
                 txlog.warn,
                 "transaction manager partition: {} not found",
-                model::tx_manager_ntp);
+                model::legacy_tm_ntp);
               return ss::make_ready_future<result<tm_transaction, tx_errc>>(
                 tx_errc::partition_not_found);
           }
@@ -3037,7 +3036,7 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
               vlog(
                 txlog.error,
                 "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
+                model::legacy_tm_ntp);
               return ss::make_ready_future<result<tm_transaction, tx_errc>>(
                 tx_errc::stm_not_found);
           }
@@ -3080,22 +3079,22 @@ ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
   kafka::transactional_id tid, tm_transaction::tx_partition ntp) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto shard = _shard_table.local().shard_for(model::legacy_tm_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", model::legacy_tm_ntp);
         co_return tx_errc::shard_not_found;
     }
 
     co_return co_await container().invoke_on(
       *shard, _ssg, [tid, ntp](tx_gateway_frontend& self) {
           auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
+            model::legacy_tm_ntp);
           if (!partition) {
               vlog(
                 txlog.warn,
                 "can't get partition by {} ntp",
-                model::tx_manager_ntp);
+                model::legacy_tm_ntp);
               return ss::make_ready_future<tx_errc>(tx_errc::invalid_txn_state);
           }
 
@@ -3105,7 +3104,7 @@ ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
               vlog(
                 txlog.warn,
                 "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
+                model::legacy_tm_ntp);
               return ss::make_ready_future<tx_errc>(tx_errc::invalid_txn_state);
           }
 

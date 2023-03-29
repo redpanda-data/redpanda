@@ -212,7 +212,7 @@ private:
                               _ctx._pid,
                               model::tx_seq{0},
                               tx_timeout,
-                              model::tx_manager_ntp.tp.partition)
+                              model::partition_id(0))
                             .get0());
         }
 
@@ -232,7 +232,7 @@ private:
               _ctx._stm
                 ->prepare_tx(
                   _ctx._term,
-                  model::tx_manager_ntp.tp.partition,
+                  model::partition_id(0),
                   _ctx._pid,
                   model::tx_seq{0},
                   tx_timeout)

@@ -3243,8 +3243,10 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
         auto tx_seq = p_it->second.tx_seq;
         auto r = co_await _tx_frontend.local().try_abort(
           model::partition_id(
-            0), // TODO: Pass partition_id to prepare request and use it here.
-                // https://github.com/redpanda-data/redpanda/issues/6137
+            model::legacy_tm_ntp.tp
+              .partition), // TODO: Pass partition_id to prepare request and use
+                           // it here.
+                           // https://github.com/redpanda-data/redpanda/issues/6137
           pid,
           tx_seq,
           config::shard_local_cfg().rm_sync_timeout_ms.value());
