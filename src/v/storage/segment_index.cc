@@ -19,6 +19,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/seastar.hh>
 
 #include <bits/stdint-uintn.h>
 #include <boost/container/container_fwd.hpp>
@@ -229,6 +230,7 @@ ss::future<bool> segment_index::materialize_index_from_file(ss::file f) {
 
 ss::future<> segment_index::drop_all_data() {
     reset();
+    clear_cached_disk_usage();
     return ss::with_file(open(), [](ss::file f) { return f.truncate(0); });
 }
 
@@ -237,6 +239,7 @@ ss::future<> segment_index::flush() {
         return ss::now();
     }
     _needs_persistence = false;
+    clear_cached_disk_usage();
     return with_file(open(), [this](ss::file backing_file) {
         return flush_to_file(std::move(backing_file));
     });
@@ -274,6 +277,24 @@ operator<<(std::ostream& o, const std::optional<segment_index::entry>& e) {
 std::ostream& operator<<(std::ostream& o, const segment_index::entry& e) {
     return o << "{offset:" << e.offset << ", time:" << e.timestamp
              << ", filepos:" << e.filepos << "}";
+}
+
+ss::future<size_t> segment_index::disk_usage() {
+    if (!_disk_usage_size.has_value()) {
+        try {
+            _disk_usage_size = co_await ss::file_size(path().string());
+        } catch (const std::filesystem::filesystem_error& e) {
+            const auto level = e.code() == std::errc::no_such_file_or_directory
+                                 ? ss::log_level::trace
+                                 : ss::log_level::info;
+            vlogl(stlog, level, "could not query file size {}: {}", path(), e);
+            co_return 0;
+        } catch (const std::exception& e) {
+            vlog(stlog.info, "could not query file size {}: {}", path(), e);
+            co_return 0;
+        }
+    }
+    co_return _disk_usage_size.value();
 }
 
 } // namespace storage

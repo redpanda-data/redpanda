@@ -137,10 +137,10 @@ ss::future<> disk_log_builder::gc(
     return ss::make_ready_future<>();
 }
 
-ss::future<reclaim_size_limits> disk_log_builder::gc_estimate(
+ss::future<usage_report> disk_log_builder::disk_usage(
   model::timestamp collection_upper_bound,
   std::optional<size_t> max_partition_retention_size) {
-    return get_disk_log_impl().estimate_reclaim_size(compaction_config(
+    return get_disk_log_impl().disk_usage(compaction_config(
       collection_upper_bound,
       max_partition_retention_size,
       model::offset::max(),

@@ -162,11 +162,9 @@ public:
 
     /*
      * return an estimate of how much data on disk is associated with this
-     * segment (e.g. the data file, indices, etc...). if the segment has been
-     * removed already (i.e. marked as a tombstone and closed) then the total
-     * amount of bytes actually removed from disk is reported.
+     * segment (e.g. the data file, indices, etc...).
      */
-    ss::future<size_t> persistent_size();
+    ss::future<usage> persistent_size();
 
     /*
      * return the number of bytes removed from disk.
@@ -189,9 +187,7 @@ public:
         return _first_write;
     }
 
-    void invalidate_compaction_index_size() {
-        _compaction_index_size = std::nullopt;
-    }
+    void clear_cached_disk_usage();
 
 private:
     void set_close();
@@ -211,12 +207,6 @@ private:
     ss::future<> do_compaction_index_batch(const model::record_batch&);
     void release_appender_in_background(readers_cache* readers_cache);
 
-    /*
-     * _removed_persistent_size is the total number of bytes removed when this
-     * segment is deleted. it is set once, after the segment is marked as a
-     * tombstone and closed.
-     */
-    std::optional<size_t> _removed_persistent_size;
     ss::future<size_t> remove_persistent_state(std::filesystem::path);
 
     struct appender_callbacks : segment_appender::callbacks {
@@ -253,6 +243,7 @@ private:
     segment_index _idx;
     bitflags _flags{bitflags::none};
     segment_appender_ptr _appender;
+    std::optional<size_t> _data_disk_usage_size;
 
     // compaction index size should be cleared whenever the size might change
     // (e.g. after compaction). when cleared it will reset the next time the

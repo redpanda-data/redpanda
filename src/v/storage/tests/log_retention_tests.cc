@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "model/fundamental.h"
 #include "storage/tests/utils/disk_log_builder.h"
 // fixture
 #include "test_utils/fixture.h"
@@ -125,7 +126,12 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
     }
 
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 2_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 2_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 2_MiB),
       20_KiB);
 
     // second segment
@@ -146,7 +152,12 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     // the first segment is now eligible for reclaim
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 3_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 3_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 3_MiB),
       20_KiB);
 
     // third segment
@@ -167,7 +178,12 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     // the first,second segment is now eligible for reclaim
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 4_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 4_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 4_MiB),
       20_KiB);
 
     // active segment
@@ -188,14 +204,22 @@ FIXTURE_TEST(retention_test_size_time, gc_fixture) {
 
     // the first,second segment is now eligible for reclaim
     BOOST_CHECK_LT(
-      (builder.gc_estimate(model::timestamp::now(), 0).get().retention - 5_MiB),
+      (builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention
+       - 5_MiB),
+      20_KiB);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 5_MiB),
       20_KiB);
 
     builder | storage::garbage_collect(yesterday, 4_MiB);
 
     // right after gc runs there shouldn't be anything reclaimable
     BOOST_CHECK_EQUAL(
-      builder.gc_estimate(model::timestamp::now(), 0).get().retention, 0);
+      builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention,
+      0);
+    BOOST_CHECK_EQUAL(
+      builder.disk_usage(model::timestamp::now(), 0).get().usage.total(), 0);
 
     builder | storage::stop();
 
@@ -335,4 +359,68 @@ FIXTURE_TEST(retention_by_time_with_remote_write, gc_fixture) {
     builder | storage::garbage_collect(model::timestamp{1}, std::nullopt)
       | storage::stop();
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
+}
+
+FIXTURE_TEST(non_collectible_disk_usage_test, gc_fixture) {
+    // a few helpers
+    const auto last_week = model::to_timestamp(
+      model::timestamp_clock::now() - std::chrono::days(7));
+    const size_t num_records = 10;
+    const auto part_size = [this] {
+        return builder.get_disk_log_impl().get_probe().partition_size();
+    };
+
+    // setup non-collectible
+    auto overrides = std::make_unique<storage::ntp_config::default_overrides>();
+    overrides->cleanup_policy_bitflags = model::cleanup_policy_bitflags::none;
+    storage::ntp_config config(
+      storage::log_builder_ntp(),
+      builder.get_log_config().base_dir,
+      std::move(overrides));
+
+    // first segment
+    model::offset offset{0};
+    builder | storage::start(std::move(config)) | storage::add_segment(offset);
+    size_t start_size = part_size();
+    while ((part_size() - start_size) < 2_MiB) {
+        builder
+          | storage::add_random_batch(
+            offset,
+            num_records,
+            storage::maybe_compress_batches::no,
+            model::record_batch_type::raft_data,
+            storage::append_config(),
+            storage::disk_log_builder::should_flush_after::no,
+            last_week);
+        offset += model::offset(num_records);
+    }
+
+    // second segment
+    builder | storage::add_segment(offset);
+    start_size = part_size();
+    while ((part_size() - start_size) < 1_MiB) {
+        builder
+          | storage::add_random_batch(
+            offset,
+            num_records,
+            storage::maybe_compress_batches::no,
+            model::record_batch_type::raft_data,
+            storage::append_config(),
+            storage::disk_log_builder::should_flush_after::no,
+            last_week);
+        offset += model::offset(num_records);
+    }
+
+    BOOST_REQUIRE_EQUAL(
+      builder.get_disk_log_impl().config().is_collectable(), false);
+
+    BOOST_CHECK_EQUAL(
+      builder.disk_usage(model::timestamp::now(), 0).get().reclaim.retention,
+      0);
+    BOOST_CHECK_LT(
+      (builder.disk_usage(model::timestamp::now(), 0).get().usage.total()
+       - 3_MiB),
+      20_KiB);
+
+    builder | storage::stop();
 }

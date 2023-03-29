@@ -394,4 +394,53 @@ struct compaction_result {
     friend std::ostream& operator<<(std::ostream&, const compaction_result&);
 };
 
+/*
+ * Report number of bytes available for reclaim under different scenarios.
+ *
+ * retention: number of bytes that would be reclaimed by applying
+ *            the log's retention policy.
+ *
+ * available: number of bytes that could be safely reclaimed if the
+ *            retention policy was ignored. for example reclaiming
+ *            past the retention limits if the data being reclaimed
+ *            has been uploaded to cloud storage.
+ */
+struct reclaim_size_limits {
+    size_t retention{0};
+    size_t available{0};
+};
+
+/*
+ * disk usage
+ *
+ * data: segment data
+ * index: offset/time index
+ * compaction: compaction index
+ */
+struct usage {
+    size_t data{0};
+    size_t index{0};
+    size_t compaction{0};
+
+    size_t total() const { return data + index + compaction; }
+
+    friend usage operator+(usage lhs, const usage& rhs) {
+        lhs.data += rhs.data;
+        lhs.index += rhs.index;
+        lhs.compaction += rhs.compaction;
+        return lhs;
+    }
+};
+
+/*
+ * disk usage report
+ *
+ * usage: disk usage summary for log.
+ * reclaim: disk uage reclaim summary for log.
+ */
+struct usage_report {
+    usage usage;
+    reclaim_size_limits reclaim;
+};
+
 } // namespace storage

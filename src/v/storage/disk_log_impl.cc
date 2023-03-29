@@ -415,7 +415,7 @@ ss::future<> disk_log_impl::do_compact(
           segment->reader().filename(),
           result);
         if (result.did_compact()) {
-            segment->invalidate_compaction_index_size();
+            segment->clear_cached_disk_usage();
             _compaction_ratio.update(result.compaction_ratio());
             co_return;
         }
@@ -531,6 +531,8 @@ ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
 
     // the segment which will be expanded to replace
     auto target = segments.front();
+
+    target->clear_cached_disk_usage();
 
     // concatenate segments from the compaction range into replacement segment
     // backed by a staging file. the process is completed while holding a read
@@ -1697,17 +1699,11 @@ log make_disk_backed_log(
     return log(ptr);
 }
 
-ss::future<reclaim_size_limits>
-disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
-    if (!config().is_collectable()) {
-        co_return reclaim_size_limits();
-    }
-
-    cfg = apply_overrides(cfg);
-
-    auto max_offset = retention_offset(cfg);
-    if (!max_offset.has_value()) {
-        co_return reclaim_size_limits();
+ss::future<usage_report> disk_log_impl::disk_usage(compaction_config cfg) {
+    std::optional<model::offset> max_offset;
+    if (config().is_collectable()) {
+        cfg = apply_overrides(cfg);
+        max_offset = retention_offset(cfg);
     }
 
     /*
@@ -1731,40 +1727,74 @@ disk_log_impl::estimate_reclaim_size(compaction_config cfg) {
      * more of the retention controls into a higher level location.
      */
     const auto max_collectible = stm_manager()->max_collectible_offset();
-    const auto retention_offset = std::min(max_offset.value(), max_collectible);
+    const auto retention_offset = [&]() -> std::optional<model::offset> {
+        if (max_offset.has_value()) {
+            return std::min(max_offset.value(), max_collectible);
+        }
+        return std::nullopt;
+    }();
 
     /*
-     * truncate_prefix() dry run
+     * truncate_prefix() dry run. the available segments are tabulated even when
+     * retention is not enabled data may be available in cloud storage and
+     * still be subject to reclaim in low disk space situations.
      */
     fragmented_vector<segment_set::type> retention_segments;
     fragmented_vector<segment_set::type> available_segments;
+    fragmented_vector<segment_set::type> remaining_segments;
     for (auto& seg : _segs) {
-        if (seg->offsets().dirty_offset <= retention_offset) {
+        if (
+          retention_offset.has_value()
+          && seg->offsets().dirty_offset <= retention_offset.value()) {
             retention_segments.push_back(seg);
         } else if (seg->offsets().dirty_offset <= max_collectible) {
             available_segments.push_back(seg);
         } else {
-            break;
+            remaining_segments.push_back(seg);
         }
     }
 
-    auto ret = co_await ss::when_all_succeed(
+    auto [retention, available, remaining] = co_await ss::when_all_succeed(
       // reduce segment subject to retention policy
       ss::map_reduce(
         retention_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
-        size_t(0),
-        std::plus<>()),
+        usage{},
+        [](usage acc, usage u) { return acc + u; }),
 
       // reduce segments available for reclaim
       ss::map_reduce(
         available_segments,
         [](const segment_set::type& seg) { return seg->persistent_size(); },
-        size_t(0),
-        std::plus<>()));
+        usage{},
+        [](usage acc, usage u) { return acc + u; }),
 
-    co_return reclaim_size_limits{
-      .retention = std::get<0>(ret), .available = std::get<1>(ret)};
+      // reduce segments not available for reclaim
+      ss::map_reduce(
+        remaining_segments,
+        [](const segment_set::type& seg) { return seg->persistent_size(); },
+        usage{},
+        [](usage acc, usage u) { return acc + u; }));
+
+    /*
+     * usage is the persistent size of on disk segment components (e.g. data and
+     * indicies) accumulated across all segments.
+     */
+    usage usage = retention + available + remaining;
+
+    /*
+     * reclaim report contains total amount of data reclaimable by retention
+     * policy or available for reclaim due to being in cloud storage tier.
+     */
+    reclaim_size_limits reclaim{
+      .retention = retention.total(),
+      .available = retention.total() + available.total(),
+    };
+
+    co_return usage_report{
+      .usage = usage,
+      .reclaim = reclaim,
+    };
 }
 
 } // namespace storage
