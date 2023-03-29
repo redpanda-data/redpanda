@@ -11,7 +11,7 @@ jobs:
       VULN_REPORTS_AWS_BUCKET: ${{ secrets.VULN_REPORTS_AWS_BUCKET }}
       AWS_EC2_METADATA_DISABLED: true
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: run kics Scan
         uses: checkmarx/kics-github-action@v1.6.3
         with:

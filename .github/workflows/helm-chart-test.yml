@@ -22,7 +22,7 @@ jobs:
     steps:
 
     - name: Check out code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
 
     - name: Set up Helm
       uses: azure/setup-helm@v1
@@ -49,7 +49,7 @@ jobs:
 
     - name: Archive test data
       if: ${{ failure() }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: kuttl helm test artifacts
         path: src/go/k8s/tests/_helm_e2e_artifacts
