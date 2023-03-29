@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Slash Command Dispatch
-        uses: peter-evans/slash-command-dispatch@v2
+        uses: peter-evans/slash-command-dispatch@v3
         with:
           token: ${{ secrets.ACTIONS_BOT_TOKEN }}
           permission: read
