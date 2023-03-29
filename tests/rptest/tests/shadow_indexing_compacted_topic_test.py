@@ -16,7 +16,9 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
     topics = (TopicSpec(name='panda-topic',
                         partition_count=1,
                         replication_factor=3,
-                        cleanup_policy='compact,delete'), )
+                        cleanup_policy='compact,delete',
+                        redpanda_remote_read=True,
+                        redpanda_remote_write=True), )
 
     def __init__(self, test_context):
         super().__init__(test_context)

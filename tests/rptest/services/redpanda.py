@@ -334,8 +334,8 @@ class SISettings:
                  cloud_storage_api_endpoint: str = 'minio-s3',
                  cloud_storage_api_endpoint_port: int = 9000,
                  cloud_storage_cache_size: int = 160 * 1000000,
-                 cloud_storage_enable_remote_read: bool = True,
-                 cloud_storage_enable_remote_write: bool = True,
+                 cloud_storage_enable_remote_read: bool = False,
+                 cloud_storage_enable_remote_write: bool = False,
                  cloud_storage_max_connections: Optional[int] = None,
                  cloud_storage_disable_tls: bool = True,
                  cloud_storage_segment_max_upload_interval_sec: Optional[

@@ -39,11 +39,11 @@ class EndToEndShadowIndexingBase(EndToEndTest):
 
     num_brokers = 3
 
-    topics = (TopicSpec(
-        name=s3_topic_name,
-        partition_count=1,
-        replication_factor=3,
-    ), )
+    topics = (TopicSpec(name=s3_topic_name,
+                        partition_count=1,
+                        replication_factor=3,
+                        redpanda_remote_read=True,
+                        redpanda_remote_write=True), )
 
     def __init__(self, test_context, extra_rp_conf=None, environment=None):
         super(EndToEndShadowIndexingBase,
@@ -129,7 +129,9 @@ class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):
         partition_count=1,
         replication_factor=3,
         cleanup_policy="compact,delete",
-        segment_bytes=EndToEndShadowIndexingBase.segment_size // 2), )
+        segment_bytes=EndToEndShadowIndexingBase.segment_size // 2,
+        redpanda_remote_read=True,
+        redpanda_remote_write=True), )
 
     def _prime_compacted_topic(self, segment_count):
         # Set compaction interval high at first, so we can get enough segments in log
@@ -309,7 +311,9 @@ class ShadowIndexingInfiniteRetentionTest(EndToEndShadowIndexingBase):
                         replication_factor=1,
                         retention_bytes=-1,
                         retention_ms=-1,
-                        segment_bytes=small_segment_size), )
+                        segment_bytes=small_segment_size,
+                        redpanda_remote_read=True,
+                        redpanda_remote_write=True), )
 
     def __init__(self, test_context):
         self.num_brokers = 1

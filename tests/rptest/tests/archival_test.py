@@ -143,7 +143,8 @@ class ArchivalTest(RedpandaTest):
     s3_topic_name = "panda-topic"
     topics = (TopicSpec(name=s3_topic_name,
                         partition_count=1,
-                        replication_factor=3), )
+                        replication_factor=3,
+                        redpanda_remote_write=True), )
 
     def __init__(self, test_context):
         self.si_settings = SISettings(test_context,
