@@ -25,4 +25,10 @@ parse_connection_rate_override(const ss::sstring& raw_option);
 std::optional<ss::sstring>
 validate_connection_rate(const std::vector<ss::sstring>& ips_with_limit);
 
+std::optional<ss::sstring>
+validate_non_empty_string_vec(const std::vector<ss::sstring>&);
+
+std::optional<ss::sstring>
+validate_non_empty_string_opt(const std::optional<ss::sstring>&);
+
 }; // namespace config
