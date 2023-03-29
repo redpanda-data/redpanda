@@ -665,7 +665,35 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
 
 ss::future<std::error_code>
 topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
-    co_return errc::success;
+    _last_applied_revision_id = model::revision_id(o);
+    // Check the topic exists.
+    auto tp = _topics.find(model::topic_namespace_view(cmd.key));
+    if (tp == _topics.end()) {
+        return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+    }
+    if (!tp->second.is_topic_replicable()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::topic_operation_error);
+    }
+
+    auto current_assignment_it = tp->second.get_assignments().find(
+      cmd.key.tp.partition);
+
+    if (current_assignment_it == tp->second.get_assignments().end()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::partition_not_exists);
+    }
+
+    if (auto it = _updates_in_progress.find(cmd.key);
+        it != _updates_in_progress.end()) {
+        return ss::make_ready_future<std::error_code>(errc::update_in_progress);
+    }
+
+    change_partition_replicas(
+      cmd.key, cmd.value.replicas, tp->second, *current_assignment_it, o, true);
+    notify_waiters();
+
+    return ss::make_ready_future<std::error_code>(errc::success);
 }
 
 template<typename T>
