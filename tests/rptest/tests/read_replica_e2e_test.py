@@ -53,6 +53,7 @@ class TestReadReplicaService(EndToEndTest):
         self.rr_settings = SISettings(
             test_context,
             bypass_bucket_creation=True,
+            cloud_storage_enable_remote_write=False,
             cloud_storage_max_connections=5,
             log_segment_size=TestReadReplicaService.log_segment_size,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
