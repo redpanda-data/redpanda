@@ -274,7 +274,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     }
 
     change_partition_replicas(
-      cmd.key, cmd.value, tp->second, *current_assignment_it, o);
+      cmd.key, cmd.value, tp->second, *current_assignment_it, o, false);
     notify_waiters();
 
     return ss::make_ready_future<std::error_code>(errc::success);
@@ -654,7 +654,8 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
           new_replicas,
           tp->second,
           *assignment,
-          o);
+          o,
+          false);
     }
 
     notify_waiters();
@@ -1104,9 +1105,14 @@ public:
                 cur_assignment.replicas = update_it->second.target_assignment;
             }
 
+            auto initial_state = update.state
+                                     == reconfiguration_state::force_update
+                                   ? update.state
+                                   : reconfiguration_state::in_progress;
             in_progress_update inp_update{
               partition.replicas,
               update.target_assignment,
+              initial_state,
               update.revision,
               _probe,
             };
@@ -1608,7 +1614,8 @@ void topic_table::change_partition_replicas(
   const std::vector<model::broker_shard>& new_assignment,
   topic_metadata_item& metadata,
   partition_assignment& current_assignment,
-  model::offset o) {
+  model::offset o,
+  bool is_forced) {
     if (are_replica_sets_equal(current_assignment.replicas, new_assignment)) {
         return;
     }
@@ -1618,7 +1625,12 @@ void topic_table::change_partition_replicas(
     _updates_in_progress.emplace(
       ntp,
       in_progress_update(
-        current_assignment.replicas, new_assignment, update_revision, _probe));
+        current_assignment.replicas,
+        new_assignment,
+        is_forced ? reconfiguration_state::force_update
+                  : reconfiguration_state::in_progress,
+        update_revision,
+        _probe));
     auto previous_assignment = current_assignment.replicas;
     // replace partition replica set
     current_assignment.replicas = new_assignment;
@@ -1633,6 +1645,7 @@ void topic_table::change_partition_replicas(
               in_progress_update(
                 current_assignment.replicas,
                 new_assignment,
+                reconfiguration_state::in_progress,
                 update_revision,
                 _probe));
             vassert(
@@ -1668,11 +1681,14 @@ void topic_table::change_partition_replicas(
       "partition {} must exist in the partition map",
       ntp);
 
+    delta::op_type move_type = is_forced ? delta::op_type::force_update
+                                         : delta::op_type::update;
+
     _pending_deltas.emplace_back(
       std::move(ntp),
       current_assignment,
       o,
-      delta::op_type::update,
+      move_type,
       std::move(previous_assignment),
       update_replicas_revisions(
         partition_it->second.replicas_revisions,
