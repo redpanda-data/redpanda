@@ -16,13 +16,7 @@ import (
 	"os"
 	"time"
 
-	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
+	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -32,6 +26,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
 const (
