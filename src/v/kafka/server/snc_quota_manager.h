@@ -10,6 +10,8 @@
  */
 
 #pragma once
+#include "cluster/fwd.h"
+#include "cluster/snc_quota_balancer_types.h"
 #include "config/property.h"
 #include "seastarx.h"
 #include "utils/bottomless_token_bucket.h"
@@ -65,7 +67,7 @@ public:
     using clock = ss::lowres_clock;
     using quota_t = bottomless_token_bucket::quota_t;
 
-    snc_quota_manager();
+    snc_quota_manager(ss::sharded<cluster::snc_quota_balancer_frontend>&);
     snc_quota_manager(const snc_quota_manager&) = delete;
     snc_quota_manager& operator=(const snc_quota_manager&) = delete;
     snc_quota_manager(snc_quota_manager&&) = delete;
@@ -104,6 +106,10 @@ public:
     /// Record the response size for all purposes
     void record_response(
       size_t request_size, clock::time_point now = clock::now()) noexcept;
+
+    /// X-core invoke a lend request handler for quota balancer on quota shard
+    ss::future<cluster::snc_quota_balancer_lend_reply>
+      handle_lend_request(cluster::snc_quota_balancer_lend_request);
 
     /// Metrics probe object
     const snc_quotas_probe& get_snc_quotas_probe() const noexcept {
@@ -161,6 +167,10 @@ private:
     /// Increase or decrease the current shard quota by the argument
     void adjust_quota(const ingress_egress_state<quota_t>& delta) noexcept;
 
+    /// Lend request handler on the balancer shard
+    ss::future<cluster::snc_quota_balancer_lend_reply>
+      handle_lend_request_backend(cluster::snc_quota_balancer_lend_request);
+
 private:
     // configuration
     config::binding<std::chrono::milliseconds> _max_kafka_throttle_delay;
@@ -184,7 +194,8 @@ private:
     ingress_egress_state<quota_t> _shard_quota_minimum;
     ingress_egress_state<bottomless_token_bucket> _shard_quota;
 
-    // service
+    // infra & service
+    ss::sharded<cluster::snc_quota_balancer_frontend>& _fe;
     snc_quotas_probe _probe;
 };
 

@@ -41,6 +41,8 @@
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
+#include "cluster/snc_quota_balancer_frontend.h"
+#include "cluster/snc_quota_balancer_service.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topic_recovery_status_rpc_handler.h"
 #include "cluster/topics_frontend.h"
@@ -1182,7 +1184,10 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota managers").get();
     construct_service(quota_mgr).get();
-    construct_service(snc_quota_mgr).get();
+    construct_service(
+      snc_quota_frontend, std::ref(_connection_cache), controller.get())
+      .get();
+    construct_service(snc_quota_mgr, std::ref(snc_quota_frontend)).get();
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
@@ -2014,6 +2019,13 @@ void application::start_runtime_services(
               _scheduling_groups.cluster_sg(),
               smp_service_groups.cluster_smp_sg(),
               std::ref(topic_recovery_service)));
+
+          runtime_services.push_back(
+            std::make_unique<cluster::snc_quota_balancer_service>(
+              _scheduling_groups.cluster_sg(),
+              smp_service_groups.cluster_smp_sg(),
+              std::ref(snc_quota_mgr)));
+
           s.add_services(std::move(runtime_services));
 
           // Done! Disallow unknown method errors.

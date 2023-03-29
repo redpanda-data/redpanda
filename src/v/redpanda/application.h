@@ -113,6 +113,7 @@ public:
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<cluster::tm_stm_cache> tm_stm_cache;
     ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
+    ss::sharded<cluster::snc_quota_balancer_frontend> snc_quota_frontend;
 
     ss::sharded<coproc::partition_manager> cp_partition_manager;
 

@@ -9,6 +9,7 @@
 
 #include "kafka/server/snc_quota_manager.h"
 
+#include "cluster/snc_quota_balancer_frontend.h"
 #include "config/configuration.h"
 #include "kafka/server/logger.h"
 #include "prometheus/prometheus_sanitize.h"
@@ -130,7 +131,7 @@ quota_t node_to_shard_quota(const std::optional<quota_t> node_quota) {
 
 } // namespace
 
-snc_quota_manager::snc_quota_manager()
+snc_quota_manager::snc_quota_manager(ss::sharded<cluster::snc_quota_balancer_frontend>& fe)
   : _max_kafka_throttle_delay(
     config::shard_local_cfg().max_kafka_throttle_delay_ms.bind())
   , _kafka_throughput_limit_node_bps{
@@ -152,6 +153,7 @@ snc_quota_manager::snc_quota_manager()
            _kafka_quota_balancer_window()},
       .eg {node_to_shard_quota(_node_quota_default.eg),
            _kafka_quota_balancer_window()}}
+  , _fe(fe)
   , _probe(*this)
 {
     update_shard_quota_minimum();
@@ -776,6 +778,39 @@ void snc_quota_manager::adjust_quota(
     f(_shard_quota.in, delta.in, "in");
     f(_shard_quota.eg, delta.eg, "eg");
     vlog(klog.trace, "qm - Adjust quota: {} -> {}", delta, _shard_quota);
+}
+
+//
+// Intra-Node Balancer and Interfaces
+
+ss::future<cluster::snc_quota_balancer_lend_reply>
+snc_quota_manager::handle_lend_request(
+  cluster::snc_quota_balancer_lend_request req) {
+    co_return co_await container().invoke_on(
+      quota_balancer_shard, [req = std::move(req)](snc_quota_manager& qm) {
+          return qm.handle_lend_request_backend(std::move(req));
+      });
+}
+
+ss::future<cluster::snc_quota_balancer_lend_reply>
+snc_quota_manager::handle_lend_request_backend(
+  cluster::snc_quota_balancer_lend_request req) {
+    // start() might not have been called yet
+    if (!_balancer_timer.armed()) {
+        vlog(
+          klog.debug,
+          "qm - The balancer is not running, lend request ignored: {}",
+          req);
+        co_return cluster::snc_quota_balancer_lend_reply{};
+    }
+
+    vlog(klog.trace, "qm - Lend request: {}", req);
+    cluster::snc_quota_balancer_lend_reply rep{};
+
+    // TBD handle lend request here
+
+    vlog(klog.trace, "qm - Lend reply: {}", rep);
+    co_return rep;
 }
 
 } // namespace kafka
