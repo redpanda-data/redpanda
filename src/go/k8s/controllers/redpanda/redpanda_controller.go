@@ -14,6 +14,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"github.com/go-logr/logr"
 	"reflect"
 	"time"
 
@@ -152,22 +153,17 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 		return rp, ctrl.Result{}, err
 	}
 
-	if repo.Generation != repo.Status.ObservedGeneration || !apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition) {
-		msg := fmt.Sprintf("HelmRepository '%s/%s' is not ready", repo.GetNamespace(), repo.GetName())
+	isGenerationCurrent := repo.Generation != repo.Status.ObservedGeneration
+	isStatusConditionReady := apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition)
+	msgNotReady := fmt.Sprintf("HelmRepository '%s/%s' is not ready", repo.GetNamespace(), repo.GetName())
+	msgReady := fmt.Sprintf("HelmRepository '%s/%s' is ready", repo.GetNamespace(), repo.GetName())
+	isStatusReadyNILorTRUE := rp.Status.HelmRepositoryReady == nil || pointer.BoolEqual(rp.Status.HelmRepositoryReady, pointer.Bool(true))
+	isStatusReadyNILorFALSE := rp.Status.HelmRepositoryReady == nil || pointer.BoolEqual(rp.Status.HelmRepositoryReady, pointer.Bool(false))
 
-		if rp.Status.HelmRepositoryReady == nil || pointer.BoolEqual(rp.Status.HelmRepositoryReady, pointer.Bool(true)) {
-			r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, msg)
-		}
-
-		rp.Status.HelmRepositoryReady = pointer.Bool(false)
-		log.Info(msg)
-		// Do not requeue immediately.
-		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msg), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
-	} else if apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition) && (rp.Status.HelmRepositoryReady == nil || pointer.BoolEqual(rp.Status.HelmRepositoryReady, pointer.Bool(false))) {
-		// here since the condition should be true, we update the value to
-		// be true, and send an event
-		rp.Status.HelmRepositoryReady = pointer.Bool(true)
-		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRepository '%s/%s' is ready!", repo.GetNamespace(), repo.GetName()))
+	isResourceReady := r.checkIfResourceIsReady(log, msgNotReady, msgReady, repo.Kind, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
+	if !isResourceReady {
+		// need to requeue in this case
+		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msgNotReady), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
 	}
 
 	// Check if HelmRelease exists or create it also
@@ -179,28 +175,54 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 		log.Info(fmt.Sprintf("Created HelmRelease for '%s/%s', will requeue", rp.Namespace, rp.Name))
 		return rp, ctrl.Result{}, err
 	}
-	if hr.Generation != hr.Status.ObservedGeneration || !apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition) {
-		msg := fmt.Sprintf("HelmRelease '%s/%s' is not ready", hr.GetNamespace(), hr.GetName())
 
-		if rp.Status.HelmReleaseReady == nil || pointer.BoolEqual(rp.Status.HelmReleaseReady, pointer.Bool(true)) {
-			r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, msg)
-		}
+	isGenerationCurrent = hr.Generation != hr.Status.ObservedGeneration
+	isStatusConditionReady = apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition)
+	msgNotReady = fmt.Sprintf("HelmRelease '%s/%s' is not ready", hr.GetNamespace(), hr.GetName())
+	msgReady = fmt.Sprintf("HelmRelease '%s/%s' is ready", hr.GetNamespace(), hr.GetName())
+	isStatusReadyNILorTRUE = rp.Status.HelmReleaseReady == nil || pointer.BoolEqual(rp.Status.HelmReleaseReady, pointer.Bool(true))
+	isStatusReadyNILorFALSE = rp.Status.HelmReleaseReady == nil || pointer.BoolEqual(rp.Status.HelmReleaseReady, pointer.Bool(false))
 
-		rp.Status.HelmReleaseReady = pointer.Bool(false)
-		log.Info(msg)
-		// Do not requeue immediately.
-		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msg), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
-	} else if apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition) && (rp.Status.HelmReleaseReady == nil || pointer.BoolEqual(rp.Status.HelmReleaseReady, pointer.Bool(false))) {
-		// here since the condition should be true, we update the value to
-		// be true, and send an event
-		rp.Status.HelmReleaseReady = pointer.Bool(true)
-		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' is ready!", hr.GetNamespace(), hr.GetName()))
+	isResourceReady = r.checkIfResourceIsReady(log, msgNotReady, msgReady, hr.Kind, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
+	if !isResourceReady {
+		// need to requeue in this case
+		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msgNotReady), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
 	}
 
 	return v1alpha1.RedpandaReady(rp), ctrl.Result{}, nil
 }
 
-func (r *RedpandaReconciler)
+func (r *RedpandaReconciler) checkIfResourceIsReady(log logr.Logger, msgNotReady, msgReady, kind string, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE bool, rp *v1alpha1.Redpanda) bool {
+	if isGenerationCurrent || !isStatusConditionReady {
+		// capture event only
+		if isStatusReadyNILorTRUE {
+			r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, msgNotReady)
+		}
+
+		switch kind {
+		case "HelmRepository":
+			rp.Status.HelmRepositoryReady = pointer.Bool(false)
+		case "HelmRelease":
+			rp.Status.HelmReleaseReady = pointer.Bool(false)
+		}
+
+		log.Info(msgNotReady)
+		return false
+	} else if isStatusConditionReady && isStatusReadyNILorFALSE {
+		// here since the condition should be true, we update the value to
+		// be true, and send an event
+		switch kind {
+		case "HelmRepository":
+			rp.Status.HelmRepositoryReady = pointer.Bool(true)
+		case "HelmRelease":
+			rp.Status.HelmReleaseReady = pointer.Bool(true)
+		}
+
+		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, msgReady)
+	}
+
+	return true
+}
 
 func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp *v1alpha1.Redpanda) (*v1alpha1.Redpanda, *helmv2beta1.HelmRelease, error) {
 	var err error
