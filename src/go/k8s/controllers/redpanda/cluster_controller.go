@@ -528,7 +528,7 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 
 		nodeID, err := r.fetchAdminNodeID(ctx, rp, pod, log)
 		if err != nil {
-			return fmt.Errorf("cannot fetch node id for node-id annotation: %w", err)
+			return fmt.Errorf(`cannot fetch node id for "%s" node-id annotation: %w`, pod.Name, err)
 		}
 
 		realNodeIDStr := fmt.Sprintf("%d", nodeID)
@@ -537,11 +537,48 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 			continue
 		}
 
+		oldNodeID, err := strconv.Atoi(nodeIDStr)
+		if err != nil {
+			return fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStr, err)
+		}
+
+		if err = r.decommissionBroker(ctx, rp, oldNodeID, log); err != nil {
+			return fmt.Errorf("unable to decommission broker: %w", err)
+		}
+
 		log.WithValues("pod-name", pod.Name, "node-id", nodeID).Info("setting node-id annotation")
 		pod.Annotations[PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
 		}
+	}
+	return nil
+}
+
+func (r *ClusterReconciler) decommissionBroker(
+	ctx context.Context, rp *redpandav1alpha1.Cluster, nodeID int, log logr.Logger,
+) error {
+	log.V(6).WithValues("node-id", nodeID).Info("decommission broker")
+
+	redpandaPorts := networking.NewRedpandaPorts(rp)
+	headlessPorts := collectHeadlessPorts(redpandaPorts)
+	clusterPorts := collectClusterPorts(redpandaPorts, rp)
+	headlessSvc := resources.NewHeadlessService(r.Client, rp, r.Scheme, headlessPorts, log)
+	clusterSvc := resources.NewClusterService(r.Client, rp, r.Scheme, clusterPorts, log)
+
+	pki, err := certmanager.NewPki(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), clusterSvc.ServiceFQDN(r.clusterDomain), r.Scheme, log)
+	if err != nil {
+		return fmt.Errorf("unable to create pki: %w", err)
+	}
+
+	adminClient, err := r.AdminAPIClientFactory(ctx, r.Client, rp, headlessSvc.HeadlessServiceFQDN(r.clusterDomain), pki.AdminAPIConfigProvider())
+	if err != nil {
+		return fmt.Errorf("unable to create admin client: %w", err)
+	}
+
+	err = adminClient.DecommissionBroker(ctx, nodeID)
+	if err != nil {
+		return fmt.Errorf("unable to decommission broker: %w", err)
 	}
 	return nil
 }
