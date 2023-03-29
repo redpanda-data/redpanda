@@ -92,6 +92,7 @@ public:
         ss::timer<ss::lowres_clock> _timer;
         ss::timer<ss::lowres_clock> _persist_disk_timer;
 
+        ss::gate _bg_write_gate;
         ss::gate _gate;
         size_t _current_window{0};
         fragmented_vector<usage_window> _buckets;

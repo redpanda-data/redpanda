@@ -170,7 +170,7 @@ ss::future<> usage_manager::accounting_fiber::start() {
     _persist_disk_timer.set_callback([this] {
         ssx::background
           = ssx::spawn_with_gate_then(
-              _gate,
+              _bg_write_gate,
               [this] {
                   return persist_to_disk(
                     _kvstore,
@@ -237,7 +237,7 @@ usage_manager::accounting_fiber::get_usage_stats() const {
 ss::future<> usage_manager::accounting_fiber::stop() {
     _timer.cancel();
     _persist_disk_timer.cancel();
-    co_await _gate.close();
+    co_await _bg_write_gate.close();
     try {
         co_await persist_to_disk(
           _kvstore,
@@ -251,6 +251,7 @@ ss::future<> usage_manager::accounting_fiber::stop() {
           "Encountered exception when persisting usage data to disk: {}",
           ex);
     }
+    co_await _gate.close();
 }
 
 ss::future<> usage_manager::accounting_fiber::close_window() {
