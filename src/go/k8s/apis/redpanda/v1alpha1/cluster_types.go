@@ -170,6 +170,13 @@ type ClusterSpec struct {
 
 	// If key is not provided in the SecretRef, Secret data should have key "license"
 	LicenseRef *SecretKeyRef `json:"licenseRef,omitempty"`
+
+	// When InitialValidationForVolume is enabled the mounted Redpanda data folder
+	// will be checked if:
+	// - it is dir
+	// - it has XFS file system
+	// - it can create test file and delete it
+	InitialValidationForVolume *bool `json:"initialValidationForVolume,omitempty"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades

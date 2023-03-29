@@ -16,10 +16,12 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/moby/sys/mountinfo"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,6 +47,7 @@ const (
 	nodeNameEnvVar                                       = "NODE_NAME"
 	proxyHostPortEnvVar                                  = "PROXY_HOST_PORT"
 	rackAwarenessEnvVar                                  = "RACK_AWARENESS"
+	validateMountedVolumeEnvVar                          = "VALIDATE_MOUNTED_VOLUME"
 	redpandaRPCPortEnvVar                                = "REDPANDA_RPC_PORT"
 	svcFQDNEnvVar                                        = "SERVICE_FQDN"
 )
@@ -64,6 +67,7 @@ type configuratorConfig struct {
 	nodeName                                       string
 	proxyHostPort                                  int
 	rackAwareness                                  bool
+	validateMountedVolume                          bool
 	redpandaRPCPort                                int
 	subdomain                                      string
 	svcFQDN                                        string
@@ -82,7 +86,8 @@ func (c *configuratorConfig) String() string {
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
 		"proxyHostPort: %d\n"+
-		"rackAwareness: %t\n",
+		"rackAwareness: %t\n"+
+		"validateMountedVolume: %t\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -94,7 +99,8 @@ func (c *configuratorConfig) String() string {
 		c.redpandaRPCPort,
 		c.hostPort,
 		c.proxyHostPort,
-		c.rackAwareness)
+		c.rackAwareness,
+		c.validateMountedVolume)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -118,6 +124,11 @@ func main() {
 	err = yaml.Unmarshal(cf, cfg)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to parse the redpanda configuration file, %q: %w", p, err))
+	}
+
+	err = validateMountedVolume(cfg, c.validateMountedVolume)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to pass validation for the mounted volume: %w", err))
 	}
 
 	kafkaAPIPort, err := getInternalKafkaAPIPort(cfg)
@@ -181,7 +192,64 @@ func main() {
 	log.Printf("Configuration saved to: %s", c.configDestination)
 }
 
-var errInternalPortMissing = errors.New("port configration is missing internal port")
+func validateMountedVolume(cfg *config.Config, validate bool) error {
+	if !validate {
+		return nil
+	}
+	dir, err := os.Open(cfg.Redpanda.Directory)
+	if err != nil {
+		return fmt.Errorf("unable to open Redpanda directory (%s): %w", cfg.Redpanda.Directory, err)
+	}
+	defer func() {
+		if errClose := dir.Close(); errClose != nil {
+			log.Printf("Error closing file: %s, %s\n", cfg.Redpanda.Directory, errClose)
+		}
+	}()
+
+	stat, err := dir.Stat()
+	if err != nil {
+		return fmt.Errorf("unable to stat the dir: %s: %w", cfg.Redpanda.Directory, err)
+	}
+
+	if !stat.IsDir() {
+		return fmt.Errorf("%s is not a directory", cfg.Redpanda.Directory) //nolint:goerr113 // Error will not be validated, but rather returned to the end user of configurator
+	}
+
+	info, err := mountinfo.GetMounts(mountinfo.FSTypeFilter("xfs"))
+	if err != nil {
+		return fmt.Errorf("%s must have an xfs formatted filesystem. unable to find xfs file system in /proc/self/mountinfo: %w", cfg.Redpanda.Directory, err)
+	}
+
+	if len(info) == 0 {
+		return fmt.Errorf("%s must have an xfs formatted filesystem. returned mount info (/proc/self/mountinfo) does not have any xfs file system", cfg.Redpanda.Directory) //nolint:goerr113 // Error will not be validated, but rather returned to the end user of configurator
+	}
+
+	found := false
+	for _, fs := range info {
+		if fs.Mountpoint == cfg.Redpanda.Directory {
+			found = true
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("returned XFS mount info list (/proc/self/mountinfo) does not have Redpanda directory (%s)", cfg.Redpanda.Directory) //nolint:goerr113 // Error will not be validated, but rather returned to the end user of configurator
+	}
+
+	file := filepath.Join(cfg.Redpanda.Directory, "testing.file")
+	err = os.WriteFile(file, []byte("test-content"), 0o600)
+	if err != nil {
+		return fmt.Errorf("unable to write to test file (%s): %w", file, err)
+	}
+
+	err = os.Remove(file)
+	if err != nil {
+		return fmt.Errorf("unable to remove test file (%s): %w", file, err)
+	}
+
+	return nil
+}
+
+var errInternalPortMissing = errors.New("port configuration is missing internal port")
 
 func getZoneLabels(nodeName string) (zone, zoneID string, err error) {
 	node, err := getNode(nodeName)
@@ -423,6 +491,15 @@ func checkEnvVars() (configuratorConfig, error) {
 		result = multierror.Append(result, fmt.Errorf("%s %w", rackAwarenessEnvVar, errorMissingEnvironmentVariable))
 	}
 	c.rackAwareness, err = strconv.ParseBool(rackAwareness)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	validateMountedVolume, exist := os.LookupEnv(validateMountedVolumeEnvVar)
+	if !exist {
+		result = multierror.Append(result, fmt.Errorf("%s %w", validateMountedVolumeEnvVar, errorMissingEnvironmentVariable))
+	}
+	c.validateMountedVolume, err = strconv.ParseBool(validateMountedVolume)
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
