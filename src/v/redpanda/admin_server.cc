@@ -2808,6 +2808,77 @@ admin_server::unclean_abort_partition_reconfig_handler(
 }
 
 ss::future<ss::json::json_return_type>
+admin_server::force_set_partition_replicas_handler(
+  std::unique_ptr<ss::http::request> req) {
+    auto ntp = parse_ntp_from_request(req->param);
+
+    if (ntp == model::controller_ntp) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Can't reconfigure a controller"));
+    }
+
+    auto doc = parse_json_body(*req);
+    auto replicas = co_await validate_set_replicas(
+      doc, _controller->get_topics_frontend().local());
+
+    const auto& topics = _controller->get_topics_state().local();
+    const auto& in_progress = topics.updates_in_progress();
+    const auto in_progress_it = in_progress.find(ntp);
+
+    if (in_progress_it != in_progress.end()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("A partition operation is in progress. Check "
+                      "reconfigurations and "
+                      "cancel in flight update before issuing force "
+                      "replica set update."));
+    }
+    const auto current_assignment = topics.get_partition_assignment(ntp);
+    if (current_assignment) {
+        const auto& current_replicas = current_assignment->replicas;
+        if (current_replicas == replicas) {
+            vlog(
+              logger.info,
+              "Request to change ntp {} replica set to {}, no change",
+              ntp,
+              replicas);
+            co_return ss::json::json_void();
+        }
+
+        if (!cluster::is_proper_subset(replicas, current_replicas)) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "Target assignment {} is not a proper subset of current {}, "
+              "choose a proper subset of existing replicas.",
+              replicas,
+              current_replicas));
+        }
+    }
+
+    vlog(
+      logger.info,
+      "Request to force update ntp {} replica set to {}",
+      ntp,
+      replicas);
+
+    auto err = co_await _controller->get_topics_frontend()
+                 .local()
+                 .force_update_partition_replicas(
+                   ntp,
+                   replicas,
+                   model::timeout_clock::now()
+                     + 10s); // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+
+    vlog(
+      logger.debug,
+      "Request to change ntp {} replica set to {}: err={}",
+      ntp,
+      replicas,
+      err);
+
+    co_await throw_on_error(*req, err, model::controller_ntp);
+    co_return ss::json::json_void();
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::set_partition_replicas_handler(
   std::unique_ptr<ss::http::request> req) {
     auto ntp = parse_ntp_from_request(req->param);
@@ -2993,6 +3064,12 @@ void admin_server::register_partition_routes() {
       ss::httpd::partition_json::set_partition_replicas,
       [this](std::unique_ptr<ss::http::request> req) {
           return set_partition_replicas_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::force_update_partition_replicas,
+      [this](std::unique_ptr<ss::http::request> req) {
+          return force_set_partition_replicas_handler(std::move(req));
       });
 
     register_route<superuser>(
