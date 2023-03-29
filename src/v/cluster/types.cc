@@ -848,6 +848,12 @@ std::ostream& operator<<(std::ostream& o, const move_topic_replicas_data& r) {
     return o;
 }
 
+std::ostream&
+operator<<(std::ostream& o, const force_partition_reconfiguration_cmd_data& r) {
+    fmt::print(o, "{{target replicas: {}}}", r.replicas);
+    return o;
+}
+
 std::ostream& operator<<(
   std::ostream& o, const feature_update_license_update_cmd_data& fulu) {
     fmt::print(o, "{{redpanda_license {}}}", fulu.redpanda_license);

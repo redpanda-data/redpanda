@@ -661,6 +661,11 @@ topic_table::apply(move_topic_replicas_cmd cmd, model::offset o) {
     co_return errc::success;
 }
 
+ss::future<std::error_code>
+topic_table::apply(force_partition_reconfiguration_cmd cmd, model::offset o) {
+    co_return errc::success;
+}
+
 template<typename T>
 void incremental_update(
   std::optional<T>& property, property_update<std::optional<T>> override) {

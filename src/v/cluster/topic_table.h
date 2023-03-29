@@ -288,6 +288,8 @@ public:
     ss::future<std::error_code> apply(move_topic_replicas_cmd, model::offset);
     ss::future<std::error_code>
       apply(revert_cancel_partition_move_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(force_partition_reconfiguration_cmd, model::offset);
 
     ss::future<> fill_snapshot(controller_snapshot&) const;
     ss::future<>

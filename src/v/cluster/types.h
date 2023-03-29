@@ -2443,6 +2443,29 @@ struct cancel_moving_partition_replicas_cmd_data
     auto serde_fields() { return std::tie(force); }
 };
 
+struct force_partition_reconfiguration_cmd_data
+  : serde::envelope<
+      force_partition_reconfiguration_cmd_data,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    force_partition_reconfiguration_cmd_data() noexcept = default;
+    explicit force_partition_reconfiguration_cmd_data(
+      std::vector<model::broker_shard> replicas)
+      : replicas(std::move(replicas)) {}
+
+    std::vector<model::broker_shard> replicas;
+
+    auto serde_fields() { return std::tie(replicas); }
+
+    friend bool operator==(
+      const force_partition_reconfiguration_cmd_data&,
+      const force_partition_reconfiguration_cmd_data&)
+      = default;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const force_partition_reconfiguration_cmd_data&);
+};
+
 struct move_topic_replicas_data
   : serde::envelope<
       move_topic_replicas_data,
