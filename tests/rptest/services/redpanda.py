@@ -29,6 +29,7 @@ from typing import Mapping, Optional, Tuple, Union, Any
 import yaml
 from ducktape.services.service import Service
 from ducktape.tests.test import TestContext
+from requests.exceptions import HTTPError
 from rptest.archival.s3_client import S3Client
 from rptest.archival.abs_client import ABSClient
 from ducktape.cluster.remoteaccount import RemoteCommandError
@@ -53,7 +54,7 @@ from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.util import wait_until_result
 
 Partition = collections.namedtuple('Partition',
-                                   ['index', 'leader', 'replicas'])
+                                   ['topic', 'index', 'leader', 'replicas'])
 
 MetricSample = collections.namedtuple(
     'MetricSample', ['family', 'sample', 'node', 'value', 'labels'])
@@ -2742,22 +2743,29 @@ class RedpandaService(Service):
                         counts[idx] += int(sample.value)
         return all(map(lambda count: count == 0, counts.values()))
 
-    def partitions(self, topic):
+    def partitions(self, topic_name=None):
         """
         Return partition metadata for the topic.
         """
         kc = KafkaCat(self)
         md = kc.metadata()
-        topic = next(filter(lambda t: t["topic"] == topic, md["topics"]))
 
-        def make_partition(p):
+        result = []
+
+        def make_partition(topic_name, p):
             index = p["partition"]
             leader_id = p["leader"]
             leader = None if leader_id == -1 else self.get_node(leader_id)
             replicas = [self.get_node(r["id"]) for r in p["replicas"]]
-            return Partition(index, leader, replicas)
+            return Partition(topic_name, index, leader, replicas)
 
-        return [make_partition(p) for p in topic["partitions"]]
+        for topic in md["topics"]:
+            if topic["topic"] == topic_name or topic_name is None:
+                result.extend(
+                    make_partition(topic["topic"], p)
+                    for p in topic["partitions"])
+
+        return result
 
     def cov_enabled(self):
         cov_option = self._context.globals.get(self.COV_KEY,
@@ -2859,6 +2867,49 @@ class RedpandaService(Service):
         return wait_until_result(check, timeout_sec=30, backoff_sec=1)
 
     def stop_and_scrub_object_storage(self):
+        # Before stopping, ensure that all tiered storage partitions
+        # have uploaded at least a manifest: we do not require that they
+        # have uploaded until the head of their log, just that they have
+        # some metadata to validate, so that we will not experience
+        # e.g. missing topic manifests.
+        #
+        # This should not need to wait long: even without waiting for
+        # manifest upload interval, partitions should upload their initial
+        # manifest as soon as they can, and that's all we require.
+
+        def all_partitions_uploaded_manifest():
+            for p in self.partitions():
+                try:
+                    status = self._admin.get_partition_cloud_storage_status(
+                        p.topic, p.index, node=p.leader)
+                except HTTPError as he:
+                    if he.response.status_code == 404:
+                        # Old redpanda, doesn't have this endpoint.  We can't
+                        # do our upload check.
+                        continue
+                    else:
+                        raise
+
+                remote_write = status["cloud_storage_mode"] in {
+                    "full", "write_only"
+                }
+                has_uploaded_manifest = status[
+                    "metadata_update_pending"] is False or status.get(
+                        'ms_since_last_manifest_upload', None) is not None
+                if remote_write and not has_uploaded_manifest:
+                    self.logger.info(f"Partition {p} hasn't yet uploaded")
+                    return False
+
+            return True
+
+        # If any nodes are up, then we expect to be able to talk to the cluster and
+        # check tiered storage status to wait for uploads to complete.
+        if self._started:
+            # Aggressive retry because almost always this should already be done
+            wait_until(all_partitions_uploaded_manifest,
+                       timeout_sec=30,
+                       backoff_sec=1)
+
         # We stop because the scrubbing routine would otherwise interpret
         # ongoing uploads as inconsistency.  In future, we may replace this
         # stop with a flush, when Redpanda gets an admin API for explicitly
