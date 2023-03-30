@@ -645,6 +645,19 @@ class Admin:
         path = f"partitions/{namespace}/{topic}/{partition}/replicas"
         return self._request('post', path, node=node, json=replicas)
 
+    def force_set_partition_replicas(self,
+                                     topic,
+                                     partition,
+                                     replicas,
+                                     *,
+                                     namespace="kafka",
+                                     node=None):
+        """
+        [ {"node_id": 0, "core": 1}, ... ]
+        """
+        path = f"debug/partitions/{namespace}/{topic}/{partition}/force_replicas"
+        return self._request('post', path, node=node, json=replicas)
+
     def cancel_partition_move(self,
                               topic,
                               partition,
