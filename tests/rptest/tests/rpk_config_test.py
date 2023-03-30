@@ -35,7 +35,7 @@ class RpkConfigTest(RedpandaTest):
         with tempfile.TemporaryDirectory() as d:
             node.account.copy_from(path, d)
             with open(os.path.join(d, path)) as f:
-                expected_out = '''# node_uuid: (the uuid is random so we don't compare it)
+                expected_out = '''
 pandaproxy: {}
 redpanda:
     data_directory: /var/lib/redpanda/data
@@ -58,12 +58,6 @@ schema_registry: {}
 
                 expected_config = yaml.full_load(expected_out)
                 actual_config = yaml.full_load(f.read())
-
-                assert actual_config['node_uuid'] is not None
-
-                # Delete 'node_uuid' so they can be compared (it's random so
-                # it's probably gonna be different each time)
-                del actual_config['node_uuid']
 
                 if actual_config != expected_config:
                     self.logger.error("Configs differ")

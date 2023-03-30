@@ -298,7 +298,6 @@ func (ss *seedServers) UnmarshalYAML(n *yaml.Node) error {
 
 func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
-		NodeUUID             weakString         `yaml:"node_uuid"`
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda"`
 		Rpk                  RpkConfig          `yaml:"rpk"`
 		Pandaproxy           *Pandaproxy        `yaml:"pandaproxy"`
@@ -311,7 +310,6 @@ func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	if err := n.Decode(&internal); err != nil {
 		return err
 	}
-	c.NodeUUID = string(internal.NodeUUID)
 	c.Redpanda = internal.Redpanda
 	c.Rpk = internal.Rpk
 	c.Pandaproxy = internal.Pandaproxy

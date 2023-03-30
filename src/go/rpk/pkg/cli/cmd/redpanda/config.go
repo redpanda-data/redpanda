@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/google/uuid"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -238,13 +237,6 @@ func initNode(fs afero.Fs) *cobra.Command {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
-
-			// Don't reset the node's UUID if it has already been set.
-			if cfg.NodeUUID == "" {
-				id, err := uuid.NewUUID()
-				out.MaybeDie(err, "error creating nodeUUID: %v", err)
-				cfg.NodeUUID = id.String()
-			}
 
 			err = cfg.Write(fs)
 			out.MaybeDie(err, "error writing config file: %v", err)
