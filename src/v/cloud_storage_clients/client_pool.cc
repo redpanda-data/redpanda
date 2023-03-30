@@ -7,6 +7,9 @@
 
 #include <seastar/core/smp.hh>
 
+#include <algorithm>
+#include <random>
+
 namespace cloud_storage_clients {
 
 client_pool::client_pool(
@@ -38,6 +41,26 @@ void client_pool::shutdown_connections() {
 
 bool client_pool::shutdown_initiated() { return _as.abort_requested(); }
 
+std::tuple<unsigned int, unsigned int> pick_two_random_shards() {
+    static thread_local std::vector<unsigned> shards = [] {
+        std::vector<unsigned> res;
+        for (auto i = 0UL; i < ss::smp::count; i++) {
+            if (i != ss::this_shard_id()) {
+                res.push_back(i);
+            }
+        }
+        return res;
+    }();
+    vassert(ss::smp::count > 1, "At least two shards are required");
+    if (shards.size() == 1) {
+        return std::tie(shards.at(0), shards.at(0));
+    }
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::shuffle(shards.begin(), shards.end(), gen);
+    return std::tie(shards.at(0), shards.at(1));
+}
+
 /// \brief Acquire http client from the pool.
 ///
 /// as: An abort source which must outlive the lease, that will
@@ -64,26 +87,36 @@ client_pool::acquire(ss::abort_source& as) {
 
         while (unlikely(
           _pool.empty() && !_gate.is_closed() && !_as.abort_requested())) {
-            if (_policy == client_pool_overdraft_policy::wait_if_empty) {
+            if (
+              ss::smp::count == 1
+              || _policy == client_pool_overdraft_policy::wait_if_empty
+              || _leased.size() >= _capacity * 2) {
+                // If borrowing is disabled or this shard borrowed '_capacity'
+                // client connections then wait util one of the clients is
+                // freed.
                 co_await _cvar.wait();
                 vlog(
                   pool_log.debug,
                   "cvar triggered, pool size: {}",
                   _pool.size());
             } else {
-                // Ask other shards for allowance
-                auto resources = co_await container().map(
-                  [](client_pool& other) {
-                      auto sid = ss::this_shard_id();
-                      return std::make_tuple(
-                        std::clamp(
-                          other._capacity - other._pool.size(),
-                          0UL,
-                          other._capacity),
-                        sid);
-                  });
-                std::sort(resources.begin(), resources.end());
-                auto [cnt, sid] = resources.front();
+                auto clients_in_use = [](client_pool& other) {
+                    return std::clamp(
+                      other._capacity - other._pool.size(),
+                      0UL,
+                      other._capacity);
+                };
+                // Borrow from random shard. Use 2-random approach. Pick 2
+                // random shards
+                auto [sid1, sid2] = pick_two_random_shards();
+                auto cnt1 = co_await container().invoke_on(
+                  sid1, clients_in_use);
+                // sid1 == sid2 if we have only two shards
+                auto cnt2 = sid1 == sid2 ? cnt1
+                                         : co_await container().invoke_on(
+                                           sid2, clients_in_use);
+                auto [sid, cnt] = cnt1 < cnt2 ? std::tie(sid1, cnt1)
+                                              : std::tie(sid2, cnt2);
                 vlog(
                   pool_log.debug,
                   "Going to borrow from {} which has {} clients in use out of "
