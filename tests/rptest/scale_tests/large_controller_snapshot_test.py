@@ -117,7 +117,7 @@ class LargeControllerSnapshotTest(RedpandaTest):
         self.logger.info(f"waiting until all commands are snapshotted...")
 
         controller_max_offset = max(
-            admin.get_controller_status(n)['commited_index']
+            admin.get_controller_status(n)['committed_index']
             for n in seed_nodes)
         self.logger.info(f"controller max offset is {controller_max_offset}")
 
