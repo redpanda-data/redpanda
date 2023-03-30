@@ -199,3 +199,6 @@ golangci-lint-install:
 .PHONY: golangci-lint
 golangci-lint:
 	$(GOLANGCI_LINT)/golangci-lint run --go=1.19
+
+.PHONY: lint
+lint: gofumpt-lint golangci-lint
