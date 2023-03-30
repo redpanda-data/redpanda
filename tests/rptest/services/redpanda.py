@@ -1207,6 +1207,8 @@ class RedpandaService(RedpandaServiceBase):
 
         self._seed_servers = [self.nodes[0]] if len(self.nodes) > 0 else []
 
+        self._expect_max_controller_records = 1000
+
     def set_seed_servers(self, node_list):
         assert len(node_list) > 0
         self._seed_servers = node_list
@@ -3261,6 +3263,46 @@ class RedpandaService(RedpandaServiceBase):
                 )
                 raise RuntimeError(
                     f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
+                )
+
+    def set_expected_controller_records(self, max_records: int):
+        self._expect_max_controller_records = max_records
+
+    def validate_controller_log(self):
+        """
+        This method is for use at end of tests, to detect issues that might
+        lead to huge numbers of writes to the controller log (e.g. rogue
+        loops/retries).
+
+        Any test that intentionally
+        """
+        max_length = None
+        for node in self.started_nodes():
+            try:
+                status = self._admin.get_controller_status(
+                    node=node)['committed_index']
+                node_length = status['committed_index'] - max(
+                    0, status['start_offset'] - 1)
+            except Exception as e:
+                self.logger.warn(
+                    f"Failed to read controller status from {node.name}: {e}")
+            else:
+                if max_length is None or node_length > max_length:
+                    max_length = node_length
+
+        if max_length is None:
+            self.logger.warn(
+                "Failed to read controller status from any node, cannot validate record count"
+            )
+            return
+
+        if self._expect_max_controller_records is not None:
+            self.logger.debug(
+                f"Checking controller record count ({max_length}/{self._expect_max_controller_records})"
+            )
+            if max_length > self._expect_max_controller_records:
+                raise RuntimeError(
+                    f"Oversized controller log detected!  {max_length} records"
                 )
 
 
