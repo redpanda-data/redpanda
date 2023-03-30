@@ -99,6 +99,12 @@ public:
 
     fragmented_vector copy() const noexcept { return *this; }
 
+    void swap(fragmented_vector& other) noexcept {
+        std::swap(_size, other._size);
+        std::swap(_capacity, other._capacity);
+        std::swap(_frags, other._frags);
+    }
+
     template<class E = T>
     void push_back(E&& elem) {
         maybe_add_capacity();
