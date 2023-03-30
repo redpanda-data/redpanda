@@ -240,60 +240,40 @@ func (r *RedpandaReconciler) reconcileHelmRelease(ctx context.Context, rp *v1alp
 	// Check if HelmRelease exists or create it
 	hr := &helmv2beta1.HelmRelease{}
 
-	// check if object exists, if it does then update
-	// if it does not, then create
-	// if we are set for deletion, then delete
-	if rp.Status.HelmRelease != "" {
-		key := types.NamespacedName{Namespace: rp.Namespace, Name: rp.Status.GetHelmRelease()}
-		err = r.Client.Get(ctx, key, hr)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				rp.Status.HelmRelease = ""
-				if hr, err = r.createHelmRelease(ctx, rp); err != nil {
-					if !apierrors.IsAlreadyExists(err) {
-						r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
-						return rp, hr, fmt.Errorf("failed to create HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
-					}
-					// if we exist already, we update the name of the in the redpanda object
-					rp.Status.HelmRelease = rp.GetHelmReleaseName()
-					return rp, hr, nil
-				}
-				r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' created ", rp.Namespace, rp.GetHelmReleaseName()))
-			}
-			return rp, hr, fmt.Errorf("failed to get HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
-		} else {
-			// Check if we need to update here
-			hrTemplate, errTemplated := r.createHelmReleaseFromTemplate(ctx, rp)
-			if errTemplated != nil {
-				r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, errTemplated.Error())
-				return rp, hr, errTemplated
-			}
-
-			if r.helmReleaseRequiresUpdate(hr, hrTemplate) {
-				hr.Spec = hrTemplate.Spec
-				if err = r.Client.Update(ctx, hr); err != nil {
-					r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
-					return rp, hr, err
-				}
-				r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' updated", rp.Namespace, rp.GetHelmReleaseName()))
-				rp.Status.HelmRelease = rp.GetHelmReleaseName()
-			}
-
-			return rp, hr, nil
-		}
-		// ok found the release, let's just move on
-	} else {
+	// have we recorded a helmRelease, if not assume we have not created it
+	if rp.Status.HelmRelease == "" {
 		// did not find helmRelease, then create it
 		hr, err = r.createHelmRelease(ctx, rp)
-		if err != nil {
-			// could be we never updated the status and it already exists, continue and ignore error for now
-			// TODO revise this logic: should we error out, or should we just continue and ignore
-			if !apierrors.IsAlreadyExists(err) {
-				r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
-				return rp, hr, fmt.Errorf("failed to create HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
-			}
+		return rp, hr, err
+	}
+
+	// if we are not empty, then we assume at some point this existed, let's check
+	key := types.NamespacedName{Namespace: rp.Namespace, Name: rp.Status.GetHelmRelease()}
+	err = r.Client.Get(ctx, key, hr)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			rp.Status.HelmRelease = ""
+			hr, err = r.createHelmRelease(ctx, rp)
+			return rp, hr, err
 		}
-		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' created ", rp.Namespace, rp.GetHelmReleaseName()))
+		// if this is a not found error
+		return rp, hr, fmt.Errorf("failed to get HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
+	}
+
+	// Check if we need to update here
+	hrTemplate, errTemplated := r.createHelmReleaseFromTemplate(ctx, rp)
+	if errTemplated != nil {
+		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, errTemplated.Error())
+		return rp, hr, errTemplated
+	}
+
+	if r.helmReleaseRequiresUpdate(hr, hrTemplate) {
+		hr.Spec = hrTemplate.Spec
+		if err = r.Client.Update(ctx, hr); err != nil {
+			r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
+			return rp, hr, err
+		}
+		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' updated", rp.Namespace, rp.GetHelmReleaseName()))
 		rp.Status.HelmRelease = rp.GetHelmReleaseName()
 	}
 
@@ -341,14 +321,28 @@ func (r *RedpandaReconciler) createHelmRelease(ctx context.Context, rp *v1alpha1
 	log := ctrl.LoggerFrom(ctx)
 	log.WithValues("redpanda", rp.Name)
 
-	// create helm release
+	// create helmRelease resource from template
 	hRelease, err := r.createHelmReleaseFromTemplate(ctx, rp)
 	if err != nil {
 		r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, fmt.Sprintf("could not create helm release template: %s", err))
-		return hRelease, fmt.Errorf("could not create helm release template: %w", err)
+		return hRelease, fmt.Errorf("could not create HelmRelease template: %w", err)
 	}
 
-	return hRelease, r.Client.Create(ctx, hRelease)
+	// create helmRelease object here
+	if err := r.Client.Create(ctx, hRelease); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityError, err.Error())
+			return hRelease, fmt.Errorf("failed to create HelmRelease '%s/%s': %w", rp.Namespace, rp.Status.HelmRelease, err)
+		}
+		// we already exist, then update the status to rp
+		rp.Status.HelmRelease = rp.GetHelmReleaseName()
+	}
+
+	// we have created the resource, so we are ok to update events, and update the helmRelease name on the status object
+	r.event(rp, rp.Status.LastAttemptedRevision, v1alpha1.EventSeverityInfo, fmt.Sprintf("HelmRelease '%s/%s' created ", rp.Namespace, rp.GetHelmReleaseName()))
+	rp.Status.HelmRelease = rp.GetHelmReleaseName()
+
+	return hRelease, nil
 }
 
 func (r *RedpandaReconciler) deleteHelmRelease(ctx context.Context, rp *v1alpha1.Redpanda) error {

@@ -2,12 +2,13 @@ package redpanda
 
 import (
 	"io"
-	"k8s.io/utils/pointer"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"k8s.io/utils/pointer"
 
 	"github.com/fluxcd/source-controller/controllers"
 	"github.com/go-logr/logr"
@@ -23,20 +24,7 @@ func ClientGenerator(isLogin bool) (*registry.Client, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
-
-		var errs []error
-		rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptCredentialsFile(credentialsFile.Name()))
-		if err != nil {
-			errs = append(errs, err)
-			// attempt to delete the temporary file
-			if credentialsFile != nil {
-				if removeErr := os.Remove(credentialsFile.Name()); removeErr != nil {
-					errs = append(errs, removeErr)
-				}
-			}
-			return nil, "", errors.NewAggregate(errs)
-		}
-		return rClient, credentialsFile.Name(), nil
+		return tryCreateNewClient(credentialsFile)
 	}
 
 	rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard))
@@ -44,6 +32,22 @@ func ClientGenerator(isLogin bool) (*registry.Client, string, error) {
 		return nil, "", err
 	}
 	return rClient, "", nil
+}
+
+func tryCreateNewClient(credentialsFile *os.File) (*registry.Client, string, error) {
+	var errs []error
+	rClient, err := registry.NewClient(registry.ClientOptWriter(io.Discard), registry.ClientOptCredentialsFile(credentialsFile.Name()))
+	if err != nil {
+		errs = append(errs, err)
+		// attempt to delete the temporary file
+		if credentialsFile != nil {
+			if removeErr := os.Remove(credentialsFile.Name()); removeErr != nil {
+				errs = append(errs, removeErr)
+			}
+		}
+		return nil, "", errors.NewAggregate(errs)
+	}
+	return rClient, credentialsFile.Name(), nil
 }
 
 func MustInitStorage(path, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) *controllers.Storage {
