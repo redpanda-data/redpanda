@@ -171,7 +171,7 @@ struct node_health_report
 struct cluster_health_report
   : serde::envelope<
       cluster_health_report,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     static constexpr int8_t current_version = 0;
 
@@ -183,6 +183,9 @@ struct cluster_health_report
     // node reports are node specific information collected directly on a
     // node
     std::vector<node_health_report> node_reports;
+
+    // cluster-wide cached information about total cloud storage usage
+    std::optional<size_t> bytes_in_cloud_storage;
     friend std::ostream&
     operator<<(std::ostream&, const cluster_health_report&);
 
@@ -191,7 +194,8 @@ struct cluster_health_report
       = default;
 
     auto serde_fields() {
-        return std::tie(raft0_leader, node_states, node_reports);
+        return std::tie(
+          raft0_leader, node_states, node_reports, bytes_in_cloud_storage);
     }
 };
 
@@ -208,6 +212,7 @@ struct cluster_health_overview {
     std::vector<model::node_id> nodes_down;
     std::vector<model::ntp> leaderless_partitions;
     std::vector<model::ntp> under_replicated_partitions;
+    std::optional<size_t> bytes_in_cloud_storage;
 };
 
 using include_partitions_info = ss::bool_class<struct include_partitions_tag>;

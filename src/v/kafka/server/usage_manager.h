@@ -28,7 +28,7 @@ struct usage
   : serde::envelope<usage, serde::version<0>, serde::compat_version<0>> {
     uint64_t bytes_sent{0};
     uint64_t bytes_received{0};
-    uint64_t bytes_cloud_storage{0};
+    std::optional<uint64_t> bytes_cloud_storage;
     usage operator+(const usage&) const;
     auto serde_fields() {
         return std::tie(bytes_sent, bytes_received, bytes_cloud_storage);
@@ -63,6 +63,7 @@ public:
     public:
         accounting_fiber(
           ss::sharded<usage_manager>& um,
+          ss::sharded<cluster::health_monitor_frontend>& health_monitor,
           ss::sharded<storage::api>& storage,
           size_t usage_num_windows,
           std::chrono::seconds usage_window_width_interval,
@@ -81,7 +82,8 @@ public:
     private:
         std::chrono::seconds
         reset_state(fragmented_vector<usage_window> buckets);
-        ss::future<> close_window();
+        void close_window();
+        ss::future<> async_data_fetch(size_t index, uint64_t close_ts);
 
     private:
         size_t _usage_num_windows;
@@ -92,9 +94,11 @@ public:
         ss::timer<ss::lowres_clock> _timer;
         ss::timer<ss::lowres_clock> _persist_disk_timer;
 
+        ss::gate _bg_write_gate;
         ss::gate _gate;
         size_t _current_window{0};
         fragmented_vector<usage_window> _buckets;
+        cluster::health_monitor_frontend& _health_monitor;
         storage::kvstore& _kvstore;
         ss::sharded<usage_manager>& _um;
     };
@@ -103,7 +107,9 @@ public:
     ///
     /// Context is to be in a sharded service, will grab \ref usage_num_windows
     /// and \ref usage_window_sec configuration parameters from cluster config
-    explicit usage_manager(ss::sharded<storage::api>& storage);
+    explicit usage_manager(
+      ss::sharded<cluster::health_monitor_frontend>& health_monitor,
+      ss::sharded<storage::api>& storage);
 
     /// Allocates and starts the accounting fiber
     ss::future<> start();
@@ -150,6 +156,7 @@ private:
     config::binding<std::chrono::seconds> _usage_window_width_interval;
     config::binding<std::chrono::seconds> _usage_disk_persistance_interval;
 
+    ss::sharded<cluster::health_monitor_frontend>& _health_monitor;
     ss::sharded<storage::api>& _storage;
 
     /// Per-core metric, shard-0 aggregates these values across shards

@@ -10,6 +10,7 @@
  */
 #include "cluster/health_monitor_backend.h"
 
+#include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
@@ -57,7 +58,9 @@ health_monitor_backend::health_monitor_backend(
   ss::sharded<ss::abort_source>& as,
   ss::sharded<node::local_monitor>& local_monitor,
   ss::sharded<drain_manager>& drain_manager,
-  ss::sharded<features::feature_table>& feature_table)
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<partition_leaders_table>& partition_leaders_table,
+  ss::sharded<topic_table>& topic_table)
   : _raft0(std::move(raft0))
   , _members(mt)
   , _connections(connections)
@@ -66,6 +69,8 @@ health_monitor_backend::health_monitor_backend(
   , _as(as)
   , _drain_manager(drain_manager)
   , _feature_table(feature_table)
+  , _partition_leaders_table(partition_leaders_table)
+  , _topic_table(topic_table)
   , _local_monitor(local_monitor) {
     _leadership_notification_handle
       = _raft_manager.local().register_leadership_notification(
@@ -552,6 +557,26 @@ result<node_health_report> health_monitor_backend::process_node_reply(
     return res;
 }
 
+ss::future<> health_monitor_backend::maybe_refresh_cloud_health_stats() {
+    auto holder = _gate.hold();
+    auto units = co_await _refresh_mutex.get_units();
+    auto leader_id = _raft0->get_leader_id();
+    if (!leader_id || leader_id != _raft0->self().id()) {
+        co_return;
+    }
+    vlog(clusterlog.debug, "collecting cloud health statistics");
+
+    cluster::cloud_storage_size_reducer reducer(
+      _topic_table,
+      _members,
+      _partition_leaders_table,
+      _connections,
+      topic_table_partition_generator::default_batch_size,
+      cloud_storage_size_reducer::default_retries_allowed);
+
+    _bytes_in_cloud_storage = co_await reducer.reduce();
+}
+
 ss::future<std::error_code> health_monitor_backend::collect_cluster_health() {
     /**
      * We are collecting cluster health on raft 0 leader only
@@ -819,6 +844,8 @@ health_monitor_backend::get_cluster_health_overview(
     ret.is_healthy = ret.nodes_down.empty() && ret.leaderless_partitions.empty()
                      && ret.under_replicated_partitions.empty()
                      && ret.controller_id && !ec;
+
+    ret.bytes_in_cloud_storage = _bytes_in_cloud_storage;
 
     co_return ret;
 }

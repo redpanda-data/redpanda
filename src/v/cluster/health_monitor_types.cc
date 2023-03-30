@@ -76,10 +76,12 @@ std::ostream& operator<<(std::ostream& o, const node_health_report& r) {
 std::ostream& operator<<(std::ostream& o, const cluster_health_report& r) {
     fmt::print(
       o,
-      "{{raft0_leader: {}, node_states: {}, node_reports: {} }}",
+      "{{raft0_leader: {}, node_states: {}, node_reports: {}, "
+      "bytes_in_cloud_storage: {} }}",
       r.raft0_leader,
       r.node_states,
-      r.node_reports);
+      r.node_reports,
+      r.bytes_in_cloud_storage);
     return o;
 }
 

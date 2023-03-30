@@ -3458,7 +3458,11 @@ static ss::json::json_return_type raw_data_to_usage_response(
         resp.back().open = e.is_open();
         resp.back().kafka_bytes_received_count = e.u.bytes_received;
         resp.back().kafka_bytes_sent_count = e.u.bytes_sent;
-        resp.back().cloud_storage_bytes_gauge = e.u.bytes_cloud_storage;
+        if (e.u.bytes_cloud_storage) {
+            resp.back().cloud_storage_bytes_gauge = *e.u.bytes_cloud_storage;
+        } else {
+            resp.back().cloud_storage_bytes_gauge = -1;
+        }
     }
     if (include_open && !resp.empty()) {
         /// Handle case where client does not want to observe
@@ -3740,6 +3744,12 @@ void admin_server::register_cluster_routes() {
                     ret.controller_id = health_overview.controller_id.value();
                 } else {
                     ret.controller_id = -1;
+                }
+                if (health_overview.bytes_in_cloud_storage) {
+                    ret.bytes_in_cloud_storage
+                      = health_overview.bytes_in_cloud_storage.value();
+                } else {
+                    ret.bytes_in_cloud_storage = -1;
                 }
 
                 return ss::json::json_return_type(ret);
