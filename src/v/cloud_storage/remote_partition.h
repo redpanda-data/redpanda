@@ -95,8 +95,9 @@ public:
     /// Return first uploaded kafka offset
     kafka::offset first_uploaded_offset();
 
-    /// Return last uploaded kafka offset
-    kafka::offset last_uploaded_offset();
+    /// Return the offset one past the end of the last offset (i.e. the high
+    /// watermark as reported by object storage).
+    kafka::offset next_kafka_offset();
 
     /// Get partition NTP
     const model::ntp& get_ntp() const;
