@@ -1124,3 +1124,12 @@ class RpkTool:
 
         # Retry if the command exits 1 (in case top level ec was returned)
         return try_offset_delete(retries=5)
+
+    def generate_grafana(self, dashboard):
+
+        cmd = [
+            self._rpk_binary(), "generate", "grafana-dashboard", "--dashboard",
+            dashboard
+        ]
+
+        return self._execute(cmd)
