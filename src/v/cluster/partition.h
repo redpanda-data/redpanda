@@ -151,6 +151,11 @@ public:
 
     storage::log log() const { return _raft->log(); }
 
+    ss::shared_ptr<const cloud_storage::remote_partition>
+    remote_partition() const {
+        return _cloud_storage_partition;
+    }
+
     ss::future<std::optional<storage::timequery_result>>
       timequery(storage::timequery_config);
 
