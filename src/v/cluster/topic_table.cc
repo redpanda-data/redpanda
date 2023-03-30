@@ -547,6 +547,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
         co_return make_error_code(errc::topic_not_exists);
     }
     auto& properties = tp->second.get_configuration().properties;
+    auto properties_snapshot = properties;
     auto& overrides = cmd.value;
     /**
      * Update topic properties
@@ -575,7 +576,10 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       properties.remote_delete,
       overrides.remote_delete,
       storage::ntp_config::default_remote_delete);
-
+    // no configuration change, no need to generate delta
+    if (properties == properties_snapshot) {
+        co_return errc::success;
+    }
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
     deltas.reserve(tp->second.get_assignments().size());
