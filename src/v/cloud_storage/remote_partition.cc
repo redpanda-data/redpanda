@@ -611,6 +611,11 @@ uint64_t remote_partition::cloud_log_size() const {
     return _manifest.cloud_log_size();
 }
 
+ss::future<> remote_partition::serialize_manifest_to_output_stream(
+  ss::output_stream<char>& output) const {
+    return _manifest.serialize(output);
+}
+
 // returns term last kafka offset
 std::optional<kafka::offset>
 remote_partition::get_term_last_offset(model::term_id term) const {
