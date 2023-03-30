@@ -114,6 +114,7 @@ class SIAdminApiTest(RedpandaTest):
             self.logger.info(f"describe topic result {partition}")
             assert partition.start_offset == 0, f"start-offset of the partition is supposed to be 0 instead of {partition.start_offset}"
 
+        self.redpanda.si_settings.set_expected_damage({"missing_segments"})
         segment_to_remove = self.find_deletion_candidate()
         self.logger.info(f"trying to remove segment {segment_to_remove}")
         self.cloud_storage_client.delete_object(self.s3_bucket_name,
