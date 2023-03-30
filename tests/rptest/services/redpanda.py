@@ -405,6 +405,8 @@ class SISettings:
             self.cloud_storage_segment_max_upload_interval_sec = 10
             self.cloud_storage_manifest_max_upload_interval_sec = 1
 
+        self._expected_damage_types = set()
+
     def load_context(self, logger, test_context):
         if self.cloud_storage_type == CloudStorageType.S3:
             self._load_s3_context(logger, test_context)
@@ -522,6 +524,26 @@ class SISettings:
             conf[
                 'cloud_storage_housekeeping_interval_ms'] = self.cloud_storage_housekeeping_interval_ms
         return conf
+
+    def set_expected_damage(self, damage_types: set[str]):
+        """
+        ***This is NOT for making a racy test pass.  This is ONLY for tests
+           that intentionally damage data by e.g. deleting a segment out
+           of band ***
+
+        For tests which intentionally damage data in the object storage
+        bucket, they may advertise that here in order to waive the default
+        bucket consistency checks at end of test.
+
+        :param damage_type: which categories of damage to ignore, from the
+                            types known by the tool invoked in
+                            RedpandaService.stop_and_scrub_object_storage, e.g.
+                            'missing_segments'
+        """
+        self._expected_damage_types = damage_types
+
+    def is_damage_expected(self, damage_types: set[str]):
+        return (damage_types & self._expected_damage_types) == damage_types
 
 
 class TLSProvider:
@@ -2926,9 +2948,16 @@ class RedpandaService(Service):
                 f"Non-fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
             )
         else:
-            self.logger.error(
-                f"Fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
-            )
-            raise RuntimeError(
-                f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
-            )
+            # Tests may declare that they expect some anomalies, e.g. if they
+            # intentionally damage the data.
+            if self._si_settings.is_damage_expected(fatal_anomalies):
+                self.logger.warn(
+                    f"Tolerating anomalies in remote storage: {json.dumps(report, indent=2)}"
+                )
+            else:
+                self.logger.error(
+                    f"Fatal anomalies in remote storage: {json.dumps(report, indent=2)}"
+                )
+                raise RuntimeError(
+                    f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
+                )
