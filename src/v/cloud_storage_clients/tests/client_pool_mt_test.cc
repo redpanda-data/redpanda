@@ -94,7 +94,7 @@ SEASTAR_THREAD_TEST_CASE(test_client_pool_acquire_blocked_on_another_shard) {
         leases.push_back(pool.local().acquire(as).get());
     }
 
-    vlog(test_log.debug, "borrow all connections from the other");
+    vlog(test_log.debug, "borrow connections from others");
     // deplete others connections
     for (size_t i = 0; i < num_connections_per_shard; i++) {
         leases.push_back(pool.local().acquire(as).get());
