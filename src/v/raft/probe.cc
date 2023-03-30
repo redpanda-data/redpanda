@@ -146,6 +146,24 @@ void probe::setup_metrics(const model::ntp& ntp) {
          [this] { return _recovery_request_error; },
          sm::description("Number of failed recovery requests"),
          labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "recovery_requests",
+         [this] { return _recovery_requests; },
+         sm::description("Number of recovery requests"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "group_configuration_updates",
+         [this] { return _configuration_updates; },
+         sm::description("Number of raft group configuration updates"),
+         labels)
+         .aggregate(aggregate_labels),
+       sm::make_counter(
+         "replicate_batch_flush_requests",
+         [this] { return _replicate_batch_flushed; },
+         sm::description("Number of replicate batch flushes"),
+         labels)
          .aggregate(aggregate_labels)});
 }
 
