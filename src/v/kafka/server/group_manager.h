@@ -221,7 +221,7 @@ private:
       ss::lw_shared_ptr<cluster::partition>,
       std::optional<model::node_id>);
 
-    void handle_topic_delta(std::span<const cluster::topic_table_delta>);
+    void handle_topic_delta(cluster::delta_range_t);
 
     ss::future<> cleanup_removed_topic_partitions(
       const std::vector<model::topic_partition>&);
