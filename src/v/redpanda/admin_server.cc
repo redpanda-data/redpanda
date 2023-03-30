@@ -356,6 +356,58 @@ apply_validator(json::validator& validator, json::Document const& doc) {
     }
 }
 
+static ss::future<std::vector<model::broker_shard>> validate_set_replicas(
+  const json::Document& doc, const cluster::topics_frontend& topic_fe) {
+    static thread_local json::validator set_replicas_validator(
+      make_set_replicas_validator());
+
+    apply_validator(set_replicas_validator, doc);
+
+    std::vector<model::broker_shard> replicas;
+    if (!doc.IsArray()) {
+        throw ss::httpd::bad_request_exception("Expected array");
+    }
+    for (auto& r : doc.GetArray()) {
+        const auto& node_id_json = r["node_id"];
+        const auto& core_json = r["core"];
+        if (!node_id_json.IsInt() || !core_json.IsInt()) {
+            throw ss::httpd::bad_request_exception(
+              "`node_id` and `core` must be integers");
+        }
+        const auto node_id = model::node_id(r["node_id"].GetInt());
+        const auto shard = static_cast<uint32_t>(r["core"].GetInt());
+
+        // Validate node ID and shard - subsequent code assumes
+        // they exist and may assert if not.
+        bool is_valid = co_await topic_fe.validate_shard(node_id, shard);
+        if (!is_valid) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "Replica set refers to non-existent node/shard (node "
+              "{} "
+              "shard {})",
+              node_id,
+              shard));
+        }
+        auto contains_already = std::find_if(
+                                  replicas.begin(),
+                                  replicas.end(),
+                                  [node_id](const model::broker_shard& bs) {
+                                      return bs.node_id == node_id;
+                                  })
+                                != replicas.end();
+        if (contains_already) {
+            throw ss::httpd::bad_request_exception(fmt::format(
+              "All the replicas must be placed on separate nodes. "
+              "Requested replica set contains node: {} more than "
+              "once",
+              node_id));
+        }
+        replicas.push_back(
+          model::broker_shard{.node_id = node_id, .shard = shard});
+    }
+    co_return replicas;
+}
+
 /**
  * Helper for requests with boolean URL query parameters that should
  * be treated as false if absent, or true if "true" (case insensitive) or "1"
@@ -2765,58 +2817,9 @@ admin_server::set_partition_replicas_handler(
           fmt::format("Can't reconfigure a controller"));
     }
 
-    // make sure to call reset() before each use
-    static thread_local json::validator set_replicas_validator(
-      make_set_replicas_validator());
-
     auto doc = parse_json_body(*req);
-    apply_validator(set_replicas_validator, doc);
-
-    std::vector<model::broker_shard> replicas;
-    if (!doc.IsArray()) {
-        throw ss::httpd::bad_request_exception("Expected array");
-    }
-    for (auto& r : doc.GetArray()) {
-        const auto& node_id_json = r["node_id"];
-        const auto& core_json = r["core"];
-        if (!node_id_json.IsInt() || !core_json.IsInt()) {
-            throw ss::httpd::bad_request_exception(
-              "`node_id` and `core` must be integers");
-        }
-        const auto node_id = model::node_id(r["node_id"].GetInt());
-        const auto shard = static_cast<uint32_t>(r["core"].GetInt());
-
-        // Validate node ID and shard - subsequent code assumes
-        // they exist and may assert if not.
-        bool is_valid
-          = co_await _controller->get_topics_frontend().local().validate_shard(
-            node_id, shard);
-        if (!is_valid) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "Replica set refers to non-existent node/shard (node "
-              "{} "
-              "shard {})",
-              node_id,
-              shard));
-        }
-        auto contains_already = std::find_if(
-                                  replicas.begin(),
-                                  replicas.end(),
-                                  [node_id](const model::broker_shard& bs) {
-                                      return bs.node_id == node_id;
-                                  })
-                                != replicas.end();
-        if (contains_already) {
-            throw ss::httpd::bad_request_exception(fmt::format(
-              "All the replicas must be placed on separate nodes. "
-              "Requested replica set contains node: {} more than "
-              "once",
-              node_id));
-        }
-        replicas.push_back(
-          model::broker_shard{.node_id = node_id, .shard = shard});
-    }
-
+    auto replicas = co_await validate_set_replicas(
+      doc, _controller->get_topics_frontend().local());
     auto current_assignment
       = _controller->get_topics_state().local().get_partition_assignment(ntp);
 
