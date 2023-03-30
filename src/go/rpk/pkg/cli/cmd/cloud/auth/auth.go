@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	browser "github.com/pkg/browser"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
@@ -39,6 +40,33 @@ type BadClientTokenError struct {
 
 func (e *BadClientTokenError) Error() string {
 	return fmt.Sprintf("invalid client token: %v", e.Err)
+}
+
+func DeviceAuthorizationFlow(ctx context.Context, cfg *cloudcfg.Config) (token string, rerr error) {
+	auth0Endpoint := auth0.Endpoint{
+		URL:      cfg.CloudURL,
+		Audience: cfg.AuthAudience,
+	}
+
+	if auth0Endpoint.URL == "" {
+		auth0Endpoint = prodAuth0Endpoint
+	}
+	defer func() {
+		if token != "" {
+			cfg.AuthToken = token
+		}
+	}()
+	auth0Client := auth0.NewClient(auth0Endpoint)
+	resp, err := auth0Client.InitDeviceAuthorization(ctx, cfg.AuthAppClientID)
+	if err != nil {
+		return "", fmt.Errorf("unable to start authorization flow: %v", err)
+	}
+	err = browser.OpenURL(resp.VerificationURLComplete)
+	if err != nil {
+		return "", fmt.Errorf("unable to open the web browser: %v", err)
+	}
+	tokenInterval := 5
+	return auth0Client.WaitForToken(ctx, resp.DeviceCode, cfg.AuthAppClientID, tokenInterval)
 }
 
 // LoadFlow loads or creates a config at default path, and validates and
