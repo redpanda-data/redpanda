@@ -677,7 +677,6 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
     }
     // generate deltas for controller backend
     const auto& assignments = tp->second.get_assignments();
-    _pending_deltas.reserve(_pending_deltas.size() + assignments.size());
     for (auto& p_as : assignments) {
         _pending_deltas.emplace_back(
           model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
@@ -755,7 +754,7 @@ void topic_table::notify_waiters() {
     auto starting_iter = _pending_deltas.cbegin()
                          + _last_consumed_by_notifier_offset;
 
-    std::span changes{starting_iter, _pending_deltas.cend()};
+    delta_range_t changes{starting_iter, _pending_deltas.cend()};
 
     if (!changes.empty()) {
         for (auto& cb : _notifications) {
@@ -774,7 +773,7 @@ void topic_table::notify_waiters() {
         active_waiters.swap(_waiters);
         for (auto& w :
              std::span{active_waiters.begin(), active_waiters.size() - 1}) {
-            w->promise.set_value(_pending_deltas);
+            w->promise.set_value(_pending_deltas.copy());
         }
 
         active_waiters[active_waiters.size() - 1]->promise.set_value(
@@ -784,9 +783,9 @@ void topic_table::notify_waiters() {
     }
 }
 
-ss::future<std::vector<topic_table::delta>>
+ss::future<fragmented_vector<topic_table::delta>>
 topic_table::wait_for_changes(ss::abort_source& as) {
-    using ret_t = std::vector<topic_table::delta>;
+    using ret_t = fragmented_vector<topic_table::delta>;
     if (!_pending_deltas.empty()) {
         ret_t ret;
         ret.swap(_pending_deltas);
