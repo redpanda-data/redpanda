@@ -102,8 +102,8 @@ func (r *RedpandaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
 
-	var rp *v1alpha1.Redpanda
-	if err := r.Get(ctx, req.NamespacedName, rp); err != nil {
+	rp := &v1alpha1.Redpanda{}
+	if err := r.Client.Get(ctx, req.NamespacedName, rp); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -162,12 +162,12 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 
 	isGenerationCurrent := repo.Generation != repo.Status.ObservedGeneration
 	isStatusConditionReady := apimeta.IsStatusConditionTrue(repo.Status.Conditions, meta.ReadyCondition)
-	msgNotReady := fmt.Sprintf(resourceNotReadyStrFmt, repo.Kind, repo.GetNamespace(), repo.GetName())
-	msgReady := fmt.Sprintf(resourceReadyStrFmt, repo.Kind, repo.GetNamespace(), repo.GetName())
+	msgNotReady := fmt.Sprintf(resourceNotReadyStrFmt, resourceTypeHelmRepository, repo.GetNamespace(), repo.GetName())
+	msgReady := fmt.Sprintf(resourceReadyStrFmt, resourceTypeHelmRepository, repo.GetNamespace(), repo.GetName())
 	isStatusReadyNILorTRUE := IsBoolPointerNILorEqual(rp.Status.HelmRepositoryReady, true)
 	isStatusReadyNILorFALSE := IsBoolPointerNILorEqual(rp.Status.HelmRepositoryReady, false)
 
-	isResourceReady := r.checkIfResourceIsReady(log, msgNotReady, msgReady, repo.Kind, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
+	isResourceReady := r.checkIfResourceIsReady(log, msgNotReady, msgReady, resourceTypeHelmRepository, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
 	if !isResourceReady {
 		// need to requeue in this case
 		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msgNotReady), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
@@ -185,12 +185,12 @@ func (r *RedpandaReconciler) reconcile(ctx context.Context, req ctrl.Request, rp
 
 	isGenerationCurrent = hr.Generation != hr.Status.ObservedGeneration
 	isStatusConditionReady = apimeta.IsStatusConditionTrue(hr.Status.Conditions, meta.ReadyCondition)
-	msgNotReady = fmt.Sprintf(resourceNotReadyStrFmt, hr.Kind, hr.GetNamespace(), hr.GetName())
-	msgReady = fmt.Sprintf(resourceReadyStrFmt, hr.Kind, hr.GetNamespace(), hr.GetName())
+	msgNotReady = fmt.Sprintf(resourceNotReadyStrFmt, resourceTypeHelmRelease, hr.GetNamespace(), hr.GetName())
+	msgReady = fmt.Sprintf(resourceReadyStrFmt, resourceTypeHelmRelease, hr.GetNamespace(), hr.GetName())
 	isStatusReadyNILorTRUE = IsBoolPointerNILorEqual(rp.Status.HelmReleaseReady, true)
 	isStatusReadyNILorFALSE = IsBoolPointerNILorEqual(rp.Status.HelmReleaseReady, false)
 
-	isResourceReady = r.checkIfResourceIsReady(log, msgNotReady, msgReady, hr.Kind, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
+	isResourceReady = r.checkIfResourceIsReady(log, msgNotReady, msgReady, resourceTypeHelmRelease, isGenerationCurrent, isStatusConditionReady, isStatusReadyNILorTRUE, isStatusReadyNILorFALSE, rp)
 	if !isResourceReady {
 		// need to requeue in this case
 		return v1alpha1.RedpandaNotReady(rp, "ArtifactFailed", msgNotReady), ctrl.Result{RequeueAfter: r.RequeueHelmDeps}, nil
