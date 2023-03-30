@@ -1369,6 +1369,26 @@ void partition_manifest::serialize(std::ostream& out) const {
     serialize_end(c);
 }
 
+ss::future<>
+partition_manifest::serialize(ss::output_stream<char>& output) const {
+    iobuf serialized;
+    iobuf_ostreambuf obuf(serialized);
+    std::ostream os(&obuf);
+    serialization_cursor_ptr c = make_cursor(os);
+    serialize_begin(c);
+    while (!c->segments_done) {
+        serialize_segments(c);
+
+        co_await write_iobuf_to_output_stream(
+          serialized.share(0, serialized.size_bytes()), output);
+        serialized.clear();
+    }
+    serialize_replaced(c);
+    serialize_end(c);
+
+    co_await write_iobuf_to_output_stream(std::move(serialized), output);
+}
+
 partition_manifest::serialization_cursor_ptr
 partition_manifest::make_cursor(std::ostream& out) const {
     return ss::make_lw_shared<serialization_cursor>(out, 500);
