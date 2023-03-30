@@ -22,7 +22,6 @@ type Config struct {
 	fileLocation string
 	rawFile      []byte
 
-	NodeUUID             string             `yaml:"node_uuid,omitempty" json:"node_uuid"`
 	Redpanda             RedpandaNodeConfig `yaml:"redpanda,omitempty" json:"redpanda"`
 	Rpk                  RpkConfig          `yaml:"rpk,omitempty" json:"rpk"`
 	Pandaproxy           *Pandaproxy        `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`

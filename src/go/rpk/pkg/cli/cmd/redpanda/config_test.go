@@ -239,39 +239,19 @@ schema_registry: {}
 }
 
 func TestInitNode(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		prevID string
-	}{
-		{name: "without UUID"},
-		{name: "with UUID", prevID: "my_id"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			fs := afero.NewMemMapFs()
-			c := config.DevDefault()
-			if test.prevID != "" {
-				c.NodeUUID = test.prevID
-			}
+	fs := afero.NewMemMapFs()
+	c := config.DevDefault()
+	bs, err := yaml.Marshal(c)
+	require.NoError(t, err)
+	err = afero.WriteFile(fs, config.DefaultPath, bs, 0o644)
+	require.NoError(t, err)
 
-			bs, err := yaml.Marshal(c)
-			require.NoError(t, err)
-			err = afero.WriteFile(fs, config.DefaultPath, bs, 0o644)
-			require.NoError(t, err)
+	cmd := initNode(fs)
+	err = cmd.Execute()
+	require.NoError(t, err)
 
-			cmd := initNode(fs)
-			err = cmd.Execute()
-			require.NoError(t, err)
-
-			conf, err := new(config.Params).Load(fs)
-			require.NoError(t, err)
-
-			if test.prevID != "" {
-				require.Exactly(t, conf.NodeUUID, test.prevID)
-			} else {
-				require.NotEmpty(t, conf.NodeUUID)
-			}
-		})
-	}
+	_, err = new(config.Params).Load(fs)
+	require.NoError(t, err)
 }
 
 // This is a top level command test, individual cases for set are
