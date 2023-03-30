@@ -226,7 +226,9 @@ public:
       model::topic_namespace_hash,
       model::topic_namespace_eq>;
 
-    using delta_cb_t = ss::noncopyable_function<void(std::span<const delta>)>;
+    using delta_range_t
+      = boost::iterator_range<fragmented_vector<delta>::const_iterator>;
+    using delta_cb_t = ss::noncopyable_function<void(delta_range_t)>;
 
     explicit topic_table()
       : _probe(*this){};
@@ -289,7 +291,7 @@ public:
     /// the \ref _waiters collection by the time the notify occurs, only one
     /// waiter will recieve the updates, leaving the second one to observe
     /// skipped events upon recieving its subsequent notification.
-    ss::future<std::vector<delta>> wait_for_changes(ss::abort_source&);
+    ss::future<fragmented_vector<delta>> wait_for_changes(ss::abort_source&);
 
     bool has_pending_changes() const { return !_pending_deltas.empty(); }
 
@@ -443,7 +445,7 @@ private:
     struct waiter {
         explicit waiter(uint64_t id)
           : id(id) {}
-        ss::promise<std::vector<delta>> promise;
+        ss::promise<fragmented_vector<delta>> promise;
         ss::abort_source::subscription sub;
         uint64_t id;
     };
@@ -468,7 +470,7 @@ private:
     updates_t _updates_in_progress;
     model::revision_id _last_applied_revision_id;
 
-    std::vector<delta> _pending_deltas;
+    fragmented_vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
     cluster::notification_id_type _notification_id{0};
     std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
