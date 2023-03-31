@@ -175,6 +175,11 @@
             "nullable": true,
             "description": "Delta in milliseconds since the last manifest sync (only present for read replicas)"
         },
+        "metadata_update_pending": {
+          "type": "boolean",
+          "description": "If true, the remote metadata may not yet include all segments that have been uploaded."
+
+        },
         "total_log_size_bytes": {
             "type": "long",
             "description": "Total size of the log for the partition (overlap between local and cloud log is excluded)"
