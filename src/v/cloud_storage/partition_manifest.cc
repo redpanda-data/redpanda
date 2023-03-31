@@ -263,11 +263,11 @@ const model::offset partition_manifest::get_last_offset() const {
 }
 
 const std::optional<kafka::offset>
-partition_manifest::get_last_kafka_offset() const {
+partition_manifest::get_next_kafka_offset() const {
     if (_segments.empty()) {
         return std::nullopt;
     }
-    return _segments.rbegin()->second.committed_kafka_offset();
+    return _segments.rbegin()->second.next_kafka_offset();
 }
 
 const model::offset partition_manifest::get_insync_offset() const {
@@ -337,7 +337,7 @@ partition_manifest::segment_containing(kafka::offset o) const {
         // check using delta_offset_end. If the field is not set then we
         // will return the last segment. This is OK since delta_offset_end
         // will always be set for new segments.
-        if (back->second.committed_kafka_offset() < o) {
+        if (back->second.next_kafka_offset() <= o) {
             return end();
         }
     }
