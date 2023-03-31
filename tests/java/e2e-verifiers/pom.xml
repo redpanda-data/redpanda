@@ -18,7 +18,7 @@
         <slf4j.version>1.7.36</slf4j.version>
         <buildDir>${project.basedir}/target</buildDir>
         <jackson.version>2.13.4</jackson.version>
-        <jackson.databind.version>2.13.4.1</jackson.databind.version>
+        <jackson.databind.version>2.13.4.2</jackson.databind.version>
     </properties>
     <dependencies>
         <dependency>
