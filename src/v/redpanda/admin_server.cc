@@ -77,9 +77,12 @@
 #include "redpanda/admin/api-doc/transaction.json.h"
 #include "redpanda/admin/api-doc/usage.json.h"
 #include "rpc/errc.h"
+#include "security/acl.h"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
+#include "security/scram_credential.h"
+#include "ssx/future-util.h"
 #include "ssx/metrics.h"
 #include "utils/string_switch.h"
 #include "vlog.h"
@@ -97,6 +100,7 @@
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
 #include <seastar/util/log.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
@@ -1757,11 +1761,24 @@ void admin_server::register_security_routes() {
 
     register_route<superuser>(
       ss::httpd::security_json::list_users,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          bool include_ephemeral = req->get_query_param("include_ephemeral")
+                                   == "true";
+          constexpr auto is_ephemeral =
+            [](security::credential_store::credential_types const& t) {
+                return ss::visit(t, [](security::scram_credential const& c) {
+                    return c.principal().has_value()
+                           && c.principal().value().type()
+                                == security::principal_type::ephemeral_user;
+                });
+            };
+
           std::vector<ss::sstring> users;
-          for (const auto& [user, _] :
+          for (const auto& [user, type] :
                _controller->get_credential_store().local()) {
-              users.push_back(user());
+              if (include_ephemeral || !is_ephemeral(type)) {
+                  users.push_back(user());
+              }
           }
           return ss::make_ready_future<ss::json::json_return_type>(
             std::move(users));

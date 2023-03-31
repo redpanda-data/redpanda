@@ -682,8 +682,12 @@ class Admin:
                           algorithm=algorithm,
                       ))
 
-    def list_users(self, node=None):
-        return self._request("get", "security/users", node=node).json()
+    def list_users(self, node=None, include_ephemeral: Optional[bool] = False):
+        params = None if include_ephemeral is None else {
+            "include_ephemeral": f"{include_ephemeral}".lower()
+        }
+        return self._request("get", "security/users", node=node,
+                             params=params).json()
 
     def partition_transfer_leadership(self,
                                       namespace,
