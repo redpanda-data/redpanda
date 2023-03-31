@@ -137,8 +137,8 @@ private:
     absl::node_hash_map<model::node_id, node_replicas>
       calculate_replicas_per_node(partition_allocation_domain) const;
 
-    unevenness_error_info
-      calculate_unevenness_error(partition_allocation_domain) const;
+    unevenness_error_info calculate_unevenness_error(
+      const update_meta&, partition_allocation_domain) const;
     bool should_stop_rebalancing_update(const update_meta&) const;
 
     static size_t calculate_total_replicas(const node_replicas_map_t&);
