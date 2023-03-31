@@ -11,6 +11,14 @@
     "get": {
         "summary": "List users",
         "operationId": "list_users",
+        "parameters": [
+            {
+                "name": "include_ephemeral",
+                "in": "query",
+                "required": false,
+                "type": "boolean"
+            }
+        ],
         "responses": {
             "200": {
                 "description": "List users"
