@@ -14,8 +14,10 @@
 #include "cloud_storage/logger.h"
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/types.h"
+#include "cloud_storage_clients/types.h"
 #include "model/metadata.h"
 #include "utils/retry_chain_node.h"
+#include "utils/string_switch.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
@@ -28,6 +30,7 @@
 #include <boost/beast/http/field.hpp>
 #include <fmt/chrono.h>
 
+#include <cstdlib>
 #include <exception>
 #include <utility>
 #include <variant>
@@ -40,9 +43,156 @@ struct key_and_node {
     cloud_storage_clients::object_key key;
     std::unique_ptr<retry_chain_node> node;
 };
+
+static std::optional<ss::sstring>
+get_env_var(const char* name, const char* warn_message) {
+    const char* str = std::getenv(name);
+    if (str == nullptr) {
+        return std::nullopt;
+    }
+    if (std::strlen(str) == 0) {
+        return std::nullopt;
+    }
+    vlog(
+      cloud_storage::cst_log.warn,
+      "Environment variable {} is set to {}, {}",
+      name,
+      str,
+      warn_message);
+    return ss::sstring(str);
+}
+
+static const char* cloud_storage_error_injection_varname
+  = "RP_INJECT_CLOUD_STORAGE_API_ERRORS";
+
 } // namespace
 
 namespace cloud_storage {
+
+std::ostream& operator<<(std::ostream& o, const injected_failure_type& f) {
+    switch (f) {
+    case injected_failure_type::failure:
+        o << "failure";
+        break;
+    case injected_failure_type::no_such_key:
+        o << "no_such_key";
+        break;
+    case injected_failure_type::throttle:
+        o << "throttle";
+        break;
+    case injected_failure_type::none:
+        o << "none";
+        break;
+    }
+    return o;
+}
+
+struct failure_injector::failure {
+    injected_failure_type _type{injected_failure_type::none};
+    ss::lowres_clock::duration _timeout{};
+
+    ss::future<std::optional<result<
+      http::client::response_stream_ref,
+      cloud_storage_clients::error_outcome>>>
+    generate_get_failure(
+      const cloud_storage_clients::object_key& key,
+      ss::abort_source& as,
+      retry_chain_logger& ctxlog) {
+        auto res = do_generate_response(true);
+        vlog(
+          ctxlog.warn,
+          "GET Error injected at {}, type {}, timeout {}ns",
+          key,
+          _type,
+          std::chrono::duration_cast<std::chrono::nanoseconds>(_timeout)
+            .count());
+        co_await ss::sleep_abortable(_timeout, as);
+        co_return res;
+    }
+
+    ss::future<std::optional<result<
+      cloud_storage_clients::client::no_response,
+      cloud_storage_clients::error_outcome>>>
+    generate_put_failure(
+      const cloud_storage_clients::object_key& key,
+      ss::abort_source& as,
+      retry_chain_logger& ctxlog) {
+        auto res = do_generate_response(false);
+        vlog(
+          ctxlog.warn,
+          "PUT Error injected at {}, type {}, timeout {}ns",
+          key,
+          _type,
+          std::chrono::duration_cast<std::chrono::nanoseconds>(_timeout)
+            .count());
+        co_await ss::sleep_abortable(_timeout, as);
+        co_return res;
+    }
+
+    std::optional<cloud_storage_clients::error_outcome>
+    do_generate_response(bool is_get_request) {
+        std::optional<cloud_storage_clients::error_outcome> res;
+        switch (_type) {
+        case injected_failure_type::failure:
+            res = cloud_storage_clients::error_outcome::fail;
+            break;
+        case injected_failure_type::no_such_key:
+            res = cloud_storage_clients::error_outcome::key_not_found;
+            if (is_get_request) {
+                break;
+            }
+        case injected_failure_type::throttle:
+            res = cloud_storage_clients::error_outcome::retry_slowdown;
+            break;
+        case injected_failure_type::none:
+            // In this case we only injecting sleep but not the actual
+            // failure.
+            res = std::nullopt;
+            break;
+        }
+        return res;
+    }
+};
+
+void failure_injector::load_from_string(const char* ctrl_string) {
+    std::stringstream str(ctrl_string);
+    std::string t;
+    if (std::getline(str, t, ':')) {
+        _freq = boost::lexical_cast<int32_t>(t);
+        while (std::getline(str, t, ':')) {
+            auto res = string_switch<injected_failure_type>(t)
+                         .match("failure", injected_failure_type::failure)
+                         .match("none", injected_failure_type::none)
+                         .match(
+                           "no_such_key", injected_failure_type::no_such_key)
+                         .match("throttle", injected_failure_type::throttle)
+                         .default_match(injected_failure_type::none);
+            _types.push_back(res);
+        }
+    }
+}
+
+std::unique_ptr<failure_injector::failure>
+failure_injector::maybe_inject_failure(ss::lowres_clock::duration max_sleep) {
+    if (_freq <= 0) {
+        return nullptr;
+    }
+    if ((_rng() % _freq) != 0) {
+        return nullptr;
+    }
+    auto res = std::make_unique<failure>();
+    res->_type = _types.at(_rng() % _types.size());
+    res->_timeout = ss::lowres_clock::duration(_rng() % max_sleep.count());
+    return res;
+}
+
+using get_response_t = std::optional<::result<
+  http::client::response_stream_ref,
+  cloud_storage_clients::error_outcome>>;
+
+using put_response_t = std::optional<result<
+  cloud_storage_clients::client::no_response,
+  cloud_storage_clients::error_outcome>>;
 
 using namespace std::chrono_literals;
 
@@ -108,6 +258,13 @@ remote::remote(
 
         _pool.load_credentials(_auth_refresh_bg_op.build_static_credentials());
     });
+
+    auto maybe_ctrl_str = get_env_var(
+      cloud_storage_error_injection_varname,
+      "failure injection will be enabled");
+    if (maybe_ctrl_str) {
+        _injector.load_from_string(maybe_ctrl_str->data());
+    }
 }
 
 remote::remote(ss::sharded<configuration>& conf)
@@ -207,8 +364,17 @@ ss::future<download_result> remote::do_download_manifest(
            && !result.has_value()) {
         notify_external_subscribers(
           api_activity_notification::manifest_download, parent);
-        auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout(), expect_missing);
+
+        auto failure = _injector.maybe_inject_failure(fib.get_timeout());
+        get_response_t injection;
+        if (failure) {
+            injection = co_await failure->generate_get_failure(
+              path, _as, ctxlog);
+        }
+        auto resp = injection.has_value()
+                      ? injection.value()
+                      : co_await lease.client->get_object(
+                        bucket, path, fib.get_timeout(), expect_missing);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
@@ -300,8 +466,18 @@ ss::future<upload_result> remote::upload_manifest(
         notify_external_subscribers(
           api_activity_notification::manifest_upload, parent);
         auto [is, size] = co_await manifest.serialize();
-        const auto res = co_await lease.client->put_object(
-          bucket, path, size, std::move(is), tags, fib.get_timeout());
+
+        auto failure = _injector.maybe_inject_failure(fib.get_timeout());
+        put_response_t injection;
+        if (failure) {
+            injection = co_await failure->generate_put_failure(
+              path, _as, ctxlog);
+        }
+        auto res
+          = injection.has_value()
+              ? injection.value()
+              : co_await lease.client->put_object(
+                bucket, path, size, std::move(is), tags, fib.get_timeout());
 
         if (res) {
             vlog(ctxlog.debug, "Successfuly uploaded manifest to {}", path);
@@ -434,13 +610,20 @@ ss::future<upload_result> remote::upload_segment(
         auto reader_handle = co_await reset_str();
         auto path = cloud_storage_clients::object_key(segment_path());
         // Segment upload attempt
-        auto res = co_await lease.client->put_object(
-          bucket,
-          path,
-          content_length,
-          reader_handle->take_stream(),
-          tags,
-          fib.get_timeout());
+        auto failure = _injector.maybe_inject_failure(fib.get_timeout());
+        put_response_t injection;
+        if (failure) {
+            injection = co_await failure->generate_put_failure(
+              path, _as, ctxlog);
+        }
+        auto res = injection.has_value() ? injection.value()
+                                         : co_await lease.client->put_object(
+                                           bucket,
+                                           path,
+                                           content_length,
+                                           reader_handle->take_stream(),
+                                           tags,
+                                           fib.get_timeout());
 
         // `put_object` closed the encapsulated input_stream, but we must
         // call close() on the segment_reader_handle to release the FD.
@@ -522,8 +705,16 @@ ss::future<download_result> remote::download_segment(
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         notify_external_subscribers(
           api_activity_notification::segment_download, parent);
-        auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout());
+
+        auto failure = _injector.maybe_inject_failure(fib.get_timeout());
+        get_response_t injection;
+        if (failure) {
+            injection = co_await failure->generate_get_failure(
+              path, _as, ctxlog);
+        }
+        auto resp = injection.has_value() ? injection.value()
+                                          : co_await lease.client->get_object(
+                                            bucket, path, fib.get_timeout());
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);

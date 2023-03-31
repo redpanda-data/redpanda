@@ -61,6 +61,9 @@ class EndToEndShadowIndexingBase(EndToEndTest):
         self.s3_bucket_name = self.si_settings.cloud_storage_bucket
         self.si_settings.load_context(self.logger, test_context)
         self.scale = Scale(test_context)
+        if test_context.function_name == "test_write_with_failures":
+            self.logger.info("Enable failure injection")
+            self.si_settings.inject_failures = "30:none:failure:throttle"
 
         self.redpanda = RedpandaService(context=self.test_context,
                                         num_brokers=self.num_brokers,
@@ -84,6 +87,14 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
     @cluster(num_nodes=5)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_write(self, cloud_storage_type):
+        self.do_write()
+
+    @cluster(num_nodes=5)
+    @matrix(cloud_storage_type=get_cloud_storage_type())
+    def test_write_with_failures(self, cloud_storage_type):
+        self.do_write(100)
+
+    def do_write(self, num_segments=10):
         """Write at least 10 segments, set retention policy to leave only 5
         segments, wait for segments removal, consume data and run validation,
         that everything that is acked is consumed."""
@@ -92,7 +103,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
             redpanda=self.redpanda,
             topic=self.topic,
             partition_idx=0,
-            count=10,
+            count=num_segments,
         )
 
         # Get a snapshot of the current segments, before tightening the
@@ -103,7 +114,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         for node, node_segments in original_snapshot.items():
             assert len(
                 node_segments
-            ) >= 10, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
+            ) >= num_segments, f"Expected at least {num_segments} segments, but got {len(node_segments)} on {node}"
 
         self.kafka_tools.alter_topic_config(
             self.topic,
@@ -116,7 +127,7 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         wait_for_removal_of_n_segments(redpanda=self.redpanda,
                                        topic=self.topic,
                                        partition_idx=0,
-                                       n=6,
+                                       n=num_segments - 4,
                                        original_snapshot=original_snapshot)
 
         self.start_consumer()

@@ -346,7 +346,8 @@ class SISettings:
                      int] = None,
                  bypass_bucket_creation: bool = False,
                  cloud_storage_housekeeping_interval_ms: Optional[int] = None,
-                 fast_uploads=False):
+                 fast_uploads=False,
+                 inject_failures: Optional[str] = None):
         """
         :param fast_uploads: if true, set low upload intervals to help tests run
                              quickly when they wait for uploads to complete.
@@ -397,6 +398,8 @@ class SISettings:
         if fast_uploads:
             self.cloud_storage_segment_max_upload_interval_sec = 10
             self.cloud_storage_manifest_max_upload_interval_sec = 1
+
+        self.inject_failures = inject_failures
 
     def load_context(self, logger, test_context):
         if self.cloud_storage_type == CloudStorageType.S3:
@@ -812,8 +815,14 @@ class RedpandaService(Service):
         self._environment = dict(
             ASAN_OPTIONS=
             "abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1")
+        if si_settings is not None and si_settings.inject_failures is not None:
+            self._environment.update(
+                dict(RP_INJECT_CLOUD_STORAGE_API_ERRORS=si_settings.
+                     inject_failures))
         if environment is not None:
             self._environment.update(environment)
+
+        self.logger.info(f"Redpanda ENV: {self._environment}")
 
         self.config_file_lock = threading.Lock()
 
