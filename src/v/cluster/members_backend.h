@@ -79,6 +79,40 @@ public:
         absl::flat_hash_map<partition_allocation_domain, size_t> last_ntp_index;
     };
 
+    struct reallocation_strategy {
+        reallocation_strategy() = default;
+        reallocation_strategy(const reallocation_strategy&) = default;
+        reallocation_strategy(reallocation_strategy&&) = default;
+        reallocation_strategy& operator=(const reallocation_strategy&)
+          = default;
+        reallocation_strategy& operator=(reallocation_strategy&&) = default;
+        virtual ~reallocation_strategy() = default;
+        virtual void reallocations_for_even_partition_count(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain)
+          = 0;
+    };
+
+    class default_reallocation_strategy : public reallocation_strategy {
+        void reallocations_for_even_partition_count(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain) final;
+
+    private:
+        void calculate_reallocations_batch(
+          size_t batch_size,
+          partition_allocator&,
+          topic_table&,
+          update_meta&,
+          partition_allocation_domain);
+    };
+
     members_backend(
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::topic_table>&,
@@ -98,16 +132,7 @@ public:
 
 private:
     static constexpr model::revision_id raft0_revision{0};
-    struct node_replicas {
-        size_t allocated_replicas;
-        size_t max_capacity;
-    };
-    struct unevenness_error_info {
-        double e;
-        double e_step;
-    };
-    using node_replicas_map_t
-      = absl::node_hash_map<model::node_id, members_backend::node_replicas>;
+
     void start_reconciliation_loop();
     ss::future<> reconciliation_loop();
     ss::future<std::error_code> reconcile();
@@ -121,24 +146,17 @@ private:
     void stop_node_decommissioning(model::node_id);
     void stop_node_addition_and_ondemand_rebalance(model::node_id id);
     void handle_reallocation_finished(model::node_id);
-    void reassign_replicas(partition_assignment&, partition_reallocation&);
-    void
-    calculate_reallocations_batch(update_meta&, partition_allocation_domain);
     void reallocations_for_even_partition_count(
       update_meta&, partition_allocation_domain);
+
     ss::future<> calculate_reallocations_after_decommissioned(update_meta&);
     ss::future<> calculate_reallocations_after_recommissioned(update_meta&);
     std::vector<model::ntp> ntps_moving_from_node_older_than(
       model::node_id, model::revision_id) const;
     void setup_metrics();
-    absl::node_hash_map<model::node_id, node_replicas>
-      calculate_replicas_per_node(partition_allocation_domain) const;
 
-    unevenness_error_info calculate_unevenness_error(
-      const update_meta&, partition_allocation_domain) const;
     bool should_stop_rebalancing_update(const update_meta&) const;
 
-    static size_t calculate_total_replicas(const node_replicas_map_t&);
     ss::future<std::error_code>
     update_raft0_configuration(const members_manager::node_update&);
 
@@ -158,6 +176,7 @@ private:
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<members_frontend>& _members_frontend;
     ss::sharded<features::feature_table>& _features;
+    std::unique_ptr<reallocation_strategy> _reallocation_strategy;
     consensus_ptr _raft0;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _bg;
