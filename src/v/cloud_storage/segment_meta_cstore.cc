@@ -183,6 +183,9 @@ class column_store
           _sname_format);
     }
 
+    // helper used for serde_write/read and insert_entries
+    auto member_fields() { return std::tuple_cat(columns(), std::tie(_hints)); }
+
     // projections from segment_meta to value_t used by the columns. the order
     // is the same of columns()
     constexpr static auto segment_meta_accessors = std::tuple{
@@ -295,8 +298,6 @@ public:
             }
         }
     }
-
-    auto serde_fields() { return std::tuple_cat(columns(), std::tie(_hints)); }
 
     /**
      * reconstruct *this by replacing local segment_meta-s with replacement
@@ -412,8 +413,8 @@ public:
         }
 
         // perform update of *this by stealing the fields from replacement
-        auto current_data = serde_fields();
-        auto replacement_data = replacement_store.serde_fields();
+        auto current_data = member_fields();
+        auto replacement_data = replacement_store.member_fields();
         std::swap(current_data, replacement_data);
         return replaced_segments;
     }
@@ -614,64 +615,67 @@ public:
     void serde_write(iobuf& out) {
         // hint_map_t (absl::btree_map) is not serde-enabled, it's serialized
         // manually as size,[(key,value)...]
-        serde::envelope_for_each_field(
-          *this, [&out]<typename FieldType>(FieldType& f) {
-              if constexpr (std::same_as<FieldType, hint_map_t>) {
-                  if (unlikely(
-                        f.size()
-                        > std::numeric_limits<serde::serde_size_t>::max())) {
-                      throw serde::serde_exception(fmt_with_ctx(
-                        ssx::sformat,
-                        "serde: {} size {} exceeds serde_size_t",
-                        serde::type_str<column_store>(),
-                        f.size()));
-                  }
-                  serde::write(out, static_cast<serde::serde_size_t>(f.size()));
-                  for (auto& [k, v] : f) {
-                      serde::write(out, k);
-                      serde::write(out, std::move(v));
-                  }
-              } else {
-                  serde::write(out, std::move(f));
-              }
-          });
+        auto field_writer = [&out]<typename FieldType>(FieldType& f) {
+            if constexpr (std::same_as<FieldType, hint_map_t>) {
+                if (unlikely(
+                      f.size()
+                      > std::numeric_limits<serde::serde_size_t>::max())) {
+                    throw serde::serde_exception(fmt_with_ctx(
+                      ssx::sformat,
+                      "serde: {} size {} exceeds serde_size_t",
+                      serde::type_str<column_store>(),
+                      f.size()));
+                }
+                serde::write(out, static_cast<serde::serde_size_t>(f.size()));
+                for (auto& [k, v] : f) {
+                    serde::write(out, k);
+                    serde::write(out, std::move(v));
+                }
+            } else {
+                serde::write(out, std::move(f));
+            }
+        };
+        std::apply(
+          [&](auto&... field) { (field_writer(field), ...); }, member_fields());
     }
 
     void serde_read(iobuf_parser& in, serde::header const& h) {
         // hint_map_t (absl::btree_map) is not serde-enabled, read it as
         // size,[(key,value)...]
-        serde::envelope_for_each_field(
-          *this, [&]<typename FieldType>(FieldType& f) {
-              if (h._bytes_left_limit == in.bytes_left()) {
-                  return false;
-              }
-              if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
-                  throw serde::serde_exception(fmt_with_ctx(
-                    ssx::sformat,
-                    "field spill over in {}, field type {}: envelope_end={}, "
-                    "in.bytes_left()={}",
-                    serde::type_str<column_store>(),
-                    serde::type_str<FieldType>(),
-                    h._bytes_left_limit,
-                    in.bytes_left()));
-              }
-              if constexpr (std::same_as<hint_map_t, FieldType>) {
-                  const auto size = serde::read_nested<serde::serde_size_t>(
-                    in, h._bytes_left_limit);
-                  for (auto i = 0U; i < size; ++i) {
-                      auto key
-                        = serde::read_nested<typename hint_map_t::key_type>(
-                          in, h._bytes_left_limit);
-                      auto value
-                        = serde::read_nested<typename hint_map_t::mapped_type>(
-                          in, h._bytes_left_limit);
-                      f.emplace(std::move(key), std::move(value));
-                  }
-              } else {
-                  f = serde::read_nested<FieldType>(in, h._bytes_left_limit);
-              }
-              return true;
-          });
+        auto field_reader = [&]<typename FieldType>(FieldType& f) {
+            if (h._bytes_left_limit == in.bytes_left()) {
+                return false;
+            }
+            if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+                throw serde::serde_exception(fmt_with_ctx(
+                  ssx::sformat,
+                  "field spill over in {}, field type {}: envelope_end={}, "
+                  "in.bytes_left()={}",
+                  serde::type_str<column_store>(),
+                  serde::type_str<FieldType>(),
+                  h._bytes_left_limit,
+                  in.bytes_left()));
+            }
+            if constexpr (std::same_as<hint_map_t, FieldType>) {
+                const auto size = serde::read_nested<serde::serde_size_t>(
+                  in, h._bytes_left_limit);
+                for (auto i = 0U; i < size; ++i) {
+                    auto key
+                      = serde::read_nested<typename hint_map_t::key_type>(
+                        in, h._bytes_left_limit);
+                    auto value
+                      = serde::read_nested<typename hint_map_t::mapped_type>(
+                        in, h._bytes_left_limit);
+                    f.emplace(std::move(key), std::move(value));
+                }
+            } else {
+                f = serde::read_nested<FieldType>(in, h._bytes_left_limit);
+            }
+            return true;
+        };
+        std::apply(
+          [&](auto&... field) { (void)(field_reader(field) && ...); },
+          member_fields());
     }
 
 private:
