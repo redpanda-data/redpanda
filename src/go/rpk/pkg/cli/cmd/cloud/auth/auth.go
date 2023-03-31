@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	browser "github.com/pkg/browser"
+	"github.com/pkg/browser"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/auth0"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
