@@ -177,6 +177,14 @@ ss::future<> ntp_archiver::upload_until_abort() {
             continue;
         }
         vlog(_rtclog.debug, "upload loop starting in term {}", _start_term);
+        auto sync_timeout = config::shard_local_cfg()
+                              .cloud_storage_metadata_sync_timeout_ms.value();
+        bool is_synced = co_await _parent.archival_meta_stm()->sync(
+          sync_timeout);
+        if (!is_synced) {
+            co_return;
+        }
+        vlog(_rtclog.debug, "upload loop synced in term {}", _start_term);
 
         co_await ss::with_scheduling_group(
           _conf->upload_scheduling_group,
