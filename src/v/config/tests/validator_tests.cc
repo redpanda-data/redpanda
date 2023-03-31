@@ -67,3 +67,19 @@ SEASTAR_THREAD_TEST_CASE(test_client_groups_byte_rate_quota_invalid_config) {
     result = config::validate_client_groups_byte_rate_quota(valid_config);
     BOOST_TEST(!result.has_value());
 }
+
+SEASTAR_THREAD_TEST_CASE(test_empty_string_vec) {
+    using config::validate_non_empty_string_vec;
+    BOOST_TEST(!(validate_non_empty_string_vec({"apple", "pear"}).has_value()));
+    BOOST_TEST(validate_non_empty_string_vec({"apple", ""}).has_value());
+    BOOST_TEST(validate_non_empty_string_vec({"", "pear"}).has_value());
+    BOOST_TEST(
+      validate_non_empty_string_vec({"apple", "", "pear"}).has_value());
+}
+
+SEASTAR_THREAD_TEST_CASE(test_empty_string_opt) {
+    using config::validate_non_empty_string_opt;
+    BOOST_TEST(!validate_non_empty_string_opt(std::nullopt).has_value());
+    BOOST_TEST(!validate_non_empty_string_opt("apple").has_value());
+    BOOST_TEST(validate_non_empty_string_opt("").has_value());
+}
