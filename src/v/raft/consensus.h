@@ -13,6 +13,7 @@
 
 #include "features/feature_table.h"
 #include "hashing/crc32c.h"
+#include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/append_entries_buffer.h"
@@ -531,39 +532,60 @@ private:
 
     template<typename Reply>
     result<Reply> validate_reply_target_node(
-      std::string_view request, result<Reply>&& reply) {
-        if (unlikely(reply && reply.value().target_node_id != self())) {
-            /**
-             * if received node_id is not initialized it means that there were
-             * no raft group instance on target node to handle the request.
-             */
-            if (reply.value().target_node_id.id() == model::node_id{}) {
-                // A grace period, where perhaps it is okay that a peer
-                // hasn't seen the controller log message that created
-                // this partition yet.
-                static constexpr clock_type::duration grace = 30s;
-                bool instantiated_recently = (clock_type::now()
-                                              - _instantiated_at)
-                                             < grace;
-                if (!instantiated_recently) {
-                    vlog(
-                      _ctxlog.warn,
-                      "received {} reply from the node where ntp {} does not "
-                      "exists",
-                      request,
-                      _log.config().ntp());
-                }
-                return result<Reply>(errc::group_not_exists);
+      std::string_view request,
+      result<Reply> reply,
+      model::node_id requested_node_id) {
+        if (reply) {
+            // since we are not going to introduce the node in ADL versions of
+            // replies it may be not initialzed, in this case just ignore the
+            // check
+            if (unlikely(
+                  reply.value().node_id != vnode{}
+                  && reply.value().node_id.id() != requested_node_id)) {
+                vlog(
+                  _ctxlog.warn,
+                  "received {} reply from a node that id does not match the "
+                  "requested one. Received: {}, requested: {}",
+                  request,
+                  reply.value().node_id.id(),
+                  requested_node_id);
+                return result<Reply>(errc::invalid_target_node);
             }
+            if (unlikely(reply.value().target_node_id != self())) {
+                /**
+                 * if received node_id is not initialized it means that there
+                 * were no raft group instance on target node to handle the
+                 * request.
+                 */
+                if (reply.value().target_node_id.id() == model::node_id{}) {
+                    // A grace period, where perhaps it is okay that a peer
+                    // hasn't seen the controller log message that created
+                    // this partition yet.
+                    static constexpr clock_type::duration grace = 30s;
+                    bool instantiated_recently = (clock_type::now()
+                                                  - _instantiated_at)
+                                                 < grace;
+                    if (!instantiated_recently) {
+                        vlog(
+                          _ctxlog.warn,
+                          "received {} reply from the node where ntp {} does "
+                          "not "
+                          "exists",
+                          request,
+                          _log.config().ntp());
+                    }
+                    return result<Reply>(errc::group_not_exists);
+                }
 
-            vlog(
-              _ctxlog.warn,
-              "received {} reply addressed to different node: {}, current "
-              "node: {}",
-              request,
-              reply.value().target_node_id,
-              _self);
-            return result<Reply>(errc::invalid_target_node);
+                vlog(
+                  _ctxlog.warn,
+                  "received {} reply addressed to different node: {}, current "
+                  "node: {}",
+                  request,
+                  reply.value().target_node_id,
+                  _self);
+                return result<Reply>(errc::invalid_target_node);
+            }
         }
         return std::move(reply);
     }
