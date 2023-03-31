@@ -806,7 +806,6 @@ public:
         // the new segment_meta could be a replacement for subsequent entries in
         // the buffer, so do a pass to clean them
         if (_write_buffer.size() > 1) {
-            //
             auto not_replaced_segment = std::find_if(
               std::next(m_it), _write_buffer.end(), [&](auto& kv) {
                   return kv.first > m.committed_offset;
