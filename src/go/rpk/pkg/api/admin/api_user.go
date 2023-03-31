@@ -51,11 +51,31 @@ func (a *AdminAPI) CreateUser(ctx context.Context, username, password, mechanism
 	return a.sendToLeader(ctx, http.MethodPost, usersEndpoint, u, nil)
 }
 
+// UpdateUser updates a user with the given username and password using the
+// given mechanism (SCRAM-SHA-256, SCRAM-SHA-512). The api call will error out if no default mechanism given.
+func (a *AdminAPI) UpdateUser(ctx context.Context, username, password, mechanism string) error {
+	if username == "" {
+		return errors.New("invalid empty username")
+	}
+	if password == "" {
+		return errors.New("invalid empty password")
+	}
+	u := newUser{
+		User:      username,
+		Password:  password,
+		Algorithm: mechanism,
+	}
+	// This is because the api endpoint is userEndpoint/{user}.
+	path := usersEndpoint + "/" + url.PathEscape(username)
+	return a.sendToLeader(ctx, http.MethodPut, path, u, nil)
+}
+
 // DeleteUser deletes the given username, if it exists.
 func (a *AdminAPI) DeleteUser(ctx context.Context, username string) error {
 	if username == "" {
 		return errors.New("invalid empty username")
 	}
+	// This is because the api endpoint is userEndpoint/{user}.
 	path := usersEndpoint + "/" + url.PathEscape(username)
 	return a.sendToLeader(ctx, http.MethodDelete, path, nil, nil)
 }
