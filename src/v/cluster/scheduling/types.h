@@ -112,18 +112,42 @@ private:
  * Configuration used to request partition allocation, if current allocations
  * are not empty then allocation strategy will allocate as many replicas as
  * required to achieve requested replication factor.
+ *
+ * Allocation constraints define a constraints hierarchy in which a root level
+ * is formed by hard constraints vector. Soft constraints hierarchy is expressed
+ * as a list of list of constraints. Where the top level list defines a
+ * constraints hierarchy while from most important to the least important
+ * constraints while the sublist contain constraints with the same priority.
  */
+// we store pointers in here to make allocation constraints copyable
+using soft_constraint_ptr = ss::lw_shared_ptr<soft_constraint>;
+using hard_constraint_ptr = ss::lw_shared_ptr<hard_constraint>;
+using soft_constraints_level = std::vector<soft_constraint_ptr>;
+using soft_constraints_hierarchy = std::vector<soft_constraints_level>;
 struct allocation_constraints {
-    // we store pointers in here to make allocation constraints copyable
-    using soft_constraint_ptr = ss::lw_shared_ptr<soft_constraint>;
-    using hard_constraint_ptr = ss::lw_shared_ptr<hard_constraint>;
-
-    std::vector<soft_constraint_ptr> soft_constraints;
+    /**
+     * Hard constraints define a root level of constraints hierarchy
+     */
     std::vector<hard_constraint_ptr> hard_constraints;
 
+    /**
+     * Each list of a constraints vector contains a level of soft constraints
+     */
+    soft_constraints_hierarchy soft_constraints;
+
+    /**
+     * Add constraints to the last hierarchy level (for backward compatibility)
+     */
     void add(soft_constraint c) {
-        return soft_constraints.push_back(
+        if (soft_constraints.empty()) {
+            soft_constraints.push_back({});
+        }
+        return soft_constraints.back().push_back(
           ss::make_lw_shared<soft_constraint>(std::move(c)));
+    }
+
+    void add_level(soft_constraints_level c) {
+        return soft_constraints.push_back(std::move(c));
     }
 
     void add(hard_constraint c) {
