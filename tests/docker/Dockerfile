@@ -32,6 +32,7 @@ RUN /opt/ducktape-deps.sh install_kafka_streams_examples
 # Install our in-tree Java test clientst
 RUN mkdir -p /opt/redpanda-tests
 COPY --chown=0:0 tests/java /opt/redpanda-tests/java
+COPY --chown=0:0 tests/java/kafka-serde /opt/redpanda-tests/java/kafka-serde
 RUN /opt/ducktape-deps.sh install_java_test_clients
 
 # - install distro-packaged depedencies
