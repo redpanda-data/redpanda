@@ -18,7 +18,7 @@ require (
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/common v0.40.0
 	github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524
-	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230104182309-7698d02c437e
+	github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230404135914-a0df09112265
 	github.com/stretchr/testify v1.8.1
 	github.com/twmb/franz-go v1.12.0
 	github.com/twmb/franz-go/pkg/kadm v1.7.0
