@@ -2469,12 +2469,6 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
-
-        // TODO: https://github.com/redpanda-data/redpanda/issues/9508
-        for (auto& entry : data_v2.seqs) {
-            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-              .pid = entry.pid, .tx_seq = model::tx_seq(entry.seq)});
-        }
     } else if (hdr.version == tx_snapshot_v1::version) {
         auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
         move_snapshot_wo_seqs(data, data_v1);
