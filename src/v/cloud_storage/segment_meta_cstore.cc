@@ -851,9 +851,27 @@ public:
           _col.at_index(ix));
     }
 
-    auto serde_fields() {
+    void serde_write(iobuf& out) {
         flush_write_buffer();
-        return std::tie(_col);
+        serde::write(out, std::exchange(_col, {}));
+    }
+    void serde_read(iobuf_parser& in, serde::header const& h) {
+        if (h._bytes_left_limit == in.bytes_left()) {
+            return;
+        }
+        if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+            throw serde::serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "field spill over in {}, field type {}: envelope_end={}, "
+              "in.bytes_left()={}",
+              serde::type_str<segment_meta_cstore::impl>(),
+              serde::type_str<column_store>(),
+              h._bytes_left_limit,
+              in.bytes_left()));
+        }
+
+        _write_buffer.clear();
+        _col = serde::read_nested<column_store>(in, h._bytes_left_limit);
     }
 
 private:
