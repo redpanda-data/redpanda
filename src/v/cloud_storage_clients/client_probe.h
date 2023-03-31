@@ -18,9 +18,12 @@
 #include "model/fundamental.h"
 #include "net/types.h"
 #include "ssx/metrics.h"
+#include "utils/hdr_hist.h"
 
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/metrics_types.hh>
 
+#include <chrono>
 #include <cstdint>
 #include <span>
 
@@ -75,6 +78,13 @@ public:
     void register_failure(abs_error_code err);
     void register_retryable_failure(std::optional<op_type_tag> op_type);
 
+    /// Call on a shard which needs to borrow a client
+    void register_borrow();
+    /// Register total lease duration
+    std::unique_ptr<hdr_hist::measurement> register_lease_duration();
+    /// Utilization metric which is used to decide if borrowing is possible
+    void register_utilization(unsigned clients_in_use);
+
 private:
     struct raw_label {
         ss::sstring key;
@@ -96,6 +106,12 @@ private:
     uint64_t _total_upload_slowdowns{0};
     /// Total number of NoSuchKey responses
     uint64_t _total_download_slowdowns{0};
+    /// Number of times this shard borrowed resources from other shards
+    uint64_t _total_borrows{0};
+    /// Total time the lease is held by the ntp_archiver (or another user)
+    hdr_hist _lease_duration;
+    /// Current utilization of the client pool
+    uint64_t _pool_utilization;
     ss::metrics::metric_groups _metrics;
     ss::metrics::metric_groups _public_metrics{
       ssx::metrics::public_metrics_handle};

@@ -18,6 +18,7 @@
 #include "cloud_storage/partition_recovery_manager.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/topic_recovery_service.h"
+#include "cloud_storage_clients/client_pool.h"
 #include "cluster/bootstrap_service.h"
 #include "cluster/cluster_discovery.h"
 #include "cluster/cluster_utils.h"
@@ -202,9 +203,10 @@ void application::shutdown() {
 
     // Stop any I/O to object store: this will cause any readers in flight
     // to abort and enables partition shutdown to proceed reliably.
-    if (cloud_storage_api.local_is_initialized()) {
-        cloud_storage_api
-          .invoke_on_all(&cloud_storage::remote::shutdown_connections)
+    if (cloud_storage_clients.local_is_initialized()) {
+        cloud_storage_clients
+          .invoke_on_all(
+            &cloud_storage_clients::client_pool::shutdown_connections)
           .get();
     }
 
@@ -1064,7 +1066,19 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
                 [&c](cloud_storage::configuration cfg) { c = std::move(cfg); });
           })
           .get();
-        construct_service(cloud_storage_api, std::ref(cloud_configs)).get();
+        construct_service(
+          cloud_storage_clients,
+          cloud_configs.local().connection_limit,
+          ss::sharded_parameter(
+            [&cloud_configs] { return cloud_configs.local().client_config; }),
+          cloud_storage_clients::client_pool_overdraft_policy::borrow_if_empty)
+          .get();
+        construct_service(
+          cloud_storage_api,
+          std::ref(cloud_storage_clients),
+          ss::sharded_parameter(
+            [&cloud_configs] { return cloud_configs.local(); }))
+          .get();
         cloud_storage_api.invoke_on_all(&cloud_storage::remote::start).get();
 
         construct_service(

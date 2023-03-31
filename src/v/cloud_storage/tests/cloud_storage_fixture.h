@@ -11,10 +11,12 @@
 #pragma once
 
 #include "cloud_storage/cache_service.h"
+#include "cloud_storage/remote.h"
 #include "cloud_storage/tests/common_def.h"
 #include "cloud_storage/tests/s3_imposter.h"
 #include "cloud_storage/types.h"
 #include "test_utils/fixture.h"
+#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -41,9 +43,29 @@ struct cloud_storage_fixture : s3_imposter_fixture {
 
         cache.invoke_on_all([](cloud_storage::cache& c) { return c.start(); })
           .get();
+
+        auto conf = get_configuration();
+        pool
+          .start(
+            10, ss::sharded_parameter([this] { return get_configuration(); }))
+          .get();
+        api
+          .start(
+            std::ref(pool),
+            ss::sharded_parameter([this] { return get_configuration(); }),
+            ss::sharded_parameter([] { return config_file; }))
+          .get();
+        api
+          .invoke_on_all([](cloud_storage::remote& api) { return api.start(); })
+          .get();
     }
 
     ~cloud_storage_fixture() {
+        if (!pool.local().shutdown_initiated()) {
+            pool.local().shutdown_connections();
+        }
+        api.stop().get();
+        pool.stop().get();
         cache.stop().get();
         tmp_directory.remove().get();
     }
@@ -55,4 +77,6 @@ struct cloud_storage_fixture : s3_imposter_fixture {
 
     ss::tmp_dir tmp_directory;
     ss::sharded<cloud_storage::cache> cache;
+    ss::sharded<cloud_storage_clients::client_pool> pool;
+    ss::sharded<remote> api;
 };

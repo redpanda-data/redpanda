@@ -75,11 +75,25 @@ archiver_fixture::archiver_fixture()
         // set of segment uploads
         cfg.cloud_storage_manifest_max_upload_interval_sec.set_value(
           std::optional<std::chrono::seconds>());
-    }).get0();
+    }).get();
+
+    auto [arch_cfg, remote_cfg] = get_configurations();
+    auto sharded_client_conf = ss::sharded_parameter(
+      [cfg = remote_cfg] { return cfg.client_config; });
+    auto sharded_cloud_conf = ss::sharded_parameter(
+      [cfg = remote_cfg] { return cfg; });
+    pool.start(remote_cfg.connection_limit(), sharded_client_conf).get();
+
+    // Init remote api
+    remote.start(std::ref(pool), sharded_cloud_conf).get();
+    remote.local().start().get();
 }
 
 archiver_fixture::~archiver_fixture() {
     config::shard_local_cfg().cloud_storage_enabled.set_value(false);
+    pool.local().shutdown_connections();
+    remote.stop().get();
+    pool.stop().get();
 }
 
 static cloud_storage::partition_manifest

@@ -13,6 +13,7 @@
 
 #include "archival/fwd.h"
 #include "cloud_storage/fwd.h"
+#include "cloud_storage_clients/client_pool.h"
 #include "cluster/config_manager.h"
 #include "cluster/fwd.h"
 #include "cluster/node/local_monitor.h"
@@ -95,6 +96,7 @@ public:
     ss::sharded<cloud_storage::cache> shadow_index_cache;
     ss::sharded<cloud_storage::partition_recovery_manager>
       partition_recovery_manager;
+    ss::sharded<cloud_storage_clients::client_pool> cloud_storage_clients;
     ss::sharded<cloud_storage::remote> cloud_storage_api;
     ss::sharded<cluster::topic_recovery_status_frontend>
       topic_recovery_status_frontend;
