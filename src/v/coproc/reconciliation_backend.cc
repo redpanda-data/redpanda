@@ -88,7 +88,8 @@ reconciliation_backend::reconciliation_backend(
   , _pacemaker(pacemaker)
   , _sdb(sdb) {}
 
-void reconciliation_backend::enqueue_events(std::span<const update_t> deltas) {
+void reconciliation_backend::enqueue_events(
+  cluster::topic_table::delta_range_t deltas) {
     for (auto& d : deltas) {
         if (is_non_replicable_event(d.type)) {
             _topic_deltas[d.ntp].push_back(d);
@@ -107,7 +108,7 @@ void reconciliation_backend::enqueue_events(std::span<const update_t> deltas) {
 
 ss::future<> reconciliation_backend::start() {
     _id_cb = _topics.local().register_delta_notification(
-      [this](std::span<const update_t> deltas) {
+      [this](cluster::topic_table::delta_range_t deltas) {
           if (!_gate.is_closed()) {
               enqueue_events(deltas);
           } else {
