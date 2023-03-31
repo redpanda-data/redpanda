@@ -4097,6 +4097,8 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
           = status.since_last_manifest_sync->count();
     }
 
+    json.metadata_update_pending = status.cloud_metadata_update_pending;
+
     json.total_log_size_bytes = status.total_log_size_bytes;
     json.cloud_log_size_bytes = status.cloud_log_size_bytes;
     json.local_log_size_bytes = status.local_log_size_bytes;

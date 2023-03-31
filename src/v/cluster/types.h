@@ -3268,6 +3268,9 @@ struct partition_cloud_storage_status {
     size_t cloud_log_segment_count{0};
     size_t local_log_segment_count{0};
 
+    // Friendlier name for archival_metadata_stm::get_dirty
+    bool cloud_metadata_update_pending{false};
+
     std::optional<kafka::offset> cloud_log_start_offset;
     std::optional<kafka::offset> local_log_last_offset;
 
