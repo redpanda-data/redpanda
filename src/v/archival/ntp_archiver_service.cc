@@ -680,9 +680,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     start_upload_offset = offset + model::offset(1);
     auto ot_state = _partition->get_offset_translator_state();
     auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
-    auto delta_offset_end = upload.final_offset
-                            - model::offset_cast(
-                              ot_state->from_log_offset(upload.final_offset));
+    auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
 
     // The upload is successful only if both segment and tx_range are uploaded.
     auto upl_fut
@@ -716,7 +714,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         .ntp_revision = _rev,
         .archiver_term = _start_term,
         .segment_term = upload.term,
-        .delta_offset_end = delta_offset_end,
+        .delta_offset_end = delta_offset_next,
         .sname_format = cloud_storage::segment_name_format::v2,
       },
       .name = upload.exposed_name, .delta = offset - base,

@@ -241,8 +241,9 @@ public:
     /// Starting offset in the object store
     model::offset start_cloud_offset() const;
 
-    /// Last available cloud offset
-    model::offset last_cloud_offset() const;
+    /// Kafka offset one past the end of the last offset (i.e. the high
+    /// watermark as reported by object storage).
+    model::offset next_cloud_offset() const;
 
     /// Create a reader that will fetch data from remote storage
     ss::future<storage::translating_reader> make_cloud_reader(

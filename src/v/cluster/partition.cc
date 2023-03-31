@@ -161,12 +161,12 @@ model::offset partition::start_cloud_offset() const {
       _cloud_storage_partition->first_uploaded_offset());
 }
 
-model::offset partition::last_cloud_offset() const {
+model::offset partition::next_cloud_offset() const {
     vassert(
       cloud_data_available(),
       "Method can only be called if cloud data is available, ntp: {}",
       _raft->ntp());
-    return kafka::offset_cast(_cloud_storage_partition->last_uploaded_offset());
+    return kafka::offset_cast(_cloud_storage_partition->next_kafka_offset());
 }
 
 ss::future<storage::translating_reader> partition::make_cloud_reader(
