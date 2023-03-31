@@ -15,10 +15,11 @@ import (
 	"crypto/tls"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // NoInternalAdminAPI signal absence of the internal admin API endpoint
@@ -71,6 +72,7 @@ func NewInternalAdminAPI(
 	if err != nil {
 		return nil, fmt.Errorf("error creating admin api for cluster %s/%s using urls %v (tls=%v): %w", redpandaCluster.Namespace, redpandaCluster.Name, urls, tlsConfig != nil, err)
 	}
+
 	return adminAPI, nil
 }
 
@@ -85,7 +87,9 @@ type AdminAPIClient interface {
 	GetNodeConfig(ctx context.Context) (admin.NodeConfig, error)
 
 	CreateUser(ctx context.Context, username, password, mechanism string) error
+	ListUsers(ctx context.Context) ([]string, error)
 	DeleteUser(ctx context.Context, username string) error
+	UpdateUser(ctx context.Context, username, password, mechanism string) error
 
 	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
 	SetLicense(ctx context.Context, license interface{}) error
