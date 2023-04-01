@@ -93,10 +93,25 @@ public:
             // This is the last client, call stop
             co_await stop();
         }
+
         // update all in-flight buffers
-        for (auto& it : _buffer) {
-            it.mask |= m;
+        auto all_bits = (1U << _num_clients) - 1;
+        auto cleanup_mark = _buffer.begin();
+        for (auto it = _buffer.begin(); it != _buffer.end(); ++it) {
+            it->mask |= m;
+            if (unlikely(it->mask == all_bits)) {
+                vassert(
+                  it == cleanup_mark,
+                  "there are non contiguous buffers eligible for cleanup: {}",
+                  std::distance(cleanup_mark, it));
+                cleanup_mark++;
+            }
         }
+
+        // Erase all elements from the buffer which have all bits set before we
+        // start scanning it. This will usually happen if some clients have read
+        // the buffers and others exited early, resulting in a mask of all_bits.
+        _buffer.erase(_buffer.begin(), cleanup_mark);
     }
 
     /// Get next buffer from original input stream
@@ -138,6 +153,7 @@ private:
           _num_clients);
         unsigned mask = 1U << index;
         std::optional<ss::temporary_buffer<Ch>> buf = std::nullopt;
+
         auto next = _buffer.end();
         for (auto it = _buffer.begin(); it != _buffer.end(); it++) {
             if ((it->mask & mask) == 0) {
@@ -146,8 +162,9 @@ private:
                 break;
             }
         }
+
+        auto all_bits = (1U << _num_clients) - 1;
         if (next != _buffer.end()) {
-            auto all_bits = (1U << _num_clients) - 1;
             if (next->mask == all_bits) {
                 // The item is consumed by all clients
                 buf = std::move(next->buf);
