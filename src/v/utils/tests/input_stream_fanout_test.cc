@@ -11,7 +11,6 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "random/generators.h"
-#include "utils/fragmented_vector.h"
 #include "utils/stream_utils.h"
 
 #include <seastar/core/abort_source.hh>
@@ -20,6 +19,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/defer.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
@@ -186,6 +186,44 @@ void test_detached_consumer(
         BOOST_REQUIRE(niter >= expected_iters);
     }
     std::apply([](auto&&... s) { (s.close().get(), ...); }, tail);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_mid_read_detach) {
+    // Asserts that if one reader has read some buffers, setting its own bit in
+    // the buffers' masks, and another reader stops which had not read those
+    // buffers, the buffers which got all bits set as a result are cleaned up by
+    // the next reader.
+    iobuf input;
+    for (int i = 0; i < 20; i++) {
+        int sz = random_generators::get_int(100, 32 * 1024);
+        auto b = random_generators::get_bytes(sz);
+        input.append(bytes_to_iobuf(b));
+    }
+    auto is = make_iobuf_input_stream(std::move(input));
+
+    // A read-ahead of 10 will cause several buffers to be pre-loaded
+    auto pair = input_stream_fanout<2>(std::move(is), 10);
+
+    // Wait for produce to fill the buffers
+    {
+        using namespace std::chrono_literals;
+        ss::sleep(10s).get();
+    }
+
+    auto a = std::move(std::get<0>(pair));
+    auto b = std::move(std::get<1>(pair));
+
+    auto deferred = ss::defer([&b] { b.close().get(); });
+
+    // b reads a buffer. It will next read from position 1 in fanout source
+    b.read().get();
+    // a closes and sets all bits to 1 in its mask bit for all buffers in the
+    // source.
+    a.close().get();
+    // when b reads from position 1, it then sets all bits to 1 in that buffer.
+    // before this, the previous buffer should have been removed, preserving the
+    // invariant.
+    BOOST_REQUIRE_NO_THROW(b.read().get());
 }
 
 SEASTAR_THREAD_TEST_CASE(input_stream_fanout_test_2) { test_sync_read<2>(4); }
