@@ -119,7 +119,7 @@ bool archival_policy::upload_deadline_reached() {
 
 archival_policy::lookup_result archival_policy::find_segment(
   model::offset start_offset,
-  model::offset adjusted_lso,
+  model::offset last_offset_inclusive,
   storage::log log,
   const storage::offset_translator_state& ot_state) {
     vlog(
@@ -186,7 +186,7 @@ archival_policy::lookup_result archival_policy::find_segment(
     if (!closed) {
         auto kafka_start_offset = ot_state.from_log_offset(start_offset);
         auto kafka_lso = ot_state.from_log_offset(
-          model::next_offset(adjusted_lso));
+          model::next_offset(last_offset_inclusive));
         if (kafka_start_offset >= kafka_lso) {
             // If timeboxed uploads are enabled and there is no producer
             // activity, we can get into a nasty loop where we upload a segment,
@@ -207,14 +207,14 @@ archival_policy::lookup_result archival_policy::find_segment(
     }
 
     auto dirty_offset = (*it)->offsets().dirty_offset;
-    if (dirty_offset > adjusted_lso && !force_upload) {
+    if (dirty_offset > last_offset_inclusive && !force_upload) {
         vlog(
           archival_log.debug,
           "Upload policy for {}: can't find candidate, candidate dirty offset "
-          "{} is above last_stable_offset {}",
+          "{} is above last_offset_inclusive {}",
           _ntp,
           dirty_offset,
-          adjusted_lso);
+          last_offset_inclusive);
         return {};
     }
     if (_upload_limit) {
@@ -386,23 +386,21 @@ ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
   ss::lowres_clock::duration segment_lock_duration) {
     // NOTE: end_exclusive (which is initialized with LSO) points to the first
     // unstable recordbatch we need to look at the previous batch if needed.
-    auto adjusted_lso = end_exclusive - model::offset(1);
+    auto end_inclusive = model::prev_offset(end_exclusive);
     auto [segment, ntp_conf, forced] = find_segment(
-      begin_inclusive, adjusted_lso, std::move(log), ot_state);
+      begin_inclusive, end_inclusive, std::move(log), ot_state);
     if (segment.get() == nullptr || ntp_conf == nullptr) {
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
-    // We need to adjust LSO since it points to the first
-    // recordbatch with uncommitted transactions data
-    auto last = forced ? std::make_optional(adjusted_lso) : std::nullopt;
+    auto last = forced ? std::make_optional(end_inclusive) : std::nullopt;
     vlog(
       archival_log.debug,
       "Upload policy for {}, creating upload candidate: start_offset {}, "
-      "segment offsets {}, adjusted LSO {}",
+      "segment offsets {}, end_offset_inclusive {}",
       _ntp,
       begin_inclusive,
       segment->offsets(),
-      adjusted_lso);
+      end_inclusive);
     auto upload = co_await create_upload_candidate(
       begin_inclusive,
       last,

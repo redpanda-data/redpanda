@@ -91,8 +91,8 @@ private:
     };
 
     lookup_result find_segment(
-      model::offset last_offset,
-      model::offset adjusted_lso,
+      model::offset start_offset,
+      model::offset last_offset_inclusive,
       storage::log,
       const storage::offset_translator_state&);
 
