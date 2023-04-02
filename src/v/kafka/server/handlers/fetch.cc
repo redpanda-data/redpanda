@@ -147,6 +147,7 @@ static ss::future<read_result> read_from_partition(
  */
 static ss::future<read_result> do_read_from_ntp(
   cluster::partition_manager& cluster_pm,
+  const replica_selector& replica_selector,
   ntp_fetch_config ntp_config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -157,7 +158,7 @@ static ss::future<read_result> do_read_from_ntp(
     if (unlikely(!kafka_partition)) {
         co_return read_result(error_code::unknown_topic_or_partition);
     }
-    if (unlikely(!kafka_partition->is_leader())) {
+    if (!ntp_config.cfg.read_from_follower && !kafka_partition->is_leader()) {
         co_return read_result(error_code::not_leader_for_partition);
     }
 
@@ -171,6 +172,7 @@ static ss::future<read_result> do_read_from_ntp(
     }
     auto offset_ec = co_await kafka_partition->validate_fetch_offset(
       ntp_config.cfg.start_offset,
+      ntp_config.cfg.read_from_follower,
       default_fetch_timeout + model::timeout_clock::now());
 
     if (config::shard_local_cfg().enable_transactions.value()) {
@@ -196,7 +198,41 @@ static ss::future<read_result> do_read_from_ntp(
           kafka_partition->start_offset(),
           kafka_partition->high_watermark(),
           offset_ec);
-        co_return read_result(offset_ec);
+
+        co_return read_result(
+          offset_ec,
+          kafka_partition->start_offset(),
+          kafka_partition->high_watermark());
+    }
+    if (ntp_config.cfg.consumer_rack_id && kafka_partition->is_leader()) {
+        auto p_info_res = kafka_partition->get_partition_info();
+        if (p_info_res.has_error()) {
+            // TODO: add mapping here
+            co_return read_result(error_code::not_leader_for_partition);
+        }
+        auto p_info = std::move(p_info_res.value());
+
+        auto lso = kafka_partition->last_stable_offset();
+        if (unlikely(!lso)) {
+            co_return read_result(lso.error());
+        }
+        auto preferred_replica = replica_selector.select_replica(
+          consumer_info{
+            .fetch_offset = ntp_config.cfg.start_offset,
+            .rack_id = ntp_config.cfg.consumer_rack_id},
+          p_info);
+        if (preferred_replica && preferred_replica.value() != p_info.leader) {
+            vlog(
+              klog.trace,
+              "Consumer in rack: {}, preferred replica id: {}",
+              *ntp_config.cfg.consumer_rack_id,
+              preferred_replica.value());
+            co_return read_result(
+              kafka_partition->start_offset(),
+              kafka_partition->high_watermark(),
+              lso.value(),
+              preferred_replica);
+        }
     }
     co_return co_await read_from_partition(
       std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
@@ -204,17 +240,22 @@ static ss::future<read_result> do_read_from_ntp(
 
 static ntp_fetch_config
 make_ntp_fetch_config(const model::ntp& ntp, const fetch_config& fetch_cfg) {
-    return ntp_fetch_config(ntp, fetch_cfg);
+    return {ntp, fetch_cfg};
 }
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
+  const replica_selector& replica_selector,
   const model::ntp& ntp,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     return do_read_from_ntp(
-      cluster_pm, make_ntp_fetch_config(ntp, config), foreign_read, deadline);
+      cluster_pm,
+      replica_selector,
+      make_ntp_fetch_config(ntp, config),
+      foreign_read,
+      deadline);
 }
 
 static void fill_fetch_responses(
@@ -256,6 +297,9 @@ static void fill_fetch_responses(
         resp.log_start_offset = res.start_offset;
         resp.high_watermark = res.high_watermark;
         resp.last_stable_offset = res.last_stable_offset;
+        if (res.preferred_replica) {
+            resp.preferred_read_replica = *res.preferred_replica;
+        }
 
         /**
          * According to KIP-74 we have to return first batch even if it would
@@ -294,6 +338,7 @@ static void fill_fetch_responses(
 
 static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   cluster::partition_manager& cluster_pm,
+  const replica_selector& replica_selector,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -320,9 +365,15 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
 
     auto results = co_await ssx::parallel_transform(
       std::move(ntp_fetch_configs),
-      [&cluster_pm, deadline, foreign_read](const ntp_fetch_config& ntp_cfg) {
+      [&cluster_pm, &replica_selector, deadline, foreign_read](
+        const ntp_fetch_config& ntp_cfg) {
           auto p_id = ntp_cfg.ntp().tp.partition;
-          return do_read_from_ntp(cluster_pm, ntp_cfg, foreign_read, deadline)
+          return do_read_from_ntp(
+                   cluster_pm,
+                   replica_selector,
+                   ntp_cfg,
+                   foreign_read,
+                   deadline)
             .then([p_id](read_result res) {
                 res.partition = p_id;
                 return res;
@@ -368,10 +419,14 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         octx.ssg,
         [foreign_read,
          deadline = octx.deadline,
-         configs = std::move(fetch.requests)](
-          cluster::partition_manager& mgr) mutable {
+         configs = std::move(fetch.requests),
+         &octx](cluster::partition_manager& mgr) mutable {
             return fetch_ntps_in_parallel(
-              mgr, std::move(configs), foreign_read, deadline);
+              mgr,
+              octx.rctx.replica_selector(),
+              std::move(configs),
+              foreign_read,
+              deadline);
         })
       .then([responses = std::move(fetch.responses),
              metrics = std::move(fetch.metrics),
@@ -479,6 +534,8 @@ class simple_fetch_planner final : public fetch_planner::impl {
                 .strict_max_bytes = octx.response_size > 0,
                 .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
                 .current_leader_epoch = fp.current_leader_epoch,
+                .read_from_follower = octx.request.has_rack_id(),
+                .consumer_rack_id = octx.request.data.rack_id,
               };
 
               plan.fetches_per_shard[*shard].push_back(
@@ -756,6 +813,11 @@ void op_context::response_placeholder::set(
     if (response.error_code != error_code::none) {
         _ctx->response_error = true;
     }
+
+    if (response.preferred_read_replica != -1) {
+        _ctx->contains_preferred_replica = true;
+    }
+
     auto& current_resp_data = _it->partition_response->records;
     if (current_resp_data) {
         auto sz = current_resp_data->size_bytes();

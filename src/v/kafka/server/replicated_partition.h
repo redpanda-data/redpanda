@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "cluster/members_table.h"
 #include "cluster/partition.h"
 #include "cluster/partition_probe.h"
 #include "kafka/protocol/errors.h"
@@ -149,7 +150,7 @@ public:
     }
 
     ss::future<error_code> validate_fetch_offset(
-      model::offset, model::timeout_clock::time_point) final;
+      model::offset, bool, model::timeout_clock::time_point) final;
 
     result<partition_info> get_partition_info() const final;
 

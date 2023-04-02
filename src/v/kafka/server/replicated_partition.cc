@@ -306,7 +306,9 @@ std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
 }
 
 ss::future<error_code> replicated_partition::validate_fetch_offset(
-  model::offset fetch_offset, model::timeout_clock::time_point deadline) {
+  model::offset fetch_offset,
+  bool reading_from_follower,
+  model::timeout_clock::time_point deadline) {
     /**
      * Make sure that we will update high watermark offset if it isn't yet
      * initialized.
@@ -330,6 +332,21 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
           _translator->from_log_offset(_partition->dirty_offset()));
     }
 
+    // offset validation logic on follower
+    if (reading_from_follower && !_partition->is_leader()) {
+        if (fetch_offset < start_offset()) {
+            co_return error_code::offset_out_of_range;
+        }
+        if (
+          fetch_offset > high_watermark()
+          && fetch_offset <= leader_high_watermark()) {
+            co_return error_code::offset_not_available;
+        }
+        if (fetch_offset > leader_high_watermark()) {
+            co_return error_code::offset_out_of_range;
+        }
+        co_return error_code::none;
+    }
     while (log_end.has_value() && fetch_offset > high_watermark()
            && fetch_offset <= log_end) {
         if (model::timeout_clock::now() > deadline) {

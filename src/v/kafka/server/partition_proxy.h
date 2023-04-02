@@ -54,9 +54,10 @@ public:
             model::offset,
             ss::lw_shared_ptr<const storage::offset_translator_state>)
           = 0;
-        virtual ss::future<error_code>
-          validate_fetch_offset(model::offset, model::timeout_clock::time_point)
+        virtual ss::future<error_code> validate_fetch_offset(
+          model::offset, bool, model::timeout_clock::time_point)
           = 0;
+
         virtual result<partition_info> get_partition_info() const = 0;
         virtual cluster::partition_probe& probe() = 0;
         virtual ~impl() noexcept = default;
@@ -111,8 +112,14 @@ public:
     }
 
     ss::future<error_code> validate_fetch_offset(
-      model::offset o, model::timeout_clock::time_point deadline) {
-        return _impl->validate_fetch_offset(o, deadline);
+      model::offset o,
+      bool is_follower,
+      model::timeout_clock::time_point deadline) {
+        return _impl->validate_fetch_offset(o, is_follower, deadline);
+    }
+
+    result<partition_info> get_partition_info() const {
+        return _impl->get_partition_info();
     }
 
 private:
