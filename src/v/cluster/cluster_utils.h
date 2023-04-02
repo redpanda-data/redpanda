@@ -315,6 +315,18 @@ inline std::vector<model::broker_shard> union_replica_sets(
     return ret;
 }
 
+// Checks if lhs is a proper subset of rhs
+inline bool is_proper_subset(
+  const std::vector<model::broker_shard>& lhs,
+  const std::vector<model::broker_shard>& rhs) {
+    auto contains_all = std::all_of(
+      lhs.begin(), lhs.end(), [&rhs](const auto& current) {
+          return std::find(rhs.begin(), rhs.end(), current) != rhs.end();
+      });
+
+    return contains_all && rhs.size() > lhs.size();
+}
+
 /**
  * Subtracts second replica set from the first one. Result contains only brokers
  * that node_ids are present in the first list but not the other one
