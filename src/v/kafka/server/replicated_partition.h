@@ -81,6 +81,14 @@ public:
         return _translator->from_log_offset(_partition->dirty_offset());
     }
 
+    model::offset leader_high_watermark() const {
+        if (_partition->is_read_replica_mode_enabled()) {
+            return high_watermark();
+        }
+        return _translator->from_log_offset(
+          _partition->leader_high_watermark());
+    }
+
     checked<model::offset, error_code> last_stable_offset() const final {
         if (_partition->is_read_replica_mode_enabled()) {
             if (_partition->cloud_data_available()) {
