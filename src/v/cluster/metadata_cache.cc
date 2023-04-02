@@ -112,6 +112,14 @@ std::optional<node_metadata>
 metadata_cache::get_node_metadata(model::node_id nid) const {
     return _members_table.local().get_node_metadata(nid);
 }
+std::optional<model::rack_id>
+metadata_cache::get_node_rack_id(model::node_id nid) const {
+    auto ref = _members_table.local().get_node_metadata_ref(nid);
+    if (ref) {
+        return ref->get().broker.rack();
+    }
+    return std::nullopt;
+}
 
 const members_table::cache_t& metadata_cache::nodes() const {
     return _members_table.local().nodes();
