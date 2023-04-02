@@ -66,6 +66,21 @@ public:
         return _translator->from_log_offset(_partition->high_watermark());
     }
 
+    model::offset log_end_offset() const {
+        return model::next_offset(log_dirty_offset());
+    }
+
+    model::offset log_dirty_offset() const {
+        if (_partition->is_read_replica_mode_enabled()) {
+            if (_partition->cloud_data_available()) {
+                return _partition->next_cloud_offset();
+            } else {
+                return model::offset(-1);
+            }
+        }
+        return _translator->from_log_offset(_partition->dirty_offset());
+    }
+
     checked<model::offset, error_code> last_stable_offset() const final {
         if (_partition->is_read_replica_mode_enabled()) {
             if (_partition->cloud_data_available()) {
