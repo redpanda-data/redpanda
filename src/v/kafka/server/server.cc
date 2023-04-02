@@ -27,6 +27,7 @@
 #include "kafka/server/handlers/describe_groups.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/end_txn.h"
+#include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/handlers/heartbeat.h"
 #include "kafka/server/handlers/init_producer_id.h"
@@ -129,7 +130,9 @@ server::server(
   , _gssapi_principal_mapper(
       config::shard_local_cfg().sasl_kerberos_principal_mapping.bind())
   , _krb_configurator(config::shard_local_cfg().sasl_kerberos_config.bind())
-  , _thread_worker(tw) {
+  , _thread_worker(tw)
+  , _replica_selector(
+      std::make_unique<rack_aware_replica_selector>(_metadata_cache.local())) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }
