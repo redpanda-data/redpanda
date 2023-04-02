@@ -434,6 +434,8 @@ public:
 
     const follower_stats& get_follower_stats() const { return _fstats; }
 
+    model::offset get_flushed_offset() const { return _flushed_offset; }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
