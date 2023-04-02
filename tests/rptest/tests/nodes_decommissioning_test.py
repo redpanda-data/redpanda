@@ -166,14 +166,22 @@ class NodesDecommissioningTest(EndToEndTest):
     def _decommission(self, node_id, node=None):
         def decommissioned():
             try:
-                brokers = self.admin.get_brokers()
-                for b in brokers:
-                    if b['node_id'] == node_id and b[
-                            'membership_status'] == 'draining':
-                        return True
 
-                r = self.admin.decommission_broker(node_id, node=node)
-                return r.status_code == 200
+                results = []
+                for n in self.redpanda.nodes:
+                    if self.redpanda.node_id(n) == node_id:
+                        continue
+
+                    brokers = self.admin.get_brokers(node=n)
+                    for b in brokers:
+                        if b['node_id'] == node_id:
+                            results.append(
+                                b['membership_status'] == 'draining')
+
+                if all(results):
+                    return True
+
+                self.admin.decommission_broker(node_id, node=node)
             except requests.exceptions.RetryError:
                 return False
             except requests.exceptions.ConnectionError:
@@ -186,15 +194,16 @@ class NodesDecommissioningTest(EndToEndTest):
     def _recommission(self, node_id, node=None):
         def recommissioned():
             try:
+                results = []
+                for n in self.redpanda.started_nodes():
+                    brokers = self.admin.get_brokers(node=n)
+                    for b in brokers:
+                        if b['node_id'] == node_id:
+                            results.append(b['membership_status'] == 'active')
 
-                brokers = self.admin.get_brokers()
-                for b in brokers:
-                    if b['node_id'] == node_id and b[
-                            'membership_status'] == 'active':
-                        return True
-
-                r = self.admin.recommission_broker(node_id, node=node)
-                return r.status_code == 200
+                if all(results):
+                    return True
+                self.admin.recommission_broker(node_id, node=node)
             except requests.exceptions.RetryError:
                 return False
             except requests.exceptions.ConnectionError:
