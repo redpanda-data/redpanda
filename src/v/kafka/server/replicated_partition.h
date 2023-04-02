@@ -151,6 +151,8 @@ public:
     ss::future<error_code> validate_fetch_offset(
       model::offset, model::timeout_clock::time_point) final;
 
+    result<partition_info> get_partition_info() const final;
+
 private:
     ss::future<std::vector<cluster::rm_stm::tx_range>>
       aborted_transactions_local(
