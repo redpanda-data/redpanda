@@ -103,7 +103,8 @@ class KCL:
                 n=None,
                 group=None,
                 regex=False,
-                fetch_max_bytes=None):
+                fetch_max_bytes=None,
+                rack=None):
         cmd = ["consume"]
         if group is not None:
             cmd += ["-g", group]
@@ -113,6 +114,8 @@ class KCL:
             cmd.append("-r")
         if fetch_max_bytes is not None:
             cmd += ["--fetch-max-bytes", str(fetch_max_bytes)]
+        if rack is not None:
+            cmd += ["--rack", rack]
         cmd.append(topic)
         return self._cmd(cmd)
 
