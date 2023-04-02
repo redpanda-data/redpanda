@@ -48,6 +48,7 @@ class RedpandaConfig:
     admin: NetworkAddress
     seed_servers: list[NetworkAddress]
     empty_seed_starts_cluster: bool = False
+    rack: str = None
 
 
 @dataclasses.dataclass
@@ -145,6 +146,11 @@ async def main():
                         type=str,
                         help="listening address",
                         default="0.0.0.0")
+    parser.add_argument("--racks",
+                        dest='racks',
+                        help="racks for each of node",
+                        action='append',
+                        default=None)
     args, extra_args = parser.parse_known_args()
 
     if extra_args and extra_args[0] == "--":
@@ -152,13 +158,12 @@ async def main():
     elif extra_args:
         # Re-do with strict parse: this will surface unknown argument errors
         args = parser.parse_args()
-
     seed_servers = [
         NetworkAddress(args.listen_address, args.base_rpc_port + i)
         for i in range(args.nodes)
     ]
 
-    def make_node_config(i, data_dir, config_path):
+    def make_node_config(i, data_dir, config_path, rack):
         make_address = lambda p: NetworkAddress(args.listen_address, p + i)
         rpc_address = seed_servers[i]
         redpanda = RedpandaConfig(data_directory=data_dir,
@@ -167,7 +172,8 @@ async def main():
                                   kafka_api=make_address(args.base_kafka_port),
                                   admin=make_address(args.base_admin_port),
                                   seed_servers=seed_servers,
-                                  empty_seed_starts_cluster=False)
+                                  empty_seed_starts_cluster=False,
+                                  rack=rack)
         return NodeConfig(redpanda=redpanda,
                           index=i,
                           config_path=config_path,
@@ -181,7 +187,7 @@ async def main():
         d.add_representer(pathlib.PosixPath, pathlib_path_representer)
         return d
 
-    def prepare_node(i):
+    def prepare_node(i, rack):
         node_dir = args.directory / f"node{i}"
         data_dir = node_dir / "data"
         conf_file = node_dir / "config.yaml"
@@ -189,7 +195,7 @@ async def main():
         node_dir.mkdir(parents=True, exist_ok=True)
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        config = make_node_config(i, data_dir, conf_file)
+        config = make_node_config(i, data_dir, conf_file, rack)
         with open(conf_file, "w") as f:
             yaml.dump(dataclasses.asdict(config),
                       f,
@@ -203,7 +209,13 @@ async def main():
 
         return config
 
-    configs = [prepare_node(i) for i in range(args.nodes)]
+    if args.racks and len(args.racks) != args.nodes:
+        raise Exception("Rack must be specified for each node")
+
+    configs = [
+        prepare_node(i, None if args.racks is None else args.racks[i])
+        for i in range(args.nodes)
+    ]
 
     cores = args.cores
     if cores is None:
