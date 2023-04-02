@@ -124,9 +124,11 @@ archival_policy::lookup_result archival_policy::find_segment(
   const storage::offset_translator_state& ot_state) {
     vlog(
       archival_log.debug,
-      "Upload policy for {} invoked, start offset: {}",
+      "Upload policy for {} invoked, start offset: {}, last_offset_inclusive: "
+      "{}",
       _ntp,
-      start_offset);
+      start_offset,
+      last_offset_inclusive);
     auto maybe_plog = get_concrete_log_impl(std::move(log));
     if (!maybe_plog) {
         vlog(
@@ -380,13 +382,10 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
 
 ss::future<upload_candidate_with_locks> archival_policy::get_next_candidate(
   model::offset begin_inclusive,
-  model::offset end_exclusive,
+  model::offset end_inclusive,
   storage::log log,
   const storage::offset_translator_state& ot_state,
   ss::lowres_clock::duration segment_lock_duration) {
-    // NOTE: end_exclusive (which is initialized with LSO) points to the first
-    // unstable recordbatch we need to look at the previous batch if needed.
-    auto end_inclusive = model::prev_offset(end_exclusive);
     auto [segment, ntp_conf, forced] = find_segment(
       begin_inclusive, end_inclusive, std::move(log), ot_state);
     if (segment.get() == nullptr || ntp_conf == nullptr) {
