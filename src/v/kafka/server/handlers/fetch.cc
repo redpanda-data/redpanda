@@ -20,6 +20,7 @@
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/fetch/fetch_plan_executor.h"
 #include "kafka/server/handlers/fetch/fetch_planner.h"
+#include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/partition_proxy.h"
 #include "kafka/server/replicated_partition.h"
 #include "likely.h"
@@ -804,4 +805,42 @@ void op_context::response_placeholder::set(
     }
 }
 
+rack_aware_replica_selector::rack_aware_replica_selector(
+  const cluster::metadata_cache& md_cache)
+  : _md_cache(md_cache) {}
+
+std::optional<model::node_id> rack_aware_replica_selector::select_replica(
+  const consumer_info& c_info, const partition_info& p_info) const {
+    if (!c_info.rack_id.has_value()) {
+        return select_leader_replica{}.select_replica(c_info, p_info);
+    }
+    if (p_info.replicas.empty()) {
+        return std::nullopt;
+    }
+
+    std::vector<replica_info> rack_replicas;
+    model::offset highest_hw;
+    for (auto& replica : p_info.replicas) {
+        if (
+          _md_cache.get_node_rack_id(replica.id) == c_info.rack_id
+          && replica.log_end_offset >= c_info.fetch_offset) {
+            if (replica.high_watermark >= highest_hw) {
+                highest_hw = replica.high_watermark;
+                rack_replicas.push_back(replica);
+            }
+        }
+    }
+
+    if (rack_replicas.empty()) {
+        return std::nullopt;
+    }
+    // if there are multiple replicas with the same high watermark in
+    // requested rack, return random one
+    return random_generators::random_choice(rack_replicas).id;
+}
+
+std::ostream& operator<<(std::ostream& o, const consumer_info& ci) {
+    fmt::print(o, "rack_id: {}, fetch_offset: {}", ci);
+    return o;
+}
 } // namespace kafka
