@@ -354,6 +354,8 @@ public:
         return _feature_table;
     }
 
+    result<std::vector<raft::follower_metrics>> get_follower_metrics() const;
+
 private:
     ss::future<std::optional<storage::timequery_result>>
       cloud_storage_timequery(storage::timequery_config);
