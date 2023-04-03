@@ -15,7 +15,7 @@ import (
 	"net/url"
 	"time"
 
-	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -170,6 +170,13 @@ type ClusterSpec struct {
 
 	// If key is not provided in the SecretRef, Secret data should have key "license"
 	LicenseRef *SecretKeyRef `json:"licenseRef,omitempty"`
+
+	// When InitialValidationForVolume is enabled the mounted Redpanda data folder
+	// will be checked if:
+	// - it is dir
+	// - it has XFS file system
+	// - it can create test file and delete it
+	InitialValidationForVolume *bool `json:"initialValidationForVolume,omitempty"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades
