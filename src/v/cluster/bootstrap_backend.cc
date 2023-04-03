@@ -13,6 +13,7 @@
 
 #include "cluster/cluster_uuid.h"
 #include "cluster/commands.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/feature_backend.h"
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
@@ -178,25 +179,67 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
         // If we didn't already save a snapshot, create it so that subsequent
         // startups see their feature table version immediately, without
         // waiting to replay the bootstrap message.
-        if (!_feature_backend.local().has_snapshot()) {
-            co_await _feature_backend.local().save_snapshot();
+        if (!_feature_backend.local().has_local_snapshot()) {
+            co_await _feature_backend.local().save_local_snapshot();
         }
     }
 
-    // Apply cluster_uuid
-    co_await _storage.invoke_on_all(
-      [&new_cluster_uuid = cmd.value.uuid](storage::api& storage) {
-          storage.set_cluster_uuid(new_cluster_uuid);
-          return ss::make_ready_future();
-      });
-    co_await _storage.local().kvs().put(
-      cluster_uuid_key_space,
-      cluster_uuid_key,
-      serde::to_iobuf(cmd.value.uuid));
-    _cluster_uuid_applied = cmd.value.uuid;
-    vlog(clusterlog.debug, "Cluster UUID initialized {}", cmd.value.uuid);
+    co_await apply_cluster_uuid(cmd.value.uuid);
 
     co_return errc::success;
+}
+
+ss::future<> bootstrap_backend::apply_cluster_uuid(model::cluster_uuid uuid) {
+    co_await _storage.invoke_on_all(
+      [&new_cluster_uuid = uuid](storage::api& storage) {
+          storage.set_cluster_uuid(new_cluster_uuid);
+      });
+    co_await _storage.local().kvs().put(
+      cluster_uuid_key_space, cluster_uuid_key, serde::to_iobuf(uuid));
+    _cluster_uuid_applied = uuid;
+    vlog(clusterlog.debug, "Cluster UUID initialized {}", uuid);
+}
+
+ss::future<> bootstrap_backend::fill_snapshot(controller_snapshot& snap) const {
+    snap.bootstrap.cluster_uuid = _cluster_uuid_applied;
+    co_return;
+}
+
+ss::future<> bootstrap_backend::apply_snapshot(
+  model::offset, const controller_snapshot& snap) {
+    // when bootstrap_backend processes the bootstrap_cluster_cmd command, it
+    // must dispatch updates to other parts of the controller stm
+    // (members_manager, feature_table, credential_store). But if we are
+    // applying a controller snapshot, these updates will be handled by the
+    // sub-stms themselves. Here we only need to initialize the cluster uuid.
+
+    auto snap_cluster_uuid = snap.bootstrap.cluster_uuid;
+    vlog(
+      clusterlog.debug,
+      "cluster uuid from controller snapshot: {}",
+      snap_cluster_uuid);
+
+    if (!snap_cluster_uuid) {
+        co_return;
+    }
+
+    if (
+      _storage.local().get_cluster_uuid()
+      && *_storage.local().get_cluster_uuid() != snap_cluster_uuid) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Cluster UUID mismatch. Controller snapshot value: {}, kvstore "
+          "value: {}. Possible reasons: local controller log storage "
+          "wiped while kvstore storage is not, or vice versa",
+          snap_cluster_uuid,
+          *_storage.local().get_cluster_uuid()));
+    }
+
+    if (_cluster_uuid_applied) {
+        co_return;
+    }
+
+    co_await apply_cluster_uuid(snap_cluster_uuid.value());
 }
 
 } // namespace cluster

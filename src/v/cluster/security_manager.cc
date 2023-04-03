@@ -11,6 +11,7 @@
 #include "cluster/security_manager.h"
 
 #include "cluster/commands.h"
+#include "cluster/controller_snapshot.h"
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "security/authorizer.h"
@@ -142,6 +143,15 @@ ss::future<std::error_code> security_manager::dispatch_updates_to_cores(
                 return ret;
             });
       });
+}
+
+ss::future<> security_manager::fill_snapshot(controller_snapshot&) const {
+    return ss::now();
+}
+
+ss::future<>
+security_manager::apply_snapshot(model::offset, const controller_snapshot&) {
+    return ss::now();
 }
 
 } // namespace cluster

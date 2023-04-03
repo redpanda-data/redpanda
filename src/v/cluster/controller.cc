@@ -463,6 +463,7 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
       .then([this] {
           return _metrics_reporter.start_single(
             _raft0,
+            std::ref(_stm),
             std::ref(_members_table),
             std::ref(_tp_state),
             std::ref(_hm_frontend),

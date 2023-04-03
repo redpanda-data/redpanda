@@ -53,6 +53,10 @@ public:
     controller_stm& operator=(const controller_stm&) = delete;
     ~controller_stm() = default;
 
+    metrics_reporter_cluster_info& get_metrics_reporter_cluster_info() {
+        return _metrics_reporter_cluster_info;
+    }
+
     template<typename Cmd>
     requires ControllerCommand<Cmd>
     bool throttle() { return _limiter.throttle<Cmd>(); }
@@ -71,6 +75,8 @@ private:
     controller_log_limiter _limiter;
     const features::feature_table& _feature_table;
     config::binding<std::chrono::seconds> _snapshot_max_age;
+
+    metrics_reporter_cluster_info _metrics_reporter_cluster_info;
 
     ss::timer<ss::lowres_clock> _snapshot_debounce_timer;
 };

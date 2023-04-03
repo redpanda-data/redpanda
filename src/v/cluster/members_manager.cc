@@ -12,6 +12,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_service.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/controller_stm.h"
 #include "cluster/drain_manager.h"
 #include "cluster/errc.h"
@@ -605,6 +606,208 @@ members_manager::apply_raft_configuration_batch(model::record_batch b) {
     co_return make_error_code(errc::success);
 }
 
+ss::future<>
+members_manager::fill_snapshot(controller_snapshot& controller_snap) const {
+    auto& snap = controller_snap.members;
+    snap.node_ids_by_uuid = _id_by_uuid;
+    snap.next_assigned_id = _next_assigned_id;
+
+    _members_table.local().fill_snapshot(controller_snap);
+
+    snap.removed_nodes_still_in_raft0 = _removed_nodes_still_in_raft0;
+
+    for (const auto& [id, update] : _in_progress_updates) {
+        snap.in_progress_updates.emplace(
+          id,
+          controller_snapshot_parts::members_t::update_t{
+            .type = update.type,
+            .offset = update.offset,
+            .decommission_update_revision
+            = update.decommission_update_revision});
+    }
+
+    snap.first_node_operation_command_offset
+      = _first_node_operation_command_offset;
+
+    co_return;
+}
+
+ss::future<> members_manager::apply_snapshot(
+  model::offset snap_offset, const controller_snapshot& controller_snap) {
+    const auto& snap = controller_snap.members;
+
+    // 1. update uuid map
+
+    _id_by_uuid = snap.node_ids_by_uuid;
+    _next_assigned_id = snap.next_assigned_id;
+
+    // 2. calculate brokers diff to update inter-node connections
+
+    changed_nodes diff;
+    for (const auto& [id, new_node] : snap.nodes) {
+        auto old_node = _members_table.local().get_node_metadata_ref(id);
+        if (!old_node) {
+            diff.added.push_back(new_node.broker);
+        } else if (old_node->get().broker != new_node.broker) {
+            diff.updated.push_back(new_node.broker);
+        }
+    }
+    for (const auto& [id, old_node] : _members_table.local().nodes()) {
+        if (!snap.nodes.contains(id)) {
+            if (!snap.removed_nodes_still_in_raft0.contains(id)) {
+                diff.removed.push_back(id);
+            } else {
+                auto new_node = snap.removed_nodes.find(id);
+                vassert(
+                  new_node != snap.removed_nodes.end(),
+                  "info about removed node {} must be present in the snapshot",
+                  id);
+                if (new_node->second.broker != old_node.broker) {
+                    diff.updated.push_back(new_node->second.broker);
+                }
+            }
+        }
+    }
+    for (auto id : _removed_nodes_still_in_raft0) {
+        if (!snap.removed_nodes_still_in_raft0.contains(id)) {
+            diff.removed.push_back(id);
+        }
+    }
+
+    // 3. calculate self maintenance state diff
+
+    std::optional<model::maintenance_state> old_self_maintenance_state;
+    std::optional<model::maintenance_state> new_self_maintenance_state;
+    if (auto it = _members_table.local().nodes().find(_self.id());
+        it != _members_table.local().nodes().end()) {
+        old_self_maintenance_state = it->second.state.get_maintenance_state();
+    }
+    if (auto it = snap.nodes.find(_self.id()); it != snap.nodes.end()) {
+        new_self_maintenance_state = it->second.state.get_maintenance_state();
+    }
+
+    // 4. update members table
+
+    _first_node_operation_command_offset
+      = snap.first_node_operation_command_offset;
+
+    co_await _members_table.invoke_on_all(
+      [snap_offset, &controller_snap](members_table& mt) {
+          return mt.apply_snapshot(snap_offset, controller_snap);
+      });
+
+    _removed_nodes_still_in_raft0 = snap.removed_nodes_still_in_raft0;
+
+    co_await persist_members_in_kvstore(snap_offset);
+
+    // partition allocator will be updated by topic_updates_dispatcher
+
+    // 5. reconcile _in_progress_updates and generate corresponding
+    // members_backend updates
+
+    std::vector<node_update> updates;
+
+    auto interrupt_previous_update = [&](model::node_id id) {
+        updates.push_back(node_update{
+          .id = id,
+          .type = node_update_type::interrupted,
+          .offset = snap_offset,
+        });
+    };
+
+    for (const auto& [id, update] : snap.in_progress_updates) {
+        bool need_raft0_update
+          = (update.type == node_update_type::added
+             || update.type == node_update_type::removed)
+            && update.offset >= snap.first_node_operation_command_offset;
+
+        auto new_update = node_update{
+          .id = id,
+          .type = update.type,
+          .offset = update.offset,
+          .need_raft0_update = need_raft0_update,
+          .decommission_update_revision = update.decommission_update_revision};
+
+        auto old_it = _in_progress_updates.find(id);
+        if (old_it == _in_progress_updates.end()) {
+            _in_progress_updates[id] = new_update;
+            updates.push_back(new_update);
+        } else {
+            auto& old_update = old_it->second;
+            if (old_update.offset != new_update.offset) {
+                interrupt_previous_update(id);
+                old_update = new_update;
+                updates.push_back(new_update);
+            }
+        }
+    }
+
+    for (auto old_it = _in_progress_updates.begin();
+         old_it != _in_progress_updates.end();) {
+        auto it_copy = old_it++;
+        if (!snap.in_progress_updates.contains(it_copy->first)) {
+            interrupt_previous_update(it_copy->first);
+            _in_progress_updates.erase(it_copy);
+        }
+    }
+
+    for (auto& update : updates) {
+        co_await _update_queue.push_eventually(std::move(update));
+    }
+
+    // 6. update drain_mamager
+
+    if (old_self_maintenance_state != new_self_maintenance_state) {
+        bool should_drain = new_self_maintenance_state
+                            == model::maintenance_state::active;
+        bool should_restore = old_self_maintenance_state
+                              == model::maintenance_state::active;
+        if (should_drain || should_restore) {
+            co_await _drain_manager.invoke_on_all(
+              [should_drain](cluster::drain_manager& dm) {
+                  if (should_drain) {
+                      return dm.drain();
+                  } else {
+                      return dm.restore();
+                  }
+              });
+        }
+    }
+
+    // 7. update connections
+
+    if (snap_offset >= _last_connection_update_offset) {
+        for (auto& broker : diff.added) {
+            if (broker.id() != _self.id()) {
+                co_await update_broker_client(
+                  _self.id(),
+                  _connection_cache,
+                  broker.id(),
+                  broker.rpc_address(),
+                  _rpc_tls_config);
+            }
+        }
+        for (auto& broker : diff.updated) {
+            if (broker.id() != _self.id()) {
+                co_await update_broker_client(
+                  _self.id(),
+                  _connection_cache,
+                  broker.id(),
+                  broker.rpc_address(),
+                  _rpc_tls_config);
+            }
+        }
+        for (model::node_id id : diff.removed) {
+            if (id != _self.id()) {
+                co_await remove_broker_client(
+                  _self.id(), _connection_cache, id);
+            }
+        }
+
+        _last_connection_update_offset = snap_offset;
+    }
+}
+
 ss::future<std::vector<members_manager::node_update>>
 members_manager::get_node_updates() {
     if (_update_queue.empty()) {
@@ -633,7 +836,7 @@ ss::future<> members_manager::set_initial_state(
   std::vector<model::broker> initial_brokers, uuid_map_t id_by_uuid) {
     vassert(_id_by_uuid.empty(), "will not overwrite existing data");
     if (!id_by_uuid.empty()) {
-        vlog(clusterlog.debug, "Initial node UUID map: {}", id_by_uuid);
+        vlog(clusterlog.info, "Initial node UUID map: {}", id_by_uuid);
     }
     // Start the node ID assignment counter just past the highest node ID. This
     // helps ensure removed seed servers are accounted for when auto-assigning

@@ -63,6 +63,8 @@ public:
     // mux_state_machine interface
     bool is_batch_applicable(const model::record_batch& b);
     ss::future<std::error_code> apply_update(model::record_batch);
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
     // Result of trying to apply a delta to a configuration
     struct apply_result {

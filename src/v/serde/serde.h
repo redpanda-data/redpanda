@@ -29,8 +29,10 @@
 #include <seastar/core/future.hh>
 #include <seastar/net/inet_address.hh>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/btree_set.h>
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 #include <absl/container/node_hash_map.h>
 #include <absl/container/node_hash_set.h>
 
@@ -108,12 +110,20 @@ concept has_serde_async_direct_read
 };
 
 template<typename T>
+concept is_absl_btree_map
+  = ::detail::is_specialization_of_v<T, absl::btree_map>;
+
+template<typename T>
 concept is_absl_flat_hash_map
   = ::detail::is_specialization_of_v<T, absl::flat_hash_map>;
 
 template<typename T>
 concept is_absl_btree_set
   = ::detail::is_specialization_of_v<T, absl::btree_set>;
+
+template<typename T>
+concept is_absl_flat_hash_set
+  = ::detail::is_specialization_of_v<T, absl::flat_hash_set>;
 
 using serde_enum_serialized_t = int32_t;
 
@@ -177,6 +187,8 @@ inline constexpr auto const is_serde_compatible_v
     || std::is_same_v<T, bytes>
     || std::is_same_v<T, uuid_t>
     || is_absl_btree_set<T>
+    || is_absl_btree_map<T>
+    || is_absl_flat_hash_set<T>
     || is_absl_flat_hash_map<T>
     || is_absl_node_hash_set<T>
     || is_absl_node_hash_map<T>
@@ -276,13 +288,16 @@ template<typename T>
 void write(iobuf& out, tristate<T> t);
 
 template<typename T>
-requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_btree_set<
-  std::decay_t<T>>
+requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_flat_hash_set<
+  std::decay_t<T>> || is_absl_btree_set<std::decay_t<T>>
 void write(iobuf& out, T t);
 
 template<typename T>
 requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
-  std::decay_t<T>> || is_std_unordered_map<std::decay_t<T>>
+  std::decay_t<
+    T>> || is_std_unordered_map<std::decay_t<T>> || is_absl_btree_map<std::
+                                                                        decay_t<
+                                                                          T>>
 void write(iobuf& out, T t);
 
 template<typename T>
@@ -434,8 +449,8 @@ void write(iobuf& out, tristate<T> t) {
 }
 
 template<typename T>
-requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_btree_set<
-  std::decay_t<T>>
+requires is_absl_node_hash_set<std::decay_t<T>> || is_absl_flat_hash_set<
+  std::decay_t<T>> || is_absl_btree_set<std::decay_t<T>>
 void write(iobuf& out, T t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
@@ -452,7 +467,10 @@ void write(iobuf& out, T t) {
 
 template<typename T>
 requires is_absl_node_hash_map<std::decay_t<T>> || is_absl_flat_hash_map<
-  std::decay_t<T>> || is_std_unordered_map<std::decay_t<T>>
+  std::decay_t<
+    T>> || is_std_unordered_map<std::decay_t<T>> || is_absl_btree_map<std::
+                                                                        decay_t<
+                                                                          T>>
 void write(iobuf& out, T t) {
     if (unlikely(t.size() > std::numeric_limits<serde_size_t>::max())) {
         throw serde_exception(fmt_with_ctx(
@@ -766,7 +784,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               ? Type{read_nested<typename Type::value_type>(
                 in, bytes_left_limit)}
               : std::nullopt;
-    } else if constexpr (is_absl_node_hash_set<Type>) {
+    } else if constexpr (
+      is_absl_node_hash_set<Type> || is_absl_flat_hash_set<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
@@ -782,7 +801,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
             t.emplace(std::move(elem));
         }
     } else if constexpr (
-      is_absl_node_hash_map<Type> || is_absl_flat_hash_map<Type>) {
+      is_absl_node_hash_map<
+        Type> || is_absl_flat_hash_map<Type> || is_std_unordered_map<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
         t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
@@ -792,9 +812,8 @@ void read_nested(iobuf_parser& in, T& t, std::size_t const bytes_left_limit) {
               in, bytes_left_limit);
             t.emplace(std::move(key), std::move(value));
         }
-    } else if constexpr (is_std_unordered_map<Type>) {
+    } else if constexpr (is_absl_btree_map<Type>) {
         const auto size = read_nested<serde_size_t>(in, bytes_left_limit);
-        t.reserve(size);
         for (auto i = 0U; i < size; ++i) {
             auto key = read_nested<typename Type::key_type>(
               in, bytes_left_limit);

@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/commands.h"
+#include "cluster/fwd.h"
 #include "model/record.h"
 #include "security/fwd.h"
 
@@ -39,6 +40,9 @@ public:
                || batch.header().type
                     == model::record_batch_type::acl_management_cmd;
     }
+
+    ss::future<> fill_snapshot(controller_snapshot&) const;
+    ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
 private:
     template<typename Cmd, typename Service>

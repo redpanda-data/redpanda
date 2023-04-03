@@ -15,6 +15,7 @@ namespace cluster {
 
 class controller;
 class controller_backend;
+class controller_stm;
 class controller_stm_shard;
 class id_allocator_frontend;
 class rm_partition_frontend;
