@@ -2810,8 +2810,13 @@ admin_server::unclean_abort_partition_reconfig_handler(
 ss::future<ss::json::json_return_type>
 admin_server::force_set_partition_replicas_handler(
   std::unique_ptr<ss::http::request> req) {
-    auto ntp = parse_ntp_from_request(req->param);
+    if (unlikely(!_controller->get_feature_table().local().is_active(
+          features::feature::force_partition_reconfiguration))) {
+        throw ss::httpd::bad_request_exception(
+          "Feature not active yet, upgrade in progress?");
+    }
 
+    auto ntp = parse_ntp_from_request(req->param);
     if (ntp == model::controller_ntp) {
         throw ss::httpd::bad_request_exception(
           fmt::format("Can't reconfigure a controller"));
