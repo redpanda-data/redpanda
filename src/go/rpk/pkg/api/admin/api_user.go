@@ -12,6 +12,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 )
@@ -59,6 +60,10 @@ func (a *AdminAPI) UpdateUser(ctx context.Context, username, password, mechanism
 	}
 	if password == "" {
 		return errors.New("invalid empty password")
+	}
+
+	if mechanism == "" || (mechanism != ScramSha256 && mechanism != ScramSha512) {
+		return errors.New(fmt.Sprintf("invalid mechanism, should either %q or %q", ScramSha256, ScramSha512))
 	}
 	u := newUser{
 		User:      username,
