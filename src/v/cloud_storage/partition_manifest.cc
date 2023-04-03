@@ -268,12 +268,11 @@ remote_manifest_path partition_manifest::get_manifest_path() const {
 
 const model::ntp& partition_manifest::get_ntp() const { return _ntp; }
 
-const model::offset partition_manifest::get_last_offset() const {
+model::offset partition_manifest::get_last_offset() const {
     return _last_offset;
 }
 
-const std::optional<kafka::offset>
-partition_manifest::get_last_kafka_offset() const {
+std::optional<kafka::offset> partition_manifest::get_last_kafka_offset() const {
     const auto next_kafka_offset = get_next_kafka_offset();
     if (!next_kafka_offset || *next_kafka_offset == kafka::offset{0}) {
         return std::nullopt;
@@ -282,8 +281,7 @@ partition_manifest::get_last_kafka_offset() const {
     return *next_kafka_offset - kafka::offset{1};
 }
 
-const std::optional<kafka::offset>
-partition_manifest::get_next_kafka_offset() const {
+std::optional<kafka::offset> partition_manifest::get_next_kafka_offset() const {
     auto last_seg = last_segment();
     if (!last_seg.has_value()) {
         return std::nullopt;
@@ -291,7 +289,7 @@ partition_manifest::get_next_kafka_offset() const {
     return last_seg->next_kafka_offset();
 }
 
-const model::offset partition_manifest::get_insync_offset() const {
+model::offset partition_manifest::get_insync_offset() const {
     return _insync_offset;
 }
 
