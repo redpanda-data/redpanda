@@ -1637,15 +1637,15 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
         auto tail = tail_seq(bid.pid);
         if (tail) {
             if (!is_sequence(tail.value(), bid.first_seq)) {
+                // there is a gap between the request'ss seq number
+                // and the seq number of the latest processed request
                 vlog(
                   _ctx_log.warn,
                   "[pid: {}] sequence number gap detected. batch first "
-                  "sequence: {}, last sequence: {}",
+                  "sequence: {}, last stored sequence: {}",
                   bid.pid,
                   bid.first_seq,
                   tail.value());
-                // there is a gap between the request'ss seq number
-                // and the seq number of the latest processed request
                 co_return errc::sequence_out_of_order;
             }
         } else {
@@ -1656,19 +1656,25 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
                   "current seq: {}",
                   bid.pid,
                   bid.first_seq);
-                // first request in a session should have seq=0
+                // first request in a session should have seq=0, client is
+                // misbehaving
                 co_return errc::sequence_out_of_order;
             }
         }
     } else {
         if (!is_sequence(session->tail_seq, bid.first_seq)) {
-            vlog(
-              _ctx_log.debug,
-              "[pid: {}] replication failed with {}",
-              bid.pid,
-              std::current_exception());
-            // there is a gap between the request'ss seq number
+            // there is a gap between the request's seq number
             // and the seq number of the latest inflight request
+            // may happen when:
+            //   - batches were reordered on the wire
+            //   - client is misbehaving
+            vlog(
+              _ctx_log.warn,
+              "[pid: {}] sequence number gap detected. batch first sequence: "
+              "{}, last inflight sequence: {}",
+              bid.pid,
+              bid.first_seq,
+              session->tail_seq);
             co_return errc::sequence_out_of_order;
         }
     }
@@ -2468,12 +2474,6 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         for (auto& entry : data_v2.prepared) {
             data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
-        }
-
-        // TODO: https://github.com/redpanda-data/redpanda/issues/9508
-        for (auto& entry : data_v2.seqs) {
-            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-              .pid = entry.pid, .tx_seq = model::tx_seq(entry.seq)});
         }
     } else if (hdr.version == tx_snapshot_v1::version) {
         auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
