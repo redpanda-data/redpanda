@@ -20,7 +20,7 @@ import (
 const usersEndpoint = "/v1/security/users"
 
 type newUser struct {
-	User      string `json:"username"`
+	User      string `json:"username,omitempty"`
 	Password  string `json:"password"`
 	Algorithm string `json:"algorithm"`
 }
@@ -62,11 +62,10 @@ func (a *AdminAPI) UpdateUser(ctx context.Context, username, password, mechanism
 		return errors.New("invalid empty password")
 	}
 
-	if mechanism == "" || (mechanism != ScramSha256 && mechanism != ScramSha512) {
-		return errors.New(fmt.Sprintf("invalid mechanism, should either %q or %q", ScramSha256, ScramSha512))
+	if mechanism != ScramSha256 && mechanism != ScramSha512 {
+		return fmt.Errorf("invalid mechanism, should either %q or %q", ScramSha256, ScramSha512)
 	}
 	u := newUser{
-		User:      username,
 		Password:  password,
 		Algorithm: mechanism,
 	}
