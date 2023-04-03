@@ -57,6 +57,10 @@ public:
     /// Difference between the log offset and the kafka offset.
     int64_t delta(model::offset) const;
 
+    /// Returns the difference between the log offset and the Kafka offset one
+    /// offset past the input.
+    model::offset_delta next_offset_delta(model::offset) const;
+
     /// Translate log offset into kafka offset.
     model::offset from_log_offset(model::offset) const;
 

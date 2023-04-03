@@ -318,7 +318,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_contains_by_kafka_offset) {
                        // ...and as a sanity check, make sure the kafka::offset
                        // falls in the segment.
                        && it->second.base_kafka_offset() <= ko
-                       && it->second.committed_kafka_offset() >= ko;
+                       && it->second.next_kafka_offset() > ko;
         if (success) {
             return true;
         }
