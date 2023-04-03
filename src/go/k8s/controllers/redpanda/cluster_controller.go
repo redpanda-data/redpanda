@@ -542,11 +542,12 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 			return fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStr, err)
 		}
 
+		log.WithValues("pod-name", pod.Name, "old-node-id", oldNodeID).Info("decommission old node-id")
 		if err = r.decommissionBroker(ctx, rp, oldNodeID, log); err != nil {
 			return fmt.Errorf("unable to decommission broker: %w", err)
 		}
 
-		log.WithValues("pod-name", pod.Name, "node-id", nodeID).Info("setting node-id annotation")
+		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id annotation")
 		pod.Annotations[PodAnnotationNodeIDKey] = realNodeIDStr
 		if err := r.Update(ctx, pod, &client.UpdateOptions{}); err != nil {
 			return fmt.Errorf(`unable to update pod "%s" with node-id annotation: %w`, pod.Name, err)
