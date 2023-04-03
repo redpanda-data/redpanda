@@ -107,9 +107,8 @@ class ShadowIndexingCompactedTopicTest(EndToEndTest):
                    err_msg=lambda: f"Compacted segments not uploaded")
 
         s3_snapshot = BucketView(self.redpanda, topics=self.topics)
-        s3_snapshot.assert_at_least_n_uploaded_segments_compacted(self.topic,
-                                                                  partition=0,
-                                                                  n=1)
+        s3_snapshot.assert_at_least_n_uploaded_segments_compacted(
+            self.topic, partition=0, revision=None, n=1)
         s3_snapshot.assert_segments_replaced(self.topic, partition=0)
         self.logger.info(
             f'manifest: {pprint.pformat(s3_snapshot.manifest_for_ntp(self.topic, 0))}'

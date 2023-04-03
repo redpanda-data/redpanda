@@ -462,12 +462,53 @@ class BucketView:
         self._ensure_listing()
         return self._state.partition_manifests
 
+    @staticmethod
+    def cloud_log_size_from_ntp_manifest(manifest,
+                                         include_below_start_offset=True
+                                         ) -> int:
+        if 'segments' not in manifest:
+            return 0
+
+        start_offset = 0
+        if not include_below_start_offset:
+            start_offset = manifest['start_offset']
+
+        res = sum(seg_meta['size_bytes']
+                  for seg_meta in manifest['segments'].values()
+                  if seg_meta['base_offset'] >= start_offset)
+
+        return res
+
+    @staticmethod
+    def kafka_start_offset(manifest) -> Optional[int]:
+        if 'segments' not in manifest or len(manifest['segments']) == 0:
+            return None
+
+        start_model_offset = manifest['start_offset']
+        first_segment = min(manifest['segments'].values(),
+                            key=lambda seg: seg['base_offset'])
+        delta = first_segment['delta_offset']
+
+        return start_model_offset - delta
+
+    @staticmethod
+    def kafka_last_offset(manifest) -> Optional[int]:
+        if 'segments' not in manifest or len(manifest['segments']) == 0:
+            return None
+
+        last_model_offset = manifest['last_offset']
+        last_segment = max(manifest['segments'].values(),
+                           key=lambda seg: seg['base_offset'])
+        delta = last_segment['delta_offset_end']
+
+        return last_model_offset - delta
+
     def total_cloud_log_size(self) -> int:
         self._do_listing()
 
         total = 0
         for pm in self._state.partition_manifests.values():
-            total += self._cloud_log_size_from_ntp_manifest(
+            total += BucketView.cloud_log_size_from_ntp_manifest(
                 pm, include_below_start_offset=False)
 
         return total
@@ -513,14 +554,21 @@ class BucketView:
         self._state.partition_manifests[ntp] = manifest
         return manifest
 
-    def get_partition_manifest(self, ntp):
+    def get_partition_manifest(self, ntp: NTP | NTPR):
         """
         Fetch a manifest, looking up revision as needed.
         """
+        ntpr = None
+        if isinstance(ntp, NTPR):
+            ntpr = ntp
+            ntp = ntpr.to_ntp()
+
         if ntp in self._state.partition_manifests:
             return self._state.partition_manifests[ntp]
 
-        ntpr = self.ntp_to_ntpr(ntp)
+        if not ntpr:
+            ntpr = self.ntp_to_ntpr(ntp)
+
         manifest_path = gen_manifest_path(ntpr)
         return self._load_manifest(ntp, manifest_path)
 
@@ -585,6 +633,14 @@ class BucketView:
         else:
             return True
 
+    def manifest_for_ntpr(self,
+                          topic: str,
+                          partition: int,
+                          revision: int,
+                          ns: str = 'kafka') -> dict:
+        ntpr = NTPR(ns, topic, partition, revision)
+        return self.get_partition_manifest(ntpr)
+
     def manifest_for_ntp(self,
                          topic: str,
                          partition: int,
@@ -602,26 +658,6 @@ class BucketView:
 
         return len(manifest['segments'])
 
-    def _cloud_log_size_from_ntp_manifest(self,
-                                          manifest,
-                                          include_below_start_offset=True
-                                          ) -> int:
-        if 'segments' not in manifest:
-            return 0
-
-        start_offset = 0
-        if not include_below_start_offset:
-            start_offset = manifest['start_offset']
-
-        res = sum(seg_meta['size_bytes']
-                  for seg_meta in manifest['segments'].values()
-                  if seg_meta['base_offset'] >= start_offset)
-
-        self.logger.info(
-            f'topic={manifest["topic"]} pid={manifest["partition"]} usage={res}'
-        )
-        return res
-
     def cloud_log_size_for_ntp(self,
                                topic: str,
                                partition: int,
@@ -631,13 +667,17 @@ class BucketView:
         except KeyError:
             return 0
         else:
-            return self._cloud_log_size_from_ntp_manifest(manifest)
+            return BucketView.cloud_log_size_from_ntp_manifest(manifest)
 
     def assert_at_least_n_uploaded_segments_compacted(self,
                                                       topic: str,
                                                       partition: int,
+                                                      revision: Optional[int],
                                                       n=1):
-        manifest_data = self.manifest_for_ntp(topic, partition)
+        if revision:
+            manifest_data = self.manifest_for_ntpr(topic, partition, revision)
+        else:
+            manifest_data = self.manifest_for_ntp(topic, partition)
         segments = manifest_data['segments']
         compacted_segments = len(
             [meta for meta in segments.values() if meta['is_compacted']])

@@ -100,6 +100,10 @@ public:
         return _last_segment_upload_time;
     }
 
+    /// Get the timestamp of the last successful manifest sync.
+    /// Returns nullopt if not in read replica mode
+    std::optional<ss::lowres_clock::time_point> get_last_sync_time() const;
+
     /// Download manifest from pre-defined S3 locatnewion
     ///
     /// \return future that returns true if the manifest was found in S3
@@ -276,7 +280,8 @@ private:
     /// Information about started upload
     struct scheduled_upload {
         /// The future that will be ready when the segment will be fully
-        /// uploaded
+        /// uploaded.
+        /// NOTE: scheduled future may hold segment read locks.
         std::optional<ss::future<cloud_storage::upload_result>> result;
         /// Last offset of the uploaded segment or part
         model::offset inclusive_last_offset;
@@ -292,9 +297,6 @@ private:
         /// case the upload is not started but the method might be called
         /// again anyway.
         ss::stop_iteration stop;
-        /// Protects the underlying segment(s) from being deleted while the
-        /// upload is in flight.
-        std::vector<ss::rwlock::holder> segment_read_locks;
         segment_upload_kind upload_kind;
     };
 
@@ -358,11 +360,14 @@ private:
     /// Upload individual segment to S3.
     ///
     /// \param candidate is an upload candidate
+    /// \param segment_read_locks protects the underlying segment(s) from being
+    ///        deleted while the upload is in flight.
     /// \param source_rtc is a retry_chain_node of the caller, if it's set
     ///        to nullopt own retry chain of the ntp_archiver is used
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_segment(
       upload_candidate candidate,
+      std::vector<ss::rwlock::holder> segment_read_locks,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
@@ -470,6 +475,10 @@ private:
 
     // When we last wrote a segment
     ss::lowres_clock::time_point _last_segment_upload_time;
+    ss::lowres_clock::time_point _last_upload_time;
+
+    // When we last synced the manifest of the read replica
+    std::optional<ss::lowres_clock::time_point> _last_sync_time;
 
     // Used during leadership transfer: instructs the archiver to
     // not proceed with uploads, even if it has leadership.

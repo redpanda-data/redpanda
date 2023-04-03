@@ -152,6 +152,103 @@ ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
     return _cloud_storage_partition->aborted_transactions(offsets);
 }
 
+cluster::cloud_storage_mode partition::get_cloud_storage_mode() const {
+    const auto& cfg = _raft->log_config();
+
+    if (cfg.is_read_replica_mode_enabled()) {
+        return cluster::cloud_storage_mode::read_replica;
+    }
+    if (cfg.is_tiered_storage()) {
+        return cluster::cloud_storage_mode::full;
+    }
+    if (cfg.is_tiered_storage()) {
+        return cluster::cloud_storage_mode::full;
+    }
+    if (cfg.is_archival_enabled()) {
+        return cluster::cloud_storage_mode::write_only;
+    }
+    if (cfg.is_remote_fetch_enabled()) {
+        return cluster::cloud_storage_mode::read_only;
+    }
+
+    return cluster::cloud_storage_mode::disabled;
+}
+
+partition_cloud_storage_status partition::get_cloud_storage_status() const {
+    auto wrap_model_offset =
+      [this](model::offset o) -> std::optional<kafka::offset> {
+        if (o == model::offset{}) {
+            return std::nullopt;
+        }
+        return model::offset_cast(
+          get_offset_translator_state()->from_log_offset(o));
+    };
+
+    auto time_point_to_delta = [](ss::lowres_clock::time_point tp)
+      -> std::optional<std::chrono::milliseconds> {
+        if (tp.time_since_epoch().count() == 0) {
+            return std::nullopt;
+        }
+
+        return std::chrono::duration_cast<std::chrono::milliseconds>(
+          ss::lowres_clock::now() - tp);
+    };
+
+    partition_cloud_storage_status status;
+
+    status.mode = get_cloud_storage_mode();
+
+    const auto& local_log = _raft->log();
+    status.local_log_size_bytes = local_log.size_bytes();
+    status.total_log_size_bytes = status.local_log_size_bytes;
+    status.local_log_segment_count = local_log.segment_count();
+
+    const auto local_log_offsets = local_log.offsets();
+    status.local_log_start_offset = wrap_model_offset(
+      local_log_offsets.start_offset);
+    status.local_log_last_offset = wrap_model_offset(
+      local_log_offsets.committed_offset);
+
+    if (status.mode != cloud_storage_mode::disabled) {
+        const auto& manifest = _archival_meta_stm->manifest();
+        status.cloud_log_size_bytes = manifest.cloud_log_size();
+        status.cloud_log_segment_count = manifest.size();
+
+        if (manifest.size() > 0) {
+            status.cloud_log_start_offset = manifest.get_start_kafka_offset();
+            status.cloud_log_last_offset = manifest.get_last_kafka_offset();
+        }
+
+        const auto log_overlap = status.cloud_log_last_offset
+                                   ? _raft->log().size_bytes_until_offset(
+                                     manifest.get_last_offset())
+                                   : 0;
+        status.total_log_size_bytes += status.cloud_log_size_bytes
+                                       - log_overlap;
+    }
+
+    if (is_leader() && _archiver) {
+        if (
+          status.mode == cloud_storage_mode::write_only
+          || status.mode == cloud_storage_mode::full) {
+            status.since_last_manifest_upload = time_point_to_delta(
+              _archiver->get_last_manfiest_upload_time());
+            status.since_last_segment_upload = time_point_to_delta(
+              _archiver->get_last_segment_upload_time());
+        } else if (status.mode == cloud_storage_mode::read_replica) {
+            const auto last_sync_at = _archiver->get_last_sync_time();
+            if (last_sync_at) {
+                status.since_last_manifest_sync = time_point_to_delta(
+                  *last_sync_at);
+            } else {
+                status.since_last_manifest_sync = std::nullopt;
+            }
+        }
+    }
+
+    return status;
+}
+
 bool partition::is_remote_fetch_enabled() const {
     const auto& cfg = _raft->log_config();
     if (_feature_table.local().is_active(features::feature::cloud_retention)) {

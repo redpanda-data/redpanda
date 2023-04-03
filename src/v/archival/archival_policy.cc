@@ -344,7 +344,15 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
 
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
     std::vector<ss::rwlock::holder> locks;
+    vlog(
+      archival_log.trace,
+      "Acquiring read lock for segment {}",
+      segment->filename());
     locks.emplace_back(co_await segment->read_lock(deadline));
+    vlog(
+      archival_log.trace,
+      "Read lock acquired for segment {}",
+      segment->filename());
     auto result = ss::make_lw_shared<upload_candidate>(
       {.term = term, .sources = {segment}});
 

@@ -165,7 +165,12 @@ public:
               nm.name);
             nm.meta.segment_term = maybe_key->term;
             _segments.insert(std::make_pair(nm.meta.base_offset, nm.meta));
-            _cloud_log_size_bytes += nm.meta.size_bytes;
+
+            if (
+              nm.meta.base_offset >= _start_offset
+              && nm.meta.committed_offset <= _last_offset) {
+                _cloud_log_size_bytes += nm.meta.size_bytes;
+            }
         }
     }
 
@@ -176,15 +181,19 @@ public:
     const model::ntp& get_ntp() const;
 
     // Get last offset
-    const model::offset get_last_offset() const;
-    const std::optional<kafka::offset> get_last_kafka_offset() const;
-    const std::optional<kafka::offset> get_next_kafka_offset() const;
+    model::offset get_last_offset() const;
+
+    // Get the last inclusive Kafka offset
+    std::optional<kafka::offset> get_last_kafka_offset() const;
+
+    // Get the last exclusive Kafka offset
+    std::optional<kafka::offset> get_next_kafka_offset() const;
 
     // Get insync offset of the archival_metadata_stm
     //
     // The offset is an offset of the last applied record with the
     // archival_metadata_stm command.
-    const model::offset get_insync_offset() const;
+    model::offset get_insync_offset() const;
 
     // Move insync offset forward
     // The method is supposed to be called by the archival_metadata_stm after

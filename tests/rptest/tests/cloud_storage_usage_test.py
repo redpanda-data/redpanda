@@ -121,7 +121,7 @@ class CloudStorageUsageTest(RedpandaTest, PartitionMovementMixin):
         # Assert that compacted segment re-upload operated during the test
         bucket_view = BucketView(self.redpanda, topics=self.topics)
         bucket_view.assert_at_least_n_uploaded_segments_compacted(
-            self.topics[1].name, partition=0, n=1)
+            self.topics[1].name, partition=0, revision=None, n=1)
 
     @cluster(num_nodes=5)
     def test_cloud_storage_usage_reporting(self):

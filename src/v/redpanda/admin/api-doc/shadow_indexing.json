@@ -67,6 +67,31 @@
           "nickname": "query_automated_recovery"
         }
       ]
+    },
+    {
+      "path": "/v1/cloud_storage/status/{topic}/{partition}",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "Get cloud storage status for a partition",
+          "operationId": "get_partition_cloud_storage_status",
+          "nickname": "get_partition_cloud_storage_status",
+          "parameters": [
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "partition",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            }
+          ]
+        }
+      ]
     }
   ],
   "models": {
@@ -125,6 +150,70 @@
         },
         "request": {
           "type": "recovery_request_params"
+        }
+      }
+    },
+    "partition_cloud_storage_status": {
+      "id": "partition_cloud_storage_status",
+      "properties": {
+        "cloud_storage_mode": {
+            "type": "string",
+            "description": "The partition's cloud storage mode (one of: disabled, write_only, read_only, full and read_replica)"
+        },
+        "ms_since_last_manifest_upload": {
+            "type": "long",
+            "nullable": true,
+            "description": "Delta in milliseconds since the last upload of the partition's manifest"
+        },
+        "ms_since_last_segment_upload": {
+            "type": "long",
+            "nullable": true,
+            "description": "Delta in milliseconds since the last segment upload for the partition"
+        },
+        "ms_since_last_manifest_sync": {
+            "type": "long",
+            "nullable": true,
+            "description": "Delta in milliseconds since the last manifest sync (only present for read replicas)"
+        },
+        "total_log_size_bytes": {
+            "type": "long",
+            "description": "Total size of the log for the partition (overlap between local and cloud log is excluded)"
+        },
+        "cloud_log_size_bytes": {
+            "type": "long",
+            "description": "Total size of the addressable cloud log for the partition"
+        },
+        "local_log_size_bytes": {
+            "type": "long",
+            "description": "Total size of the addressable local log for the partition"
+        },
+        "cloud_log_segment_count": {
+            "type": "long",
+            "description": "Number of segments in the cloud log (does not include segments queued for removal)"
+        },
+        "local_log_segment_count": {
+            "type": "long",
+            "description": "Number of segments in the local log"
+        },
+        "cloud_log_start_offset": {
+            "type": "long",
+            "nullable": true,
+            "description": "The first Kafka offset accessible from the cloud (inclusive)"
+        },
+        "cloud_log_last_offset": {
+            "type": "long",
+            "nullable": true,
+            "description": "The last Kafka offset accessible from the cloud (inclusive)"
+        },
+        "local_log_start_offset": {
+            "type": "long",
+            "nullable": true,
+            "description": "The first Kafka offset accessible locally (inclusive)"
+        },
+        "local_log_last_offset": {
+            "type": "long",
+            "nullable": true,
+            "description": "The last Kafka offset accessible locally (inclusive)"
         }
       }
     }
