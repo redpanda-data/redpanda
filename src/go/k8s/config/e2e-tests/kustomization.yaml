@@ -1,0 +1,16 @@
+bases:
+- ../default
+
+patchesStrategicMerge:
+- manager.yaml
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+images:
+  - name: vectorized/redpanda-operator
+    newName: localhost/redpanda-operator
+    newTag: dev
+  - name: vectorized/configurator
+    newName: localhost/configurator
+    newTag: dev
+

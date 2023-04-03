@@ -26,8 +26,14 @@ import (
 
 const (
 	nginx = "nginx"
-	//nolint:gosec // This value does not contain credentials.
-	sslPassthroughAnnotation = "nginx.ingress.kubernetes.io/ssl-passthrough"
+
+	// SSLPassthroughAnnotation is the annotation for ingress nginx SSL passthrough
+	SSLPassthroughAnnotation = "nginx.ingress.kubernetes.io/ssl-passthrough" //nolint:gosec // This value does not contain credentials.
+
+	debugLogLevel = 4
+
+	// LEClusterIssuer is the LetsEncrypt issuer
+	LEClusterIssuer = "letsencrypt-dns-prod"
 )
 
 var _ Resource = &IngressResource{}
@@ -36,20 +42,24 @@ var _ Resource = &IngressResource{}
 // focusing on the internal connectivity management of redpanda cluster
 type IngressResource struct {
 	k8sclient.Client
-	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
-	host         string
-	svcName      string
-	svcPortName  string
-	logger       logr.Logger
+	scheme          *runtime.Scheme
+	object          metav1.Object
+	subdomain       string
+	svcName         string
+	svcPortName     string
+	annotations     map[string]string
+	TLS             []netv1.IngressTLS
+	userConfig      *redpandav1alpha1.IngressConfig
+	defaultEndpoint string
+	logger          logr.Logger
 }
 
 // NewIngress creates IngressResource
 func NewIngress(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	object metav1.Object,
 	scheme *runtime.Scheme,
-	host string,
+	subdomain string,
 	svcName string,
 	svcPortName string,
 	logger logr.Logger,
@@ -57,20 +67,113 @@ func NewIngress(
 	return &IngressResource{
 		client,
 		scheme,
-		pandaCluster,
-		host,
+		object,
+		subdomain,
 		svcName,
 		svcPortName,
+		map[string]string{},
+		nil,
+		nil,
+		"",
 		logger.WithValues(
 			"Kind", ingressKind(),
 		),
 	}
 }
 
+// WithAnnotations sets annotations to the IngressResource
+func (r *IngressResource) WithAnnotations(
+	annot map[string]string,
+) *IngressResource {
+	for k, v := range annot {
+		r.annotations[k] = v
+	}
+	return r
+}
+
+// WithTLS sets Ingress TLS with specified issuer
+func (r *IngressResource) WithTLS(
+	clusterIssuer, secretName string,
+) *IngressResource {
+	r.annotations["cert-manager.io/cluster-issuer"] = clusterIssuer
+	r.annotations["nginx.ingress.kubernetes.io/force-ssl-redirect"] = trueString
+
+	if r.TLS == nil {
+		r.TLS = []netv1.IngressTLS{}
+	}
+
+	r.TLS = append(r.TLS, netv1.IngressTLS{
+		Hosts: []string{r.subdomain, fmt.Sprintf("*.%s", r.subdomain)},
+		// Use the Cluster wildcard certificate
+		SecretName: secretName,
+	})
+
+	return r
+}
+
+// GetAnnotations returns the annotations for the Ingress resource
+func (r *IngressResource) GetAnnotations() map[string]string {
+	allAnnotations := make(map[string]string)
+	for k, v := range r.annotations {
+		allAnnotations[k] = v
+	}
+	if r.userConfig != nil {
+		// user configured annotations take precedence over default ones
+		for k, v := range r.userConfig.Annotations {
+			allAnnotations[k] = v
+		}
+	}
+
+	return allAnnotations
+}
+
+// WithUserConfig injects the end-user configuration for the ingress
+func (r *IngressResource) WithUserConfig(
+	userConfig *redpandav1alpha1.IngressConfig,
+) *IngressResource {
+	r.userConfig = userConfig
+	return r
+}
+
+// WithDefaultEndpoint allows to configure the default endpoint for the ingress,
+// that is used when user does not inject a different one.
+func (r *IngressResource) WithDefaultEndpoint(
+	defaultEndpoint string,
+) *IngressResource {
+	r.defaultEndpoint = defaultEndpoint
+	return r
+}
+
+func (r *IngressResource) host() string {
+	if r.subdomain == "" {
+		return ""
+	}
+
+	endpoint := r.defaultEndpoint
+	if r.userConfig != nil {
+		endpoint = r.userConfig.Endpoint
+	}
+	if endpoint == "" {
+		return r.subdomain
+	}
+
+	return fmt.Sprintf("%s.%s", endpoint, r.subdomain)
+}
+
 // Ensure will manage kubernetes Ingress for redpanda.vectorized.io custom resource
 func (r *IngressResource) Ensure(ctx context.Context) error {
-	if r.host == "" {
-		return nil
+	ingressDisabled := r.userConfig != nil && r.userConfig.Enabled != nil && !*r.userConfig.Enabled
+	emptyHost := r.host() == ""
+	if ingressDisabled || emptyHost {
+		r.logger.V(debugLogLevel).Info("ingress will not be created", "disabled", ingressDisabled, "empty_host", emptyHost)
+		key := r.Key()
+		ingress := netv1.Ingress{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: key.Namespace,
+				Name:      key.Name,
+			},
+		}
+		return DeleteIfExists(ctx, &ingress, r.Client)
 	}
 
 	obj, err := r.obj()
@@ -91,9 +194,13 @@ func (r *IngressResource) Ensure(ctx context.Context) error {
 }
 
 func (r *IngressResource) obj() (k8sclient.Object, error) {
-	objLabels := labels.ForCluster(r.pandaCluster)
 	ingressClassName := nginx
 	pathTypePrefix := netv1.PathTypePrefix
+
+	objLabels, err := objectLabels(r.object)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get object labels: %w", err)
+	}
 
 	ingress := &netv1.Ingress{
 		TypeMeta: metav1.TypeMeta{
@@ -104,13 +211,13 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 			Name:        r.Key().Name,
 			Namespace:   r.Key().Namespace,
 			Labels:      objLabels,
-			Annotations: map[string]string{sslPassthroughAnnotation: "true"},
+			Annotations: r.GetAnnotations(),
 		},
 		Spec: netv1.IngressSpec{
 			IngressClassName: &ingressClassName,
 			Rules: []netv1.IngressRule{
 				{
-					Host: r.host,
+					Host: r.host(),
 					IngressRuleValue: netv1.IngressRuleValue{
 						HTTP: &netv1.HTTPIngressRuleValue{
 							Paths: []netv1.HTTPIngressPath{
@@ -131,10 +238,11 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 					},
 				},
 			},
+			TLS: r.TLS,
 		},
 	}
 
-	err := controllerutil.SetControllerReference(r.pandaCluster, ingress, r.scheme)
+	err = controllerutil.SetControllerReference(r.object, ingress, r.scheme)
 	if err != nil {
 		return nil, err
 	}
@@ -144,10 +252,23 @@ func (r *IngressResource) obj() (k8sclient.Object, error) {
 
 // Key returns namespace/name object that is used to identify object.
 func (r *IngressResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
+	return types.NamespacedName{Name: r.object.GetName(), Namespace: r.object.GetNamespace()}
 }
 
 func ingressKind() string {
 	var obj netv1.Ingress
 	return obj.Kind
+}
+
+func objectLabels(obj metav1.Object) (labels.CommonLabels, error) {
+	var objLabels labels.CommonLabels
+	switch o := obj.(type) {
+	case *redpandav1alpha1.Cluster:
+		objLabels = labels.ForCluster(o)
+	case *redpandav1alpha1.Console:
+		objLabels = labels.ForConsole(o)
+	default:
+		return nil, fmt.Errorf("expected object to be Cluster or Console") //nolint:goerr113 // no need to declare new error type
+	}
+	return objLabels, nil
 }

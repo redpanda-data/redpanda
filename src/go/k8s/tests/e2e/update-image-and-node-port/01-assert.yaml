@@ -1,89 +1,19 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: update-image-cluster-and-node-port
+  name: kminion
 status:
-  readyReplicas: 2
-
----
-
-apiVersion: v1
-kind: Pod
-metadata:
-  name: update-image-cluster-and-node-port-0
-spec:
-  containers:
-  - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
-status:
-  phase: "Running"
-
----
-
-apiVersion: v1
-kind: Pod
-metadata:
-  name: update-image-cluster-and-node-port-1
-spec:
-  containers:
-  - name: redpanda
-    image: "vectorized/redpanda:v21.11.12"
-    volumeMounts:
-    - mountPath: /etc/redpanda
-      name: config-dir
-    - mountPath: /var/lib/redpanda/data
-      name: datadir
-    - mountPath: /var/lib/shadow-index-cache
-      name: shadow-index-cache
-    - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-      readOnly: true
-status:
-  phase: "Running"
-
----
-
-apiVersion: v1
-kind: Service
-metadata:
-  name: update-image-cluster-and-node-port-external
-spec:
-  externalTrafficPolicy: Local
-  ports:
-    - name: kafka-external
-      nodePort: 32748
-      port: 9093
-      protocol: TCP
-      targetPort: 9093
-    - name: admin-external
-      nodePort: 31178
-      port: 9645
-      protocol: TCP
-      targetPort: 9645
-  type: NodePort
+  availableReplicas: 1
+  readyReplicas: 1
+  replicas: 1
+  updatedReplicas: 1
 
 ---
 
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda
-  tail: -1
-
----
-
-apiVersion: redpanda.vectorized.io/v1alpha1
-kind: Cluster
-metadata:
-  name: update-image-cluster-and-node-port
-status:
-  version: "v21.11.12"
+  - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-and-node-port/step-1"
+  - command: /bin/bash -c "kubectl get pod -o json -n $NAMESPACE > ../../_e2e_artifacts/update-image-and-node-port/step-1/pods.json"
+  - command: /bin/bash -c "kubectl describe pod -n $NAMESPACE > ../../_e2e_artifacts/update-image-and-node-port/step-1/describe-pods.txt"
+  - command: /bin/bash -c "kubectl logs -n $NAMESPACE -l app.kubernetes.io/name=kminion > ../../_e2e_artifacts/update-image-and-node-port/step-1/kminion-logs.txt"

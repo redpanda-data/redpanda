@@ -11,17 +11,23 @@ package resources_test
 
 import (
 	"context"
+	"crypto/tls"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -75,6 +81,8 @@ func TestEnsure_StatefulSet(t *testing.T) {
 	cluster := pandaCluster()
 	cluster = cluster.DeepCopy()
 	cluster.Name = "ensure-integration-cluster"
+	err := c.Create(context.Background(), cluster)
+	require.NoError(t, err)
 
 	sts := res.NewStatefulSet(
 		c,
@@ -83,15 +91,8 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		"cluster.local",
 		"servicename",
 		types.NamespacedName{Name: "test", Namespace: "test"},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
+		TestStatefulsetTLSVolumeProvider{},
+		TestAdminTLSConfigProvider{},
 		"",
 		res.ConfiguratorSettings{
 			ConfiguratorBaseImage: "vectorized/configurator",
@@ -99,9 +100,12 @@ func TestEnsure_StatefulSet(t *testing.T) {
 			ImagePullPolicy:       "Always",
 		},
 		func(ctx context.Context) (string, error) { return hash, nil },
-		ctrl.Log.WithName("test"))
+		adminutils.NewInternalAdminAPI,
+		time.Second,
+		ctrl.Log.WithName("test"),
+		0)
 
-	err := sts.Ensure(context.Background())
+	err = sts.Ensure(context.Background())
 	assert.NoError(t, err)
 
 	actual := &v1.StatefulSet{}
@@ -124,6 +128,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	cluster := pandaCluster()
 	cluster = cluster.DeepCopy()
 	cluster.Name = "ensure-integration-cm-cluster"
+	assert.NoError(t, c.Create(context.Background(), cluster))
 
 	secret := corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -143,6 +148,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 		"cluster.local",
 		types.NamespacedName{},
 		types.NamespacedName{},
+		TestBrokerTLSConfigProvider{},
 		ctrl.Log.WithName("test"))
 
 	err := cm.Ensure(context.Background())
@@ -186,7 +192,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	}
 }
 
-// nolint:funlen // the subtests might causes linter to complain
+//nolint:funlen // the subtests might causes linter to complain
 func TestEnsure_HeadlessService(t *testing.T) {
 	t.Run("create-headless-service", func(t *testing.T) {
 		cluster := pandaCluster()
@@ -428,4 +434,225 @@ func TestEnsure_LoadbalancerService(t *testing.T) {
 		assert.Equal(t, corev1.ProtocolTCP, actual.Spec.Ports[0].Protocol)
 		assert.Equal(t, "kafka-external-bootstrap", actual.Spec.Ports[0].Name)
 	})
+}
+
+//nolint:funlen // more cases are welcome
+func TestEnsure_Ingress(t *testing.T) {
+	cluster := pandaCluster()
+	cluster = cluster.DeepCopy()
+	err := c.Create(context.Background(), cluster)
+	require.NoError(t, err)
+	falseVar := false
+	emptyString := ""
+
+	cases := []struct {
+		name                string
+		configs             []*redpandav1alpha1.IngressConfig
+		internalAnnotations map[string]string
+		defaultEndpoint     string
+		customSubdomain     *string
+		expectNoIngress     bool
+		expectHost          string
+		expectAnnotations   map[string]string
+	}{
+		{
+			name:       "no user config",
+			configs:    []*redpandav1alpha1.IngressConfig{nil},
+			expectHost: "external.domain",
+		},
+		{
+			name:       "empty user config",
+			configs:    []*redpandav1alpha1.IngressConfig{{}},
+			expectHost: "external.domain",
+		},
+		{
+			name: "endpoint in user config",
+			configs: []*redpandav1alpha1.IngressConfig{
+				{
+					Endpoint: "pp-rnd",
+				},
+			},
+			expectHost: "pp-rnd.external.domain",
+		},
+		{
+			name:            "using default endpoint",
+			configs:         []*redpandav1alpha1.IngressConfig{nil},
+			defaultEndpoint: "console",
+			expectHost:      "console.external.domain",
+		},
+		{
+			name: "user endpoint override default endpoint",
+			configs: []*redpandav1alpha1.IngressConfig{
+				nil,
+				{
+					Endpoint: "override",
+				},
+			},
+			defaultEndpoint: "console",
+			expectHost:      "override.external.domain",
+		},
+		{
+			name: "ingress explicitly disabled",
+			configs: []*redpandav1alpha1.IngressConfig{
+				{
+					Enabled: &falseVar,
+				},
+			},
+			expectNoIngress: true,
+		},
+		{
+			name: "no subdomain on ingress",
+			configs: []*redpandav1alpha1.IngressConfig{
+				{
+					Endpoint: "anything",
+				},
+			},
+			customSubdomain: &emptyString,
+			expectNoIngress: true,
+		},
+		{
+			name: "annotations in user config",
+			configs: []*redpandav1alpha1.IngressConfig{
+				{
+					Endpoint: "pp-rnd",
+					Annotations: map[string]string{
+						"a": "b",
+						"b": "c",
+					},
+				},
+			},
+			expectHost: "pp-rnd.external.domain",
+			expectAnnotations: map[string]string{
+				"a": "b",
+				"b": "c",
+			},
+		},
+		{
+			name: "user annotations override",
+			internalAnnotations: map[string]string{
+				"a": "not-this",
+				"c": "d",
+			},
+			configs: []*redpandav1alpha1.IngressConfig{
+				{
+					Endpoint: "pp-rnd",
+					Annotations: map[string]string{
+						"a": "b",
+						"b": "c",
+					},
+				},
+			},
+			expectHost: "pp-rnd.external.domain",
+			expectAnnotations: map[string]string{
+				"a": "b",
+				"b": "c",
+				"c": "d",
+			},
+		},
+		{
+			name: "create then delete twice",
+			configs: []*redpandav1alpha1.IngressConfig{
+				{
+					Endpoint: "pp-rnd",
+					Annotations: map[string]string{
+						"a": "b",
+						"b": "c",
+					},
+				},
+				{
+					Enabled: &falseVar,
+				},
+				{
+					Enabled: &falseVar,
+				},
+			},
+			expectNoIngress: true,
+		},
+		{
+			name: "disable then enable and change",
+			configs: []*redpandav1alpha1.IngressConfig{
+				{
+					Enabled: &falseVar,
+				},
+				{
+					Endpoint: "xx",
+					Annotations: map[string]string{
+						"a": "xx",
+					},
+				},
+				{
+					Endpoint: "pp-rnd",
+					Annotations: map[string]string{
+						"a": "b",
+					},
+				},
+			},
+			expectHost: "pp-rnd.external.domain",
+			expectAnnotations: map[string]string{
+				"a": "b",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.True(t, len(tc.configs) > 0)
+			var ingress *res.IngressResource
+			for _, conf := range tc.configs {
+				subdomain := "external.domain"
+				if tc.customSubdomain != nil {
+					subdomain = *tc.customSubdomain
+				}
+				ingress = res.NewIngress(
+					c,
+					cluster,
+					scheme.Scheme,
+					subdomain,
+					"svcname",
+					"svcport",
+					ctrl.Log.WithName("test"),
+				).WithAnnotations(tc.internalAnnotations).
+					WithUserConfig(conf).
+					WithDefaultEndpoint(tc.defaultEndpoint)
+
+				err = ingress.Ensure(context.Background())
+				require.NoError(t, err)
+			}
+
+			actual := networkingv1.Ingress{}
+			err = c.Get(context.Background(), ingress.Key(), &actual)
+			if tc.expectNoIngress {
+				require.Error(t, err)
+				assert.True(t, k8serrors.IsNotFound(err))
+				return
+			}
+
+			require.NoError(t, err)
+			defer c.Delete(context.Background(), &actual) //nolint:errcheck // best effort
+
+			require.Len(t, actual.Spec.Rules, 1)
+			require.Equal(t, tc.expectHost, actual.Spec.Rules[0].Host)
+
+			for k, v := range tc.expectAnnotations {
+				assert.Equal(t, v, actual.Annotations[k])
+			}
+		})
+	}
+}
+
+type TestStatefulsetTLSVolumeProvider struct{}
+
+func (TestStatefulsetTLSVolumeProvider) Volumes() (
+	[]corev1.Volume,
+	[]corev1.VolumeMount,
+) {
+	return []corev1.Volume{}, []corev1.VolumeMount{}
+}
+
+type TestAdminTLSConfigProvider struct{}
+
+func (TestAdminTLSConfigProvider) GetTLSConfig(
+	ctx context.Context, k8sClient client.Reader,
+) (*tls.Config, error) {
+	return nil, nil
 }

@@ -20,6 +20,11 @@ spec:
     - port: 9092
       tls:
         enabled: true
+    - external:
+        enabled: true
+        subdomain: "test.subdomain.com"
+      tls:
+        enabled: true
     adminApi:
     - port: 9644
     developerMode: true

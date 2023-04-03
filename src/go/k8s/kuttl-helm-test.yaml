@@ -2,20 +2,20 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestSuite
 startKIND: true
 kindContainers:
-  - vectorized/redpanda-operator:dev
-  - vectorized/configurator:dev
+  - localhost/redpanda-operator:dev
+  - localhost/configurator:dev
 testDirs:
   - ./tests/e2e-helm
 kindConfig: ./kind.yaml
 kindNodeCache: false
 commands:
-  - command: "./hack/install-cert-manager.sh"
+  - command: "mkdir -p tests/_helm_e2e_artifacts"
+  - command: "./hack/install-cert-manager.sh tests/_helm_e2e_artifacts"
   - command: "kubectl apply -k ./config/crd"
   - command: "kubectl create -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/e23ff77fceba6a5d9f190f5d1a123c87701dc964/bundle.yaml"
   - command: "helm dep up ./helm-chart/charts/redpanda-operator"
   - command: "helm install --set configurator.tag=dev --set image.tag=dev --namespace helm-test --create-namespace redpanda-operator ./helm-chart/charts/redpanda-operator"
   - command: "./hack/wait-for-webhook-ready.sh"
-  - command: "mkdir -p tests/_helm_e2e_artifacts"
 artifactsDir: tests/_helm_e2e_artifacts
 timeout: 300
 reportFormat: xml

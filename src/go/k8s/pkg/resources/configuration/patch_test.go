@@ -132,7 +132,7 @@ func TestString(t *testing.T) {
 	assert.Equal(t, "+a +c -e -f -x", p.String())
 }
 
-// nolint:funlen // it's a table test
+//nolint:funlen // it's a table test
 func TestPropertyEquality(t *testing.T) {
 	var nilPointer *int
 	tests := []struct {

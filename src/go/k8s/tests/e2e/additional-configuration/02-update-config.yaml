@@ -2,10 +2,6 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: additional-configuration
-  namespace: default
-  annotations:
-    # We also check that the cluster starts correctly when using the annotation
-    redpanda.vectorized.io/skip-cluster-seed-init: "true"
 spec:
   additionalConfiguration:
     redpanda.enable_idempotence: "true"

@@ -4,7 +4,6 @@ repos:
   - repo: https://github.com/redpanda-data/pre-commit-vectorizedio.git
     rev: 91f6656b0fd532cdf325536a1daf8f28a8fa670c
     hooks:
-      - id: crlfmt
       - id: golangci-lint
         args:
           - src/go/k8s

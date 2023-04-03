@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -34,8 +35,8 @@ func NewInternalAdminAPI(
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminAPINodeCertSecretKey client.ObjectKey,
-	adminAPIClientCertSecretKey client.ObjectKey,
+	adminTLSProvider types.AdminTLSConfigProvider,
+	ordinals ...int32,
 ) (AdminAPIClient, error) {
 	adminInternal := redpandaCluster.AdminAPIInternal()
 	if adminInternal == nil {
@@ -45,7 +46,7 @@ func NewInternalAdminAPI(
 	var tlsConfig *tls.Config
 	if adminInternal.TLS.Enabled {
 		var err error
-		tlsConfig, err = GetTLSConfig(ctx, k8sClient, redpandaCluster, adminAPINodeCertSecretKey, adminAPIClientCertSecretKey)
+		tlsConfig, err = adminTLSProvider.GetTLSConfig(ctx, k8sClient)
 		if err != nil {
 			return nil, fmt.Errorf("could not create tls configuration for internal admin API: %w", err)
 		}
@@ -53,11 +54,17 @@ func NewInternalAdminAPI(
 
 	adminInternalPort := adminInternal.Port
 
-	var urls []string
-	replicas := *redpandaCluster.Spec.Replicas
+	if len(ordinals) == 0 {
+		// Not a specific node, just go through all them
+		replicas := redpandaCluster.GetCurrentReplicas()
 
-	for i := int32(0); i < replicas; i++ {
-		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, i, fqdn, adminInternalPort))
+		for i := int32(0); i < replicas; i++ {
+			ordinals = append(ordinals, i)
+		}
+	}
+	urls := make([]string, 0, len(ordinals))
+	for _, on := range ordinals {
+		urls = append(urls, fmt.Sprintf("%s-%d.%s:%d", redpandaCluster.Name, on, fqdn, adminInternalPort))
 	}
 
 	adminAPI, err := admin.NewAdminAPI(urls, admin.BasicCredentials{}, tlsConfig)
@@ -68,29 +75,45 @@ func NewInternalAdminAPI(
 }
 
 // AdminAPIClient is a sub interface of the admin API containing what we need in the operator
-// nolint:revive // usually package is called adminutils
+//
+
 type AdminAPIClient interface {
-	Config(includeDefaults bool) (admin.Config, error)
-	ClusterConfigStatus(sendToLeader bool) (admin.ConfigStatusResponse, error)
-	ClusterConfigSchema() (admin.ConfigSchema, error)
-	PatchClusterConfig(upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
+	Config(ctx context.Context, includeDefaults bool) (admin.Config, error)
+	ClusterConfigStatus(ctx context.Context, sendToLeader bool) (admin.ConfigStatusResponse, error)
+	ClusterConfigSchema(ctx context.Context) (admin.ConfigSchema, error)
+	PatchClusterConfig(ctx context.Context, upsert map[string]interface{}, remove []string) (admin.ClusterConfigWriteResult, error)
+	GetNodeConfig(ctx context.Context) (admin.NodeConfig, error)
 
-	CreateUser(username, password, mechanism string) error
+	CreateUser(ctx context.Context, username, password, mechanism string) error
+	DeleteUser(ctx context.Context, username string) error
 
-	GetFeatures() (admin.FeaturesResponse, error)
+	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
+	SetLicense(ctx context.Context, license interface{}) error
+	GetLicenseInfo(ctx context.Context) (admin.License, error)
+
+	Brokers(ctx context.Context) ([]admin.Broker, error)
+	Broker(ctx context.Context, nodeID int) (admin.Broker, error)
+	DecommissionBroker(ctx context.Context, node int) error
+	RecommissionBroker(ctx context.Context, node int) error
+
+	EnableMaintenanceMode(ctx context.Context, node int) error
+	DisableMaintenanceMode(ctx context.Context, node int) error
+
+	GetHealthOverview(ctx context.Context) (admin.ClusterHealthOverview, error)
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}
 
 // AdminAPIClientFactory is an abstract constructor of admin API clients
-// nolint:revive // usually package is called adminutils
+//
+
 type AdminAPIClientFactory func(
 	ctx context.Context,
 	k8sClient client.Reader,
 	redpandaCluster *redpandav1alpha1.Cluster,
 	fqdn string,
-	adminAPINodeCertSecretKey client.ObjectKey,
-	adminAPIClientCertSecretKey client.ObjectKey,
+	adminTLSProvider types.AdminTLSConfigProvider,
+	ordinals ...int32,
 ) (AdminAPIClient, error)
 
 var _ AdminAPIClientFactory = NewInternalAdminAPI

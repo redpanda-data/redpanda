@@ -11,7 +11,7 @@ Use all your favorite open source tooling - 10x faster.
 ## Getting started
 
 Official Kubernetes quick start documentation can be found at
-[https://vectorized.io/docs/](https://vectorized.io/docs/quick-start-kubernetes)
+[https://docs.redpanda.com/docs/](https://docs.redpanda.com/docs/platform/quickstart/kubernetes-qs-dev/)
 
 ### Requirements
 
@@ -20,7 +20,7 @@ Official Kubernetes quick start documentation can be found at
 * kustomize v3.8.7 or newer
 * cert-manager v1.0.0 or newer
 
-Optionaly to run operator locally:
+Optionally to run operator locally:
 
 * kind v0.9.0 or newer
 
@@ -30,7 +30,7 @@ Optionaly to run operator locally:
 
 Create local Kubernetes cluster using KIND
 
-```
+```bash
 export KUBECONFIG=your/path/to/kubeconfig.yaml
 kind create cluster --config kind.yaml
 ```
@@ -47,19 +47,19 @@ resources. To verify that cert manager is ready please follow
 
 You can simply deploy the Redpanda operator with webhook (recommended) by running the following command
 
-```
+```bash
 kubectl apply -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/default
 ```
 
 You can deploy the Redpanda operator without webhook by running the following command:
 
-```
+```bash
 kubectl apply -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/without-webhook
 ```
 
 Install sample RedpandaCluster custom resource
 
-```
+```bash
 kubectl apply -f https://raw.githubusercontent.com/redpanda-data/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
 ```
 
@@ -68,26 +68,26 @@ kubectl apply -f https://raw.githubusercontent.com/redpanda-data/redpanda/dev/sr
 
 Create kind cluster
 
-```
+```bash
 make kind-create
 ```
 
 Install cert manager
 
-```
+```bash
 make certmanager-install
 ```
 
 Build docker images for manager and configurator
 
-```
+```bash
 make docker-build
 make docker-build-configurator
 ```
 
 Deploy operator to kind
 
-```
+```bash
 make deploy-to-kind
 ```
 
@@ -96,6 +96,6 @@ make deploy-to-kind
 To remove all resources even the running Redpanda cluster
 please run the following command:
 
-```
+```bash
 kubectl delete -k https://github.com/redpanda-data/redpanda/src/go/k8s/config/default
 ```

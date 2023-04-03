@@ -16,50 +16,61 @@ import (
 	"log"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/spf13/afero"
+	"github.com/moby/sys/mountinfo"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 )
 
 const (
-	hostNameEnvVar                        = "HOSTNAME"
-	svcFQDNEnvVar                         = "SERVICE_FQDN"
-	configSourceDirEnvVar                 = "CONFIG_SOURCE_DIR"
-	configDestinationEnvVar               = "CONFIG_DESTINATION"
-	redpandaRPCPortEnvVar                 = "REDPANDA_RPC_PORT"
-	nodeNameEnvVar                        = "NODE_NAME"
-	externalConnectivityEnvVar            = "EXTERNAL_CONNECTIVITY"
-	externalConnectivitySubDomainEnvVar   = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
-	externalConnectivityAddressTypeEnvVar = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
-	hostPortEnvVar                        = "HOST_PORT"
-	proxyHostPortEnvVar                   = "PROXY_HOST_PORT"
-	skipClusterSeedInitEnvVar             = "SKIP_CLUSTER_SEED_INIT"
+	configDestinationEnvVar                              = "CONFIG_DESTINATION"
+	configSourceDirEnvVar                                = "CONFIG_SOURCE_DIR"
+	externalConnectivityAddressTypeEnvVar                = "EXTERNAL_CONNECTIVITY_ADDRESS_TYPE"
+	externalConnectivityEnvVar                           = "EXTERNAL_CONNECTIVITY"
+	externalConnectivityKafkaEndpointTemplateEnvVar      = "EXTERNAL_CONNECTIVITY_KAFKA_ENDPOINT_TEMPLATE"
+	externalConnectivityPandaProxyEndpointTemplateEnvVar = "EXTERNAL_CONNECTIVITY_PANDA_PROXY_ENDPOINT_TEMPLATE"
+	externalConnectivitySubDomainEnvVar                  = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
+	hostIPEnvVar                                         = "HOST_IP_ADDRESS"
+	hostNameEnvVar                                       = "HOSTNAME"
+	hostPortEnvVar                                       = "HOST_PORT"
+	nodeNameEnvVar                                       = "NODE_NAME"
+	proxyHostPortEnvVar                                  = "PROXY_HOST_PORT"
+	rackAwarenessEnvVar                                  = "RACK_AWARENESS"
+	validateMountedVolumeEnvVar                          = "VALIDATE_MOUNTED_VOLUME"
+	redpandaRPCPortEnvVar                                = "REDPANDA_RPC_PORT"
+	svcFQDNEnvVar                                        = "SERVICE_FQDN"
 )
 
 type brokerID int
 
 type configuratorConfig struct {
-	hostName                        string
-	svcFQDN                         string
-	configSourceDir                 string
-	configDestination               string
-	nodeName                        string
-	subdomain                       string
-	externalConnectivity            bool
-	externalConnectivityAddressType corev1.NodeAddressType
-	redpandaRPCPort                 int
-	hostPort                        int
-	proxyHostPort                   int
-	skipClusterSeedInit             bool
+	configDestination                              string
+	configSourceDir                                string
+	externalConnectivity                           bool
+	externalConnectivityAddressType                corev1.NodeAddressType
+	externalConnectivityKafkaEndpointTemplate      string
+	externalConnectivityPandaProxyEndpointTemplate string
+	hostIP                                         string
+	hostName                                       string
+	hostPort                                       int
+	nodeName                                       string
+	proxyHostPort                                  int
+	rackAwareness                                  bool
+	validateMountedVolume                          bool
+	redpandaRPCPort                                int
+	subdomain                                      string
+	svcFQDN                                        string
 }
 
 func (c *configuratorConfig) String() string {
@@ -74,7 +85,9 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivityAddressType: %s\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n"+
-		"proxyHostPort: %d\n",
+		"proxyHostPort: %d\n"+
+		"rackAwareness: %t\n"+
+		"validateMountedVolume: %t\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -85,7 +98,9 @@ func (c *configuratorConfig) String() string {
 		c.externalConnectivityAddressType,
 		c.redpandaRPCPort,
 		c.hostPort,
-		c.proxyHostPort)
+		c.proxyHostPort,
+		c.rackAwareness,
+		c.validateMountedVolume)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -100,11 +115,20 @@ func main() {
 
 	log.Print(c.String())
 
-	fs := afero.NewOsFs()
-	mgr := config.NewManager(fs)
-	cfg, err := mgr.Read(path.Join(c.configSourceDir, "redpanda.yaml"))
+	p := path.Join(c.configSourceDir, "redpanda.yaml")
+	cf, err := os.ReadFile(p)
 	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file: %w", err))
+		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file, %q: %w", p, err))
+	}
+	cfg := &config.Config{}
+	err = yaml.Unmarshal(cf, cfg)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to parse the redpanda configuration file, %q: %w", p, err))
+	}
+
+	err = validateMountedVolume(cfg, c.validateMountedVolume)
+	if err != nil {
+		log.Fatalf("%s", fmt.Errorf("unable to pass validation for the mounted volume: %w", err))
 	}
 
 	kafkaAPIPort, err := getInternalKafkaAPIPort(cfg)
@@ -131,12 +155,29 @@ func main() {
 		}
 	}
 
-	cfg.Redpanda.Id = int(hostIndex)
+	// New bootstrap with v22.3, if redpanda.empty_seed_starts_cluster is false redpanda automatically
+	// generated IDs and forms clusters using the full set of nodes.
+	if cfg.Redpanda.EmptySeedStartsCluster != nil && !*cfg.Redpanda.EmptySeedStartsCluster {
+		cfg.Redpanda.ID = nil
+	} else {
+		cfg.Redpanda.ID = new(int)
+		*cfg.Redpanda.ID = int(hostIndex)
 
-	// Unless the cluster is configured to skip this phase, the first Redpanda node
-	// needs to have seed servers cleared in order to form raft group 0.
-	if !c.skipClusterSeedInit && hostIndex == 0 {
-		cfg.Redpanda.SeedServers = []config.SeedServer{}
+		// In case of a single seed server, the list should contain the current node itself.
+		// Normally the cluster is able to recognize it's talking to itself, except when the cluster is
+		// configured to use mutual TLS on the Kafka API (see Helm test).
+		// So, we clear the list of seeds to help Redpanda.
+		if len(cfg.Redpanda.SeedServers) == 1 {
+			cfg.Redpanda.SeedServers = []config.SeedServer{}
+		}
+	}
+
+	if c.rackAwareness {
+		zone, zoneID, errZone := getZoneLabels(c.nodeName)
+		if errZone != nil {
+			log.Fatalf("%s", fmt.Errorf("unable to retrieve zone labels: %w", errZone))
+		}
+		populateRack(cfg, zone, zoneID)
 	}
 
 	cfgBytes, err := yaml.Marshal(cfg)
@@ -151,15 +192,89 @@ func main() {
 	log.Printf("Configuration saved to: %s", c.configDestination)
 }
 
-var errInternalPortMissing = errors.New("port configration is missing internal port")
+func validateMountedVolume(cfg *config.Config, validate bool) error {
+	if !validate {
+		return nil
+	}
+	dir, err := os.Open(cfg.Redpanda.Directory)
+	if err != nil {
+		return fmt.Errorf("unable to open Redpanda directory (%s): %w", cfg.Redpanda.Directory, err)
+	}
+	defer func() {
+		if errClose := dir.Close(); errClose != nil {
+			log.Printf("Error closing file: %s, %s\n", cfg.Redpanda.Directory, errClose)
+		}
+	}()
+
+	stat, err := dir.Stat()
+	if err != nil {
+		return fmt.Errorf("unable to stat the dir: %s: %w", cfg.Redpanda.Directory, err)
+	}
+
+	if !stat.IsDir() {
+		return fmt.Errorf("%s is not a directory", cfg.Redpanda.Directory) //nolint:goerr113 // Error will not be validated, but rather returned to the end user of configurator
+	}
+
+	info, err := mountinfo.GetMounts(mountinfo.FSTypeFilter("xfs"))
+	if err != nil {
+		return fmt.Errorf("%s must have an xfs formatted filesystem. unable to find xfs file system in /proc/self/mountinfo: %w", cfg.Redpanda.Directory, err)
+	}
+
+	if len(info) == 0 {
+		return fmt.Errorf("%s must have an xfs formatted filesystem. returned mount info (/proc/self/mountinfo) does not have any xfs file system", cfg.Redpanda.Directory) //nolint:goerr113 // Error will not be validated, but rather returned to the end user of configurator
+	}
+
+	found := false
+	for _, fs := range info {
+		if fs.Mountpoint == cfg.Redpanda.Directory {
+			found = true
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("returned XFS mount info list (/proc/self/mountinfo) does not have Redpanda directory (%s)", cfg.Redpanda.Directory) //nolint:goerr113 // Error will not be validated, but rather returned to the end user of configurator
+	}
+
+	file := filepath.Join(cfg.Redpanda.Directory, "testing.file")
+	err = os.WriteFile(file, []byte("test-content"), 0o600)
+	if err != nil {
+		return fmt.Errorf("unable to write to test file (%s): %w", file, err)
+	}
+
+	err = os.Remove(file)
+	if err != nil {
+		return fmt.Errorf("unable to remove test file (%s): %w", file, err)
+	}
+
+	return nil
+}
+
+var errInternalPortMissing = errors.New("port configuration is missing internal port")
+
+func getZoneLabels(nodeName string) (zone, zoneID string, err error) {
+	node, err := getNode(nodeName)
+	if err != nil {
+		return "", "", fmt.Errorf("unable to retrieve node: %w", err)
+	}
+	zone = node.Labels["topology.kubernetes.io/zone"]
+	zoneID = node.Labels["topology.cloud.redpanda.com/zone-id"]
+	return zone, zoneID, nil
+}
+
+func populateRack(cfg *config.Config, zone, zoneID string) {
+	cfg.Redpanda.Rack = zoneID
+	if zoneID == "" {
+		cfg.Redpanda.Rack = zone
+	}
+}
 
 func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
-	for _, l := range cfg.Redpanda.KafkaApi {
+	for _, l := range cfg.Redpanda.KafkaAPI {
 		if l.Name == "kafka" {
 			return l.Port, nil
 		}
 	}
-	return 0, fmt.Errorf("%w %v", errInternalPortMissing, cfg.Redpanda.KafkaApi)
+	return 0, fmt.Errorf("%w %v", errInternalPortMissing, cfg.Redpanda.KafkaAPI)
 }
 
 func getInternalProxyAPIPort(cfg *config.Config) int {
@@ -192,13 +307,11 @@ func getNode(nodeName string) (*corev1.Node, error) {
 func registerAdvertisedKafkaAPI(
 	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int,
 ) error {
-	cfg.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{
+	cfg.Redpanda.AdvertisedKafkaAPI = []config.NamedSocketAddress{
 		{
-			SocketAddress: config.SocketAddress{
-				Address: c.hostName + "." + c.svcFQDN,
-				Port:    kafkaAPIPort,
-			},
-			Name: "kafka",
+			Address: c.hostName + "." + c.svcFQDN,
+			Port:    kafkaAPIPort,
+			Name:    "kafka",
 		},
 	}
 
@@ -207,12 +320,16 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if len(c.subdomain) > 0 {
-		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.hostPort,
-			},
-			Name: "kafka-external",
+		data := utils.NewEndpointTemplateData(int(index), c.hostIP)
+		ep, err := utils.ComputeEndpoint(c.externalConnectivityKafkaEndpointTemplate, data)
+		if err != nil {
+			return err
+		}
+
+		cfg.Redpanda.AdvertisedKafkaAPI = append(cfg.Redpanda.AdvertisedKafkaAPI, config.NamedSocketAddress{
+			Address: fmt.Sprintf("%s.%s", ep, c.subdomain),
+			Port:    c.hostPort,
+			Name:    "kafka-external",
 		})
 		return nil
 	}
@@ -222,12 +339,10 @@ func registerAdvertisedKafkaAPI(
 		return fmt.Errorf("unable to retrieve node: %w", err)
 	}
 
-	cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
-		SocketAddress: config.SocketAddress{
-			Address: networking.GetPreferredAddress(node, c.externalConnectivityAddressType),
-			Port:    c.hostPort,
-		},
-		Name: "kafka-external",
+	cfg.Redpanda.AdvertisedKafkaAPI = append(cfg.Redpanda.AdvertisedKafkaAPI, config.NamedSocketAddress{
+		Address: networking.GetPreferredAddress(node, c.externalConnectivityAddressType),
+		Port:    c.hostPort,
+		Name:    "kafka-external",
 	})
 
 	return nil
@@ -238,11 +353,9 @@ func registerAdvertisedPandaproxyAPI(
 ) error {
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = []config.NamedSocketAddress{
 		{
-			SocketAddress: config.SocketAddress{
-				Address: c.hostName + "." + c.svcFQDN,
-				Port:    proxyAPIPort,
-			},
-			Name: "proxy",
+			Address: c.hostName + "." + c.svcFQDN,
+			Port:    proxyAPIPort,
+			Name:    "proxy",
 		},
 	}
 
@@ -252,12 +365,16 @@ func registerAdvertisedPandaproxyAPI(
 
 	// Pandaproxy uses the Kafka API subdomain.
 	if len(c.subdomain) > 0 {
+		data := utils.NewEndpointTemplateData(int(index), c.hostIP)
+		ep, err := utils.ComputeEndpoint(c.externalConnectivityPandaProxyEndpointTemplate, data)
+		if err != nil {
+			return err
+		}
+
 		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
-				Port:    c.proxyHostPort,
-			},
-			Name: "proxy-external",
+			Address: fmt.Sprintf("%s.%s", ep, c.subdomain),
+			Port:    c.proxyHostPort,
+			Name:    "proxy-external",
 		})
 		return nil
 	}
@@ -268,11 +385,9 @@ func registerAdvertisedPandaproxyAPI(
 	}
 
 	cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
-		SocketAddress: config.SocketAddress{
-			Address: getExternalIP(node),
-			Port:    c.proxyHostPort,
-		},
-		Name: "proxy-external",
+		Address: getExternalIP(node),
+		Port:    c.proxyHostPort,
+		Name:    "proxy-external",
 	})
 
 	return nil
@@ -290,7 +405,7 @@ func getExternalIP(node *corev1.Node) string {
 	return ""
 }
 
-// nolint:funlen // this lists all envs
+//nolint:funlen // envs are many
 func checkEnvVars() (configuratorConfig, error) {
 	var result error
 	var extCon string
@@ -339,6 +454,18 @@ func checkEnvVars() (configuratorConfig, error) {
 			value: &hostPort,
 			name:  hostPortEnvVar,
 		},
+		{
+			value: &c.externalConnectivityKafkaEndpointTemplate,
+			name:  externalConnectivityKafkaEndpointTemplateEnvVar,
+		},
+		{
+			value: &c.externalConnectivityPandaProxyEndpointTemplate,
+			name:  externalConnectivityPandaProxyEndpointTemplateEnvVar,
+		},
+		{
+			value: &c.hostIP,
+			name:  hostIPEnvVar,
+		},
 	}
 	for _, envVar := range envVarList {
 		v, exist := os.LookupEnv(envVar.name)
@@ -355,6 +482,24 @@ func checkEnvVars() (configuratorConfig, error) {
 
 	var err error
 	c.externalConnectivity, err = strconv.ParseBool(extCon)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	rackAwareness, exist := os.LookupEnv(rackAwarenessEnvVar)
+	if !exist {
+		result = multierror.Append(result, fmt.Errorf("%s %w", rackAwarenessEnvVar, errorMissingEnvironmentVariable))
+	}
+	c.rackAwareness, err = strconv.ParseBool(rackAwareness)
+	if err != nil {
+		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
+	}
+
+	validateMountedVolume, exist := os.LookupEnv(validateMountedVolumeEnvVar)
+	if !exist {
+		result = multierror.Append(result, fmt.Errorf("%s %w", validateMountedVolumeEnvVar, errorMissingEnvironmentVariable))
+	}
+	c.validateMountedVolume, err = strconv.ParseBool(validateMountedVolume)
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to parse bool: %w", err))
 	}
@@ -381,15 +526,6 @@ func checkEnvVars() (configuratorConfig, error) {
 		c.proxyHostPort, err = strconv.Atoi(proxyHostPort)
 		if err != nil {
 			result = multierror.Append(result, fmt.Errorf("unable to convert proxy host port from string to int: %w", err))
-		}
-	}
-
-	// Existing cluster env var is optional
-	skipInit, exist := os.LookupEnv(skipClusterSeedInitEnvVar)
-	if exist && skipInit != "" {
-		c.skipClusterSeedInit, err = strconv.ParseBool(skipInit)
-		if err != nil {
-			result = multierror.Append(result, fmt.Errorf("unable to convert the skip cluster seed init flag (%q) from string to bool: %w", skipInit, err))
 		}
 	}
 

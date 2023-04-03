@@ -14,13 +14,14 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
 const (
@@ -28,6 +29,8 @@ const (
 	ScramPandaproxyUsername = "pandaproxy_client"
 	// ScramSchemaRegistryUsername is the username for schema registry
 	ScramSchemaRegistryUsername = "schemaregistry_client"
+	// ScramConsoleUsername is the username for console
+	ScramConsoleUsername = "console_client"
 
 	// PandaProxySuffix is the suffix for the kubernetes secret
 	// where sasl credentials (username and password) for panda
@@ -37,6 +40,10 @@ const (
 	// where sasl credentials (username and password) for schema
 	// registry client is held
 	SchemaRegistrySuffix = "schema-registry-sasl"
+	// ConsoleSuffix is the suffix for the kubernetes secret
+	// where sasl credentials (username and password) for
+	// console client is held
+	ConsoleSuffix = "console-sasl"
 )
 
 var _ Resource = &SuperUsersResource{}
@@ -45,28 +52,29 @@ var _ Resource = &SuperUsersResource{}
 // focusing on the super users for Schema Registry and Panda proxy
 type SuperUsersResource struct {
 	k8sclient.Client
-	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
-	username     string
-	suffix       string
-	logger       logr.Logger
+	scheme   *runtime.Scheme
+	object   metav1.Object
+	username string
+	suffix   string
+	logger   logr.Logger
 }
 
 // NewSuperUsers creates SuperUsersResource that managed super users
 // for Schema Registry and Panda proxy
 func NewSuperUsers(
 	client k8sclient.Client,
-	pandaCluster *redpandav1alpha1.Cluster,
+	object metav1.Object,
 	scheme *runtime.Scheme,
 	username string,
 	suffix string,
 	logger logr.Logger,
 ) *SuperUsersResource {
+	prefixedUsername := redpandav1alpha1.SuperUsersPrefix + username
 	return &SuperUsersResource{
 		client,
 		scheme,
-		pandaCluster,
-		username,
+		object,
+		prefixedUsername,
 		suffix,
 		logger.WithValues(
 			"Kind", ingressKind(),
@@ -84,7 +92,14 @@ func (r *SuperUsersResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
-	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if !created && redpandav1alpha1.SuperUsersPrefix != "" {
+		r.logger.V(debugLogLevel).Info(
+			"Ignoring --superusers-prefix because SuperUser Secret is already created",
+			"prefix", redpandav1alpha1.SuperUsersPrefix,
+			"superUserSecret", r.Key(),
+		)
+	}
 	return err
 }
 
@@ -110,7 +125,7 @@ func (r *SuperUsersResource) obj() (k8sclient.Object, error) {
 		},
 	}
 
-	err = controllerutil.SetControllerReference(r.pandaCluster, obj, r.scheme)
+	err = controllerutil.SetControllerReference(r.object, obj, r.scheme)
 	if err != nil {
 		return nil, err
 	}
@@ -120,5 +135,10 @@ func (r *SuperUsersResource) obj() (k8sclient.Object, error) {
 
 // Key returns namespace/name object that is used to identify object.
 func (r *SuperUsersResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: resourceNameTrim(r.pandaCluster.Name, r.suffix), Namespace: r.pandaCluster.Namespace}
+	return types.NamespacedName{Name: resourceNameTrim(r.object.GetName(), r.suffix), Namespace: r.object.GetNamespace()}
+}
+
+// GetUsername returns username used for Kafka SASL config that has prefix based on --superusers-prefix flag
+func (r *SuperUsersResource) GetUsername() string {
+	return r.username
 }

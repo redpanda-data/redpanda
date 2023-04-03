@@ -27,6 +27,26 @@ webhooks:
     resources:
     - clusters
   sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-redpanda-vectorized-io-v1alpha1-console
+  failurePolicy: Fail
+  name: mconsole.kb.io
+  rules:
+  - apiGroups:
+    - redpanda.vectorized.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - consoles
+  sideEffects: None
 
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -55,4 +75,24 @@ webhooks:
     - UPDATE
     resources:
     - clusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-redpanda-vectorized-io-v1alpha1-console
+  failurePolicy: Fail
+  name: vconsole.kb.io
+  rules:
+  - apiGroups:
+    - redpanda.vectorized.io
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - consoles
   sideEffects: None

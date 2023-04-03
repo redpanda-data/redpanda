@@ -5,7 +5,7 @@ metadata:
 spec:
   image: "localhost/redpanda"
   version: "dev"
-  replicas: 1
+  replicas: 2
   resources:
     requests:
       cpu: 100m
@@ -22,7 +22,6 @@ spec:
     - port: 9644
       tls:
         enabled: true
-        requireClientAuth: true
     pandaproxyApi:
      - port: 8082
     developerMode: true

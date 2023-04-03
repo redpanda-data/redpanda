@@ -16,7 +16,7 @@ import (
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -53,8 +53,6 @@ func NewPDB(
 }
 
 // Ensure will create/update PDB resource based on configuration inside our CR.
-// For now we're creating v1beta1 version of PDB because v1 is available only
-// from k8s version 1.21+
 func (r *PDBResource) Ensure(ctx context.Context) error {
 	if r.pandaCluster.Spec.PodDisruptionBudget == nil || !r.pandaCluster.Spec.PodDisruptionBudget.Enabled {
 		return nil
@@ -68,7 +66,7 @@ func (r *PDBResource) Ensure(ctx context.Context) error {
 	if err != nil || created {
 		return err
 	}
-	var pdb policyv1beta1.PodDisruptionBudget
+	var pdb policyv1.PodDisruptionBudget
 	err = r.Get(ctx, r.Key(), &pdb)
 	if err != nil {
 		return fmt.Errorf("error while fetching Service resource: %w", err)
@@ -79,16 +77,16 @@ func (r *PDBResource) Ensure(ctx context.Context) error {
 
 func (r *PDBResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
-	obj := &policyv1beta1.PodDisruptionBudget{
+	obj := &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      r.Key().Name,
 			Namespace: r.Key().Namespace,
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "PodDisruptionBudget",
-			APIVersion: "policy/v1beta1",
+			APIVersion: "policy/v1",
 		},
-		Spec: policyv1beta1.PodDisruptionBudgetSpec{
+		Spec: policyv1.PodDisruptionBudgetSpec{
 			MinAvailable:   r.pandaCluster.Spec.PodDisruptionBudget.MinAvailable,
 			MaxUnavailable: r.pandaCluster.Spec.PodDisruptionBudget.MaxUnavailable,
 			Selector:       objLabels.AsAPISelector(),
@@ -109,6 +107,6 @@ func (r *PDBResource) Key() types.NamespacedName {
 }
 
 func pdbKind() string {
-	var obj policyv1beta1.PodDisruptionBudget
+	var obj policyv1.PodDisruptionBudget
 	return obj.Kind
 }

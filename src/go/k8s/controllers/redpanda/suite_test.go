@@ -10,53 +10,53 @@
 package redpanda_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"net/http"
 	"path/filepath"
-	"sort"
-	"sync"
 	"testing"
 	"time"
 
-	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
+	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
-	"sigs.k8s.io/controller-runtime/pkg/envtest/printer"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 )
 
 // These tests use Ginkgo (BDD-style Go testing framework). Refer to
 // http://onsi.github.io/ginkgo/ to learn more about Ginkgo.
 
 var (
-	k8sClient           client.Client
-	testEnv             *envtest.Environment
-	cfg                 *rest.Config
-	testAdminAPI        *mockAdminAPI
-	testAdminAPIFactory adminutils.AdminAPIClientFactory
+	k8sClient             client.Client
+	testEnv               *envtest.Environment
+	cfg                   *rest.Config
+	testAdminAPI          *adminutils.MockAdminAPI
+	testAdminAPIFactory   adminutils.AdminAPIClientFactory
+	testStore             *consolepkg.Store
+	testKafkaAdmin        *mockKafkaAdmin
+	testKafkaAdminFactory consolepkg.KafkaAdminClientFactory
+
+	ctx              context.Context
+	controllerCancel context.CancelFunc
 )
 
 func TestAPIs(t *testing.T) {
 	RegisterFailHandler(Fail)
 
-	RunSpecsWithDefaultAndCustomReporters(t,
-		"Controller Suite",
-		[]Reporter{printer.NewlineReporter{}})
+	RunSpecs(t, "Controller Suite")
 }
 
 var _ = BeforeSuite(func(done Done) {
@@ -85,24 +85,39 @@ var _ = BeforeSuite(func(done Done) {
 		Scheme: scheme.Scheme,
 	})
 	Expect(err).ToNot(HaveOccurred())
+	ctx = ctrl.SetupSignalHandler()
+	ctx, controllerCancel = context.WithCancel(ctx)
 
-	testAdminAPI = &mockAdminAPI{}
+	testAdminAPI = &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
 	testAdminAPIFactory = func(
 		_ context.Context,
 		_ client.Reader,
 		_ *redpandav1alpha1.Cluster,
 		_ string,
-		_ client.ObjectKey,
-		_ client.ObjectKey,
+		_ types.AdminTLSConfigProvider,
+		ordinals ...int32,
 	) (adminutils.AdminAPIClient, error) {
+		if len(ordinals) == 1 {
+			return &adminutils.ScopedMockAdminAPI{
+				MockAdminAPI: testAdminAPI,
+				Ordinal:      ordinals[0],
+			}, nil
+		}
 		return testAdminAPI, nil
 	}
 
+	testStore = consolepkg.NewStore(k8sManager.GetClient(), k8sManager.GetScheme())
+	testKafkaAdmin = &mockKafkaAdmin{}
+	testKafkaAdminFactory = func(context.Context, client.Client, *redpandav1alpha1.Cluster, *consolepkg.Store) (consolepkg.KafkaAdminClient, error) {
+		return testKafkaAdmin, nil
+	}
+
 	err = (&redpandacontrollers.ClusterReconciler{
-		Client:                k8sManager.GetClient(),
-		Log:                   ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
-		Scheme:                k8sManager.GetScheme(),
-		AdminAPIClientFactory: testAdminAPIFactory,
+		Client:                   k8sManager.GetClient(),
+		Log:                      ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Scheme:                   k8sManager.GetScheme(),
+		AdminAPIClientFactory:    testAdminAPIFactory,
+		DecommissionWaitInterval: 100 * time.Millisecond,
 	}).WithClusterDomain("cluster.local").WithConfiguratorSettings(resources.ConfiguratorSettings{
 		ConfiguratorBaseImage: "vectorized/configurator",
 		ConfiguratorTag:       "latest",
@@ -120,10 +135,22 @@ var _ = BeforeSuite(func(done Done) {
 	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	err = (&redpandacontrollers.ConsoleReconciler{
+		Client:                  k8sManager.GetClient(),
+		Scheme:                  k8sManager.GetScheme(),
+		Log:                     ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Console"),
+		AdminAPIClientFactory:   testAdminAPIFactory,
+		Store:                   testStore,
+		EventRecorder:           k8sManager.GetEventRecorderFor("Console"),
+		KafkaAdminClientFactory: testKafkaAdminFactory,
+	}).WithClusterDomain("cluster.local").SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	go func() {
-		err = k8sManager.Start(ctrl.SetupSignalHandler())
+		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred())
 	}()
+	Expect(k8sManager.GetCache().WaitForCacheSync(context.Background())).To(BeTrue())
 
 	k8sClient = k8sManager.GetClient()
 	Expect(k8sClient).ToNot(BeNil())
@@ -138,261 +165,22 @@ var _ = BeforeEach(func() {
 	testAdminAPI.RegisterPropertySchema("auto_create_topics_enabled", admin.ConfigPropertyMetadata{NeedsRestart: false})
 	testAdminAPI.RegisterPropertySchema("cloud_storage_segment_max_upload_interval_sec", admin.ConfigPropertyMetadata{NeedsRestart: true})
 	testAdminAPI.RegisterPropertySchema("log_segment_size", admin.ConfigPropertyMetadata{NeedsRestart: true})
+	testAdminAPI.RegisterPropertySchema("enable_rack_awareness", admin.ConfigPropertyMetadata{NeedsRestart: false})
 
 	// By default we set the following properties and they'll be loaded by redpanda from the .bootstrap.yaml
 	// So we initialize the test admin API with those
 	testAdminAPI.SetProperty("auto_create_topics_enabled", false)
 	testAdminAPI.SetProperty("cloud_storage_segment_max_upload_interval_sec", 1800)
 	testAdminAPI.SetProperty("log_segment_size", 536870912)
+	testAdminAPI.SetProperty("enable_rack_awareness", true)
 })
 
 var _ = AfterSuite(func() {
 	By("tearing down the test environment")
+	// kube-apiserver hanging during cleanup
+	// stopping the controllers prevents the hang
+	controllerCancel()
 	gexec.KillAndWait(5 * time.Second)
 	err := testEnv.Stop()
 	Expect(err).NotTo(HaveOccurred())
 })
-
-type mockAdminAPI struct {
-	config           admin.Config
-	schema           admin.ConfigSchema
-	patches          []configuration.CentralConfigurationPatch
-	unavailable      bool
-	invalid          []string
-	unknown          []string
-	directValidation bool
-	monitor          sync.Mutex
-}
-
-var _ adminutils.AdminAPIClient = &mockAdminAPI{}
-
-type unavailableError struct{}
-
-func (*unavailableError) Error() string {
-	return "unavailable"
-}
-
-func (m *mockAdminAPI) Config(bool) (admin.Config, error) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	if m.unavailable {
-		return admin.Config{}, &unavailableError{}
-	}
-	var res admin.Config
-	makeCopy(m.config, &res)
-	return res, nil
-}
-
-func (m *mockAdminAPI) ClusterConfigStatus(
-	_ bool,
-) (admin.ConfigStatusResponse, error) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	if m.unavailable {
-		return admin.ConfigStatusResponse{}, &unavailableError{}
-	}
-	node := admin.ConfigStatus{
-		Invalid: append([]string{}, m.invalid...),
-		Unknown: append([]string{}, m.unknown...),
-	}
-	return []admin.ConfigStatus{node}, nil
-}
-
-func (m *mockAdminAPI) ClusterConfigSchema() (admin.ConfigSchema, error) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	if m.unavailable {
-		return admin.ConfigSchema{}, &unavailableError{}
-	}
-	var res admin.ConfigSchema
-	makeCopy(m.schema, &res)
-	return res, nil
-}
-
-func (m *mockAdminAPI) PatchClusterConfig(
-	upsert map[string]interface{}, remove []string,
-) (admin.ClusterConfigWriteResult, error) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	if m.unavailable {
-		return admin.ClusterConfigWriteResult{}, &unavailableError{}
-	}
-	m.patches = append(m.patches, configuration.CentralConfigurationPatch{
-		Upsert: upsert,
-		Remove: remove,
-	})
-	var newInvalid []string
-	var newUnknown []string
-	for k := range upsert {
-		if meta, ok := m.schema[k]; !ok {
-			newUnknown = append(newUnknown, k)
-		} else if meta.Description == "invalid" {
-			newInvalid = append(newInvalid, k)
-		}
-	}
-	invalidRequest := len(newInvalid)+len(newUnknown) > 0
-	if m.directValidation && invalidRequest {
-		return admin.ClusterConfigWriteResult{}, &admin.HttpError{
-			Method: http.MethodPut,
-			Url:    "/v1/cluster_config",
-			Response: &http.Response{
-				Status:     "Bad Request",
-				StatusCode: 400,
-			},
-			Body: []byte("Mock bad request message"),
-		}
-	}
-	if invalidRequest {
-		m.invalid = addAsSet(m.invalid, newInvalid...)
-		m.unknown = addAsSet(m.unknown, newUnknown...)
-		return admin.ClusterConfigWriteResult{}, nil
-	}
-	if m.config == nil {
-		m.config = make(map[string]interface{})
-	}
-	for k, v := range upsert {
-		m.config[k] = v
-	}
-	for _, k := range remove {
-		delete(m.config, k)
-		for i := range m.invalid {
-			if m.invalid[i] == k {
-				m.invalid = append(m.invalid[0:i], m.invalid[i+1:]...)
-			}
-		}
-		for i := range m.unknown {
-			if m.unknown[i] == k {
-				m.unknown = append(m.unknown[0:i], m.unknown[i+1:]...)
-			}
-		}
-	}
-	return admin.ClusterConfigWriteResult{}, nil
-}
-
-func (m *mockAdminAPI) CreateUser(_, _, _ string) error {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	if m.unavailable {
-		return &unavailableError{}
-	}
-	return nil
-}
-
-func (m *mockAdminAPI) Clear() {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	m.config = nil
-	m.schema = nil
-	m.patches = nil
-	m.unavailable = false
-	m.directValidation = false
-}
-
-func (m *mockAdminAPI) GetFeatures() (admin.FeaturesResponse, error) {
-	return admin.FeaturesResponse{
-		ClusterVersion: 0,
-		Features: []admin.Feature{
-			{
-				Name:      "central_config",
-				State:     admin.FeatureStateActive,
-				WasActive: true,
-			},
-		},
-	}, nil
-}
-
-// nolint:gocritic // It's test API
-func (m *mockAdminAPI) RegisterPropertySchema(
-	name string, metadata admin.ConfigPropertyMetadata,
-) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	if m.schema == nil {
-		m.schema = make(map[string]admin.ConfigPropertyMetadata)
-	}
-	m.schema[name] = metadata
-}
-
-func (m *mockAdminAPI) PropertyGetter(name string) func() interface{} {
-	return func() interface{} {
-		m.monitor.Lock()
-		defer m.monitor.Unlock()
-		return m.config[name]
-	}
-}
-
-func (m *mockAdminAPI) ConfigGetter() func() admin.Config {
-	return func() admin.Config {
-		m.monitor.Lock()
-		defer m.monitor.Unlock()
-		var res admin.Config
-		makeCopy(m.config, &res)
-		return res
-	}
-}
-
-func (m *mockAdminAPI) PatchesGetter() func() []configuration.CentralConfigurationPatch {
-	return func() []configuration.CentralConfigurationPatch {
-		m.monitor.Lock()
-		defer m.monitor.Unlock()
-		var res []configuration.CentralConfigurationPatch
-		makeCopy(m.patches, &res)
-		return res
-	}
-}
-
-func (m *mockAdminAPI) NumPatchesGetter() func() int {
-	return func() int {
-		return len(m.PatchesGetter()())
-	}
-}
-
-func (m *mockAdminAPI) SetProperty(key string, value interface{}) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	if m.config == nil {
-		m.config = make(map[string]interface{})
-	}
-	m.config[key] = value
-}
-
-func (m *mockAdminAPI) SetUnavailable(unavailable bool) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	m.unavailable = unavailable
-}
-
-func (m *mockAdminAPI) SetDirectValidationEnabled(directValidation bool) {
-	m.monitor.Lock()
-	defer m.monitor.Unlock()
-	m.directValidation = directValidation
-}
-
-func makeCopy(input, output interface{}) {
-	ser, err := json.Marshal(input)
-	if err != nil {
-		panic(err)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(ser))
-	decoder.UseNumber()
-	err = decoder.Decode(output)
-	if err != nil {
-		panic(err)
-	}
-}
-
-func addAsSet(sliceSet []string, vals ...string) []string {
-	asSet := make(map[string]bool, len(sliceSet)+len(vals))
-	for _, k := range sliceSet {
-		asSet[k] = true
-	}
-	for _, v := range vals {
-		asSet[v] = true
-	}
-	lst := make([]string, 0, len(asSet))
-	for k := range asSet {
-		lst = append(lst, k)
-	}
-	sort.Strings(lst)
-	return lst
-}

@@ -11,10 +11,14 @@ package resources_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/stretchr/testify/assert"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,17 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// nolint:funlen // Test function can have more than 100 lines
+//nolint:funlen // Test function can have more than 100 lines
 func TestEnsure(t *testing.T) {
 	cluster := pandaCluster()
 	stsResource := stsFromCluster(cluster)
-
-	var newReplicas int32 = 3333
-
-	replicasUpdatedCluster := cluster.DeepCopy()
-	replicasUpdatedCluster.Spec.Replicas = &newReplicas
-	replicasUpdatedSts := stsFromCluster(cluster).DeepCopy()
-	replicasUpdatedSts.Spec.Replicas = &newReplicas
 
 	newResources := corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse("1111"),
@@ -64,35 +61,30 @@ func TestEnsure(t *testing.T) {
 	noSidecarSts := stsFromCluster(noSidecarCluster)
 
 	withoutShadowIndexCacheDirectory := cluster.DeepCopy()
-	withoutShadowIndexCacheDirectory.Spec.Version = "dev"
+	withoutShadowIndexCacheDirectory.Spec.Version = "v21.10.1"
 	stsWithoutSecondPersistentVolume := stsFromCluster(withoutShadowIndexCacheDirectory)
 	// Remove shadow-indexing-cache from the volume claim templates
 	stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates = stsWithoutSecondPersistentVolume.Spec.VolumeClaimTemplates[:1]
 
-	skipInitCluster := cluster.DeepCopy()
-	if skipInitCluster.Annotations == nil {
-		skipInitCluster.Annotations = make(map[string]string)
-	}
-	skipInitCluster.Annotations["redpanda.vectorized.io/skip-cluster-seed-init"] = "true"
-	skipInitSts := stsFromCluster(skipInitCluster)
-	skipInitSts.Spec.Template.Spec.InitContainers[0].Env = append(skipInitSts.Spec.Template.Spec.InitContainers[0].Env, corev1.EnvVar{
-		Name:  "SKIP_CLUSTER_SEED_INIT",
-		Value: "true",
-	})
+	unhealthyRedpandaCluster := cluster.DeepCopy()
 
 	tests := []struct {
 		name           string
 		existingObject client.Object
 		pandaCluster   *redpandav1alpha1.Cluster
 		expectedObject *v1.StatefulSet
+		clusterHealth  bool
+		expectedError  error
 	}{
-		{"none existing", nil, cluster, stsResource},
-		{"update replicas", stsResource, replicasUpdatedCluster, replicasUpdatedSts},
-		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts},
-		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts},
-		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts},
-		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume},
-		{"skip seed init cluster", nil, skipInitCluster, skipInitSts},
+		{"none existing", nil, cluster, stsResource, true, nil},
+		{"update resources", stsResource, resourcesUpdatedCluster, resourcesUpdatedSts, true, nil},
+		{"update redpanda resources", stsResource, resourcesUpdatedRedpandaCluster, resourcesUpdatedSts, true, nil},
+		{"disabled sidecar", nil, noSidecarCluster, noSidecarSts, true, nil},
+		{"cluster without shadow index cache dir", stsResource, withoutShadowIndexCacheDirectory, stsWithoutSecondPersistentVolume, true, nil},
+		{"update none healthy cluster", stsResource, unhealthyRedpandaCluster, stsResource, false, &res.RequeueAfterError{
+			RequeueAfter: res.RequeueDuration,
+			Msg:          "wait for cluster to become healthy (cluster restarting)",
+		}},
 	}
 
 	for _, tt := range tests {
@@ -119,15 +111,8 @@ func TestEnsure(t *testing.T) {
 				"cluster.local",
 				"servicename",
 				types.NamespacedName{Name: "test", Namespace: "test"},
-				types.NamespacedName{},
-				types.NamespacedName{},
-				types.NamespacedName{},
-				types.NamespacedName{},
-				types.NamespacedName{},
-				types.NamespacedName{},
-				types.NamespacedName{},
-				types.NamespacedName{},
-				types.NamespacedName{},
+				TestStatefulsetTLSVolumeProvider{},
+				TestAdminTLSConfigProvider{},
 				"",
 				res.ConfiguratorSettings{
 					ConfiguratorBaseImage: "vectorized/configurator",
@@ -135,10 +120,22 @@ func TestEnsure(t *testing.T) {
 					ImagePullPolicy:       "Always",
 				},
 				func(ctx context.Context) (string, error) { return hash, nil },
-				ctrl.Log.WithName("test"))
+				func(ctx context.Context, k8sClient client.Reader, redpandaCluster *redpandav1alpha1.Cluster, fqdn string, adminTLSProvider resourcetypes.AdminTLSConfigProvider, ordinals ...int32) (adminutils.AdminAPIClient, error) {
+					health := tt.clusterHealth
+					adminAPI := &adminutils.MockAdminAPI{Log: ctrl.Log.WithName("testAdminAPI").WithName("mockAdminAPI")}
+					adminAPI.SetClusterHealth(health)
+					return adminAPI, nil
+				},
+				time.Second,
+				ctrl.Log.WithName("test"),
+				0)
 
 			err = sts.Ensure(context.Background())
-			assert.NoError(t, err, tt.name)
+			if tt.expectedError != nil && errors.Is(err, tt.expectedError) {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err, tt.name)
+			}
 
 			actual := &v1.StatefulSet{}
 			err = c.Get(context.Background(), sts.Key(), actual)
@@ -164,27 +161,8 @@ func TestEnsure(t *testing.T) {
 				actual.Spec.VolumeClaimTemplates[i].Labels = nil
 			}
 			assert.Equal(t, tt.expectedObject.Spec.VolumeClaimTemplates, actual.Spec.VolumeClaimTemplates)
-
-			assert.Equal(t, len(tt.expectedObject.Spec.Template.Spec.InitContainers), len(actual.Spec.Template.Spec.InitContainers))
-			for i := range tt.expectedObject.Spec.Template.Spec.InitContainers {
-				expEnv := envAsMap(tt.expectedObject.Spec.Template.Spec.InitContainers[i].Env)
-				actEnv := envAsMap(actual.Spec.Template.Spec.InitContainers[i].Env)
-				// assert that the subset of expected envs matches
-				for k, v := range expEnv {
-					assert.Equal(t, v, actEnv[k])
-				}
-			}
 		})
 	}
-}
-
-func envAsMap(envs []corev1.EnvVar) map[string]string {
-	m := make(map[string]string, len(envs))
-	for _, e := range envs {
-		// Ignoring value from for the tests
-		m[e.Name] = e.Value
-	}
-	return m
 }
 
 func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
@@ -292,8 +270,8 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 		},
 		Spec: redpandav1alpha1.ClusterSpec{
 			Image:    "image",
-			Version:  "v21.11.1",
-			Replicas: pointer.Int32Ptr(replicas),
+			Version:  "v22.3.0",
+			Replicas: pointer.Int32(replicas),
 			CloudStorage: redpandav1alpha1.CloudStorageConfig{
 				Enabled: true,
 				CacheStorage: &redpandav1alpha1.StorageSpec{
@@ -307,7 +285,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			},
 			Configuration: redpandav1alpha1.RedpandaConfig{
 				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
-				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}},
+				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123, AuthenticationMethod: "none"}},
 			},
 			Resources: redpandav1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{

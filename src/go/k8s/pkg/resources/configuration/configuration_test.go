@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
+	rpkcfg "github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,20 +48,20 @@ func TestFlatProperties(t *testing.T) {
 	err := config.SetAdditionalFlatProperties(map[string]string{"redpanda.a": "b", "node_uuid": "uuid"})
 	require.NoError(t, err)
 	assert.Equal(t, "b", config.ClusterConfiguration["a"])
-	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUuid)
+	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUUID)
 	assert.NotContains(t, config.NodeConfiguration.Redpanda.Other, "a")
 
 	config = configuration.GlobalConfiguration{Mode: configuration.GlobalConfigurationModeClassic}
 	err = config.SetAdditionalFlatProperties(map[string]string{"redpanda.a": "b", "node_uuid": "uuid"})
 	require.NoError(t, err)
-	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUuid)
+	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUUID)
 	assert.Equal(t, "b", config.NodeConfiguration.Redpanda.Other["a"])
 	assert.NotContains(t, config.ClusterConfiguration, "a")
 
 	config = configuration.GlobalConfiguration{Mode: configuration.GlobalConfigurationModeMixed}
 	err = config.SetAdditionalFlatProperties(map[string]string{"redpanda.a": "b", "node_uuid": "uuid"})
 	require.NoError(t, err)
-	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUuid)
+	assert.Equal(t, "uuid", config.NodeConfiguration.NodeUUID)
 	assert.Equal(t, "b", config.NodeConfiguration.Redpanda.Other["a"])
 	assert.Equal(t, "b", config.ClusterConfiguration["a"])
 }
@@ -109,17 +110,43 @@ func TestStringSliceProperties(t *testing.T) {
 		configuration.GlobalConfigurationModeMixed,
 	}
 	for i, mode := range tests {
-		t.Run(fmt.Sprintf("test property slices %d", i), func(t *testing.T) {
-			t.Parallel()
+		func(m configuration.GlobalConfigurationMode) bool {
+			return t.Run(fmt.Sprintf("test property slices %d", i), func(t *testing.T) {
+				t.Parallel()
 
-			config := configuration.GlobalConfiguration{Mode: mode}
-			assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "a"))
-			assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "b"))
-			assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "c"))
-			assert.Equal(t, []string{"a", "b", "c"}, config.GetAdditionalRedpandaProperty("superusers"))
+				config := configuration.GlobalConfiguration{Mode: m}
+				assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "a"))
+				assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "b"))
+				assert.NoError(t, config.AppendToAdditionalRedpandaProperty("superusers", "c"))
+				assert.Equal(t, []string{"a", "b", "c"}, config.GetAdditionalRedpandaProperty("superusers"))
 
-			config.SetAdditionalRedpandaProperty("superusers", "nonslice")
-			assert.Error(t, config.AppendToAdditionalRedpandaProperty("superusers", "value"))
-		})
+				config.SetAdditionalRedpandaProperty("superusers", "nonslice")
+				assert.Error(t, config.AppendToAdditionalRedpandaProperty("superusers", "value"))
+			})
+		}(mode)
 	}
+}
+
+func TestHash_FieldsWithNoHashChange(t *testing.T) {
+	cfg := configuration.For("v22.1.1-test")
+	cfg.NodeConfiguration.Redpanda.SeedServers = []rpkcfg.SeedServer{}
+	cfg.NodeConfiguration.PandaproxyClient = &rpkcfg.KafkaClient{Brokers: []rpkcfg.SocketAddress{}}
+	cfg.NodeConfiguration.SchemaRegistryClient = &rpkcfg.KafkaClient{Brokers: []rpkcfg.SocketAddress{}}
+	nodeConfHash, err := cfg.GetNodeConfigurationHash()
+	require.NoError(t, err)
+	allConfHash, err := cfg.GetFullConfigurationHash()
+	require.NoError(t, err)
+
+	cfg.NodeConfiguration.Redpanda.SeedServers = []rpkcfg.SeedServer{{Host: rpkcfg.SocketAddress{Address: "redpanda.com", Port: 9090}}}
+	cfg.NodeConfiguration.PandaproxyClient = &rpkcfg.KafkaClient{Brokers: []rpkcfg.SocketAddress{{Address: "redpanda.com", Port: 9091}}}
+	cfg.NodeConfiguration.SchemaRegistryClient = &rpkcfg.KafkaClient{Brokers: []rpkcfg.SocketAddress{{Address: "redpanda.com", Port: 9092}}}
+	nodeConfHashNew, err := cfg.GetNodeConfigurationHash()
+	require.NoError(t, err)
+	allConfHashNew, err := cfg.GetFullConfigurationHash()
+	require.NoError(t, err)
+
+	// seed servers, pandaproxy clients, and schema registry clients should not affect the
+	// hash, so rolling restarts do not take place, e.g., when scaling out/in a cluster.
+	require.Equal(t, allConfHash, allConfHashNew, "all conf")
+	require.Equal(t, nodeConfHash, nodeConfHashNew, "node conf")
 }

@@ -3,8 +3,8 @@ kind: Cluster
 metadata:
   name: centralized-configuration-upgrade
 spec:
-  image: "localhost/redpanda"
-  version: "dev"
+  image: "vectorized/redpanda"
+  version: "v22.2.8"
   replicas: 2
   resources:
     requests:

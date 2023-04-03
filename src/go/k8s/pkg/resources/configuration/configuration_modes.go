@@ -14,9 +14,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	"github.com/spf13/afero"
 )
 
 // GlobalConfigurationMode changes the behavior of the global configuration when reading/writing properties.
@@ -65,33 +62,20 @@ func (r globalConfigurationModeClassic) GetAdditionalRedpandaProperty(
 func (r globalConfigurationModeClassic) SetAdditionalFlatProperties(
 	targetConfig *GlobalConfiguration, props map[string]string,
 ) error {
-	// all properties are node properties in the classic setting
-	mgr := config.NewManager(afero.NewOsFs())
-	err := mgr.Merge(&targetConfig.NodeConfiguration)
-	if err != nil {
-		return fmt.Errorf("merging node configuration: %w", err)
-	}
-
 	// Add arbitrary parameters to configuration
 	for k, v := range props {
 		if builtInType(v) {
-			err = mgr.Set(k, v, "single")
+			err := targetConfig.NodeConfiguration.Set(k, v, "")
 			if err != nil {
 				return fmt.Errorf("setting built-in type: %w", err)
 			}
 		} else {
-			err = mgr.Set(k, v, "")
+			err := targetConfig.NodeConfiguration.Set(k, v, "")
 			if err != nil {
 				return fmt.Errorf("setting complex type: %w", err)
 			}
 		}
 	}
-
-	newRpCfg, err := mgr.Get()
-	if err != nil {
-		return fmt.Errorf("getting redpanda node configuration: %w", err)
-	}
-	targetConfig.NodeConfiguration = *newRpCfg
 	return nil
 }
 
@@ -181,7 +165,8 @@ func builtInType(value string) bool {
 }
 
 // isEmpty helps to keep the "omitempty" behavior on additional fields
-// nolint:exhaustive // just care about these types
+//
+//nolint:exhaustive // just care about these types
 func isEmpty(val interface{}) bool {
 	if val == nil {
 		return true

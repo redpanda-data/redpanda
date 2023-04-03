@@ -12,6 +12,10 @@ spec:
         name: configmap-dir
       - emptyDir: {}
         name: config-dir
+      - secret:
+          defaultMode: 365
+          secretName: update-cluster-lifecycle
+        name: hook-scripts-dir
       - name: tlscert
         secret:
           defaultMode: 420

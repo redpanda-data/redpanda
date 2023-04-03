@@ -1,0 +1,17 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Console
+metadata:
+  name: console
+  namespace: console-kafka-mtls
+spec:
+  server:
+    listenPort: 8080
+  schema:
+    enabled: false
+  clusterRef:
+    name: cluster
+    namespace: console-kafka-mtls
+  deployment:
+    image: vectorized/console:v2.1.1
+  connect:
+    enabled: false
