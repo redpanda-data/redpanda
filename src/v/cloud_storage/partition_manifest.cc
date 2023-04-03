@@ -540,7 +540,7 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
             // This branch should never be taken. It indicates that the
             // in-memory manifest may be is in some sort of inconsistent state.
             vlog(
-              cst_log.warn,
+              cst_log.error,
               "Previous start offset is not within segment in "
               "manifest for {}: previous_start_offset={}",
               _ntp,
