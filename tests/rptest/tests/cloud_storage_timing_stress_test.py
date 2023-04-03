@@ -209,7 +209,7 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
     message_size = 32 * 1024  # 32KiB
     log_segment_size = 4 * mib  # 4MiB
     produce_byte_rate_per_ntp = 8 * mib  # 8 MiB
-    target_runtime = 60  # seconds
+    target_runtime = 30 * 60  # seconds
     check_interval = 10  # seconds
     allow_runtime_overshoot_by = 2
 
