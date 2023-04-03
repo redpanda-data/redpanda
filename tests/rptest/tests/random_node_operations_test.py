@@ -109,6 +109,12 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.rate_limit = 1024 * 1024
             self.total_data = 50 * 1024 * 1024
 
+        # Tip off the end-of-test controller log validation that we will
+        # create a large number of records, scaling with partition count
+        # and operation count.
+        self.redpanda.set_expected_controller_records(
+            self.max_partitions * self.node_operations * 10)
+
         self.consumers_count = int(self.max_partitions / 4)
         self.msg_count = int(self.total_data / self.msg_size)
 

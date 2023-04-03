@@ -42,17 +42,25 @@ class NodesDecommissioningTest(EndToEndTest):
         return Admin(self.redpanda, retry_codes=[503, 504])
 
     def _create_topics(self, replication_factors=[1, 3]):
+        """
+        :return: total number of partitions in all topics
+        """
+        total_partitions = 0
         topics = []
         for i in range(10):
+            partitions = random.randint(1, 10)
             spec = TopicSpec(
-                partition_count=random.randint(1, 10),
+                partition_count=partitions,
                 replication_factor=random.choice(replication_factors))
             topics.append(spec)
+            total_partitions += partitions
 
         for spec in topics:
             self.client().create_topic(spec)
 
         self.topic = random.choice(topics).name
+
+        return total_partitions
 
     def _partitions_moving(self, node=None):
         reconfigurations = self.admin.list_reconfigurations(node=node)
@@ -653,7 +661,7 @@ class NodesDecommissioningTest(EndToEndTest):
     def test_multiple_decommissions(self):
         self._extra_node_conf = {"empty_seed_starts_cluster": False}
         self.start_redpanda(num_nodes=5, new_bootstrap=True)
-        self._create_topics()
+        total_partitions = self._create_topics()
 
         self.start_producer(1)
         self.start_consumer(1)
@@ -665,7 +673,12 @@ class NodesDecommissioningTest(EndToEndTest):
                     return n
             return None
 
-        for i in range(0, 2):
+        iteration_count = 2
+
+        self.redpanda.set_expected_controller_records(
+            10 * iteration_count * len(self.redpanda.nodes) * total_partitions)
+
+        for i in range(0, iteration_count):
             for b in self.redpanda.nodes:
                 id = self.redpanda.node_id(b, force_refresh=True)
                 self.logger.info(f"decommissioning node: {id}, iteration: {i}")
