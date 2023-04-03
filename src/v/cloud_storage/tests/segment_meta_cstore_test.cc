@@ -745,6 +745,12 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
 }
 
 void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
+    // failing seed:
+    // std::istringstream{"10263162"} >> random_generators::internal::gen;
+    BOOST_TEST_INFO(fmt::format(
+      "random_generators::internal::gen: [{}]",
+      random_generators::internal::gen));
+
     segment_meta_cstore store;
     auto manifest = generate_metadata(test_size);
     for (const auto& sm : manifest) {
