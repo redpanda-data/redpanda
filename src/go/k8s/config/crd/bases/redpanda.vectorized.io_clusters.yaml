@@ -752,6 +752,11 @@ spec:
               image:
                 description: Image is the fully qualified name of the Redpanda container
                 type: string
+              initialValidationForVolume:
+                description: 'When InitialValidationForVolume is enabled the mounted
+                  Redpanda data folder will be checked if: - it is dir - it has XFS
+                  file system - it can create test file and delete it'
+                type: boolean
               kafkaEnableAuthorization:
                 description: "Enable authorization for Kafka connections. Values are:
                   \n - `nil`: Ignored. Authorization is enabled with `enable_sasl:
