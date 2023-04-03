@@ -573,9 +573,17 @@ public:
         return materialize(std::move(it));
     }
 
+    void clear() {
+        // replace *this with an empty instance
+        auto replacement = column_store{};
+        auto current_fields = member_fields();
+        auto new_fields = replacement.member_fields();
+        std::swap(current_fields, new_fields);
+    }
     void prefix_truncate(int64_t bo) {
         auto lb = _base_offset.lower_bound(bo);
         if (lb == _base_offset.end()) {
+            clear();
             return;
         }
         auto ix = lb.index();
