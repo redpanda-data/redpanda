@@ -181,19 +181,19 @@ public:
     const model::ntp& get_ntp() const;
 
     // Get last offset
-    const model::offset get_last_offset() const;
+    model::offset get_last_offset() const;
 
     // Get the last inclusive Kafka offset
-    const std::optional<kafka::offset> get_last_kafka_offset() const;
+    std::optional<kafka::offset> get_last_kafka_offset() const;
 
     // Get the last exclusive Kafka offset
-    const std::optional<kafka::offset> get_next_kafka_offset() const;
+    std::optional<kafka::offset> get_next_kafka_offset() const;
 
     // Get insync offset of the archival_metadata_stm
     //
     // The offset is an offset of the last applied record with the
     // archival_metadata_stm command.
-    const model::offset get_insync_offset() const;
+    model::offset get_insync_offset() const;
 
     // Move insync offset forward
     // The method is supposed to be called by the archival_metadata_stm after
