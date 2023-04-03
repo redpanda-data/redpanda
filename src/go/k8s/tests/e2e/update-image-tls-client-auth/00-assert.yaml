@@ -70,7 +70,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
   - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/update-image-tls-client-auth/step-0"
-  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-tls-client-auth/step-0/pods.json"
+  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/update-image-tls-client-auth/step-0/pods.yaml"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-0 -- curl -sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https://up-img-0.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls-client-auth/step-0/brokers-from-pod-0.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-1 -- curl -sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https://up-img-1.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls-client-auth/step-0/brokers-from-pod-1.json"
   - command: /bin/bash -c "kubectl -n $NAMESPACE exec -c redpanda up-img-2 -- curl -sk --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key https://up-img-2.up-img.$NAMESPACE.svc.cluster.local.:9644/v1/brokers > ../../_e2e_artifacts/update-image-tls-client-auth/step-0/brokers-from-pod-2.json"

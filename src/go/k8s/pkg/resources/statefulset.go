@@ -442,6 +442,10 @@ func (r *StatefulSetResource) obj(
 									Name:  "RACK_AWARENESS",
 									Value: strconv.FormatBool(featuregates.RackAwareness(r.pandaCluster.Spec.Version)),
 								},
+								{
+									Name:  "VALIDATE_MOUNTED_VOLUME",
+									Value: strconv.FormatBool(r.pandaCluster.Spec.InitialValidationForVolume != nil && *r.pandaCluster.Spec.InitialValidationForVolume),
+								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser:  pointer.Int64(userID),
@@ -639,6 +643,17 @@ func setVolumes(ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster) {
 				MountPath: dataDirectory,
 			}
 			containers[i].VolumeMounts = append(containers[i].VolumeMounts, volMount)
+		}
+	}
+
+	initContainer := ss.Spec.Template.Spec.InitContainers
+	for i := range initContainer {
+		if initContainer[i].Name == configuratorContainerName {
+			volMount := corev1.VolumeMount{
+				Name:      datadirName,
+				MountPath: dataDirectory,
+			}
+			initContainer[i].VolumeMounts = append(initContainer[i].VolumeMounts, volMount)
 		}
 	}
 

@@ -1,0 +1,27 @@
+apiVersion: v1
+data:
+  archival-update-image-tls: WA==
+kind: Secret
+metadata:
+  creationTimestamp: null
+  name: archival-update-image-tls
+  namespace: default
+---
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: up-img
+spec:
+  version: "v22.2.10"
+  cloudStorage:
+    enabled: true
+    accessKey: XXX
+    secretKeyRef:
+      namespace: default
+      name: archival-update-image-tls
+    region: europe-west1
+    bucket: X
+    apiEndpoint: storage.googleapis.com
+    cacheStorage:
+      capacity: 1Gi
+      storageClassName: standard

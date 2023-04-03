@@ -15,7 +15,7 @@
 package v1alpha1
 
 import (
-	metav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	metav1 "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"k8s.io/api/core/v1"
 	apismetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -250,6 +250,11 @@ func (in *ClusterSpec) DeepCopyInto(out *ClusterSpec) {
 	if in.LicenseRef != nil {
 		in, out := &in.LicenseRef, &out.LicenseRef
 		*out = new(SecretKeyRef)
+		**out = **in
+	}
+	if in.InitialValidationForVolume != nil {
+		in, out := &in.InitialValidationForVolume, &out.InitialValidationForVolume
+		*out = new(bool)
 		**out = **in
 	}
 }
