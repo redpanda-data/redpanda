@@ -849,9 +849,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     start_upload_offset = offset + model::offset(1);
     auto ot_state = _parent.get_offset_translator_state();
     auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
-    auto delta_offset_end = upload.final_offset
-                            - model::offset_cast(
-                              ot_state->from_log_offset(upload.final_offset));
+    auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
 
     // The upload is successful only if both segment and tx_range are uploaded.
     std::vector<ss::future<cloud_storage::upload_result>> all_uploads;
@@ -878,7 +876,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         .ntp_revision = _rev,
         .archiver_term = _start_term,
         .segment_term = upload.term,
-        .delta_offset_end = delta_offset_end,
+        .delta_offset_end = delta_offset_next,
         .sname_format = cloud_storage::segment_name_format::v2,
       },
       .name = upload.exposed_name, .delta = offset - base,
@@ -1555,9 +1553,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
     auto base = upload.starting_offset;
     auto ot_state = _parent.get_offset_translator_state();
     auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
-    auto delta_offset_end = upload.final_offset
-                            - model::offset_cast(
-                              ot_state->from_log_offset(upload.final_offset));
+    auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
 
     // Upload segments and tx-manifest in parallel
     std::vector<ss::future<cloud_storage::upload_result>> futures;
@@ -1585,7 +1581,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
       .ntp_revision = _rev,
       .archiver_term = _start_term,
       .segment_term = upload.term,
-      .delta_offset_end = delta_offset_end,
+      .delta_offset_end = delta_offset_next,
       .sname_format = cloud_storage::segment_name_format::v2,
     };
 

@@ -129,8 +129,8 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
                 break;
             }
             auto b = mit->second.base_kafka_offset();
-            auto m = mit->second.committed_kafka_offset();
-            if (b != m) {
+            auto end = mit->second.next_kafka_offset() - kafka::offset(1);
+            if (b != end) {
                 break;
             }
             mit++;
@@ -534,12 +534,14 @@ kafka::offset remote_partition::first_uploaded_offset() {
     return so;
 }
 
-model::offset remote_partition::last_uploaded_offset() {
+kafka::offset remote_partition::next_kafka_offset() {
     vassert(
       _manifest.size() > 0,
       "The manifest for {} is not expected to be empty",
       _manifest.get_ntp());
-    return _manifest.get_last_offset();
+    auto next = _manifest.get_next_kafka_offset().value();
+    vlog(_ctxlog.debug, "remote partition next_kafka_offset: {}", next);
+    return next;
 }
 
 const model::ntp& remote_partition::get_ntp() const {
@@ -576,8 +578,9 @@ remote_partition::get_term_last_offset(model::term_id term) const {
         }
     }
     // if last segment term is equal to the one we look for return it
-    if (_manifest.rbegin()->second.segment_term == term) {
-        return _manifest.rbegin()->second.committed_kafka_offset();
+    auto last = _manifest.rbegin()->second;
+    if (last.segment_term == term) {
+        return last.next_kafka_offset() - kafka::offset(1);
     }
 
     return std::nullopt;
