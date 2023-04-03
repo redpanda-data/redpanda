@@ -303,8 +303,6 @@ class TestReadReplicaService(EndToEndTest):
         # Consume from read replica topic and validate
         self.start_consumer()
         self.run_validation()  # calls self.consumer.stop()
-        assert self.redpanda
-        self.redpanda.stop()
 
         # Run consumer again, this time with source cluster stopped.
         # Now we can test that replicas do not write to s3.
