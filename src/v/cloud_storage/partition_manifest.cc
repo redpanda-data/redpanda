@@ -273,6 +273,16 @@ const model::offset partition_manifest::get_last_offset() const {
 }
 
 const std::optional<kafka::offset>
+partition_manifest::get_last_kafka_offset() const {
+    const auto next_kafka_offset = get_next_kafka_offset();
+    if (!next_kafka_offset || *next_kafka_offset == kafka::offset{0}) {
+        return std::nullopt;
+    }
+
+    return *next_kafka_offset - kafka::offset{1};
+}
+
+const std::optional<kafka::offset>
 partition_manifest::get_next_kafka_offset() const {
     auto last_seg = last_segment();
     if (!last_seg.has_value()) {
