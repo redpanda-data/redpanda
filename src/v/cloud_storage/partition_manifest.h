@@ -182,7 +182,11 @@ public:
 
     // Get last offset
     const model::offset get_last_offset() const;
+
+    // Get the last inclusive Kafka offset
     const std::optional<kafka::offset> get_last_kafka_offset() const;
+
+    // Get the last exclusive Kafka offset
     const std::optional<kafka::offset> get_next_kafka_offset() const;
 
     // Get insync offset of the archival_metadata_stm
