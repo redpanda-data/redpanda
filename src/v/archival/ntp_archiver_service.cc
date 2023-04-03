@@ -872,7 +872,7 @@ ntp_archiver::segment_path_for_candidate(const upload_candidate& candidate) {
       .ntp_revision = _rev,
       .archiver_term = _start_term,
       .segment_term = candidate.term,
-      .sname_format = cloud_storage::segment_name_format::v2,
+      .sname_format = cloud_storage::segment_name_format::v3,
     };
 
     return manifest().generate_segment_path(val);
@@ -2096,7 +2096,7 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
     candidate.term = run->meta.segment_term;
     candidate.remote_sources = run->segments;
     // Reuploaded segment can only use new name format
-    run->meta.sname_format = cloud_storage::segment_name_format::v2;
+    run->meta.sname_format = cloud_storage::segment_name_format::v3;
     candidate.exposed_name
       = cloud_storage::partition_manifest::generate_remote_segment_name(
         run->meta);
