@@ -417,7 +417,23 @@ segment_collector::make_upload_candidate(
           "No segments to reupload for {}",
           _manifest.get_ntp());
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    } else {
+        if (archival_log.is_enabled(ss::log_level::debug)) {
+            std::stringstream seg;
+            for (const auto& s : _segments) {
+                fmt::print(
+                  seg,
+                  "{}-{}/{}; ",
+                  s->offsets().base_offset,
+                  s->offsets().committed_offset,
+                  s->size_bytes());
+            }
+            vlog(archival_log.debug, "Collected segments: {}", seg.str());
+        }
     }
+
+    auto last = _segments.back();
+    auto last_size_bytes = last->size_bytes();
 
     // Take the locks before opening any readers on the segments.
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
@@ -443,7 +459,6 @@ segment_collector::make_upload_candidate(
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
-    auto last = _segments.back();
     auto tail_seek_result = co_await storage::convert_end_offset_to_file_pos(
       _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
 
@@ -454,8 +469,19 @@ segment_collector::make_upload_candidate(
     auto head_seek = head_seek_result.value();
     auto tail_seek = tail_seek_result.value();
 
+    vlog(
+      archival_log.debug,
+      "collected size: {}, last segment {}-{}/{}, head seek bytes: {}, tail "
+      "seek bytes: {}",
+      _collected_size,
+      last->offsets().base_offset,
+      last->offsets().committed_offset,
+      last_size_bytes,
+      head_seek.bytes,
+      tail_seek.bytes);
+
     size_t content_length = _collected_size
-                            - (head_seek.bytes + last->size_bytes());
+                            - (head_seek.bytes + last_size_bytes);
     content_length += tail_seek.bytes;
 
     auto starting_offset = head_seek.offset;
