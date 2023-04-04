@@ -80,7 +80,8 @@ public:
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
       configure_node_id use_node_id = configure_node_id::yes,
       const empty_seed_starts_cluster empty_seed_starts_cluster_val
-      = empty_seed_starts_cluster::yes)
+      = empty_seed_starts_cluster::yes,
+      std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt)
       : app(ssx::sformat("redpanda-{}", node_id()))
       , proxy_port(proxy_port)
       , schema_reg_port(schema_reg_port)
@@ -97,7 +98,8 @@ public:
           std::move(archival_cfg),
           std::move(cloud_cfg),
           use_node_id,
-          empty_seed_starts_cluster_val);
+          empty_seed_starts_cluster_val,
+          kafka_admin_topic_api_rate);
         app.initialize(
           proxy_config(proxy_port),
           proxy_client_config(kafka_port),
@@ -271,7 +273,8 @@ public:
       std::optional<cloud_storage::configuration> cloud_cfg = std::nullopt,
       configure_node_id use_node_id = configure_node_id::yes,
       const empty_seed_starts_cluster empty_seed_starts_cluster_val
-      = empty_seed_starts_cluster::yes) {
+      = empty_seed_starts_cluster::yes,
+      std::optional<uint32_t> kafka_admin_topic_api_rate = std::nullopt) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
@@ -283,7 +286,8 @@ public:
                                 archival_cfg,
                                 cloud_cfg,
                                 use_node_id,
-                                empty_seed_starts_cluster_val]() mutable {
+                                empty_seed_starts_cluster_val,
+                                kafka_admin_topic_api_rate]() mutable {
             auto& config = config::shard_local_cfg();
 
             config.get("enable_pid_file").set_value(false);
@@ -353,6 +357,11 @@ public:
                 config.get("cloud_storage_max_connections")
                   .set_value(
                     static_cast<int16_t>(cloud_cfg->connection_limit()));
+            }
+
+            if (kafka_admin_topic_api_rate) {
+                config.get("kafka_admin_topic_api_rate")
+                  .set_value(kafka_admin_topic_api_rate);
             }
         }).get0();
     }
