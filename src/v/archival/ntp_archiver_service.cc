@@ -787,8 +787,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_manifest(
     retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
     auto units = co_await _parent.archival_meta_stm()->acquire_manifest_lock();
 
-    auto upload_insync_offset
-      = _parent.archival_meta_stm()->get_insync_offset();
+    auto upload_insync_offset = manifest().get_insync_offset();
 
     vlog(
       _rtclog.debug,
