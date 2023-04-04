@@ -22,14 +22,15 @@ const (
 	FlagClientID     = "client-id"
 	FlagClientSecret = "client-secret"
 
-	envClientID     = "RPK_CLOUD_CLIENT_ID"
-	envClientSecret = "RPK_CLOUD_CLIENT_SECRET"
+	envClientID     = "RPK_CLOUD_CLIENT_ID"     // The user's client ID.
+	envClientSecret = "RPK_CLOUD_CLIENT_SECRET" // The user's client secret.
 
-	envAuthURL          = "RPK_CLOUD_AUTH_URL"
-	envAuthAudience     = "RPK_CLOUD_AUTH_AUDIENCE"
-	envCloudURL         = "RPK_CLOUD_URL"
-	envAuthAppClientID  = "RPK_AUTH_APP_CLIENT_ID"
-	envSkipVersionCheck = "RPK_CLOUD_SKIP_VERSION_CHECK"
+	envAuthURL          = "RPK_CLOUD_AUTH_URL"           // The authentication server URL.
+	envAuthAudience     = "RPK_CLOUD_AUTH_AUDIENCE"      // The Auth0 audience.
+	envCloudURL         = "RPK_CLOUD_URL"                // The Cloud API URL.
+	envAuthClientID     = "RPK_AUTH_APP_CLIENT_ID"       // The ClientID of rpk to authenticate against the auth server.
+	envSkipVersionCheck = "RPK_CLOUD_SKIP_VERSION_CHECK" // If true, rpk won't validate the plugin version against the Cloud API.
+
 )
 
 // Params contains values that can be set by flags.
@@ -77,7 +78,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		{envAuthURL, "", &cfg.AuthURL},
 		{envAuthAudience, "", &cfg.AuthAudience},
 		{envCloudURL, "", &cfg.CloudURL},
-		{envAuthAppClientID, "", &cfg.AuthAppClientID},
+		{envAuthClientID, "", &cfg.AuthClientID},
 		{envSkipVersionCheck, "", &cfg.SkipVersionCheck},
 	} {
 		if v, ok := os.LookupEnv(override.env); ok && len(v) > 0 {
