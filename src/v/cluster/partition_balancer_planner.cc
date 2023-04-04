@@ -258,7 +258,7 @@ result<allocation_units> partition_balancer_planner::get_reallocation(
 
     if (!reallocation) {
         vlog(
-          clusterlog.debug,
+          clusterlog.info,
           "attempt to find reallocation for ntp {} with "
           "stable_replicas: {} failed, error: {}",
           ntp,
