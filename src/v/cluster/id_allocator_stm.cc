@@ -80,7 +80,8 @@ ss::future<bool> id_allocator_stm::set_state(
         co_return false;
     }
     if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), timeout)) {
+          model::offset(r.value().last_offset()),
+          model::timeout_clock::now() + timeout)) {
         co_return false;
     }
     co_return true;
