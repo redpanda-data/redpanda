@@ -12,6 +12,8 @@ import json
 from typing import Optional
 
 from ducktape.utils.util import wait_until
+from ducktape.mark import ok_to_fail
+
 from ducktape.mark import matrix, parametrize
 from requests.exceptions import HTTPError
 
@@ -231,6 +233,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             self.si_settings.cloud_storage_bucket, topic=topic_name)
         assert sum(1 for _ in objects) > 0
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/8496
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(num_nodes=3)
     def topic_delete_installed_snapshots_test(self):
@@ -272,6 +275,7 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    timeout_sec=30,
                    backoff_sec=1)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/9629
     @skip_debug_mode  # Rely on timely uploads during leader transfers
     @cluster(
         num_nodes=3,
