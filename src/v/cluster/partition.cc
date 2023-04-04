@@ -494,15 +494,18 @@ void partition::maybe_construct_archiver() {
     // NOTE: construct and archiver even if shadow indexing isn't enabled, e.g.
     // in the case of read replicas -- we still need the archiver to drive
     // manifest updates, etc.
+    auto& ntp_config = _raft->log().config();
     if (
       config::shard_local_cfg().cloud_storage_enabled()
       && _cloud_storage_api.local_is_initialized()
       && _raft->ntp().ns == model::kafka_namespace
-      && (_raft->log().config().is_archival_enabled() || _raft->log().config().is_read_replica_mode_enabled())) {
+      && (ntp_config.is_archival_enabled() || ntp_config.is_read_replica_mode_enabled())) {
         _archiver = std::make_unique<archival::ntp_archiver>(
-          log().config(), _archival_conf, _cloud_storage_api.local(), *this);
-        _upload_housekeeping.local().register_jobs(
-          _archiver->get_housekeeping_jobs());
+          ntp_config, _archival_conf, _cloud_storage_api.local(), *this);
+        if (!ntp_config.is_read_replica_mode_enabled()) {
+            _upload_housekeeping.local().register_jobs(
+              _archiver->get_housekeeping_jobs());
+        }
     }
 }
 
