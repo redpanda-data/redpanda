@@ -201,7 +201,7 @@ public:
         } else if constexpr (std::is_same_v<type, list_groups_request>) {
             return dispatch(std::move(r), api_version(2));
         } else if constexpr (std::is_same_v<type, create_topics_request>) {
-            return dispatch(std::move(r), api_version(4));
+            return dispatch(std::move(r), api_version(6));
         } else if constexpr (std::is_same_v<type, sasl_handshake_request>) {
             return dispatch(std::move(r), api_version(1));
         } else if constexpr (std::is_same_v<type, sasl_authenticate_request>) {
