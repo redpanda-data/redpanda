@@ -846,6 +846,22 @@ void partition::set_topic_config(
     }
 }
 
+ss::future<> partition::serialize_manifest_to_output_stream(
+  ss::output_stream<char>& output) {
+    if (!_archival_meta_stm || !_cloud_storage_partition) {
+        throw std::runtime_error(fmt::format(
+          "{} not configured for cloud storage", _topic_cfg->tp_ns));
+    }
+
+    auto lock = _archival_meta_stm->acquire_manifest_lock();
+
+    // The timeout here is meant to place an upper bound on the amount
+    // of time the manifest lock is held for.
+    co_await ss::with_timeout(
+      model::timeout_clock::now() + manifest_serialization_timeout,
+      _cloud_storage_partition->serialize_manifest_to_output_stream(output));
+}
+
 ss::future<std::error_code>
 partition::transfer_leadership(std::optional<model::node_id> target) {
     vlog(

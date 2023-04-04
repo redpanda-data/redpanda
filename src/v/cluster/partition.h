@@ -323,6 +323,20 @@ public:
      */
     void set_topic_config(std::unique_ptr<cluster::topic_configuration> cfg);
 
+    // If the partition is enabled for cloud storage, serialize the manifest to
+    // an ss::output_stream in JSON format. Otherwise, throw an
+    // std::runtime_error.
+    //
+    // If the serialization does not complete within
+    // manifest_serialization_timeout, a ss::timed_out_error is thrown.
+    //
+    //
+    // Note that the caller must keep the stream alive until the future
+    // completes.
+    static constexpr std::chrono::seconds manifest_serialization_timeout{3s};
+    ss::future<>
+    serialize_manifest_to_output_stream(ss::output_stream<char>& output);
+
     std::optional<std::reference_wrapper<cluster::topic_configuration>>
     get_topic_config() {
         if (_topic_cfg) {
