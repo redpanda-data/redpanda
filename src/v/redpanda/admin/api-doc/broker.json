@@ -252,6 +252,14 @@
                     "type": "string",
                     "description": "rack id"
                 },
+                "internal_rpc_address": {
+                    "type": "string",
+                    "description": "Internal RPC address (usually, but not necessarily, a hostname)"
+                },
+                "internal_rpc_port": {
+                    "type": "long",
+                    "description": "Internal RPC port"
+                },
                 "membership_status": {
                     "type": "string",
                     "description": "Broker membership status"
