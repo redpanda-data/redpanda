@@ -19,6 +19,7 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/container/btree_map.h>
 #include <boost/range/irange.hpp>
@@ -367,8 +368,8 @@ configuration_manager::start(bool reset, model::revision_id initial_revision) {
     });
 }
 
-ss::future<> configuration_manager::maybe_store_highest_known_offset(
-  model::offset offset, size_t bytes) {
+void configuration_manager::maybe_store_highest_known_offset_in_background(
+  model::offset offset, size_t bytes, ss::gate& gate) {
     _highest_known_offset = offset;
     _bytes_since_last_offset_update += bytes;
 
@@ -379,13 +380,32 @@ ss::future<> configuration_manager::maybe_store_highest_known_offset(
     if (
       _bytes_since_last_offset_update < offset_update_treshold
       && !checkpoint_hint) {
-        co_return;
+        return;
     }
 
-    _bytes_since_last_offset_update = 0;
+    if (_hko_checkpoint_in_progress) {
+        return;
+    }
+
+    ssx::spawn_with_gate(gate, [this, bytes] {
+        return do_maybe_store_highest_known_offset(bytes);
+    });
+}
+
+ss::future<>
+configuration_manager::do_maybe_store_highest_known_offset(size_t bytes) {
+    if (_hko_checkpoint_in_progress) {
+        // This could be a mutex, but it doesn't make much sense to wait on it.
+        // In an unlikely event checkpointing fails, immediate retry by another
+        // waiting fiber is likely to fail as well.
+        co_return;
+    }
+    _hko_checkpoint_in_progress = true;
+    auto deferred = ss::defer([&] { _hko_checkpoint_in_progress = false; });
 
     co_await store_highest_known_offset();
 
+    _bytes_since_last_offset_update = 0;
     _bytes_since_last_offset_update_units.return_all();
 }
 
