@@ -180,6 +180,10 @@ public:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       update_tx(tm_transaction, model::term_id);
 
+    model::partition_id get_partition() const {
+        return _raft->ntp().tp.partition;
+    }
+
 protected:
     ss::future<> handle_eviction() override;
 

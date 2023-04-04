@@ -338,24 +338,29 @@ struct end_tx_reply {
 };
 struct fetch_tx_request
   : serde::
-      envelope<fetch_tx_request, serde::version<0>, serde::compat_version<0>> {
+      envelope<fetch_tx_request, serde::version<1>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     kafka::transactional_id tx_id{};
     model::term_id term{};
+    model::partition_id tm{0};
 
     fetch_tx_request() noexcept = default;
 
-    fetch_tx_request(kafka::transactional_id tx_id, model::term_id term)
+    fetch_tx_request(
+      kafka::transactional_id tx_id,
+      model::term_id term,
+      model::partition_id tm)
       : tx_id(tx_id)
-      , term(term) {}
+      , term(term)
+      , tm(tm) {}
 
     friend bool operator==(const fetch_tx_request&, const fetch_tx_request&)
       = default;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_tx_request& r);
 
-    auto serde_fields() { return std::tie(tx_id, term); }
+    auto serde_fields() { return std::tie(tx_id, term, tm); }
 };
 
 struct fetch_tx_reply
