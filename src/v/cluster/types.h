@@ -1833,6 +1833,7 @@ struct update_topic_properties_reply
 
     friend bool operator==(
       const update_topic_properties_reply&,
+
       const update_topic_properties_reply&)
       = default;
 
@@ -3033,6 +3034,148 @@ struct partition_state_request
     auto serde_fields() { return std::tie(ntp); }
 };
 
+struct partition_raft_state
+  : serde::envelope<
+      partition_raft_state,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::node_id node;
+    model::term_id term;
+    ss::sstring offset_translator_state;
+    ss::sstring group_configuration;
+    model::term_id confirmed_term;
+    model::offset flushed_offset;
+    model::offset commit_index;
+    model::offset majority_replicated_index;
+    model::offset visibility_upper_bound_index;
+    model::offset last_quorum_replicated_index;
+    model::term_id last_snapshot_term;
+    model::offset last_snapshot_index;
+    model::offset received_snapshot_index;
+    size_t received_snapshot_bytes;
+    bool has_pending_flushes;
+    bool is_leader;
+    bool is_elected_leader;
+
+    struct follower_state
+      : serde::envelope<
+          follower_state,
+          serde::version<0>,
+          serde::compat_version<0>> {
+        using rpc_adl_exempt = std::true_type;
+
+        model::node_id node;
+        model::offset last_flushed_log_index;
+        model::offset last_dirty_log_index;
+        model::offset match_index;
+        model::offset next_index;
+        model::offset last_sent_offset;
+        size_t heartbeats_failed;
+        bool is_learner;
+        uint64_t ms_since_last_heartbeat;
+        uint64_t last_sent_seq;
+        uint64_t last_received_seq;
+        uint64_t last_successful_received_seq;
+        bool suppress_heartbeats;
+        bool is_recovering;
+
+        auto serde_fields() {
+            return std::tie(
+              node,
+              last_flushed_log_index,
+              last_dirty_log_index,
+              match_index,
+              next_index,
+              last_sent_offset,
+              heartbeats_failed,
+              is_learner,
+              ms_since_last_heartbeat,
+              last_sent_seq,
+              last_received_seq,
+              last_successful_received_seq,
+              suppress_heartbeats,
+              is_recovering);
+        }
+    };
+
+    // Set only on leaders.
+    std::optional<std::vector<follower_state>> followers;
+
+    auto serde_fields() {
+        return std::tie(
+          node,
+          term,
+          offset_translator_state,
+          group_configuration,
+          confirmed_term,
+          flushed_offset,
+          commit_index,
+          majority_replicated_index,
+          visibility_upper_bound_index,
+          last_quorum_replicated_index,
+          last_snapshot_term,
+          last_snapshot_index,
+          received_snapshot_index,
+          received_snapshot_bytes,
+          has_pending_flushes,
+          is_leader,
+          is_elected_leader,
+          followers);
+    }
+
+    friend bool
+    operator==(const partition_raft_state&, const partition_raft_state&)
+      = default;
+};
+
+struct partition_state
+  : serde::
+      envelope<partition_state, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::offset start_offset;
+    model::offset committed_offset;
+    model::offset last_stable_offset;
+    model::offset high_water_mark;
+    model::offset dirty_offset;
+    model::offset latest_configuration_offset;
+    model::offset start_cloud_offset;
+    model::offset next_cloud_offset;
+    model::revision_id revision_id;
+    size_t log_size_bytes;
+    size_t non_log_disk_size_bytes;
+    bool is_read_replica_mode_enabled;
+    bool is_remote_fetch_enabled;
+    bool is_cloud_data_available;
+    ss::sstring read_replica_bucket;
+    partition_raft_state raft_state;
+
+    auto serde_fields() {
+        return std::tie(
+          start_offset,
+          committed_offset,
+          last_stable_offset,
+          high_water_mark,
+          dirty_offset,
+          latest_configuration_offset,
+          start_cloud_offset,
+          next_cloud_offset,
+          revision_id,
+          log_size_bytes,
+          non_log_disk_size_bytes,
+          is_read_replica_mode_enabled,
+          is_remote_fetch_enabled,
+          is_cloud_data_available,
+          read_replica_bucket,
+          raft_state);
+    }
+
+    friend bool operator==(const partition_state&, const partition_state&)
+      = default;
+};
+
 struct partition_state_reply
   : serde::envelope<
       partition_state_reply,
@@ -3041,12 +3184,14 @@ struct partition_state_reply
     using rpc_adl_exempt = std::true_type;
 
     model::ntp ntp;
+    std::optional<partition_state> state;
+    errc error_code;
 
     friend bool
     operator==(const partition_state_reply&, const partition_state_reply&)
       = default;
 
-    auto serde_fields() { return std::tie(ntp); }
+    auto serde_fields() { return std::tie(ntp, state, error_code); }
 };
 
 struct revert_cancel_partition_move_cmd_data
