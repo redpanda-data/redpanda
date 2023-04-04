@@ -135,6 +135,11 @@
             "name": "cloud_storage_usage",
             "input_type": "cloud_storage_usage_request",
             "output_type": "cloud_storage_usage_reply"
+        },
+        {
+            "name": "get_partition_state",
+            "input_type": "partition_state_request",
+            "output_type": "partition_state_reply"
         }
     ]
 }
