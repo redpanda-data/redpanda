@@ -157,11 +157,13 @@ FIXTURE_TEST(test_getting_configurations, config_manager_fixture) {
     BOOST_REQUIRE_EQUAL(
       _cfg_mgr.get_highest_known_offset(), model::offset(1254));
     validate_recovery();
-    _cfg_mgr
-      .maybe_store_highest_known_offset(
-        model::offset(10000),
-        raft::configuration_manager::offset_update_treshold + 1_KiB)
-      .get0();
+
+    ss::gate gate;
+    _cfg_mgr.maybe_store_highest_known_offset_in_background(
+      model::offset(10000),
+      raft::configuration_manager::offset_update_treshold + 1_KiB,
+      gate);
+    gate.close().get();
 
     validate_recovery();
     BOOST_REQUIRE_EQUAL(
