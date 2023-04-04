@@ -329,7 +329,8 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
     }
 
     auto offset = model::offset(r.value().last_offset());
-    if (!co_await wait_no_throw(offset, _sync_timeout)) {
+    if (!co_await wait_no_throw(
+          offset, model::timeout_clock::now() + _sync_timeout)) {
         vlog(
           txlog.info,
           "timeout on waiting until {} is applied on updating tx:{} pid:{} "
@@ -597,7 +598,8 @@ ss::future<tm_stm::op_status> tm_stm::do_register_new_producer(
     }
 
     if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), _sync_timeout)) {
+          model::offset(r.value().last_offset()),
+          model::timeout_clock::now() + _sync_timeout)) {
         co_return tm_stm::op_status::unknown;
     }
     if (_c->term() != expected_term) {
