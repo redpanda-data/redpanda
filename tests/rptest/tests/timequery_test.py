@@ -283,6 +283,20 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         errors = [0 for _ in range(num_threads)]
         should_stop = threading.Event()
 
+        failed_offsets = set()
+
+        def check_offset(kcat, o):
+            expected_offset = o
+            ts = timestamps[o]
+            offset = kcat.query_offset(topic.name, 0, ts)
+            if expected_offset != offset:
+                self.logger.exception(
+                    f"Timestamp {ts} returned {offset} instead of {expected_offset}"
+                )
+                return True
+            else:
+                return False
+
         def query_slices(tid):
             kcat = KafkaCat(self.redpanda)
             while not should_stop.is_set():
@@ -291,13 +305,8 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                 # Step 100 offsets at a time so we only end up with a few dozen
                 # queries per thread at a time.
                 for idx in range(start_idx, end_idx, 100):
-                    expected_offset = idx
-                    ts = timestamps[idx]
-                    offset = kcat.query_offset(topic.name, 0, ts)
-                    if expected_offset != offset:
-                        self.logger.exception(
-                            f"Timestamp {ts} returned {offset} instead of {expected_offset}"
-                        )
+                    if check_offset(kcat, idx):
+                        failed_offsets.add(idx)
                         errors[tid] += 1
 
         with concurrent.futures.ThreadPoolExecutor(
@@ -311,6 +320,21 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                                           count=local_retain_segments)
             finally:
                 should_stop.set()
+
+        # Re-issue queries the failed offsets: this tells us if the error
+        # was transient, and if it happens again it gives us a cleaner
+        # log to analyze compared with the concurrent operations above.
+        # A transient failure is still a failure, but it's interesting
+        # to know that it was transient when investigating the bug.
+        if failed_offsets:
+            self.logger.info("Re-issuing queries on failed offsets...")
+            kcat = KafkaCat(self.redpanda)
+            for o in failed_offsets:
+                if check_offset(kcat, o):
+                    self.logger.info(f"Reproducible failure at {o}")
+                else:
+                    self.logger.info(f"Query at {o} succeeded on retry")
+
         assert not any([e > 0 for e in errors])
 
 
