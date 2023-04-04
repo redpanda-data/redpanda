@@ -117,7 +117,11 @@ std::vector<model::node_id> optimize_constraints(
                          / constraints.size();
 
         vlog(
-          clusterlog.trace, "node: {}, total normalized score: {}", id, score);
+          clusterlog.trace,
+          "node: {}, total normalized score: {} ({})",
+          id,
+          score,
+          (double)score / soft_constraint::max_score);
         if (score >= best_score) {
             if (score > best_score) {
                 // untied, winner clear out existing winners
