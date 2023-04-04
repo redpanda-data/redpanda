@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: call-controller-status
+spec:
+  template:
+    spec:
+      containers:
+        - name: curl
+          image: badouralix/curl-jq:latest
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+          args:
+            - |
+              set -xe
+              # using the same value found in the duck-tape test https://github.com/redpanda-data/redpanda/pull/9737/commits/cf98f44141a5b07eddf5d2f7e69868585c7246f4
+              MAX_INDEX=1000
+              ADMIN_API_PATH="http://cluster-0.cluster.$POD_NAMESPACE.svc.cluster.local:9644"
+              CONTROLLER_STATUS_PATH="v1/debug/controller_status"
+                            
+              # we wait 5 minutes for controller to stabilize
+              sleep 300
+              
+              index=$(curl -s ${ADMIN_API_PATH}/${CONTROLLER_STATUS_PATH} | jq -r .commited_index)
+              
+              if [ "$index" -ge "$MAX_INDEX" ]; then
+                echo "failed: index is ${index} is greater than ${MAX_INDEX}"
+                exit 1
+              fi
+              
+              echo "test passed"
+      restartPolicy: Never
+  backoffLimit: 0
+  parallelism: 1
+  completions: 1
