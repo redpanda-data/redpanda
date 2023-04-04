@@ -57,7 +57,7 @@ func DeviceAuthorizationFlow(ctx context.Context, cfg *cloudcfg.Config) (token s
 		}
 	}()
 	auth0Client := auth0.NewClient(auth0Endpoint)
-	resp, err := auth0Client.InitDeviceAuthorization(ctx, cfg.AuthAppClientID)
+	resp, err := auth0Client.InitDeviceAuthorization(ctx, cfg.AuthClientID)
 	if err != nil {
 		return "", fmt.Errorf("unable to start authorization flow: %v", err)
 	}
@@ -66,7 +66,7 @@ func DeviceAuthorizationFlow(ctx context.Context, cfg *cloudcfg.Config) (token s
 		return "", fmt.Errorf("unable to open the web browser: %v", err)
 	}
 	tokenInterval := 5
-	return auth0Client.WaitForToken(ctx, resp.DeviceCode, cfg.AuthAppClientID, tokenInterval)
+	return auth0Client.WaitForDeviceToken(ctx, resp.DeviceCode, cfg.AuthClientID, tokenInterval)
 }
 
 // LoadFlow loads or creates a config at default path, and validates and
