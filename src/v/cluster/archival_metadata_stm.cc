@@ -337,8 +337,7 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
         if (now >= deadline) {
             co_return errc::replication_error;
         }
-        auto timeout = deadline - now;
-        applied = co_await wait_no_throw(result.value().last_offset, timeout);
+        applied = co_await wait_no_throw(result.value().last_offset, deadline);
     }
 
     if (!applied) {
