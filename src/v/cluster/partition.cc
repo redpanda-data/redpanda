@@ -398,40 +398,45 @@ ss::future<> partition::stop() {
 
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
-    const bool is_read_replica
-      = _raft->log_config().is_read_replica_mode_enabled();
-    const bool query_before_raft_log_start = _raft->log().start_timestamp()
-                                             > cfg.time;
-
-    std::optional<storage::timequery_result> result;
-
-    if (is_read_replica || query_before_raft_log_start) {
-        // We have data in the remote partition, and all the data in the raft
-        // log is ahead of the query timestamp or the topic is a read replica,
-        // so proceed to query the remote partition to try and find the earliest
-        // data that has timestamp >= the query time.
+    // Read replicas never consider local raft data
+    if (_raft->log_config().is_read_replica_mode_enabled()) {
         co_return co_await cloud_storage_timequery(cfg);
     }
 
-    result = co_await local_timequery(cfg);
-
-    // It's possible that during the query, our local log was GCed, and the
-    // result may not actually reflect the correct offset for this
-    // partition. If the local log doesn't look like it can serve the query
-    // anymore, query the remote log.
-    if (_raft->log().start_timestamp() > cfg.time) {
-        co_return co_await cloud_storage_timequery(cfg);
+    if (_raft->log().start_timestamp() <= cfg.time) {
+        // The query is ahead of the local data's start_timestamp: this means
+        // it _might_ hit on local data: start_timestamp is not precise, so
+        // once we query we might still fall back to cloud storage
+        auto result = co_await local_timequery(cfg);
+        if (!result.has_value()) {
+            // The local storage hit a case where it needs to fall back
+            // to querying cloud storage.
+            co_return co_await cloud_storage_timequery(cfg);
+        } else {
+            co_return result;
+        }
     } else {
-        co_return result;
+        if (
+          may_read_from_cloud()
+          && _cloud_storage_partition->bounds_timestamp(cfg.time)) {
+            // Timestamp is before local storage but within cloud storage
+            co_return co_await cloud_storage_timequery(cfg);
+        } else {
+            // No cloud data: queries earlier than the start of the log
+            // will hit on the start of the log.
+            co_return co_await local_timequery(cfg);
+        }
     }
+}
+
+bool partition::may_read_from_cloud() const {
+    return _cloud_storage_partition
+           && _cloud_storage_partition->is_data_available();
 }
 
 ss::future<std::optional<storage::timequery_result>>
 partition::cloud_storage_timequery(storage::timequery_config cfg) {
-    const bool may_read_from_cloud
-      = _cloud_storage_partition
-        && _cloud_storage_partition->is_data_available();
-    if (may_read_from_cloud) {
+    if (may_read_from_cloud()) {
         // We have data in the remote partition, and all the data in the raft
         // log is ahead of the query timestamp or the topic is a read replica,
         // so proceed to query the remote partition to try and find the earliest
@@ -475,7 +480,70 @@ partition::local_timequery(storage::timequery_config cfg) {
       cfg.max_offset);
 
     auto result = co_await _raft->timequery(cfg);
+
+    bool may_answer_from_cloud = may_read_from_cloud()
+                                 && _cloud_storage_partition->bounds_timestamp(
+                                   cfg.time);
+
     if (result) {
+        if (
+          _raft->log().start_timestamp() > cfg.time && may_answer_from_cloud) {
+            // Query raced with prefix truncation
+            vlog(
+              clusterlog.debug,
+              "timequery (raft) ts={} raced with truncation (start_timestamp "
+              "{}, "
+              "result {})",
+              cfg.time,
+              _raft->log().start_timestamp(),
+              result->time);
+            co_return std::nullopt;
+        }
+
+        if (
+          _raft->log().start_timestamp() <= cfg.time && result->time > cfg.time
+          && may_answer_from_cloud) {
+            // start_timestamp() points to the beginning of the oldest segment,
+            // but start_offset points to somewhere within a segment.  If our
+            // timequery hits the range between the start of segment and
+            // the start_offset, consensus::timequery may answer with
+            // the start offset rather than the pre-start-offset location
+            // where the timestamp is actually found.
+            // Ref https://github.com/redpanda-data/redpanda/issues/9669
+            vlog(
+              clusterlog.debug,
+              "Timequery (raft) ts={} miss on local log (start_timestamp {}, "
+              "result {})",
+              cfg.time,
+              _raft->log().start_timestamp(),
+              result->time);
+            co_return std::nullopt;
+        }
+
+        if (result->offset == _raft->log().offsets().start_offset) {
+            // If we hit at the start of the local log, this is ambiguous:
+            // there could be earlier batches prior to start_offset which
+            // have the same timestamp and are present in cloud storage.
+            vlog(
+              clusterlog.debug,
+              "Timequery (raft) ts={} hit start_offset in local log "
+              "(start_offset {} start_timestamp {}, result {})",
+              _raft->log().offsets().start_offset,
+              cfg.time,
+              _raft->log().start_timestamp(),
+              cfg.time);
+            if (
+              _cloud_storage_partition
+              && _cloud_storage_partition->is_data_available()
+              && may_answer_from_cloud) {
+                // Even though we hit data with the desired timestamp, we cannot
+                // be certain that this is the _first_ batch with the desired
+                // timestamp: return null so that the caller will fall back
+                // to cloud storage.
+                co_return std::nullopt;
+            }
+        }
+
         vlog(
           clusterlog.debug,
           "timequery (raft) {} t={} max_offset(r)={} result(r)={}",

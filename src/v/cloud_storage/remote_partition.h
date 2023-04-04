@@ -91,6 +91,13 @@ public:
     ss::future<std::optional<storage::timequery_result>>
     timequery(storage::timequery_config cfg);
 
+    /// Whether a timequery on this timestamp can match this remote log
+    /// log (i.e. whether it is <= the max offset).  Timestamps below the
+    /// base_timestamp will also return true, as Kafka timequery semantics
+    /// are that a timestamp below the start of a log will match the first
+    /// record in the log.
+    bool bounds_timestamp(model::timestamp) const;
+
     /// Return first uploaded kafka offset
     kafka::offset first_uploaded_offset();
 

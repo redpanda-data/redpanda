@@ -139,7 +139,7 @@ class BaseTimeQuery:
             ex(msg_count // 4),  # 25%th message
             ex(msg_count // 2),  # 50%th message
             ex(msg_count - 1),  # last message
-            ex(0, timestamps[0] - 1000),
+            ex(0, timestamps[0] - 1000),  # Before the start of the log
             ex(-1, timestamps[msg_count - 1] + 1000,
                False)  # After last message
         ]

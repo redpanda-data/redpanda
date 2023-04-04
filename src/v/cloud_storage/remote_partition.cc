@@ -798,6 +798,15 @@ remote_partition::timequery(storage::timequery_config cfg) {
     }
 }
 
+bool remote_partition::bounds_timestamp(model::timestamp t) const {
+    auto last_seg = _manifest.last_segment();
+    if (last_seg.has_value()) {
+        return t <= last_seg.value().max_timestamp;
+    } else {
+        return false;
+    }
+}
+
 remote_partition::iterator
 remote_partition::seek_by_timestamp(model::timestamp t) {
     auto segment_meta = _manifest.timequery(t);
