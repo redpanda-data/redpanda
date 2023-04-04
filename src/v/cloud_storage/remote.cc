@@ -606,11 +606,11 @@ ss::future<download_result> remote::download_index(
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
-            _probe.successful_download();
             auto index_buffer
               = co_await cloud_storage_clients::util::drain_response_stream(
                 resp.value());
             ix.from_iobuf(std::move(index_buffer));
+            _probe.index_download();
             co_return download_result::success;
         }
 
@@ -643,7 +643,7 @@ ss::future<download_result> remote::download_index(
             break;
         }
     }
-    _probe.failed_download();
+    _probe.failed_index_download();
     if (!result) {
         vlog(
           ctxlog.warn,
@@ -1107,6 +1107,9 @@ ss::future<upload_result> remote::upload_object(
           fib.get_timeout());
 
         if (res) {
+            if (log_object_type == std::string_view{"segment-index"}) {
+                _probe.index_upload();
+            }
             co_return upload_result::success;
         }
 
@@ -1139,6 +1142,9 @@ ss::future<upload_result> remote::upload_object(
         }
     }
 
+    if (log_object_type == std::string_view{"segment-index"}) {
+        _probe.failed_index_upload();
+    }
     if (!result) {
         vlog(
           ctxlog.warn,

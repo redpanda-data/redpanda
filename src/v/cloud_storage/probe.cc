@@ -98,6 +98,22 @@ remote_probe::remote_probe(
               "bytes_received",
               [this] { return _cnt_bytes_received; },
               sm::description("Number of bytes received from cloud storage")),
+            sm::make_counter(
+              "index_uploads",
+              [this] { return get_index_uploads(); },
+              sm::description("Number of segment indices uploaded")),
+            sm::make_counter(
+              "index_downloads",
+              [this] { return get_index_downloads(); },
+              sm::description("Number of segment indices downloaded")),
+            sm::make_counter(
+              "failed_index_uploads",
+              [this] { return get_failed_index_uploads(); },
+              sm::description("Number of failed segment index uploads")),
+            sm::make_counter(
+              "failed_index_downloads",
+              [this] { return get_failed_index_downloads(); },
+              sm::description("Number of failed segment index downloads")),
           });
     }
 
@@ -106,49 +122,56 @@ remote_probe::remote_probe(
 
         _public_metrics.add_group(
           prometheus_sanitize::metrics_name("cloud_storage"),
-          {sm::make_counter(
-             "errors_total",
-             [this] {
-                 return get_failed_uploads() + get_failed_manifest_uploads();
-             },
-             sm::description("Number of transmit errors"),
-             {direction_label("tx")})
-             .aggregate({sm::shard_label}),
+          {
+            sm::make_counter(
+              "errors_total",
+              [this] {
+                  return get_failed_uploads() + get_failed_manifest_uploads()
+                         + get_failed_index_uploads();
+              },
+              sm::description("Number of transmit errors"),
+              {direction_label("tx")})
+              .aggregate({sm::shard_label}),
 
-           sm::make_counter(
-             "errors_total",
-             [this] {
-                 return get_failed_downloads()
-                        + get_failed_manifest_downloads();
-             },
-             sm::description("Number of receive errors"),
-             {direction_label("rx")})
-             .aggregate({sm::shard_label}),
-           sm::make_counter(
-             "partition_manifest_uploads_total",
-             [this] { return get_partition_manifest_uploads(); },
-             sm::description("Successful partition manifest uploads"),
-             {})
-             .aggregate({sm::shard_label}),
-           sm::make_counter(
-             "segment_uploads_total",
-             [this] { return get_successful_uploads(); },
-             sm::description("Successful data segment uploads"),
-             {})
-             .aggregate({sm::shard_label}),
-           sm::make_gauge(
-             "active_segments",
-             [&ms] { return ms.current_segments(); },
-             sm::description(
-               "Number of remote log segments currently hydrated for read"))
-             .aggregate({sm::shard_label}),
-           sm::make_gauge(
-             "readers",
-             [&ms] { return ms.current_readers(); },
-             sm::description(
-               "Number of read cursors for hydrated remote log segments"))
-             .aggregate({sm::shard_label})
-
+            sm::make_counter(
+              "errors_total",
+              [this] {
+                  return get_failed_downloads()
+                         + get_failed_manifest_downloads();
+              },
+              sm::description("Number of receive errors"),
+              {direction_label("rx")})
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "partition_manifest_uploads_total",
+              [this] { return get_partition_manifest_uploads(); },
+              sm::description("Successful partition manifest uploads"),
+              {})
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "segment_uploads_total",
+              [this] { return get_successful_uploads(); },
+              sm::description("Successful data segment uploads"),
+              {})
+              .aggregate({sm::shard_label}),
+            sm::make_gauge(
+              "active_segments",
+              [&ms] { return ms.current_segments(); },
+              sm::description(
+                "Number of remote log segments currently hydrated for read"))
+              .aggregate({sm::shard_label}),
+            sm::make_gauge(
+              "readers",
+              [&ms] { return ms.current_readers(); },
+              sm::description(
+                "Number of read cursors for hydrated remote log segments"))
+              .aggregate({sm::shard_label}),
+            sm::make_counter(
+              "segment_index_uploads_total",
+              [this] { return get_index_uploads(); },
+              sm::description("Successful segment index uploads"),
+              {})
+              .aggregate({sm::shard_label}),
           });
     }
 }

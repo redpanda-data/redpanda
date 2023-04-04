@@ -1172,7 +1172,8 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment_index(
       cloud_storage_clients::object_key{index_path},
       ix->to_iobuf(),
       fib,
-      _segment_index_tags);
+      _segment_index_tags,
+      "segment-index");
 }
 
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment_index(
