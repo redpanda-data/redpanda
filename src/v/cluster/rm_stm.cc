@@ -464,7 +464,8 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     }
 
     if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), _sync_timeout)) {
+          model::offset(r.value().last_offset()),
+          model::timeout_clock::now() + _sync_timeout)) {
         vlog(
           _ctx_log.trace,
           "timeout on waiting until {} is applied (begin_tx pid:{} tx_seq:{})",
@@ -656,7 +657,8 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
     }
 
     if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), timeout)) {
+          model::offset(r.value().last_offset()),
+          model::timeout_clock::now() + timeout)) {
         co_return tx_errc::unknown_server_error;
     }
 
@@ -695,7 +697,8 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
     // catching up with all previous end_tx operations (commit | abort)
     // to avoid writing the same commit | abort marker twice
     if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(_mem_state.last_end_tx, timeout)) {
+        if (!co_await wait_no_throw(
+              _mem_state.last_end_tx, model::timeout_clock::now() + timeout)) {
             co_return tx_errc::stale;
         }
     }
@@ -821,7 +824,8 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         }
         co_return tx_errc::timeout;
     }
-    if (!co_await wait_no_throw(r.value().last_offset, timeout)) {
+    if (!co_await wait_no_throw(
+          r.value().last_offset, model::timeout_clock::now() + timeout)) {
         if (_c->is_leader() && _c->term() == synced_term) {
             co_await _c->step_down("do_commit_tx wait error");
         }
@@ -944,7 +948,8 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
     // catching up with all previous end_tx operations (commit | abort)
     // to avoid writing the same commit | abort marker twice
     if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(_mem_state.last_end_tx, timeout)) {
+        if (!co_await wait_no_throw(
+              _mem_state.last_end_tx, model::timeout_clock::now() + timeout)) {
             vlog(
               _ctx_log.trace,
               "Can't catch up to abort pid:{} tx_seq:{}",
@@ -1045,7 +1050,8 @@ ss::future<tx_errc> rm_stm::do_abort_tx(
         _mem_state.last_end_tx = r.value().last_offset;
     }
 
-    if (!co_await wait_no_throw(r.value().last_offset, timeout)) {
+    if (!co_await wait_no_throw(
+          r.value().last_offset, model::timeout_clock::now() + timeout)) {
         vlog(
           _ctx_log.trace,
           "timeout on waiting until {} is applied (abort_tx pid:{} tx_seq:{})",
@@ -1476,7 +1482,8 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
         co_return r.error();
     }
     if (!co_await wait_no_throw(
-          model::offset(r.value().last_offset()), _sync_timeout)) {
+          model::offset(r.value().last_offset()),
+          model::timeout_clock::now() + _sync_timeout)) {
         vlog(
           _ctx_log.warn,
           "application of the replicated tx batch has timed out pid:{}",
@@ -2098,7 +2105,9 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
     // catching up with all previous end_tx operations (commit | abort)
     // to avoid writing the same commit | abort marker twice
     if (_mem_state.last_end_tx >= model::offset{0}) {
-        if (!co_await wait_no_throw(_mem_state.last_end_tx, _sync_timeout)) {
+        if (!co_await wait_no_throw(
+              _mem_state.last_end_tx,
+              model::timeout_clock::now() + _sync_timeout)) {
             co_return tx_errc::timeout;
         }
     }
@@ -2176,7 +2185,8 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                     _mem_state.last_end_tx = cr.value().last_offset;
                 }
                 if (!co_await wait_no_throw(
-                      cr.value().last_offset, _sync_timeout)) {
+                      cr.value().last_offset,
+                      model::timeout_clock::now() + _sync_timeout)) {
                     vlog(
                       _ctx_log.warn,
                       "Timed out on waiting for the commit marker to be "
@@ -2212,7 +2222,8 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
                     _mem_state.last_end_tx = cr.value().last_offset;
                 }
                 if (!co_await wait_no_throw(
-                      cr.value().last_offset, _sync_timeout)) {
+                      cr.value().last_offset,
+                      model::timeout_clock::now() + _sync_timeout)) {
                     vlog(
                       _ctx_log.warn,
                       "Timed out on waiting for the abort marker to be applied "
