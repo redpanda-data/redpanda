@@ -2514,11 +2514,10 @@ ss::future<storage::append_result> consensus::disk_append(
               ssx::spawn_with_gate(
                 _bg, [this] { return _offset_translator.maybe_checkpoint(); });
 
-              ssx::spawn_with_gate(
-                _bg, [this, last_offset = ret.last_offset, sz = ret.byte_size] {
-                    return _configuration_manager
-                      .maybe_store_highest_known_offset(last_offset, sz);
-                });
+              _configuration_manager
+                .maybe_store_highest_known_offset_in_background(
+                  ret.last_offset, ret.byte_size, _bg);
+
               return ret;
           });
       });
