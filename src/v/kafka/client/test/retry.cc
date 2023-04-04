@@ -49,3 +49,43 @@ FIXTURE_TEST(test_retry_produce, kafka_client_fixture) {
     BOOST_REQUIRE_EQUAL(
       res.error_code, kafka::error_code::unknown_topic_or_partition);
 }
+
+class kafka_client_create_topic_fixture : public kafka_client_fixture {
+public:
+    kafka_client_create_topic_fixture()
+      : kafka_client_fixture(std::make_optional<uint32_t>(1)) {}
+};
+
+FIXTURE_TEST(test_retry_create_topic, kafka_client_create_topic_fixture) {
+    auto client = make_connected_client();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
+
+    client.config().retry_base_backoff.set_value(10ms);
+    client.config().retries.set_value(size_t(5));
+
+    auto make_topic = [](ss::sstring name) {
+        return kafka::creatable_topic{
+          .name = model::topic{name},
+          .num_partitions = 1,
+          .replication_factor = 1};
+    };
+
+    size_t num_topics = 20;
+    for (int i = 0; i < num_topics; ++i) {
+        auto creatable_topic = make_topic(fmt::format("topic-{}", i));
+        try {
+            auto res = client.create_topic(creatable_topic).get();
+            BOOST_REQUIRE_EQUAL(res.data.topics.size(), 1);
+            for (auto& topic : res.data.topics) {
+                BOOST_REQUIRE_EQUAL(topic.name, creatable_topic.name);
+                BOOST_REQUIRE_EQUAL(topic.error_code, kafka::error_code::none);
+            }
+        } catch (const kafka::client::topic_error& ex) {
+            // If we do get an error, then it should be
+            // throttling_quota_exceeded. Anything else is a problem
+            BOOST_REQUIRE_EQUAL(ex.topic, creatable_topic.name);
+            BOOST_REQUIRE_EQUAL(
+              ex.error, kafka::error_code::throttling_quota_exceeded);
+        }
+    }
+}
