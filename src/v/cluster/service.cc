@@ -745,4 +745,16 @@ service::do_cloud_storage_usage(cloud_storage_usage_request req) {
       .missing_partitions = std::move(result.missing_partitions)};
 }
 
+ss::future<partition_state_reply> service::get_partition_state(
+  partition_state_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_get_partition_state(req);
+    });
+}
+
+ss::future<partition_state_reply>
+service::do_get_partition_state(partition_state_request) {
+    co_return partition_state_reply{};
+}
+
 } // namespace cluster

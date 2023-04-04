@@ -3065,6 +3065,37 @@ struct cloud_storage_usage_reply
     }
 };
 
+struct partition_state_request
+  : serde::envelope<
+      partition_state_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::ntp ntp;
+    friend bool
+    operator==(const partition_state_request&, const partition_state_request&)
+      = default;
+
+    auto serde_fields() { return std::tie(ntp); }
+};
+
+struct partition_state_reply
+  : serde::envelope<
+      partition_state_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    model::ntp ntp;
+
+    friend bool
+    operator==(const partition_state_reply&, const partition_state_reply&)
+      = default;
+
+    auto serde_fields() { return std::tie(ntp); }
+};
+
 struct revert_cancel_partition_move_cmd_data
   : serde::envelope<
       revert_cancel_partition_move_cmd_data,
