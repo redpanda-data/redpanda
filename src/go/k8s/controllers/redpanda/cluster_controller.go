@@ -537,14 +537,17 @@ func (r *ClusterReconciler) setPodNodeIDAnnotation(
 			continue
 		}
 
-		oldNodeID, err := strconv.Atoi(nodeIDStr)
-		if err != nil {
-			return fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStr, err)
-		}
+		var oldNodeID int
+		if ok {
+			oldNodeID, err = strconv.Atoi(nodeIDStr)
+			if err != nil {
+				return fmt.Errorf("unable to convert node ID (%s) to int: %w", nodeIDStr, err)
+			}
 
-		log.WithValues("pod-name", pod.Name, "old-node-id", oldNodeID).Info("decommission old node-id")
-		if err = r.decommissionBroker(ctx, rp, oldNodeID, log); err != nil {
-			return fmt.Errorf("unable to decommission broker: %w", err)
+			log.WithValues("pod-name", pod.Name, "old-node-id", oldNodeID).Info("decommission old node-id")
+			if err = r.decommissionBroker(ctx, rp, oldNodeID, log); err != nil {
+				return fmt.Errorf("unable to decommission broker: %w", err)
+			}
 		}
 
 		log.WithValues("pod-name", pod.Name, "new-node-id", nodeID).Info("setting node-id annotation")
