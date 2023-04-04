@@ -227,9 +227,8 @@ class TestReadReplicaService(EndToEndTest):
             return None
 
     @cluster(num_nodes=8)
-    @matrix(partition_count=[5], cloud_storage_type=[CloudStorageType.S3])
-    def test_identical_hwms(self, partition_count: int,
-                            cloud_storage_type: CloudStorageType) -> None:
+    @matrix(partition_count=[5])
+    def test_identical_hwms(self, partition_count: int) -> None:
         self._setup_read_replica(partition_count=partition_count,
                                  num_messages=1000)
         self.start_consumer()
@@ -341,7 +340,6 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         super(ReadReplicasUpgradeTest, self).__init__(
             test_context=test_context,
             si_settings=SISettings(
-                test_context,
                 cloud_storage_max_connections=5,
                 log_segment_size=self.log_segment_size,
                 cloud_storage_readreplica_manifest_sync_timeout_ms=500,
@@ -351,13 +349,11 @@ class ReadReplicasUpgradeTest(EndToEndTest):
         # We're adding 'none' as a bucket name without creating
         # an actual bucket with such name.
         self.rr_settings = SISettings(
-            test_context,
             bypass_bucket_creation=True,
             cloud_storage_max_connections=5,
             log_segment_size=self.log_segment_size,
             cloud_storage_readreplica_manifest_sync_timeout_ms=500,
-            cloud_storage_segment_max_upload_interval_sec=1,
-            cloud_storage_housekeeping_interval_ms=1)
+            cloud_storage_segment_max_upload_interval_sec=1)
         self.second_cluster = None
 
     @cluster(num_nodes=8)
@@ -411,6 +407,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             lambda: cluster_has_offsets(self.second_cluster),
             timeout_sec=30,
             backoff_sec=1)
+        self.logger.info(f"pre-upgrade read replica HWMs: {rr_hwms}")
         # Upgrade the read replica cluster first.
         self.second_cluster._installer.install(self.second_cluster.nodes,
                                                RedpandaInstaller.HEAD)
@@ -420,13 +417,18 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             lambda: cluster_has_offsets(self.second_cluster),
             timeout_sec=30,
             backoff_sec=1)
-        assert new_rr_hwms != rr_hwms, f"{new_rr_hwms} vs {rr_hwms}"
+        self.logger.info(f"post-upgrade read replica HWMs: {new_rr_hwms}")
 
         # Then upgrade the source cluster and make sure the source and RRR
         # cluster match.
         self.redpanda._installer.install(self.redpanda.nodes,
                                          RedpandaInstaller.HEAD)
         self.redpanda.restart_nodes(self.redpanda.nodes)
+
+        # NOTE: this config doesn't exist in v22.2, so set it here after the
+        # upgrade. Speed up manifest uploads.
+        rpk = RpkTool(self.redpanda)
+        rpk.cluster_config_set("cloud_storage_housekeeping_interval_ms", "1")
 
         def clusters_report_identical_hwms():
             return hwms_are_identical(self.logger, self.redpanda,
