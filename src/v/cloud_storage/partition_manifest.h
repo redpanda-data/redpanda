@@ -335,6 +335,11 @@ public:
     /// impossible.
     void disable_permanently();
 
+    model::offset get_archive_start_offset() const;
+    model::offset get_archive_clean_offset() const;
+    void set_archive_start_offset(model::offset start_rp_offset);
+    void set_archive_clean_offset(model::offset start_rp_offset);
+
 private:
     void subtract_from_cloud_log_size(size_t to_subtract);
 
@@ -390,6 +395,13 @@ private:
     model::offset _last_uploaded_compacted_offset;
     model::offset _insync_offset;
     size_t _cloud_log_size_bytes{0};
+    // First accessible offset of the 'archive' region. Default value means
+    // that there is no archive.
+    model::offset _archive_start_offset;
+    // First offset of the 'archive'. The data between 'clean' and 'archive'
+    // could be removed by the housekeeping. The invariant is that 'clean' is
+    // less or equal to 'start'.
+    model::offset _archive_clean_offset;
 };
 
 } // namespace cloud_storage

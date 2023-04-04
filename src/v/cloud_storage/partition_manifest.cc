@@ -508,6 +508,24 @@ bool partition_manifest::contains(const segment_name& name) const {
 
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
+model::offset partition_manifest::get_archive_start_offset() const {
+    return _archive_start_offset;
+}
+
+model::offset partition_manifest::get_archive_clean_offset() const {
+    return _archive_clean_offset;
+}
+
+void partition_manifest::set_archive_start_offset(
+  model::offset start_rp_offset) {
+    _archive_start_offset = std::max(_archive_start_offset, start_rp_offset);
+}
+
+void partition_manifest::set_archive_clean_offset(
+  model::offset start_rp_offset) {
+    _archive_clean_offset = std::max(_archive_clean_offset, start_rp_offset);
+}
+
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     const auto previous_start_offset = _start_offset;
 
@@ -914,6 +932,10 @@ struct partition_manifest_handler
                 _insync_offset = model::offset(u);
             } else if ("cloud_log_size_bytes" == _manifest_key) {
                 _cloud_log_size_bytes = u;
+            } else if ("archive_start_offset" == _manifest_key) {
+                _archive_start_offset = model::offset(u);
+            } else if ("archive_clean_offset" == _manifest_key) {
+                _archive_clean_offset = model::offset(u);
             } else {
                 return false;
             }
@@ -1145,6 +1167,8 @@ struct partition_manifest_handler
     std::optional<model::offset> _last_uploaded_compacted_offset;
     std::optional<model::offset> _insync_offset;
     std::optional<size_t> _cloud_log_size_bytes;
+    std::optional<model::offset> _archive_start_offset;
+    std::optional<model::offset> _archive_clean_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -1285,6 +1309,14 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
 
     if (handler._insync_offset) {
         _insync_offset = handler._insync_offset.value();
+    }
+
+    if (handler._archive_start_offset) {
+        _archive_start_offset = handler._archive_start_offset.value();
+    }
+
+    if (handler._archive_clean_offset) {
+        _archive_clean_offset = handler._archive_clean_offset.value();
     }
 
     if (handler._segments) {
@@ -1430,6 +1462,14 @@ void partition_manifest::serialize_begin(
     }
     w.Key("cloud_log_size_bytes");
     w.Uint64(_cloud_log_size_bytes);
+    if (_archive_start_offset != model::offset{}) {
+        w.Key("archive_start_offset");
+        w.Int64(_archive_start_offset());
+    }
+    if (_archive_clean_offset != model::offset{}) {
+        w.Key("archive_clean_offset");
+        w.Int64(_archive_clean_offset());
+    }
     cursor->prologue_done = true;
 }
 
