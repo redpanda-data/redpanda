@@ -24,19 +24,19 @@ namespace cloud_storage {
 
 using int64_delta_alg = details::delta_delta<int64_t>;
 using int64_xor_alg = details::delta_xor;
-// Column for monotonically increaseing data
+// Column for monotonically increasing data
 using counter_col_t = segment_meta_column<int64_t, int64_delta_alg>;
 // Column for varying data
 using gauge_col_t = segment_meta_column<int64_t, int64_xor_alg>;
 
-/// Samping rate of the indexer inside the column store, if
-/// sampling_rate == 1 every row is indexed, 2 - every secod row, etc
+/// Sampling rate of the indexer inside the column store, if
+/// sampling_rate == 1 every row is indexed, 2 - every second row, etc
 /// The value 8 with max_frame_size set to 64 will give us 8 hints per
-/// frame (frame has 64 rows). There is no measureable difference between
+/// frame (frame has 64 rows). There is no measurable difference between
 /// value 8 and smaller values.
 static constexpr uint32_t sampling_rate = 8;
 
-// Sampling rate shold be proportional to max_frame_size so we will
+// Sampling rate should be proportional to max_frame_size so we will
 // sample first row of every frame.
 static_assert(
   gauge_col_t::max_frame_size % sampling_rate == 0, "Invalid sampling rate");
@@ -86,11 +86,40 @@ void increment_all(std::tuple<Args...>& tup) {
 }
 
 /// The iters tuple is a tuple of std::optional<iterator-type>. The method
-/// checks if the optoinal referenced by index is not none and dereferences.
+/// checks if the optional referenced by index is not none and dereferences.
 template<segment_meta_ix ix, class T, class... Args>
 void value_or(const std::tuple<Args...>& iters, T& res) {
     const auto& it = std::get<static_cast<size_t>(ix)>(iters);
     res = T(*it);
+}
+
+/// zip first_tuple with second_tuple, calls map_fn on each pair of elements,
+/// collect results in a tuple if map_fn produces a result
+template<typename Fn>
+auto tuple_map(Fn&& map_fn, auto&& first_tuple, auto&& second_tuple) {
+    return std::apply(
+      [&]<typename... Ts>(Ts&&... first_param) {
+          return std::apply(
+            [&]<typename... Us>(Us&&... second_param) {
+                if constexpr (std::is_void_v<std::invoke_result_t<
+                                Fn&&,
+                                decltype(std::get<0>(first_tuple)),
+                                decltype(std::get<0>(second_tuple))>>) {
+                    (std::invoke(
+                       map_fn,
+                       std::forward<Ts>(first_param),
+                       std::forward<Us>(second_param)),
+                     ...);
+                } else {
+                    return std::tuple{std::invoke(
+                      map_fn,
+                      std::forward<Ts>(first_param),
+                      std::forward<Us>(second_param))...};
+                }
+            },
+            second_tuple);
+      },
+      first_tuple);
 }
 
 } // namespace details
@@ -154,6 +183,59 @@ class column_store
           _sname_format);
     }
 
+    // helper used for serde_write/read and insert_entries
+    auto member_fields() { return std::tuple_cat(columns(), std::tie(_hints)); }
+
+    // projections from segment_meta to value_t used by the columns. the order
+    // is the same of columns()
+    constexpr static auto segment_meta_accessors = std::tuple{
+      [](segment_meta const& s) {
+          return static_cast<int64_t>(s.is_compacted);
+      },
+      [](segment_meta const& s) { return static_cast<int64_t>(s.size_bytes); },
+      [](segment_meta const& s) { return s.base_offset(); },
+      [](segment_meta const& s) { return s.committed_offset(); },
+      [](segment_meta const& s) { return s.base_timestamp(); },
+      [](segment_meta const& s) { return s.max_timestamp(); },
+      [](segment_meta const& s) { return s.delta_offset(); },
+      [](segment_meta const& s) { return s.ntp_revision(); },
+      [](segment_meta const& s) { return s.archiver_term(); },
+      [](segment_meta const& s) { return s.segment_term(); },
+      [](segment_meta const& s) { return s.delta_offset_end(); },
+      [](segment_meta const& s) {
+          return static_cast<std::underlying_type_t<segment_name_format>>(
+            s.sname_format);
+      },
+    };
+
+    static_assert(
+      reflection::arity<segment_meta>()
+        == std::tuple_size_v<decltype(segment_meta_accessors)>,
+      "segment_meta has a field that is not in segment_meta_accessors. check "
+      "also that the members of column_store match the members of "
+      "segment_meta");
+    /**
+     * private constructor used to create a store that share the underlying
+     * buffers with another store
+     * @param cols_iterators tuple<<begin,end>...> of
+     * std::list<frame_t>::iterators for each column
+     * @param hints_begin start of hints map
+     * @param hints_end end of hints map
+     */
+    column_store(
+      share_frame_t,
+      auto cols_iterators,
+      hint_map_t::const_iterator hints_begin,
+      hint_map_t::const_iterator hints_end)
+      : _hints{hints_begin, hints_end} {
+        details::tuple_map(
+          [](auto& col, auto& it_pair) {
+              col = {share_frame, std::get<0>(it_pair), std::get<1>(it_pair)};
+          },
+          columns(),
+          cols_iterators);
+    }
+
 public:
     using iterators_t = std::tuple<
       gauge_col_t::const_iterator,
@@ -184,25 +266,18 @@ public:
         // committing them. If any 'append_tx' call will throw no column will be
         // updated and all transactions will be aborted. Because of that the
         // update is all or nothing even in presence of bad_alloc exceptions.
-        details::commit_all(std::make_tuple(
-          _is_compacted.append_tx(static_cast<int64_t>(meta.is_compacted)),
-          _size_bytes.append_tx(static_cast<int64_t>(meta.size_bytes)),
-          _base_offset.append_tx(meta.base_offset()),
-          _committed_offset.append_tx(meta.committed_offset()),
-          _base_timestamp.append_tx(meta.base_timestamp.value()),
-          _max_timestamp.append_tx(meta.max_timestamp.value()),
-          _delta_offset.append_tx(meta.delta_offset()),
-          _ntp_revision.append_tx(meta.ntp_revision()),
-          _archiver_term.append_tx(meta.archiver_term()),
-          _segment_term.append_tx(meta.segment_term()),
-          _delta_offset_end.append_tx(meta.delta_offset_end()),
-          _sname_format.append_tx(static_cast<int64_t>(meta.sname_format))));
+        details::commit_all(details::tuple_map(
+          [&](auto& col, auto accessor) {
+              return col.append_tx(std::invoke(accessor, meta));
+          },
+          columns(),
+          segment_meta_accessors));
 
         if (
           ix
             % static_cast<uint32_t>(::details::FOR_buffer_depth * sampling_rate)
           == 0) {
-            // At the begining of every row we need to collect
+            // At the beginning of every row we need to collect
             // a set of hints to speed up the subsequent random
             // reads.
             auto base_offset_hint = _base_offset.get_current_stream_pos();
@@ -228,6 +303,126 @@ public:
                 _hints.insert(std::make_pair(meta.base_offset(), std::nullopt));
             }
         }
+    }
+
+    /**
+     * reconstruct *this by replacing local segment_meta-s with replacement
+     * segment_metas replacements must sorted and be [base_offset,
+     * commit_offset] aligned to local segments
+     * @param offset_seg_it a [base_offset, segment_meta] iterator
+     * @param offset_seg_end end sentinel for offset_seg_it
+     * @return a list of segment_meta that where evicted during the process
+     */
+    auto insert_entries(
+      absl::btree_map<model::offset, segment_meta>::const_iterator
+        offset_seg_it,
+      absl::btree_map<model::offset, segment_meta>::const_iterator
+        offset_seg_end) -> fragmented_vector<segment_meta> {
+        if (offset_seg_it == offset_seg_end) {
+            return {};
+        }
+
+        // construct a column_store with the frames and hints that are before
+        // the replacements
+        auto first_replacement_index
+          = _base_offset.find(offset_seg_it->first()).index();
+        // tuple of [begin, end] iterators to std::list<frame_t>
+        auto to_clone_frames = std::apply(
+          [&](auto&... col) {
+              return std::tuple{std::tuple{
+                col._frames.begin(),
+                col.get_frame_iterator_by_element_index(
+                  first_replacement_index)}...};
+          },
+          columns());
+
+        // extract the end iterator for hints, to cover only the frames that
+        // will be cloned
+        auto end_hints = [&] {
+            auto frame_it = _base_offset.get_frame_iterator_by_element_index(
+              first_replacement_index);
+            if (frame_it == _base_offset._frames.begin()) {
+                // no hint will be saved
+                return _hints.begin();
+            }
+            --frame_it; // go back to last frame that will be cloned
+            auto frame_max_offset = frame_it->last_value();
+            return _hints.upper_bound(
+              frame_max_offset.value_or(model::offset::min()()));
+        }();
+
+        // this column_store is initialized with the run of segments that are
+        // not changed
+        auto replacement_store = column_store{
+          share_frame, std::move(to_clone_frames), _hints.begin(), end_hints};
+
+        auto unchanged_committed_offset
+          = replacement_store.last_committed_offset().value_or(
+            model::offset::min());
+        vassert(
+          unchanged_committed_offset < offset_seg_it->first(),
+          "committed_offset of unchanged elements must be strictly less than "
+          "replacements base_offset, by design");
+
+        // iterator pointing to first segment not cloned into replacement_store
+        auto old_segments_it = upper_bound(unchanged_committed_offset());
+        auto old_segments_end = end();
+
+        auto replaced_segments = fragmented_vector<segment_meta>{};
+        // merge replacements and old segments into new store
+        while (old_segments_it != old_segments_end
+               && offset_seg_it != offset_seg_end) {
+            auto [replacement_base_offset, replacement_meta] = *offset_seg_it;
+            ++offset_seg_it;
+
+            auto old_seg = dereference(old_segments_it);
+            // append old segments with committed offset smaller than
+            // replacement
+            while (old_seg.committed_offset < replacement_base_offset) {
+                replacement_store.append(old_seg);
+                details::increment_all(old_segments_it);
+                if (old_segments_it == old_segments_end) {
+                    break;
+                }
+                old_seg = dereference(old_segments_it);
+            }
+            // old_segment_it points to first segment to replace
+
+            // append replacement segment instead of the old one
+            replacement_store.append(replacement_meta);
+
+            // skip over segments superseded by replacement_meta
+            while (old_segments_it != old_segments_end) {
+                auto to_replace = dereference(
+                  old_segments_it); // this could potentially be cached for the
+                                    // next iteration of the outer loop
+                if (
+                  to_replace.base_offset > replacement_meta.committed_offset) {
+                    break;
+                }
+                replaced_segments.push_back(to_replace);
+                details::increment_all(old_segments_it);
+            }
+        }
+
+        // drain remaining segments
+        if (old_segments_it == old_segments_end) {
+            for (; offset_seg_it != offset_seg_end; ++offset_seg_it) {
+                replacement_store.append(offset_seg_it->second);
+            }
+        } else {
+            // offset_seg_it==offset_seg_end
+            for (; old_segments_it != old_segments_end;
+                 details::increment_all(old_segments_it)) {
+                replacement_store.append(dereference(old_segments_it));
+            }
+        }
+
+        // perform update of *this by stealing the fields from replacement
+        auto current_data = member_fields();
+        auto replacement_data = replacement_store.member_fields();
+        std::swap(current_data, replacement_data);
+        return replaced_segments;
     }
 
     static segment_meta dereference(const iterators_t& it) {
@@ -277,8 +472,15 @@ public:
         return meta;
     }
 
+    auto last_committed_offset() const -> std::optional<model::offset> {
+        if (_base_offset.size() == 0) {
+            return std::nullopt;
+        }
+        return model::offset(*_committed_offset.last_value());
+    }
+
     /// Return iterator to the end of the sequence
-    auto begin() const {
+    auto begin() const -> iterators_t {
         // Individual iterators can be accessed using
         // segment_meta_ix values as tuple indexes.
         return std::apply(
@@ -286,7 +488,7 @@ public:
     }
 
     /// Return iterator to the first element after the end of the sequence
-    auto end() const {
+    auto end() const -> iterators_t {
         return std::apply(
           [](auto&&... col) { return iterators_t(col.end()...); }, columns());
     }
@@ -302,7 +504,8 @@ public:
     /// Materialize 'segment_meta' struct from column iterator
     ///
     ///
-    auto materialize(counter_col_t::const_iterator base_offset_iter) const {
+    auto materialize(counter_col_t::const_iterator base_offset_iter) const
+      -> iterators_t {
         if (base_offset_iter == _base_offset.end()) {
             return end();
         }
@@ -359,7 +562,7 @@ public:
     }
 
     /// Search by base_offset
-    auto upper_bound(int64_t bo) const {
+    auto upper_bound(int64_t bo) const -> iterators_t {
         auto it = _base_offset.upper_bound(bo);
         return materialize(std::move(it));
     }
@@ -370,9 +573,17 @@ public:
         return materialize(std::move(it));
     }
 
+    void clear() {
+        // replace *this with an empty instance
+        auto replacement = column_store{};
+        auto current_fields = member_fields();
+        auto new_fields = replacement.member_fields();
+        std::swap(current_fields, new_fields);
+    }
     void prefix_truncate(int64_t bo) {
         auto lb = _base_offset.lower_bound(bo);
         if (lb == _base_offset.end()) {
+            clear();
             return;
         }
         auto ix = lb.index();
@@ -415,84 +626,70 @@ public:
 
     bool empty() const { return size() == 0; }
 
-    auto serde_fields() {
-        return std::tie(
-          _is_compacted,
-          _size_bytes,
-          _base_offset,
-          _committed_offset,
-          _base_timestamp,
-          _max_timestamp,
-          _delta_offset,
-          _ntp_revision,
-          _archiver_term,
-          _segment_term,
-          _delta_offset_end,
-          _sname_format,
-          _hints);
-    }
-
     void serde_write(iobuf& out) {
         // hint_map_t (absl::btree_map) is not serde-enabled, it's serialized
         // manually as size,[(key,value)...]
-        serde::envelope_for_each_field(
-          *this, [&out]<typename FieldType>(FieldType& f) {
-              if constexpr (std::same_as<FieldType, hint_map_t>) {
-                  if (unlikely(
-                        f.size()
-                        > std::numeric_limits<serde::serde_size_t>::max())) {
-                      throw serde::serde_exception(fmt_with_ctx(
-                        ssx::sformat,
-                        "serde: {} size {} exceeds serde_size_t",
-                        serde::type_str<column_store>(),
-                        f.size()));
-                  }
-                  serde::write(out, static_cast<serde::serde_size_t>(f.size()));
-                  for (auto& [k, v] : f) {
-                      serde::write(out, k);
-                      serde::write(out, std::move(v));
-                  }
-              } else {
-                  serde::write(out, std::move(f));
-              }
-          });
+        auto field_writer = [&out]<typename FieldType>(FieldType& f) {
+            if constexpr (std::same_as<FieldType, hint_map_t>) {
+                if (unlikely(
+                      f.size()
+                      > std::numeric_limits<serde::serde_size_t>::max())) {
+                    throw serde::serde_exception(fmt_with_ctx(
+                      ssx::sformat,
+                      "serde: {} size {} exceeds serde_size_t",
+                      serde::type_str<column_store>(),
+                      f.size()));
+                }
+                serde::write(out, static_cast<serde::serde_size_t>(f.size()));
+                for (auto& [k, v] : f) {
+                    serde::write(out, k);
+                    serde::write(out, std::move(v));
+                }
+            } else {
+                serde::write(out, std::move(f));
+            }
+        };
+        std::apply(
+          [&](auto&... field) { (field_writer(field), ...); }, member_fields());
     }
 
     void serde_read(iobuf_parser& in, serde::header const& h) {
         // hint_map_t (absl::btree_map) is not serde-enabled, read it as
         // size,[(key,value)...]
-        serde::envelope_for_each_field(
-          *this, [&]<typename FieldType>(FieldType& f) {
-              if (h._bytes_left_limit == in.bytes_left()) {
-                  return false;
-              }
-              if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
-                  throw serde::serde_exception(fmt_with_ctx(
-                    ssx::sformat,
-                    "field spill over in {}, field type {}: envelope_end={}, "
-                    "in.bytes_left()={}",
-                    serde::type_str<column_store>(),
-                    serde::type_str<FieldType>(),
-                    h._bytes_left_limit,
-                    in.bytes_left()));
-              }
-              if constexpr (std::same_as<hint_map_t, FieldType>) {
-                  const auto size = serde::read_nested<serde::serde_size_t>(
-                    in, h._bytes_left_limit);
-                  for (auto i = 0U; i < size; ++i) {
-                      auto key
-                        = serde::read_nested<typename hint_map_t::key_type>(
-                          in, h._bytes_left_limit);
-                      auto value
-                        = serde::read_nested<typename hint_map_t::mapped_type>(
-                          in, h._bytes_left_limit);
-                      f.emplace(std::move(key), std::move(value));
-                  }
-              } else {
-                  f = serde::read_nested<FieldType>(in, h._bytes_left_limit);
-              }
-              return true;
-          });
+        auto field_reader = [&]<typename FieldType>(FieldType& f) {
+            if (h._bytes_left_limit == in.bytes_left()) {
+                return false;
+            }
+            if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+                throw serde::serde_exception(fmt_with_ctx(
+                  ssx::sformat,
+                  "field spill over in {}, field type {}: envelope_end={}, "
+                  "in.bytes_left()={}",
+                  serde::type_str<column_store>(),
+                  serde::type_str<FieldType>(),
+                  h._bytes_left_limit,
+                  in.bytes_left()));
+            }
+            if constexpr (std::same_as<hint_map_t, FieldType>) {
+                const auto size = serde::read_nested<serde::serde_size_t>(
+                  in, h._bytes_left_limit);
+                for (auto i = 0U; i < size; ++i) {
+                    auto key
+                      = serde::read_nested<typename hint_map_t::key_type>(
+                        in, h._bytes_left_limit);
+                    auto value
+                      = serde::read_nested<typename hint_map_t::mapped_type>(
+                        in, h._bytes_left_limit);
+                    f.emplace(std::move(key), std::move(value));
+                }
+            } else {
+                f = serde::read_nested<FieldType>(in, h._bytes_left_limit);
+            }
+            return true;
+        };
+        std::apply(
+          [&](auto&... field) { (void)(field_reader(field) && ...); },
+          member_fields());
     }
 
 private:
@@ -563,65 +760,144 @@ class segment_meta_cstore::impl
       segment_meta_cstore::impl,
       serde::version<0>,
       serde::compat_version<0>> {
+    // TODO tunable?
+    constexpr static auto max_buffer_entries = 1024u;
+
 public:
     void append(const segment_meta& meta) { _col.append(meta); }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl> begin() const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.begin());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl> end() const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.end());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     find(model::offset o) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.find(o()));
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     lower_bound(model::offset o) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.lower_bound(o()));
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     upper_bound(model::offset o) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.upper_bound(o()));
     }
 
     std::optional<segment_meta> last_segment() const {
+        if (!_write_buffer.empty()) {
+            auto last_committed_offset = _col.last_committed_offset().value_or(
+              model::offset::min());
+
+            auto& buffer_last_seg = _write_buffer.crbegin()->second;
+            if (likely(
+                  buffer_last_seg.committed_offset >= last_committed_offset)) {
+                // return last one in _write_buffer
+                return buffer_last_seg;
+            }
+            // fallthrough
+        }
         return _col.last_segment();
     }
 
-    void insert(const segment_meta& m) { _col.append(m); }
+    void insert(const segment_meta& m) {
+        auto [m_it, _] = _write_buffer.insert_or_assign(m.base_offset, m);
+        // the new segment_meta could be a replacement for subsequent entries in
+        // the buffer, so do a pass to clean them
+        if (_write_buffer.size() > 1) {
+            auto not_replaced_segment = std::find_if(
+              std::next(m_it), _write_buffer.end(), [&](auto& kv) {
+                  return kv.first > m.committed_offset;
+              });
+            // if(next(m_it) == not_replaced_segment) there is nothing to erase,
+            // _write_buffer.erase would do nothing
+            _write_buffer.erase(std::next(m_it), not_replaced_segment);
+        }
 
-    auto inflated_actual_size() const { return _col.inflated_actual_size(); }
+        if (_write_buffer.size() > max_buffer_entries) {
+            flush_write_buffer();
+        }
+    }
 
-    size_t size() const { return _col.size(); }
+    auto inflated_actual_size() const {
+        // TODO how to deal with write_buffer? is it ok to return an approx
+        // value by not flushing?
+        return _col.inflated_actual_size();
+    }
 
-    bool empty() const { return _col.empty(); }
+    size_t size() const {
+        flush_write_buffer();
+        return _col.size();
+    }
 
-    bool contains(model::offset o) { return _col.contains(o()); }
+    bool empty() const { return _write_buffer.empty() && _col.empty(); }
+
+    bool contains(model::offset o) {
+        return _write_buffer.contains(o) || _col.contains(o());
+    }
 
     void prefix_truncate(model::offset new_start_offset) {
+        auto new_begin = _write_buffer.lower_bound(new_start_offset);
+        _write_buffer.erase(_write_buffer.begin(), new_begin);
         _col.prefix_truncate(new_start_offset());
     }
 
     std::unique_ptr<segment_meta_materializing_iterator::impl>
     at_index(size_t ix) const {
+        flush_write_buffer();
         return std::make_unique<segment_meta_materializing_iterator::impl>(
           _col.at_index(ix));
     }
 
-    auto serde_fields() { return std::tie(_col); }
+    void serde_write(iobuf& out) {
+        flush_write_buffer();
+        serde::write(out, std::exchange(_col, {}));
+    }
+    void serde_read(iobuf_parser& in, serde::header const& h) {
+        if (h._bytes_left_limit == in.bytes_left()) {
+            return;
+        }
+        if (unlikely(in.bytes_left() < h._bytes_left_limit)) {
+            throw serde::serde_exception(fmt_with_ctx(
+              ssx::sformat,
+              "field spill over in {}, field type {}: envelope_end={}, "
+              "in.bytes_left()={}",
+              serde::type_str<segment_meta_cstore::impl>(),
+              serde::type_str<column_store>(),
+              h._bytes_left_limit,
+              in.bytes_left()));
+        }
+
+        _write_buffer.clear();
+        _col = serde::read_nested<column_store>(in, h._bytes_left_limit);
+    }
 
 private:
-    column_store _col;
+    void flush_write_buffer() const {
+        if (_write_buffer.empty()) {
+            return;
+        }
+        _col.insert_entries(_write_buffer.begin(), _write_buffer.end());
+        _write_buffer.clear();
+    }
+
+    mutable absl::btree_map<model::offset, segment_meta> _write_buffer{};
+    mutable column_store _col{};
 };
 
 segment_meta_cstore::segment_meta_cstore()

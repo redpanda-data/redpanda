@@ -745,6 +745,12 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
 }
 
 void test_cstore_prefix_truncate(size_t test_size, size_t max_truncate_ix) {
+    // failing seed:
+    // std::istringstream{"10263162"} >> random_generators::internal::gen;
+    BOOST_TEST_INFO(fmt::format(
+      "random_generators::internal::gen: [{}]",
+      random_generators::internal::gen));
+
     segment_meta_cstore store;
     auto manifest = generate_metadata(test_size);
     for (const auto& sm : manifest) {
@@ -820,4 +826,121 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
     for (; store_it != store_end; ++store_it, ++manifest_it) {
         BOOST_REQUIRE_EQUAL(*store_it, *manifest_it);
     }
+}
+
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
+    // std::istringstream{"1868201168"} >> random_generators::internal::gen;
+
+    BOOST_TEST_INFO(fmt::format(
+      "random_generators::internal::gen: [{}]",
+      random_generators::internal::gen));
+
+    segment_meta_cstore store{};
+    auto manifest = generate_metadata(9973);
+    auto replacements = std::vector<segment_meta>{};
+    auto to_be_evicted = std::vector<segment_meta>{};
+    auto merged_result = std::vector<segment_meta>{};
+    // merge segments at random
+    auto still_generating = std::accumulate(
+      manifest.begin(),
+      manifest.end(),
+      false,
+      [&](bool generating_replacement, auto const& in) {
+          if (generating_replacement) {
+              if (random_generators::get_int(1) == 1) {
+                  // absorb "in" and keep generating
+                  replacements.back().committed_offset = in.committed_offset;
+                  to_be_evicted.push_back(in);
+                  return true;
+              }
+              // stop generation
+              merged_result.push_back(replacements.back());
+              merged_result.push_back(in);
+              return false;
+          }
+          // no running generation
+          if (random_generators::get_int(1) == 1) {
+              // start generating a new replacement that absorbs "in"
+              replacements.push_back(in);
+              to_be_evicted.push_back(in);
+              return true;
+          }
+
+          // no-op
+          merged_result.push_back(in);
+          return false;
+      });
+
+    if (still_generating) {
+        // close of last generation
+        merged_result.push_back(replacements.back());
+    }
+
+    // divide the test in two, in each half: apply a portion of the manifest, a
+    // portion of replacements, check the last_segment is correct, rinse and
+    // repeat
+    auto manifest_partition_point
+      = manifest.begin()
+        + random_generators::get_int<std::ptrdiff_t>(1, manifest.size());
+    // divide the replacements in two such as all the replacements in part 1
+    // will not come after manifest part 2 this is to ensure that manifest in
+    // part 2 can be applied after applying replacements part 1
+    auto replacements_partition_point = std::find_if(
+      replacements.begin(),
+      replacements.end(),
+      [val = *std::next(manifest_partition_point, -1)](auto& repl) {
+          return repl.committed_offset > val.committed_offset;
+      });
+
+    auto insert_segments = [&](
+                             std::span<const segment_meta> manifest_slice,
+                             std::span<segment_meta> replacements_slice) {
+        // insert original run of segments
+        for (auto& e : manifest_slice) {
+            store.insert(e);
+        }
+
+        std::shuffle(
+          replacements_slice.begin(),
+          replacements_slice.end(),
+          random_generators::internal::gen);
+        // insert replacements
+        for (auto& r : replacements_slice) {
+            store.insert(r);
+        }
+    };
+
+    auto expected_last_seg = [&] {
+        auto manifest_middle = *std::next(manifest_partition_point, -1);
+        auto replacement_middle = *std::next(replacements_partition_point, -1);
+        // replacement is expected to encompass their counterpart in manifest
+        return manifest_middle.committed_offset
+                   <= replacement_middle.committed_offset
+                 ? replacement_middle
+                 : manifest_middle;
+    }();
+
+    // insert first part, stop to check that last_segment is accurate,
+    // insert rest of segments
+    insert_segments(
+      {manifest.begin(), manifest_partition_point},
+      {replacements.begin(), replacements_partition_point});
+    BOOST_REQUIRE(store.last_segment() == expected_last_seg);
+    insert_segments(
+      {manifest_partition_point, manifest.end()},
+      {replacements_partition_point, replacements.end()});
+
+    // transfer store to a vector for easier manipulation
+    auto store_it = store.begin();
+    auto store_end = store.end();
+    auto store_result = std::vector<segment_meta>{};
+    for (; store_it != store_end; ++store_it) {
+        store_result.push_back(*store_it);
+    }
+
+    BOOST_REQUIRE(std::equal(
+      store_result.begin(),
+      store_result.end(),
+      merged_result.begin(),
+      merged_result.end()));
 }
