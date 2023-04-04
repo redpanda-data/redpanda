@@ -355,7 +355,7 @@ private:
     void abort_old_txes();
     ss::future<> do_abort_old_txes();
     ss::future<> try_abort_old_tx(model::producer_identity);
-    ss::future<> do_try_abort_old_tx(model::producer_identity);
+    ss::future<tx_errc> do_try_abort_old_tx(model::producer_identity);
     void try_arm(time_point_type);
 
     ss::future<std::error_code> do_mark_expired(model::producer_identity pid);

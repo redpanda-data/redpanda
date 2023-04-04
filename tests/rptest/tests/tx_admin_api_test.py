@@ -9,8 +9,6 @@
 
 from rptest.services.cluster import cluster
 from rptest.clients.types import TopicSpec
-from ducktape.utils.util import wait_until
-from ducktape.mark import ignore
 from rptest.services.admin import Admin
 import confluent_kafka as ck
 from rptest.tests.redpanda_test import RedpandaTest
@@ -33,6 +31,7 @@ class TxAdminTest(RedpandaTest):
         super(TxAdminTest,
               self).__init__(test_context=test_context,
                              num_brokers=3,
+                             log_level="trace",
                              extra_rp_conf={
                                  "tx_timeout_delay_ms": 10000000,
                                  "abort_timed_out_transactions_interval_ms":
@@ -123,10 +122,15 @@ class TxAdminTest(RedpandaTest):
 
         for topic in self.topics:
             for partition in range(topic.partition_count):
-                self.admin.mark_transaction_expired(topic.name, partition, {
-                    "id": abort_tx[0],
-                    "epoch": abort_tx[1]
-                }, "kafka")
+                try:
+                    self.admin.mark_transaction_expired(
+                        topic.name, partition, {
+                            "id": abort_tx[0],
+                            "epoch": abort_tx[1]
+                        }, "kafka")
+                except requests.exceptions.HTTPError as e:
+                    if e.response.status_code != 404:
+                        raise
 
                 txs_info = self.admin.get_transactions(topic.name, partition,
                                                        "kafka")
