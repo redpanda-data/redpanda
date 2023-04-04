@@ -158,6 +158,9 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
               if (ex.node_id == unknown_node_id) {
                   vlog(kclog.warn, "broker_error: {}", ex);
                   return connect();
+              } else if (ex.error == error_code::not_controller) {
+                  vlog(kclog.debug, "broker_error: {}", ex);
+                  return _wait_or_start_update_metadata();
               } else {
                   vlog(kclog.debug, "broker_error: {}", ex);
                   return _brokers.erase(ex.node_id).then([this]() {
