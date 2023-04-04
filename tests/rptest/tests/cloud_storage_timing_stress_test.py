@@ -235,7 +235,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
             cloud_storage_segment_size_target=4 * self.log_segment_size,
             cloud_storage_segment_size_min=2 * self.log_segment_size,
             retention_local_target_bytes_default=10 * self.log_segment_size,
-            cloud_storage_manifest_upload_timeout_ms=60 * 1000,
             cloud_storage_enable_segment_merging=True)
 
         super(CloudStorageTimingStressTest,
