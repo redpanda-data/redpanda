@@ -201,6 +201,40 @@ class BaseTimeQuery:
         # no user data, to check that their timestamps don't
         # break out indexing.
 
+    def _test_timequery_below_start_offset(self, cluster):
+        """
+        Run a timequery for an offset that falls below the start offset
+        of the local log and ensure that -1 (i.e. not found) is returned.
+        """
+        total_segments = 3
+        local_retain_segments = 1
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+
+        topic, timestamps = self._create_and_produce(cluster, False,
+                                                     local_retain_segments,
+                                                     base_ts, record_size,
+                                                     msg_count)
+
+        self.client().alter_topic_config(
+            topic.name, 'retention.bytes',
+            self.log_segment_size * local_retain_segments)
+
+        rpk = RpkTool(cluster)
+
+        def start_offset_advanced():
+            return next(rpk.describe_topic(topic.name)).start_offset > 0
+
+        wait_until(start_offset_advanced,
+                   timeout_sec=60,
+                   backoff_sec=5,
+                   err_msg="Start offset did not advance")
+
+        kcat = KafkaCat(cluster)
+        offset = kcat.query_offset(topic.name, 0, base_ts)
+        assert offset == -1
+
 
 class TimeQueryTest(RedpandaTest, BaseTimeQuery):
     # We use small segments to enable quickly exercising the
@@ -256,6 +290,11 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
     @parametrize(cloud_storage=False, batch_cache=False)
     def test_timequery(self, cloud_storage: bool, batch_cache: bool):
         self._do_test_timequery(cloud_storage, batch_cache)
+
+    @cluster(num_nodes=4)
+    def test_timequery_below_start_offset(self):
+        self.set_up_cluster(cloud_storage=False, batch_cache=False)
+        self._test_timequery_below_start_offset(cluster=self.redpanda)
 
     @cluster(num_nodes=4)
     def test_timequery_with_local_gc(self):
@@ -333,42 +372,6 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
 
         assert not any([e > 0 for e in errors])
 
-    @cluster(num_nodes=4)
-    def test_timequery_below_start_offset(self):
-        """
-        Run a timequery for an offset that falls below the start offset
-        of the local log and ensure that -1 (i.e. not found) is returned.
-        """
-        total_segments = 3
-        self.set_up_cluster(cloud_storage=False, batch_cache=False)
-        local_retain_segments = 1
-        record_size = 1024
-        base_ts = 1664453149000
-        msg_count = (self.log_segment_size * total_segments) // record_size
-
-        topic, timestamps = self._create_and_produce(self.redpanda, False,
-                                                     local_retain_segments,
-                                                     base_ts, record_size,
-                                                     msg_count)
-
-        self.client().alter_topic_config(
-            topic.name, 'retention.bytes',
-            self.log_segment_size * local_retain_segments)
-
-        rpk = RpkTool(self.redpanda)
-
-        def start_offset_advanced():
-            return next(rpk.describe_topic(topic.name)).start_offset > 0
-
-        wait_until(start_offset_advanced,
-                   timeout_sec=60,
-                   backoff_sec=5,
-                   err_msg="Start offset did not advance")
-
-        kcat = KafkaCat(self.redpanda)
-        offset = kcat.query_offset(topic.name, 0, base_ts)
-        assert offset == -1
-
 
 class TimeQueryKafkaTest(Test, BaseTimeQuery):
     """
@@ -418,6 +421,10 @@ class TimeQueryKafkaTest(Test, BaseTimeQuery):
         self._test_timequery(cluster=self.kafka,
                              cloud_storage=False,
                              batch_cache=True)
+
+    @ducktape_cluster(num_nodes=5)
+    def test_timequery_below_start_offset(self):
+        self._test_timequery_below_start_offset(cluster=self.kafka)
 
 
 class TestReadReplicaTimeQuery(RedpandaTest):
