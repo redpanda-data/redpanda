@@ -532,13 +532,10 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
           meta.base_offset, meta.segment_term);
         vlog(
           _logger.info,
-          "new remote segment added (name: {}, base_offset: {} "
-          "last_offset: "
-          "{}), "
+          "new remote segment added (name: {}, meta: {}"
           "remote start_offset: {}, last_offset: {}",
           name,
-          meta.base_offset,
-          meta.committed_offset,
+          meta,
           get_start_offset(),
           get_last_offset());
     }
@@ -547,13 +544,14 @@ ss::future<std::error_code> archival_metadata_stm::do_add_segments(
 }
 
 ss::future<> archival_metadata_stm::apply(model::record_batch b) {
-    // Block manifest serialization during mutation of the
-    // manifest since it's asynchronous.
-    auto units = co_await _manifest_lock.get_units();
     if (b.header().type != model::record_batch_type::archival_metadata) {
         _insync_offset = b.last_offset();
         co_return;
     }
+
+    // Block manifest serialization during mutation of the
+    // manifest since it's asynchronous.
+    auto units = co_await _manifest_lock.get_units();
 
     b.for_each_record([this, base_offset = b.base_offset()](model::record&& r) {
         auto key = serde::from_iobuf<cmd_key>(r.release_key());
@@ -781,10 +779,11 @@ void archival_metadata_stm::apply_add_segment(const segment& segment) {
     vlog(
       _logger.debug,
       "Add segment command applied with {}, new start offset: {}, new last "
-      "offset: {}",
+      "offset: {}, meta: {}",
       segment.name,
       get_start_offset(),
-      get_last_offset());
+      get_last_offset(),
+      segment.meta);
 
     if (meta.committed_offset > get_last_offset()) {
         if (meta.base_offset > model::next_offset(get_last_offset())) {

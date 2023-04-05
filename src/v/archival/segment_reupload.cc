@@ -24,11 +24,13 @@ segment_collector::segment_collector(
   model::offset begin_inclusive,
   const cloud_storage::partition_manifest& manifest,
   const storage::disk_log_impl& log,
-  size_t max_uploaded_segment_size)
+  size_t max_uploaded_segment_size,
+  std::optional<model::offset> end_inclusive)
   : _begin_inclusive(begin_inclusive)
   , _manifest(manifest)
   , _log(log)
   , _max_uploaded_segment_size(max_uploaded_segment_size)
+  , _target_end_inclusive(end_inclusive)
   , _collected_size(0) {}
 
 void segment_collector::collect_segments(segment_collector_mode mode) {
@@ -64,6 +66,29 @@ void segment_collector::collect_segments(segment_collector_mode mode) {
           _manifest.get_ntp());
         return;
     }
+    if (_target_end_inclusive.has_value()) {
+        if (_target_end_inclusive.value() < _log.offsets().start_offset) {
+            vlog(
+              archival_log.debug,
+              "Provided end offset is below the start offset of the local log: "
+              "{} < {} for ntp {}. Advancing to the beginning of the local "
+              "log.",
+              _target_end_inclusive.value(),
+              _log.offsets().start_offset,
+              _manifest.get_ntp());
+            return;
+        }
+        if (_target_end_inclusive.value() > _manifest.get_last_offset()) {
+            vlog(
+              archival_log.debug,
+              "Target end offset {} is ahead of manifest last offset {} for "
+              "ntp {}",
+              _target_end_inclusive.value(),
+              _manifest.get_last_offset(),
+              _manifest.get_ntp());
+            return;
+        }
+    }
 
     do_collect(mode);
 }
@@ -73,10 +98,12 @@ segment_collector::segment_seq segment_collector::segments() {
 }
 
 void segment_collector::do_collect(segment_collector_mode mode) {
-    auto replace_boundary = find_replacement_boundary();
+    auto replace_boundary = _target_end_inclusive.value_or(
+      find_replacement_boundary());
     auto start = _begin_inclusive;
     model::offset current_segment_end{0};
-    while (current_segment_end < _manifest.get_last_offset()) {
+    bool done = false;
+    while (!done && current_segment_end < _manifest.get_last_offset()) {
         auto result = find_next_segment(start, mode);
         if (result.segment.get() == nullptr) {
             break;
@@ -87,7 +114,25 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         }
 
         auto segment_size = result.segment->size_bytes();
-        if (_collected_size + segment_size > _max_uploaded_segment_size) {
+        if (
+          _target_end_inclusive.has_value()
+          && result.segment->offsets().committed_offset
+               >= _target_end_inclusive.value()) {
+            // In this case the collected size may overflow
+            // _max_uploaded_segment_size a bit so we could actually find
+            // _target_end_inclusive inside the last segment.
+            vlog(
+              archival_log.debug,
+              "Segment collect for ntp {} stopping collection, total size: {} "
+              "reached target end offset: {}, current collected size: {}",
+              _manifest.get_ntp(),
+              _collected_size + segment_size,
+              _target_end_inclusive.value(),
+              _collected_size);
+            // Current segment has to be added to the list of results
+            done = true;
+        } else if (
+          _collected_size + segment_size > _max_uploaded_segment_size) {
             vlog(
               archival_log.debug,
               "Segment collect for ntp {} stopping collection, total "
@@ -116,7 +161,8 @@ void segment_collector::do_collect(segment_collector_mode mode) {
         _can_replace_manifest_segment = true;
     }
 
-    align_end_offset_to_manifest(current_segment_end);
+    align_end_offset_to_manifest(
+      _target_end_inclusive.value_or(current_segment_end));
 }
 
 model::offset segment_collector::find_replacement_boundary() const {
@@ -371,7 +417,23 @@ segment_collector::make_upload_candidate(
           "No segments to reupload for {}",
           _manifest.get_ntp());
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
+    } else {
+        if (archival_log.is_enabled(ss::log_level::debug)) {
+            std::stringstream seg;
+            for (const auto& s : _segments) {
+                fmt::print(
+                  seg,
+                  "{}-{}/{}; ",
+                  s->offsets().base_offset,
+                  s->offsets().committed_offset,
+                  s->size_bytes());
+            }
+            vlog(archival_log.debug, "Collected segments: {}", seg.str());
+        }
     }
+
+    auto last = _segments.back();
+    auto last_size_bytes = last->size_bytes();
 
     // Take the locks before opening any readers on the segments.
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
@@ -397,7 +459,6 @@ segment_collector::make_upload_candidate(
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
-    auto last = _segments.back();
     auto tail_seek_result = co_await storage::convert_end_offset_to_file_pos(
       _end_inclusive, last, last->index().max_timestamp(), io_priority_class);
 
@@ -408,8 +469,19 @@ segment_collector::make_upload_candidate(
     auto head_seek = head_seek_result.value();
     auto tail_seek = tail_seek_result.value();
 
+    vlog(
+      archival_log.debug,
+      "collected size: {}, last segment {}-{}/{}, head seek bytes: {}, tail "
+      "seek bytes: {}",
+      _collected_size,
+      last->offsets().base_offset,
+      last->offsets().committed_offset,
+      last_size_bytes,
+      head_seek.bytes,
+      tail_seek.bytes);
+
     size_t content_length = _collected_size
-                            - (head_seek.bytes + last->size_bytes());
+                            - (head_seek.bytes + last_size_bytes);
     content_length += tail_seek.bytes;
 
     auto starting_offset = head_seek.offset;
