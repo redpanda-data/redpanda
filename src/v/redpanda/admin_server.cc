@@ -1587,6 +1587,12 @@ bool is_no_op_user_write(
 
 ss::future<ss::json::json_return_type>
 admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
     auto doc = parse_json_body(*req);
 
     auto credential = parse_scram_credential(doc);
@@ -1631,6 +1637,12 @@ admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
 
 ss::future<ss::json::json_return_type>
 admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
     auto user = security::credential_user(req->param["user"]);
 
     if (!_controller->get_credential_store().local().contains(user)) {
@@ -1652,6 +1664,12 @@ admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
 
 ss::future<ss::json::json_return_type>
 admin_server::update_user_handler(std::unique_ptr<ss::httpd::request> req) {
+    if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
+        // In order that we can do a reliably ordered validation of
+        // the request (and drop no-op requests), run on controller leader;
+        throw co_await redirect_to_leader(*req, model::controller_ntp);
+    }
+
     auto user = security::credential_user(req->param["user"]);
 
     auto doc = parse_json_body(*req);
