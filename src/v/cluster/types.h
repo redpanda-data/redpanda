@@ -3053,8 +3053,6 @@ struct partition_raft_state
     model::offset last_quorum_replicated_index;
     model::term_id last_snapshot_term;
     model::offset last_snapshot_index;
-    model::offset received_snapshot_index;
-    size_t received_snapshot_bytes;
     bool has_pending_flushes;
     bool is_leader;
     bool is_elected_leader;
@@ -3117,8 +3115,6 @@ struct partition_raft_state
           last_quorum_replicated_index,
           last_snapshot_term,
           last_snapshot_index,
-          received_snapshot_index,
-          received_snapshot_bytes,
           has_pending_flushes,
           is_leader,
           is_elected_leader,

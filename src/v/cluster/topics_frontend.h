@@ -49,6 +49,8 @@ public:
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::members_table>&,
+      ss::sharded<partition_manager>&,
+      ss::sharded<shard_table>&,
       config::binding<unsigned>);
 
     ss::future<std::vector<topic_result>> create_topics(
@@ -231,6 +233,8 @@ private:
     ss::sharded<features::feature_table>& _features;
 
     ss::sharded<cluster::members_table>& _members_table;
+    ss::sharded<partition_manager>& _pm;
+    ss::sharded<shard_table>& _shard_table;
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
 
