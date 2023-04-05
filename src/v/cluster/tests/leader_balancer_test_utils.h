@@ -10,9 +10,9 @@
  */
 
 #include "cluster/scheduling/leader_balancer_greedy.h"
+#include "cluster/scheduling/leader_balancer_types.h"
 
 namespace leader_balancer_test_utils {
-
 /**
  * @brief Create an artificial cluster index object with the given
  * number of nodes, shards, groups and replica count.

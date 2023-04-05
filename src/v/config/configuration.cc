@@ -1627,6 +1627,19 @@ configuration::configuration()
       "Enable automatic leadership rebalancing",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       true)
+  , leader_balancer_mode(
+      *this,
+      "leader_balancer_mode",
+      "Leader balancer mode",
+      {.needs_restart = needs_restart::no,
+       .example = model::leader_balancer_mode_to_string(
+         model::leader_balancer_mode::random_hill_climbing),
+       .visibility = visibility::user},
+      model::leader_balancer_mode::random_hill_climbing,
+      {
+        model::leader_balancer_mode::greedy_balanced_shards,
+        model::leader_balancer_mode::random_hill_climbing,
+      })
   , leader_balancer_idle_timeout(
       *this,
       "leader_balancer_idle_timeout",
