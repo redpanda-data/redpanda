@@ -81,7 +81,19 @@ ManifestRecord = namedtuple('ManifestRecord', [
 ])
 
 
-def _parse_normalized_segment_path(path, md5, segment_size):
+def _get_name_version(path):
+    """Return segment size based on path"""
+    items = path.split('/')
+    name = items[-1]
+    ndelim = name.count('-')
+    if ndelim == 2:
+        return "v1"
+    elif ndelim == 4:
+        return "v2"  # v3 is the same format
+    raise ValueError(f"unexpected path format {path}")
+
+
+def _parse_normalized_segment_path_v1(path, md5, segment_size):
     """Parse path like 'kafka/panda-topic/1_8/3319-1-v1.log' and
     return the components - topic: panda-topic, ns: kafka, partition: 1
     revision: 8, base offset: 3319, term: 1"""
@@ -101,6 +113,35 @@ def _parse_normalized_segment_path(path, md5, segment_size):
                            normalized_path=path,
                            md5=md5,
                            size=segment_size)
+
+
+def _parse_normalized_segment_path_v2_v3(path, md5, segment_size):
+    """Parse path like 'kafka/panda-topic/1_8/3319-3421-2817-1-v1.log' and
+    return the components - topic: panda-topic, ns: kafka, partition: 1
+    revision: 8, base offset: 3319, committed offset 3421, size 2817 term: 1
+    """
+    items = path.split('/')
+    ns = items[0]
+    topic = items[1]
+    part_rev = items[2].split('_')
+    partition = int(part_rev[0])
+    revision = int(part_rev[1])
+    fname = items[3].split('-')
+    base_offset = int(fname[0])
+    term = int(fname[1])
+    ntp = NTP(ns=ns, topic=topic, partition=partition, revision=revision)
+    return SegmentMetadata(ntp=ntp,
+                           base_offset=base_offset,
+                           term=term,
+                           normalized_path=path,
+                           md5=md5,
+                           size=segment_size)
+
+
+def _parse_normalized_segment_path(path, md5, segment_size):
+    if _get_name_version(path) == "v1":
+        return _parse_normalized_segment_path_v1(path, md5, segment_size)
+    return _parse_normalized_segment_path_v2_v3(path, md5, segment_size)
 
 
 def _parse_manifest_segment(manifest, sname, meta, remote_set, logger):
