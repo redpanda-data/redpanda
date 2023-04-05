@@ -876,3 +876,7 @@ class Admin:
         return self._request("GET",
                              f"usage?include_open_bucket={str(include_open)}",
                              node=node).json()
+
+    def get_partition_state(self, namespace, topic, partition, node=None):
+        path = f"debug/partition/{namespace}/{topic}/{partition}"
+        return self._request("GET", path, node=node).json()
