@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -e
+git -C /opt clone -b v1.32.0 --single-branch https://github.com/Shopify/sarama.git
+cd /opt/sarama/examples/interceptors
+go mod tidy
+go build
+cd /opt/sarama/examples/http_server
+go mod tidy
+go build
+cd /opt/sarama/examples/consumergroup
+go mod tidy
+go build
+cd /opt/sarama/examples/sasl_scram_client
+go mod tidy
+go build

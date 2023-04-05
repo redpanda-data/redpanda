@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -e
+cd /opt/redpanda-tests/go/sarama/produce_test
+go mod tidy
+go build
