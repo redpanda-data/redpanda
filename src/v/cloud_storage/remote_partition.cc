@@ -268,6 +268,49 @@ public:
                     co_await set_end_of_stream();
                     co_return storage_t{};
                 }
+                auto reader_delta = _reader->current_delta();
+                if (
+                  !_ot_state->empty()
+                  && _ot_state->last_delta() > reader_delta) {
+                    // It's not safe to call 'read_sone' with the current
+                    // offset translator state becuase delta offset of the
+                    // current reader is below last delta registred by the
+                    // offset translator. The offset translator contains data
+                    // from the previous segment and there is an inconsistency
+                    // between them.
+                    //
+                    // If the reader never produced any data we can simply reset
+                    // the offset translator state and continue. Otherwise, we
+                    // need to stop producing.
+                    //
+                    // This trick should guarantee us forward progress. If the
+                    // reader will stop right away before it will be able to
+                    // produce any batches (in the first branch) that belong to
+                    // the current segment the next fetch request will likely
+                    // have start_offset that corresponds to the previous
+                    // segment. In this case the reader will have to skip all
+                    // previously seen batches and _first_produced_offset will
+                    // be set to default value. This will allow reader to reset
+                    // the ot_state and move to the current segment in the
+                    // second branch. This is safe because the ot_state won't
+                    // have any information about the previous segment.
+                    vlog(
+                      _ctxlog.info,
+                      "Detected inconsistency. Reader config: {}, delta offset "
+                      "of the current reader: {}, delta offset of the offset "
+                      "translator: {}, first offset produced by this reader: "
+                      "{}",
+                      _reader->config(),
+                      reader_delta,
+                      _ot_state->last_delta(),
+                      _first_produced_offset);
+                    if (_first_produced_offset != model::offset{}) {
+                        co_await set_end_of_stream();
+                        co_return storage_t{};
+                    } else {
+                        _ot_state->reset();
+                    }
+                }
                 vlog(
                   _ctxlog.debug,
                   "Invoking 'read_some' on current log reader with config: "
@@ -287,6 +330,9 @@ public:
                     _partition->_probe.add_bytes_read(
                       batch.header().size_bytes);
                     _partition->_probe.add_records_read(batch.record_count());
+                }
+                if (_first_produced_offset == model::offset{} && !d.empty()) {
+                    _first_produced_offset = d.front().base_offset();
                 }
                 co_return storage_t{std::move(d)};
             }
@@ -468,6 +514,9 @@ private:
     /// Guard for the partition gate
     gate_guard _gate_guard;
     model::offset _next_segment_base_offset{};
+    /// Contains offset of the first produced record batch or min()
+    /// if no data were produced yet
+    model::offset _first_produced_offset{};
 };
 
 remote_partition::remote_partition(
