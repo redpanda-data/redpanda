@@ -229,17 +229,27 @@ class BaseTimeQuery:
 
         rpk = RpkTool(cluster)
 
-        def start_offset_advanced():
-            return next(rpk.describe_topic(topic.name)).start_offset > 0
+        def start_offset():
+            return next(rpk.describe_topic(topic.name)).start_offset
 
-        wait_until(start_offset_advanced,
+        wait_until(lambda: start_offset() > 0,
                    timeout_sec=60,
                    backoff_sec=5,
                    err_msg="Start offset did not advance")
 
         kcat = KafkaCat(cluster)
+        lwm_before = start_offset()
         offset = kcat.query_offset(topic.name, 0, base_ts)
-        assert offset == -1
+        lwm_after = start_offset()
+
+        # When querying before the start of the log, we should get
+        # the offset of the start of the log.
+        assert offset >= 0
+        # The LWM can move during background housekeeping while we
+        # are doing timequery, so success condition is that if falls
+        # within a range.
+        assert offset >= lwm_before
+        assert offset <= lwm_after
 
 
 class TimeQueryTest(RedpandaTest, BaseTimeQuery):
