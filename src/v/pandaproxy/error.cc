@@ -215,6 +215,8 @@ std::error_condition make_error_condition(std::error_code ec) {
         switch (static_cast<jec>(ec.value())) {
         case jec::invalid_json:
             return rec::unprocessable_entity;
+        case jec::unable_to_serialize:
+            return rec::serialization_error;
         }
         return {};
     }
