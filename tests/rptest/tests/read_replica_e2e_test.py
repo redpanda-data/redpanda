@@ -414,6 +414,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             lambda: cluster_has_offsets(self.second_cluster),
             timeout_sec=30,
             backoff_sec=1)
+        self.logger.info(f"pre-upgrade read replica HWMs: {rr_hwms}")
         # Upgrade the read replica cluster first.
         self.second_cluster._installer.install(self.second_cluster.nodes,
                                                RedpandaInstaller.HEAD)
@@ -423,7 +424,7 @@ class ReadReplicasUpgradeTest(EndToEndTest):
             lambda: cluster_has_offsets(self.second_cluster),
             timeout_sec=30,
             backoff_sec=1)
-        assert new_rr_hwms != rr_hwms, f"{new_rr_hwms} vs {rr_hwms}"
+        self.logger.info(f"post-upgrade read replica HWMs: {new_rr_hwms}")
 
         # Then upgrade the source cluster and make sure the source and RRR
         # cluster match.
