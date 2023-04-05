@@ -2168,3 +2168,38 @@ SEASTAR_THREAD_TEST_CASE(test_readd_protection) {
     auto backlog = m.replaced_segments();
     BOOST_REQUIRE(backlog.empty());
 }
+
+SEASTAR_THREAD_TEST_CASE(test_archive_offsets_serialization) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    m.add(
+      segment_name("1000-1-v1.log"),
+      {
+        .base_offset = model::offset{1000},
+        .committed_offset = model::offset{1999},
+      });
+    m.add(
+      segment_name("2000-1-v1.log"),
+      {
+        .base_offset = model::offset{2000},
+        .committed_offset = model::offset{3000},
+      });
+    BOOST_REQUIRE(m.get_start_offset() == model::offset(1000));
+    m.set_archive_start_offset(model::offset(100));
+    m.set_archive_clean_offset(model::offset(50));
+
+    BOOST_REQUIRE(m.get_archive_start_offset() == model::offset(100));
+    BOOST_REQUIRE(m.get_archive_clean_offset() == model::offset(50));
+
+    auto [is, size] = m.serialize().get();
+    iobuf buf;
+    auto os = make_iobuf_ref_output_stream(buf);
+    ss::copy(is, os).get();
+
+    auto rstr = make_iobuf_input_stream(std::move(buf));
+    partition_manifest restored;
+    restored.update(std::move(rstr)).get();
+
+    BOOST_REQUIRE_EQUAL(
+      restored.get_archive_start_offset(), model::offset(100));
+    BOOST_REQUIRE_EQUAL(restored.get_archive_clean_offset(), model::offset(50));
+}
