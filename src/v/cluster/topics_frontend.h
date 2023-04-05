@@ -140,6 +140,9 @@ public:
     ss::future<topic_result> do_update_topic_properties(
       topic_properties_update, model::timeout_clock::time_point);
 
+    ss::future<result<std::vector<partition_state>>>
+      get_partition_state(model::ntp);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -220,6 +223,9 @@ private:
     ss::future<result<std::vector<partition_assignment>>>
     generate_reassignments(
       model::ntp, std::vector<model::node_id> new_replicas);
+
+    ss::future<result<partition_state_reply>>
+      do_get_partition_state(model::node_id, model::ntp);
 
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
