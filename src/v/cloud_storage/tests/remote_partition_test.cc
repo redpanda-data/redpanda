@@ -1420,3 +1420,176 @@ FIXTURE_TEST(
         BOOST_REQUIRE(headers_read.size() == num_data_batches);
     }
 }
+
+FIXTURE_TEST(test_remote_partition_scan_after_recovery, cloud_storage_fixture) {
+    const char* manifest_json = R"json({
+      "version": 1,
+      "namespace": "test-ns",
+      "topic": "test-topic",
+      "partition": 42,
+      "revision": 0,
+      "last_offset": 1311,
+      "insync_offset": 1313,
+      "start_offset": 0,
+      "segments": {
+        "0-1-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 15468,
+          "committed_offset": 225,
+          "base_offset": 0,
+          "base_timestamp": 1680714100332,
+          "max_timestamp": 1680714107958,
+          "delta_offset": 0,
+          "archiver_term": 1,
+          "segment_term": 1,
+          "delta_offset_end": 1,
+          "sname_format": 2
+        },
+        "226-1-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 190,
+          "committed_offset": 226,
+          "base_offset": 226,
+          "base_timestamp": 1680714108861,
+          "max_timestamp": 1680714107958,
+          "delta_offset": 1,
+          "archiver_term": 2,
+          "segment_term": 1,
+          "delta_offset_end": 1,
+          "sname_format": 2
+        },
+        "227-2-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 7976,
+          "committed_offset": 340,
+          "base_offset": 227,
+          "base_timestamp": 1680714332546,
+          "max_timestamp": 1680714337548,
+          "delta_offset": 2,
+          "archiver_term": 3,
+          "segment_term": 2,
+          "delta_offset_end": 4,
+          "sname_format": 2
+        },
+        "341-3-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 5256,
+          "committed_offset": 414,
+          "base_offset": 341,
+          "base_timestamp": 1680714341227,
+          "max_timestamp": 1680714343949,
+          "delta_offset": 4,
+          "archiver_term": 4,
+          "segment_term": 3,
+          "delta_offset_end": 6,
+          "sname_format": 2
+        },
+        "415-4-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 6616,
+          "committed_offset": 508,
+          "base_offset": 415,
+          "base_timestamp": 1680714353405,
+          "max_timestamp": 1680714356759,
+          "delta_offset": 6,
+          "archiver_term": 5,
+          "segment_term": 4,
+          "delta_offset_end": 8,
+          "sname_format": 2
+        },
+        "501-5-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 32708,
+          "committed_offset": 989,
+          "base_offset": 501,
+          "base_timestamp": 1680714817104,
+          "max_timestamp": 1680714832463,
+          "delta_offset": 1,
+          "archiver_term": 5,
+          "segment_term": 5,
+          "delta_offset_end": 1,
+          "sname_format": 2
+        },
+        "990-5-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 10596,
+          "committed_offset": 1143,
+          "base_offset": 990,
+          "base_timestamp": 1680714833102,
+          "max_timestamp": 1680714842970,
+          "delta_offset": 1,
+          "archiver_term": 5,
+          "segment_term": 5,
+          "delta_offset_end": 2,
+          "sname_format": 2
+        },
+        "1144-5-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 192,
+          "committed_offset": 1144,
+          "base_offset": 1144,
+          "base_timestamp": 1680714846258,
+          "max_timestamp": 1680714842970,
+          "delta_offset": 2,
+          "archiver_term": 6,
+          "segment_term": 5,
+          "delta_offset_end": 2,
+          "sname_format": 2
+        },
+        "1145-6-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 9846,
+          "committed_offset": 1310,
+          "base_offset": 1145,
+          "base_timestamp": 1680714852301,
+          "max_timestamp": 1680714857884,
+          "delta_offset": 3,
+          "archiver_term": 6,
+          "segment_term": 6,
+          "delta_offset_end": 5,
+          "sname_format": 2
+        },
+        "1311-6-v1.log": {
+          "is_compacted": false,
+          "size_bytes": 193,
+          "committed_offset": 1311,
+          "base_offset": 1311,
+          "base_timestamp": 1680714866941,
+          "max_timestamp": 1680714857884,
+          "delta_offset": 5,
+          "archiver_term": 7,
+          "segment_term": 6,
+          "delta_offset_end": 5,
+          "sname_format": 2
+        }
+      }
+    })json";
+
+    cloud_storage::partition_manifest manifest;
+    iobuf manifest_body;
+    manifest_body.append(manifest_json, std::strlen(manifest_json));
+    auto is = make_iobuf_input_stream(std::move(manifest_body));
+    manifest.update(std::move(is)).get();
+
+    auto segments = setup_s3_imposter(*this, manifest);
+
+    auto base = segments.front().base_offset;
+    auto max = segments.back().max_offset;
+
+    vlog(test_log.debug, "offset range: {}-{}", base, max);
+    print_segments(segments);
+
+    for (size_t sz : client_batch_sizes) {
+        auto headers_read = scan_remote_partition_incrementally(
+          *this, base, max, sz);
+
+        // Check that there are no holes in the offset range.
+        // This test works only with batches that contain a single record
+        // so a simple check like this works.
+        model::offset prev;
+        for (const auto& hdr : headers_read) {
+            BOOST_REQUIRE_EQUAL(hdr.base_offset, model::next_offset(prev));
+            prev = hdr.base_offset;
+        }
+    }
+}
