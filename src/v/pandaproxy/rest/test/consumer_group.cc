@@ -283,3 +283,179 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::not_found);
     }
 }
+
+FIXTURE_TEST(
+  pandaproxy_consumer_group_fetch_binary_with_jsonv2, pandaproxy_test_fixture) {
+    using namespace std::chrono_literals;
+    info("Waiting for leadership");
+    wait_for_controller_leadership().get();
+    info("Connecting client");
+    auto client = make_proxy_client();
+
+    kafka::group_id group_id{"test_group"};
+    kafka::member_id member_id{kafka::no_member};
+    {
+        info("Create consumer");
+        ss::sstring req_body(R"({
+  "name": "test_consumer",
+  "format": "json",
+  "auto.offset.reset": "earliest",
+  "auto.commit.enable": "false",
+  "fetch.min.bytes": "1",
+  "consumer.request.timeout.ms": "10000"
+})");
+        iobuf req_body_buf;
+        req_body_buf.append(req_body.data(), req_body.size());
+        auto res = http_request(
+          client,
+          fmt::format("/consumers/{}", group_id()),
+          std::move(req_body_buf),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::v2,
+          ppj::serialization_format::v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+
+        auto res_data = ppj::rjson_parse(
+          res.body.data(), ppj::create_consumer_response_handler());
+        BOOST_REQUIRE_EQUAL(res_data.instance_id, "test_consumer");
+        member_id = res_data.instance_id;
+        BOOST_REQUIRE_EQUAL(
+          res_data.base_uri,
+          fmt::format(
+            "http://{}:{}/consumers/{}/instances/{}",
+            "127.0.0.1",
+            "8082",
+            group_id(),
+            member_id()));
+        BOOST_REQUIRE_EQUAL(
+          res.headers.at(boost::beast::http::field::content_type),
+          to_header_value(ppj::serialization_format::v2));
+    }
+
+    info("Member id: {}", member_id);
+
+    info("Adding known topic");
+    auto tp = model::topic_partition(model::topic("t"), model::partition_id(0));
+    auto ntp = make_default_ntp(tp.topic, tp.partition);
+    add_topic(model::topic_namespace_view(ntp)).get();
+
+    {
+        info("Subscribe consumer");
+        ss::sstring req_body(R"(
+{
+  "topics": [
+    "t"
+  ]
+})");
+        iobuf req_body_buf;
+        req_body_buf.append(req_body.data(), req_body.size());
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/subscription", group_id(), member_id()),
+          std::move(req_body_buf),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::v2,
+          ppj::serialization_format::v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::no_content);
+    }
+
+    {
+        const ss::sstring post_body(
+          R"({
+"records":[
+    {
+        "key": "cGFuZGFwcm94eQ==",
+        "value": "IlZhbHVlIg=="
+    }
+]
+})");
+
+        info("Produce binary key to known topic");
+        set_client_config("retries", size_t(5));
+        auto body = iobuf();
+        body.append(post_body.data(), post_body.size());
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::v2);
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body, R"({"offsets":[{"partition":0,"offset":0}]})");
+    }
+
+    {
+        info("Consume from topic");
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/records?timeout={}&max_bytes={}",
+            group_id(),
+            member_id(),
+            "1000",
+            "1000000"),
+          boost::beast::http::verb::get,
+          ppj::serialization_format::v2,
+          ppj::serialization_format::json_v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::request_timeout);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"error_code":40801,"message":"Unable to serialize key of record at offset 0 in topic:partition t:0"})");
+    }
+
+    {
+        const ss::sstring post_body(
+          R"({
+"records":[
+    {
+        "value": "cGFuZGFwcm94eQ=="
+    }
+]
+})");
+
+        info("Produce binary value to known topic");
+        set_client_config("retries", size_t(5));
+        auto body = iobuf();
+        body.append(post_body.data(), post_body.size());
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::v2);
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body, R"({"offsets":[{"partition":0,"offset":1}]})");
+    }
+
+    {
+        info("Consume from topic");
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/records?timeout={}&max_bytes={}",
+            group_id(),
+            member_id(),
+            "1000",
+            "1000000"),
+          boost::beast::http::verb::get,
+          ppj::serialization_format::v2,
+          ppj::serialization_format::json_v2);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::request_timeout);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"error_code":40801,"message":"Unable to serialize value of record at offset 1 in topic:partition t:0"})");
+    }
+}
