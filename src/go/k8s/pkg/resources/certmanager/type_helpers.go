@@ -24,6 +24,7 @@ import (
 	resourcetypes "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	corev1 "k8s.io/api/core/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -333,6 +334,15 @@ func isSelfSigned(ctx context.Context, nodeSecretRef *corev1.ObjectReference, ex
 		var secret corev1.Secret
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: nodeSecretRef.Name, Namespace: nodeSecretRef.Namespace}, &secret)
 		if err != nil {
+			if k8serrors.IsNotFound(err) {
+				// let's assume that the certificate is not self-signed if the
+				// secret is not yet present at cluster creation time. The pods
+				// would not start until the secret is created and, at that
+				// time, a new reconcile loop will fix any inconsistencies.
+				// This allows referencing an external (shared) Certificate by
+				// pointing to its target secret.
+				return false, nil
+			}
 			return false, err
 		}
 		_, ok := secret.Data[cmmetav1.TLSCAKey]
