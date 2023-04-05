@@ -4,12 +4,23 @@ dir="$1"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 export PATH="$dir/.cargo/bin:${PATH}"
 pushd /tmp
+
 git clone https://github.com/redpanda-data/client-swarm.git
 pushd client-swarm
-git reset --hard 9ef8e93
+git reset --hard 5610f614545ee34f593e1279b30ee9986959d9b0
 cargo build --release
-cp target/release/client-swarm /usr/local/bin/
+cp target/release/client-swarm /usr/local/bin
 popd
 rm -rf client-swarm
+
+git clone https://github.com/jcsp/segment_toy.git
+pushd segment_toy
+git reset --hard 830a4de9ac5f1c40a52fb4fc68b91996e9e6a86c
+cargo build --release
+cp target/release/rp-storage-tool /usr/local/bin
+popd
+rm -rf segment_toy
+
 popd
 rm -rf $dir/.cargo
+rm -rf $dir/.rustup
