@@ -1478,13 +1478,26 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
         auto& log = dynamic_cast<storage::disk_log_impl&>(
           *log_generic.get_impl());
         segment_collector collector(
-          run->meta.base_offset, manifest(), log, run->meta.size_bytes);
+          run->meta.base_offset,
+          manifest(),
+          log,
+          run->meta.size_bytes,
+          run->meta.committed_offset);
         collector.collect_segments(
           segment_collector_mode::collect_non_compacted);
         auto candidate = co_await collector.make_upload_candidate(
           _conf->upload_io_priority, _conf->segment_upload_timeout);
         if (candidate.candidate.exposed_name().empty()) {
             vlog(_rtclog.warn, "Failed to make upload candidate");
+            co_return std::nullopt;
+        }
+        if (candidate.candidate.content_length != run->meta.size_bytes) {
+            vlog(
+              _rtclog.error,
+              "Failed to make upload candidate with correct size, expected {}, "
+              "actual {}",
+              candidate.candidate,
+              run->meta);
             co_return std::nullopt;
         }
         co_return candidate;
