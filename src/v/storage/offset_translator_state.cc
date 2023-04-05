@@ -251,6 +251,8 @@ bool offset_translator_state::add_absolute_delta(
     return false;
 }
 
+void offset_translator_state::reset() { _last_offset2batch.clear(); }
+
 bool offset_translator_state::truncate(model::offset offset) {
     vassert(
       !_last_offset2batch.empty(),
