@@ -266,6 +266,8 @@ public:
         return _cur_rp_offset - _cur_delta;
     }
 
+    model::offset_delta current_delta() const { return _cur_delta; }
+
     bool reads_from_segment(const remote_segment& segm) const {
         return &segm == _seg.get();
     }
