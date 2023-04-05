@@ -265,6 +265,8 @@ controller::start(cluster_discovery& discovery, ss::abort_source& shard0_as) {
             std::ref(_cloud_storage_api),
             std::ref(_feature_table),
             std::ref(_members_table),
+            std::ref(_partition_manager),
+            std::ref(_shard_table),
             ss::sharded_parameter([] {
                 return config::shard_local_cfg()
                   .storage_space_alert_free_threshold_percent.bind();
