@@ -1573,6 +1573,18 @@ static bool match_scram_credential(
     }
 }
 
+bool is_no_op_user_write(
+  security::credential_store& store,
+  security::credential_user username,
+  security::scram_credential credential) {
+    auto user_opt = store.get<security::scram_credential>(username);
+    if (user_opt.has_value()) {
+        return user_opt.value() == credential;
+    } else {
+        return false;
+    }
+}
+
 ss::future<ss::json::json_return_type>
 admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
     auto doc = parse_json_body(*req);
@@ -1585,6 +1597,15 @@ admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
     }
 
     auto username = security::credential_user(doc["username"].GetString());
+
+    if (is_no_op_user_write(
+          _controller->get_credential_store().local(), username, credential)) {
+        vlog(
+          logger.debug,
+          "User {} already exists with matching credential",
+          username);
+        co_return ss::json::json_return_type(ss::json::json_void());
+    }
 
     auto err
       = co_await _controller->get_security_frontend().local().create_user(
@@ -1612,6 +1633,11 @@ ss::future<ss::json::json_return_type>
 admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
     auto user = security::credential_user(req->param["user"]);
 
+    if (!_controller->get_credential_store().local().contains(user)) {
+        vlog(logger.debug, "User '{}' already gone during deletion", user);
+        co_return ss::json::json_return_type(ss::json::json_void());
+    }
+
     auto err
       = co_await _controller->get_security_frontend().local().delete_user(
         user, model::timeout_clock::now() + 5s);
@@ -1631,6 +1657,15 @@ admin_server::update_user_handler(std::unique_ptr<ss::httpd::request> req) {
     auto doc = parse_json_body(*req);
 
     auto credential = parse_scram_credential(doc);
+
+    if (is_no_op_user_write(
+          _controller->get_credential_store().local(), user, credential)) {
+        vlog(
+          logger.debug,
+          "User {} already exists with matching credential",
+          user);
+        co_return ss::json::json_return_type(ss::json::json_void());
+    }
 
     auto err
       = co_await _controller->get_security_frontend().local().update_user(
