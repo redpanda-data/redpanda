@@ -1604,6 +1604,7 @@ ss::future<> ntp_archiver::housekeeping() {
             const auto gc_updated_manifest = co_await garbage_collect();
             if (retention_updated_manifest || gc_updated_manifest) {
                 co_await upload_manifest(housekeeping_ctx_label);
+                co_await maybe_flush_manifest_clean_offset();
             }
         }
     } catch (std::exception& e) {
@@ -1943,6 +1944,10 @@ ss::future<bool> ntp_archiver::do_upload_local(
         vlog(
           _rtclog.info,
           "archival metadata replicated but manifest is not re-uploaded");
+    } else {
+        // Write to archival_metadata_stm to mark our updated clean offset
+        // as a result of uploading the manifest successfully.
+        co_await maybe_flush_manifest_clean_offset();
     }
     co_return true;
 }
