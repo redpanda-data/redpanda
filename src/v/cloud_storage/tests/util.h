@@ -23,6 +23,8 @@
 
 #include <boost/test/unit_test.hpp>
 
+#include <algorithm>
+#include <random>
 #include <vector>
 
 namespace cloud_storage {
@@ -348,6 +350,38 @@ copy_subsegment(const in_memory_segment& src, size_t shift, size_t length) {
     return dst;
 }
 
+std::vector<in_memory_segment>
+make_segments(const partition_manifest& manifest) {
+    std::vector<in_memory_segment> segments;
+    for (const auto& s : manifest) {
+        const auto& meta = s.second;
+        auto num_config_records = meta.delta_offset_end() - meta.delta_offset();
+        auto num_records = meta.committed_offset() - meta.base_offset() + 1;
+        std::vector<batch_t> all_batches;
+        for (long i = 0; i < num_records; i++) {
+            if (i < num_config_records) {
+                all_batches.push_back(batch_t{
+                  .num_records = 1,
+                  .type = model::record_batch_type::archival_metadata,
+                  .record_sizes = {random_generators::get_int(10UL, 200UL)},
+                });
+            } else {
+                all_batches.push_back(batch_t{
+                  .num_records = 1,
+                  .type = model::record_batch_type::raft_data,
+                  .record_sizes = {random_generators::get_int(10UL, 200UL)},
+                });
+            }
+        }
+        std::random_device dev;
+        std::mt19937 mtws(dev());
+        std::shuffle(all_batches.begin(), all_batches.end(), mtws);
+        auto body = make_segment(meta.base_offset, all_batches);
+        segments.push_back(std::move(body));
+    }
+    return segments;
+}
+
 std::vector<in_memory_segment> make_segments(
   const std::vector<std::vector<batch_t>>& segments,
   bool produce_overlapping = false,
@@ -436,6 +470,28 @@ enum class manifest_inconsistency {
     overlapping_segments,
     duplicate_offset_ranges,
 };
+
+std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
+  const cloud_storage::partition_manifest& m,
+  const std::vector<in_memory_segment>& segments) {
+    std::vector<cloud_storage_fixture::expectation> results;
+    for (const auto& s : segments) {
+        auto url = m.generate_segment_path(*m.get(s.base_offset));
+        results.push_back(cloud_storage_fixture::expectation{
+          .url = "/" + url().string(), .body = s.bytes});
+    }
+    std::stringstream ostr;
+    m.serialize(ostr);
+    results.push_back(cloud_storage_fixture::expectation{
+      .url = "/" + m.get_manifest_path()().string(),
+      .body = ss::sstring(ostr.str())});
+    vlog(
+      test_util_log.info,
+      "Uploaded manifest at {}:\n{}",
+      m.get_manifest_path(),
+      ostr.str());
+    return results;
+}
 
 std::vector<cloud_storage_fixture::expectation> make_imposter_expectations(
   cloud_storage::partition_manifest& m,
@@ -534,6 +590,15 @@ auto setup_s3_imposter(
       inject == manifest_inconsistency::overlapping_segments,
       inject == manifest_inconsistency::duplicate_offset_ranges);
     cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+    auto expectations = make_imposter_expectations(manifest, segments);
+    fixture.set_expectations_and_listen(expectations);
+    return segments;
+}
+
+auto setup_s3_imposter(
+  cloud_storage_fixture& fixture,
+  const cloud_storage::partition_manifest& manifest) {
+    auto segments = make_segments(manifest);
     auto expectations = make_imposter_expectations(manifest, segments);
     fixture.set_expectations_and_listen(expectations);
     return segments;
