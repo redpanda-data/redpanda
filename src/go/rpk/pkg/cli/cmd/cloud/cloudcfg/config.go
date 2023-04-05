@@ -83,6 +83,20 @@ func (c *Config) SaveAll(fs afero.Fs) error {
 	return c.save(fs)
 }
 
+// SaveIDAndToken saves the in-memory token and the client ID to the config
+// file, preserving what's in the config file already.
+func (c *Config) SaveIDAndToken(fs afero.Fs) error {
+	if c.AuthToken == c.file.authToken && c.ClientID == c.file.clientID {
+		return nil // no changes
+	}
+	return (&Config{
+		path:         c.path,
+		ClientSecret: c.file.clientSecret,
+		ClientID:     c.ClientID,
+		AuthToken:    c.AuthToken,
+	}).save(fs)
+}
+
 // SaveToken saves only the in-memory token to the config file, preserving the
 // previous client ID and secret if they existed.
 func (c *Config) SaveToken(fs afero.Fs) error {

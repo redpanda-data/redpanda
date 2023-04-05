@@ -17,9 +17,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/auth"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloudapi"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth/providers/auth0"
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
@@ -74,7 +75,7 @@ func loginAndEnsurePluginVersion(ctx context.Context, fs afero.Fs, cfg *cloudcfg
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to determine managed plugin path: %w", err)
 	}
-	token, err = auth.LoadFlow(ctx, fs, cfg)
+	token, err = oauth.LoadFlow(ctx, fs, cfg, auth0.NewClient(cfg))
 	if err != nil {
 		return "", "", false, fmt.Errorf("unable to load the cloud token: %w", err)
 	}
