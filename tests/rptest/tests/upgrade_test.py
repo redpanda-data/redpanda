@@ -493,6 +493,15 @@ class UpgradeFromPriorFeatureVersionCloudStorageTest(RedpandaTest):
             or initial_version > Version("23.1.0")
             and initial_version < Version("23.2.0"))
 
+        #  23.1.x -> 23.2.x: the `cloud_storage_manifest_max_upload_interval_sec` is new,
+        #                    and needs to be set to avoid the test timing out waiting for
+        #                    local log trim, as in 23.2.x we are lazy about uploading manifests by default.
+        if initial_version > Version("23.1.0") and initial_version < Version(
+                "23.2.0"):
+            admin.patch_cluster_config(
+                upsert={'cloud_storage_manifest_max_upload_interval_sec': 1},
+                node=new_version_node)
+
         if block_uploads_during_upgrade:
             # If uploads are blocked during upgrade, we expect the new
             # nodes not to be able to trim their local logs.
