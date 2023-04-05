@@ -565,7 +565,6 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
         case op_t::add:
         case op_t::add_non_replicable:
         case op_t::update_finished:
-        case op_t::update_properties:
             return has_local_replicas(self, delta.new_assignment.replicas);
         case op_t::update:
         case op_t::cancel_update:
@@ -576,6 +575,8 @@ controller_backend::deltas_t calculate_bootstrap_deltas(
               delta);
             return has_local_replicas(self, delta.new_assignment.replicas)
                    || has_local_replicas(self, *delta.previous_replica_set);
+        case op_t::update_properties:
+            return true;
         case op_t::del:
         case op_t::del_non_replicable:
             return false;
@@ -1377,13 +1378,6 @@ ss::future<std::error_code> controller_backend::execute_reconfiguration(
 
 ss::future<> controller_backend::process_partition_properties_update(
   model::ntp ntp, partition_assignment assignment) {
-    /**
-     * No core local replicas are expected to exists, do nothing
-     */
-    if (!has_local_replicas(_self, assignment.replicas)) {
-        co_return;
-    }
-
     auto partition = _partition_manager.local().get(ntp);
 
     // partition doesn't exists, it must already have been removed, do
