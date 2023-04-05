@@ -7,21 +7,24 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 import random
+import re
 import time
+from collections import defaultdict
 
-from ducktape.mark import parametrize, matrix
+from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
 from ducktape.utils.util import wait_until
 
-from rptest.services.admin import Admin
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
-from rptest.services.action_injector import ActionConfig, random_process_kills
+from rptest.services.action_injector import random_process_kills
+from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from rptest.services.kgo_verifier_services import KgoVerifierProducer, KgoVerifierRandomConsumer, KgoVerifierSeqConsumer
+from rptest.services.metrics_check import MetricCheck
 from rptest.services.redpanda import RedpandaService, CHAOS_LOG_ALLOW_LIST
-from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_storage_type
+from rptest.services.redpanda import SISettings, get_cloud_storage_type
 from rptest.tests.end_to_end import EndToEndTest
 from rptest.tests.prealloc_nodes import PreallocNodesTest
 from rptest.util import Scale, wait_until_segments
@@ -29,8 +32,8 @@ from rptest.util import (
     produce_until_segments,
     wait_for_removal_of_n_segments,
 )
-from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView
 from rptest.utils.mode_checks import skip_debug_mode
+from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView
 
 
 class EndToEndShadowIndexingBase(EndToEndTest):
@@ -87,6 +90,17 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
         """Write at least 10 segments, set retention policy to leave only 5
         segments, wait for segments removal, consume data and run validation,
         that everything that is acked is consumed."""
+        brokers = self.redpanda.started_nodes()
+        index_metrics = [
+            MetricCheck(self.logger,
+                        self.redpanda,
+                        node, [
+                            'vectorized_cloud_storage_index_uploads_total',
+                            'vectorized_cloud_storage_index_downloads_total',
+                        ],
+                        reduce=sum) for node in brokers
+        ]
+
         self.start_producer()
         produce_until_segments(
             redpanda=self.redpanda,
@@ -105,6 +119,10 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
                 node_segments
             ) >= 10, f"Expected at least 10 segments, but got {len(node_segments)} on {node}"
 
+        assert any(
+            im.evaluate([('vectorized_cloud_storage_index_uploads_total',
+                          lambda _, cnt: cnt)]) for im in index_metrics)
+
         self.kafka_tools.alter_topic_config(
             self.topic,
             {
@@ -121,6 +139,24 @@ class EndToEndShadowIndexingTest(EndToEndShadowIndexingBase):
 
         self.start_consumer()
         self.run_validation()
+
+        assert any(
+            im.evaluate([('vectorized_cloud_storage_index_downloads_total',
+                          lambda _, cnt: cnt)]) for im in index_metrics)
+
+        # Matches the segment or the index
+        cache_expr = re.compile(
+            fr'^({self.redpanda.DATA_DIR}/cloud_storage_cache/.*\.log\.\d+)(\.index)?$'
+        )
+
+        # Each segment should have the corresponding index present
+        for node in self.redpanda.nodes:
+            index_segment_pair = defaultdict(lambda: 0)
+            for file in self.redpanda.data_checksum(node):
+                if (match := cache_expr.match(file)) and self.topic in file:
+                    index_segment_pair[match[1]] += 1
+            for file, count in index_segment_pair.items():
+                assert count == 2, f'expected one index and one log for {file}, found {count}'
 
 
 class EndToEndShadowIndexingTestCompactedTopic(EndToEndShadowIndexingBase):

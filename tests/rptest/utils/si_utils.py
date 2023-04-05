@@ -11,10 +11,11 @@ import json
 import pprint
 import struct
 from collections import defaultdict, namedtuple
-from typing import Sequence, Optional
+from typing import Sequence, Optional, NewType
+
 import xxhash
 
-from rptest.archival.s3_client import ObjectMetadata, S3Client
+from rptest.archival.s3_client import ObjectMetadata
 from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
 from rptest.services.redpanda import MetricsEndpoint, RESTART_LOG_ALLOW_LIST
@@ -271,10 +272,11 @@ def get_on_disk_size_per_ntp(chk):
     return size_bytes_per_ntp
 
 
-def get_expected_ntp_restored_size(nodes_segments_report: dict[str,
-                                                               dict[str,
-                                                                    (str,
-                                                                     int)]],
+NodeReport = NewType('NodeReport', dict[str, (str, int)])
+NodeSegmentsReport = NewType('NodeSegmentsReport', dict[str, NodeReport])
+
+
+def get_expected_ntp_restored_size(nodes_segments_report: NodeSegmentsReport,
                                    retention_policy: int):
     """ Get expected retestored ntp disk size
     We expect that redpanda will restore max

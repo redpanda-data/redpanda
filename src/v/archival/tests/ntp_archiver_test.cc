@@ -187,6 +187,97 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     }
 }
 
+FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
+    // During a segment upload, the stream used to read from the segment and
+    // upload it can be created in two ways, depending on the failures that
+    // occur. The first upload uses a stream created from a fanout. If that
+    // upload fails, subsequent uploads use a simple stream read from file. This
+    // test checks that the switch from the first type of stream to the second
+    // works as expected, and also that the segment index is uploaded even if
+    // the segment upload fails.
+
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, model::offset(0), model::term_id(1)},
+    };
+    init_storage_api_local(segments);
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(1);
+    }).get();
+
+    auto fail_resp = http_test_utils::response{
+      .body = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>SlowDown</Code>
+    <Message>Slow Down</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml",
+      .status = http_test_utils::response::status_type::service_unavailable};
+
+    bool state{false};
+    std::regex logexpr{".*/0-.*log\\.\\d+"};
+
+    // Only fail the first segment put request
+    fail_request_if(
+      [&state, &logexpr](const ss::http::request& req) {
+          auto should_fail = !state && req._method == "PUT"
+                             && std::regex_match(
+                               req._url.begin(), req._url.end(), logexpr);
+          state = true;
+          return should_fail;
+      },
+      std::move(fail_resp));
+
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), arch_conf, remote.local(), *part);
+
+    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+
+    retry_chain_node fib(never_abort);
+    auto res = upload_next_with_retries(archiver).get0();
+
+    auto&& [non_compacted_result, compacted_result] = res;
+
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 1);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 0);
+
+    BOOST_REQUIRE_EQUAL(compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
+
+    cloud_storage::partition_manifest manifest;
+    {
+        BOOST_REQUIRE(get_targets().count(manifest_url)); // NOLINT
+        auto req_opt = get_latest_request(manifest_url);
+        BOOST_REQUIRE(req_opt.has_value());
+        auto req = req_opt.value().get();
+        BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
+        verify_manifest_content(req.content);
+        manifest = load_manifest(req.content);
+        BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
+    }
+
+    segment_name segment1_name{"0-1-v1.log"};
+    auto segment1_url = get_segment_path(manifest, segment1_name);
+    auto req_opt = get_latest_request("/" + segment1_url().string());
+    BOOST_REQUIRE(req_opt.has_value());
+    auto req = req_opt.value().get();
+    BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
+    verify_segment(manifest_ntp, segment1_name, req.content);
+
+    auto index_url = get_segment_index_path(manifest, segment1_name);
+    const auto& index_req = get_targets().find("/" + index_url().native());
+    BOOST_REQUIRE(index_req != get_targets().end());
+    BOOST_REQUIRE_EQUAL(index_req->second.method, "PUT");
+    verify_index(
+      manifest_ntp, segment1_name, manifest, index_req->second.content);
+}
+
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_retention, archiver_fixture) {
     /*
@@ -270,17 +361,20 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
     }
 
     for (const auto& [url, deletion_expected] : segment_urls) {
-        auto [req_begin, req_end] = get_targets().equal_range(
-          "/" + url().string());
-        auto segment_deleted = std::find_if(
-                                 req_begin,
-                                 req_end,
-                                 [](auto entry) {
-                                     return entry.second.method == "DELETE";
-                                 })
-                               != req_end;
-
-        BOOST_REQUIRE(segment_deleted == deletion_expected);
+        auto urlstr = url().string();
+        auto expected_delete_paths = {
+          urlstr, urlstr + ".index", urlstr + ".tx"};
+        for (const auto& p : expected_delete_paths) {
+            auto [req_begin, req_end] = get_targets().equal_range("/" + p);
+            auto entity_deleted = std::find_if(
+                                    req_begin,
+                                    req_end,
+                                    [](auto entry) {
+                                        return entry.second.method == "DELETE";
+                                    })
+                                  != req_end;
+            BOOST_REQUIRE(entity_deleted == deletion_expected);
+        }
     }
 }
 
