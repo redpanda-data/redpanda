@@ -264,6 +264,15 @@ public:
     /// \returns true if start offset was moved
     bool advance_start_offset(model::offset start_offset);
 
+    /// \brief Set start kafka offset without removing any data from the
+    /// manifest.
+    ///
+    /// Allows to move start_kafka_offset forward
+    /// freely. The corresponding start_offset value is moved
+    /// to the closest aligned offset.
+    /// \returns true if start_offset was moved
+    bool advance_start_kafka_offset(kafka::offset start_offset);
+
     /// Get segment if available or nullopt
     const segment_meta* get(const key& key) const;
     const segment_meta* get(const segment_name& name) const;
@@ -402,6 +411,8 @@ private:
     // could be removed by the housekeeping. The invariant is that 'clean' is
     // less or equal to 'start'.
     model::offset _archive_clean_offset;
+    // Start kafka offset set by the DeleteRecords request
+    kafka::offset _start_kafka_offset;
 };
 
 } // namespace cloud_storage

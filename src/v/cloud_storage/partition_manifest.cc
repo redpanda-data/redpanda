@@ -306,6 +306,9 @@ std::optional<model::offset> partition_manifest::get_start_offset() const {
 
 std::optional<kafka::offset>
 partition_manifest::get_start_kafka_offset() const {
+    if (_start_kafka_offset != kafka::offset{}) {
+        return _start_kafka_offset;
+    }
     if (_start_offset != model::offset{}) {
         auto iter = _segments.find(_start_offset);
         if (iter != _segments.end()) {
@@ -526,6 +529,40 @@ void partition_manifest::set_archive_clean_offset(
     _archive_clean_offset = std::max(_archive_clean_offset, start_rp_offset);
 }
 
+bool partition_manifest::advance_start_kafka_offset(
+  kafka::offset new_start_offset) {
+    auto it = segment_containing(new_start_offset);
+    if (it == end()) {
+        vlog(
+          cst_log.debug,
+          "{} start kafka offset not moved to {}, no such segment",
+          _ntp,
+          _start_kafka_offset);
+        return false;
+    } else if (it == begin()) {
+        _start_kafka_offset = new_start_offset;
+        vlog(
+          cst_log.debug,
+          "{} start kafka offset moved to {}, start offset stayed at {}",
+          _ntp,
+          _start_kafka_offset,
+          _start_offset);
+        return true;
+    }
+    auto moved = advance_start_offset(it->second.base_offset);
+    // 'advance_start_offset' resets _start_kafka_offset value
+    // so it's important to set it after this call.
+    _start_kafka_offset = new_start_offset;
+    vlog(
+      cst_log.info,
+      "{} start kafka offset moved to {}, start offset {} {}",
+      _ntp,
+      _start_kafka_offset,
+      moved ? "moved to" : "stayed at",
+      _start_offset);
+    return true;
+}
+
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     const auto previous_start_offset = _start_offset;
 
@@ -579,6 +616,9 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         for (auto it = previous_head_segment; it != new_head_segment; ++it) {
             subtract_from_cloud_log_size(it->second.size_bytes);
         }
+
+        // Reset start kafka offset so it will be aligned by segment boundary
+        _start_kafka_offset = kafka::offset{};
 
         return true;
     }
