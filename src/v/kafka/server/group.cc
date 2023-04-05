@@ -2683,6 +2683,7 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
                 if (res) {
                     p.partition_index = id;
                     p.committed_offset = res->offset;
+                    p.committed_leader_epoch = res->committed_leader_epoch;
                     p.metadata = res->metadata;
                     p.error_code = error_code::none;
                 }
