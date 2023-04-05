@@ -115,5 +115,6 @@ func run(
 // IsRunningSudo checks if you are running the program with sudo by checking the
 // caller UID and the env variable SUDO_UID.
 func IsRunningSudo() bool {
-	return os.Getuid() == 0 && os.Getenv("SUDO_UID") != "0"
+	sudoID, set := os.LookupEnv("SUDO_UID")
+	return os.Getuid() == 0 && set && sudoID != "0"
 }
