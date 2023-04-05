@@ -887,6 +887,16 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
     def _partial_upgrade(self, num_to_upgrade: int):
         nodes = self.redpanda.nodes[0:num_to_upgrade]
+        self.logger.info(f"Upgrading nodes: {[node.name for node in nodes]}")
+
+        self.redpanda._installer.install(nodes, RedpandaInstaller.HEAD)
+        self.redpanda.rolling_restart_nodes(nodes,
+                                            start_timeout=90,
+                                            stop_timeout=90)
+
+    def _finish_upgrade(self, num_upgraded_already: int):
+        nodes = self.redpanda.nodes[num_upgraded_already:]
+        self.logger.info(f"Upgrading nodes: {[node.name for node in nodes]}")
 
         self.redpanda._installer.install(nodes, RedpandaInstaller.HEAD)
         self.redpanda.rolling_restart_nodes(nodes,
@@ -934,6 +944,8 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
                             min_records=records)
+
+        self._finish_upgrade(num_to_upgrade)
 
     @cluster(num_nodes=5, log_allow_list=PREV_VERSION_LOG_ALLOW_LIST)
     # Redpandas before v23.1 did not have support for ABS.
@@ -985,3 +997,5 @@ class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
                             min_records=records)
+
+        self._finish_upgrade(num_to_upgrade)
