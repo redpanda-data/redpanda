@@ -1323,6 +1323,70 @@ SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_offset_advance) {
     BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_partition_manifest_start_kafka_offset_advance) {
+    partition_manifest m(manifest_ntp, model::initial_revision_id(0));
+    BOOST_REQUIRE(m.get_start_kafka_offset() == std::nullopt);
+    m.add(
+      segment_name("0-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{0},
+        .committed_offset = model::offset{99},
+        .delta_offset = model::offset_delta{0},
+      });
+    BOOST_REQUIRE(*m.get_start_kafka_offset() == kafka::offset(0));
+    m.add(
+      segment_name("100-1-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{100}, // kafka offset 90
+        .committed_offset = model::offset{199},
+        .delta_offset = model::offset_delta{10},
+      });
+    m.add(
+      segment_name("200-2-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{200}, // kafka offset 180
+        .committed_offset = model::offset{299},
+        .delta_offset = model::offset_delta{20},
+      });
+    m.add(
+      segment_name("300-3-v1.log"),
+      partition_manifest::segment_meta{
+        .base_offset = model::offset{300}, // kafka offset 270
+        .committed_offset = model::offset{399},
+        .delta_offset = model::offset_delta{30},
+      });
+
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(80)));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(80));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(0));
+
+    BOOST_REQUIRE(m.advance_start_offset(model::offset(100)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(100));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(90));
+
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(180)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(200));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(180));
+
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(200)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(200));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(200));
+
+    BOOST_REQUIRE(m.advance_start_kafka_offset(kafka::offset(370)));
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(300));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(370));
+
+    m.truncate();
+    BOOST_REQUIRE_EQUAL(m.get_start_offset(), model::offset(300));
+    BOOST_REQUIRE_EQUAL(m.get_start_kafka_offset(), kafka::offset(370));
+
+    auto m2 = m.truncate(model::offset(400));
+    BOOST_REQUIRE(m2.size() == 1);
+    BOOST_REQUIRE(m.size() == 0);
+    BOOST_REQUIRE(m.get_start_offset() == std::nullopt);
+    BOOST_REQUIRE(m.get_start_kafka_offset() == std::nullopt);
+}
+
 SEASTAR_THREAD_TEST_CASE(
   test_partition_manifest_start_offset_advance_with_gap) {
     partition_manifest m(manifest_ntp, model::initial_revision_id(0));
