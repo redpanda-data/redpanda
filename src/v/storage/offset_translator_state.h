@@ -80,6 +80,9 @@ public:
     /// the map changed.
     bool add_absolute_delta(model::offset offset, int64_t delta);
 
+    /// Remove all gaps from offset translator
+    void reset();
+
     /// Removes the offset translation state starting from the offset
     /// (inclusive). Returns true if the map changed.
     bool truncate(model::offset);
