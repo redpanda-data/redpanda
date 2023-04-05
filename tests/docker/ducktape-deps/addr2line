@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -e
+mkdir -p /opt/scripts
+curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/addr2line.py -o /opt/scripts/addr2line.py
+curl https://raw.githubusercontent.com/redpanda-data/seastar/2a9504b3238cba4150be59353bf8d0b3a01fe39c/scripts/seastar-addr2line -o /opt/scripts/seastar-addr2line
+chmod +x /opt/scripts/seastar-addr2line

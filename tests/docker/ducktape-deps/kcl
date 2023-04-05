@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -e
+go install github.com/twmb/kcl@v0.8.0
+mv /root/go/bin/kcl /usr/local/bin/
