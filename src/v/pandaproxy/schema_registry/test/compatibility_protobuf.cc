@@ -204,6 +204,8 @@ import "google/type/phone_number.proto";
 import "google/type/postal_address.proto";
 import "google/type/quaternion.proto";
 import "google/type/timeofday.proto";
+import "confluent/meta.proto";
+import "confluent/types/decimal.proto";
 
 message well_known_types {
   google.protobuf.Any any = 1;
@@ -251,6 +253,8 @@ message well_known_types {
   google.type.PostalAddress postal_address = 44;
   google.type.Quaternion quaternion = 45;
   google.type.TimeOfDay time_of_day = 46;
+  confluent.Meta c_meta = 47;
+  confluent.type.Decimal c_decimal = 48;
 })",
         pps::schema_type::protobuf}};
     store.insert(schema, pps::schema_version{1});

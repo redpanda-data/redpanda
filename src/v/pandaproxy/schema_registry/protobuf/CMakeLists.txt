@@ -1,6 +1,8 @@
 find_package(Protobuf REQUIRED)
 
 set(PROTO_FILES
+  confluent/meta.proto
+  confluent/types/decimal.proto
   google/type/calendar_period.proto
   google/type/color.proto
   google/type/date.proto
