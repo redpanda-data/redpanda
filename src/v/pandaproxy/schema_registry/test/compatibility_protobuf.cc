@@ -187,6 +187,23 @@ import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/type.proto";
 import "google/protobuf/wrappers.proto";
+import "google/type/calendar_period.proto";
+import "google/type/color.proto";
+import "google/type/date.proto";
+import "google/type/datetime.proto";
+import "google/type/dayofweek.proto";
+import "google/type/decimal.proto";
+import "google/type/expr.proto";
+import "google/type/fraction.proto";
+import "google/type/interval.proto";
+import "google/type/latlng.proto";
+import "google/type/localized_text.proto";
+import "google/type/money.proto";
+import "google/type/month.proto";
+import "google/type/phone_number.proto";
+import "google/type/postal_address.proto";
+import "google/type/quaternion.proto";
+import "google/type/timeofday.proto";
 
 message well_known_types {
   google.protobuf.Any any = 1;
@@ -217,6 +234,23 @@ message well_known_types {
   google.protobuf.UInt32Value uint32_value = 26;
   google.protobuf.UInt64Value uint64_value = 27;
   google.protobuf.Value value = 28;
+  google.type.CalendarPeriod calendar_period = 29;
+  google.type.Color color = 30;
+  google.type.Date date = 31;
+  google.type.DateTime date_time = 32;
+  google.type.DayOfWeek day_of_wekk = 33;
+  google.type.Decimal decimal = 34;
+  google.type.Expr expr = 35;
+  google.type.Fraction fraction = 36;
+  google.type.Interval interval = 37;
+  google.type.LatLng lat_lng = 39;
+  google.type.LocalizedText localized_text = 40;
+  google.type.Money money = 41;
+  google.type.Month month = 42;
+  google.type.PhoneNumber phone_number = 43;
+  google.type.PostalAddress postal_address = 44;
+  google.type.Quaternion quaternion = 45;
+  google.type.TimeOfDay time_of_day = 46;
 })",
         pps::schema_type::protobuf}};
     store.insert(schema, pps::schema_version{1});
