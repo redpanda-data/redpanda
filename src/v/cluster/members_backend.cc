@@ -178,7 +178,7 @@ double calculate_unevenness_error(
      * from the node after successful reallocation
      */
     for (const auto& r : update.partition_reallocations) {
-        if (r.allocation_units) {
+        if (get_allocation_domain(r.ntp) == domain && r.allocation_units) {
             for (const auto& to_remove : r.replicas_to_remove) {
                 auto it = node_replicas.find(to_remove);
                 if (it != node_replicas.end()) {
