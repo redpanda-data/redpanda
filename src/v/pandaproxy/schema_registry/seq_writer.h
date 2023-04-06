@@ -42,7 +42,7 @@ public:
     // API for readers: notify us when they have read and applied an offset
     ss::future<> advance_offset(model::offset offset);
 
-    ss::future<schema_id> write_subject_version(canonical_schema ref);
+    ss::future<schema_id> write_subject_version(subject_schema schema);
 
     ss::future<bool>
     write_config(std::optional<subject> sub, compatibility_level compat);
@@ -65,6 +65,25 @@ private:
     model::node_id _node_id;
 
     void advance_offset_inner(model::offset offset);
+
+    ss::future<std::optional<schema_id>> do_write_subject_version(
+      subject_schema schema, model::offset write_at, seq_writer& seq);
+
+    ss::future<std::optional<bool>> do_write_config(
+      std::optional<subject> sub,
+      compatibility_level compat,
+      model::offset write_at,
+      seq_writer& seq);
+
+    ss::future<std::optional<bool>> do_delete_subject_version(
+      subject sub,
+      schema_version version,
+      model::offset write_at,
+      seq_writer& seq);
+
+    ss::future<std::optional<std::vector<schema_version>>>
+    do_delete_subject_impermanent(
+      subject sub, model::offset write_at, seq_writer& seq);
 
     ss::future<std::vector<schema_version>> delete_subject_permanent_inner(
       subject sub, std::optional<schema_version> version);
