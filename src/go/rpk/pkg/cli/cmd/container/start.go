@@ -24,9 +24,9 @@ import (
 	"github.com/avast/retry-go"
 	"github.com/docker/docker/api/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
@@ -412,10 +412,8 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 		return nil, nil
 	}
 
-	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetColWidth(80)
-	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Node-ID", "Status", "Kafka-Address", "Admin-Address", "Proxy-Address"})
+	tw := out.NewTable("Node-ID", "Status", "Kafka-Address", "Admin-Address", "Proxy-Address")
+	defer tw.Flush()
 	sort.Slice(nodes, func(i, j int) bool {
 		return nodes[i].ID < nodes[j].ID
 	})
@@ -432,15 +430,14 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 		if node.HostProxyPort == 0 {
 			proxy = "-"
 		}
-		t.Append([]string{
+		tw.PrintStrings(
 			fmt.Sprint(node.ID),
 			node.Status,
 			kafka,
 			admin,
 			proxy,
-		})
+		)
 	}
-	t.Render()
 	return nodes, nil
 }
 

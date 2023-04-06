@@ -14,12 +14,9 @@ package redpanda
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/olekukonko/tablewriter"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
@@ -62,16 +59,6 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func appendToTable(t *tablewriter.Table, r tuners.CheckResult) {
-	t.Append([]string{
-		r.Desc,
-		r.Required,
-		r.Current,
-		fmt.Sprint(r.Severity),
-		fmt.Sprint(printResult(r.Severity, r.IsOk)),
-	})
-}
-
 func executeCheck(
 	fs afero.Fs, cfg *config.Config, timeout time.Duration,
 ) error {
@@ -79,20 +66,25 @@ func executeCheck(
 	if err != nil {
 		return err
 	}
-	table := ui.NewRpkTable(os.Stdout)
-	table.SetHeader([]string{
+	tw := out.NewTable(
 		"Condition",
 		"Required",
 		"Current",
 		"Severity",
 		"Passed",
-	})
+	)
+	defer tw.Flush()
 
-	for _, res := range results {
-		appendToTable(table, res)
+	for _, r := range results {
+		tw.PrintStrings(
+			r.Desc,
+			r.Required,
+			r.Current,
+			fmt.Sprint(r.Severity),
+			fmt.Sprint(printResult(r.Severity, r.IsOk)),
+		)
 	}
 	fmt.Printf("\nSystem check results\n")
-	table.Render()
 	return nil
 }
 

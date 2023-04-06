@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/factory"
@@ -247,8 +246,8 @@ func printTuneResult(results []result, includeErr bool) {
 		headers = append(headers, "Error")
 	}
 
-	t := ui.NewRpkTable(os.Stdout)
-	t.SetHeader(headers)
+	tw := out.NewTable(headers...)
+	defer tw.Flush()
 	red := color.New(color.FgRed).SprintFunc()
 	yellow := color.New(color.FgYellow).SprintFunc()
 	green := color.New(color.FgGreen).SprintFunc()
@@ -272,9 +271,8 @@ func printTuneResult(results []result, includeErr bool) {
 		} else if res.applied {
 			c = green
 		}
-		t.Append(colorRow(c, row))
+		tw.PrintStrings(colorRow(c, row)...)
 	}
-	t.Render()
 }
 
 func colorRow(c func(...interface{}) string, row []string) []string {
