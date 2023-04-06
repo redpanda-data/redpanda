@@ -10,8 +10,10 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +24,6 @@ import (
 
 	"github.com/fatih/color"
 	mTerm "github.com/moby/term"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
@@ -38,11 +39,42 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
+
+// TODO: replace logrus with zap, initialized in config.Params
+type rpkLogFormatter struct {
+	logrus.Formatter
+}
+
+func (f rpkLogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
+	var b *bytes.Buffer
+	if entry.Buffer != nil {
+		b = entry.Buffer
+	} else {
+		b = &bytes.Buffer{}
+	}
+
+	printer := f.getPrinter(entry.Level)
+	printer(b, entry.Message)
+	return b.Bytes(), nil
+}
+
+var logLevelColorMap = map[logrus.Level]*color.Color{
+	logrus.WarnLevel:  color.New(color.FgYellow),
+	logrus.ErrorLevel: color.New(color.FgRed),
+}
+
+func (rpkLogFormatter) getPrinter(lvl logrus.Level) func(io.Writer, ...interface{}) (int, error) {
+	if color, exists := logLevelColorMap[lvl]; exists {
+		return color.Fprintln
+	}
+	return fmt.Fprintln
+}
 
 func Execute() {
 	verbose := false
@@ -51,7 +83,7 @@ func Execute() {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
 	}
-	log.SetFormatter(cli.NewRpkLogFormatter())
+	log.SetFormatter(new(rpkLogFormatter))
 	log.SetOutput(os.Stdout)
 
 	cobra.OnInitialize(func() {
