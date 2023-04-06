@@ -82,6 +82,12 @@ struct index_state
           relative_offset_index[i], relative_time_index[i], position_index[i]};
     }
 
+    void shrink_to_fit() {
+        relative_offset_index.shrink_to_fit();
+        relative_time_index.shrink_to_fit();
+        position_index.shrink_to_fit();
+    }
+
     bool maybe_index(
       size_t accumulator,
       size_t step,
