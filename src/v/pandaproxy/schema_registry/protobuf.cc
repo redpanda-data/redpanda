@@ -37,6 +37,23 @@
 #include <google/protobuf/type.pb.h>
 #include <google/protobuf/util/type_resolver.h>
 #include <google/protobuf/wrappers.pb.h>
+#include <google/type/calendar_period.pb.h>
+#include <google/type/color.pb.h>
+#include <google/type/date.pb.h>
+#include <google/type/datetime.pb.h>
+#include <google/type/dayofweek.pb.h>
+#include <google/type/decimal.pb.h>
+#include <google/type/expr.pb.h>
+#include <google/type/fraction.pb.h>
+#include <google/type/interval.pb.h>
+#include <google/type/latlng.pb.h>
+#include <google/type/localized_text.pb.h>
+#include <google/type/money.pb.h>
+#include <google/type/month.pb.h>
+#include <google/type/phone_number.pb.h>
+#include <google/type/postal_address.pb.h>
+#include <google/type/quaternion.pb.h>
+#include <google/type/timeofday.pb.h>
 
 #include <unordered_set>
 
@@ -72,6 +89,23 @@ struct descriptor_equal {
 using known_types_set = absl::
   flat_hash_set<const pb::FileDescriptor*, descriptor_hasher, descriptor_equal>;
 static const known_types_set known_types{
+  google::type::CalendarPeriod_descriptor()->file(),
+  google::type::Color::GetDescriptor()->file(),
+  google::type::Date::GetDescriptor()->file(),
+  google::type::DateTime::GetDescriptor()->file(),
+  google::type::DayOfWeek_descriptor()->file(),
+  google::type::Decimal::GetDescriptor()->file(),
+  google::type::Expr::GetDescriptor()->file(),
+  google::type::Fraction::GetDescriptor()->file(),
+  google::type::Interval::GetDescriptor()->file(),
+  google::type::LatLng::GetDescriptor()->file(),
+  google::type::LocalizedText::GetDescriptor()->file(),
+  google::type::Money::GetDescriptor()->file(),
+  google::type::Month_descriptor()->file(),
+  google::type::PhoneNumber::GetDescriptor()->file(),
+  google::type::PostalAddress::GetDescriptor()->file(),
+  google::type::Quaternion::GetDescriptor()->file(),
+  google::type::TimeOfDay::GetDescriptor()->file(),
   google::protobuf::SourceContext::GetDescriptor()->file(),
   google::protobuf::Any::GetDescriptor()->file(),
   google::protobuf::Option::GetDescriptor()->file(),
