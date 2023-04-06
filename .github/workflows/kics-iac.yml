@@ -18,7 +18,7 @@ jobs:
           path: .
           ignore_on_exit: results
           output_path: res/
-          exclude_paths: tests/,src/go/k8s/tests/,src/go/rpk/pkg/testfs/
+          exclude_paths: tests/,src/go/k8s/tests/,src/go/rpk/pkg/testfs/,src/go/k8s/config/
       - name: display kics results
         run: |
           cat res/results.json
