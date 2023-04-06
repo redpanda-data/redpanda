@@ -331,24 +331,28 @@ ss::future<> offset_translator::maybe_checkpoint(size_t checkpoint_threshold) {
         co_return;
     }
 
-    co_await _checkpoint_lock.with([this, checkpoint_threshold] {
-        if (
-          _bytes_processed
-            < _bytes_processed_at_checkpoint + checkpoint_threshold
-          && !_checkpoint_hint) {
-            return ss::now();
-        }
+    auto maybe_locked = _checkpoint_lock.try_get_units();
+    if (!maybe_locked) {
+        // A checkpoint attempt is in progress, it doesn't make much sense to
+        // do another one.
+        co_return;
+    }
 
-        vlog(
-          _logger.trace,
-          "threshold reached, performing checkpoint; state: {}, "
-          "highest_known_offset: {} (hint={})",
-          _state,
-          _highest_known_offset,
-          _checkpoint_hint);
+    if (
+      _bytes_processed < _bytes_processed_at_checkpoint + checkpoint_threshold
+      && !_checkpoint_hint) {
+        co_return;
+    }
 
-        return do_checkpoint();
-    });
+    vlog(
+      _logger.trace,
+      "threshold reached, performing checkpoint; state: {}, "
+      "highest_known_offset: {} (hint={})",
+      _state,
+      _highest_known_offset,
+      _checkpoint_hint);
+
+    co_await do_checkpoint();
 }
 
 ss::future<> offset_translator::do_checkpoint() {
