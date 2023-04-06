@@ -156,6 +156,12 @@ struct index_state
           position_index[i]};
     }
 
+    void shrink_to_fit() {
+        relative_offset_index.shrink_to_fit();
+        relative_time_index.shrink_to_fit();
+        position_index.shrink_to_fit();
+    }
+
     std::optional<std::tuple<uint32_t, offset_time_index, uint64_t>>
     find_entry(model::timestamp ts) {
         const auto idx = offset_time_index{ts, with_offset};
