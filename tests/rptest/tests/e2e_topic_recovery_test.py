@@ -353,3 +353,173 @@ class EndToEndTopicRecovery(RedpandaTest):
         assert restore_hwm == hwm
 
         validate()
+
+
+class EndToEndCompactedTopicRecovery(RedpandaTest):
+    """
+    The test produces data and makes sure that all data
+    is uploaded to S3. After that the test recreates the
+    cluster (or topic) and runs the verifier.
+    """
+
+    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+
+    def __init__(self, test_context):
+        extra_rp_conf = dict(
+            enable_leader_balancer=False,
+            partition_autobalancing_mode="off",
+            group_initial_rebalance_delay=300,
+        )
+        si_settings = SISettings(
+            test_context,
+            log_segment_size=1024 * 1024,
+            cloud_storage_segment_max_upload_interval_sec=5,
+            cloud_storage_enable_remote_read=True,
+            cloud_storage_enable_remote_write=True)
+        self.scale = Scale(test_context)
+        self._bucket = si_settings.cloud_storage_bucket
+        super().__init__(test_context=test_context,
+                         si_settings=si_settings,
+                         extra_rp_conf=extra_rp_conf)
+        self._ctx = test_context
+        self._producer = None
+        self._consumer = None
+        self._verifier_node = test_context.cluster.alloc(
+            ClusterSpec.simple_linux(1))[0]
+        self.logger.info(f"Verifier node name: {self._verifier_node.name}")
+
+    def init_producer(self, msg_size, num_messages):
+        self._producer = KgoVerifierProducer(self._ctx, self.redpanda,
+                                             self.topic, msg_size,
+                                             num_messages,
+                                             [self._verifier_node])
+
+    def init_consumer(self, msg_size):
+        self._consumer = KgoVerifierSeqConsumer(self._ctx,
+                                                self.redpanda,
+                                                self.topic,
+                                                msg_size,
+                                                nodes=[self._verifier_node],
+                                                loop=False)
+
+    def free_nodes(self):
+        super().free_nodes()
+        wait_until(lambda: self.redpanda.sockets_clear(self._verifier_node),
+                   timeout_sec=120,
+                   backoff_sec=10)
+        self.test_context.cluster.free_single(self._verifier_node)
+
+    def _stop_redpanda_nodes(self):
+        """Stop all redpanda nodes"""
+        for node in self.redpanda.nodes:
+            self.logger.info(f"Node {node.account.hostname} will be stopped")
+            if not node is self._verifier_node:
+                self.redpanda.stop_node(node)
+        time.sleep(10)
+
+    def _start_redpanda_nodes(self):
+        """Start all redpanda nodes"""
+        for node in self.redpanda.nodes:
+            self.logger.info(f"Starting node {node.account.hostname}")
+            if not node is self._verifier_node:
+                self.redpanda.start_node(node)
+        time.sleep(10)
+
+    def _wipe_data(self):
+        """Remove all data from redpanda cluster"""
+        for node in self.redpanda.nodes:
+            self.logger.info(
+                f"All data will be removed from node {node.account.hostname}")
+            self.redpanda.remove_local_data(node)
+
+    def _restore_topic(self, topic_spec, overrides={}):
+        """Restore individual topic"""
+        self.logger.info(f"Restore topic called. Topic-manifest: {topic_spec}")
+        conf = {
+            'redpanda.remote.recovery': 'true',
+            #'redpanda.remote.write': 'true',
+        }
+        conf.update(overrides)
+        self.logger.info(f"Confg: {conf}")
+        topic = topic_spec.name
+        npart = topic_spec.partition_count
+        nrepl = topic_spec.replication_factor
+        rpk = RpkTool(self.redpanda)
+        rpk.create_topic(topic, npart, nrepl, conf)
+        time.sleep(10)
+        rpk.describe_topic(topic)
+        rpk.describe_topic_configs(topic)
+
+    def _s3_has_all_data(self, num_messages):
+        objects = list(self.redpanda.get_objects_from_si())
+        for o in objects:
+            if o.key.endswith("/manifest.json") and self.topic in o.key:
+                data = self.redpanda.cloud_storage_client.get_object_data(
+                    self._bucket, o.key)
+                manifest = json.loads(data)
+                last_upl_offset = manifest['last_offset']
+                if 'segments' in manifest:
+                    segments = manifest['segments']
+                    last_segment = segments[list(segments)[-1]]
+                    last_delta_offset = last_segment['delta_offset_end']
+                    # We have one partition so this invariant holds it has to
+                    # be changed when the number of partitions will get larger.
+                    # This will also require different S3 check.
+                    self.logger.info(
+                        f"Found manifest at {o.key}, last_offset is {last_upl_offset}, last delta_offset is {last_delta_offset}"
+                    )
+                    return (last_upl_offset - last_delta_offset +
+                            1) >= num_messages
+                else:
+                    return False
+        return False
+
+    @skip_debug_mode
+    @cluster(num_nodes=4)
+    @matrix(
+        message_size=[5000],
+        num_messages=[100000],
+        recovery_overrides=[  #{}, 
+            {
+                'retention.local.target.bytes': 1024
+            }
+        ],
+        cloud_storage_type=[CloudStorageType.S3])  #get_cloud_storage_type())
+    def test_restore_compacted(self, message_size, num_messages,
+                               recovery_overrides, cloud_storage_type):
+        """Write some data. Remove local data then restore
+        the cluster."""
+
+        self.init_producer(message_size, num_messages)
+        self._producer.start(clean=False)
+
+        self._producer.wait()
+        assert self._producer.produce_status.acked >= num_messages
+
+        time.sleep(10)
+        wait_until(lambda: self._s3_has_all_data(num_messages),
+                   timeout_sec=600,
+                   backoff_sec=5,
+                   err_msg=f"Not all data is uploaded to S3 bucket")
+
+        # Wipe out the state on the nodes
+        self._stop_redpanda_nodes()
+        self._wipe_data()
+        # Run recovery
+        self._start_redpanda_nodes()
+        for topic_spec in self.topics:
+            self._restore_topic(topic_spec, recovery_overrides)
+
+        # Start verifiable consumer
+        self.init_consumer(message_size)
+        self._consumer.start(clean=False)
+
+        self._consumer.wait()
+
+        produce_acked = self._producer.produce_status.acked
+        consume_total = self._consumer.consumer_status.validator.total_reads
+        consume_valid = self._consumer.consumer_status.validator.valid_reads
+        self.logger.info(f"Producer acked {produce_acked} messages")
+        self.logger.info(f"Consumer read {consume_total} messages")
+        assert produce_acked >= num_messages
+        assert consume_valid >= produce_acked, f"produced {produce_acked}, consumed {consume_valid}"
