@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from enum import IntEnum
 import http.client
 import json
 import uuid
@@ -14,16 +15,18 @@ import requests
 import time
 import random
 
-from rptest.util import inject_remote_script
-from rptest.services.cluster import cluster
+from ducktape.mark import matrix
 from ducktape.services.background_thread import BackgroundThreadService
 
-from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.clients.python_librdkafka_serde_client import SerdeClient, SchemaType
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.clients.serde_client_utils import SchemaType, SerdeClientType
+from rptest.clients.types import TopicSpec
 from rptest.services.admin import Admin
+from rptest.services.cluster import cluster
 from rptest.services.redpanda import ResourceSettings
+from rptest.services.serde_client import SerdeClient
+from rptest.tests.redpanda_test import RedpandaTest
+from rptest.util import inject_remote_script
 
 
 def create_topic_names(count):
@@ -133,6 +136,22 @@ class SchemaRegistryTest(RedpandaTest):
 
     def _base_uri(self):
         return f"http://{self.redpanda.nodes[0].account.hostname}:8081"
+
+    def _get_serde_client(self, schema_type: SchemaType,
+                          client_type: SerdeClientType, topic: str,
+                          count: int):
+        schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
+        sasl_enabled = self.redpanda.sasl_enabled()
+        sec_cfg = self.redpanda.security_config() if sasl_enabled else None
+
+        return SerdeClient(self.test_context,
+                           self.redpanda.brokers(),
+                           schema_reg,
+                           schema_type,
+                           client_type,
+                           count,
+                           topic=topic,
+                           security_config=sec_cfg)
 
     def _get_topics(self):
         return requests.get(
@@ -1054,32 +1073,39 @@ class SchemaRegistryTest(RedpandaTest):
         assert result_raw.status_code == requests.codes.ok
         assert result_raw.json() == [2]
 
-    @cluster(num_nodes=3)
-    def test_serde_client(self):
+    @cluster(num_nodes=4)
+    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF],
+            client_type=[
+                SerdeClientType.Python, SerdeClientType.Java,
+                SerdeClientType.Golang
+            ])
+    def test_serde_client(self, protocol: SchemaType,
+                          client_type: SerdeClientType):
         """
-        Verify basic serialization client
+        Verify basic operation of Schema registry across a range of schema types and serde
+        client types
         """
-        protocols = [SchemaType.AVRO, SchemaType.PROTOBUF]
-        topics = [f"serde-topic-{x.name}" for x in protocols]
-        self._create_topics(topics)
+
+        topic = f"serde-topic-{protocol.name}-{client_type.name}"
+        self._create_topics([topic])
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
-        for i in range(len(protocols)):
-            self.logger.info(
-                f"Connecting to redpanda: {self.redpanda.brokers()} schema_reg: {schema_reg}"
-            )
-            client = SerdeClient(self.redpanda.brokers(),
-                                 schema_reg,
-                                 protocols[i],
-                                 topic=topics[i],
-                                 logger=self.logger)
-            client.run(2)
-            schema = self._get_subjects_subject_versions_version(
-                f"{topics[i]}-value", "latest")
-            self.logger.info(schema.json())
-            if protocols[i] == SchemaType.AVRO:
-                assert schema.json().get("schemaType") is None
-            else:
-                assert schema.json()["schemaType"] == protocols[i].name
+        self.logger.info(
+            f"Connecting to redpanda: {self.redpanda.brokers()} schema_Reg: {schema_reg}"
+        )
+        client = self._get_serde_client(protocol, client_type, topic, 2)
+        self.logger.debug("Starting client")
+        client.start()
+        self.logger.debug("Waiting on client")
+        client.wait()
+        self.logger.debug("Client completed")
+
+        schema = self._get_subjects_subject_versions_version(
+            f"{topic}-value", "latest")
+        self.logger.info(schema.json())
+        if protocol == SchemaType.AVRO:
+            assert schema.json().get("schemaType") is None
+        else:
+            assert schema.json()["schemaType"] == protocol.name
 
     @cluster(num_nodes=3)
     def test_restarts(self):
