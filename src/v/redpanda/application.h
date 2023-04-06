@@ -78,6 +78,7 @@ public:
       std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
     void wire_up_and_start(::stop_signal&, bool test_mode = false);
+    void post_start_tasks();
 
     void check_for_crash_loop();
     void schedule_crash_tracker_file_cleanup();
