@@ -12,7 +12,7 @@ import random
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
-from ducktape.mark import matrix
+from ducktape.mark import matrix, ok_to_fail
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.types import TopicSpec
 from rptest.clients.default import DefaultClient
@@ -102,6 +102,7 @@ class ScalingUpTest(EndToEndTest):
 
         return total_replicas
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/4371
     @cluster(num_nodes=5)
     @matrix(partition_count=[1, 20])
     def test_adding_nodes_to_cluster(self, partition_count):
