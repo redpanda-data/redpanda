@@ -55,18 +55,19 @@ func init() {
 //nolint:funlen // length looks good
 func main() {
 	var (
-		clusterDomain               string
-		metricsAddr                 string
-		probeAddr                   string
-		pprofAddr                   string
-		enableLeaderElection        bool
-		webhookEnabled              bool
-		configuratorBaseImage       string
-		configuratorTag             string
-		configuratorImagePullPolicy string
-		decommissionWaitInterval    time.Duration
-		metricsTimeout              time.Duration
-		restrictToRedpandaVersion   string
+		clusterDomain                  string
+		metricsAddr                    string
+		probeAddr                      string
+		pprofAddr                      string
+		enableLeaderElection           bool
+		webhookEnabled                 bool
+		configuratorBaseImage          string
+		configuratorTag                string
+		configuratorDriftCheckInterval time.Duration
+		configuratorImagePullPolicy    string
+		decommissionWaitInterval       time.Duration
+		metricsTimeout                 time.Duration
+		restrictToRedpandaVersion      string
 
 		// allowPVCDeletion controls the PVC deletion feature in the Cluster custom resource.
 		// PVCs will be deleted when its Pod has been deleted and the Node that Pod is assigned to
@@ -86,6 +87,7 @@ func main() {
 	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "Enable webhook Manager")
 	flag.StringVar(&configuratorBaseImage, "configurator-base-image", defaultConfiguratorContainerImage, "Set the configurator base image")
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
+	flag.DurationVar(&configuratorDriftCheckInterval, "configurator-drift-check-period", redpandacontrollers.DefaultDriftCheckPeriod, "Set the time interval to check for configuration drift")
 	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
 	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
 	flag.DurationVar(&metricsTimeout, "metrics-timeout", 8*time.Second, "Set the timeout for a checking metrics Admin API endpoint. If set to 0, then the 2 seconds default will be used")
@@ -161,6 +163,7 @@ func main() {
 		Scheme:                    mgr.GetScheme(),
 		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
 		RestrictToRedpandaVersion: restrictToRedpandaVersion,
+		DriftCheckPeriod:          &configuratorDriftCheckInterval,
 	}).WithClusterDomain(clusterDomain).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "ClusterConfigurationDrift")
 		os.Exit(1)

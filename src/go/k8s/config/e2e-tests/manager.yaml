@@ -19,3 +19,4 @@ spec:
         - "--configurator-image-pull-policy=Never"
         - "--allow-pvc-deletion=true"
         - "--superusers-prefix=__redpanda_system__"
+        - "--configurator-drift-check-period=10s"

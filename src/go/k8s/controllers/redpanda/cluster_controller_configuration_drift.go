@@ -15,13 +15,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,10 +22,18 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/networking"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/certmanager"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/configuration"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 )
 
 const (
-	defaultDriftCheckPeriod = 1 * time.Minute
+	DefaultDriftCheckPeriod = 1 * time.Minute
 
 	debugLogLevel = 4
 )
@@ -194,7 +195,7 @@ func (r *ClusterConfigurationDriftReconciler) getDriftCheckPeriod() time.Duratio
 	if r.DriftCheckPeriod != nil {
 		return *r.DriftCheckPeriod
 	}
-	return defaultDriftCheckPeriod
+	return DefaultDriftCheckPeriod
 }
 
 // createOrDeleteEventFilter selects only the events of creation and deletion of a cluster,
