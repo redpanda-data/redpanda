@@ -14,7 +14,7 @@ import requests
 import time
 import random
 
-from ducktape.mark import matrix
+from ducktape.mark import parametrize
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -1137,11 +1137,15 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.json() == [2]
 
     @cluster(num_nodes=4)
-    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF],
-            client_type=[
-                SerdeClientType.Python, SerdeClientType.Java,
-                SerdeClientType.Golang
-            ])
+    @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Python)
+    @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Java)
+    @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Golang)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Python)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Java)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Golang)
     def test_serde_client(self, protocol: SchemaType,
                           client_type: SerdeClientType):
         """
