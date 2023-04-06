@@ -15,11 +15,13 @@
 #include "cluster/scheduling/allocation_node.h"
 #include "model/metadata.h"
 
+#include <seastar/core/weak_ptr.hh>
+
 namespace cluster {
 /**
  * Partition allocator state
  */
-class allocation_state {
+class allocation_state : public ss::weakly_referencable<allocation_state> {
 public:
     using node_t = allocation_node;
     using node_ptr = std::unique_ptr<node_t>;
@@ -34,6 +36,7 @@ public:
 
     // Allocation nodes
     void register_node(node_ptr);
+    void register_node(const model::broker&, allocation_node::state);
     void update_allocation_nodes(const std::vector<model::broker>&);
     void upsert_allocation_node(const model::broker&);
     void remove_allocation_node(model::node_id);
@@ -63,6 +66,7 @@ public:
     // Raft group id
     raft::group_id next_group_id();
     raft::group_id last_group_id() const { return _highest_group; }
+    void set_last_group_id(raft::group_id id) { _highest_group = id; }
 
     // Get rack information
     //

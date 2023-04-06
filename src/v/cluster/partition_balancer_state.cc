@@ -10,11 +10,14 @@
 
 #include "cluster/partition_balancer_state.h"
 
+#include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "ssx/metrics.h"
+
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -74,6 +77,60 @@ void partition_balancer_state::handle_ntp_update(
             }
         }
     }
+}
+
+ss::future<>
+partition_balancer_state::apply_snapshot(const controller_snapshot& snap) {
+    if (!_partition_allocator.is_rack_awareness_enabled()) {
+        co_return;
+    }
+
+    absl::flat_hash_map<model::node_id, model::rack_id> node2rack;
+    for (const auto& [id, node] : snap.members.nodes) {
+        if (node.broker.rack()) {
+            node2rack[id] = *node.broker.rack();
+        }
+    }
+
+    auto is_rack_placement_valid =
+      [&](const std::vector<model::broker_shard>& replicas) {
+          absl::flat_hash_set<model::rack_id> racks;
+          for (auto [node_id, shard] : replicas) {
+              auto it = node2rack.find(node_id);
+              if (it != node2rack.end() && !racks.insert(it->second).second) {
+                  return false;
+              }
+          }
+          return true;
+      };
+
+    _ntps_with_broken_rack_constraint.clear();
+    for (const auto& [ns_tp, topic] : snap.topics.topics) {
+        if (topic.metadata.source_topic) {
+            // skip non-replicable topics
+            continue;
+        }
+
+        for (const auto& [p_id, partition] : topic.partitions) {
+            const std::vector<model::broker_shard>* replicas
+              = &partition.replicas;
+
+            if (auto it = topic.updates.find(p_id); it != topic.updates.end()) {
+                const auto& update = it->second;
+                if (update.state == reconfiguration_state::in_progress) {
+                    replicas = &update.target_assignment;
+                }
+            }
+
+            if (!is_rack_placement_valid(*replicas)) {
+                _ntps_with_broken_rack_constraint.emplace(
+                  ns_tp.ns, ns_tp.tp, p_id);
+            }
+
+            co_await ss::coroutine::maybe_yield();
+        }
+    }
+    co_return;
 }
 
 partition_balancer_state::probe::probe(const partition_balancer_state& parent)

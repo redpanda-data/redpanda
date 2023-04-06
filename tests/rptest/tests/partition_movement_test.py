@@ -9,6 +9,7 @@
 
 import random
 import time
+import signal
 import requests
 
 from rptest.services.cluster import cluster
@@ -571,8 +572,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     @matrix(num_to_upgrade=[0, 2])
     def test_deletion_stops_move(self, num_to_upgrade):
         """
-        Delete topic which partitions are being moved and check status after 
-        topic is created again, old move 
+        Delete topic which partitions are being moved and check status after
+        topic is created again, old move
         opeartions should not influcence newly created topic
         """
         test_mixed_versions = num_to_upgrade > 0
@@ -692,8 +693,8 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     def test_availability_when_one_node_down(self):
         """
         Test availability during partition reconfiguration.
-        
-        The test validates if a partition is available when one of its replicas 
+
+        The test validates if a partition is available when one of its replicas
         is down during reconfiguration.
         """
         throughput, records, _ = self._get_scale_params()
@@ -758,6 +759,92 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
         self.run_validation(enable_idempotence=False,
                             consumer_timeout_sec=45,
                             min_records=records)
+
+    @cluster(num_nodes=4)
+    @matrix(enable_controller_snapshots=[False, True])
+    def test_stale_node(self, enable_controller_snapshots):
+        """
+        Test that a stale node rejoining the cluster can correctly restore info about
+        in-progress partition movements and finish them.
+        """
+
+        partition_count = 1
+        self.start_redpanda(num_nodes=4)
+
+        admin = Admin(self.redpanda)
+
+        if enable_controller_snapshots:
+            self.redpanda.set_cluster_config(
+                {"controller_snapshot_max_age_sec": 1})
+            admin.put_feature("controller_snapshots", {"state": "active"})
+
+        spec = TopicSpec(partition_count=partition_count, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        partition_id = 0
+
+        assignments = self._get_assignments(admin, self.topic, partition_id)
+        self.logger.info(
+            f"current assignment for {self.topic}/{partition_id}: {assignments}"
+        )
+        current_replicas = set()
+        for a in assignments:
+            current_replicas.add(a['node_id'])
+        # replace single replica
+        brokers = admin.get_brokers()
+        to_select = [
+            b for b in brokers if b['node_id'] not in current_replicas
+        ]
+        selected = random.choice(to_select)
+        # replace one of the assignments
+        replaced = assignments[0]['node_id']
+        assignments[0] = {'node_id': selected['node_id'], 'core': 0}
+        self.logger.info(
+            f"target assignment for {self.topic}/{partition_id}: {assignments}"
+        )
+
+        # stop the replaced node
+        self.logger.info(f"stopping node: {replaced}")
+        self.redpanda.signal_redpanda(self.redpanda.get_node(replaced),
+                                      signal=signal.SIGSTOP)
+
+        def new_controller_available():
+            controller_id = admin.get_partition_leader(namespace="redpanda",
+                                                       topic="controller",
+                                                       partition=0)
+            self.logger.debug(
+                f"current controller: {controller_id}, stopped node: {replaced}"
+            )
+            return controller_id != -1 and controller_id != replaced
+
+        wait_until(new_controller_available, 30, 1)
+
+        # ask partition to move
+        admin.set_partition_replicas(self.topic, partition_id, assignments)
+
+        def status_done():
+            info = admin.get_partitions(self.topic, partition_id)
+            self.logger.info(
+                f"current assignments for {self.topic}/{partition_id}: {info}")
+            converged = self._equal_assignments(info["replicas"], assignments)
+            return converged and info["status"] == "done"
+
+        # wait until redpanda reports complete
+        wait_until(status_done, timeout_sec=40, backoff_sec=2)
+
+        self.logger.info(
+            "first movement done, scheduling second movement back")
+
+        # bring replaced node back
+        assignments[0] = {'node_id': replaced, 'core': 0}
+        admin.set_partition_replicas(self.topic, partition_id, assignments)
+
+        time.sleep(5)
+        self.logger.info(f"unfreezing node: {replaced} again")
+        self.redpanda.signal_redpanda(self.redpanda.get_node(replaced),
+                                      signal=signal.SIGCONT)
+
+        wait_until(status_done, timeout_sec=40, backoff_sec=2)
 
 
 class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
