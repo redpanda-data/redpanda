@@ -20,6 +20,8 @@
 #include <seastar/core/coroutine.hh>
 
 #include <absl/container/flat_hash_set.h>
+#include <confluent/meta.pb.h>
+#include <confluent/types/decimal.pb.h>
 #include <fmt/ostream.h>
 #include <google/protobuf/any.pb.h>
 #include <google/protobuf/api.pb.h>
@@ -89,6 +91,8 @@ struct descriptor_equal {
 using known_types_set = absl::
   flat_hash_set<const pb::FileDescriptor*, descriptor_hasher, descriptor_equal>;
 static const known_types_set known_types{
+  confluent::Meta::GetDescriptor()->file(),
+  confluent::type::Decimal::GetDescriptor()->file(),
   google::type::CalendarPeriod_descriptor()->file(),
   google::type::Color::GetDescriptor()->file(),
   google::type::Date::GetDescriptor()->file(),
