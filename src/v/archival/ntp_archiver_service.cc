@@ -973,48 +973,93 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
       _segment_tags);
 }
 
-ss::future<cloud_storage::upload_result>
-ntp_archiver::stream_reference::close_on_cleanup_with_res(
-  cloud_storage::upload_result result) {
+ss::future<> ntp_archiver::stream_reference::maybe_close_ref() {
     if (stream_ref.has_value()) {
         co_await stream_ref->get().close();
     }
+}
 
-    co_return result;
+static ss::sstring make_index_path(const remote_segment_path& segment_path) {
+    return fmt::format("{}.index", segment_path().native());
 }
 
 // from offset to offset (by record batch boundary)
 ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
   upload_candidate candidate,
   std::vector<ss::rwlock::holder> segment_read_locks,
-  ss::input_stream<char> stream,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
     vassert(
       candidate.remote_sources.empty(),
       "This method can only work with local segments");
 
+    auto [stream_upload, stream_index] = split_segment_stream(
+      candidate, _conf->upload_io_priority);
+
     auto path = segment_path_for_candidate(candidate);
-    stream_reference stream_state{.stream_ref = stream};
+    stream_reference stream_state{.stream_ref = stream_upload};
 
-    co_return co_await do_upload_segment(
-      std::move(candidate), stream_state, source_rtc)
-      .handle_exception_type(
-        [&stream_state](const ss::gate_closed_exception&) mutable {
-            return stream_state.close_on_cleanup_with_res(
-              cloud_storage::upload_result::cancelled);
-        })
-      .handle_exception_type(
-        [&stream_state](const ss::abort_requested_exception&) mutable {
-            return stream_state.close_on_cleanup_with_res(
-              cloud_storage::upload_result::cancelled);
-        })
-      .handle_exception_type([this, path = std::move(path), &stream_state](
-                               const std::exception& e) mutable {
-          vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
-          return stream_state.close_on_cleanup_with_res(
-            cloud_storage::upload_result::failed);
-      });
+    auto upload_fut
+      = do_upload_segment(candidate, stream_state, source_rtc)
+          .handle_exception_type(
+            [&stream_state](const ss::gate_closed_exception&) mutable {
+                return stream_state.maybe_close_ref().then(
+                  [] { return cloud_storage::upload_result::cancelled; });
+            })
+          .handle_exception_type(
+            [&stream_state](const ss::abort_requested_exception&) mutable {
+                return stream_state.maybe_close_ref().then(
+                  [] { return cloud_storage::upload_result::cancelled; });
+            })
+          .handle_exception_type(
+            [this, path, &stream_state](const std::exception& e) mutable {
+                vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
+                return stream_state.maybe_close_ref().then(
+                  [] { return cloud_storage::upload_result::failed; });
+            });
 
+    auto index_path = make_index_path(path);
+    auto make_idx_fut = make_segment_index(
+      candidate.starting_offset, _rtclog, index_path, std::move(stream_index));
+
+    auto [upload_res, idx_res] = co_await ss::when_all_succeed(
+      std::move(upload_fut), std::move(make_idx_fut));
+
+    if (
+      upload_res == cloud_storage::upload_result::success
+      && idx_res.has_value()) {
+        auto rtc = source_rtc.value_or(std::ref(_rtcnode));
+        retry_chain_node fib(
+          _conf->segment_upload_timeout,
+          _conf->cloud_storage_initial_backoff,
+          &rtc.get());
+
+        co_await _remote.upload_object(
+          _conf->bucket_name,
+          cloud_storage_clients::object_key{index_path},
+          idx_res->to_iobuf(),
+          fib,
+          _segment_index_tags,
+          "segment-index");
+    } else {
+        if (upload_res != cloud_storage::upload_result::success) {
+            vlog(
+              _rtclog.warn,
+              "skipping segment index upload to {} because segment upload was "
+              "unsuccessful: {}",
+              index_path,
+              path);
+        }
+
+        if (!idx_res.has_value()) {
+            vlog(
+              _rtclog.warn,
+              "skipping segment index upload to {} index could not be "
+              "generated",
+              index_path);
+        }
+    }
+
+    co_return upload_res;
     // Note on segment locks:
     //
     // We've successfully uploaded the segment. Before we replicate an update
@@ -1100,11 +1145,10 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_tx(
 
 ss::future<std::optional<cloud_storage::offset_index>>
 ntp_archiver::make_segment_index(
-  const upload_candidate& candidate,
+  model::offset base_rp_offset,
   retry_chain_logger& ctxlog,
   std::string_view index_path,
   ss::input_stream<char> stream) {
-    auto base_rp_offset = candidate.starting_offset;
     auto base_kafka_offset = model::offset_cast(
       _parent.get_offset_translator_state()->from_log_offset(base_rp_offset));
 
@@ -1134,79 +1178,6 @@ ntp_archiver::make_segment_index(
     }
 
     co_return ix;
-}
-
-static ss::sstring make_index_path(const remote_segment_path& segment_path) {
-    return fmt::format("{}.index", segment_path().native());
-}
-
-ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment_index(
-  upload_candidate candidate,
-  stream_reference& stream_state,
-  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
-    vassert(
-      candidate.remote_sources.empty(),
-      "This method can only work with local segments");
-    vassert(
-      stream_state.stream_ref.has_value(),
-      "Stream used to build index is not valid");
-
-    gate_guard guard{_gate};
-    auto rtc = source_rtc.value_or(std::ref(_rtcnode));
-    retry_chain_node fib(
-      _conf->segment_upload_timeout,
-      _conf->cloud_storage_initial_backoff,
-      &rtc.get());
-    retry_chain_logger ctxlog(archival_log, fib, _ntp.path());
-
-    auto index_path = make_index_path(segment_path_for_candidate(candidate));
-    auto ix = co_await make_segment_index(
-      candidate, ctxlog, index_path, std::move(stream_state.stream_ref->get()));
-    stream_state.stream_ref.reset();
-    if (!ix) {
-        co_return cloud_storage::upload_result::cancelled;
-    }
-
-    co_return co_await _remote.upload_object(
-      _conf->bucket_name,
-      cloud_storage_clients::object_key{index_path},
-      ix->to_iobuf(),
-      fib,
-      _segment_index_tags,
-      "segment-index");
-}
-
-ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment_index(
-  upload_candidate candidate,
-  ss::input_stream<char> stream,
-  std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
-    vassert(
-      candidate.remote_sources.empty(),
-      "This method can only work with local segments");
-    auto path = segment_path_for_candidate(candidate);
-    stream_reference stream_state{.stream_ref = stream};
-    co_return co_await do_upload_segment_index(
-      std::move(candidate), stream_state, source_rtc)
-      .handle_exception_type(
-        [&stream_state](const ss::gate_closed_exception&) mutable {
-            return stream_state.close_on_cleanup_with_res(
-              cloud_storage::upload_result::cancelled);
-        })
-      .handle_exception_type(
-        [&stream_state](const ss::abort_requested_exception&) mutable {
-            return stream_state.close_on_cleanup_with_res(
-              cloud_storage::upload_result::cancelled);
-        })
-      .handle_exception_type([this, path = std::move(path), &stream_state](
-                               const std::exception& ex) mutable {
-          vlog(
-            _rtclog.error,
-            "failed to upload segment index {}: {}",
-            make_index_path(path),
-            ex);
-          return stream_state.close_on_cleanup_with_res(
-            cloud_storage::upload_result::failed);
-      });
 }
 
 // The function turns an array of futures that return an error code into a
@@ -1285,20 +1256,11 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
     auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
 
-    // The upload is successful only if the segment, the index and tx_range are
+    // The upload is successful only if the segment, and tx_range are
     // uploaded.
     std::vector<ss::future<cloud_storage::upload_result>> all_uploads;
 
-    // Create a fanout from the upload candidate. The two streams read from the
-    // same concat data source, and are used for the segment upload and index
-    // creation.
-    auto [stream_for_upload, stream_for_index] = split_segment_stream(
-      upload, _conf->upload_io_priority);
-
-    all_uploads.emplace_back(
-      upload_segment(upload, std::move(locks), std::move(stream_for_upload)));
-    all_uploads.emplace_back(
-      upload_segment_index(upload, std::move(stream_for_index)));
+    all_uploads.emplace_back(upload_segment(upload, std::move(locks)));
 
     size_t tx_size = 0;
     // Compacted segments never have tx-manifests because all batches
@@ -2155,13 +2117,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
 
     // Upload segments and tx-manifest in parallel
     std::vector<ss::future<cloud_storage::upload_result>> futures;
-    auto [stream_for_upload, stream_for_index] = split_segment_stream(
-      upload, _conf->upload_io_priority);
-
-    futures.emplace_back(upload_segment(
-      upload, std::move(locks), std::move(stream_for_upload), source_rtc));
-    futures.emplace_back(
-      upload_segment_index(upload, std::move(stream_for_index)));
+    futures.emplace_back(upload_segment(upload, std::move(locks), source_rtc));
 
     size_t tx_size = 0;
     auto tx_range = co_await get_aborted_transactions(upload);

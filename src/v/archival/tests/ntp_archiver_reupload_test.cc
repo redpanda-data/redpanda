@@ -701,7 +701,7 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     upload_and_verify(archiver.value(), expected, model::offset::max());
 
     log_requests();
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
 
     manifest = part->archival_meta_stm()->manifest();
     verify_segment_request("30-5-v1.log", manifest);

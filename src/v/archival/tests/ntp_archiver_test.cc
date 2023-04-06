@@ -278,6 +278,56 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
       manifest_ntp, segment1_name, manifest, index_req->second.content);
 }
 
+FIXTURE_TEST(
+  test_index_not_uploaded_if_segment_not_uploaded, archiver_fixture) {
+    // This test asserts that uploading of segment index will only happen if the
+    // segment upload is successful. Indices uploaded without segments are not
+    // found during cleanup, thus leaving behind orphan items in the bucket.
+
+    std::vector<segment_desc> segments = {
+      {manifest_ntp, model::offset(0), model::term_id(1)},
+    };
+    init_storage_api_local(segments);
+    wait_for_partition_leadership(manifest_ntp);
+    auto part = app.partition_manager.local().get(manifest_ntp);
+    tests::cooperative_spin_wait_with_timeout(10s, [part]() mutable {
+        return part->last_stable_offset() >= model::offset(1);
+    }).get();
+
+    auto fail_resp = http_test_utils::response{
+      .body = R"xml(<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+    <Code>AccessDenied</Code>
+    <Message>Access Denied</Message>
+    <Resource>resource</Resource>
+    <RequestId>requestid</RequestId>
+</Error>)xml",
+      .status = http_test_utils::response::status_type::forbidden};
+    std::regex logexpr{".*/0-.*log\\.\\d+"};
+    fail_request_if(
+      [&logexpr](const ss::http::request& req) {
+          return req._method == "PUT"
+                 && std::regex_match(req._url.begin(), req._url.end(), logexpr);
+      },
+      std::move(fail_resp));
+
+    listen();
+
+    auto [arch_conf, remote_conf] = get_configurations();
+    archival::ntp_archiver archiver(
+      get_ntp_conf(), arch_conf, remote.local(), *part);
+
+    auto action = ss::defer([&archiver] { archiver.stop().get(); });
+
+    retry_chain_node fib(never_abort);
+    auto res = archiver.upload_next_candidates().get0();
+
+    auto&& [non_compacted_result, compacted_result] = res;
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_succeeded, 0);
+    BOOST_REQUIRE_EQUAL(non_compacted_result.num_failed, 1);
+    BOOST_REQUIRE_EQUAL(get_requests().size(), 1);
+}
+
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_retention, archiver_fixture) {
     /*
