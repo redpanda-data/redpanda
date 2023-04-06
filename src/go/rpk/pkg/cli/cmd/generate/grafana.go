@@ -28,10 +28,10 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
@@ -207,6 +207,12 @@ func decompressAndPrint(fs fs.FS, path string, writer io.Writer) error {
 	return nil
 }
 
+type noopFormatter struct{}
+
+func (*noopFormatter) Format(e *logrus.Entry) ([]byte, error) {
+	return []byte(e.Message), nil
+}
+
 func executeGrafanaDashboard(metricsEndpoint string, datasource string) (string, error) {
 	if !(strings.HasPrefix(metricsEndpoint, "http://") ||
 		strings.HasPrefix(metricsEndpoint, "https://")) {
@@ -227,7 +233,7 @@ func executeGrafanaDashboard(metricsEndpoint string, datasource string) (string,
 	if err != nil {
 		return "", err
 	}
-	log.SetFormatter(cli.NewNoopFormatter())
+	log.SetFormatter(new(noopFormatter))
 	// The logger's default stream is stderr, which prevents piping to files
 	// from working without redirecting them with '2>&1'.
 	if log.StandardLogger().Out == os.Stderr {
