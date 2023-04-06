@@ -60,14 +60,10 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
 
 class ControllerSnapshotTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
-        # TODO: remove partition_autobalancing_mode after applying controller snapshots
-        # to partition_allocator gets implemented (rebalance on node addition doesn't
-        # like empty partition allocator)
         super().__init__(*args,
                          num_brokers=4,
                          extra_rp_conf={
                              'controller_snapshot_max_age_sec': 5,
-                             'partition_autobalancing_mode': 'off',
                          },
                          **kwargs)
 
