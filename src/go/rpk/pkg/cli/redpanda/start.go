@@ -21,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
@@ -362,7 +361,9 @@ func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra
 				return err
 			}
 			rpArgs.ExtraArgs = args
-			fmt.Println(common.FeedbackMsg)
+			fmt.Print(`We'd love to hear about your experience with Redpanda:
+https://redpanda.com/feedback
+`)
 			fmt.Println("Starting redpanda...")
 			return launcher.Start(installDirectory, rpArgs)
 		},
