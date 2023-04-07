@@ -13,8 +13,8 @@
 package redpanda
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/tune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/tune"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"

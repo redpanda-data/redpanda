@@ -13,7 +13,7 @@
 package redpanda
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda/admin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/admin"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )

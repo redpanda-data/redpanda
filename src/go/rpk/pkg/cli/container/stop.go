@@ -14,7 +14,7 @@ import (
 	"sync"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
