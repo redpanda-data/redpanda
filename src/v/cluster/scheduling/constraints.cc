@@ -264,38 +264,6 @@ least_allocated_in_domain(const partition_allocation_domain domain) {
     return soft_constraint(std::make_unique<impl>(domain));
 }
 
-hard_constraint distinct_rack(const allocation_state& state) {
-    class impl : public hard_constraint::impl {
-    public:
-        explicit impl(const allocation_state& state)
-          : _state(state) {}
-
-        hard_constraint_evaluator
-        make_evaluator(const replicas_t& replicas) const final {
-            return [this, &replicas](const allocation_node& node) {
-                for (auto [node_id, shard] : replicas) {
-                    auto rack = _state.get_rack_id(node_id);
-                    // replica has no rack assigned, any node will match
-                    if (!rack.has_value()) {
-                        return true;
-                    }
-                    // rack is already in replica set
-                    if (rack.value() == node.rack()) {
-                        return false;
-                    }
-                }
-                return true;
-            };
-        }
-
-        ss::sstring name() const final { return "distinct rack"; }
-
-        const allocation_state& _state;
-    };
-
-    return hard_constraint(std::make_unique<impl>(state));
-}
-
 soft_constraint least_disk_filled(
   const double max_disk_usage_ratio,
   const absl::flat_hash_map<model::node_id, node_disk_space>&
@@ -371,6 +339,12 @@ soft_constraint make_soft_constraint(hard_constraint constraint) {
     };
 
     return soft_constraint(std::make_unique<impl>(std::move(constraint)));
+}
+
+soft_constraint distinct_rack_preferred(const allocation_state& state) {
+    return distinct_labels_preferred(
+      rack_label.data(),
+      [&state](model::node_id id) { return state.get_rack_id(id); });
 }
 
 } // namespace cluster

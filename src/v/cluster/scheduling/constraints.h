@@ -76,8 +76,6 @@ soft_constraint least_disk_filled(
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
-hard_constraint distinct_rack(const allocation_state&);
-
 template<
   typename Mapper,
   typename LabelType
@@ -138,5 +136,7 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
     return soft_constraint(
       std::make_unique<impl>(label_name, std::forward<Mapper>(mapper)));
 }
+
+soft_constraint distinct_rack_preferred(const allocation_state& state);
 
 } // namespace cluster
