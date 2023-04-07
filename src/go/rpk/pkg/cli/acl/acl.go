@@ -12,30 +12,14 @@ package acl
 import (
 	"fmt"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
-	var (
-		brokers                []string
-		configFile             string
-		user                   string
-		password               string
-		mechanism              string
-		enableTLS              bool
-		certFile               string
-		keyFile                string
-		truststoreFile         string
-		adminAPIEnableTLS      bool
-		adminAPICertFile       string
-		adminAPIKeyFile        string
-		adminAPITruststoreFile string
-
-		helpOperations bool
-	)
-	command := &cobra.Command{
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var helpOperations bool
+	cmd := &cobra.Command{
 		Use:   "acl",
 		Short: "Manage ACLs and SASL users",
 		Long:  helpACLs,
@@ -49,33 +33,16 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 
-	command.Flags().BoolVar(&helpOperations, "help-operations", false, "Print more help about ACL operations")
+	p.InstallKafkaFlags(cmd)
+	p.InstallAdminFlags(cmd)
 
-	common.AddKafkaFlags(
-		command,
-		&configFile,
-		&user,
-		&password,
-		&mechanism,
-		&enableTLS,
-		&certFile,
-		&keyFile,
-		&truststoreFile,
-		&brokers,
-	)
-	common.AddAdminAPITLSFlags(
-		command,
-		&adminAPIEnableTLS,
-		&adminAPICertFile,
-		&adminAPIKeyFile,
-		&adminAPITruststoreFile,
-	)
+	cmd.Flags().BoolVar(&helpOperations, "help-operations", false, "Print more help about ACL operations")
 
-	command.AddCommand(newCreateCommand(fs))
-	command.AddCommand(newDeleteCommand(fs))
-	command.AddCommand(newListCommand(fs))
-	command.AddCommand(newUserCommand(fs))
-	return command
+	cmd.AddCommand(newCreateCommand(fs, p))
+	cmd.AddCommand(newDeleteCommand(fs, p))
+	cmd.AddCommand(newListCommand(fs, p))
+	cmd.AddCommand(newUserCommand(fs, p))
+	return cmd
 }
 
 const helpACLs = `Manage ACLs and SASL users.
