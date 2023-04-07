@@ -82,7 +82,8 @@ private:
         return _out.write(iobuf_as_scattered(std::move(buf)))
           .then([this, is_flexible](bool) {
               return protocol::parse_size(_in).then([this, is_flexible](
-                                            std::optional<size_t> sz) {
+                                                      std::optional<size_t>
+                                                        sz) {
                   if (!sz) {
                       return ss::make_exception_future<iobuf>(
                         kafka_request_disconnected_exception(

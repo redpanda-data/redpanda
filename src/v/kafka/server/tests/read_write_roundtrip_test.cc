@@ -20,20 +20,23 @@ using namespace kafka; // NOLINT
                               ">");                                            \
         auto val = value;                                                      \
         auto out = iobuf();                                                    \
-        kafka::protocol::encoder w(out);                                         \
+        kafka::protocol::encoder w(out);                                       \
         w.write((type_cast)val);                                               \
-        kafka::protocol::decoder r(std::move(out));                               \
+        kafka::protocol::decoder r(std::move(out));                            \
         BOOST_REQUIRE_EQUAL(val, (r.*read_method)());                          \
     }
 
 SEASTAR_THREAD_TEST_CASE(write_and_read_value_test) {
-    roundtrip_test(static_cast<int8_t>(64), int8_t, &protocol::decoder::read_int8);
+    roundtrip_test(
+      static_cast<int8_t>(64), int8_t, &protocol::decoder::read_int8);
     roundtrip_test(
       static_cast<int16_t>(32000), int16_t, &protocol::decoder::read_int16);
     roundtrip_test(
       static_cast<int32_t>(64000000), int32_t, &protocol::decoder::read_int32);
     roundtrip_test(
-      static_cast<int64_t>(45564000000), int64_t, &protocol::decoder::read_int64);
+      static_cast<int64_t>(45564000000),
+      int64_t,
+      &protocol::decoder::read_int64);
     roundtrip_test(true, bool, &protocol::decoder::read_bool);
     roundtrip_test(false, bool, &protocol::decoder::read_bool);
     roundtrip_test(

@@ -109,6 +109,6 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
     }
     co_return parse_size_buffer(std::move(buf));
 }
-}
+} // namespace protocol
 
 } // namespace kafka

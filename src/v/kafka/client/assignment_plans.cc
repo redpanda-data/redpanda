@@ -100,8 +100,9 @@ join_group_request_protocol make_join_group_request_protocol_range(
     iobuf metadata;
     protocol::encoder writer(metadata);
     writer.write_array(
-      topics,
-      [](const model::topic& t, protocol::encoder& writer) { writer.write(t); });
+      topics, [](const model::topic& t, protocol::encoder& writer) {
+          writer.write(t);
+      });
     writer.write(int32_t(-1)); // userdata length
 
     return join_group_request_protocol{
