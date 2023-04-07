@@ -25,7 +25,6 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
 )
 
@@ -337,87 +336,6 @@ func (p *Params) backcompatFlagsToOverrides() {
 	if p.adminKeyFile != "" {
 		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientKey, p.adminKeyFile))
 	}
-}
-
-////////////////////////////////////
-// BACKCOMPAT PARAMS FROM COMMAND //
-////////////////////////////////////
-
-// ParamsFromCommand is an intermediate function to be used while refactoring
-// rpk to have a top-down passed Params function. See the docs at the top of
-// this file for the refactoring process.
-func ParamsFromCommand(cmd *cobra.Command) *Params {
-	var p Params
-
-	for _, set := range []*pflag.FlagSet{
-		cmd.PersistentFlags(),
-		cmd.Flags(),
-	} {
-		set.Visit(func(f *pflag.Flag) {
-			var key string
-			var stripBrackets bool
-
-			switch f.Name {
-			default:
-				return
-
-			case FlagConfig:
-				p.ConfigPath = f.Value.String()
-				return
-
-			case FlagVerbose:
-				if b, err := strconv.ParseBool(f.Value.String()); err == nil {
-					p.Verbose = b
-				}
-				return
-
-			case FlagBrokers:
-				key = xKafkaBrokers
-				stripBrackets = true
-
-			case FlagEnableTLS:
-				key = xKafkaTLSEnabled
-			case FlagTLSCA:
-				key = xKafkaCACert
-			case FlagTLSCert:
-				key = xKafkaClientCert
-			case FlagTLSKey:
-				key = xKafkaClientKey
-
-			case FlagSASLMechanism:
-				key = xKafkaSASLMechanism
-			case FlagSASLUser:
-				key = xKafkaSASLUser
-			case FlagSASLPass:
-				key = xKafkaSASLPass
-
-			case FlagAdminHosts1, FlagAdminHosts2:
-				key = xAdminHosts
-				stripBrackets = true
-			case FlagEnableAdminTLS:
-				key = xAdminTLSEnabled
-			case FlagAdminTLSCA:
-				key = xAdminCACert
-			case FlagAdminTLSCert:
-				key = xAdminClientCert
-			case FlagAdminTLSKey:
-				key = xAdminClientKey
-			}
-
-			val := f.Value.String()
-			// Value.String() adds brackets to slice types, and we
-			// need to strip that here.
-			if stripBrackets {
-				if len(val) > 0 && val[0] == '[' && val[len(val)-1] == ']' {
-					val = val[1 : len(val)-1]
-				}
-			}
-
-			p.FlagOverrides = append(p.FlagOverrides, key+"="+val)
-		})
-	}
-
-	return &p
 }
 
 ///////////////////////
