@@ -169,7 +169,7 @@ SEASTAR_THREAD_TEST_CASE(member_serde) {
     m0.set_assignment(bytes("assignment"));
     auto m0_state = m0.state().copy();
     iobuf m0_iobuf;
-    auto writer = kafka::protocol::response_writer(m0_iobuf);
+    auto writer = kafka::protocol::encoder(m0_iobuf);
     member_state::encode(writer, m0_state);
     kafka::protocol::decoder reader(m0_iobuf.copy());
     auto m1_state = member_state::decode(reader);

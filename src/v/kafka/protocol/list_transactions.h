@@ -22,7 +22,7 @@ struct list_transactions_request final {
 
     list_transactions_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -41,7 +41,7 @@ struct list_transactions_response final {
 
     list_transactions_response_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

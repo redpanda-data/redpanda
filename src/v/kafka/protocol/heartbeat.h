@@ -29,7 +29,7 @@ struct heartbeat_request final {
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -58,7 +58,7 @@ struct heartbeat_response final {
     heartbeat_response(const heartbeat_request&, error_code error)
       : heartbeat_response(error) {}
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

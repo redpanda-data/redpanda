@@ -33,7 +33,7 @@ public:
           flex ? std::optional<tagged_fields>(tagged_fields{}) : std::nullopt)
       , _writer(_buf) {}
 
-    protocol::response_writer& writer() { return _writer; }
+    protocol::encoder& writer() { return _writer; }
 
     const iobuf& buf() const { return _buf; }
     iobuf& buf() { return _buf; }
@@ -62,7 +62,7 @@ private:
     flex_enabled _flex{flex_enabled::no};
     std::optional<tagged_fields> _tags;
     iobuf _buf;
-    protocol::response_writer _writer;
+    protocol::encoder _writer;
 };
 
 using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;

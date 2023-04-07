@@ -27,7 +27,7 @@ struct delete_acls_request final {
 
     delete_acls_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -46,7 +46,7 @@ struct delete_acls_response final {
 
     delete_acls_response_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

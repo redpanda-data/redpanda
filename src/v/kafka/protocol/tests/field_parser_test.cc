@@ -41,7 +41,7 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
     auto tags = make_random_tags(10);
 
     /// Serialize the random tags into an iobuf
-    kafka::protocol::response_writer writer(buf);
+    kafka::protocol::encoder writer(buf);
     writer.write_tags(copy_tags(tags));
 
     /// Copy the result to use for a later comparison
@@ -56,7 +56,7 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
 
     /// Re-serialize these tags to compare against the previous
     iobuf result;
-    kafka::protocol::response_writer end_writer(result);
+    kafka::protocol::encoder end_writer(result);
     end_writer.write_tags(std::move(deser_tags));
 
     /// Perform checks against serialized copies
@@ -87,10 +87,10 @@ struct test_struct {
 /// Only includes impls of supported types used in following unit tests
 template<typename T>
 void write_flex(T& type, iobuf& buf) {
-    kafka::protocol::response_writer writer(buf);
+    kafka::protocol::encoder writer(buf);
     if constexpr (std::is_same_v<T, std::vector<test_struct>>) {
         writer.write_flex_array(
-          type, [](test_struct& ts, kafka::protocol::response_writer& writer) {
+          type, [](test_struct& ts, kafka::protocol::encoder& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
               writer.write_tags(kafka::tagged_fields{});
@@ -99,7 +99,7 @@ void write_flex(T& type, iobuf& buf) {
                            T,
                            std::optional<std::vector<test_struct>>>) {
         writer.write_nullable_flex_array(
-          type, [](test_struct& ts, kafka::protocol::response_writer& writer) {
+          type, [](test_struct& ts, kafka::protocol::encoder& writer) {
               writer.write_flex(ts.field_a);
               writer.write(ts.field_b);
               writer.write_tags(kafka::tagged_fields{});
@@ -216,7 +216,7 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         iobuf data, writers_buf, copy;
         data.append(str.begin(), str.length());
         copy.append(str.begin(), str.length());
-        kafka::protocol::response_writer writer(writers_buf);
+        kafka::protocol::encoder writer(writers_buf);
         writer.write_flex(std::move(data));
 
         kafka::protocol::decoder reader(std::move(writers_buf));

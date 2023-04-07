@@ -53,7 +53,7 @@ struct offset_fetch_response;
 struct produce_request;
 struct produce_response;
 namespace protocol {
-class response_writer;
+class encoder;
 }
 struct sasl_authenticate_request;
 struct sasl_authenticate_response;

@@ -1095,7 +1095,7 @@ namespace kafka {
 
 namespace protocol {
 class decoder;
-class response_writer;
+class encoder;
 }
 class response;
 
@@ -1107,7 +1107,7 @@ class response;
 {% endfor %}
 
 {{ render_struct(struct) }}
-    void encode(protocol::response_writer&, api_version);
+    void encode(protocol::encoder&, api_version);
 {%- if op_type == "request" %}
     void decode(protocol::decoder&, api_version);
 {%- else %}
@@ -1117,8 +1117,8 @@ class response;
     friend std::ostream& operator<<(std::ostream&, const {{ struct.name }}&);
 {%- if first_flex > 0 %}
 private:
-    void encode_flex(protocol::response_writer&, api_version);
-    void encode_standard(protocol::response_writer&, api_version);
+    void encode_flex(protocol::encoder&, api_version);
+    void encode_standard(protocol::encoder&, api_version);
 {%- if op_type == "request" %}
     void decode_flex(protocol::decoder&, api_version);
     void decode_standard(protocol::decoder&, api_version);
@@ -1213,15 +1213,15 @@ if ({{ cond }}) {
 {%- if field.is_array %}
 {%- if field.nullable() %}
 {%- if flex %}
-{{ writer }}.write_nullable_flex_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::response_writer& writer) {
+{{ writer }}.write_nullable_flex_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::encoder& writer) {
 {%- else %}
-{{ writer }}.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::response_writer& writer) {
+{{ writer }}.write_nullable_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::encoder& writer) {
 {%- endif %}
 {%- else %}
 {%- if flex %}
-{{ writer }}.write_flex_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::response_writer& writer) {
+{{ writer }}.write_flex_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::encoder& writer) {
 {%- else %}
-{{ writer }}.write_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::response_writer& writer) {
+{{ writer }}.write_array({{ fname }}, [version]({{ field.value_type }}& v, protocol::encoder& writer) {
 {%- endif %}
 {%- endif %}
     (void)version;
@@ -1365,7 +1365,7 @@ std::vector<uint32_t> to_encode;
 tagged_fields::type tags_to_encode{std::move({{ tf }})};
 for(uint32_t tag : to_encode) {
     iobuf b;
-    protocol::response_writer rw(b);
+    protocol::encoder rw(b);
     switch(tag){
 {%- for tdef in tag_definitions %}
     case {{ tdef.tag() }}:
@@ -1415,7 +1415,7 @@ namespace kafka {
 
 {%- if struct.fields %}
 {%- if first_flex > 0 %}
-void {{ struct.name }}::encode(protocol::response_writer& writer, api_version version) {
+void {{ struct.name }}::encode(protocol::encoder& writer, api_version version) {
     if (version >= api_version({{ first_flex }})) {
         encode_flex(writer, version);
     } else {
@@ -1423,20 +1423,20 @@ void {{ struct.name }}::encode(protocol::response_writer& writer, api_version ve
     }
 }
 
-void {{ struct.name }}::encode_flex(protocol::response_writer& writer, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::encode_flex(protocol::encoder& writer, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, flex_encoder) | indent }}
 }
 
-void {{ struct.name }}::encode_standard([[maybe_unused]] protocol::response_writer& writer, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::encode_standard([[maybe_unused]] protocol::encoder& writer, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, encoder) | indent }}
 }
 
 {%- elif first_flex < 0 %}
-void {{ struct.name }}::encode(protocol::response_writer& writer, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::encode(protocol::encoder& writer, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, encoder) | indent }}
 }
 {%- else %}
-void {{ struct.name }}::encode(protocol::response_writer& writer, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::encode(protocol::encoder& writer, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, flex_encoder) | indent }}
 }
 {%- endif %}
@@ -1507,7 +1507,7 @@ void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) 
 {%- else %}
 {%- if op_type == "request" %}
 {%- if first_flex > 0 %}
-void {{ struct.name }}::encode(protocol::response_writer& writer, api_version version) {
+void {{ struct.name }}::encode(protocol::encoder& writer, api_version version) {
     if (version >= api_version({{ first_flex }})) {
         writer.write_tags(std::move(unknown_tags));
     }
@@ -1518,12 +1518,12 @@ void {{ struct.name }}::decode(protocol::decoder& reader, api_version version) {
     }
 }
 {%- else %}
-void {{ struct.name }}::encode(protocol::response_writer&, api_version) {}
+void {{ struct.name }}::encode(protocol::encoder&, api_version) {}
 void {{ struct.name }}::decode(protocol::decoder&, api_version) {}
 {%- endif %}
 {%- else %}
 {%- if first_flex > 0 %}
-void {{ struct.name }}::encode(protocol::response_writer& writer, api_version version) {
+void {{ struct.name }}::encode(protocol::encoder& writer, api_version version) {
     if (version >= api_version({{ first_flex }})) {
         write.write_tags(std::move(unknown_tags));
     }
@@ -1535,7 +1535,7 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
     }
 }
 {%- else %}
-void {{ struct.name }}::encode(protocol::response_writer&, api_version) {}
+void {{ struct.name }}::encode(protocol::encoder&, api_version) {}
 void {{ struct.name }}::decode(iobuf, api_version) {}
 {%- endif %}
 {%- endif %}

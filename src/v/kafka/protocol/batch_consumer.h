@@ -84,7 +84,7 @@ private:
 
 private:
     iobuf _buf;
-    protocol::response_writer _wr;
+    protocol::encoder _wr;
     model::offset _base_offset;
     model::offset _last_offset;
     std::optional<model::offset> _first_tx_batch_offset;

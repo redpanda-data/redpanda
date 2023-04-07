@@ -68,7 +68,7 @@ group_metadata_type decode_metadata_type(protocol::decoder& key_reader) {
 }
 
 void group_metadata_key::encode(
-  protocol::response_writer& writer, const group_metadata_key& v) {
+  protocol::encoder& writer, const group_metadata_key& v) {
     writer.write(v.version);
     writer.write(v.group_id);
 }
@@ -98,7 +98,7 @@ group_metadata_key group_metadata_key::decode(protocol::decoder& reader) {
     return ret;
 }
 
-void member_state::encode(protocol::response_writer& writer, const member_state& v) {
+void member_state::encode(protocol::encoder& writer, const member_state& v) {
     writer.write(v.version);
     writer.write(v.id);
     writer.write(v.instance_id);
@@ -138,7 +138,7 @@ member_state member_state::decode(protocol::decoder& reader) {
 }
 
 void group_metadata_value::encode(
-  protocol::response_writer& writer, const group_metadata_value& v) {
+  protocol::encoder& writer, const group_metadata_value& v) {
     writer.write(v.version);
     writer.write(v.protocol_type);
     writer.write(v.generation);
@@ -146,7 +146,7 @@ void group_metadata_value::encode(
     writer.write(v.leader);
     writer.write(v.state_timestamp);
     writer.write_array(
-      v.members, [](const member_state& member, protocol::response_writer writer) {
+      v.members, [](const member_state& member, protocol::encoder writer) {
           member_state::encode(writer, member);
       });
 }
@@ -178,7 +178,7 @@ group_metadata_value group_metadata_value::decode(protocol::decoder& reader) {
 }
 
 void offset_metadata_key::encode(
-  protocol::response_writer& writer, const offset_metadata_key& v) {
+  protocol::encoder& writer, const offset_metadata_key& v) {
     writer.write(v.version);
     writer.write(v.group_id);
     writer.write(v.topic);
@@ -197,7 +197,7 @@ offset_metadata_key offset_metadata_key::decode(protocol::decoder& reader) {
 }
 
 void offset_metadata_value::encode(
-  protocol::response_writer& writer, const offset_metadata_value& v) {
+  protocol::encoder& writer, const offset_metadata_value& v) {
     const auto version = v.expiry_timestamp != model::timestamp(-1)
                            ? group_metadata_version{1}
                            : offset_metadata_value::latest_version;
@@ -245,7 +245,7 @@ std::optional<T> read_optional_value(std::optional<protocol::decoder>& reader) {
 template<typename T>
 iobuf metadata_to_iobuf(const T& t) {
     iobuf buffer;
-    protocol::response_writer writer(buffer);
+    protocol::encoder writer(buffer);
     T::encode(writer, t);
     return buffer;
 }

@@ -32,7 +32,7 @@ struct txn_offset_commit_request final {
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -67,7 +67,7 @@ struct txn_offset_commit_response final {
         }
     }
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

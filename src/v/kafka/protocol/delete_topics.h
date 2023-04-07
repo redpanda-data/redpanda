@@ -29,7 +29,7 @@ struct delete_topics_request final {
 
     delete_topics_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -48,7 +48,7 @@ struct delete_topics_response final {
 
     delete_topics_response_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

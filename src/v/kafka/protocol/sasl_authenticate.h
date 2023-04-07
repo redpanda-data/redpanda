@@ -26,7 +26,7 @@ struct sasl_authenticate_request final {
 
     sasl_authenticate_request() = default;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -50,7 +50,7 @@ struct sasl_authenticate_response final {
     explicit sasl_authenticate_response(sasl_authenticate_response_data data)
       : data(std::move(data)) {}
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

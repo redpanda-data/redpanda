@@ -31,7 +31,7 @@ struct sync_group_request final {
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -76,7 +76,7 @@ struct sync_group_response final {
     sync_group_response(const sync_group_request&, error_code error)
       : sync_group_response(error) {}
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

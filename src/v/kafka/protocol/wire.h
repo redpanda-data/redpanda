@@ -308,10 +308,10 @@ concept SizedContainer = requires(C c, const C cc) {
     { cc.end() } -> std::same_as<typename C::const_iterator>;
 };
 
-class response_writer;
-void writer_serialize_batch(response_writer& w, model::record_batch&& batch);
+class encoder;
+void writer_serialize_batch(encoder& w, model::record_batch&& batch);
 
-class response_writer {
+class encoder {
     template<typename ExplicitIntegerType, typename IntegerType>
     // clang-format off
     requires std::is_integral<ExplicitIntegerType>::value
@@ -337,7 +337,7 @@ class response_writer {
     }
 
 public:
-    explicit response_writer(iobuf& out) noexcept
+    explicit encoder(iobuf& out) noexcept
       : _out(&out) {}
 
     uint32_t write(bool v) { return serialize_int<int8_t>(v); }
@@ -507,7 +507,7 @@ public:
     template<typename C, typename ElementWriter>
     requires requires(
       ElementWriter writer,
-      response_writer& rw,
+      encoder& rw,
       const typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
@@ -521,7 +521,7 @@ public:
     }
     template<typename C, typename ElementWriter>
     requires requires(
-      ElementWriter writer, response_writer& rw, typename C::value_type& elem) {
+      ElementWriter writer, encoder& rw, typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
     uint32_t write_array(C& v, ElementWriter&& writer) {
@@ -534,7 +534,7 @@ public:
     }
 
     template<typename T, typename ElementWriter>
-    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+    requires requires(ElementWriter writer, encoder& rw, T& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
     uint32_t write_nullable_array(
@@ -547,7 +547,7 @@ public:
 
     template<typename C, typename ElementWriter>
     requires requires(
-      ElementWriter writer, response_writer& rw, typename C::value_type& elem) {
+      ElementWriter writer, encoder& rw, typename C::value_type& elem) {
         requires SizedContainer<C>;
         { writer(elem, rw) } -> std::same_as<void>;
     }
@@ -561,7 +561,7 @@ public:
     }
 
     template<typename T, typename ElementWriter>
-    requires requires(ElementWriter writer, response_writer& rw, T& elem) {
+    requires requires(ElementWriter writer, encoder& rw, T& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
     uint32_t write_nullable_flex_array(
@@ -576,7 +576,7 @@ public:
     // true if writing no bytes should result in the encoding as nullable bytes,
     // and false otherwise.
     template<typename ElementWriter>
-    requires requires(ElementWriter writer, response_writer& rw) {
+    requires requires(ElementWriter writer, encoder& rw) {
         { writer(rw) } -> std::same_as<bool>;
     }
     uint32_t write_bytes_wrapped(ElementWriter&& writer) {
@@ -645,7 +645,7 @@ private:
 };
 
 inline void
-writer_serialize_batch(response_writer& w, model::record_batch&& batch) {
+writer_serialize_batch(encoder& w, model::record_batch&& batch) {
     /*
      * calculate batch size expected by kafka client.
      *

@@ -33,7 +33,7 @@ struct list_offsets_request final {
 
     list_offset_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -95,7 +95,7 @@ struct list_offsets_response final {
           invalid_leader_epoch);
     }
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         // convert to version zero in which the data model supported returning
         // multiple offsets instead of just one
         if (version == api_version(0)) {

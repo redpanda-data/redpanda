@@ -21,7 +21,7 @@ struct delete_groups_request final {
 
     delete_groups_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -45,7 +45,7 @@ struct delete_groups_response final {
         data.results = std::move(results);
     }
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

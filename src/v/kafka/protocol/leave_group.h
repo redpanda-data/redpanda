@@ -31,7 +31,7 @@ struct leave_group_request final {
     // additional context, set in decode
     api_version version;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -60,7 +60,7 @@ struct leave_group_response final {
     leave_group_response(const leave_group_request&, error_code error)
       : leave_group_response(error) {}
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

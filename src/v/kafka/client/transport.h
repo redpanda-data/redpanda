@@ -56,7 +56,7 @@ private:
         iobuf buf;
         auto ph = buf.reserve(sizeof(int32_t));
         auto start_size = buf.size_bytes();
-        protocol::response_writer wr(buf);
+        protocol::encoder wr(buf);
 
         // encode request
         func(wr);
@@ -144,7 +144,7 @@ public:
                  T::api_type::key,
                  request_version,
                  [this, request_version, r = std::move(r)](
-                   protocol::response_writer& wr) mutable {
+                   protocol::encoder& wr) mutable {
                      write_header(wr, T::api_type::key, request_version);
                      r.encode(wr, request_version);
                  })
@@ -210,7 +210,7 @@ public:
     }
 
 private:
-    void write_header(protocol::response_writer& wr, api_key key, api_version version) {
+    void write_header(protocol::encoder& wr, api_key key, api_version version) {
         wr.write(int16_t(key()));
         wr.write(int16_t(version()));
         wr.write(int32_t(_correlation()));

@@ -597,7 +597,7 @@ public:
         kafka::fetch_request request;
         // do not use incremental fetch requests
         request.data.max_wait_ms = std::chrono::milliseconds::zero();
-        kafka::protocol::response_writer writer(buf);
+        kafka::protocol::encoder writer(buf);
         request.encode(writer, encoder_context.header().version);
 
         return kafka::request_context(
