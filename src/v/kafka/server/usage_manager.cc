@@ -367,7 +367,7 @@ ss::future<> usage_manager::reset() {
     oncore_debug_verify(_verify_shard);
     try {
         auto h = _background_gate.hold();
-        auto u = _background_mutex.get_units();
+        auto u = co_await _background_mutex.get_units();
         if (_accounting_fiber) {
             /// Deallocate the accounting_fiber if the feature is disabled,
             /// otherwise it will keep in memory the number of configured
