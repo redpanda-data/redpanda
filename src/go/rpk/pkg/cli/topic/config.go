@@ -21,7 +21,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-func newAlterConfigCommand(fs afero.Fs) *cobra.Command {
+func newAlterConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		sets      []string // key=val
 		deletions []string // key only
@@ -51,7 +51,6 @@ valid, but does not apply it.
 `,
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

@@ -58,7 +58,7 @@ type consumer struct {
 	cl *kgo.Client
 }
 
-func newConsumeCommand(fs afero.Fs) *cobra.Command {
+func newConsumeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		c      consumer
 		offset string
@@ -71,7 +71,6 @@ func newConsumeCommand(fs afero.Fs) *cobra.Command {
 		Long:  helpConsume,
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

@@ -92,6 +92,7 @@ resource names:
 			deleteReqResp(adm, printAllFilters, printDeletionsHeader, b)
 		},
 	}
+	p.InstallKafkaFlags(cmd)
 	a.addDeleteFlags(cmd)
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	cmd.Flags().BoolVarP(&dry, "dry", "d", false, "Dry run: validate what would be deleted")

@@ -17,9 +17,8 @@ import (
 
 func NewInfoCommand() *cobra.Command {
 	var (
-		configFile string
-		send       bool
-		timeout    time.Duration
+		send    bool
+		timeout time.Duration
 	)
 	cmd := &cobra.Command{
 		Use:     "info",
@@ -31,10 +30,8 @@ func NewInfoCommand() *cobra.Command {
 			// no-op: keeping the command for backompat.
 		},
 	}
-	cmd.Flags().StringVar(&configFile, "config", "", "Redpanda config file, if not set the file will be searched for in $PWD or /etc/redpanda/redpanda.yaml")
 	cmd.Flags().BoolVar(&send, "send", false, "If true, send resource usage data to Redpanda")
 	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Second, "How long to wait to calculate the Redpanda CPU % utilization")
-	cmd.Flags().MarkHidden("config")
 	cmd.Flags().MarkHidden("send")
 	cmd.Flags().MarkHidden("timeout")
 	return cmd

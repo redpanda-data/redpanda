@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newSetCommand(fs afero.Fs) *cobra.Command {
+func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var licPath string
 	cmd := &cobra.Command{
 		Use:   "set",
@@ -41,7 +41,6 @@ default location '/etc/redpanda/redpanda.license'.
 				licPath = "/etc/redpanda/redpanda.license"
 			}
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -64,8 +63,6 @@ default location '/etc/redpanda/redpanda.license'.
 			fmt.Println("Successfully uploaded license.")
 		},
 	}
-
 	cmd.Flags().StringVar(&licPath, "path", "", "Path to the license file")
-
 	return cmd
 }

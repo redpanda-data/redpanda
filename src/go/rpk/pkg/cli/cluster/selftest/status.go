@@ -30,7 +30,7 @@ const (
 	statusRunning = "running"
 )
 
-func NewStatusCommand(fs afero.Fs) *cobra.Command {
+func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var format string
 	cmd := &cobra.Command{
 		Use:   "status",
@@ -49,7 +49,6 @@ the jobs launched. Possible results are:
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

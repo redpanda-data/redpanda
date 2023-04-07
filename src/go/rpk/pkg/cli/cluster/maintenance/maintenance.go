@@ -10,21 +10,12 @@
 package maintenance
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewMaintenanceCommand(fs afero.Fs) *cobra.Command {
-	var (
-		adminURL       string
-		adminEnableTLS bool
-		adminCertFile  string
-		adminKeyFile   string
-		adminCAFile    string
-	)
-
+func NewMaintenanceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "maintenance",
 		Short: "Toggle a node's maintenance mode",
@@ -49,24 +40,12 @@ workloads when the node is shutdown.
 Currently leadership is not transferred for partitions with one replica.
 `,
 	}
-
-	cmd.PersistentFlags().StringVar(
-		&adminURL,
-		config.FlagAdminHosts2,
-		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>)")
-
-	common.AddAdminAPITLSFlags(cmd,
-		&adminEnableTLS,
-		&adminCertFile,
-		&adminKeyFile,
-		&adminCAFile,
-	)
+	p.InstallAdminFlags(cmd)
 
 	cmd.AddCommand(
-		newEnableCommand(fs),
-		newDisableCommand(fs),
-		newStatusCommand(fs))
+		newEnableCommand(fs, p),
+		newDisableCommand(fs, p),
+		newStatusCommand(fs, p))
 
 	return cmd
 }

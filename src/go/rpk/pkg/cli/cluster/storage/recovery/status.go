@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newStatusCommand(fs afero.Fs) *cobra.Command {
+func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Fetch the status of the topic recovery process",
@@ -28,7 +28,6 @@ func newStatusCommand(fs afero.Fs) *cobra.Command {
 This command fetches the status of the process of restoring topics from the 
 archival bucket.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

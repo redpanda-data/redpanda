@@ -24,30 +24,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const (
-	configFileFlag     = "config"
-	configFileFlagDesc = "Redpanda config file, if not set the file will be searched for in the default location"
-)
-
-func NewConfigCommand(fs afero.Fs) *cobra.Command {
-	root := &cobra.Command{
-		Use:   "config <command>",
+func NewConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "config",
 		Short: "Edit configuration",
 	}
-	root.AddCommand(set(fs))
-	root.AddCommand(bootstrap(fs))
-	root.AddCommand(initNode(fs))
-
-	return root
+	cmd.AddCommand(
+		set(fs, p),
+		bootstrap(fs, p),
+		initNode(fs, p),
+	)
+	return cmd
 }
 
-func set(fs afero.Fs) *cobra.Command {
-	var (
-		format     string
-		configPath string
-	)
+func set(fs afero.Fs, p *config.Params) *cobra.Command {
+	var format string
 	c := &cobra.Command{
-		Use:   "set <key> <value>",
+		Use:   "set [KEY] [VALUE]",
 		Short: "Set configuration values, such as the redpanda node ID or the list of seed servers",
 		Long: `Set configuration values, such as the redpanda node ID or the list of seed servers
 
@@ -81,7 +74,6 @@ The json format can be used to set values as json:
 `,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			cfg = cfg.FileOrDefaults() // we set fields in the raw file without writing env / flag overrides
@@ -97,21 +89,14 @@ The json format can be used to set values as json:
 		},
 	}
 	c.Flags().StringVar(&format, "format", "yaml", "Format of the value (yaml/json)")
-	c.Flags().StringVar(
-		&configPath,
-		configFileFlag,
-		"",
-		configFileFlagDesc,
-	)
 	return c
 }
 
-func bootstrap(fs afero.Fs) *cobra.Command {
+func bootstrap(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		ips        []string
-		self       string
-		id         int
-		configPath string
+		ips  []string
+		self string
+		id   int
 	)
 	c := &cobra.Command{
 		Use:   "bootstrap [--self <ip>] [--ips <ip1,ip2,...>]",
@@ -133,7 +118,6 @@ you must use the --self flag to specify which ip redpanda should listen on.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
@@ -198,42 +182,19 @@ you must use the --self flag to specify which ip redpanda should listen on.
 			out.MaybeDie(err, "error writing config file: %v", err)
 		},
 	}
-	c.Flags().StringSliceVar(
-		&ips,
-		"ips",
-		[]string{},
-		"Comma-separated list of the seed node addresses or hostnames; at least three are recommended",
-	)
-	c.Flags().StringVar(
-		&configPath,
-		configFileFlag,
-		"",
-		configFileFlagDesc,
-	)
-	c.Flags().StringVar(
-		&self,
-		"self",
-		"",
-		"Optional IP address for redpanda to listen on; if empty, defaults to a private address",
-	)
-	c.Flags().IntVar(
-		&id,
-		"id",
-		-1,
-		"This node's ID. If unset, redpanda will assign one automatically",
-	)
+	c.Flags().StringSliceVar(&ips, "ips", nil, "Comma-separated list of the seed node addresses or hostnames; at least three are recommended")
+	c.Flags().StringVar(&self, "self", "", "Optional IP address for redpanda to listen on; if empty, defaults to a private address")
+	c.Flags().IntVar(&id, "id", -1, "This node's ID. If unset, redpanda will assign one automatically")
 	c.Flags().MarkHidden("id")
 	return c
 }
 
-func initNode(fs afero.Fs) *cobra.Command {
-	var configPath string
+func initNode(fs afero.Fs, p *config.Params) *cobra.Command {
 	c := &cobra.Command{
 		Use:   "init",
 		Short: "Init the node after install, by setting the node's UUID",
 		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
@@ -242,12 +203,6 @@ func initNode(fs afero.Fs) *cobra.Command {
 			out.MaybeDie(err, "error writing config file: %v", err)
 		},
 	}
-	c.Flags().StringVar(
-		&configPath,
-		configFileFlag,
-		"",
-		configFileFlagDesc,
-	)
 	return c
 }
 

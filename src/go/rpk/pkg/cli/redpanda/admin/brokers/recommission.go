@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newRecommissionBroker(fs afero.Fs) *cobra.Command {
+func newRecommissionBroker(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:   "recommission [BROKER ID]",
 		Short: "Recommission the given broker if it is still decommissioning",
@@ -34,7 +34,6 @@ the cluster leader handles the request.
 				out.Die("invalid negative broker id %v", broker)
 			}
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

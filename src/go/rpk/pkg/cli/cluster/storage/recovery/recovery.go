@@ -10,11 +10,12 @@
 package recovery
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "recovery",
 		Short: "Interact with the topic recovery process",
@@ -32,10 +33,10 @@ You can check the status of the recovery process with the "recovery status"
 command after it has been started.
 `,
 	}
-
+	p.InstallAdminFlags(cmd)
 	cmd.AddCommand(
-		newStartCommand(fs),
-		newStatusCommand(fs),
+		newStartCommand(fs, p),
+		newStatusCommand(fs, p),
 	)
 
 	return cmd

@@ -15,13 +15,14 @@ package cli
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/tune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewTuneCommand(fs afero.Fs) *cobra.Command {
+func NewTuneCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return common.Deprecated(
-		tune.NewCommand(fs),
+		tune.NewCommand(fs, p),
 		"rpk redpanda tune",
 	)
 }

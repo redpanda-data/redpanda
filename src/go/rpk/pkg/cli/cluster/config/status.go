@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newStatusCommand(fs afero.Fs) *cobra.Command {
+func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Get configuration status of redpanda nodes.",
@@ -32,7 +32,6 @@ has applied: under normal circumstances these should all be equal,
 a lower number shows that a node is out of sync, perhaps because it
 is offline.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

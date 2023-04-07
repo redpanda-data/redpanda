@@ -41,9 +41,9 @@ func (s *anySlice) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-func newSetCommand(fs afero.Fs) *cobra.Command {
+func newSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "set <key> <value>",
+		Use:   "set [KEY] [VALUE]",
 		Short: "Set a single cluster configuration property",
 		Long: `Set a single cluster configuration property.
 
@@ -56,7 +56,6 @@ If an empty string is given as the value, the property is reset to its default.`
 			key := args[0]
 			value := args[1]
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

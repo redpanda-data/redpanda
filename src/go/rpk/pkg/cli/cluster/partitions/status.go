@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newBalancerStatusCommand(fs afero.Fs) *cobra.Command {
+func newBalancerStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "balancer-status",
 		Short: "Queries cluster for partition balancer status",
@@ -68,7 +68,6 @@ investigation. A few areas to investigate:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

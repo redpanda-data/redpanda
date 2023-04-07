@@ -15,24 +15,14 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func newHealthOverviewCommand(fs afero.Fs) *cobra.Command {
-	var (
-		watch bool
-		exit  bool
-
-		adminURL       string
-		adminEnableTLS bool
-		adminCertFile  string
-		adminKeyFile   string
-		adminCAFile    string
-	)
+func newHealthOverviewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var watch, exit bool
 	cmd := &cobra.Command{
 		Use:   "health",
 		Short: "Queries cluster for health overview",
@@ -48,7 +38,6 @@ following conditions are met:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -70,19 +59,7 @@ following conditions are met:
 			}
 		},
 	}
-
-	cmd.PersistentFlags().StringVar(
-		&adminURL,
-		config.FlagAdminHosts2,
-		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>)")
-
-	common.AddAdminAPITLSFlags(cmd,
-		&adminEnableTLS,
-		&adminCertFile,
-		&adminKeyFile,
-		&adminCAFile,
-	)
+	p.InstallAdminFlags(cmd)
 
 	cmd.Flags().BoolVarP(&watch, "watch", "w", false, "Blocks and writes out all cluster health changes")
 	cmd.Flags().BoolVarP(&exit, "exit-when-healthy", "e", false, "When used with watch, exits after cluster is back in healthy state")

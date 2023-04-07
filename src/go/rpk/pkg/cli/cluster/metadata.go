@@ -25,7 +25,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-func newMetadataCommand(fs afero.Fs) *cobra.Command {
+func newMetadataCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		cluster  bool
 		brokers  bool
@@ -54,7 +54,6 @@ flag.
 In the broker section, the controller node is suffixed with *.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -119,7 +118,7 @@ In the broker section, the controller node is suffixed with *.
 			}
 		},
 	}
-
+	p.InstallKafkaFlags(cmd)
 	cmd.Flags().BoolVarP(&cluster, "print-cluster", "c", false, "Print cluster section")
 	cmd.Flags().BoolVarP(&brokers, "print-brokers", "b", false, "Print brokers section")
 	cmd.Flags().BoolVarP(&topics, "print-topics", "t", false, "Print topics section (implied if any topics are specified)")

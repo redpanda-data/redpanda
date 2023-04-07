@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newDeployCommand(fs afero.Fs) *cobra.Command {
+func newDeployCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		description string
 		name        string
@@ -22,7 +22,6 @@ func newDeployCommand(fs afero.Fs) *cobra.Command {
 		Short: "Deploy inline WASM function",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

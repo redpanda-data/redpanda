@@ -138,9 +138,10 @@ func TestModeCommand(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			_, err := tt.before(fs)
 			require.NoError(t, err)
-			cmd := NewModeCommand(fs)
+			p := new(config.Params)
+			cmd := NewModeCommand(fs, p)
 			cmd.SetArgs(tt.args)
-			err = executeMode(fs, cmd, tt.args[0])
+			err = executeMode(fs, p, tt.args[0])
 			if tt.expErr && err != nil {
 				return
 			}

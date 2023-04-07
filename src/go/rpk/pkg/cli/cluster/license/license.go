@@ -1,44 +1,21 @@
 package license
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewLicenseCommand(fs afero.Fs) *cobra.Command {
-	var (
-		adminURL       string
-		adminEnableTLS bool
-		adminCertFile  string
-		adminKeyFile   string
-		adminCAFile    string
-	)
-
+func NewLicenseCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "license",
 		Args:  cobra.ExactArgs(0),
 		Short: "Manage cluster license",
 	}
-
-	common.AddAdminAPITLSFlags(cmd,
-		&adminEnableTLS,
-		&adminCertFile,
-		&adminKeyFile,
-		&adminCAFile,
-	)
-
+	p.InstallAdminFlags(cmd)
 	cmd.AddCommand(
-		newInfoCommand(fs),
-		newSetCommand(fs),
+		newInfoCommand(fs, p),
+		newSetCommand(fs, p),
 	)
-
-	cmd.PersistentFlags().StringVar(
-		&adminURL,
-		config.FlagAdminHosts2,
-		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>)")
-
 	return cmd
 }

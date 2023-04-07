@@ -11,7 +11,6 @@
 package admin
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/admin/brokers"
 	configcmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/admin/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/admin/partitions"
@@ -21,51 +20,17 @@ import (
 )
 
 // NewCommand returns the redpanda admin command.
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "admin",
 		Short: "Talk to the Redpanda admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
-
-	var (
-		configFile     string
-		hosts          []string
-		adminEnableTLS bool
-		adminCertFile  string
-		adminKeyFile   string
-		adminCAFile    string
-	)
-
-	cmd.PersistentFlags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"rpk config file, if not set the file will be searched for"+
-			" in $PWD or /etc/redpanda/redpanda.yaml",
-	)
-
-	cmd.PersistentFlags().StringSliceVar(
-		&hosts,
-		config.FlagAdminHosts1,
-		[]string{},
-		"A comma-separated list of Admin API addresses (<IP>:<port>)."+
-			" You must specify one for each node",
-	)
-
-	common.AddAdminAPITLSFlags(
-		cmd,
-		&adminEnableTLS,
-		&adminCertFile,
-		&adminKeyFile,
-		&adminCAFile,
-	)
-
+	p.InstallAdminFlags(cmd)
 	cmd.AddCommand(
-		brokers.NewCommand(fs),
-		partitions.NewCommand(fs),
-		configcmd.NewCommand(fs),
+		brokers.NewCommand(fs, p),
+		partitions.NewCommand(fs, p),
+		configcmd.NewCommand(fs, p),
 	)
-
 	return cmd
 }

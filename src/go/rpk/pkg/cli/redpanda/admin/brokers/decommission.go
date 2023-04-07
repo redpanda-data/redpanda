@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newDecommissionBroker(fs afero.Fs) *cobra.Command {
+func newDecommissionBroker(fs afero.Fs, p *config.Params) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "decommission [BROKER ID]",
@@ -38,7 +38,6 @@ cluster is unreachable), use the hidden --force flag.
 				out.Die("invalid negative broker id %v", broker)
 			}
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

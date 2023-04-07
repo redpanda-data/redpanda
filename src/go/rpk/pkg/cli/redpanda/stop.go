@@ -27,20 +27,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewStopCommand(fs afero.Fs) *cobra.Command {
-	var (
-		configFile string
-		timeout    time.Duration
-	)
-	command := &cobra.Command{
+func NewStopCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var timeout time.Duration
+	cmd := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop redpanda",
 		Long: `Stop a local redpanda process. 'rpk stop'
 first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
-		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
+		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -48,25 +44,8 @@ running.`,
 			out.MaybeDieErr(err)
 		},
 	}
-	command.Flags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in $PWD or /etc/redpanda/redpanda.yaml.",
-	)
-	command.Flags().DurationVar(
-		&timeout,
-		"timeout",
-		5*time.Second,
-		"The maximum amount of time to wait for redpanda to stop,"+
-			"after each signal is sent. The value passed is a"+
-			"sequence of decimal numbers, each with optional"+
-			" fraction and a unit suffix, such as '300ms', '1.5s'"+
-			" or '2h45m'. Valid time units are 'ns', 'us' (or"+
-			" 'µs'), 'ms', 's', 'm', 'h'",
-	)
-	return command
+	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Second, "The maximum amount of time to wait for redpanda to stop after each signal is sent (e.g. 300ms, 1.5s, 2h45m)")
+	return cmd
 }
 
 func executeStop(fs afero.Fs, cfg *config.Config, timeout time.Duration) error {

@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/afero"
@@ -48,16 +47,15 @@ type tlsConfig struct {
 	enableTLS bool
 }
 
-func newPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
+func newPrometheusConfigCmd(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		configFile string
 		intMetrics bool
 		jobName    string
 		nodeAddrs  []string
 		seedAddr   string
-		tlsConfig  tlsConfig
+		tlsCfg     tlsConfig
 	)
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "prometheus-config",
 		Short: "Generate the Prometheus configuration to scrape redpanda nodes",
 		Long: `
@@ -75,7 +73,6 @@ If the node you want to scrape uses TLS, you can provide the TLS flags:
 --tls-key, --tls-cert, and --tls-truststore and rpk will generate the required
 tls_config section in the scrape configuration.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -85,45 +82,37 @@ tls_config section in the scrape configuration.`,
 				nodeAddrs,
 				seedAddr,
 				intMetrics,
-				tlsConfig,
+				tlsCfg,
 				fs,
 			)
 			out.MaybeDieErr(err)
 			fmt.Println(string(yml))
 		},
 	}
-	command.Flags().StringVar(
-		&jobName,
-		"job-name",
-		"redpanda",
-		"The prometheus job name by which to identify the redpanda nodes")
-	command.Flags().StringSliceVar(
-		&nodeAddrs,
-		"node-addrs",
-		[]string{},
-		fmt.Sprintf(`A comma-delimited list of the addresses (<host>:<port>) of all the redpanda nodes in a cluster. The port must be the one configured for the nodes' admin API (%d by default)`,
-			config.DefaultAdminPort,
-		))
-	command.Flags().StringVar(
-		&seedAddr,
-		"seed-addr",
-		"",
-		"The URL of a redpanda node with which to discover the rest")
-	command.Flags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"The path to the redpanda config file")
-	command.Flags().BoolVar(&intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
-	command.Flags().StringVar(&tlsConfig.TLS.TruststoreFile, "ca-file", "", "CA certificate used to sign node_exporter certificate")
-	command.Flags().StringVar(&tlsConfig.TLS.CertFile, "cert-file", "", "Cert file presented to node_exporter to authenticate Prometheus as a client")
-	command.Flags().StringVar(&tlsConfig.TLS.KeyFile, "key-file", "", "Key file presented to node_exporter to authenticate Prometheus as a client")
-	command.Flags().MarkHidden("ca-file")
-	command.Flags().MarkHidden("cert-file")
-	command.Flags().MarkHidden("key-file")
 
-	common.AddTLSFlags(command, &tlsConfig.enableTLS, &tlsConfig.TLS.CertFile, &tlsConfig.TLS.KeyFile, &tlsConfig.TLS.TruststoreFile)
-	return command
+	f := cmd.Flags()
+
+	f.StringVar(&jobName, "job-name", "redpanda", "The prometheus job name by which to identify the redpanda nodes")
+	f.StringSliceVar(&nodeAddrs, "node-addrs", nil, "Comma separated list of admin API host:ports")
+	f.StringVar(&seedAddr, "seed-addr", "", "The URL of a redpanda node with which to discover the rest")
+	f.BoolVar(&intMetrics, "internal-metrics", false, "Include scrape config for internal metrics (/metrics)")
+
+	// Backcompat
+	f.StringVar(&tlsCfg.TLS.TruststoreFile, "ca-file", "", "CA certificate used to sign node_exporter certificate")
+	f.StringVar(&tlsCfg.TLS.CertFile, "cert-file", "", "Cert file presented to node_exporter to authenticate Prometheus as a client")
+	f.StringVar(&tlsCfg.TLS.KeyFile, "key-file", "", "Key file presented to node_exporter to authenticate Prometheus as a client")
+	f.MarkHidden("ca-file")
+	f.MarkHidden("cert-file")
+	f.MarkHidden("key-file")
+
+	// Prometheus generation uses its own TLS for some reason.
+	// TODO clean up this entire flag set / just use the Redpanda config?
+	pf := cmd.PersistentFlags()
+	pf.BoolVar(&tlsCfg.enableTLS, config.FlagEnableTLS, false, "Enable TLS for the Kafka API (not necessary if specifying custom certs)")
+	pf.StringVar(&tlsCfg.TLS.TruststoreFile, config.FlagTLSCA, "", "The CA certificate to be used for TLS communication with the broker")
+	pf.StringVar(&tlsCfg.TLS.CertFile, config.FlagTLSCert, "", "The certificate to be used for TLS authentication with the broker")
+	pf.StringVar(&tlsCfg.TLS.KeyFile, config.FlagTLSKey, "", "The certificate key to be used for TLS authentication with the broker")
+	return cmd
 }
 
 func executePrometheusConfig(

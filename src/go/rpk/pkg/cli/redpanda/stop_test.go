@@ -79,7 +79,9 @@ func TestStopCommand(t *testing.T) {
 			require.NoError(t, err)
 
 			var out bytes.Buffer
-			c := cli.NewStopCommand(fs)
+			p := new(config.Params)
+			c := cli.NewStopCommand(fs, p)
+			c.Flags().StringVar(&p.ConfigPath, "config", "", "this is done in root.go, but we need it here for the tests setting args")
 			args := append([]string{"--config", conf.FileLocation()}, tt.args...)
 			c.SetArgs(args)
 

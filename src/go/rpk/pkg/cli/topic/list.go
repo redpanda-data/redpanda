@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newListCommand(fs afero.Fs) *cobra.Command {
+func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		detailed bool
 		internal bool
@@ -59,7 +59,6 @@ information.
 				out.Exit("cannot list with internal topics and list by regular expression")
 			}
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

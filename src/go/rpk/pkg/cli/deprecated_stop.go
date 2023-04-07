@@ -15,13 +15,14 @@ package cli
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewStopCommand(fs afero.Fs) *cobra.Command {
+func NewStopCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return common.Deprecated(
-		redpanda.NewStopCommand(fs),
+		redpanda.NewStopCommand(fs, p),
 		"rpk redpanda stop",
 	)
 }

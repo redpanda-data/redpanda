@@ -37,7 +37,7 @@ func addBrokerMaintenanceReport(table *out.TabWriter, b admin.Broker) {
 		b.Maintenance.Failed)
 }
 
-func newStatusCommand(fs afero.Fs) *cobra.Command {
+func newStatusCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Report maintenance status",
@@ -71,7 +71,6 @@ Notes:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

@@ -127,7 +127,7 @@ func exportConfig(
 	return nil
 }
 
-func newExportCommand(fs afero.Fs, all *bool) *cobra.Command {
+func newExportCommand(fs afero.Fs, p *config.Params, all *bool) *cobra.Command {
 	var filename string
 
 	cmd := &cobra.Command{
@@ -143,7 +143,6 @@ By default, low level tunables are excluded: use the '--all' flag
 to include all properties including these low level tunables.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

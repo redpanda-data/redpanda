@@ -50,7 +50,6 @@ resource names:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -63,6 +62,7 @@ resource names:
 			describeReqResp(adm, printAllFilters, false, b)
 		},
 	}
+	p.InstallKafkaFlags(cmd)
 	a.addListFlags(cmd)
 	cmd.Flags().BoolVarP(&printAllFilters, "print-filters", "f", false, "Print the filters that were requested (failed filters are always printed)")
 	return cmd

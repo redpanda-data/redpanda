@@ -16,59 +16,37 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/partitions"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/selftest"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/storage"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/group"
+	pkgconfig "github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
-	var (
-		brokers        []string
-		configFile     string
-		user           string
-		password       string
-		mechanism      string
-		enableTLS      bool
-		certFile       string
-		keyFile        string
-		truststoreFile string
-	)
-	command := &cobra.Command{
+func NewCommand(fs afero.Fs, p *pkgconfig.Params) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "cluster",
 		Short: "Interact with a Redpanda cluster",
 	}
-	// backcompat: until we switch to -X, we need these flags.
-	common.AddKafkaFlags(
-		command,
-		&configFile,
-		&user,
-		&password,
-		&mechanism,
-		&enableTLS,
-		&certFile,
-		&keyFile,
-		&truststoreFile,
-		&brokers,
-	)
 
-	offsets := group.NewDescribeCommand(fs)
+	offsets := group.NewDescribeCommand(fs, p)
 	offsets.Deprecated = "replaced by 'rpk group describe'"
 	offsets.Hidden = true
 	offsets.Use = "offsets"
-	command.AddCommand(
-		newHealthOverviewCommand(fs),
-		newLogdirsCommand(fs),
-		newMetadataCommand(fs),
+	p.InstallKafkaFlags(offsets)
 
-		config.NewConfigCommand(fs),
-		license.NewLicenseCommand(fs),
-		maintenance.NewMaintenanceCommand(fs),
-		partitions.NewPartitionsCommand(fs),
-		selftest.NewSelfTestCommand(fs),
-		storage.NewCommand(fs),
+	cmd.AddCommand(
+		newHealthOverviewCommand(fs, p),
+		newLogdirsCommand(fs, p),
+		newMetadataCommand(fs, p),
+
+		config.NewConfigCommand(fs, p),
+		license.NewLicenseCommand(fs, p),
+		maintenance.NewMaintenanceCommand(fs, p),
+		partitions.NewPartitionsCommand(fs, p),
+		selftest.NewSelfTestCommand(fs, p),
+		storage.NewCommand(fs, p),
 		offsets,
 	)
 
-	return command
+	return cmd
 }

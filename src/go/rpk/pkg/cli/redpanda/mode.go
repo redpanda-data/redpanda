@@ -22,10 +22,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewModeCommand(fs afero.Fs) *cobra.Command {
-	var configFile string
-	command := &cobra.Command{
-		Use:   "mode <mode>",
+func NewModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "mode [MODE]",
 		Short: "Enable a default configuration mode",
 		Long:  "",
 		Args: func(_ *cobra.Command, args []string) error {
@@ -34,24 +33,16 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 			}
 			return nil
 		},
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, args []string) {
 			// Safe to access args[0] because it was validated in Args
-			err := executeMode(fs, cmd, args[0])
+			err := executeMode(fs, p, args[0])
 			out.MaybeDieErr(err)
 		},
 	}
-	command.Flags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in $PWD or /etc/redpanda/redpanda.yaml.",
-	)
-	return command
+	return cmd
 }
 
-func executeMode(fs afero.Fs, cmd *cobra.Command, mode string) error {
-	p := config.ParamsFromCommand(cmd)
+func executeMode(fs afero.Fs, p *config.Params, mode string) error {
 	cfg, err := p.Load(fs)
 	if err != nil {
 		return fmt.Errorf("unable to load config: %v", err)

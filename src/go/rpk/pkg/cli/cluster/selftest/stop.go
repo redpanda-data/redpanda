@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewStopCommand(fs afero.Fs) *cobra.Command {
+func newStopCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:   "stop",
 		Short: "Stops the currently executing self-test",
@@ -32,7 +32,6 @@ success when all jobs have been stopped or reports errors if broker timeouts hav
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

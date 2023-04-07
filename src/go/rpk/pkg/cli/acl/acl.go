@@ -33,9 +33,6 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		},
 	}
 
-	p.InstallKafkaFlags(cmd)
-	p.InstallAdminFlags(cmd)
-
 	cmd.Flags().BoolVar(&helpOperations, "help-operations", false, "Print more help about ACL operations")
 
 	cmd.AddCommand(newCreateCommand(fs, p))

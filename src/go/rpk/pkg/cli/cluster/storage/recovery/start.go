@@ -21,7 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newStartCommand(fs afero.Fs) *cobra.Command {
+func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		topicNamePattern string
 		wait             bool
@@ -37,7 +37,6 @@ This command starts the process of restoring topics from the archival bucket.
 If the wait flag (--wait/-w) is set, the command will poll the status of the
 recovery process until it's finished.`,
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

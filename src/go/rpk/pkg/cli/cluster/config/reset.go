@@ -20,7 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func newForceResetCommand(fs afero.Fs) *cobra.Command {
+func newForceResetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var configCacheFile string
 	cmd := &cobra.Command{
 		Use:   "force-reset [PROPERTY...]",
@@ -42,7 +42,6 @@ WARNING: this should only be used when redpanda is not running.
 `,
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, propertyNames []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

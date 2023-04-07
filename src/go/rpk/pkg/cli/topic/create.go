@@ -24,7 +24,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-func newCreateCommand(fs afero.Fs) *cobra.Command {
+func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		dry        bool
 		partitions int32
@@ -50,7 +50,6 @@ the cleanup.policy=compact config option set.
 `,
 
 		Run: func(cmd *cobra.Command, topics []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
