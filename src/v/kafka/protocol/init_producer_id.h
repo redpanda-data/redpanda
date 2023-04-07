@@ -29,11 +29,11 @@ struct init_producer_id_request final {
 
     init_producer_id_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -48,7 +48,7 @@ struct init_producer_id_response final {
 
     init_producer_id_response_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 

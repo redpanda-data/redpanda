@@ -20,7 +20,7 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_delete.h"
 #include "kafka/protocol/offset_fetch.h"
-#include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/group_recovery_consumer.h"
 #include "model/fundamental.h"

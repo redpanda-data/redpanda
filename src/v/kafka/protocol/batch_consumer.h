@@ -12,7 +12,7 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "seastarx.h"
@@ -79,12 +79,12 @@ public:
 
 private:
     void write_batch(model::record_batch&& batch) {
-        writer_serialize_batch(_wr, std::move(batch));
+        protocol::writer_serialize_batch(_wr, std::move(batch));
     }
 
 private:
     iobuf _buf;
-    response_writer _wr;
+    protocol::response_writer _wr;
     model::offset _base_offset;
     model::offset _last_offset;
     std::optional<model::offset> _first_tx_batch_offset;

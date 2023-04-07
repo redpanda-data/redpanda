@@ -52,7 +52,9 @@ struct offset_fetch_request;
 struct offset_fetch_response;
 struct produce_request;
 struct produce_response;
+namespace protocol {
 class response_writer;
+}
 struct sasl_authenticate_request;
 struct sasl_authenticate_response;
 struct sasl_handshake_request;

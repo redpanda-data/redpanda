@@ -14,7 +14,7 @@
 #include "cluster/security_frontend.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/fwd.h"
-#include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_session_cache.h"
@@ -88,7 +88,7 @@ public:
 
     ss::lw_shared_ptr<connection_context> connection() { return _conn; }
 
-    request_reader& reader() { return _reader; }
+    protocol::request_reader& reader() { return _reader; }
 
     latency_probe& probe() { return _conn->server().latency_probe(); }
 
@@ -161,7 +161,7 @@ public:
 
     template<typename ResponseType>
     requires requires(
-      ResponseType r, response_writer& writer, api_version version) {
+      ResponseType r, protocol::response_writer& writer, api_version version) {
         { r.encode(writer, version) } -> std::same_as<void>;
     }
     ss::future<response_ptr> respond(ResponseType r) {
@@ -263,7 +263,7 @@ private:
     ss::lw_shared_ptr<connection_context> _conn;
     size_t _request_size;
     request_header _header;
-    request_reader _reader;
+    protocol::request_reader _reader;
     ss::lowres_clock::duration _throttle_delay;
 };
 

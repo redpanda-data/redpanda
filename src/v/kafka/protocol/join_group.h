@@ -60,11 +60,11 @@ struct join_group_request final {
         return res;
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -112,7 +112,7 @@ struct join_group_response final {
         data.members = std::move(members);
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 
