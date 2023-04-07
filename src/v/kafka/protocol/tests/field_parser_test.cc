@@ -47,8 +47,8 @@ SEASTAR_THREAD_TEST_CASE(serde_tags) {
     /// Copy the result to use for a later comparison
     iobuf copy = buf.copy();
 
-    /// Deserialize the tags with the kafka::protocol::request_reader
-    kafka::protocol::request_reader reader(std::move(buf));
+    /// Deserialize the tags with the kafka::protocol::decoder
+    kafka::protocol::decoder reader(std::move(buf));
     auto deser_tags = reader.read_tags();
 
     /// Verify the inital values are equivalent
@@ -113,7 +113,7 @@ void write_flex(T& type, iobuf& buf) {
 
 template<typename T>
 T read_flex(iobuf buf) {
-    kafka::protocol::request_reader reader(std::move(buf));
+    kafka::protocol::decoder reader(std::move(buf));
     if constexpr (std::is_same_v<T, ss::sstring>) {
         return reader.read_flex_string();
     } else if constexpr (std::is_same_v<T, kafka::uuid>) {
@@ -123,7 +123,7 @@ T read_flex(iobuf buf) {
     } else if constexpr (std::is_same_v<T, bytes>) {
         return reader.read_flex_bytes();
     } else if constexpr (std::is_same_v<T, std::vector<test_struct>>) {
-        return reader.read_flex_array([](kafka::protocol::request_reader& reader) {
+        return reader.read_flex_array([](kafka::protocol::decoder& reader) {
             test_struct v;
             v.field_a = reader.read_flex_string();
             v.field_b = reader.read_int32();
@@ -134,7 +134,7 @@ T read_flex(iobuf buf) {
                            T,
                            std::optional<std::vector<test_struct>>>) {
         return reader.read_nullable_flex_array(
-          [](kafka::protocol::request_reader& reader) {
+          [](kafka::protocol::decoder& reader) {
               test_struct v;
               v.field_a = reader.read_flex_string();
               v.field_b = reader.read_int32();
@@ -219,7 +219,7 @@ SEASTAR_THREAD_TEST_CASE(serde_flex_types) {
         kafka::protocol::response_writer writer(writers_buf);
         writer.write_flex(std::move(data));
 
-        kafka::protocol::request_reader reader(std::move(writers_buf));
+        kafka::protocol::decoder reader(std::move(writers_buf));
         auto result = reader.read_fragmented_nullable_flex_bytes();
         BOOST_REQUIRE(result.has_value());
         BOOST_CHECK_EQUAL(iobuf_to_bytes(*result), iobuf_to_bytes(copy));

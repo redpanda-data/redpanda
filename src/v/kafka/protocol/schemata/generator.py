@@ -1094,7 +1094,7 @@ struct {{ struct.name }} {
 namespace kafka {
 
 namespace protocol {
-class request_reader;
+class decoder;
 class response_writer;
 }
 class response;
@@ -1109,7 +1109,7 @@ class response;
 {{ render_struct(struct) }}
     void encode(protocol::response_writer&, api_version);
 {%- if op_type == "request" %}
-    void decode(protocol::request_reader&, api_version);
+    void decode(protocol::decoder&, api_version);
 {%- else %}
     void decode(iobuf, api_version);
 {%- endif %}
@@ -1120,8 +1120,8 @@ private:
     void encode_flex(protocol::response_writer&, api_version);
     void encode_standard(protocol::response_writer&, api_version);
 {%- if op_type == "request" %}
-    void decode_flex(protocol::request_reader&, api_version);
-    void decode_standard(protocol::request_reader&, api_version);
+    void decode_flex(protocol::decoder&, api_version);
+    void decode_standard(protocol::decoder&, api_version);
 {%- else %}
     void decode_flex(iobuf, api_version);
     void decode_standard(iobuf, api_version);
@@ -1250,15 +1250,15 @@ if ({{ cond }}) {
 {%- if field.is_array %}
 {%- if field.nullable() %}
 {%- if flex %}
-{{ fname }} = reader.read_nullable_flex_array([version](protocol::request_reader& reader) {
+{{ fname }} = reader.read_nullable_flex_array([version](protocol::decoder& reader) {
 {%- else %}
-{{ fname }} = reader.read_nullable_array([version](protocol::request_reader& reader) {
+{{ fname }} = reader.read_nullable_array([version](protocol::decoder& reader) {
 {%- endif %}
 {%- else %}
 {%- if flex %}
-{{ fname }} = reader.read_flex_array([version](protocol::request_reader& reader) {
+{{ fname }} = reader.read_flex_array([version](protocol::decoder& reader) {
 {%- else %}
-{{ fname }} = reader.read_array([version](protocol::request_reader& reader) {
+{{ fname }} = reader.read_array([version](protocol::decoder& reader) {
 {%- endif %}
 {%- endif %}
     (void)version;
@@ -1444,26 +1444,26 @@ void {{ struct.name }}::encode(protocol::response_writer& writer, [[maybe_unused
 
 {%- if op_type == "request" %}
 {%- if first_flex > 0 %}
-void {{ struct.name }}::decode(protocol::request_reader& reader, api_version version) {
+void {{ struct.name }}::decode(protocol::decoder& reader, api_version version) {
     if (version >= api_version({{ first_flex }})) {
         decode_flex(reader, version);
     } else {
         decode_standard(reader, version);
     }
 }
-void {{ struct.name }}::decode_flex(protocol::request_reader& reader, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::decode_flex(protocol::decoder& reader, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, flex_decoder) | indent }}
 }
 
-void {{ struct.name }}::decode_standard([[maybe_unused]] protocol::request_reader& reader, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::decode_standard([[maybe_unused]] protocol::decoder& reader, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, decoder) | indent }}
 }
 {%- elif first_flex < 0 %}
-void {{ struct.name }}::decode(protocol::request_reader& reader, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::decode(protocol::decoder& reader, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, decoder) | indent }}
 }
 {% else %}
-void {{ struct.name }}::decode(protocol::request_reader& reader, [[maybe_unused]] api_version version) {
+void {{ struct.name }}::decode(protocol::decoder& reader, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, flex_decoder) | indent }}
 }
 {%- endif %}
@@ -1478,25 +1478,25 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
     }
 }
 void {{ struct.name }}::decode_flex(iobuf buf, [[maybe_unused]] api_version version) {
-    protocol::request_reader reader(std::move(buf));
+    protocol::decoder reader(std::move(buf));
 
 {{- struct_serde(struct, flex_decoder) | indent }}
 }
 void {{ struct.name }}::decode_standard(iobuf buf, [[maybe_unused]] api_version version) {
-    protocol::request_reader reader(std::move(buf));
+    protocol::decoder reader(std::move(buf));
 
 {{- struct_serde(struct, decoder) | indent }}
 }
 
 {%- elif first_flex < 0 %}
 void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
-    protocol::request_reader reader(std::move(buf));
+    protocol::decoder reader(std::move(buf));
 
 {{- struct_serde(struct, decoder) | indent }}
 }
 {%- else %}
 void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
-    protocol::request_reader reader(std::move(buf));
+    protocol::decoder reader(std::move(buf));
 
 {{- struct_serde(struct, flex_decoder) | indent }}
 }
@@ -1512,14 +1512,14 @@ void {{ struct.name }}::encode(protocol::response_writer& writer, api_version ve
         writer.write_tags(std::move(unknown_tags));
     }
 }
-void {{ struct.name }}::decode(protocol::request_reader& reader, api_version version) {
+void {{ struct.name }}::decode(protocol::decoder& reader, api_version version) {
     if (version >= api_version({{ first_flex }})) {
         unknown_tags = reader.read_tags();
     }
 }
 {%- else %}
 void {{ struct.name }}::encode(protocol::response_writer&, api_version) {}
-void {{ struct.name }}::decode(protocol::request_reader&, api_version) {}
+void {{ struct.name }}::decode(protocol::decoder&, api_version) {}
 {%- endif %}
 {%- else %}
 {%- if first_flex > 0 %}
@@ -1530,7 +1530,7 @@ void {{ struct.name }}::encode(protocol::response_writer& writer, api_version ve
 }
 void {{ struct.name }}::decode(iobuf buf, api_version version) {
     if (version >= api_version({{ first_flex }})) {
-        protocol::request_reader reader(std::move(buf));
+        protocol::decoder reader(std::move(buf));
         unknown_tags = reader.read_tags();
     }
 }

@@ -88,7 +88,7 @@ public:
 
     ss::lw_shared_ptr<connection_context> connection() { return _conn; }
 
-    protocol::request_reader& reader() { return _reader; }
+    protocol::decoder& reader() { return _reader; }
 
     latency_probe& probe() { return _conn->server().latency_probe(); }
 
@@ -263,7 +263,7 @@ private:
     ss::lw_shared_ptr<connection_context> _conn;
     size_t _request_size;
     request_header _header;
-    protocol::request_reader _reader;
+    protocol::decoder _reader;
     ss::lowres_clock::duration _throttle_delay;
 };
 

@@ -127,7 +127,7 @@ void check_kafka_binary_format(
         if constexpr (HasPrimitiveDecode<decltype(r)>) {
             r.decode(bytes_to_iobuf(result), version);
         } else {
-            kafka::protocol::request_reader rdr(bytes_to_iobuf(result));
+            kafka::protocol::decoder rdr(bytes_to_iobuf(result));
             r.decode(rdr, version);
         }
     }

@@ -92,7 +92,7 @@ namespace {
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
     iobuf data;
     data.append(std::move(buf));
-    protocol::request_reader reader(std::move(data));
+    protocol::decoder reader(std::move(data));
     auto size = reader.read_int32();
     if (size < 0) {
         throw std::runtime_error("kafka::parse_size_buffer is negative");

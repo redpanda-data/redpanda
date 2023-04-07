@@ -30,7 +30,7 @@ struct offset_delete_request final {
         data.encode(writer, version);
     }
 
-    void decode(protocol::request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 

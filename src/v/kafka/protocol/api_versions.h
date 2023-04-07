@@ -24,7 +24,7 @@ struct api_versions_request final {
 
     api_versions_request_data data;
 
-    void decode(protocol::request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
