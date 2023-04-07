@@ -506,9 +506,7 @@ public:
 
     template<typename C, typename ElementWriter>
     requires requires(
-      ElementWriter writer,
-      encoder& rw,
-      const typename C::value_type& elem) {
+      ElementWriter writer, encoder& rw, const typename C::value_type& elem) {
         { writer(elem, rw) } -> std::same_as<void>;
     }
     uint32_t write_array(const C& v, ElementWriter&& writer) {
@@ -644,8 +642,7 @@ private:
     iobuf* _out;
 };
 
-inline void
-writer_serialize_batch(encoder& w, model::record_batch&& batch) {
+inline void writer_serialize_batch(encoder& w, model::record_batch&& batch) {
     /*
      * calculate batch size expected by kafka client.
      *
@@ -683,4 +680,4 @@ writer_serialize_batch(encoder& w, model::record_batch&& batch) {
     w.write_direct(std::move(batch).release_data());
 }
 
-} // namespace kafka
+} // namespace kafka::protocol
