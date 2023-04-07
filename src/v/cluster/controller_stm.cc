@@ -36,10 +36,12 @@ ss::future<> controller_stm::on_batch_applied() {
     };
 }
 
-ss::future<> controller_stm::stop() {
+ss::future<> controller_stm::shutdown() {
     _snapshot_debounce_timer.cancel();
     return base_t::stop();
 }
+
+ss::future<> controller_stm::stop() { co_return; }
 
 void controller_stm::snapshot_timer_callback() {
     ssx::background
