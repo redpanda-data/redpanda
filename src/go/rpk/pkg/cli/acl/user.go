@@ -20,8 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newUserCommand(fs afero.Fs) *cobra.Command {
-	var apiUrls []string
+func newUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "user",
 		Short: "Manage SASL users",
@@ -34,14 +33,6 @@ creating SASL users. Using SASL requires setting "enable_sasl: true" in the
 redpanda section of your redpanda.yaml.
 `,
 	}
-	cmd.PersistentFlags().StringSliceVar(
-		&apiUrls,
-		config.FlagAdminHosts2,
-		[]string{},
-		"The comma-separated list of Admin API addresses (<IP>:<port>)."+
-			" You must specify one for each node",
-	)
-
 	cmd.AddCommand(newCreateUserCommand(fs))
 	cmd.AddCommand(newDeleteUserCommand(fs))
 	cmd.AddCommand(newListUsersCommand(fs))

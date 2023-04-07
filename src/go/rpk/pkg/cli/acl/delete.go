@@ -22,7 +22,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func newDeleteCommand(fs afero.Fs) *cobra.Command {
+func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		a               acls
 		printAllFilters bool
@@ -56,7 +56,6 @@ resource names:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

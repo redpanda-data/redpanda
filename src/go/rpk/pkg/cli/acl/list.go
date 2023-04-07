@@ -22,7 +22,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func newListCommand(fs afero.Fs) *cobra.Command {
+func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var a acls
 	var printAllFilters bool
 	cmd := &cobra.Command{

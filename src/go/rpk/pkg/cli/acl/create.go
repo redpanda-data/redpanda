@@ -21,7 +21,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func newCreateCommand(fs afero.Fs) *cobra.Command {
+func newCreateCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var a acls
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -47,7 +47,6 @@ Allow write permissions to user buzz to transactional id "txn":
 
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

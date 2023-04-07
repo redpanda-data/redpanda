@@ -110,7 +110,7 @@ func Execute() {
 	root.PersistentFlags().StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
 
 	root.AddCommand(
-		acl.NewCommand(fs),
+		acl.NewCommand(fs, p),
 		cloud.NewCommand(fs, osExec),
 		cluster.NewCommand(fs),
 		container.NewCommand(),
