@@ -10,9 +10,11 @@
 #include "raft/consensus_utils.h"
 
 #include "bytes/iostream.h"
+#include "cluster/archival_metadata_stm.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_utils.h"
 #include "model/timestamp.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
@@ -21,23 +23,31 @@
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "resource_mgmt/io_priority.h"
+#include "ssx/future-util.h"
 #include "storage/api.h"
+#include "storage/fs_utils.h"
 #include "storage/kvstore.h"
 #include "storage/ntp_config.h"
 #include "storage/offset_translator_state.h"
 #include "storage/record_batch_builder.h"
+#include "storage/segment_appender_utils.h"
 #include "storage/segment_utils.h"
+#include "storage/version.h"
 #include "vassert.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/util/defer.hh>
 
 #include <cstring>
+#include <exception>
 #include <filesystem>
 // delete
 #include <seastar/core/future-util.hh>
@@ -470,14 +480,23 @@ ss::future<> create_offset_translator_state_for_pre_existing_partition(
   const storage::ntp_config& ntp_cfg,
   raft::group_id group,
   model::offset min_rp_offset,
-  model::offset max_rp_offset) {
+  model::offset max_rp_offset,
+  ss::lw_shared_ptr<storage::offset_translator_state> ot_state) {
     // Prepare offset_translator state in kvstore
-    storage::offset_translator_state ot_state(
-      ntp_cfg.ntp(), get_prev_offset(min_rp_offset), 0);
+    vlog(
+      raftlog.debug,
+      "{} Prepare offset_translator_state in kv-store, last ot-offset {}",
+      ntp_cfg.ntp(),
+      max_rp_offset);
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
       raft::offset_translator::kvstore_offsetmap_key(group),
-      ot_state.serialize_map());
+      ot_state->serialize_map());
+    vlog(
+      raftlog.debug,
+      "{} Set highest_known_offset in kv-store to {}",
+      ntp_cfg.ntp(),
+      get_prev_offset(max_rp_offset));
     co_await api.kvs().put(
       storage::kvstore::key_space::offset_translator,
       raft::offset_translator::kvstore_highest_known_offset_key(group),
@@ -493,12 +512,17 @@ ss::future<> create_raft_state_for_pre_existing_partition(
   model::term_id last_included_term,
   std::vector<model::broker> initial_nodes) {
     // Prepare Raft state in kvstore
+    vlog(
+      raftlog.debug,
+      "{} Prepare raft state, set latest_known_offset {} to the kv-store",
+      ntp_cfg.ntp(),
+      get_prev_offset(max_rp_offset));
     auto key = raft::details::serialize_group_key(
       group, raft::metadata_key::config_latest_known_offset);
     co_await api.kvs().put(
       storage::kvstore::key_space::consensus,
       key,
-      reflection::to_iobuf(max_rp_offset));
+      reflection::to_iobuf(get_prev_offset(max_rp_offset)));
 
     // Prepare Raft snapshot
     raft::group_configuration group_config(
@@ -511,6 +535,14 @@ ss::future<> create_raft_state_for_pre_existing_partition(
       .cluster_time = ss::lowres_clock::now(),
       .log_start_delta = raft::offset_translator_delta{0},
     };
+
+    vlog(
+      raftlog.debug,
+      "{} Prepare raft state, create snapshot, last_included_index {}, "
+      "last_included_term {}",
+      ntp_cfg.ntp(),
+      meta.last_included_index,
+      meta.last_included_term);
 
     storage::simple_snapshot_manager tmp_snapshot_mgr(
       std::filesystem::path(ntp_cfg.work_directory()),
@@ -525,6 +557,11 @@ ss::future<> create_storage_state_for_pre_existing_partition(
   storage::api& api,
   const storage::ntp_config& ntp_cfg,
   model::offset min_rp_offset) {
+    vlog(
+      raftlog.debug,
+      "{} Add storage start_offset to the kv-store {}",
+      ntp_cfg.ntp(),
+      min_rp_offset);
     co_await api.kvs().put(
       storage::kvstore::key_space::storage,
       storage::internal::start_offset_key(ntp_cfg.ntp()),
@@ -538,9 +575,10 @@ ss::future<> bootstrap_pre_existing_partition(
   model::offset min_rp_offset,
   model::offset max_rp_offset,
   model::term_id last_included_term,
-  std::vector<model::broker> initial_nodes) {
+  std::vector<model::broker> initial_nodes,
+  ss::lw_shared_ptr<storage::offset_translator_state> ot_state) {
     co_await create_offset_translator_state_for_pre_existing_partition(
-      api, ntp_cfg, group, min_rp_offset, max_rp_offset);
+      api, ntp_cfg, group, min_rp_offset, max_rp_offset, ot_state);
     co_await create_storage_state_for_pre_existing_partition(
       api, ntp_cfg, min_rp_offset);
     co_await create_raft_state_for_pre_existing_partition(
