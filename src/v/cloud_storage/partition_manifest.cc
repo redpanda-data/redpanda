@@ -312,10 +312,17 @@ partition_manifest::get_start_kafka_offset() const {
             auto delta = iter->second.delta_offset;
             return _start_offset - delta;
         } else {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "can't translate start offset {} because the manifest is empty",
-              _start_offset));
+            // If start offset points outside a segment, then we cannot
+            // translate it.  If there are any segments ahead of it, then
+            // those may be considered the start of the remote log.
+            if (
+              !_segments.empty()
+              && _segments.begin()->second.base_offset >= _start_offset) {
+                const auto& seg = _segments.begin()->second;
+                return seg.base_offset - seg.delta_offset;
+            } else {
+                return std::nullopt;
+            }
         }
     }
     return std::nullopt;
