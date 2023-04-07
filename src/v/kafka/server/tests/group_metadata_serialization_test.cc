@@ -8,8 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/bytes.h"
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/group_metadata.h"
 #include "kafka/server/server.h"
 #include "kafka/types.h"
@@ -39,10 +38,10 @@ struct fixture {
     void roundtrip_test(const T& value) {
         iobuf buffer;
         logger.info("encoding: {}", value);
-        kafka::response_writer writer(buffer);
+        kafka::protocol::encoder writer(buffer);
         T::encode(writer, value);
 
-        kafka::request_reader reader(std::move(buffer));
+        kafka::protocol::decoder reader(std::move(buffer));
 
         auto decoded = T::decode(reader);
         logger.info("decoded: {}", decoded);

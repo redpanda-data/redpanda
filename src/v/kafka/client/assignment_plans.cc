@@ -9,20 +9,19 @@
 
 #include "kafka/client/assignment_plans.h"
 
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 
 namespace kafka::client {
 
 sync_group_request_assignment
 assignment_plan::encode(const assignments::value_type& m) const {
     iobuf assignments_buf;
-    response_writer writer(assignments_buf);
+    protocol::encoder writer(assignments_buf);
     writer.write(int32_t(m.second.size()));
     for (const auto& t : m.second) {
         writer.write(t.first);
         writer.write_array(
-          t.second, [](model::partition_id id, response_writer& writer) {
+          t.second, [](model::partition_id id, protocol::encoder& writer) {
               writer.write(id);
           });
     }
@@ -45,11 +44,11 @@ assignment assignment_plan::decode(const bytes& b) const {
     if (b.empty()) {
         return {};
     }
-    request_reader reader(bytes_to_iobuf(b));
-    auto result = reader.read_array([](request_reader& reader) {
+    protocol::decoder reader(bytes_to_iobuf(b));
+    auto result = reader.read_array([](protocol::decoder& reader) {
         auto topic = model::topic(reader.read_string());
         return std::make_pair(
-          std::move(topic), reader.read_array([](request_reader& reader) {
+          std::move(topic), reader.read_array([](protocol::decoder& reader) {
               return model::partition_id(reader.read_int32());
           }));
     });
@@ -99,10 +98,11 @@ make_assignment_plan(const protocol_name& protocol_name) {
 join_group_request_protocol make_join_group_request_protocol_range(
   const std::vector<model::topic>& topics) {
     iobuf metadata;
-    response_writer writer(metadata);
+    protocol::encoder writer(metadata);
     writer.write_array(
-      topics,
-      [](const model::topic& t, response_writer& writer) { writer.write(t); });
+      topics, [](const model::topic& t, protocol::encoder& writer) {
+          writer.write(t);
+      });
     writer.write(int32_t(-1)); // userdata length
 
     return join_group_request_protocol{

@@ -24,11 +24,11 @@ struct offset_for_leader_epoch_request final {
 
     offset_for_leader_epoch_request_data data;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -70,7 +70,7 @@ struct offset_for_leader_epoch_response final {
           p_id, ec, model::offset(-1), invalid_leader_epoch);
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

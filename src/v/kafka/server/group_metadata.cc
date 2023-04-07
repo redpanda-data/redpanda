@@ -14,8 +14,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/logger.h"
 #include "kafka/types.h"
 #include "model/adl_serde.h"
@@ -52,7 +51,7 @@ namespace kafka {
  *    -> value version 0:       [protocol_type, generation, protocol, leader,
  * members]
  */
-group_metadata_type decode_metadata_type(request_reader& key_reader) {
+group_metadata_type decode_metadata_type(protocol::decoder& key_reader) {
     auto version = read_metadata_version(key_reader);
 
     if (
@@ -69,7 +68,7 @@ group_metadata_type decode_metadata_type(request_reader& key_reader) {
 }
 
 void group_metadata_key::encode(
-  response_writer& writer, const group_metadata_key& v) {
+  protocol::encoder& writer, const group_metadata_key& v) {
     writer.write(v.version);
     writer.write(v.group_id);
 }
@@ -88,7 +87,7 @@ void validate_version_range(
 }
 } // namespace
 
-group_metadata_key group_metadata_key::decode(request_reader& reader) {
+group_metadata_key group_metadata_key::decode(protocol::decoder& reader) {
     group_metadata_key ret;
     auto version = read_metadata_version(reader);
     vassert(
@@ -99,7 +98,7 @@ group_metadata_key group_metadata_key::decode(request_reader& reader) {
     return ret;
 }
 
-void member_state::encode(response_writer& writer, const member_state& v) {
+void member_state::encode(protocol::encoder& writer, const member_state& v) {
     writer.write(v.version);
     writer.write(v.id);
     writer.write(v.instance_id);
@@ -115,7 +114,7 @@ void member_state::encode(response_writer& writer, const member_state& v) {
     writer.write(iobuf_to_bytes(v.assignment.copy()));
 }
 
-member_state member_state::decode(request_reader& reader) {
+member_state member_state::decode(protocol::decoder& reader) {
     member_state ret;
     auto version = read_metadata_version(reader);
     validate_version_range(version, "members_state", member_state::version);
@@ -139,7 +138,7 @@ member_state member_state::decode(request_reader& reader) {
 }
 
 void group_metadata_value::encode(
-  response_writer& writer, const group_metadata_value& v) {
+  protocol::encoder& writer, const group_metadata_value& v) {
     writer.write(v.version);
     writer.write(v.protocol_type);
     writer.write(v.generation);
@@ -147,12 +146,12 @@ void group_metadata_value::encode(
     writer.write(v.leader);
     writer.write(v.state_timestamp);
     writer.write_array(
-      v.members, [](const member_state& member, response_writer writer) {
+      v.members, [](const member_state& member, protocol::encoder writer) {
           member_state::encode(writer, member);
       });
 }
 
-group_metadata_value group_metadata_value::decode(request_reader& reader) {
+group_metadata_value group_metadata_value::decode(protocol::decoder& reader) {
     group_metadata_value ret;
     auto version = read_metadata_version(reader);
     validate_version_range(
@@ -173,20 +172,20 @@ group_metadata_value group_metadata_value::decode(request_reader& reader) {
     }
 
     ret.members = reader.read_array(
-      [](request_reader& reader) { return member_state::decode(reader); });
+      [](protocol::decoder& reader) { return member_state::decode(reader); });
 
     return ret;
 }
 
 void offset_metadata_key::encode(
-  response_writer& writer, const offset_metadata_key& v) {
+  protocol::encoder& writer, const offset_metadata_key& v) {
     writer.write(v.version);
     writer.write(v.group_id);
     writer.write(v.topic);
     writer.write(v.partition);
 }
 
-offset_metadata_key offset_metadata_key::decode(request_reader& reader) {
+offset_metadata_key offset_metadata_key::decode(protocol::decoder& reader) {
     offset_metadata_key ret;
     auto version = read_metadata_version(reader);
     validate_version_range(
@@ -198,7 +197,7 @@ offset_metadata_key offset_metadata_key::decode(request_reader& reader) {
 }
 
 void offset_metadata_value::encode(
-  response_writer& writer, const offset_metadata_value& v) {
+  protocol::encoder& writer, const offset_metadata_value& v) {
     const auto version = v.expiry_timestamp != model::timestamp(-1)
                            ? group_metadata_version{1}
                            : offset_metadata_value::latest_version;
@@ -214,7 +213,7 @@ void offset_metadata_value::encode(
     }
 }
 
-offset_metadata_value offset_metadata_value::decode(request_reader& reader) {
+offset_metadata_value offset_metadata_value::decode(protocol::decoder& reader) {
     offset_metadata_value ret;
     const auto version = read_metadata_version(reader);
     validate_version_range(
@@ -236,7 +235,7 @@ offset_metadata_value offset_metadata_value::decode(request_reader& reader) {
 
 namespace {
 template<typename T>
-std::optional<T> read_optional_value(std::optional<request_reader>& reader) {
+std::optional<T> read_optional_value(std::optional<protocol::decoder>& reader) {
     if (!reader) {
         return std::nullopt;
     }
@@ -246,7 +245,7 @@ std::optional<T> read_optional_value(std::optional<request_reader>& reader) {
 template<typename T>
 iobuf metadata_to_iobuf(const T& t) {
     iobuf buffer;
-    response_writer writer(buffer);
+    protocol::encoder writer(buffer);
     T::encode(writer, t);
     return buffer;
 }
@@ -326,7 +325,7 @@ iobuf maybe_unwrap_from_iobuf(iobuf buffer) {
 group_metadata_serializer make_consumer_offsets_serializer() {
     struct impl final : group_metadata_serializer::impl {
         group_metadata_type get_metadata_type(iobuf buffer) final {
-            auto reader = request_reader(
+            auto reader = protocol::decoder(
               maybe_unwrap_from_iobuf(std::move(buffer)));
             return decode_metadata_type(reader);
         };
@@ -354,11 +353,11 @@ group_metadata_serializer make_consumer_offsets_serializer() {
 
         group_metadata_kv decode_group_metadata(model::record record) final {
             group_metadata_kv ret;
-            request_reader k_reader(
+            protocol::decoder k_reader(
               maybe_unwrap_from_iobuf(record.release_key()));
             ret.key = group_metadata_key::decode(k_reader);
             if (record.has_value()) {
-                request_reader v_reader(record.release_value());
+                protocol::decoder v_reader(record.release_value());
                 ret.value = group_metadata_value::decode(v_reader);
             }
 
@@ -367,11 +366,11 @@ group_metadata_serializer make_consumer_offsets_serializer() {
 
         offset_metadata_kv decode_offset_metadata(model::record record) final {
             offset_metadata_kv ret;
-            request_reader k_reader(
+            protocol::decoder k_reader(
               maybe_unwrap_from_iobuf(record.release_key()));
             ret.key = offset_metadata_key::decode(k_reader);
             if (record.has_value()) {
-                request_reader v_reader(record.release_value());
+                protocol::decoder v_reader(record.release_value());
                 ret.value = offset_metadata_value::decode(v_reader);
             }
 

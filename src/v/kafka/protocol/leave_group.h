@@ -31,11 +31,11 @@ struct leave_group_request final {
     // additional context, set in decode
     api_version version;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -60,7 +60,7 @@ struct leave_group_response final {
     leave_group_response(const leave_group_request&, error_code error)
       : leave_group_response(error) {}
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

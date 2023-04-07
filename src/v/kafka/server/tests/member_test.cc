@@ -7,8 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/request_reader.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/member.h"
 #include "kafka/types.h"
@@ -170,9 +169,9 @@ SEASTAR_THREAD_TEST_CASE(member_serde) {
     m0.set_assignment(bytes("assignment"));
     auto m0_state = m0.state().copy();
     iobuf m0_iobuf;
-    auto writer = kafka::response_writer(m0_iobuf);
+    auto writer = kafka::protocol::encoder(m0_iobuf);
     member_state::encode(writer, m0_state);
-    kafka::request_reader reader(m0_iobuf.copy());
+    kafka::protocol::decoder reader(m0_iobuf.copy());
     auto m1_state = member_state::decode(reader);
     auto m1 = kafka::group_member(
       std::move(m1_state),

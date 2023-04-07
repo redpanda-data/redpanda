@@ -127,7 +127,7 @@ void check_kafka_binary_format(
         if constexpr (HasPrimitiveDecode<decltype(r)>) {
             r.decode(bytes_to_iobuf(result), version);
         } else {
-            kafka::request_reader rdr(bytes_to_iobuf(result));
+            kafka::protocol::decoder rdr(bytes_to_iobuf(result));
             r.decode(rdr, version);
         }
     }
@@ -146,7 +146,7 @@ void check_kafka_binary_format(
             return;
         }
         iobuf iob;
-        kafka::response_writer rw(iob);
+        kafka::protocol::encoder rw(iob);
         r.encode(rw, version);
         b = iobuf_to_bytes(iob);
     }

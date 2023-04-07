@@ -92,7 +92,7 @@ namespace {
 size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
     iobuf data;
     data.append(std::move(buf));
-    request_reader reader(std::move(data));
+    protocol::decoder reader(std::move(data));
     auto size = reader.read_int32();
     if (size < 0) {
         throw std::runtime_error("kafka::parse_size_buffer is negative");
@@ -101,6 +101,7 @@ size_t parse_size_buffer(ss::temporary_buffer<char> buf) {
 }
 } // namespace
 
+namespace protocol {
 ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
     auto buf = co_await src.read_exactly(sizeof(int32_t));
     if (!buf) {
@@ -108,5 +109,6 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
     }
     co_return parse_size_buffer(std::move(buf));
 }
+} // namespace protocol
 
 } // namespace kafka
