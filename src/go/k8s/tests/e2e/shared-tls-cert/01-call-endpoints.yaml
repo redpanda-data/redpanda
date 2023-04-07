@@ -1,0 +1,39 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: call-endpoints
+spec:
+  template:
+    spec:
+      volumes:
+        - name: sharedtls
+          secret:
+            defaultMode: 420
+            secretName: shared-tls-cert-redpanda
+      containers:
+        - name: curl
+          image: curlimages/curl:latest
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/sh
+            - -c
+            - -ex
+          args:
+            - >
+              echo "Checking that the shared certificate is used for both pandaproxy and schema registry" && 
+              sr_res=$(curl --silent -o /dev/null -w "%{http_code}" -k -i -v --cacert /etc/tls/certs/shared/ca.crt https://shared-tls-cert-0.shared-tls-cert.$POD_NAMESPACE.svc.cluster.local:8081) &&
+              pp_res=$(curl --silent -o /dev/null -w "%{http_code}" -k -i -v --cacert /etc/tls/certs/shared/ca.crt https://shared-tls-cert-0.shared-tls-cert.$POD_NAMESPACE.svc.cluster.local:8080) &&
+              if [[ "$sr_res" != "404" ]] || [[ "$pp_res" != "404" ]]; then
+                exit 1;
+              fi
+          volumeMounts:
+            - mountPath: /etc/tls/certs/shared
+              name: sharedtls
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1
