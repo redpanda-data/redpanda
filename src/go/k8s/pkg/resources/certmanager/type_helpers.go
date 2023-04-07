@@ -426,7 +426,7 @@ func (ac *apiCertificates) resources(
 		return []resources.Resource{}, nil
 	}
 	nodeSecretRef := ac.externalNodeCertificate
-	if nodeSecretRef != nil && nodeSecretRef.Name != "" && nodeSecretRef.Namespace != ac.clusterNamespace {
+	if nodeSecretRef != nil && nodeSecretRef.Name != "" && nodeSecretRef.Namespace != "" && nodeSecretRef.Namespace != ac.clusterNamespace {
 		if err := copyNodeSecretToLocalNamespace(ctx, nodeSecretRef, ac.clusterNamespace, k8sClient, logger); err != nil {
 			return nil, fmt.Errorf("copy node secret for %s cert group: %w", ac.nodeCertificateName().Name, err)
 		}
