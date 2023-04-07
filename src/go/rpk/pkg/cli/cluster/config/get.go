@@ -20,9 +20,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func newGetCommand(fs afero.Fs) *cobra.Command {
+func newGetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "get <key>",
+		Use:   "get [KEY]",
 		Short: "Get a cluster configuration property",
 		Long: `Get a cluster configuration property.
 
@@ -32,7 +32,6 @@ output, use the 'edit' and 'export' commands respectively.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			key := args[0]
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

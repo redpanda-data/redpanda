@@ -1659,7 +1659,9 @@ func TestStartCommand(t *testing.T) {
 			}
 			var out bytes.Buffer
 			logrus.SetOutput(&out)
-			c := NewStartCommand(fs, launcher)
+			p := new(config.Params)
+			c := NewStartCommand(fs, p, launcher)
+			c.Flags().StringVar(&p.ConfigPath, "config", "", "this is done in root.go, but we need it here for the tests setting args")
 			// We disable --check flag to avoid running tuner checks in Afero's
 			// memory backed file system.
 			args := append([]string{"--check=false"}, tt.args...)
@@ -1825,7 +1827,7 @@ func Test_buildRedpandaFlags(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			cmdFlag := NewStartCommand(fs, &noopLauncher{}).Flags()
+			cmdFlag := NewStartCommand(fs, new(config.Params), &noopLauncher{}).Flags()
 			if len(tt.args.flags) > 0 {
 				for k, v := range tt.args.flags {
 					err := cmdFlag.Set(k, v)

@@ -23,21 +23,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
-		configFile  string
 		directories []string
 		duration    time.Duration
 		noConfirm   bool
 		outputFile  string
 		timeout     time.Duration
 	)
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "iotune",
 		Short: "Measure filesystem performance and create IO configuration file",
 		Run: func(cmd *cobra.Command, args []string) {
 			timeout += duration
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -71,39 +69,10 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 			fmt.Printf("IO configuration file stored as %q\n", outputFile)
 		},
 	}
-	command.Flags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in $PWD or /etc/redpanda/redpanda.yaml",
-	)
-	command.Flags().StringVar(
-		&outputFile,
-		"out",
-		filepath.Join(filepath.Dir(config.DefaultPath), "io-config.yaml"),
-		"The file path where the IO config will be written",
-	)
-	command.Flags().StringSliceVar(&directories,
-		"directories", []string{}, "List of directories to evaluate")
-	command.Flags().DurationVar(
-		&duration,
-		"duration",
-		10*time.Minute,
-		"Duration of tests."+
-			"The value passed is a sequence of decimal numbers, each with optional "+
-			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
-			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
-	)
-	command.Flags().DurationVar(
-		&timeout,
-		"timeout",
-		1*time.Hour,
-		"The maximum time after --duration to wait for iotune to complete. "+
-			"The value passed is a sequence of decimal numbers, each with optional "+
-			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
-			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
-	)
-	command.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt if the iotune file already exists")
-	return command
+	cmd.Flags().StringVar(&outputFile, "out", filepath.Join(filepath.Dir(config.DefaultPath), "io-config.yaml"), "The file path where the IO config will be written")
+	cmd.Flags().StringSliceVar(&directories, "directories", []string{}, "List of directories to evaluate")
+	cmd.Flags().DurationVar(&duration, "duration", 10*time.Minute, "Duration of tests (e.g. 300ms, 1.5s, 2h45m)")
+	cmd.Flags().DurationVar(&timeout, "timeout", 1*time.Hour, "The maximum time after --duration to wait for iotune to complete (e.g. 300ms, 1.5s, 2h45m)")
+	cmd.Flags().BoolVar(&noConfirm, "no-confirm", false, "Disable confirmation prompt if the iotune file already exists")
+	return cmd
 }

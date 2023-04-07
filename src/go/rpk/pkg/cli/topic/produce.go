@@ -25,7 +25,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-func newProduceCommand(fs afero.Fs) *cobra.Command {
+func newProduceCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		key        string
 		recHeaders []string
@@ -126,7 +126,6 @@ func newProduceCommand(fs afero.Fs) *cobra.Command {
 			}
 
 			// We are now ready to produce.
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

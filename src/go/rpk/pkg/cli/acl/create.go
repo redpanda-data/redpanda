@@ -80,6 +80,7 @@ Allow write permissions to user buzz to transactional id "txn":
 			}
 		},
 	}
+	p.InstallKafkaFlags(cmd)
 	a.addCreateFlags(cmd)
 	return cmd
 }

@@ -21,9 +21,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newDisableCommand(fs afero.Fs) *cobra.Command {
+func newDisableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "disable <broker-id>",
+		Use:   "disable [BROKER-ID]",
 		Short: "Disable maintenance mode for a node",
 		Long:  `Disable maintenance mode for a node.`,
 		Args:  cobra.ExactArgs(1),
@@ -37,7 +37,6 @@ func newDisableCommand(fs afero.Fs) *cobra.Command {
 				out.Die("invalid node id: %d", nodeID)
 			}
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

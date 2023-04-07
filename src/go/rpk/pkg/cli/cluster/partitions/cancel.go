@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newMovementCancelCommand(fs afero.Fs) *cobra.Command {
+func newMovementCancelCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		node      int
 		noConfirm bool
@@ -34,7 +34,6 @@ occurring in the specified node:
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

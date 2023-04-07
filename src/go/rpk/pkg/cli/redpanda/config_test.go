@@ -207,7 +207,7 @@ schema_registry: {}
 				}
 			}
 
-			c := bootstrap(fs)
+			c := bootstrap(fs, new(config.Params))
 
 			var args []string
 			if len(test.ips) != 0 {
@@ -246,7 +246,7 @@ func TestInitNode(t *testing.T) {
 	err = afero.WriteFile(fs, config.DefaultPath, bs, 0o644)
 	require.NoError(t, err)
 
-	cmd := initNode(fs)
+	cmd := initNode(fs, new(config.Params))
 	err = cmd.Execute()
 	require.NoError(t, err)
 
@@ -339,7 +339,7 @@ rpk:
 			}
 		}
 
-		c := set(fs)
+		c := set(fs, new(config.Params))
 		c.SetArgs(test.args)
 		err := c.Execute()
 		if err != nil {

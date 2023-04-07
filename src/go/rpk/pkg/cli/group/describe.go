@@ -23,7 +23,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-func NewDescribeCommand(fs afero.Fs) *cobra.Command {
+func NewDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var summary bool
 
 	cmd := &cobra.Command{
@@ -36,7 +36,6 @@ information about the members.
 `,
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, groups []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

@@ -29,11 +29,10 @@ type tunerInfo struct {
 	Reason    string
 }
 
-func newListCommand(fs afero.Fs) *cobra.Command {
-	tunerParams := factory.TunerParams{}
-	var cfgFile string
+func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var tunerParams factory.TunerParams
 
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List available tuners",
 		Long: `List available redpanda tuners and check if they are enabled and 
@@ -49,8 +48,7 @@ under rpk section, e.g:
 You may use 'rpk redpanda config set' to enable or disable a tuner.
 `,
 		Args: cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
+		Run: func(*cobra.Command, []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -73,15 +71,8 @@ You may use 'rpk redpanda config set' to enable or disable a tuner.
 			printTunerList(list)
 		},
 	}
-	addTunerParamsFlags(command, &tunerParams)
-	command.Flags().StringVar(
-		&cfgFile,
-		config.FlagConfig,
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in $PWD or /etc/redpanda/redpanda.yaml.",
-	)
-	return command
+	addTunerParamsFlags(cmd, &tunerParams)
+	return cmd
 }
 
 func printTunerList(list []tunerInfo) {

@@ -13,9 +13,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newInfoCommand(fs afero.Fs) *cobra.Command {
+func newInfoCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var format string
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "info",
 		Args:  cobra.ExactArgs(0),
 		Short: "Retrieve license information",
@@ -27,7 +27,6 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
     Version:         License schema version.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -67,8 +66,8 @@ func newInfoCommand(fs afero.Fs) *cobra.Command {
 		},
 	}
 
-	command.Flags().StringVar(&format, "format", "text", "Output format (text, json)")
-	return command
+	cmd.Flags().StringVar(&format, "format", "text", "Output format (text, json)")
+	return cmd
 }
 
 func printLicenseInfo(p admin.LicenseProperties, expired bool) {

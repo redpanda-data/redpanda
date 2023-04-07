@@ -10,40 +10,26 @@
 package topic
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
-	var (
-		brokers        []string
-		configFile     string
-		user           string
-		password       string
-		mechanism      string
-		enableTLS      bool
-		certFile       string
-		keyFile        string
-		truststoreFile string
-	)
-	command := &cobra.Command{
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "topic",
 		Short: "Create, delete, produce to and consume from Redpanda topics",
 	}
-
-	common.AddKafkaFlags(command, &configFile, &user, &password, &mechanism, &enableTLS, &certFile, &keyFile, &truststoreFile, &brokers)
-
-	command.AddCommand(
-		newAddPartitionsCommand(fs),
-		newAlterConfigCommand(fs),
-		newConsumeCommand(fs),
-		newCreateCommand(fs),
-		newDeleteCommand(fs),
-		newDescribeCommand(fs),
-		newListCommand(fs),
-		newProduceCommand(fs),
+	p.InstallKafkaFlags(cmd)
+	cmd.AddCommand(
+		newAddPartitionsCommand(fs, p),
+		newAlterConfigCommand(fs, p),
+		newConsumeCommand(fs, p),
+		newCreateCommand(fs, p),
+		newDeleteCommand(fs, p),
+		newDescribeCommand(fs, p),
+		newListCommand(fs, p),
+		newProduceCommand(fs, p),
 	)
-
-	return command
+	return cmd
 }

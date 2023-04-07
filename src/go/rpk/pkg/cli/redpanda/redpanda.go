@@ -15,25 +15,28 @@ package redpanda
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/tune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
-	command := &cobra.Command{
+func NewCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "redpanda",
 		Short: "Interact with a local Redpanda process",
 	}
 
-	command.AddCommand(NewStartCommand(fs, launcher))
-	command.AddCommand(NewStopCommand(fs))
-	command.AddCommand(NewCheckCommand(fs))
-	command.AddCommand(NewModeCommand(fs))
-	command.AddCommand(NewConfigCommand(fs))
+	cmd.AddCommand(
+		NewStartCommand(fs, p, launcher),
+		NewStopCommand(fs, p),
+		NewCheckCommand(fs, p),
+		NewModeCommand(fs, p),
+		NewConfigCommand(fs, p),
 
-	command.AddCommand(tune.NewCommand(fs))
-	command.AddCommand(admin.NewCommand(fs))
+		tune.NewCommand(fs, p),
+		admin.NewCommand(fs, p),
+	)
 
-	return command
+	return cmd
 }

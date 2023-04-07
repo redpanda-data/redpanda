@@ -112,18 +112,18 @@ func Execute() {
 	root.AddCommand(
 		acl.NewCommand(fs, p),
 		cloud.NewCommand(fs, osExec),
-		cluster.NewCommand(fs),
+		cluster.NewCommand(fs, p),
 		container.NewCommand(),
-		debug.NewCommand(fs),
-		generate.NewCommand(fs),
-		group.NewCommand(fs),
+		debug.NewCommand(fs, p),
+		generate.NewCommand(fs, p),
+		group.NewCommand(fs, p),
 		plugincmd.NewCommand(fs),
-		topic.NewCommand(fs),
+		topic.NewCommand(fs, p),
 		version.NewCommand(),
-		wasm.NewCommand(fs),
+		wasm.NewCommand(fs, p),
 	)
 
-	addPlatformDependentCmds(fs, root)
+	addPlatformDependentCmds(fs, p, root)
 
 	// Plugin autocompletion: Cobra creates autocompletion for shells via
 	// all commands discoverable from the root command. Plugins that are

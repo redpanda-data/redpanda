@@ -280,7 +280,7 @@ func formatValidationError(
 	return buf.String(), nil
 }
 
-func newImportCommand(fs afero.Fs, all *bool) *cobra.Command {
+func newImportCommand(fs afero.Fs, p *config.Params, all *bool) *cobra.Command {
 	var filename string
 	cmd := &cobra.Command{
 		Use:   "import",
@@ -293,7 +293,6 @@ configuration, calculates the difference with the YAML file, and
 updates any properties that were changed.  If a property is removed
 from the YAML file, it is reset to its default value.  `,
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

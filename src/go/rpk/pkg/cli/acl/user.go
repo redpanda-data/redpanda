@@ -33,9 +33,12 @@ creating SASL users. Using SASL requires setting "enable_sasl: true" in the
 redpanda section of your redpanda.yaml.
 `,
 	}
-	cmd.AddCommand(newCreateUserCommand(fs))
-	cmd.AddCommand(newDeleteUserCommand(fs))
-	cmd.AddCommand(newListUsersCommand(fs))
+	p.InstallAdminFlags(cmd)
+	cmd.AddCommand(
+		newCreateUserCommand(fs, p),
+		newDeleteUserCommand(fs, p),
+		newListUsersCommand(fs, p),
+	)
 	return cmd
 }
 
@@ -46,7 +49,7 @@ type UserAPI interface {
 	ListUsers() ([]string, error)
 }
 
-func newCreateUserCommand(fs afero.Fs) *cobra.Command {
+func newCreateUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var userOld, pass, newPass, mechanism string
 	cmd := &cobra.Command{
 		Use:   "create [USER] -p [PASS]",
@@ -69,7 +72,6 @@ acl help text for more info.
 
 		Args: cobra.MaximumNArgs(1), // when the deprecated user flag is removed, change this to cobra.ExactArgs(1)
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -140,17 +142,12 @@ acl help text for more info.
 	cmd.Flags().StringVarP(&newPass, "new-password", "p", "", "")
 	cmd.Flags().MarkHidden("new-password")
 
-	cmd.Flags().StringVar(
-		&mechanism,
-		"mechanism",
-		strings.ToLower(admin.ScramSha256),
-		"SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive); not to be confused with the global flag --sasl-mechanism which is used for authenticating the rpk client",
-	)
+	cmd.Flags().StringVar(&mechanism, "mechanism", strings.ToLower(admin.ScramSha256), "SASL mechanism to use for the user you are creating (scram-sha-256, scram-sha-512, case insensitive); not to be confused with the global flag --sasl-mechanism which is used for authenticating the rpk client")
 
 	return cmd
 }
 
-func newDeleteUserCommand(fs afero.Fs) *cobra.Command {
+func newDeleteUserCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var oldUser string
 	cmd := &cobra.Command{
 		Use:   "delete [USER]",
@@ -162,7 +159,6 @@ delete any ACLs that may exist for this user.
 `,
 		Args: cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -193,13 +189,12 @@ delete any ACLs that may exist for this user.
 	return cmd
 }
 
-func newListUsersCommand(fs afero.Fs) *cobra.Command {
+func newListUsersCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List SASL users",
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

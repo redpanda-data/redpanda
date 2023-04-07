@@ -16,7 +16,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -26,45 +25,19 @@ import (
 	"github.com/twmb/types"
 )
 
-func newLogdirsCommand(fs afero.Fs) *cobra.Command {
-	var (
-		configFile string
-
-		brokers   []string
-		user      string
-		password  string
-		mechanism string
-		enableTLS bool
-		certFile  string
-		keyFile   string
-		caFile    string
-	)
-
+func newLogdirsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "logdirs",
 		Short: "Describe log directories on Redpanda brokers",
 	}
-
-	common.AddKafkaFlags(
-		cmd,
-		&configFile,
-		&user,
-		&password,
-		&mechanism,
-		&enableTLS,
-		&certFile,
-		&keyFile,
-		&caFile,
-		&brokers,
-	)
-
+	p.InstallKafkaFlags(cmd)
 	cmd.AddCommand(
-		newLogdirsDescribeCommand(fs),
+		newLogdirsDescribeCommand(fs, p),
 	)
 	return cmd
 }
 
-func newLogdirsDescribeCommand(fs afero.Fs) *cobra.Command {
+func newLogdirsDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		broker        int32
 		sortBySize    bool
@@ -94,7 +67,6 @@ where revision is a Redpanda internal concept.
 
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

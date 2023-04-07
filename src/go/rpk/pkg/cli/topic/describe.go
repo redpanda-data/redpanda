@@ -27,7 +27,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func newDescribeCommand(fs afero.Fs) *cobra.Command {
+func newDescribeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		all        bool
 		summary    bool
@@ -47,7 +47,6 @@ partitions section. By default, the summary and configs sections are printed.
 
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, topicArg []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

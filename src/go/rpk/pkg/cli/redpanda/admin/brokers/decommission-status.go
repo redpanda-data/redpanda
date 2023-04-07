@@ -12,7 +12,7 @@ import (
 	"github.com/twmb/types"
 )
 
-func newDecommissionBrokerStatus(fs afero.Fs) *cobra.Command {
+func newDecommissionBrokerStatus(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		completion int
 		detailed   bool
@@ -23,7 +23,6 @@ func newDecommissionBrokerStatus(fs afero.Fs) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			broker, _ := strconv.Atoi(args[0])
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

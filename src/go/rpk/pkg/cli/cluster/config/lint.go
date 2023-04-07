@@ -41,7 +41,7 @@ func (c *clusterConfigN) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-func newLintCommand(fs afero.Fs) *cobra.Command {
+func newLintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lint",
 		Short: "Remove any deprecated content from redpanda.yaml",
@@ -52,7 +52,6 @@ in earlier versions of redpanda, but are now managed via Redpanda's
 central configuration store (and via 'rpk cluster config edit').
 `,
 		Run: func(cmd *cobra.Command, propertyNames []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

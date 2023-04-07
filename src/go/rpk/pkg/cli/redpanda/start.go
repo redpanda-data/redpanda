@@ -113,10 +113,9 @@ func parseConfigKvs(args []string) ([]string, []string) {
 	return kvs, args
 }
 
-func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
+func NewStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
-		configFile      string
 		nodeID          int
 		seeds           []string
 		kafkaAddr       []string
@@ -133,7 +132,7 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 	)
 	sFlags := seastarFlags{}
 
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start redpanda",
 		FParseErrWhitelist: cobra.FParseErrWhitelist{
@@ -148,7 +147,6 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			// for list flags, and since JSON often contains commas, it
 			// blows up when there's a JSON object.
 			configKvs, filteredArgs := parseConfigKvs(os.Args)
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			if err != nil {
 				return fmt.Errorf("unable to load config file: %s", err)
@@ -369,136 +367,44 @@ func NewStartCommand(fs afero.Fs, launcher rp.Launcher) *cobra.Command {
 			return launcher.Start(installDirectory, rpArgs)
 		},
 	}
-	command.Flags().StringVar(
-		&configFile,
-		configFlag,
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in $PWD or /etc/redpanda/redpanda.yaml.",
-	)
-	command.Flags().IntVar(
-		&nodeID,
-		nodeIDFlag,
-		-1,
-		"The node ID. Must be an integer and must be unique within a cluster. If unset, Redpanda will assign one automatically")
-	command.Flags().MarkHidden(nodeIDFlag)
-	command.Flags().StringSliceVarP(
-		&seeds,
-		"seeds",
-		"s",
-		[]string{},
-		"A comma-separated list of seed node addresses"+
-			" (<host>[:<port>]) to connect to",
-	)
-	command.Flags().StringSliceVar(
-		&kafkaAddr,
-		"kafka-addr",
-		[]string{},
-		"A comma-separated list of Kafka listener addresses to bind to (<name>://<host>:<port>)",
-	)
-	command.Flags().StringSliceVar(
-		&proxyAddr,
-		"pandaproxy-addr",
-		[]string{},
-		"A comma-separated list of Pandaproxy listener addresses to bind to (<name>://<host>:<port>)",
-	)
-	command.Flags().StringSliceVar(
-		&schemaRegAddr,
-		"schema-registry-addr",
-		[]string{},
-		"A comma-separated list of Schema Registry listener addresses to bind to (<name>://<host>:<port>)",
-	)
-	command.Flags().StringVar(
-		&rpcAddr,
-		"rpc-addr",
-		"",
-		"The RPC address to bind to (<host>:<port>)",
-	)
-	command.Flags().StringSliceVar(
-		&advertisedKafka,
-		"advertise-kafka-addr",
-		[]string{},
-		"A comma-separated list of Kafka addresses to advertise (<name>://<host>:<port>)",
-	)
-	command.Flags().StringSliceVar(
-		&advertisedProxy,
-		"advertise-pandaproxy-addr",
-		[]string{},
-		"A comma-separated list of Pandaproxy addresses to advertise (<name>://<host>:<port>)",
-	)
-	command.Flags().StringVar(
-		&advertisedRPC,
-		"advertise-rpc-addr",
-		"",
-		"The advertised RPC address (<host>:<port>)",
-	)
-	command.Flags().StringVar(&sFlags.memory,
-		memoryFlag, "", "Amount of memory for redpanda to use, "+
-			"if not specified redpanda will use all available memory")
-	command.Flags().BoolVar(&sFlags.lockMemory,
-		lockMemoryFlag, false, "If set, will prevent redpanda from swapping")
-	command.Flags().StringVar(&sFlags.cpuSet, cpuSetFlag, "",
-		"Set of CPUs for redpanda to use in cpuset(7) format, "+
-			"if not specified redpanda will use all available CPUs")
-	command.Flags().StringVar(&installDirFlag,
-		"install-dir", "",
-		"Directory where redpanda has been installed")
-	command.Flags().BoolVar(&prestartCfg.tuneEnabled, "tune", false,
-		"When present will enable tuning before starting redpanda")
-	command.Flags().BoolVar(&prestartCfg.checkEnabled, checkFlag, true,
-		"When set to false will disable system checking before starting redpanda")
-	command.Flags().IntVar(&sFlags.smp, smpFlag, 0, "Restrict redpanda to"+
-		" the given number of CPUs. This option does not mandate a"+
-		" specific placement of CPUs. See --cpuset if you need to do so.")
-	command.Flags().StringVar(&sFlags.reserveMemory, reserveMemoryFlag, "",
-		"Memory reserved for the OS (if --memory isn't specified)")
-	command.Flags().StringVar(&sFlags.hugepages, hugepagesFlag, "",
-		"Path to accessible hugetlbfs mount (typically /dev/hugepages/something)")
-	command.Flags().BoolVar(&sFlags.threadAffinity, threadAffinityFlag, true,
-		"Pin threads to their cpus (disable for overprovisioning)")
-	command.Flags().IntVar(&sFlags.numIoQueues, numIoQueuesFlag, 0,
-		"Number of IO queues. Each IO unit will be responsible for a fraction "+
-			"of the IO requests. Defaults to the number of threads")
-	command.Flags().IntVar(&sFlags.maxIoRequests, maxIoRequestsFlag, 0,
-		"Maximum amount of concurrent requests to be sent to the disk. "+
-			"Defaults to 128 times the number of IO queues")
-	command.Flags().StringVar(&sFlags.ioPropertiesFile, ioPropertiesFileFlag, "",
-		"Path to a YAML file describing the characteristics of the I/O Subsystem")
-	command.Flags().StringVar(&sFlags.ioProperties, ioPropertiesFlag, "",
-		"A YAML string describing the characteristics of the I/O Subsystem")
-	command.Flags().StringVar(
-		&wellKnownIo,
-		wellKnownIOFlag,
-		"",
-		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
-	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "Enable mbind")
-	command.Flags().BoolVar(
-		&sFlags.overprovisioned,
-		overprovisionedFlag,
-		false,
-		"Enable overprovisioning",
-	)
-	command.Flags().BoolVar(&sFlags.unsafeBypassFsync, unsafeBypassFsyncFlag, false, "Enable unsafe-bypass-fsync")
-	command.Flags().StringVar(
-		&mode,
-		modeFlag,
-		"",
-		"Mode sets well-known configuration properties for development or test environments; use --mode help for more info",
-	)
 
-	command.Flags().DurationVar(
-		&timeout,
-		"timeout",
-		10000*time.Millisecond,
-		"The maximum time to wait for the checks and tune processes to complete. "+
-			"The value passed is a sequence of decimal numbers, each with optional "+
-			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
-			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
-	)
+	f := cmd.Flags()
+	f.IntVar(&nodeID, nodeIDFlag, -1, "The node ID. Must be an integer and must be unique within a cluster. If unset, Redpanda will assign one automatically")
+	f.MarkHidden(nodeIDFlag)
+
+	f.StringSliceVarP(&seeds, "seeds", "s", nil, "A comma-separated list of seed nodes to connect to (scheme://host:port|name)")
+	f.StringSliceVar(&kafkaAddr, "kafka-addr", nil, "A comma-separated list of Kafka listener addresses to bind to (scheme://host:port|name)")
+	f.StringSliceVar(&proxyAddr, "pandaproxy-addr", nil, "A comma-separated list of Pandaproxy listener addresses to bind to (scheme://host:port|name)")
+	f.StringSliceVar(&schemaRegAddr, "schema-registry-addr", nil, "A comma-separated list of Schema Registry listener addresses to bind to (scheme://host:port|name)")
+	f.StringVar(&rpcAddr, "rpc-addr", "", "The RPC address to bind to (host:port)")
+	f.StringSliceVar(&advertisedKafka, "advertise-kafka-addr", nil, "A comma-separated list of Kafka addresses to advertise (scheme://host:port|name)")
+	f.StringSliceVar(&advertisedProxy, "advertise-pandaproxy-addr", nil, "A comma-separated list of Pandaproxy addresses to advertise (scheme://host:port|name)")
+	f.StringVar(&advertisedRPC, "advertise-rpc-addr", "", "The advertised RPC address (host:port)")
+	f.StringVar(&sFlags.memory, memoryFlag, "", "Amount of memory for redpanda to use, if not specified redpanda will use all available memory")
+	f.BoolVar(&sFlags.lockMemory, lockMemoryFlag, false, "If set, will prevent redpanda from swapping")
+	f.StringVar(&sFlags.cpuSet, cpuSetFlag, "", "Set of CPUs for redpanda to use in cpuset(7) format, if not specified redpanda will use all available CPUs")
+	f.StringVar(&installDirFlag, "install-dir", "", "Directory where redpanda has been installed")
+	f.BoolVar(&prestartCfg.tuneEnabled, "tune", false, "When present will enable tuning before starting redpanda")
+	f.BoolVar(&prestartCfg.checkEnabled, checkFlag, true, "When set to false will disable system checking before starting redpanda")
+	f.IntVar(&sFlags.smp, smpFlag, 0, "Restrict redpanda to the given number of CPUs. This option does not mandate a specific placement of CPUs. See --cpuset if you need to do so.")
+	f.StringVar(&sFlags.reserveMemory, reserveMemoryFlag, "", "Memory reserved for the OS (if --memory isn't specified)")
+	f.StringVar(&sFlags.hugepages, hugepagesFlag, "", "Path to accessible hugetlbfs mount (typically /dev/hugepages/something)")
+	f.BoolVar(&sFlags.threadAffinity, threadAffinityFlag, true, "Pin threads to their cpus (disable for overprovisioning)")
+	f.IntVar(&sFlags.numIoQueues, numIoQueuesFlag, 0, "Number of IO queues. Each IO unit will be responsible for a fraction of the IO requests. Defaults to the number of threads")
+	f.IntVar(&sFlags.maxIoRequests, maxIoRequestsFlag, 0, "Maximum amount of concurrent requests to be sent to the disk. Defaults to 128 times the number of IO queues")
+	f.StringVar(&sFlags.ioPropertiesFile, ioPropertiesFileFlag, "", "Path to a YAML file describing the characteristics of the I/O Subsystem")
+	f.StringVar(&sFlags.ioProperties, ioPropertiesFlag, "", "A YAML string describing the characteristics of the I/O Subsystem")
+	f.StringVar(&wellKnownIo, wellKnownIOFlag, "", "The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
+	f.BoolVar(&sFlags.mbind, mbindFlag, true, "Enable mbind")
+	f.BoolVar(&sFlags.overprovisioned, overprovisionedFlag, false, "Enable overprovisioning")
+	f.BoolVar(&sFlags.unsafeBypassFsync, unsafeBypassFsyncFlag, false, "Enable unsafe-bypass-fsync")
+	f.StringVar(&mode, modeFlag, "", "Mode sets well-known configuration properties for development or test environments; use --mode help for more info")
+
+	f.DurationVar(&timeout, "timeout", 10000*time.Millisecond, "The maximum time to wait for the checks and tune processes to complete (e.g. 300ms, 1.5s, 2h45m)")
 	for flag := range flagsMap(sFlags) {
-		command.Flag(flag).Hidden = true
+		cmd.Flag(flag).Hidden = true
 	}
-	return command
+	return cmd
 }
 
 func flagsMap(sFlags seastarFlags) map[string]interface{} {

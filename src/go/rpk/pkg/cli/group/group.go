@@ -13,7 +13,6 @@ package group
 import (
 	"context"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -21,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "group",
 		Aliases: []string{"g"},
@@ -68,44 +67,20 @@ members and their lag), and manage offsets.
 `,
 		Args: cobra.ExactArgs(0),
 	}
-
-	var (
-		brokers        []string
-		configFile     string
-		user           string
-		password       string
-		mechanism      string
-		enableTLS      bool
-		certFile       string
-		keyFile        string
-		truststoreFile string
-	)
-	// backcompat: until we switch to -X, we need these flags.
-	common.AddKafkaFlags(
-		cmd,
-		&configFile,
-		&user,
-		&password,
-		&mechanism,
-		&enableTLS,
-		&certFile,
-		&keyFile,
-		&truststoreFile,
-		&brokers,
-	)
+	p.InstallKafkaFlags(cmd)
 
 	cmd.AddCommand(
-		newDeleteCommand(fs),
-		NewDescribeCommand(fs),
-		newListCommand(fs),
-		newSeekCommand(fs),
-		NewOffsetDeleteCommand(fs),
+		newDeleteCommand(fs, p),
+		NewDescribeCommand(fs, p),
+		newListCommand(fs, p),
+		newSeekCommand(fs, p),
+		NewOffsetDeleteCommand(fs, p),
 	)
 
 	return cmd
 }
 
-func newListCommand(fs afero.Fs) *cobra.Command {
+func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
@@ -119,7 +94,6 @@ groups, or to list groups that need to be cleaned up.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -142,7 +116,7 @@ groups, or to list groups that need to be cleaned up.
 	}
 }
 
-func newDeleteCommand(fs afero.Fs) *cobra.Command {
+func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	return &cobra.Command{
 		Use:   "delete [GROUPS...]",
 		Short: "Delete groups from brokers",
@@ -167,7 +141,6 @@ quick investigation or testing. This command helps you do that.
 `,
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

@@ -24,19 +24,19 @@ import (
 )
 
 // NewCommand returns the partitions admin command.
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "partitions",
 		Short: "View and configure Redpanda partitions through the admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
-		newListCommand(fs),
+		newListCommand(fs, p),
 	)
 	return cmd
 }
 
-func newListCommand(fs afero.Fs) *cobra.Command {
+func newListCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var leaderOnly bool
 	cmd := &cobra.Command{
 		Use:     "list [BROKER ID]",
@@ -50,7 +50,6 @@ func newListCommand(fs afero.Fs) *cobra.Command {
 				out.Die("invalid negative broker id %v", brokerID)
 			}
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

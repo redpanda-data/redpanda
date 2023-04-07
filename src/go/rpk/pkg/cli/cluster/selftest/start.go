@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewStartCommand(fs afero.Fs) *cobra.Command {
+func newStartCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		noConfirm      bool
 		diskDurationMs uint
@@ -54,7 +54,6 @@ command.`,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
 			// Load config settings
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

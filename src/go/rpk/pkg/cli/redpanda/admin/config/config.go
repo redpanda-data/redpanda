@@ -17,20 +17,20 @@ import (
 )
 
 // NewCommand returns the config admin command.
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
 		Short: "View or modify Redpanda configuration through the admin listener",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
-		newPrintCommand(fs),
-		newLogLevelCommand(fs),
+		newPrintCommand(fs, p),
+		newLogLevelCommand(fs, p),
 	)
 	return cmd
 }
 
-func newPrintCommand(fs afero.Fs) *cobra.Command {
+func newPrintCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var host string
 	cmd := &cobra.Command{
 		Use:     "print",
@@ -38,7 +38,6 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 		Short:   "Display the current Redpanda configuration",
 		Args:    cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -62,19 +61,19 @@ func newPrintCommand(fs afero.Fs) *cobra.Command {
 }
 
 // 'rpk redpanda admin config log-level set'.
-func newLogLevelCommand(fs afero.Fs) *cobra.Command {
+func newLogLevelCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "log-level",
 		Short: "Manage a broker's log level",
 		Args:  cobra.ExactArgs(0),
 	}
 	cmd.AddCommand(
-		newLogLevelSetCommand(fs),
+		newLogLevelSetCommand(fs, p),
 	)
 	return cmd
 }
 
-func newLogLevelSetCommand(fs afero.Fs) *cobra.Command {
+func newLogLevelSetCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var host string
 	var level string
 	var expirySeconds int
@@ -103,7 +102,6 @@ failure of enabling each logger is individually printed.
 `,
 
 		Run: func(cmd *cobra.Command, loggers []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

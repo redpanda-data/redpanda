@@ -10,43 +10,21 @@
 package wasm
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
-	var (
-		configFile     string
-		brokers        []string
-		user           string
-		password       string
-		mechanism      string
-		enableTLS      bool
-		certFile       string
-		keyFile        string
-		truststoreFile string
-	)
-
-	command := &cobra.Command{
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "wasm",
 		Short: "Deploy and remove inline WASM engine scripts",
 	}
-	common.AddKafkaFlags(
-		command,
-		&configFile,
-		&user,
-		&password,
-		&mechanism,
-		&enableTLS,
-		&certFile,
-		&keyFile,
-		&truststoreFile,
-		&brokers,
+	p.InstallKafkaFlags(cmd)
+	cmd.AddCommand(
+		newGenerateCommand(fs),
+		newDeployCommand(fs, p),
+		newRemoveCommand(fs, p),
 	)
-	command.AddCommand(newGenerateCommand(fs))
-	command.AddCommand(newDeployCommand(fs))
-	command.AddCommand(newRemoveCommand(fs))
-
-	return command
+	return cmd
 }

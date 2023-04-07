@@ -18,13 +18,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewRedpandaDarwinCommand(fs afero.Fs) *cobra.Command {
-	command := &cobra.Command{
+func NewRedpandaDarwinCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "redpanda",
 		Short: "Interact with a local or remote Redpanda process",
 	}
-
-	command.AddCommand(admin.NewCommand(fs))
-
-	return command
+	cmd.AddCommand(admin.NewCommand(fs, p))
+	return cmd
 }

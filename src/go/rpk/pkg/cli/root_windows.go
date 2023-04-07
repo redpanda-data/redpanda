@@ -10,10 +10,10 @@
 package cli
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
 // On Windows this is a no-op.
-func addPlatformDependentCmds(fs afero.Fs, cmd *cobra.Command) {
-}
+func addPlatformDependentCmds(fs afero.Fs, p *config.Params, cmd *cobra.Command) {}

@@ -24,39 +24,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCheckCommand(fs afero.Fs) *cobra.Command {
-	var (
-		configFile string
-		timeout    time.Duration
-	)
-	command := &cobra.Command{
+func NewCheckCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	var timeout time.Duration
+	cmd := &cobra.Command{
 		Use:   "check",
 		Short: "Check if system meets redpanda requirements",
-		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
+		Run: func(_ *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			err = executeCheck(fs, cfg, timeout)
 			out.MaybeDie(err, "unable to check: %v", err)
 		},
 	}
-	command.Flags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in $PWD or /etc/redpanda/redpanda.yaml.",
-	)
-	command.Flags().DurationVar(
-		&timeout,
-		"timeout",
-		2000*time.Millisecond,
-		"The maximum amount of time to wait for the checks and tune processes to complete. "+
-			"The value passed is a sequence of decimal numbers, each with optional "+
-			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
-			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
-	)
-	return command
+	cmd.Flags().DurationVar(&timeout, "timeout", 2*time.Second, "The maximum amount of time to wait for the checks and tune process to complete (e.g. 300ms, 1.5s, 2h45m)")
+	return cmd
 }
 
 func executeCheck(

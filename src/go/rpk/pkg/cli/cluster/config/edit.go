@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newEditCommand(fs afero.Fs, all *bool) *cobra.Command {
+func newEditCommand(fs afero.Fs, p *config.Params, all *bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "edit",
 		Short: "Edit cluster configuration properties",
@@ -43,7 +43,6 @@ to edit all properties including these tunables.
 `,
 		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, _ []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

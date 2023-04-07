@@ -22,7 +22,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kadm"
 )
 
-func NewOffsetDeleteCommand(fs afero.Fs) *cobra.Command {
+func NewOffsetDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		fromFile        string
 		topicPartitions []string
@@ -51,7 +51,6 @@ topic_b 0
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

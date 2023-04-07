@@ -26,7 +26,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 )
 
-func newSeekCommand(fs afero.Fs) *cobra.Command {
+func newSeekCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var (
 		to             string
 		toGroup        string
@@ -86,7 +86,6 @@ Seek group G to the beginning of a topic it was not previously consuming:
 `,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

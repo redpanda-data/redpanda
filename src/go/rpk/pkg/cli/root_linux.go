@@ -12,21 +12,26 @@ package cli
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/iotune"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func addPlatformDependentCmds(fs afero.Fs, cmd *cobra.Command) {
-	cmd.AddCommand(redpanda.NewCommand(fs, rp.NewLauncher()))
-	cmd.AddCommand(iotune.NewCommand(fs))
+func addPlatformDependentCmds(fs afero.Fs, p *config.Params, cmd *cobra.Command) {
+	cmd.AddCommand(
+		redpanda.NewCommand(fs, p, rp.NewLauncher()),
+		iotune.NewCommand(fs, p),
+	)
 
 	// deprecated
-	cmd.AddCommand(NewCheckCommand(fs))
-	cmd.AddCommand(NewConfigCommand(fs))
-	cmd.AddCommand(NewModeCommand(fs))
-	cmd.AddCommand(NewStartCommand(fs, rp.NewLauncher()))
-	cmd.AddCommand(NewStatusCommand())
-	cmd.AddCommand(NewStopCommand(fs))
-	cmd.AddCommand(NewTuneCommand(fs))
+	cmd.AddCommand(
+		NewCheckCommand(fs, p),
+		NewConfigCommand(fs, p),
+		NewModeCommand(fs, p),
+		NewStartCommand(fs, p, rp.NewLauncher()),
+		NewStatusCommand(),
+		NewStopCommand(fs, p),
+		NewTuneCommand(fs, p),
+	)
 }

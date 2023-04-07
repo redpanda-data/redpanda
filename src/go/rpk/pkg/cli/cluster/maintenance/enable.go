@@ -22,10 +22,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newEnableCommand(fs afero.Fs) *cobra.Command {
+func newEnableCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var wait bool
 	cmd := &cobra.Command{
-		Use:   "enable <node-id>",
+		Use:   "enable [BROKER-ID]",
 		Short: "Enable maintenance mode for a node",
 		Long: `Enable maintenance mode for a node.
 
@@ -43,7 +43,6 @@ node exists that is already in maintenance mode then an error will be returned.
 				out.Die("invalid node id: %d", nodeID)
 			}
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

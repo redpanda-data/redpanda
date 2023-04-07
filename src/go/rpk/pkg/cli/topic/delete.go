@@ -19,7 +19,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newDeleteCommand(fs afero.Fs) *cobra.Command {
+func newDeleteCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var re bool
 	cmd := &cobra.Command{
 		Use:   "delete [TOPICS...]",
@@ -49,7 +49,6 @@ For example,
 
 		Args: cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, topics []string) {
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

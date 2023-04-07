@@ -10,17 +10,20 @@
 package generate
 
 import (
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
-	command := &cobra.Command{
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "generate [template]",
 		Short: "Generate a configuration template for related services",
 	}
-	command.AddCommand(newGrafanaDashboardCmd())
-	command.AddCommand(newPrometheusConfigCmd(fs))
-	command.AddCommand(newShellCompletionCommand())
-	return command
+	cmd.AddCommand(
+		newGrafanaDashboardCmd(),
+		newPrometheusConfigCmd(fs, p),
+		newShellCompletionCommand(),
+	)
+	return cmd
 }

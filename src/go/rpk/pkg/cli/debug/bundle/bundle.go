@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/docker/go-units"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/kafka"
@@ -25,12 +24,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kgo"
-)
-
-// Use the same date specs as journalctl (see `man journalctl`).
-const (
-	timeHelpText = `(journalctl date format, e.g. YYYY-MM-DD)`
-	outputFlag   = "output"
 )
 
 type bundleParams struct {
@@ -47,26 +40,11 @@ type bundleParams struct {
 	metricsInterval         time.Duration
 }
 
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
+	const outputFlag = "output"
 	var (
-		configFile string
-		outFile    string
-		uploadURL  string
-
-		brokers   []string
-		user      string
-		password  string
-		mechanism string
-		enableTLS bool
-		certFile  string
-		keyFile   string
-		caFile    string
-
-		adminURL       string
-		adminEnableTLS bool
-		adminCertFile  string
-		adminKeyFile   string
-		adminCAFile    string
+		outFile   string
+		uploadURL string
 
 		logsSince     string
 		logsUntil     string
@@ -78,7 +56,7 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 		timeout         time.Duration
 		metricsInterval time.Duration
 	)
-	command := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "bundle",
 		Short: "Collect environment data and create a bundle file for the Redpanda Data support team to inspect",
 		Long:  bundleHelpText,
@@ -86,7 +64,6 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 			path, err := determineFilepath(fs, outFile, cmd.Flags().Changed(outputFlag))
 			out.MaybeDie(err, "unable to determine filepath %q: %v", outFile, err)
 
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -130,87 +107,22 @@ func NewCommand(fs afero.Fs) *cobra.Command {
 			}
 		},
 	}
-	command.Flags().StringVar(
-		&adminURL,
-		config.FlagAdminHosts2,
-		"",
-		"Comma-separated list of admin API addresses (<IP>:<port>)",
-	)
-	command.Flags().StringVar(&adminURL, "admin-url", "", "")
-	command.Flags().MarkDeprecated("admin-url", "use --"+config.FlagAdminHosts2)
 
-	command.Flags().StringVarP(
-		&outFile,
-		outputFlag,
-		"o",
-		"",
-		"The file path where the debug file will be written (default ./<timestamp>-bundle.zip)",
-	)
-	command.Flags().DurationVar(
-		&timeout,
-		"timeout",
-		12*time.Second,
-		"How long to wait for child commands to execute (e.g. '30s', '1.5m')",
-	)
-	command.Flags().DurationVar(
-		&metricsInterval,
-		"metrics-interval",
-		10*time.Second,
-		"Interval between metrics snapshots (e.g. '30s', '1.5m')",
-	)
-	command.Flags().StringVar(
-		&logsSince,
-		"logs-since",
-		"",
-		fmt.Sprintf(`Include log entries on or newer than the specified date. %s`, timeHelpText),
-	)
-	command.Flags().StringVar(
-		&logsUntil,
-		"logs-until",
-		"",
-		fmt.Sprintf(`Include log entries on or older than the specified date. %s`, timeHelpText),
-	)
-	command.Flags().StringVar(
-		&logsSizeLimit,
-		"logs-size-limit",
-		"100MiB",
-		"Read the logs until the given size is reached. Multipliers are also supported, e.g. 3MB, 1GiB",
-	)
-	command.Flags().StringVar(
-		&controllerLogsSizeLimit,
-		"controller-logs-size-limit",
-		"20MB",
-		"Sets the limit of the controller log size that can be stored in the bundle. Multipliers are also supported, e.g. 3MB, 1GiB",
-	)
-	command.Flags().StringVar(
-		&uploadURL,
-		"upload-url",
-		"",
-		"If provided, rpk will upload the bundle to the given URL in addition to creating a copy on disk",
-	)
+	p.InstallKafkaFlags(cmd)
+	p.InstallAdminFlags(cmd)
 
-	command.Flags().StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
+	f := cmd.Flags()
+	f.StringVarP(&outFile, outputFlag, "o", "", "The file path where the debug file will be written (default ./<timestamp>-bundle.zip)")
+	f.DurationVar(&timeout, "timeout", 12*time.Second, "How long to wait for child commands to execute (e.g. 30s, 1.5m)")
+	f.DurationVar(&metricsInterval, "metrics-interval", 10*time.Second, "Interval between metrics snapshots (e.g. 30s, 1.5m)")
+	f.StringVar(&logsSince, "logs-since", "", "Include log entries on or newer than the specified date (journalctl date format, e.g. YYYY-MM-DD")
+	f.StringVar(&logsUntil, "logs-until", "", "Include log entries on or older than the specified date (journalctl date format, e.g. YYYY-MM-DD")
+	f.StringVar(&logsSizeLimit, "logs-size-limit", "100MiB", "Read the logs until the given size is reached (e.g. 3MB, 1GiB)")
+	f.StringVar(&controllerLogsSizeLimit, "controller-logs-size-limit", "20MB", "The size limit of the controller logs that can be stored in the bundle (e.g. 3MB, 1GiB)")
+	f.StringVar(&uploadURL, "upload-url", "", "If provided, where to upload the bundle in addition to creating a copy on disk")
+	f.StringVarP(&namespace, "namespace", "n", "redpanda", "The namespace to use to collect the resources from (k8s only)")
 
-	common.AddKafkaFlags(
-		command,
-		&configFile,
-		&user,
-		&password,
-		&mechanism,
-		&enableTLS,
-		&certFile,
-		&keyFile,
-		&caFile,
-		&brokers,
-	)
-	common.AddAdminAPITLSFlags(command,
-		&adminEnableTLS,
-		&adminCertFile,
-		&adminKeyFile,
-		&adminCAFile,
-	)
-
-	return command
+	return cmd
 }
 
 // uploadBundle will send the file located in 'filepath' by issuing a PUT

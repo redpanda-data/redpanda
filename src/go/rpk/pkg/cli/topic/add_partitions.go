@@ -23,7 +23,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kerr"
 )
 
-func newAddPartitionsCommand(fs afero.Fs) *cobra.Command {
+func newAddPartitionsCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	var num int
 	var force bool
 	cmd := &cobra.Command{
@@ -39,7 +39,6 @@ func newAddPartitionsCommand(fs afero.Fs) *cobra.Command {
 					}
 				}
 			}
-			p := config.ParamsFromCommand(cmd)
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 

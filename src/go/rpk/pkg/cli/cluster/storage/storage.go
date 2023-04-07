@@ -11,18 +11,18 @@ package storage
 
 import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/storage/recovery"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewCommand(fs afero.Fs) *cobra.Command {
+func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "storage",
 		Short: "Manage the cluster storage",
 	}
-
 	cmd.AddCommand(
-		recovery.NewCommand(fs),
+		recovery.NewCommand(fs, p),
 	)
 	return cmd
 }
