@@ -154,7 +154,8 @@ cluster_health_report health_monitor_backend::build_cluster_report(
     return cluster_health_report{
       .raft0_leader = _raft0->get_leader_id(),
       .node_states = std::move(statuses),
-      .node_reports = std::move(reports)};
+      .node_reports = std::move(reports),
+      .bytes_in_cloud_storage = _bytes_in_cloud_storage};
 }
 
 void health_monitor_backend::refresh_nodes_status() {
@@ -378,6 +379,7 @@ health_monitor_backend::dispatch_refresh_cluster_health_request(
         _reports.emplace(id, std::move(n_report));
     }
 
+    _bytes_in_cloud_storage = reply.value().report->bytes_in_cloud_storage;
     _reports_disk_health = cluster_disk_health;
     _last_refresh = ss::lowres_clock::now();
     co_return make_error_code(errc::success);
