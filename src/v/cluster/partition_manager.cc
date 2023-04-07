@@ -114,26 +114,52 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::with_learner_recovery_throttle enable_learner_recovery_throttle) {
     gate_guard guard(_gate);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
-    auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]
+    auto
+      [logs_recovered,
+       clean_download,
+       min_offset,
+       max_offset,
+       manifest,
+       ot_state]
       = dl_result;
     if (logs_recovered) {
         vlog(
           clusterlog.info,
           "Log download complete, ntp: {}, rev: {}, "
-          "min_kafka_offset: {}, max_kafka_offset: {}",
+          "min_offset: {}, max_offset: {}",
           ntp_cfg.ntp(),
           ntp_cfg.get_revision(),
-          min_kafka_offset,
-          max_kafka_offset);
+          min_offset,
+          max_offset);
+        if (!clean_download) {
+            vlog(
+              clusterlog.error,
+              "{} partition recovery is not clean, try to delete the topic "
+              "and retry recovery",
+              ntp_cfg.ntp());
+            manifest.disable_permanently();
+        }
 
-        if (
-          min_kafka_offset == max_kafka_offset
-          && min_kafka_offset == model::offset{0}) {
+        if (min_offset == max_offset && min_offset == model::offset{0}) {
+            // Here two cases are possible:
+            // - Recover failed and we didn't download anything.
+            //   In this case we need to create empty partition and disable
+            //   updates to archival STM to preserve data.
+            // - The manifest was empty. We don't need to do anything, just
+            //   start from an empty slate.
             vlog(
               clusterlog.info,
               "{} no data in the downloaded segments, empty partition will be "
               "created",
               ntp_cfg.ntp());
+
+            if (!clean_download) {
+                // No data was downloaded because of error, in this case it's
+                // not safe to upload data to the cloud. The snapshot should be
+                // created to disable uploads.
+                co_await archival_metadata_stm::make_snapshot(
+                  ntp_cfg, manifest, max_offset);
+            }
         } else {
             // Manifest is not empty since we were able to recovery
             // some data.
@@ -150,22 +176,40 @@ ss::future<consensus_ptr> partition_manager::manage(
               "Last included term: {}, ",
               ntp_cfg.ntp(),
               group,
-              min_kafka_offset,
-              max_kafka_offset,
+              min_offset,
+              max_offset,
               last_included_term);
+
+            if (min_offset > max_offset) {
+                // No data was downloaded. In this case we're doing shallow
+                // recovery. The dl_result is not populated with data yet so we
+                // have to provide initial delta value.
+                vassert(
+                  manifest.last_segment().has_value(), "Manifest is empty");
+
+                min_offset = model::next_offset(manifest.get_last_offset());
+                max_offset = min_offset;
+                co_await seastar::recursive_touch_directory(
+                  ntp_cfg.work_directory());
+            }
+
+            dl_result.ot_state->add_absolute_delta(
+              model::next_offset(manifest.get_last_offset()),
+              manifest.last_segment()->delta_offset_end);
 
             co_await raft::details::bootstrap_pre_existing_partition(
               _storage,
               ntp_cfg,
               group,
-              min_kafka_offset,
-              max_kafka_offset,
+              min_offset,
+              max_offset,
               last_included_term,
-              initial_nodes);
+              initial_nodes,
+              dl_result.ot_state);
 
             // Initialize archival snapshot
             co_await archival_metadata_stm::make_snapshot(
-              ntp_cfg, manifest, max_kafka_offset);
+              ntp_cfg, manifest, max_offset);
         }
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
@@ -198,12 +242,12 @@ ss::future<consensus_ptr> partition_manager::manage(
     _raft_table.emplace(group, p);
 
     /*
-     * part of the node leadership draining infrastructure. when a node is in a
-     * drianing state new groups might be created since the controller will
-     * still be active as a follower. however, if draining is almost complete
-     * then new groups may not be noticed. marking as blocked should be done
-     * atomically with adding the partition to the ntp_table index above for
-     * proper synchronization with the drianing manager.
+     * part of the node leadership draining infrastructure. when a node is
+     * in a drianing state new groups might be created since the controller
+     * will still be active as a follower. however, if draining is almost
+     * complete then new groups may not be noticed. marking as blocked
+     * should be done atomically with adding the partition to the ntp_table
+     * index above for proper synchronization with the drianing manager.
      */
     if (_block_new_leadership) {
         p->block_new_leadership();
@@ -307,7 +351,8 @@ ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
     auto partition = get(ntp);
     if (!partition) {
         return ss::make_exception_future<>(std::invalid_argument(fmt::format(
-          "Can not shutdown partition. NTP {} is not present in partition "
+          "Can not shutdown partition. NTP {} is not present in "
+          "partition "
           "manager",
           ntp)));
     }

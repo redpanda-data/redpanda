@@ -319,6 +319,10 @@ public:
 
     ss::shared_ptr<util::mem_tracker> mem_tracker() { return _mem_tracker; }
 
+    /// Transition manifest into such state which makes any uploads or reuploads
+    /// impossible.
+    void disable_permanently();
+
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file

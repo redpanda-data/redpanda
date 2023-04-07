@@ -443,6 +443,11 @@ uint64_t partition_manifest::cloud_log_size() const {
       });
 }
 
+void partition_manifest::disable_permanently() {
+    _last_offset = model::offset::max();
+    _last_uploaded_compacted_offset = model::offset::max();
+}
+
 bool partition_manifest::contains(const partition_manifest::key& key) const {
     return _segments.contains(key);
 }
