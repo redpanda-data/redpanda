@@ -32,11 +32,11 @@ struct offset_commit_request final {
     // set during request processing after mapping group to ntp
     model::ntp ntp;
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -67,7 +67,7 @@ struct offset_commit_response final {
         }
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 

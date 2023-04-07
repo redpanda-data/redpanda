@@ -14,7 +14,7 @@
 #include "kafka/client/test/utils.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
-#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/wire.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
@@ -38,8 +38,8 @@ make_record_set(model::offset offset, size_t count) {
         return std::nullopt;
     }
     iobuf record_set;
-    auto writer{kafka::response_writer(record_set)};
-    kafka::writer_serialize_batch(writer, make_batch(offset, count));
+    auto writer{kafka::protocol::response_writer(record_set)};
+    kafka::protocol::writer_serialize_batch(writer, make_batch(offset, count));
     return kafka::batch_reader{std::move(record_set)};
 }
 

@@ -34,11 +34,11 @@ struct find_coordinator_request final {
         .key_type = key_type,
       }) {}
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -72,7 +72,7 @@ struct find_coordinator_response final {
     explicit find_coordinator_response(error_code error)
       : find_coordinator_response(error, model::node_id(-1), "", -1) {}
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 

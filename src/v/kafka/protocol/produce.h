@@ -48,11 +48,11 @@ struct produce_request final {
         data.topics = std::move(topics);
     }
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         data.encode(writer, version);
     }
 
-    void decode(request_reader& reader, api_version version) {
+    void decode(protocol::request_reader& reader, api_version version) {
         data.decode(reader, version);
     }
 
@@ -84,7 +84,7 @@ struct produce_response final {
     // Used for usage/metering to relay this value back to the connection layer
     size_t internal_topic_bytes{0};
 
-    void encode(response_writer& writer, api_version version) {
+    void encode(protocol::response_writer& writer, api_version version) {
         // normalize errors
         for (auto& r : data.responses) {
             for (auto& p : r.partitions) {

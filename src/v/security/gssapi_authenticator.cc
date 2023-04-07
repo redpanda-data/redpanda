@@ -11,7 +11,7 @@
 
 #include "bytes/bytes.h"
 #include "config/configuration.h"
-#include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/wire.h"
 #include "security/acl.h"
 #include "security/errc.h"
 #include "security/gssapi.h"

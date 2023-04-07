@@ -12,7 +12,7 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_for_leader_epoch.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/wire.h"
 #include "kafka/server/handlers/produce.h"
 #include "kafka/server/snc_quota_manager.h"
 #include "model/fundamental.h"
