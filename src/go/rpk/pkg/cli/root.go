@@ -96,6 +96,7 @@ func Execute() {
 		}
 	})
 
+	p := new(config.Params)
 	root := &cobra.Command{
 		Use:   "rpk",
 		Short: "rpk is the Redpanda CLI & toolbox",
@@ -105,8 +106,8 @@ func Execute() {
 			DisableDefaultCmd: true,
 		},
 	}
-	root.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose,
-		"v", false, "Enable verbose logging (default: false)")
+	root.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose, "v", false, "Enable verbose logging (default: false)")
+	root.PersistentFlags().StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
 
 	root.AddCommand(
 		acl.NewCommand(fs),
