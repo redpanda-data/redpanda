@@ -13,9 +13,11 @@
 
 #include "cluster/cluster_uuid.h"
 #include "cluster/commands.h"
+#include "cluster/feature_backend.h"
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
 #include "cluster/types.h"
+#include "features/feature_table.h"
 #include "security/credential_store.h"
 
 namespace cluster {
@@ -35,10 +37,14 @@ namespace cluster {
 bootstrap_backend::bootstrap_backend(
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<storage::api>& storage,
-  ss::sharded<members_manager>& members_manager)
+  ss::sharded<members_manager>& members_manager,
+  ss::sharded<features::feature_table>& feature_table,
+  ss::sharded<feature_backend>& feature_backend)
   : _credentials(credentials)
   , _storage(storage)
-  , _members_manager(members_manager) {}
+  , _members_manager(members_manager)
+  , _feature_table(feature_table)
+  , _feature_backend(feature_backend) {}
 
 namespace {
 
@@ -146,6 +152,26 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
     // Apply initial node UUID to ID map
     _members_manager.local().apply_initial_node_uuid_map(
       cmd.value.node_ids_by_uuid);
+
+    // Apply cluster version to feature table: this activates features without
+    // waiting for feature_manager to come up.
+    if (cmd.value.founding_version != invalid_version) {
+        if (
+          _feature_table.local().get_active_version()
+          < cmd.value.founding_version) {
+            co_await _feature_table.invoke_on_all(
+              [v = cmd.value.founding_version](features::feature_table& ft) {
+                  ft.bootstrap_active_version(v);
+              });
+        }
+
+        // If we didn't already save a snapshot, create it so that subsequent
+        // startups see their feature table version immediately, without
+        // waiting to replay the bootstrap message.
+        if (!_feature_backend.local().has_snapshot()) {
+            co_await _feature_backend.local().save_snapshot();
+        }
+    }
 
     // Apply cluster_uuid
     co_await _storage.invoke_on_all(

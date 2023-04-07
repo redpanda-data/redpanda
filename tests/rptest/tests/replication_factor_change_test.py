@@ -10,6 +10,7 @@
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
 from rptest.clients.types import TopicSpec
+from rptest.util import expect_exception
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool, RpkException
@@ -59,16 +60,24 @@ class ReplicationFactorChangeTest(RedpandaTest):
     def check_error_test(self):
         self.replication_factor = 3
         new_rf = -1
-        self._rpk.alter_topic_config(self.topic_name, self.rf_property, new_rf)
+
+        with expect_exception(RpkException, lambda e: "Invalid" in e.msg):
+            self._rpk.alter_topic_config(self.topic_name, self.rf_property,
+                                         new_rf)
+
         assert len(self.admin.list_reconfigurations()) == 0
         self.check_rf(self.replication_factor)
 
         new_rf = 0
-        self._rpk.alter_topic_config(self.topic_name, self.rf_property, new_rf)
+        with expect_exception(RpkException, lambda e: "Invalid" in e.msg):
+            self._rpk.alter_topic_config(self.topic_name, self.rf_property,
+                                         new_rf)
         assert len(self.admin.list_reconfigurations()) == 0
         self.check_rf(self.replication_factor)
 
         new_rf = 10000
-        self._rpk.alter_topic_config(self.topic_name, self.rf_property, new_rf)
+        with expect_exception(RpkException, lambda e: "Invalid" in e.msg):
+            self._rpk.alter_topic_config(self.topic_name, self.rf_property,
+                                         new_rf)
         assert len(self.admin.list_reconfigurations()) == 0
         self.check_rf(self.replication_factor)

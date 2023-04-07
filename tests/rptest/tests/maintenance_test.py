@@ -21,11 +21,16 @@ import requests
 
 
 class MaintenanceTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=10, replication_factor=3),
-              TopicSpec(partition_count=20, replication_factor=3))
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # Vary partition count relative to num_cpus. This is to ensure that
+        # leadership is moved back to a node that exits maintenance.
+        num_cpus = self.redpanda.get_node_cpu_count()
+        self.topics = (TopicSpec(partition_count=num_cpus * 3,
+                                 replication_factor=3),
+                       TopicSpec(partition_count=num_cpus * 3,
+                                 replication_factor=3))
         self.admin = Admin(self.redpanda)
         self.rpk = RpkTool(self.redpanda)
         self._use_rpk = True

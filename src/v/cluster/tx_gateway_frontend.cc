@@ -234,42 +234,15 @@ ss::future<> tx_gateway_frontend::stop() {
       [] { vlog(txlog.debug, "Tx coordinator is stopped"); });
 }
 
-ss::future<std::optional<model::node_id>> tx_gateway_frontend::get_tx_broker() {
-    auto has_topic = ss::make_ready_future<bool>(true);
-
-    if (!_metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
-        has_topic = try_create_tx_topic();
+ss::future<std::optional<model::node_id>>
+tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
+    if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
+        if (!co_await try_create_tx_topic()) {
+            co_return std::nullopt;
+        }
     }
 
-    auto timeout = ss::lowres_clock::now()
-                   + config::shard_local_cfg().wait_for_leader_timeout_ms();
-
-    return has_topic.then([this, timeout](bool does_topic_exist) {
-        if (!does_topic_exist) {
-            return ss::make_ready_future<std::optional<model::node_id>>(
-              std::nullopt);
-        }
-
-        auto md = _metadata_cache.local().contains(model::tx_manager_nt);
-        if (!md) {
-            return ss::make_ready_future<std::optional<model::node_id>>(
-              std::nullopt);
-        }
-        return _metadata_cache.local()
-          .get_leader(model::tx_manager_ntp, timeout)
-          .then([](model::node_id leader) {
-              return std::optional<model::node_id>(leader);
-          })
-          .handle_exception([](std::exception_ptr e) {
-              vlog(
-                txlog.warn,
-                "can't find find a leader of tx manager's topic {}",
-                e);
-              return ss::make_ready_future<std::optional<model::node_id>>(
-                std::nullopt);
-          });
-    });
+    co_return _metadata_cache.local().get_leader_id(model::tx_manager_ntp);
 }
 
 ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
@@ -507,14 +480,6 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
       txlog.trace, "processing name:try_abort, pid:{}, tx_seq:{}", pid, tx_seq);
 
     auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
-
-    auto retries = _metadata_dissemination_retries;
-    auto delay_ms = _metadata_dissemination_retry_delay_ms;
-    auto aborted = false;
-    while (!aborted && !shard && 0 < retries--) {
-        aborted = !co_await sleep_abortable(delay_ms, _as);
-        shard = _shard_table.local().shard_for(model::tx_manager_ntp);
-    }
 
     if (!shard) {
         vlog(
@@ -1309,7 +1274,8 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
             bool expected_ec = br.ec == tx_errc::leader_not_found
                                || br.ec == tx_errc::shard_not_found
                                || br.ec == tx_errc::stale
-                               || br.ec == tx_errc::timeout;
+                               || br.ec == tx_errc::timeout
+                               || br.ec == tx_errc::partition_not_exists;
             should_abort = should_abort
                            || (br.ec != tx_errc::none && !expected_ec);
             should_retry = should_retry || expected_ec;
@@ -3005,6 +2971,33 @@ tx_gateway_frontend::get_ongoing_tx(
                   old_tx.etag,
                   tx.pid);
                 co_return tx_errc::invalid_txn_state;
+            }
+
+            if (old_tx.status == tm_transaction::tx_status::ongoing) {
+                if (old_tx.tx_seq() == tx.tx_seq()) {
+                    // previous leader attempted a commit/about, the operation
+                    // returned indecisive error (the cached ongoing wasn't
+                    // updated) but the operation actually passed (current
+                    // leader observes the commit/abort)"
+                    old_tx = tx;
+                } else if (old_tx.tx_seq() != tx.tx_seq() + 1) {
+                    vlog(
+                      txlog.warn,
+                      "Cached tx (tx:{} pid:{} etag:{} tx_seq:{} status:{}) "
+                      "isn't"
+                      "aligned with persisted tx (pid:{} etag:{} tx_seq:{} "
+                      "status:{}))",
+                      old_tx.id,
+                      old_tx.pid,
+                      old_tx.etag,
+                      old_tx.tx_seq,
+                      old_tx.get_status(),
+                      tx.pid,
+                      tx.etag,
+                      tx.tx_seq,
+                      tx.get_status());
+                    co_return tx_errc::invalid_txn_state;
+                }
             }
 
             old_tx.etag = expected_term;

@@ -64,8 +64,8 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     md.replica_revisions.reserve(cmd.value.assignments.size());
     for (auto& pas : md.get_assignments()) {
         auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
+        _partition_count++;
         for (auto& r : pas.replicas) {
-            _partition_count++;
             md.replica_revisions[pas.id][r.node_id] = model::revision_id(
               offset);
         }
@@ -309,23 +309,23 @@ topic_table::apply(cancel_moving_partition_replicas_cmd cmd, model::offset o) {
         co_return errc::no_update_in_progress;
     }
     switch (in_progress_it->second.get_state()) {
-    case in_progress_state::update_requested:
+    case reconfiguration_state::in_progress:
         break;
-    case in_progress_state::cancel_requested:
+    case reconfiguration_state::cancelled:
         // partition reconfiguration already cancelled, only allow force
         // cancelling it
         if (cmd.value.force == force_abort_update::no) {
             co_return errc::no_update_in_progress;
         }
         break;
-    case in_progress_state::force_cancel_requested:
+    case reconfiguration_state::force_cancelled:
         // partition reconfiguration already cancelled forcibly
         co_return errc::no_update_in_progress;
     }
 
     in_progress_it->second.set_state(
-      cmd.value.force ? in_progress_state::force_cancel_requested
-                      : in_progress_state::cancel_requested);
+      cmd.value.force ? reconfiguration_state::force_cancelled
+                      : reconfiguration_state::cancelled);
 
     auto replicas = current_assignment_it->replicas;
     // replace replica set with set from in progress operation
@@ -547,6 +547,7 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
         co_return make_error_code(errc::topic_not_exists);
     }
     auto& properties = tp->second.get_configuration().properties;
+    auto properties_snapshot = properties;
     auto& overrides = cmd.value;
     /**
      * Update topic properties
@@ -575,7 +576,10 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       properties.remote_delete,
       overrides.remote_delete,
       storage::ntp_config::default_remote_delete);
-
+    // no configuration change, no need to generate delta
+    if (properties == properties_snapshot) {
+        co_return errc::success;
+    }
     // generate deltas for controller backend
     std::vector<topic_table_delta> deltas;
     deltas.reserve(tp->second.get_assignments().size());
@@ -939,7 +943,7 @@ void topic_table::change_partition_replicas(
       in_progress_update(
         current_assignment.replicas,
         new_assignment,
-        in_progress_state::update_requested,
+        reconfiguration_state::in_progress,
         model::revision_id(o),
         // snapshot replicas revisions
         revisions_it->second,
@@ -975,7 +979,7 @@ void topic_table::change_partition_replicas(
               in_progress_update(
                 current_assignment.replicas,
                 new_assignment,
-                in_progress_state::update_requested,
+                reconfiguration_state::in_progress,
                 model::revision_id(o),
                 // empty replicas revisions
                 {},
@@ -1015,17 +1019,19 @@ void topic_table::change_partition_replicas(
       revisions_it->second);
 }
 
-std::ostream&
-operator<<(std::ostream& o, topic_table::in_progress_state update) {
-    switch (update) {
-    case topic_table::in_progress_state::update_requested:
-        return o << "update_requested";
-    case topic_table::in_progress_state::cancel_requested:
-        return o << "cancel_requested";
-    case topic_table::in_progress_state::force_cancel_requested:
-        return o << "force_cancel_requested";
+size_t topic_table::get_node_partition_count(model::node_id id) const {
+    size_t cnt = 0;
+    // NOTE: if this loop will cause reactor stalls with large partition counts
+    // we may consider making this method asynchronous
+    for (const auto& [_, tp_md] : _topics) {
+        cnt += std::count_if(
+          tp_md.get_assignments().begin(),
+          tp_md.get_assignments().end(),
+          [id](const partition_assignment& p_as) {
+              return contains_node(p_as.replicas, id);
+          });
     }
-    __builtin_unreachable();
+    return cnt;
 }
 
 } // namespace cluster

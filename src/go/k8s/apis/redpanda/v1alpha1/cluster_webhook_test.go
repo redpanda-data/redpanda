@@ -14,8 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
-	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
+
+	"github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
 //nolint:funlen // this is ok for a test
@@ -53,7 +54,7 @@ func TestDefault(t *testing.T) {
 			configAlreadyPresent:                true,
 		},
 	}
-	fields := []string{"redpanda.default_topic_replications", "redpanda.transaction_coordinator_replication", "redpanda.id_allocator_replication"}
+	fields := []string{"redpanda.internal_topic_replication_factor"}
 	for _, tt := range tests {
 		for _, field := range fields {
 			t.Run(tt.name, func(t *testing.T) {
@@ -63,7 +64,7 @@ func TestDefault(t *testing.T) {
 						Namespace: "",
 					},
 					Spec: v1alpha1.ClusterSpec{
-						Replicas:      pointer.Int32Ptr(tt.replicas),
+						Replicas:      pointer.Int32(tt.replicas),
 						Configuration: v1alpha1.RedpandaConfig{},
 					},
 				}
@@ -89,7 +90,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas:      pointer.Int32Ptr(1),
+				Replicas:      pointer.Int32(1),
 				Configuration: v1alpha1.RedpandaConfig{},
 				Resources: v1alpha1.RedpandaResourceRequirements{
 					ResourceRequirements: corev1.ResourceRequirements{
@@ -112,7 +113,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32Ptr(1),
+				Replicas: pointer.Int32(1),
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{},
 				},
@@ -137,7 +138,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32Ptr(1),
+				Replicas: pointer.Int32(1),
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
 						Port: 999,
@@ -164,7 +165,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32Ptr(1),
+				Replicas: pointer.Int32(1),
 				Configuration: v1alpha1.RedpandaConfig{
 					SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
 						External: &v1alpha1.SchemaRegistryExternalConnectivityConfig{
@@ -193,7 +194,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32Ptr(1),
+				Replicas: pointer.Int32(1),
 			},
 		}
 		redpandaCluster.Default()
@@ -207,7 +208,7 @@ func TestDefault(t *testing.T) {
 				Namespace: "",
 			},
 			Spec: v1alpha1.ClusterSpec{
-				Replicas: pointer.Int32Ptr(1),
+				Replicas: pointer.Int32(1),
 				LicenseRef: &v1alpha1.SecretKeyRef{
 					Name:      "test",
 					Namespace: "",
@@ -216,6 +217,19 @@ func TestDefault(t *testing.T) {
 		}
 		redpandaCluster.Default()
 		assert.Equal(t, v1alpha1.DefaultLicenseSecretKey, redpandaCluster.Spec.LicenseRef.Key)
+	})
+
+	t.Run("when restart config is nil, set UnderReplicatedPartitionThreshold to 0", func(t *testing.T) {
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "",
+			},
+			Spec: v1alpha1.ClusterSpec{},
+		}
+		redpandaCluster.Default()
+		assert.NotNil(t, redpandaCluster.Spec.RestartConfig)
+		assert.Equal(t, 0, redpandaCluster.Spec.RestartConfig.UnderReplicatedPartitionThreshold)
 	})
 }
 
@@ -229,7 +243,7 @@ func TestValidateUpdate(t *testing.T) {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:      pointer.Int32Ptr(replicas3),
+			Replicas:      pointer.Int32(replicas3),
 			Configuration: v1alpha1.RedpandaConfig{},
 			Resources: v1alpha1.RedpandaResourceRequirements{
 				ResourceRequirements: corev1.ResourceRequirements{
@@ -311,7 +325,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas: pointer.Int32Ptr(replicas2),
+			Replicas: pointer.Int32(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124, AuthenticationMethod: "none"}},
 				AdminAPI:       []v1alpha1.AdminAPI{{Port: 125}},
@@ -631,6 +645,18 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		err := c.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
+	})
+
+	t.Run("cluster can be deleted even if licenseRef not found", func(t *testing.T) {
+		license := redpandaCluster.DeepCopy()
+		license.Spec.LicenseRef = &v1alpha1.SecretKeyRef{Name: "notfound", Namespace: "notfound"}
+
+		// Set cluster to deleting state
+		now := metav1.Now()
+		license.SetDeletionTimestamp(&now)
+
+		err := license.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
 	})
 
 	decreaseCases := []struct {
@@ -1377,7 +1403,7 @@ func validRedpandaCluster() *v1alpha1.Cluster {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas: pointer.Int32Ptr(1),
+			Replicas: pointer.Int32(1),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:       []v1alpha1.KafkaAPI{{Port: 124, AuthenticationMethod: "none"}},
 				AdminAPI:       []v1alpha1.AdminAPI{{Port: 126}},

@@ -318,7 +318,10 @@ class RpkTool:
 
     def alter_topic_config(self, topic, set_key, set_value):
         cmd = ['alter-config', topic, "--set", f"{set_key}={set_value}"]
-        self._run_topic(cmd)
+        out = self._run_topic(cmd)
+        if 'INVALID' in out:
+            raise RpkException(
+                f"Invalid topic config {topic} {set_key}={set_value}")
 
     def delete_topic_config(self, topic, key):
         cmd = ['alter-config', topic, "--delete", key]
@@ -440,9 +443,13 @@ class RpkTool:
                 elif "NOT_COORDINATOR" in e.msg:
                     # Transient, retry
                     return None
-                elif "Kafka replied that group" in e.msg:
+                elif "broker replied that group" in e.msg:
                     # Transient, return None to retry
-                    # e.g. Kafka replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
+                    # e.g. broker replied that group repeat01 has broker coordinator 8, but did not reply with that broker in the broker list
+                    return None
+                elif "connection refused" in e.msg:
+                    # Metadata directed us to a broker that is uncontactable, perhaps
+                    # it was just stopped.  Retry should succeed once metadata updates.
                     return None
                 else:
                     raise

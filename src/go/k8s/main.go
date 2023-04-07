@@ -10,16 +10,13 @@ package main
 
 import (
 	"flag"
+	"log"
+	"net/http"
+	"net/http/pprof"
 	"os"
 	"time"
 
-	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
-	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
-	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
-	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
-	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
-	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
-	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
+	cmapiv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -29,6 +26,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	redpandacontrollers "github.com/redpanda-data/redpanda/src/go/k8s/controllers/redpanda"
+	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
+	consolepkg "github.com/redpanda-data/redpanda/src/go/k8s/pkg/console"
+	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
+	redpandawebhooks "github.com/redpanda-data/redpanda/src/go/k8s/webhooks/redpanda"
 )
 
 const (
@@ -53,13 +57,15 @@ func main() {
 	var (
 		clusterDomain               string
 		metricsAddr                 string
-		enableLeaderElection        bool
 		probeAddr                   string
+		pprofAddr                   string
+		enableLeaderElection        bool
 		webhookEnabled              bool
 		configuratorBaseImage       string
 		configuratorTag             string
 		configuratorImagePullPolicy string
 		decommissionWaitInterval    time.Duration
+		metricsTimeout              time.Duration
 		restrictToRedpandaVersion   string
 
 		// allowPVCDeletion controls the PVC deletion feature in the Cluster custom resource.
@@ -67,10 +73,12 @@ func main() {
 		// does not exist, or has the NoExecute taint. This is intended to support the rancher.io/local-path
 		// storage driver.
 		allowPVCDeletion bool
+		debug            bool
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&pprofAddr, "pprof-bind-address", ":8082", "The address the metric endpoint binds to.")
 	flag.StringVar(&clusterDomain, "cluster-domain", "cluster.local", "Set the Kubernetes local domain (Kubelet's --cluster-domain)")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -80,10 +88,13 @@ func main() {
 	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
 	flag.StringVar(&configuratorImagePullPolicy, "configurator-image-pull-policy", "Always", "Set the configurator image pull policy")
 	flag.DurationVar(&decommissionWaitInterval, "decommission-wait-interval", 8*time.Second, "Set the time to wait for a node decommission to happen in the cluster")
+	flag.DurationVar(&metricsTimeout, "metrics-timeout", 8*time.Second, "Set the timeout for a checking metrics Admin API endpoint. If set to 0, then the 2 seconds default will be used")
 	flag.BoolVar(&redpandav1alpha1.AllowDownscalingInWebhook, "allow-downscaling", false, "Allow to reduce the number of replicas in existing clusters (alpha feature)")
 	flag.BoolVar(&allowPVCDeletion, "allow-pvc-deletion", false, "Allow the operator to delete PVCs for Pods assigned to failed or missing Nodes (alpha feature)")
 	flag.BoolVar(&redpandav1alpha1.AllowConsoleAnyNamespace, "allow-console-any-ns", false, "Allow to create Console in any namespace. Allowing this copies Redpanda SchemaRegistry TLS Secret to namespace (alpha feature)")
 	flag.StringVar(&restrictToRedpandaVersion, "restrict-redpanda-version", "", "Restrict management of clusters to those with this version")
+	flag.StringVar(&redpandav1alpha1.SuperUsersPrefix, "superusers-prefix", "", "Prefix to add in username of superusers managed by operator. This will only affect new clusters, enabling this will not add prefix to existing clusters (alpha feature)")
+	flag.BoolVar(&debug, "debug", false, "Set to enable debugging")
 
 	opts := zap.Options{
 		Development: true,
@@ -94,6 +105,23 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if debug {
+		go func() {
+			pprofMux := http.NewServeMux()
+			pprofMux.HandleFunc("/debug/pprof/", pprof.Index)
+			pprofMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+			pprofMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+			pprofMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+			pprofMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+			pprofServer := &http.Server{
+				Addr:              pprofAddr,
+				Handler:           pprofMux,
+				ReadHeaderTimeout: 3 * time.Second,
+			}
+			log.Fatal(pprofServer.ListenAndServe())
+		}()
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
@@ -120,6 +148,7 @@ func main() {
 		Scheme:                    mgr.GetScheme(),
 		AdminAPIClientFactory:     adminutils.NewInternalAdminAPI,
 		DecommissionWaitInterval:  decommissionWaitInterval,
+		MetricsTimeout:            metricsTimeout,
 		RestrictToRedpandaVersion: restrictToRedpandaVersion,
 	}).WithClusterDomain(clusterDomain).WithConfiguratorSettings(configurator).WithAllowPVCDeletion(allowPVCDeletion).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")

@@ -28,6 +28,7 @@ schema_template = '{"type":"record","name":"record_%s","fields":[{"type":"string
 class WriteWorker(threading.Thread):
     def __init__(self, name, count, node_names):
         super(WriteWorker, self).__init__()
+        self.daemon = True
         self.name = name
         self.count = count
         self.schema_counter = 1

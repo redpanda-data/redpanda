@@ -162,6 +162,9 @@ private:
 
     ss::future<> cluster_creation_hook(cluster_discovery& discovery);
 
+    // Checks configuration invariants stored in kvstore
+    ss::future<> validate_configuration_invariants();
+
     config_manager::preload_result _config_preload;
 
     ss::sharded<ss::abort_source> _as;                     // instance per core

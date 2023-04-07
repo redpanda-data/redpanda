@@ -126,6 +126,8 @@ public:
 
     const model::ntp& ntp() const { return _raft->ntp(); }
 
+    storage::log log() const { return _raft->log(); }
+
     ss::future<std::optional<storage::timequery_result>>
       timequery(storage::timequery_config);
 
@@ -201,11 +203,11 @@ public:
 
     ss::shared_ptr<cluster::tm_stm> tm_stm() { return _tm_stm; }
 
-    ss::future<std::vector<rm_stm::tx_range>>
+    ss::future<fragmented_vector<rm_stm::tx_range>>
     aborted_transactions(model::offset from, model::offset to) {
         if (!_rm_stm) {
-            return ss::make_ready_future<std::vector<rm_stm::tx_range>>(
-              std::vector<rm_stm::tx_range>());
+            return ss::make_ready_future<fragmented_vector<rm_stm::tx_range>>(
+              fragmented_vector<rm_stm::tx_range>());
         }
         return _rm_stm->aborted_transactions(from, to);
     }
@@ -239,8 +241,9 @@ public:
     /// Starting offset in the object store
     model::offset start_cloud_offset() const;
 
-    /// Last available cloud offset
-    model::offset last_cloud_offset() const;
+    /// Kafka offset one past the end of the last offset (i.e. the high
+    /// watermark as reported by object storage).
+    model::offset next_cloud_offset() const;
 
     /// Create a reader that will fetch data from remote storage
     ss::future<storage::translating_reader> make_cloud_reader(
@@ -272,6 +275,12 @@ public:
     consensus_ptr raft() const { return _raft; }
 
 private:
+    ss::future<std::optional<storage::timequery_result>>
+      cloud_storage_timequery(storage::timequery_config);
+
+    ss::future<std::optional<storage::timequery_result>>
+      local_timequery(storage::timequery_config);
+
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _log_eviction_stm;
     ss::shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;

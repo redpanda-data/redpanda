@@ -17,6 +17,7 @@
 #include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
+#include "net/types.h"
 #include "utils/to_string.h"
 #include "vlog.h"
 
@@ -107,10 +108,10 @@ process_result_stages process_generic(
     return handler->handle(std::move(ctx), g);
 }
 
-class kafka_authentication_exception : public std::runtime_error {
+class kafka_authentication_exception : public net::authentication_exception {
 public:
     explicit kafka_authentication_exception(const std::string& m)
-      : std::runtime_error(m) {}
+      : net::authentication_exception(m) {}
 };
 
 /*

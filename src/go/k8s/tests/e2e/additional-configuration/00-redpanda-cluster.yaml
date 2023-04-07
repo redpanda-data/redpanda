@@ -2,10 +2,9 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: additional-configuration
-  namespace: default
 spec:
   image: "vectorized/redpanda"
-  version: "v21.11.2"
+  version: "v22.1.11"
   replicas: 1
   resources:
     requests:
@@ -25,6 +24,7 @@ spec:
      - port: 8082
     developerMode: true
   additionalConfiguration:
+    redpanda.enable_idempotence: "true"
     redpanda.default_topic_partitions: "3"
     pandaproxy_client.retries: "10"
     schema_registry.schema_registry_api: "[{'name':'external','address':'0.0.0.0','port':8081}]"

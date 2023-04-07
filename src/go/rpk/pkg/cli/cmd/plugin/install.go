@@ -145,9 +145,7 @@ command %q!
 		},
 	}
 
-	var err error
-	dir, err = plugin.DefaultBinPath()
-	out.MaybeDieErr(err)
+	dir, _ = plugin.DefaultBinPath()
 
 	cmd.Flags().StringVar(&dir, "dir", dir, "Destination directory to save the installed plugin (defaults to $HOME/.local/bin)")
 	cmd.Flags().BoolVarP(&update, "update", "u", false, "Update a locally installed plugin if it differs from the current remote version")

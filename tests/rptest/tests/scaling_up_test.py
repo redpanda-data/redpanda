@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+from collections import defaultdict
 import random
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
@@ -24,7 +25,7 @@ class ScalingUpTest(EndToEndTest):
     Adding nodes to the cluster should result in partition reallocations to new
     nodes
     """
-
+    rebalance_timeout = 120
     group_topic_partitions = 16
 
     def _replicas_per_node(self):
@@ -41,6 +42,19 @@ class ScalingUpTest(EndToEndTest):
                     node_replicas[id] += 1
 
         return node_replicas
+
+    def _topic_replicas_per_node(self):
+        kafkacat = KafkaCat(self.redpanda)
+        topic_replicas = defaultdict(lambda: defaultdict(int))
+        md = kafkacat.metadata()
+        self.redpanda.logger.debug(f"metadata: {md}")
+        for topic in md['topics']:
+            for p in topic['partitions']:
+                for r in p['replicas']:
+                    id = r['id']
+                    topic_replicas[topic['topic']][id] += 1
+
+        return topic_replicas
 
     def wait_for_partitions_rebalanced(self, total_replicas, timeout_sec):
 
@@ -113,11 +127,11 @@ class ScalingUpTest(EndToEndTest):
         # add second node
         self.redpanda.start_node(self.redpanda.nodes[1])
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=30)
+                                            timeout_sec=self.rebalance_timeout)
         # add third node
         self.redpanda.start_node(self.redpanda.nodes[2])
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=30)
+                                            timeout_sec=self.rebalance_timeout)
 
         self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
 
@@ -148,10 +162,11 @@ class ScalingUpTest(EndToEndTest):
         self.await_startup(min_records=5 * throughput, timeout_sec=120)
         # add three nodes at once
         for n in self.redpanda.nodes[3:]:
+            self.redpanda.clean_node(n)
             self.redpanda.start_node(n)
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=120)
+                                            timeout_sec=self.rebalance_timeout)
 
     @cluster(num_nodes=8)
     @matrix(partition_count=[1, 20])
@@ -176,7 +191,8 @@ class ScalingUpTest(EndToEndTest):
         throughput = 100000 if not self.debug_mode else 1000
         self.start_producer(1, throughput=throughput)
         self.start_consumer(1)
-        self.await_startup(min_records=5 * throughput, timeout_sec=120)
+        self.await_startup(min_records=5 * throughput,
+                           timeout_sec=self.rebalance_timeout)
         # add three nodes
         for n in self.redpanda.nodes[3:]:
             self.redpanda.clean_node(n)
@@ -193,4 +209,53 @@ class ScalingUpTest(EndToEndTest):
         admin.trigger_rebalance()
 
         self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
-                                            timeout_sec=120)
+                                            timeout_sec=self.rebalance_timeout)
+
+    @cluster(num_nodes=7)
+    def test_topic_hot_spots(self):
+        self.redpanda = RedpandaService(self.test_context,
+                                        5,
+                                        extra_rp_conf={
+                                            "group_topic_partitions":
+                                            self.group_topic_partitions,
+                                            "partition_autobalancing_mode":
+                                            "node_add"
+                                        })
+        # start 3 nodes cluster
+        self.redpanda.start(nodes=self.redpanda.nodes[0:3])
+        # create some topics
+        total_replicas = 0
+        topics = []
+        for _ in range(1, 5):
+            partitions = 30
+            spec = TopicSpec(partition_count=partitions, replication_factor=3)
+            total_replicas += partitions * 3
+            topics.append(spec)
+
+        for spec in topics:
+            DefaultClient(self.redpanda).create_topic(spec)
+
+        self.topic = random.choice(topics).name
+
+        # include __consumer_offsets topic replica
+        total_replicas += self.group_topic_partitions * 3
+
+        self.start_producer(1)
+        self.start_consumer(1)
+        self.await_startup()
+        # add second node
+        self.redpanda.start_node(self.redpanda.nodes[3])
+        self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
+                                            timeout_sec=self.rebalance_timeout)
+        # add third node
+        self.redpanda.start_node(self.redpanda.nodes[4])
+        self.wait_for_partitions_rebalanced(total_replicas=total_replicas,
+                                            timeout_sec=self.rebalance_timeout)
+
+        self.run_validation(enable_idempotence=False, consumer_timeout_sec=45)
+
+        topic_per_node = self._topic_replicas_per_node()
+        for t, nodes in topic_per_node.items():
+            self.logger.info(f"{t} spans {len(nodes)} nodes")
+            # assert that each topic has replicas on all of the nodes
+            assert len(nodes) == len(self.redpanda.nodes)

@@ -132,8 +132,13 @@ void health_monitor_frontend::disk_health_tick() {
     }
     ssx::spawn_with_gate(_refresh_gate, [this]() {
         // Ensure that this node's cluster health data is not too stale.
-        return update_disk_health_cache().finally(
-          [this] { _refresh_timer.arm(disk_health_refresh_interval); });
+        return update_disk_health_cache()
+          .handle_exception([](const std::exception_ptr& e) {
+              vlog(
+                clusterlog.warn, "failed to update disk health cache: {}", e);
+          })
+          .finally(
+            [this] { _refresh_timer.arm(disk_health_refresh_interval); });
     });
 }
 

@@ -196,6 +196,7 @@ void consensus::do_step_down(std::string_view ctx) {
           _term,
           _log.offsets().dirty_offset);
     }
+    _fstats.reset();
     _vstate = vote_state::follower;
 }
 
@@ -326,6 +327,12 @@ consensus::success_reply consensus::update_follower_index(
           _group));
     }
 
+    // check preconditions for processing the reply
+    if (unlikely(!is_elected_leader())) {
+        vlog(_ctxlog.debug, "ignoring append entries reply, not leader");
+        return success_reply::no;
+    }
+
     update_node_reply_timestamp(node);
 
     if (
@@ -360,15 +367,11 @@ consensus::success_reply consensus::update_follower_index(
      * seq 98, updating the last_received_seq unconditionally would cause
      * accepting request with seq 98, which should be rejected
      */
-    idx.last_received_seq = std::max(seq, idx.last_received_seq);
+    idx.last_received_seq = std::min(
+      std::max(seq, idx.last_received_seq), idx.last_sent_seq);
     auto broadcast_state_change = ss::defer(
       [&idx] { idx.follower_state_change.broadcast(); });
 
-    // check preconditions for processing the reply
-    if (!is_elected_leader()) {
-        vlog(_ctxlog.debug, "ignoring append entries reply, not leader");
-        return success_reply::no;
-    }
     // If RPC request or response contains term T > currentTerm:
     // set currentTerm = T, convert to follower (Raft paper: §5.1)
     if (reply.term > _term) {
@@ -948,7 +951,7 @@ ss::future<std::error_code> consensus::change_configuration(Func&& f) {
               return ss::make_ready_future<std::error_code>(
                 errc::configuration_change_in_progress);
           }
-
+          maybe_upgrade_configuration(latest_cfg);
           result<group_configuration> res = f(std::move(latest_cfg));
           if (res) {
               if (res.value().revision_id() < config().revision_id()) {
@@ -1947,8 +1950,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
               return _offset_translator.prefix_truncate_reset(
                 _last_snapshot_index, delta);
           })
-          .then([this] { return truncate_to_latest_snapshot(); })
-          .then([this] { _log.set_collectible_offset(_last_snapshot_index); });
+          .then([this] { return truncate_to_latest_snapshot(); });
     });
 }
 
@@ -2102,8 +2104,6 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
               _flushed_offset = std::max(last_included_index, _flushed_offset);
           });
     });
-
-    _log.set_collectible_offset(last_included_index);
 }
 
 ss::future<>
@@ -2156,15 +2156,7 @@ ss::future<std::error_code> consensus::replicate_configuration(
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
     return ss::with_gate(
       _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
-          if (unlikely(cfg.version() < group_configuration::version_t(4))) {
-              if (
-                _features.is_active(
-                  features::feature::raft_improved_configuration)
-                && cfg.get_state() == configuration_state::simple) {
-                  vlog(_ctxlog.debug, "Upgrading configuration version");
-                  cfg.set_version(group_configuration::current_version);
-              }
-          }
+          maybe_upgrade_configuration(cfg);
           auto batches = details::serialize_configuration_as_batches(
             std::move(cfg));
           for (auto& b : batches) {
@@ -2190,6 +2182,17 @@ ss::future<std::error_code> consensus::replicate_configuration(
                 return res.error();
             });
       });
+}
+
+void consensus::maybe_upgrade_configuration(group_configuration& cfg) {
+    if (unlikely(cfg.version() < group_configuration::version_t(4))) {
+        if (
+          _features.is_active(features::feature::raft_improved_configuration)
+          && cfg.get_state() == configuration_state::simple) {
+            vlog(_ctxlog.debug, "Upgrading configuration version");
+            cfg.set_version(group_configuration::current_version);
+        }
+    }
 }
 
 ss::future<result<replicate_result>> consensus::dispatch_replicate(
@@ -3253,7 +3256,8 @@ follower_metrics build_follower_metrics(
       .last_heartbeat = meta.last_received_reply_timestamp,
       .is_live = is_live,
       .under_replicated = (meta.is_recovering || !is_live)
-                          && meta.match_index < lstats.dirty_offset};
+                          && meta.match_index < lstats.dirty_offset
+                          && !meta.is_learner};
 }
 
 std::vector<follower_metrics> consensus::get_follower_metrics() const {
@@ -3302,14 +3306,7 @@ size_t consensus::get_follower_count() const {
 
 ss::future<std::optional<storage::timequery_result>>
 consensus::timequery(storage::timequery_config cfg) {
-    return _log.timequery(cfg).then(
-      [this](std::optional<storage::timequery_result> res) {
-          if (res) {
-              // do not return offset that is earlier raft start offset
-              res->offset = std::max(res->offset, start_offset());
-          }
-          return res;
-      });
+    return _log.timequery(cfg);
 }
 
 } // namespace raft

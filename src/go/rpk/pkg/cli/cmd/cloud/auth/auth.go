@@ -118,14 +118,14 @@ func validateToken(auth0Endpoint auth0.Endpoint, token, clientID string) (expire
 func promptClientCfg() (clientID, clientSecret string, err error) {
 	fmt.Println("What is your client ID and secret? You can retrieve these in the Redpanda Cloud UI user panel.")
 	for _, prompt := range []struct {
-		name string
-		dst  *string
+		name  string
+		input survey.Prompt
+		dst   *string
 	}{
-		{"Client ID", &clientID},
-		{"Client secret", &clientSecret},
+		{name: "Client ID", input: &survey.Input{Message: "Client ID:"}, dst: &clientID},
+		{name: "Client secret", input: &survey.Password{Message: "Client Secret:"}, dst: &clientSecret},
 	} {
-		input := &survey.Input{Message: prompt.name + ":"}
-		if err := survey.AskOne(input, prompt.dst, survey.WithValidator(survey.Required)); err != nil {
+		if err := survey.AskOne(prompt.input, prompt.dst, survey.WithValidator(survey.Required)); err != nil {
 			return "", "", fmt.Errorf("failed to retrieve %s: %w", prompt.name, err)
 		}
 	}

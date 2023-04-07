@@ -17,7 +17,6 @@
 #include "model/metadata.h"
 #include "pandaproxy/schema_registry/fwd.h"
 #include "request_auth.h"
-#include "rp_services.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 
@@ -37,6 +36,10 @@ struct admin_server_cfg {
     std::vector<config::endpoint_tls_config> endpoints_tls;
     ss::sstring admin_api_docs_dir;
     ss::scheduling_group sg;
+};
+
+enum class service_kind {
+    schema_registry,
 };
 
 namespace detail {
@@ -267,6 +270,9 @@ private:
     ss::future<ss::json::json_return_type>
       decomission_broker_handler(std::unique_ptr<ss::httpd::request>);
     ss::future<ss::json::json_return_type>
+      get_decommission_progress_handler(std::unique_ptr<ss::httpd::request>);
+
+    ss::future<ss::json::json_return_type>
       recomission_broker_handler(std::unique_ptr<ss::httpd::request>);
     ss::future<ss::json::json_return_type>
       start_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
@@ -356,4 +362,7 @@ private:
     ss::sharded<archival::scheduler_service>& _archival_service;
     ss::sharded<cluster::node_status_table>& _node_status_table;
     pandaproxy::schema_registry::api* _schema_registry;
+    // Value before the temporary override
+    std::chrono::milliseconds _default_blocked_reactor_notify;
+    ss::timer<> _blocked_reactor_notify_reset_timer;
 };

@@ -39,6 +39,10 @@ int64_t offset_translator_state::delta(model::offset o) const {
         return delta + (o - it->second.base_offset);
     }
 }
+model::offset_delta
+offset_translator_state::next_offset_delta(model::offset o) const {
+    return model::offset_delta(delta(model::next_offset(o)));
+}
 
 model::offset offset_translator_state::from_log_offset(model::offset o) const {
     const auto d = delta(o);
@@ -184,6 +188,8 @@ bool offset_translator_state::add_absolute_delta(
         }
     }
 }
+
+void offset_translator_state::reset() { _last_offset2batch.clear(); }
 
 bool offset_translator_state::truncate(model::offset offset) {
     vassert(

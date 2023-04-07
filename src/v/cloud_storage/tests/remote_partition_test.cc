@@ -29,6 +29,7 @@
 #include "s3/client.h"
 #include "s3/configuration.h"
 #include "seastarx.h"
+#include "ssx/future-util.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/segment.h"
@@ -105,6 +106,9 @@ struct in_memory_segment {
     // (Optional) If the segment overlaps with the prevoius segment this field
     // should contain number of config records inside the overlapping area. This
     // is needed to compute the offset_delta field in the manifest correctly.
+    //
+    // Only used to emulate an older version of Redpanda that had offset
+    // overlap between segments.
     int delta_offset_overlap{0};
 };
 
@@ -373,9 +377,10 @@ static std::vector<cloud_storage_fixture::expectation>
 make_imposter_expectations(
   cloud_storage::partition_manifest& m,
   const std::vector<in_memory_segment>& segments,
-  bool truncate_segments = false) {
+  bool truncate_segments = false,
+  model::offset_delta delta = model::offset_delta(0)) {
     std::vector<cloud_storage_fixture::expectation> results;
-    model::offset_delta delta{0};
+
     for (const auto& s : segments) {
         auto body = s.bytes;
         if (truncate_segments) {
@@ -450,7 +455,7 @@ static void reupload_compacted_segments(
             m.add(s.sname, meta);
             auto url = m.generate_segment_path(*m.get(meta.base_offset));
             vlog(test_log.debug, "reuploading segment {}", url);
-            retry_chain_node rtc(10s, 1s);
+            retry_chain_node rtc(60s, 1s);
             bytes bb;
             bb.resize(body.size());
             std::memcpy(bb.data(), body.data(), body.size());
@@ -584,6 +589,32 @@ static auto setup_s3_imposter(
     return segments;
 }
 
+static std::vector<in_memory_segment> make_segments(
+  const std::vector<std::vector<batch_t>>& segments,
+  model::offset base_offset) {
+    std::vector<in_memory_segment> s;
+    s.reserve(segments.size());
+    for (const auto& batches : segments) {
+        auto seg = make_segment(base_offset, batches);
+        s.push_back(std::move(seg));
+        base_offset = s.back().max_offset + model::offset(1);
+    }
+    return s;
+}
+
+static auto setup_s3_imposter(
+  cloud_storage_fixture& fixture,
+  model::offset base_offset,
+  model::offset_delta base_delta,
+  const std::vector<std::vector<batch_t>>& batches) {
+    auto segments = make_segments(batches, base_offset);
+    cloud_storage::partition_manifest manifest(manifest_ntp, manifest_revision);
+    auto expectations = make_imposter_expectations(
+      manifest, segments, false, base_delta);
+    fixture.set_expectations_and_listen(expectations);
+    return segments;
+}
+
 static partition_manifest
 hydrate_manifest(remote& api, const s3::bucket_name& bucket) {
     partition_manifest m(manifest_ntp, manifest_revision);
@@ -596,7 +627,9 @@ hydrate_manifest(remote& api, const s3::bucket_name& bucket) {
 
 /// This test reads only a tip of the log
 static model::record_batch_header read_single_batch_from_remote_partition(
-  cloud_storage_fixture& fixture, model::offset target) {
+  cloud_storage_fixture& fixture,
+  model::offset target,
+  bool expect_exists = true) {
     auto conf = fixture.get_configuration();
     static auto bucket = s3::bucket_name("bucket");
     remote api(s3_connection_limit(10), conf, config_file);
@@ -618,10 +651,18 @@ static model::record_batch_header read_single_batch_from_remote_partition(
     auto headers_read
       = reader.consume(test_consumer(), model::no_timeout).get();
 
-    vlog(test_log.debug, "num headers: {}", headers_read.size());
-    BOOST_REQUIRE(headers_read.size() == 1);
-    vlog(test_log.debug, "batch found: {}", headers_read.front());
-    return headers_read.front();
+    vlog(
+      test_log.debug,
+      "num headers for offset {}: {}",
+      target,
+      headers_read.size());
+    if (expect_exists) {
+        BOOST_REQUIRE(headers_read.size() == 1);
+        vlog(test_log.debug, "batch found: {}", headers_read.front());
+        return headers_read.front();
+    }
+    BOOST_REQUIRE(headers_read.empty());
+    return model::record_batch_header{};
 }
 
 /// Similar to prev function but scans the range of offsets instead of
@@ -629,7 +670,7 @@ static model::record_batch_header read_single_batch_from_remote_partition(
 static std::vector<model::record_batch_header> scan_remote_partition(
   cloud_storage_fixture& imposter,
   model::offset base,
-  model::offset max,
+  model::offset max = model::offset::max(),
   size_t maybe_max_segments = 0,
   size_t maybe_max_readers = 0) {
     auto conf = imposter.get_configuration();
@@ -666,6 +707,191 @@ static std::vector<model::record_batch_header> scan_remote_partition(
     std::move(reader).release();
 
     return headers_read;
+}
+
+// Returns true if a kafka::offset scan returns the expected existence of the
+// record.
+bool check_fetch(
+  cloud_storage_fixture& fixture, kafka::offset ko, bool expect_exists) {
+    auto hdr = read_single_batch_from_remote_partition(
+      fixture, kafka::offset_cast(ko), expect_exists);
+    bool exists = hdr.record_count > 0;
+    bool ret = expect_exists == exists;
+    if (!ret) {
+        test_log.error("Unexpected result", hdr);
+    }
+    return ret;
+}
+
+// Returns true if a kafka::offset scan returns the expected number of records.
+bool check_scan(
+  cloud_storage_fixture& fixture, kafka::offset ko, int expected_num_records) {
+    auto seg_hdrs = scan_remote_partition(fixture, kafka::offset_cast(ko));
+    int num_data_records = 0;
+    for (const auto& hdr : seg_hdrs) {
+        num_data_records += hdr.record_count;
+    }
+    auto ret = expected_num_records == num_data_records;
+    if (!ret) {
+        test_log.error(
+          "Expected {} records, got {}: {}",
+          expected_num_records,
+          num_data_records,
+          seg_hdrs);
+    }
+    return ret;
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset, cloud_storage_fixture) {
+    // mo: 0     5 6    11 12   17 18
+    //     [a    ] [b    ] [c    ] end
+    // ko: 0     2 3     5 6     8 9
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 8; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 9 - i));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(9), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(9), false));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(10), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(10), false));
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset_truncated, cloud_storage_fixture) {
+    // mo: 6    11 12   17
+    //     [b    ] [c    ] end
+    // ko: 3     5 6     8
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, data, data, data},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(6), model::offset_delta(3), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 2; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 6));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
+    }
+    for (int i = 3; i <= 8; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 9 - i));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(9), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(9), false));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(10), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(10), false));
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset_repeats, cloud_storage_fixture) {
+    // mo: 0     5 6    11 12   17
+    //     [a    ] [b    ] [c    ] end
+    // ko: 0     2 3     3 3     3
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, data, data, data},
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 3; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 4 - i));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(4), false));
+}
+FIXTURE_TEST(
+  test_scan_by_kafka_offset_repeats_truncated, cloud_storage_fixture) {
+    // mo: 6    11 12   17
+    //     [b    ] [c    ] end
+    // ko: 3     3 3     3
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(6), model::offset_delta(3), batch_types);
+    print_segments(segments);
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(2), 1));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(2), false));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(3), 1));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(3), true));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(4), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(4), false));
+}
+
+FIXTURE_TEST(test_scan_by_kafka_offset_same_bounds, cloud_storage_fixture) {
+    // mo: 0     5 6    11 12   17 18
+    //     [a    ] [b    ] [c    ] end
+    // ko: 0     5 6     6 6     6 7
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {data, data, data, data, data, data},
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(0), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i <= 6; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 7 - i));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), true));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(7), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(7), false));
+}
+
+FIXTURE_TEST(
+  test_scan_by_kafka_offset_same_bounds_truncated, cloud_storage_fixture) {
+    // mo: 6    11 12   17
+    //     [b    ] [c    ] end
+    // ko: 6     6 6     6
+    batch_t data = {
+      .num_records = 1, .type = model::record_batch_type::raft_data};
+    batch_t conf = {
+      .num_records = 1, .type = model::record_batch_type::raft_configuration};
+    const std::vector<std::vector<batch_t>> batch_types = {
+      {conf, conf, conf, conf, conf, conf},
+      {data, conf, conf, conf, conf, conf},
+    };
+    auto segments = setup_s3_imposter(
+      *this, model::offset(6), model::offset_delta(0), batch_types);
+    print_segments(segments);
+    for (int i = 0; i < 6; i++) {
+        BOOST_REQUIRE(check_scan(*this, kafka::offset(i), 1));
+        BOOST_REQUIRE(check_fetch(*this, kafka::offset(i), false));
+    }
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(6), 1));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(6), true));
+    BOOST_REQUIRE(check_scan(*this, kafka::offset(7), 0));
+    BOOST_REQUIRE(check_fetch(*this, kafka::offset(7), false));
 }
 
 FIXTURE_TEST(
@@ -1366,7 +1592,7 @@ static void remove_segment_from_s3(
     auto meta = m.get(o);
     BOOST_REQUIRE(meta != nullptr);
     auto path = m.generate_segment_path(*meta);
-    retry_chain_node fib(10s, 1s);
+    retry_chain_node fib(60s, 1s);
     auto res = api.delete_object(bucket, s3::object_key(path()), fib).get();
     BOOST_REQUIRE(res == cloud_storage::upload_result::success);
 }
@@ -1891,216 +2117,6 @@ static std::vector<size_t> client_batch_sizes = {
 
 /// This test scans the entire range of offsets
 FIXTURE_TEST(
-  test_remote_partition_scan_translate_overlap_1, cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
-    constexpr int num_segments = 10;
-    constexpr int total_batches = batches_per_segment * num_segments;
-    batch_t data = {
-      .num_records = 1, .type = model::record_batch_type::raft_data};
-    batch_t conf = {
-      .num_records = 1, .type = model::record_batch_type::raft_configuration};
-    const std::vector<std::vector<batch_t>> batch_types = {
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-    };
-
-    auto num_conf_batches = 0;
-    for (const auto& segment : batch_types) {
-        for (const auto& b : segment) {
-            if (b.type == model::record_batch_type::raft_configuration) {
-                num_conf_batches++;
-            }
-        }
-    }
-
-    auto segments = setup_s3_imposter(
-      *this, batch_types, manifest_inconsistency::overlapping_segments);
-    auto base = segments[0].base_offset;
-    auto max = segments[num_segments - 1].max_offset;
-
-    vlog(test_log.debug, "offset range: {}-{}", base, max);
-    print_segments(segments);
-
-    for (size_t sz : client_batch_sizes) {
-        auto headers_read = scan_remote_partition_incrementally(
-          *this, base, max, sz);
-
-        BOOST_REQUIRE_EQUAL(
-          headers_read.size(), total_batches - num_conf_batches);
-    }
-}
-
-/// This test scans the entire range of offsets
-FIXTURE_TEST(
-  test_remote_partition_scan_translate_with_duplicates_1,
-  cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
-    constexpr int num_segments = 10;
-    constexpr int num_segments_with_duplicates = num_segments * 2;
-    constexpr int total_batches = batches_per_segment * num_segments;
-    batch_t data = {
-      .num_records = 10, .type = model::record_batch_type::raft_data};
-    batch_t conf = {
-      .num_records = 1, .type = model::record_batch_type::raft_configuration};
-    const std::vector<std::vector<batch_t>> batch_types = {
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-      {conf, data, data, data, data, data, data, data, data, data},
-    };
-
-    auto num_conf_batches = 0;
-    auto num_data_batches = 0;
-    for (const auto& segment : batch_types) {
-        for (const auto& b : segment) {
-            if (b.type == model::record_batch_type::raft_configuration) {
-                num_conf_batches++;
-            } else {
-                num_data_batches++;
-            }
-        }
-    }
-
-    auto segments = setup_s3_imposter(
-      *this, batch_types, manifest_inconsistency::duplicate_offset_ranges);
-    auto base = segments[0].base_offset;
-    auto max = segments[num_segments_with_duplicates - 1].max_offset;
-
-    vlog(test_log.debug, "offset range: {}-{}", base, max);
-    print_segments(segments);
-
-    for (size_t bsize : client_batch_sizes) {
-        auto headers_read = scan_remote_partition_incrementally(
-          *this, base, max, bsize);
-        if (headers_read.size() != num_data_batches) {
-            vlog(
-              test_log.error,
-              "Number of headers read: {}, expected: {}",
-              headers_read.size(),
-              total_batches - num_conf_batches);
-            for (const auto& hdr : headers_read) {
-                vlog(
-                  test_log.info,
-                  "base offset: {}, last offset: {}",
-                  hdr.base_offset,
-                  hdr.last_offset());
-            }
-        }
-        BOOST_REQUIRE(headers_read.size() == num_data_batches);
-    }
-}
-
-FIXTURE_TEST(
-  test_remote_partition_scan_translate_with_duplicates_2,
-  cloud_storage_fixture) {
-    constexpr int batches_per_segment = 10;
-    constexpr int num_segments = 10;
-    constexpr int num_segments_with_duplicates = num_segments * 2;
-    constexpr int total_batches = batches_per_segment * num_segments;
-    batch_t data = {
-      .num_records = 10, .type = model::record_batch_type::raft_data};
-    batch_t conf = {
-      .num_records = 1, .type = model::record_batch_type::raft_configuration};
-    const std::vector<std::vector<batch_t>> batch_types = {
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-      {conf, data, data, conf, data, data, conf, data, data, conf},
-    };
-
-    auto num_conf_batches = 0;
-    auto num_data_batches = 0;
-    for (const auto& segment : batch_types) {
-        for (const auto& b : segment) {
-            if (b.type == model::record_batch_type::raft_configuration) {
-                num_conf_batches++;
-            } else {
-                num_data_batches++;
-            }
-        }
-    }
-
-    auto segments = setup_s3_imposter(
-      *this, batch_types, manifest_inconsistency::duplicate_offset_ranges);
-    auto base = segments[0].base_offset;
-    auto max = segments[num_segments_with_duplicates - 1].max_offset;
-
-    vlog(test_log.debug, "offset range: {}-{}", base, max);
-    print_segments(segments);
-
-    for (size_t bsize : client_batch_sizes) {
-        auto headers_read = scan_remote_partition_incrementally(
-          *this, base, max, bsize);
-        if (headers_read.size() != num_data_batches) {
-            vlog(
-              test_log.error,
-              "Number of headers read: {}, expected: {}",
-              headers_read.size(),
-              total_batches - num_conf_batches);
-            for (const auto& hdr : headers_read) {
-                vlog(
-                  test_log.info,
-                  "base offset: {}, last offset: {}",
-                  hdr.base_offset,
-                  hdr.last_offset());
-            }
-        }
-        BOOST_REQUIRE(headers_read.size() == num_data_batches);
-    }
-}
-
-FIXTURE_TEST(
-  test_remote_partition_scan_incrementally_random_with_overlaps,
-  cloud_storage_fixture) {
-    constexpr int num_segments = 1000;
-    const auto [batch_types, num_data_batches] = generate_segment_layout(
-      num_segments, 42);
-    auto segments = setup_s3_imposter(
-      *this, batch_types, manifest_inconsistency::overlapping_segments);
-    auto base = segments[0].base_offset;
-    auto max = segments.back().max_offset;
-    vlog(test_log.debug, "offset range: {}-{}", base, max);
-
-    scan_remote_partition_incrementally(*this, base, max);
-}
-
-FIXTURE_TEST(
-  test_remote_partition_scan_incrementally_random_with_duplicates,
-  cloud_storage_fixture) {
-    constexpr int num_segments = 500;
-    const auto [batch_types, num_data_batches] = generate_segment_layout(
-      num_segments, 42);
-    auto segments = setup_s3_imposter(
-      *this, batch_types, manifest_inconsistency::duplicate_offset_ranges);
-    auto base = segments[0].base_offset;
-    auto max = segments.back().max_offset;
-    vlog(test_log.debug, "offset range: {}-{}", base, max);
-
-    scan_remote_partition_incrementally(*this, base, max);
-}
-
-/// This test scans the entire range of offsets
-FIXTURE_TEST(
   test_remote_partition_scan_translate_tx_fence, cloud_storage_fixture) {
     constexpr int batches_per_segment = 10;
     constexpr int num_segments = 9;
@@ -2151,6 +2167,69 @@ FIXTURE_TEST(
           headers_read.size(),
           total_batches - num_conf_batches - num_tx_batches);
     }
+}
+
+namespace {
+
+ss::future<> scan_until_close(
+  remote_partition& partition,
+  const storage::log_reader_config& reader_config,
+  ss::gate& g) {
+    gate_guard guard{g};
+    while (!g.is_closed()) {
+        try {
+            auto translating_reader = co_await partition.make_reader(
+              reader_config);
+            auto reader = std::move(translating_reader.reader);
+            auto headers_read = co_await reader.consume(
+              test_consumer(), model::no_timeout);
+        } catch (...) {
+            test_log.info("Error scanning: {}", std::current_exception());
+        }
+    }
+}
+
+} // anonymous namespace
+
+// Test designed to reproduce a hang seen during shutdown.
+FIXTURE_TEST(test_scan_while_shutting_down, cloud_storage_fixture) {
+    constexpr int num_segments = 1000;
+    const auto [segment_layout, num_data_batches] = generate_segment_layout(
+      num_segments, 42, false);
+    auto segments = setup_s3_imposter(*this, segment_layout);
+    auto base = segments[0].base_offset;
+
+    auto remote_conf = this->get_configuration();
+    remote api(s3_connection_limit(10), remote_conf, config_file);
+    api.start().get();
+    auto action = ss::defer([&api] { api.stop().get(); });
+
+    auto m = ss::make_lw_shared<cloud_storage::partition_manifest>(
+      manifest_ntp, manifest_revision);
+
+    storage::log_reader_config reader_config(
+      base, model::offset::max(), ss::default_priority_class());
+    static auto bucket = s3::bucket_name("bucket");
+    auto manifest = hydrate_manifest(api, bucket);
+    auto partition = ss::make_shared<remote_partition>(
+      manifest, api, this->cache.local(), bucket);
+    partition->start().get();
+    auto partition_stop = ss::defer([&partition] { partition->stop().get(); });
+
+    ss::gate g;
+    ssx::background = scan_until_close(*partition, reader_config, g);
+    auto close_fut = ss::maybe_yield()
+                       .then([] { return ss::maybe_yield(); })
+                       .then([] { return ss::maybe_yield(); })
+                       .then([] {
+                           return ss::sleep(std::chrono::milliseconds(10));
+                       })
+                       .then([&] {
+                           api.shutdown_connections();
+                           return g.close();
+                       });
+    ss::with_timeout(model::timeout_clock::now() + 60s, std::move(close_fut))
+      .get();
 }
 
 FIXTURE_TEST(

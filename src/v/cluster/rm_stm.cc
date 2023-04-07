@@ -210,13 +210,13 @@ struct seq_entry_v0 {
 struct tx_snapshot_v0 {
     static constexpr uint8_t version = 0;
 
-    std::vector<model::producer_identity> fenced;
-    std::vector<rm_stm::tx_range> ongoing;
-    std::vector<rm_stm::prepare_marker> prepared;
-    std::vector<rm_stm::tx_range> aborted;
-    std::vector<rm_stm::abort_index> abort_indexes;
+    fragmented_vector<model::producer_identity> fenced;
+    fragmented_vector<rm_stm::tx_range> ongoing;
+    fragmented_vector<rm_stm::prepare_marker> prepared;
+    fragmented_vector<rm_stm::tx_range> aborted;
+    fragmented_vector<rm_stm::abort_index> abort_indexes;
     model::offset offset;
-    std::vector<seq_entry_v0> seqs;
+    fragmented_vector<seq_entry_v0> seqs;
 };
 
 struct seq_cache_entry_v1 {
@@ -235,25 +235,25 @@ struct seq_entry_v1 {
 struct tx_snapshot_v1 {
     static constexpr uint8_t version = 1;
 
-    std::vector<model::producer_identity> fenced;
-    std::vector<rm_stm::tx_range> ongoing;
-    std::vector<rm_stm::prepare_marker> prepared;
-    std::vector<rm_stm::tx_range> aborted;
-    std::vector<rm_stm::abort_index> abort_indexes;
+    fragmented_vector<model::producer_identity> fenced;
+    fragmented_vector<rm_stm::tx_range> ongoing;
+    fragmented_vector<rm_stm::prepare_marker> prepared;
+    fragmented_vector<rm_stm::tx_range> aborted;
+    fragmented_vector<rm_stm::abort_index> abort_indexes;
     model::offset offset;
-    std::vector<seq_entry_v1> seqs;
+    fragmented_vector<seq_entry_v1> seqs;
 };
 
 struct tx_snapshot_v2 {
     static constexpr uint8_t version = 2;
 
-    std::vector<model::producer_identity> fenced;
-    std::vector<rm_stm::tx_range> ongoing;
-    std::vector<rm_stm::prepare_marker> prepared;
-    std::vector<rm_stm::tx_range> aborted;
-    std::vector<rm_stm::abort_index> abort_indexes;
+    fragmented_vector<model::producer_identity> fenced;
+    fragmented_vector<rm_stm::tx_range> ongoing;
+    fragmented_vector<rm_stm::prepare_marker> prepared;
+    fragmented_vector<rm_stm::tx_range> aborted;
+    fragmented_vector<rm_stm::abort_index> abort_indexes;
     model::offset offset;
-    std::vector<rm_stm::seq_entry> seqs;
+    fragmented_vector<rm_stm::seq_entry> seqs;
 };
 
 rm_stm::rm_stm(
@@ -1210,20 +1210,28 @@ rm_stm::do_mark_expired(model::producer_identity pid) {
     co_return std::error_code(tx_errc::none);
 }
 
-bool rm_stm::check_seq(model::batch_identity bid) {
-    auto& seq = _log_state.seq_table[bid.pid].entry;
+bool rm_stm::check_seq(model::batch_identity bid, model::term_id term) {
+    auto& seq_it = _log_state.seq_table[bid.pid];
     auto last_write_timestamp = model::timestamp::now().value();
 
-    if (!is_sequence(seq.seq, bid.first_seq)) {
+    if (!is_sequence(seq_it.entry.seq, bid.first_seq)) {
+        vlog(
+          _ctx_log.warn,
+          "provided seq:{} for pid:{} isn't a continuation of the last known "
+          "seq:{}",
+          bid.first_seq,
+          bid.pid,
+          seq_it.entry.seq);
         return false;
     }
 
-    seq.update(bid.last_seq, kafka::offset{-1});
+    seq_it.entry.update(bid.last_seq, kafka::offset{-1});
 
-    seq.pid = bid.pid;
-    seq.last_write_timestamp = last_write_timestamp;
+    seq_it.entry.pid = bid.pid;
+    seq_it.entry.last_write_timestamp = last_write_timestamp;
+    seq_it.term = term;
     _oldest_session = std::min(
-      _oldest_session, model::timestamp(seq.last_write_timestamp));
+      _oldest_session, model::timestamp(seq_it.entry.last_write_timestamp));
 
     return true;
 }
@@ -1262,15 +1270,16 @@ void rm_stm::set_seq(model::batch_identity bid, kafka::offset last_offset) {
     }
 }
 
-void rm_stm::reset_seq(model::batch_identity bid) {
+void rm_stm::reset_seq(model::batch_identity bid, model::term_id term) {
     _log_state.erase_pid_from_seq_table(bid.pid);
-    auto& seq = _log_state.seq_table[bid.pid].entry;
-    seq.seq = bid.last_seq;
-    seq.last_offset = kafka::offset{-1};
-    seq.pid = bid.pid;
-    seq.last_write_timestamp = model::timestamp::now().value();
+    auto& seq_it = _log_state.seq_table[bid.pid];
+    seq_it.term = term;
+    seq_it.entry.seq = bid.last_seq;
+    seq_it.entry.last_offset = kafka::offset{-1};
+    seq_it.entry.pid = bid.pid;
+    seq_it.entry.last_write_timestamp = model::timestamp::now().value();
     _oldest_session = std::min(
-      _oldest_session, model::timestamp(seq.last_write_timestamp));
+      _oldest_session, model::timestamp(seq_it.entry.last_write_timestamp));
 }
 
 ss::future<result<kafka_result>>
@@ -1348,27 +1357,66 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
 
     if (_log_state.ongoing_map.contains(bid.pid)) {
         // this isn't the first attempt in the tx we should try dedupe
-        auto cached_offset = known_seq(bid);
-        if (cached_offset) {
-            if (cached_offset.value() < kafka::offset{0}) {
+        auto pid_seq = _log_state.seq_table.find(bid.pid);
+        if (pid_seq == _log_state.seq_table.end()) {
+            if (!check_seq(bid, synced_term)) {
+                co_return errc::sequence_out_of_order;
+            }
+        } else if (pid_seq->second.entry.seq == bid.last_seq) {
+            if (pid_seq->second.entry.last_offset() == -1) {
+                if (pid_seq->second.term == synced_term) {
+                    vlog(
+                      _ctx_log.debug,
+                      "Status of the original attempt pid:{} seq:{} is "
+                      "unknown. Returning not_leader_for_partition to trigger "
+                      "retry.",
+                      bid.pid,
+                      bid.last_seq);
+                    co_return errc::not_leader;
+                } else {
+                    // when the term a tx originated on doesn't match the
+                    // current term it means that the re-election happens; upon
+                    // re-election we sync and it catches up with all records
+                    // replicated in previous term. since the cached offset for
+                    // a given seq is still -1 it means that the replication
+                    // hasn't passed so we updating the term to pretent that the
+                    // retry (seqs match) put it there
+                    pid_seq->second.term = synced_term;
+                }
+            } else {
                 vlog(
-                  _ctx_log.debug,
-                  "Status of the original attempt pid:{} seq:{} is unknown. "
-                  "Returning not_leader_for_partition to trigger retry.",
+                  _ctx_log.trace,
+                  "cache hit for pid:{} seq:{}",
                   bid.pid,
                   bid.last_seq);
-                co_return errc::not_leader;
+                co_return kafka_result{
+                  .last_offset = pid_seq->second.entry.last_offset};
             }
-            vlog(_ctx_log.trace, "cache hit for pid:{}", bid.pid);
-            co_return kafka_result{.last_offset = cached_offset.value()};
-        }
-
-        if (!check_seq(bid)) {
-            co_return errc::sequence_out_of_order;
+        } else {
+            for (auto& entry : pid_seq->second.entry.seq_cache) {
+                if (entry.seq == bid.last_seq) {
+                    if (entry.offset() == -1) {
+                        vlog(
+                          _ctx_log.error,
+                          "cache hit for pid:{} seq:{} resolves to -1 offset",
+                          bid.pid,
+                          entry.seq);
+                    }
+                    vlog(
+                      _ctx_log.trace,
+                      "cache hit for pid:{} seq:{}",
+                      bid.pid,
+                      entry.seq);
+                    co_return kafka_result{.last_offset = entry.offset};
+                }
+            }
+            if (!check_seq(bid, synced_term)) {
+                co_return errc::sequence_out_of_order;
+            }
         }
     } else {
         // this is the first attempt in the tx, reset dedupe cache
-        reset_seq(bid);
+        reset_seq(bid, synced_term);
 
         _mem_state.estimated[bid.pid] = _insync_offset;
     }
@@ -1810,8 +1858,8 @@ model::offset rm_stm::last_stable_offset() {
 }
 
 static void filter_intersecting(
-  std::vector<rm_stm::tx_range>& target,
-  const std::vector<rm_stm::tx_range>& source,
+  fragmented_vector<rm_stm::tx_range>& target,
+  const fragmented_vector<rm_stm::tx_range>& source,
   model::offset from,
   model::offset to) {
     for (auto& range : source) {
@@ -1825,7 +1873,7 @@ static void filter_intersecting(
     }
 }
 
-ss::future<std::vector<rm_stm::tx_range>>
+ss::future<fragmented_vector<rm_stm::tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
     return _state_lock.hold_read_lock().then(
       [from, to, this](ss::basic_rwlock<>::holder unit) mutable {
@@ -1834,13 +1882,13 @@ rm_stm::aborted_transactions(model::offset from, model::offset to) {
       });
 }
 
-ss::future<std::vector<rm_stm::tx_range>>
+ss::future<fragmented_vector<rm_stm::tx_range>>
 rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
-    std::vector<rm_stm::tx_range> result;
+    fragmented_vector<rm_stm::tx_range> result;
     if (!_is_tx_enabled) {
         co_return result;
     }
-    std::vector<abort_index> intersecting_idxes;
+    fragmented_vector<abort_index> intersecting_idxes;
     for (const auto& idx : _log_state.abort_indexes) {
         if (idx.last < from) {
             continue;
@@ -1849,7 +1897,7 @@ rm_stm::do_aborted_transactions(model::offset from, model::offset to) {
             continue;
         }
         if (_log_state.last_abort_snapshot.match(idx)) {
-            auto opt = _log_state.last_abort_snapshot;
+            const auto& opt = _log_state.last_abort_snapshot;
             filter_intersecting(result, opt.aborted, from, to);
         } else {
             intersecting_idxes.push_back(idx);
@@ -1882,8 +1930,7 @@ void rm_stm::compact_snapshot() {
         return;
     }
 
-    std::vector<model::timestamp::type> lw_tss;
-    lw_tss.reserve(_log_state.seq_table.size());
+    fragmented_vector<model::timestamp::type> lw_tss;
     for (auto it = _log_state.seq_table.cbegin();
          it != _log_state.seq_table.cend();
          it++) {
@@ -1960,7 +2007,7 @@ ss::future<> rm_stm::do_abort_old_txes() {
         co_return;
     }
 
-    std::vector<model::producer_identity> pids;
+    fragmented_vector<model::producer_identity> pids;
     for (auto& [k, _] : _mem_state.estimated) {
         pids.push_back(k);
     }
@@ -2373,6 +2420,16 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
+template<class T>
+static void move_snapshot_wo_seqs(rm_stm::tx_snapshot& target, T& source) {
+    target.fenced = std::move(source.fenced);
+    target.ongoing = std::move(source.ongoing);
+    target.prepared = std::move(source.prepared);
+    target.aborted = std::move(source.aborted);
+    target.abort_indexes = std::move(source.abort_indexes);
+    target.offset = std::move(source.offset);
+}
+
 ss::future<>
 rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     tx_snapshot data;
@@ -2381,31 +2438,21 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         data = reflection::adl<tx_snapshot>{}.from(data_parser);
     } else if (hdr.version == tx_snapshot_v2::version) {
         auto data_v2 = reflection::adl<tx_snapshot_v2>{}.from(data_parser);
-        data.fenced = std::move(data_v2.fenced);
-        data.ongoing = std::move(data_v2.ongoing);
-        data.prepared = std::move(data_v2.prepared);
-        data.aborted = std::move(data_v2.aborted);
-        data.abort_indexes = std::move(data_v2.abort_indexes);
-        data.offset = std::move(data_v2.offset);
+        move_snapshot_wo_seqs(data, data_v2);
         data.seqs = std::move(data_v2.seqs);
 
         for (auto& entry : data_v2.prepared) {
-            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
 
         for (auto& entry : data_v2.seqs) {
-            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = model::tx_seq(entry.seq)});
         }
     } else if (hdr.version == tx_snapshot_v1::version) {
         auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
-        data.fenced = std::move(data_v1.fenced);
-        data.ongoing = std::move(data_v1.ongoing);
-        data.prepared = std::move(data_v1.prepared);
-        data.aborted = std::move(data_v1.aborted);
-        data.abort_indexes = std::move(data_v1.abort_indexes);
-        data.offset = std::move(data_v1.offset);
+        move_snapshot_wo_seqs(data, data_v1);
         for (auto& seq_v1 : data_v1.seqs) {
             seq_entry seq;
             seq.pid = seq_v1.pid;
@@ -2431,17 +2478,12 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
 
         for (auto& entry : data_v1.prepared) {
-            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
     } else if (hdr.version == tx_snapshot_v0::version) {
         auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
-        data.fenced = std::move(data_v0.fenced);
-        data.ongoing = std::move(data_v0.ongoing);
-        data.prepared = std::move(data_v0.prepared);
-        data.aborted = std::move(data_v0.aborted);
-        data.abort_indexes = std::move(data_v0.abort_indexes);
-        data.offset = std::move(data_v0.offset);
+        move_snapshot_wo_seqs(data, data_v0);
         for (auto seq_v0 : data_v0.seqs) {
             auto seq = seq_entry{
               .pid = seq_v0.pid,
@@ -2451,7 +2493,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.seqs.push_back(std::move(seq));
         }
         for (auto& entry : data_v0.prepared) {
-            data.tx_seqs.emplace_back(tx_snapshot::tx_seqs_snapshot{
+            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
     } else {
@@ -2469,22 +2511,27 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     for (auto& entry : data.prepared) {
         _log_state.prepared.emplace(entry.pid, entry);
     }
-    _log_state.aborted.insert(
-      _log_state.aborted.end(),
-      std::make_move_iterator(data.aborted.begin()),
-      std::make_move_iterator(data.aborted.end()));
-    _log_state.abort_indexes.insert(
-      _log_state.abort_indexes.end(),
-      std::make_move_iterator(data.abort_indexes.begin()),
-      std::make_move_iterator(data.abort_indexes.end()));
+    for (auto it = std::make_move_iterator(data.aborted.begin());
+         it != std::make_move_iterator(data.aborted.end());
+         it++) {
+        _log_state.aborted.push_back(*it);
+    }
+    for (auto it = std::make_move_iterator(data.abort_indexes.begin());
+         it != std::make_move_iterator(data.abort_indexes.end());
+         it++) {
+        _log_state.abort_indexes.push_back(*it);
+    }
     for (auto& entry : data.seqs) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(
-          entry.pid, seq_entry_wrapper{.entry = std::move(entry)});
+          entry.pid,
+          seq_entry_wrapper{
+            .term = model::term_id(-1), .entry = std::move(entry)});
         // try_emplace does not move from r-value reference if the insertion
         // didn't take place so the clang-tidy warning is a false positive
         // NOLINTNEXTLINE(hicpp-invalid-access-moved)
         if (!inserted && seq_it->second.entry.seq < entry.seq) {
             seq_it->second.entry = std::move(entry);
+            seq_it->second.term = model::term_id(-1);
         }
     }
 
@@ -2497,7 +2544,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     if (last.last > model::offset(0)) {
         auto snapshot_opt = co_await load_abort_snapshot(last);
         if (snapshot_opt) {
-            _log_state.last_abort_snapshot = snapshot_opt.value();
+            _log_state.last_abort_snapshot = std::move(snapshot_opt.value());
         }
     }
 
@@ -2517,13 +2564,13 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     // We need to fill order for idempotent requests. So pid is from idempotent
     // request if it is not inside fence_pid_epoch. For order we just need to
     // check last_write_timestamp. It contains time last apply for log record.
-    std::vector<log_state::seq_map::iterator> sorted_pids;
+    fragmented_vector<log_state::seq_map::iterator> sorted_pids;
     for (auto it = _log_state.seq_table.begin();
          it != _log_state.seq_table.end();
          ++it) {
         if (!_log_state.fence_pid_epoch.contains(
               it->second.entry.pid.get_id())) {
-            sorted_pids.emplace_back(it);
+            sorted_pids.push_back(it);
         }
     }
 
@@ -2598,12 +2645,12 @@ ss::future<> rm_stm::offload_aborted_txns() {
             auto idx = abort_index{
               .first = snapshot.first, .last = snapshot.last};
             _log_state.abort_indexes.push_back(idx);
-            co_await save_abort_snapshot(snapshot);
+            co_await save_abort_snapshot(std::move(snapshot));
             snapshot = abort_snapshot{
               .first = model::offset::max(), .last = model::offset::min()};
         }
     }
-    _log_state.aborted = snapshot.aborted;
+    _log_state.aborted = std::move(snapshot.aborted);
 }
 
 // DO NOT coroutinize this method as it may cause issues on ARM:
@@ -2611,9 +2658,8 @@ ss::future<> rm_stm::offload_aborted_txns() {
 ss::future<stm_snapshot> rm_stm::take_snapshot() {
     auto start_offset = _raft->start_offset();
 
-    std::vector<abort_index> abort_indexes;
-    std::vector<abort_index> expired_abort_indexes;
-    abort_indexes.reserve(_log_state.abort_indexes.size());
+    fragmented_vector<abort_index> abort_indexes;
+    fragmented_vector<abort_index> expired_abort_indexes;
 
     for (const auto& idx : _log_state.abort_indexes) {
         if (idx.last < start_offset) {
@@ -2633,7 +2679,8 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
       expired_abort_indexes.size(),
       start_offset);
     auto f = ss::do_with(
-      std::move(expired_abort_indexes), [this](std::vector<abort_index>& idxs) {
+      std::move(expired_abort_indexes),
+      [this](fragmented_vector<abort_index>& idxs) {
           return ss::parallel_for_each(
             idxs.begin(), idxs.end(), [this](const abort_index& idx) {
                 auto f_name = abort_idx_name(idx.first, idx.last);
@@ -2645,8 +2692,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
             });
       });
 
-    std::vector<tx_range> aborted;
-    aborted.reserve(_log_state.aborted.size());
+    fragmented_vector<tx_range> aborted;
     std::copy_if(
       _log_state.aborted.begin(),
       _log_state.aborted.end(),
@@ -2713,7 +2759,6 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
                 continue;
             }
             seqs.last_write_timestamp = entry.last_write_timestamp;
-            seqs.seq_cache.reserve(seqs.seq_cache.size());
             for (auto& item : entry.seq_cache) {
                 try {
                     seqs.seq_cache.push_back(seq_cache_entry_v1{
@@ -2740,7 +2785,7 @@ ss::future<> rm_stm::save_abort_snapshot(abort_snapshot snapshot) {
     auto filename = abort_idx_name(snapshot.first, snapshot.last);
     vlog(_ctx_log.debug, "saving abort snapshot {} at {}", snapshot, filename);
     iobuf snapshot_data;
-    reflection::adl<abort_snapshot>{}.to(snapshot_data, snapshot);
+    reflection::adl<abort_snapshot>{}.to(snapshot_data, std::move(snapshot));
     int32_t snapshot_size = snapshot_data.size_bytes();
 
     auto writer = co_await _abort_snapshot_mgr.start_snapshot(filename);
@@ -2874,7 +2919,7 @@ ss::future<> rm_stm::clear_old_tx_pids() {
         co_return;
     }
 
-    std::vector<model::producer_identity> pids_for_delete;
+    fragmented_vector<model::producer_identity> pids_for_delete;
     for (auto [id, epoch] : _log_state.fence_pid_epoch) {
         auto pid = model::producer_identity(id, epoch);
         // If pid is not inside tx_seqs it means we do not have transaction for

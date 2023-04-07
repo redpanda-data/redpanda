@@ -176,7 +176,7 @@ struct try_abort_request
     model::partition_id tm;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     try_abort_request() noexcept = default;
 
@@ -235,9 +235,9 @@ struct try_abort_reply : serde::envelope<try_abort_reply, serde::version<0>> {
 
 struct init_tm_tx_request
   : serde::envelope<init_tm_tx_request, serde::version<0>> {
-    kafka::transactional_id tx_id;
-    std::chrono::milliseconds transaction_timeout_ms;
-    model::timeout_clock::duration timeout;
+    kafka::transactional_id tx_id{};
+    std::chrono::milliseconds transaction_timeout_ms{};
+    model::timeout_clock::duration timeout{};
 
     init_tm_tx_request() noexcept = default;
 
@@ -327,7 +327,7 @@ struct fetch_tx_request
     using rpc_adl_exempt = std::true_type;
 
     kafka::transactional_id tx_id{};
-    model::term_id term;
+    model::term_id term{};
 
     fetch_tx_request() noexcept = default;
 
@@ -406,13 +406,13 @@ struct fetch_tx_reply
     };
 
     tx_errc ec{};
-    model::producer_identity pid;
-    model::producer_identity last_pid;
-    model::tx_seq tx_seq;
+    model::producer_identity pid{};
+    model::producer_identity last_pid{};
+    model::tx_seq tx_seq{};
     std::chrono::milliseconds timeout_ms;
-    tx_status status;
-    std::vector<tx_partition> partitions;
-    std::vector<tx_group> groups;
+    tx_status status{};
+    std::vector<tx_partition> partitions{};
+    std::vector<tx_group> groups{};
 
     fetch_tx_reply() noexcept = default;
 
@@ -452,7 +452,7 @@ struct begin_tx_request : serde::envelope<begin_tx_request, serde::version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    std::chrono::milliseconds transaction_timeout_ms;
+    std::chrono::milliseconds transaction_timeout_ms{};
 
     begin_tx_request() noexcept = default;
 
@@ -520,7 +520,7 @@ struct prepare_tx_request
     model::partition_id tm;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     prepare_tx_request() noexcept = default;
 
@@ -550,7 +550,7 @@ struct prepare_tx_request
 };
 
 struct prepare_tx_reply : serde::envelope<prepare_tx_reply, serde::version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     prepare_tx_reply() noexcept = default;
 
@@ -570,7 +570,7 @@ struct commit_tx_request
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     commit_tx_request() noexcept = default;
 
@@ -594,7 +594,7 @@ struct commit_tx_request
 };
 
 struct commit_tx_reply : serde::envelope<commit_tx_reply, serde::version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     commit_tx_reply() noexcept = default;
 
@@ -613,7 +613,7 @@ struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     abort_tx_request() noexcept = default;
 
@@ -636,7 +636,7 @@ struct abort_tx_request : serde::envelope<abort_tx_request, serde::version<0>> {
 };
 
 struct abort_tx_reply : serde::envelope<abort_tx_reply, serde::version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     abort_tx_reply() noexcept = default;
 
@@ -657,7 +657,7 @@ struct begin_group_tx_request
     kafka::group_id group_id;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     begin_group_tx_request() noexcept = default;
 
@@ -700,7 +700,7 @@ struct begin_group_tx_request
 struct begin_group_tx_reply
   : serde::envelope<begin_group_tx_reply, serde::version<0>> {
     model::term_id etag;
-    tx_errc ec;
+    tx_errc ec{};
 
     begin_group_tx_reply() noexcept = default;
 
@@ -728,7 +728,7 @@ struct prepare_group_tx_request
     model::term_id etag;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     prepare_group_tx_request() noexcept = default;
 
@@ -773,7 +773,7 @@ struct prepare_group_tx_request
 
 struct prepare_group_tx_reply
   : serde::envelope<prepare_group_tx_reply, serde::version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     prepare_group_tx_reply() noexcept = default;
 
@@ -796,7 +796,7 @@ struct commit_group_tx_request
     model::producer_identity pid;
     model::tx_seq tx_seq;
     kafka::group_id group_id;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     commit_group_tx_request() noexcept = default;
 
@@ -838,7 +838,7 @@ struct commit_group_tx_request
 
 struct commit_group_tx_reply
   : serde::envelope<commit_group_tx_reply, serde::version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     commit_group_tx_reply() noexcept = default;
 
@@ -861,7 +861,7 @@ struct abort_group_tx_request
     kafka::group_id group_id;
     model::producer_identity pid;
     model::tx_seq tx_seq;
-    model::timeout_clock::duration timeout;
+    model::timeout_clock::duration timeout{};
 
     abort_group_tx_request() noexcept = default;
 
@@ -903,7 +903,7 @@ struct abort_group_tx_request
 
 struct abort_group_tx_reply
   : serde::envelope<abort_group_tx_reply, serde::version<0>> {
-    tx_errc ec;
+    tx_errc ec{};
 
     abort_group_tx_reply() noexcept = default;
 
@@ -2161,7 +2161,10 @@ struct user_and_credential
 };
 
 struct bootstrap_cluster_cmd_data
-  : serde::envelope<bootstrap_cluster_cmd_data, serde::version<0>> {
+  : serde::envelope<
+      bootstrap_cluster_cmd_data,
+      serde::version<1>,
+      serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     friend bool operator==(
@@ -2169,12 +2172,18 @@ struct bootstrap_cluster_cmd_data
       = default;
 
     auto serde_fields() {
-        return std::tie(uuid, bootstrap_user_cred, node_ids_by_uuid);
+        return std::tie(
+          uuid, bootstrap_user_cred, node_ids_by_uuid, founding_version);
     }
 
     model::cluster_uuid uuid;
     std::optional<user_and_credential> bootstrap_user_cred;
     absl::flat_hash_map<model::node_uuid, model::node_id> node_ids_by_uuid;
+
+    // If this is set, fast-forward the feature_table to enable features
+    // from this version. Indicates the version of Redpanda of
+    // the node that generated the bootstrap record.
+    cluster_version founding_version{invalid_version};
 };
 
 enum class reconciliation_status : int8_t {
@@ -2720,6 +2729,41 @@ struct cancel_partition_movements_reply
 
     errc general_error;
     std::vector<move_cancellation_result> partition_results;
+};
+
+/**
+ * Reconfiguration state indicates if ongoing reconfiguration is a result of
+ * partition movement, cancellation or forced cancellation
+ */
+enum class reconfiguration_state { in_progress, cancelled, force_cancelled };
+
+std::ostream& operator<<(std::ostream&, reconfiguration_state);
+
+struct replica_bytes {
+    model::node_id node;
+    size_t bytes{0};
+};
+
+struct partition_reconfiguration_state {
+    model::ntp ntp;
+    // assignments
+    std::vector<model::broker_shard> previous_assignment;
+    std::vector<model::broker_shard> current_assignment;
+    // state indicating if reconfiguration was cancelled or requested
+    reconfiguration_state state;
+    // amount of bytes already transferred to new replicas
+    std::vector<replica_bytes> already_transferred_bytes;
+    // current size of partition
+    size_t current_partition_size{0};
+};
+
+struct node_decommission_progress {
+    // indicate if node decommissioning finished
+    bool finished = false;
+    // number of replicas left on decommissioned node
+    size_t replicas_left{0};
+    // list of currently ongoing partition reconfigurations
+    std::vector<partition_reconfiguration_state> current_reconfigurations;
 };
 
 /*

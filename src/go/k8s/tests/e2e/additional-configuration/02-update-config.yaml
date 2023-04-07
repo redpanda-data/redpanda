@@ -2,7 +2,6 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: additional-configuration
-  namespace: default
 spec:
   additionalConfiguration:
     redpanda.enable_idempotence: "true"

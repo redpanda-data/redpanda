@@ -542,6 +542,14 @@ combine_statuses(cache_element_status segment, cache_element_status tx_range) {
     }
 }
 
+void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
+    while (!_wait_list.empty()) {
+        auto& p = _wait_list.front();
+        p.set_exception(err);
+        _wait_list.pop_front();
+    }
+};
+
 ss::future<> remote_segment::run_hydrate_bg() {
     ss::gate::holder guard(_gate);
 
@@ -563,7 +571,7 @@ ss::future<> remote_segment::run_hydrate_bg() {
               _wait_list.size(),
               _data_file ? "available" : "not available");
             std::exception_ptr err;
-            if (!_data_file) {
+            if (!_data_file || !_tx_range) {
                 // We don't have a _data_file set so we have to check cache
                 // and retrieve the file out of it or hydrate.
                 // If _data_file is initialized we can use it safely since the
@@ -664,15 +672,17 @@ ss::future<> remote_segment::run_hydrate_bg() {
         }
     } catch (const ss::broken_condition_variable&) {
         vlog(_ctxlog.debug, "Hydration loop shut down");
+        set_waiter_errors(std::current_exception());
     } catch (const ss::abort_requested_exception&) {
         vlog(_ctxlog.debug, "Hydration loop shut down");
+        set_waiter_errors(std::current_exception());
     } catch (const ss::gate_closed_exception&) {
         vlog(_ctxlog.debug, "Hydration loop shut down");
+        set_waiter_errors(std::current_exception());
     } catch (...) {
-        vlog(
-          _ctxlog.error,
-          "Error in hydraton loop: {}",
-          std::current_exception());
+        const auto err = std::current_exception();
+        vlog(_ctxlog.error, "Error in hydraton loop: {}", err);
+        set_waiter_errors(err);
     }
 }
 

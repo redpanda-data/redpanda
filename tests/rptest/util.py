@@ -316,16 +316,23 @@ def inject_remote_script(node, script_name):
     return remote_path
 
 
-def get_cluster_license():
-    license = os.environ.get("REDPANDA_SAMPLE_LICENSE", None)
+def _get_cluster_license(env_var):
+    license = os.environ.get(env_var, None)
     if license is None:
         is_ci = os.environ.get("CI", "false")
         if is_ci == "true":
             raise RuntimeError(
-                "Expected REDPANDA_SAMPLE_LICENSE variable to be set in this environment"
-            )
+                f"Expected {env_var} variable to be set in this environment")
 
     return license
+
+
+def get_cluster_license():
+    return _get_cluster_license("REDPANDA_SAMPLE_LICENSE")
+
+
+def get_second_cluster_license():
+    return _get_cluster_license("REDPANDA_SECOND_SAMPLE_LICENSE")
 
 
 class firewall_blocked:

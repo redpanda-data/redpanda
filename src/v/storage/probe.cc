@@ -37,12 +37,12 @@ void node_probe::setup_node_metrics() {
     _public_metrics.add_group(
       prometheus_sanitize::metrics_name("storage:disk"),
       {
-        sm::make_total_bytes(
+        sm::make_gauge(
           "total_bytes",
           [this] { return _disk.total_bytes; },
           sm::description("Total size of attached storage, in bytes."))
           .aggregate({sm::shard_label}),
-        sm::make_total_bytes(
+        sm::make_gauge(
           "free_bytes",
           [this] { return _disk.free_bytes; },
           sm::description("Disk storage bytes free."))

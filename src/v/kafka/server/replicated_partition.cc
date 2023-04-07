@@ -49,12 +49,8 @@ ss::future<storage::translating_reader> replicated_partition::make_reader(
         co_return co_await _partition->make_cloud_reader(cfg);
     }
 
-    auto local_kafka_start_offset = _translator->from_log_offset(
-      _partition->start_offset());
     if (
-      _partition->is_remote_fetch_enabled()
-      && _partition->cloud_data_available()
-      && cfg.start_offset < local_kafka_start_offset
+      may_read_from_cloud(model::offset_cast(cfg.start_offset))
       && cfg.start_offset >= _partition->start_cloud_offset()) {
         cfg.type_filter = {model::record_batch_type::raft_data};
         co_return co_await _partition->make_cloud_reader(cfg, deadline);
@@ -174,6 +170,16 @@ replicated_partition::aborted_transactions_remote(
     co_return target;
 }
 
+/**
+ * Based on the lower offset of an incoming request, decide whether it should
+ * be sent to cloud storage (return true), or local raft storage (return false)
+ */
+bool replicated_partition::may_read_from_cloud(kafka::offset start_offset) {
+    return _partition->is_remote_fetch_enabled()
+           && _partition->cloud_data_available()
+           && (start_offset < _translator->from_log_offset(_partition->start_offset()));
+}
+
 ss::future<std::vector<cluster::rm_stm::tx_range>>
 replicated_partition::aborted_transactions(
   model::offset base,
@@ -213,9 +219,7 @@ replicated_partition::aborted_transactions(
         // Always use SI for read replicas
         co_return co_await aborted_transactions_remote(offsets, ot_state);
     }
-    if (
-      _partition->cloud_data_available()
-      && offsets.begin_rp < _partition->start_offset()) {
+    if (may_read_from_cloud(model::offset_cast(base))) {
         // The fetch request was satisfied using shadow indexing.
         auto tx_remote = co_await aborted_transactions_remote(
           offsets, ot_state);
@@ -278,22 +282,27 @@ raft::replicate_stages replicated_partition::replicate(
 std::optional<model::offset> replicated_partition::get_leader_epoch_last_offset(
   kafka::leader_epoch epoch) const {
     const model::term_id term(epoch);
-    const auto first_local_term = _partition->get_term(
-      _partition->start_offset());
-    // found in local state
+    const auto first_local_offset = _partition->start_offset();
+    const auto first_local_term = _partition->get_term(first_local_offset);
+    // Look for the highest offset in the requested term, or the first offset
+    // in the next term. This mirrors behavior in Kafka, see
+    // https://github.com/apache/kafka/blob/97105a8e5812135515f5a0fa4d5ff554d80df2fe/storage/src/main/java/org/apache/kafka/storage/internals/epoch/LeaderEpochFileCache.java#L255-L281
     if (term >= first_local_term) {
         auto last_offset = _partition->get_term_last_offset(term);
         if (last_offset) {
             return _translator->from_log_offset(*last_offset);
         }
     }
+    // The requested term falls below our earliest local segment.
 
+    // Check cloud storage for a viable offset.
     if (
       _partition->is_remote_fetch_enabled()
       && _partition->cloud_data_available()) {
         return _partition->get_cloud_term_last_offset(term);
     }
-    return std::nullopt;
+    // Return the offset of this next-highest term.
+    return _translator->from_log_offset(first_local_offset);
 }
 
 ss::future<error_code> replicated_partition::validate_fetch_offset(
@@ -310,11 +319,19 @@ ss::future<error_code> replicated_partition::validate_fetch_offset(
      * receive data.
      */
 
-    // calculate log end in kafka offset domain
-    const auto log_end = model::next_offset(
-      _translator->from_log_offset(_partition->dirty_offset()));
+    // Calculate log end in kafka offset domain
+    std::optional<model::offset> log_end;
+    if (_partition->dirty_offset() >= _partition->start_offset()) {
+        // Translate the raft dirty offset to find the kafka dirty offset.  This
+        // is conditional on dirty offset being ahead of start offset, because
+        // if it isn't, then the log is empty and we do not need to check for
+        // the case of a fetch between hwm and dirty offset.  (Issue #7758)
+        log_end = model::next_offset(
+          _translator->from_log_offset(_partition->dirty_offset()));
+    }
 
-    while (fetch_offset > high_watermark() && fetch_offset <= log_end) {
+    while (log_end.has_value() && fetch_offset > high_watermark()
+           && fetch_offset <= log_end) {
         if (model::timeout_clock::now() > deadline) {
             break;
         }

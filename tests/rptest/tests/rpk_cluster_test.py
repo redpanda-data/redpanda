@@ -16,7 +16,7 @@ import json
 
 from rptest.services.cluster import cluster
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
-from rptest.util import expect_exception, get_cluster_license
+from rptest.util import expect_exception, get_cluster_license, get_second_cluster_license
 from ducktape.utils.util import wait_until
 from rptest.util import wait_until_result
 
@@ -230,6 +230,24 @@ class RpkClusterTest(RedpandaTest):
         }
         result = json.loads(rp_license)
         assert expected_license == result, result
+
+        # Assert that a second put takes license
+        license = get_second_cluster_license()
+        output = self._rpk.license_set(None, license)
+        assert "Successfully uploaded license" in output
+
+        def obtain_new_license():
+            lic = self._rpk.license_info()
+            if lic is None or lic == "{}":
+                return False
+            result = json.loads(lic)
+            return result['organization'] == 'redpanda-testing-2'
+
+        wait_until(obtain_new_license,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   retry_on_exc=True,
+                   err_msg="unable to retrieve new license information")
 
     @cluster(num_nodes=3)
     def test_upload_cluster_license_rpk(self):

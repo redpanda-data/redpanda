@@ -14,8 +14,7 @@ import (
 	"time"
 
 	"github.com/cloudhut/common/rest"
-	"github.com/redpanda-data/console/backend/pkg/connect"
-	"github.com/redpanda-data/console/backend/pkg/kafka"
+	"github.com/redpanda-data/console/backend/pkg/config"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 )
 
@@ -31,14 +30,15 @@ type ConsoleConfig struct {
 	ServeFrontend    bool   `json:"serveFrontend" yaml:"serveFrontend"`
 
 	Server  rest.Config    `json:"server" yaml:"server"`
-	Kafka   kafka.Config   `json:"kafka" yaml:"kafka"`
-	Connect connect.Config `json:"connect" yaml:"connect"`
+	Kafka   config.Kafka   `json:"kafka" yaml:"kafka"`
+	Connect config.Connect `json:"connect" yaml:"connect"`
 
-	License    string          `json:"license,omitempty" yaml:"license,omitempty"`
-	Enterprise Enterprise      `json:"enterprise,omitempty" yaml:"enterprise,omitempty"`
-	Login      EnterpriseLogin `json:"login,omitempty" yaml:"login,omitempty"`
-	Cloud      CloudConfig     `json:"cloud,omitempty" yaml:"cloud,omitempty"`
-	Redpanda   Redpanda        `json:"redpanda,omitempty" yaml:"redpanda,omitempty"`
+	License     string                `json:"license,omitempty" yaml:"license,omitempty"`
+	Enterprise  Enterprise            `json:"enterprise,omitempty" yaml:"enterprise,omitempty"`
+	Login       EnterpriseLogin       `json:"login,omitempty" yaml:"login,omitempty"`
+	Cloud       CloudConfig           `json:"cloud,omitempty" yaml:"cloud,omitempty"`
+	Redpanda    Redpanda              `json:"redpanda,omitempty" yaml:"redpanda,omitempty"`
+	SecretStore EnterpriseSecretStore `json:"secretStore,omitempty" yaml:"secretStore,omitempty"`
 }
 
 // SetDefaults sets sane defaults
@@ -146,4 +146,36 @@ type RedpandaAdminTLS struct {
 	CertFilepath          string `json:"certFilepath" yaml:"certFilepath"`
 	KeyFilepath           string `json:"keyFilepath" yaml:"keyFilepath"`
 	InsecureSkipTLSVerify bool   `json:"insecureSkipTlsVerify,omitempty" yaml:"insecureSkipTlsVerify,omitempty"`
+}
+
+type EnterpriseSecretStore struct {
+	Enabled          bool                              `json:"enabled" yaml:"enabled"`
+	SecretNamePrefix string                            `json:"secretNamePrefix" yaml:"secretNamePrefix"`
+	GCPSecretManager EnterpriseSecretManagerGCP        `json:"gcpSecretManager" yaml:"gcpSecretManager"`
+	AWSSecretManager EnterpriseSecretManagerAWS        `json:"awsSecretManager" yaml:"awsSecretManager"`
+	KafkaConnect     EnterpriseSecretStoreKafkaConnect `json:"kafkaConnect" yaml:"kafkaConnect"`
+}
+
+type EnterpriseSecretManagerGCP struct {
+	Enabled             bool              `json:"enabled" yaml:"enabled"`
+	CredentialsFilepath string            `json:"credentialsFilepath" yaml:"credentialsFilepath"`
+	ProjectID           string            `json:"projectId" yaml:"projectId"`
+	Labels              map[string]string `json:"labels" yaml:"labels"`
+}
+
+type EnterpriseSecretManagerAWS struct {
+	Enabled  bool              `json:"enabled" yaml:"enabled"`
+	Region   string            `json:"region" yaml:"region"`
+	KmsKeyID *string           `json:"kmsKeyId" yaml:"kmsKeyId"`
+	Tags     map[string]string `json:"tags" yaml:"tags"`
+}
+
+type EnterpriseSecretStoreKafkaConnect struct {
+	Enabled  bool                                       `json:"enabled" yaml:"enabled"`
+	Clusters []EnterpriseSecretStoreKafkaConnectCluster `json:"clusters" yaml:"clusters"`
+}
+
+type EnterpriseSecretStoreKafkaConnectCluster struct {
+	Name                   string `json:"name" yaml:"name"`
+	SecretNamePrefixAppend string `json:"secretNamePrefixAppend" yaml:"secretNamePrefixAppend"`
 }

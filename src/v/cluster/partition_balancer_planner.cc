@@ -648,9 +648,7 @@ void partition_balancer_planner::get_full_node_reassignments(
 void partition_balancer_planner::get_unavailable_node_movement_cancellations(
   plan_data& result, const reallocation_request_state& rrs) {
     for (const auto& update : _state.topics().updates_in_progress()) {
-        if (
-          update.second.get_state()
-          != topic_table::in_progress_state::update_requested) {
+        if (update.second.get_state() != reconfiguration_state::in_progress) {
             continue;
         }
 

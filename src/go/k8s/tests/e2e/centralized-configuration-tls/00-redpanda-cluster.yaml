@@ -22,7 +22,6 @@ spec:
     - port: 9644
       tls:
         enabled: true
-        requireClientAuth: true
     pandaproxyApi:
      - port: 8082
     developerMode: true

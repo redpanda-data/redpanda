@@ -93,47 +93,47 @@ std::optional<cluster::leader_term> get_leader_term(
 }
 
 namespace {
-bool is_internal(const model::topic_namespace& tp_ns) {
+bool is_internal(model::topic_namespace_view tp_ns) {
     return tp_ns == model::kafka_consumer_offsets_nt;
 }
 
 } // namespace
 
 metadata_response::topic make_topic_response_from_topic_metadata(
-  const cluster::metadata_cache& md_cache, cluster::topic_metadata&& tp_md) {
+  const cluster::metadata_cache& md_cache,
+  const cluster::topic_metadata& tp_md) {
     metadata_response::topic tp;
+    tp.partitions.reserve(tp_md.get_assignments().size());
     tp.error_code = error_code::none;
-    auto tp_ns = tp_md.get_configuration().tp_ns;
-    tp.name = std::move(tp_md.get_configuration().tp_ns.tp);
+    model::topic_namespace_view tp_ns = tp_md.get_configuration().tp_ns;
+    tp.name = tp_md.get_configuration().tp_ns.tp;
 
     tp.is_internal = is_internal(tp_ns);
-    std::transform(
-      tp_md.get_assignments().begin(),
-      tp_md.get_assignments().end(),
-      std::back_inserter(tp.partitions),
-      [tp_ns = std::move(tp_ns),
-       &md_cache](cluster::partition_assignment& p_md) {
-          std::vector<model::node_id> replicas{};
-          replicas.reserve(p_md.replicas.size());
-          std::transform(
-            std::cbegin(p_md.replicas),
-            std::cend(p_md.replicas),
-            std::back_inserter(replicas),
-            [](const model::broker_shard& bs) { return bs.node_id; });
-          metadata_response::partition p;
-          p.error_code = error_code::none;
-          p.partition_index = p_md.id;
-          p.leader_id = no_leader;
-          auto lt = get_leader_term(tp_ns, p_md.id, md_cache, replicas);
-          if (lt) {
-              p.leader_id = lt->leader.value_or(no_leader);
-              p.leader_epoch = leader_epoch_from_term(lt->term);
-          }
-          p.replica_nodes = std::move(replicas);
-          p.isr_nodes = p.replica_nodes;
-          p.offline_replicas = {};
-          return p;
-      });
+
+    for (const auto& p_as : tp_md.get_assignments()) {
+        std::vector<model::node_id> replicas{};
+        replicas.reserve(p_as.replicas.size());
+        // current replica set
+        std::transform(
+          std::cbegin(p_as.replicas),
+          std::cend(p_as.replicas),
+          std::back_inserter(replicas),
+          [](const model::broker_shard& bs) { return bs.node_id; });
+        metadata_response::partition p;
+        p.error_code = error_code::none;
+        p.partition_index = p_as.id;
+        p.leader_id = no_leader;
+        auto lt = get_leader_term(tp_ns, p_as.id, md_cache, replicas);
+        if (lt) {
+            p.leader_id = lt->leader.value_or(no_leader);
+            p.leader_epoch = leader_epoch_from_term(lt->term);
+        }
+        p.replica_nodes = std::move(replicas);
+        p.isr_nodes = p.replica_nodes;
+        p.offline_replicas = {};
+        tp.partitions.push_back(std::move(p));
+    }
+
     return tp;
 }
 
@@ -176,7 +176,7 @@ create_topic(request_context& ctx, model::topic&& topic) {
                    tout + model::timeout_clock::now())
             .then([&ctx, tp_md = std::move(tp_md)]() mutable {
                 return make_topic_response_from_topic_metadata(
-                  ctx.metadata_cache(), std::move(tp_md.value()));
+                  ctx.metadata_cache(), tp_md.value());
             });
       })
       .handle_exception([topic = std::move(topic)](
@@ -194,7 +194,9 @@ make_error_topic_response(model::topic tp, error_code ec) {
 }
 
 static metadata_response::topic make_topic_response(
-  request_context& ctx, metadata_request& rq, cluster::topic_metadata md) {
+  request_context& ctx,
+  metadata_request& rq,
+  const cluster::topic_metadata& md) {
     int32_t auth_operations = 0;
     /**
      * if requested include topic authorized operations
@@ -205,7 +207,7 @@ static metadata_response::topic make_topic_response(
     }
 
     auto res = make_topic_response_from_topic_metadata(
-      ctx.metadata_cache(), std::move(md));
+      ctx.metadata_cache(), md);
     res.topic_authorized_operations = auth_operations;
     return res;
 }
@@ -217,7 +219,9 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
         auto& topics_md = ctx.metadata_cache().all_topics_metadata();
-
+        // reserve vector capacity to full size as there are only few topics
+        // outside of kafka namespace
+        res.reserve(topics_md.size());
         for (const auto& [tp_ns, md] : topics_md) {
             // only serve topics from the kafka namespace
             if (tp_ns.ns != model::kafka_namespace) {
@@ -255,8 +259,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
         if (auto md = ctx.metadata_cache().get_topic_metadata(
               model::topic_namespace_view(model::kafka_namespace, topic.name));
             md) {
-            auto src_topic_response = make_topic_response(
-              ctx, request, std::move(*md));
+            auto src_topic_response = make_topic_response(ctx, request, *md);
             src_topic_response.name = std::move(topic.name);
             res.push_back(std::move(src_topic_response));
             continue;

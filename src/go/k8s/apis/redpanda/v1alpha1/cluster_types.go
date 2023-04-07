@@ -15,7 +15,7 @@ import (
 	"net/url"
 	"time"
 
-	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources/featuregates"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -170,6 +170,13 @@ type ClusterSpec struct {
 
 	// If key is not provided in the SecretRef, Secret data should have key "license"
 	LicenseRef *SecretKeyRef `json:"licenseRef,omitempty"`
+
+	// When InitialValidationForVolume is enabled the mounted Redpanda data folder
+	// will be checked if:
+	// - it is dir
+	// - it has XFS file system
+	// - it can create test file and delete it
+	InitialValidationForVolume *bool `json:"initialValidationForVolume,omitempty"`
 }
 
 // RestartConfig contains strategies to configure how the cluster behaves when restarting, because of upgrades
@@ -177,6 +184,26 @@ type ClusterSpec struct {
 type RestartConfig struct {
 	// DisableMaintenanceModeHooks deactivates the preStop and postStart hooks that force nodes to enter maintenance mode when stopping and exit maintenance mode when up again
 	DisableMaintenanceModeHooks *bool `json:"disableMaintenanceModeHooks,omitempty"`
+
+	// UnderReplicatedPartitionThreshold controls when rolling update will continue with
+	// restarts. The procedure can be described as follows:
+	//
+	// 1. Rolling update checks if Pod specification needs to be replaced and deletes it
+	// 2. Deleted Redpanda Pod is put into maintenance mode (postStart hook will disable
+	//    maintenance mode when new Pod starts)
+	// 3. Rolling update waits for Pod to be in Ready state
+	// 4. Rolling update checks if cluster is in healthy state
+	// 5. Rolling update checks if restarted Redpanda Pod admin API Ready endpoint returns HTTP 200 response
+	// 6. Using UnderReplicatedPartitionThreshold each under replicated partition metric is compared with the threshold
+	// 7. Rolling update moves to the next Redpanda pod
+	//
+	// The metric `vectorized_cluster_partition_under_replicated_replicas` is used in the comparison
+	//
+	// Mentioned metrics has the following help description:
+	// `vectorized_cluster_partition_under_replicated_replicas` Number of under replicated replicas
+	//
+	// By default, the UnderReplicatedPartitionThreshold will be 0, which means all partitions needs to catch up without any lag.
+	UnderReplicatedPartitionThreshold int `json:"underReplicatedPartitionThreshold,omitempty"`
 }
 
 // PDBConfig specifies how the PodDisruptionBudget should be created for the
@@ -532,6 +559,10 @@ type RedpandaConfig struct {
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 	// Enable auto-creation of topics. Reference https://kafka.apache.org/documentation/#brokerconfigs_auto.create.topics.enable
 	AutoCreateTopics bool `json:"autoCreateTopics,omitempty"`
+	// Additional command line arguments that we pass to the redpanda binary
+	// These are applied last and will override any other command line arguments that may be defined,
+	// including the ones added when setting `DeveloperMode` to `true`.
+	AdditionalCommandlineArguments map[string]string `json:"additionalCommandlineArguments,omitempty"`
 }
 
 // AdminAPI configures listener for the Redpanda Admin API

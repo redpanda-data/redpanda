@@ -58,7 +58,7 @@ public:
     model::offset high_watermark() const final {
         if (_partition->is_read_replica_mode_enabled()) {
             if (_partition->cloud_data_available()) {
-                return model::next_offset(_partition->last_cloud_offset());
+                return _partition->next_cloud_offset();
             } else {
                 return model::offset(0);
             }
@@ -70,7 +70,7 @@ public:
         if (_partition->is_read_replica_mode_enabled()) {
             if (_partition->cloud_data_available()) {
                 // There is no difference between HWM and LO in this mode
-                return model::next_offset(_partition->last_cloud_offset());
+                return _partition->next_cloud_offset();
             } else {
                 return model::offset(0);
             }
@@ -138,6 +138,8 @@ private:
     aborted_transactions_remote(
       cloud_storage::offset_range offsets,
       ss::lw_shared_ptr<const storage::offset_translator_state> ot_state);
+
+    bool may_read_from_cloud(kafka::offset);
 
     ss::lw_shared_ptr<cluster::partition> _partition;
     ss::lw_shared_ptr<const storage::offset_translator_state> _translator;

@@ -531,15 +531,14 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
 
     auto ts = now();
 
-    auto new_lstats = log.offsets();
-    log.set_collectible_offset(new_lstats.dirty_offset);
-
     append_random_batches(log, 10, model::term_id(2));
     log.flush().get0();
-    // garbadge collect first append series
     ss::abort_source as;
 
-    // truncate at 0, offset earlier then the one present in log
+    // The call to 'compact' simply triggers a notification
+    // for the log eviction stm with an offset until which
+    // to evict. The test does not listen for the notification,
+    // so this call is basically a no-op.
     auto f1 = log.compact(compaction_config(
       ts,
       std::nullopt,
@@ -548,7 +547,7 @@ FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
       as));
 
     auto f2 = log.truncate_prefix(storage::truncate_prefix_config(
-      lstats.dirty_offset, ss::default_priority_class()));
+      model::next_offset(lstats.dirty_offset), ss::default_priority_class()));
 
     f1.get0();
     f2.get0();

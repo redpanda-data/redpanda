@@ -130,6 +130,20 @@ replicate_stages::replicate_stages(raft::errc ec)
   , replicate_finished(
       ss::make_ready_future<result<replicate_result>>(make_error_code(ec))){};
 
+void follower_index_metadata::reset() {
+    last_dirty_log_index = model::offset{};
+    last_flushed_log_index = model::offset{};
+    last_sent_offset = model::offset{};
+    match_index = model::offset{};
+    next_index = model::offset{};
+    heartbeats_failed = 0;
+    last_sent_seq = follower_req_seq{0};
+    last_received_seq = follower_req_seq{0};
+    last_successful_received_seq = follower_req_seq{0};
+    last_suppress_heartbeats_seq = follower_req_seq{0};
+    suppress_heartbeats = heartbeats_suppressed::no;
+}
+
 std::ostream& operator<<(std::ostream& o, const vnode& id) {
     return o << "{id: " << id.id() << ", revision: " << id.revision() << "}";
 }
@@ -428,11 +442,33 @@ void heartbeat_reply::serde_write(iobuf& dst) {
         return;
     }
 
-    // replies are comming from the same physical node
-    write(out, reply.meta.front().node_id.id());
-    // replies are addressed to the same physical node
-    write(out, reply.meta.front().target_node_id.id());
     std::sort(reply.meta.begin(), reply.meta.end(), sorter_fn{});
+    /**
+     * We use a target/source node_id from the last available append_entries
+     * response as all of the failed responses (timeouts and responses for which
+     * group couldn't be find) are present at the beginning after the array is
+     * sorted since last_flushed_log_index for those replies is an uninitialized
+     * i.e. model::offset::min().
+     */
+    auto it = reply.meta.rbegin();
+    for (; it != reply.meta.rend(); ++it) {
+        if (likely(it->target_node_id.id() != model::node_id{})) {
+            // replies are coming from the same physical node
+            write(out, it->node_id.id());
+            // replies are addressed to the same physical node
+            write(out, it->target_node_id.id());
+            break;
+        }
+    }
+    /**
+     * There are no successful heartbeat replies, fill in with information from
+     * first reply
+     */
+    if (unlikely(it == reply.meta.rend())) {
+        write(out, reply.meta.front().node_id.id());
+        write(out, reply.meta.front().target_node_id.id());
+    }
+
     internal::hbeat_response_array encodee(reply.meta.size());
 
     for (size_t i = 0; i < reply.meta.size(); ++i) {

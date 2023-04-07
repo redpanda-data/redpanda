@@ -94,6 +94,8 @@ CHAOS_LOG_ALLOW_LIST = [
     # Failure to progress STMs promptly
     re.compile("raft::offset_monitor::wait_timed_out"),
 
+    # storage - log_manager.cc:415 - Leftover staging file found, removing: /var/lib/redpanda/data/kafka/__consumer_offsets/15_320/0-1-v1.log.staging
+    re.compile("storage - .*Leftover staging file"),
     # e.g. cluster - controller_backend.cc:466 - exception while executing partition operation: {type: update_finished, ntp: {kafka/test-topic-1944-1639161306808363/1}, offset: 413, new_assignment: { id: 1, group_id: 65, replicas: {{node_id: 3, shard: 2}, {node_id: 4, shard: 2}, {node_id: 1, shard: 0}} }, previous_assignment: {nullopt}} - std::__1::__fs::filesystem::filesystem_error (error system:39, filesystem error: remove failed: Directory not empty [/var/lib/redpanda/data/kafka/test-topic-1944-1639161306808363])
     re.compile("cluster - .*Directory not empty"),
     re.compile("r/heartbeat - .*cannot find consensus group"),
@@ -467,7 +469,7 @@ class RedpandaService(Service):
         "admin", "admin", "SCRAM-SHA-256")
 
     COV_KEY = "enable_cov"
-    DEFAULT_COV_OPT = False
+    DEFAULT_COV_OPT = "OFF"
 
     # Where we put a compressed binary if saving it after failure
     EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
@@ -951,6 +953,13 @@ class RedpandaService(Service):
         preamble, res_args = self._resource_settings.to_cli(
             dedicated_node=self._dedicated_nodes)
 
+        # each node will create its own copy of the .profraw file
+        # since each node creates a redpanda broker.
+        if self.cov_enabled():
+            self._environment.update(
+                dict(LLVM_PROFILE_FILE=
+                     f"\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\""))
+
         # Pass environment variables via FOO=BAR shell expressions
         env_preamble = " ".join(
             [f"{k}={v}" for (k, v) in self._environment.items()])
@@ -962,12 +971,6 @@ class RedpandaService(Service):
             " --abort-on-seastar-bad-alloc "
             f" {res_args} "
             f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
-
-        # set llvm_profile var for code coverae
-        # each node will create its own copy of the .profraw file
-        # since each node creates a redpanda broker.
-        if self.cov_enabled():
-            cmd = f"LLVM_PROFILE_FILE=\"{RedpandaService.COVERAGE_PROFRAW_CAPTURE}\" " + cmd
 
         node.account.ssh(cmd)
 
@@ -1111,7 +1114,8 @@ class RedpandaService(Service):
                    first_start=False,
                    expect_fail: bool = False,
                    auto_assign_node_id: bool = False,
-                   omit_seeds_on_idx_one: bool = True):
+                   omit_seeds_on_idx_one: bool = True,
+                   skip_readiness_check: bool = False):
         """
         Start a single instance of redpanda. This function will not return until
         redpanda appears to have started successfully. If redpanda does not
@@ -1156,7 +1160,7 @@ class RedpandaService(Service):
                     err_msg=
                     f"Redpanda processes did not terminate on {node.name} during startup as expected"
                 )
-            else:
+            elif not skip_readiness_check:
                 wait_until(
                     lambda: self.__is_status_ready(node),
                     timeout_sec=timeout,
@@ -1170,12 +1174,16 @@ class RedpandaService(Service):
         if not expect_fail:
             self._started.append(node)
 
-    def start_node_with_rpk(self, node, additional_args=""):
+    def start_node_with_rpk(self, node, additional_args="", clean_node=True):
         """
         Start a single instance of redpanda using rpk. similar to start_node, 
         this function will not return until redpanda appears to have started 
         successfully.
         """
+        if clean_node:
+            self.clean_node(node, preserve_current_install=True)
+        else:
+            self.logger.debug("%s: skip cleaning node" % self.who_am_i(node))
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.NODE_CONFIG_FILE))
 
@@ -1198,6 +1206,15 @@ class RedpandaService(Service):
         self.logger.debug(f"Node status prior to redpanda startup:")
         self.start_service(node, start_rp)
         self._started.append(node)
+
+        # We need to manually read the config from the file and add it
+        # to _node_configs since we use rpk to write the file instead of
+        # the write_node_conf_file method.
+        with tempfile.TemporaryDirectory() as d:
+            node.account.copy_from(RedpandaService.NODE_CONFIG_FILE, d)
+            with open(os.path.join(d, "redpanda.yaml")) as f:
+                actual_config = yaml.full_load(f.read())
+                self._node_configs[node] = actual_config
 
     def _log_node_process_state(self, node):
         """
@@ -1311,7 +1328,10 @@ class RedpandaService(Service):
         return self.s3_client.list_objects(
             self._si_settings.cloud_storage_bucket)
 
-    def set_cluster_config(self, values: dict, expect_restart: bool = False):
+    def set_cluster_config(self,
+                           values: dict,
+                           expect_restart: bool = False,
+                           timeout: int = 10):
         """
         Update cluster configuration and wait for all nodes to report that they
         have seen the new config.
@@ -1335,7 +1355,7 @@ class RedpandaService(Service):
         # early in the cluster's lifetime
         config_status = wait_until_result(
             is_ready,
-            timeout_sec=10,
+            timeout_sec=timeout,
             backoff_sec=0.5,
             err_msg=f"Config status versions did not converge on {new_version}"
         )
@@ -1738,7 +1758,7 @@ class RedpandaService(Service):
         # we need to look for redpanda pid. pids() method returns pids of both
         # nodejs server and redpanda
         try:
-            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | awk '{print $1}'"
+            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version' | awk '{print $1}'"
             for p in node.account.ssh_capture(cmd,
                                               allow_fail=True,
                                               callback=int):
@@ -2347,26 +2367,41 @@ class RedpandaService(Service):
         return [make_partition(p) for p in topic["partitions"]]
 
     def cov_enabled(self):
-        return self._context.globals.get(self.COV_KEY, self.DEFAULT_COV_OPT)
+        cov_option = self._context.globals.get(self.COV_KEY,
+                                               self.DEFAULT_COV_OPT)
+        if cov_option == "ON":
+            return True
+        elif cov_option == "OFF":
+            return False
+
+        self.logger.warn(f"{self.COV_KEY} should be one of 'ON', or 'OFF'")
+        return False
+
+    def search_log_node(self, node: ClusterNode, pattern: str):
+        for line in node.account.ssh_capture(
+                f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+        ):
+            # We got a match
+            self.logger.debug(f"Found {pattern} on node {node.name}: {line}")
+            return True
+
+        return False
 
     def search_log_any(self, pattern: str, nodes: list[ClusterNode] = None):
-        # Test helper for grepping the redpanda log.
-        # The design follows python's built-in any() function.
-        # https://docs.python.org/3/library/functions.html#any
+        """
+        Test helper for grepping the redpanda log.
+        The design follows python's built-in any() function.
+        https://docs.python.org/3/library/functions.html#any
 
-        # :param pattern: the string to search for
-        # :param nodes: a list of nodes to run grep on
-        # :return:  true if any instances of `pattern` found
+        :param pattern: the string to search for
+        :param nodes: a list of nodes to run grep on
+        :return:  true if any instances of `pattern` found
+        """
         if nodes is None:
             nodes = self.nodes
 
         for node in nodes:
-            for line in node.account.ssh_capture(
-                    f"grep \"{pattern}\" {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-            ):
-                # We got a match
-                self.logger.debug(
-                    f"Found {pattern} on node {node.name}: {line}")
+            if self.search_log_node(node, pattern):
                 return True
 
         # Fall through, no matches

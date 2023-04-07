@@ -46,7 +46,8 @@ credentials can be provided in three ways, in order of preference:
 If none of these are provided, login will prompt you for the client ID and
 client secret and will save them to the __cloud.yaml file. If you specify
 environment variables or flags, they will not be synced to the __cloud.yaml
-file. The cloud authorization token is always synced.
+file unless the --save flag is passed. The cloud authorization token is always 
+synced.
 `,
 		Run: func(cmd *cobra.Command, _ []string) {
 			cfg, err := params.Load(fs)

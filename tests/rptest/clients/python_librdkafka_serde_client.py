@@ -91,7 +91,8 @@ class SerdeClient:
             SchemaType.AVRO:
             AvroSerializer(self.sr_client, AVRO_SCHEMA),
             SchemaType.PROTOBUF:
-            ProtobufSerializer(ProtobufPayloadClass, self.sr_client)
+            ProtobufSerializer(ProtobufPayloadClass, self.sr_client,
+                               {'use.deprecated.format': False})
         }[self.schema_type]
 
     def _make_deserializer(self):
@@ -101,7 +102,8 @@ class SerdeClient:
                              AVRO_SCHEMA,
                              from_dict=lambda d, _: AvroPayload(d['val'])),
             SchemaType.PROTOBUF:
-            ProtobufDeserializer(ProtobufPayloadClass)
+            ProtobufDeserializer(ProtobufPayloadClass,
+                                 {'use.deprecated.format': False})
         }[self.schema_type]
 
     def _make_payload(self, val: int):

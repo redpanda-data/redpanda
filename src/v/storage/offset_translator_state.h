@@ -57,6 +57,10 @@ public:
     /// Difference between the log offset and the kafka offset.
     int64_t delta(model::offset) const;
 
+    /// Returns the difference between the log offset and the Kafka offset one
+    /// offset past the input.
+    model::offset_delta next_offset_delta(model::offset) const;
+
     /// Translate log offset into kafka offset.
     model::offset from_log_offset(model::offset) const;
 
@@ -75,6 +79,9 @@ public:
     /// the map) so that delta at `offset` equals to `delta`. Returns true if
     /// the map changed.
     bool add_absolute_delta(model::offset offset, int64_t delta);
+
+    /// Remove all gaps from offset translator
+    void reset();
 
     /// Removes the offset translation state starting from the offset
     /// (inclusive). Returns true if the map changed.

@@ -74,12 +74,15 @@
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
 #include "ssx/metrics.h"
+#include "utils/string_switch.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/prometheus.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/http/api_docs.hh>
@@ -94,9 +97,12 @@
 #include <boost/lexical_cast/bad_lexical_cast.hpp>
 #include <fmt/core.h>
 
+#include <charconv>
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <system_error>
+#include <type_traits>
 #include <unordered_map>
 
 using namespace std::chrono_literals;
@@ -126,9 +132,16 @@ admin_server::admin_server(
   , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
   , _archival_service(archival_service)
   , _node_status_table(node_status_table)
-  , _schema_registry(schema_registry) {}
+  , _schema_registry(schema_registry)
+  , _default_blocked_reactor_notify(
+      ss::engine().get_blocked_reactor_notify_ms()) {}
 
 ss::future<> admin_server::start() {
+    _blocked_reactor_notify_reset_timer.set_callback([this] {
+        return ss::smp::invoke_on_all([ms = _default_blocked_reactor_notify] {
+            ss::engine().update_blocked_reactor_notify_ms(ms);
+        });
+    });
     configure_metrics_route();
     configure_admin_routes();
 
@@ -140,7 +153,10 @@ ss::future<> admin_server::start() {
       _cfg.endpoints);
 }
 
-ss::future<> admin_server::stop() { return _server.stop(); }
+ss::future<> admin_server::stop() {
+    _blocked_reactor_notify_reset_timer.cancel();
+    return _server.stop();
+}
 
 void admin_server::configure_admin_routes() {
     auto rb = ss::make_shared<ss::api_registry_builder20>(
@@ -989,6 +1005,70 @@ void admin_server::register_config_routes() {
           return ss::make_ready_future<ss::json::json_return_type>(
             ss::json::json_void());
       });
+
+    register_route<superuser>(
+      ss::httpd::config_json::blocked_reactor_notify_ms,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          ss::sstring timeout_str;
+          if (!ss::httpd::connection::url_decode(
+                req->param["timeout"], timeout_str)) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Required parameter 'timeout' is not set"));
+          }
+
+          std::chrono::milliseconds ms;
+          try {
+              ms = std::clamp(
+                std::chrono::milliseconds(
+                  boost::lexical_cast<long long>(timeout_str)),
+                1ms,
+                _default_blocked_reactor_notify);
+          } catch (const boost::bad_lexical_cast&) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'timeout' value {{{}}}", timeout_str));
+          }
+
+          std::optional<std::chrono::seconds> expires;
+          static constexpr std::chrono::seconds max_expire_time_sec
+            = std::chrono::minutes(30);
+          if (auto e = req->get_query_param("expires"); !e.empty()) {
+              try {
+                  expires = std::clamp(
+                    std::chrono::seconds(boost::lexical_cast<long long>(e)),
+                    1s,
+                    max_expire_time_sec);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid parameter 'expires' value {{{}}}", e));
+              }
+          }
+
+          // This value is used when the expiration time is not set explicitly
+          static constexpr std::chrono::seconds default_expiration_time
+            = std::chrono::minutes(5);
+          auto curr = ss::engine().get_blocked_reactor_notify_ms();
+
+          vlog(
+            logger.info,
+            "Setting blocked_reactor_notify_ms from {} to {} for {} "
+            "(default={})",
+            curr,
+            ms.count(),
+            expires.value_or(default_expiration_time),
+            _default_blocked_reactor_notify);
+
+          return ss::smp::invoke_on_all(
+                   [ms] { ss::engine().update_blocked_reactor_notify_ms(ms); })
+            .then([] {
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_void());
+            })
+            .finally([this, expires] {
+                _blocked_reactor_notify_reset_timer.rearm(
+                  ss::steady_clock_type::now()
+                  + expires.value_or(default_expiration_time));
+            });
+      });
 }
 
 static json::validator make_cluster_config_validator() {
@@ -1766,6 +1846,10 @@ admin_server::put_license_handler(std::unique_ptr<ss::httpd::request> req) {
         if (loaded_license && (*loaded_license == license)) {
             /// Loaded license is idential to license in request, do
             /// nothing and return 200(OK)
+            vlog(
+              logger.info,
+              "Attempted to load identical license, doing nothing: {}",
+              license);
             co_return ss::json::json_void();
         }
         auto& fm = _controller->get_feature_manager();
@@ -1933,6 +2017,73 @@ ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
     co_return ss::json::json_void();
 }
 
+ss::future<ss::json::json_return_type>
+admin_server::get_decommission_progress_handler(
+  std::unique_ptr<ss::httpd::request> req) {
+    model::node_id id = parse_broker_id(*req);
+    auto res
+      = co_await _controller->get_api().local().get_node_decommission_progress(
+        id, 5s + model::timeout_clock::now());
+    if (!res) {
+        if (res.error() == cluster::errc::node_does_not_exists) {
+            throw ss::httpd::base_exception(
+              fmt::format("Node {} does not exists", id),
+              ss::httpd::reply::status_type::not_found);
+        } else if (res.error() == cluster::errc::invalid_node_operation) {
+            throw ss::httpd::base_exception(
+              fmt::format("Node {} is not decommissioning", id),
+              ss::httpd::reply::status_type::bad_request);
+        }
+
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "Unable to get decommission status for {} - {}",
+            id,
+            res.error().message()),
+          ss::httpd::reply::status_type::internal_server_error);
+    }
+    ss::httpd::broker_json::decommission_status ret;
+    auto& decommission_progress = res.value();
+
+    ret.replicas_left = decommission_progress.replicas_left;
+    ret.finished = decommission_progress.finished;
+
+    for (auto& p : decommission_progress.current_reconfigurations) {
+        ss::httpd::broker_json::partition_reconfiguration_status status;
+        status.ns = p.ntp.ns;
+        status.topic = p.ntp.tp.topic;
+        status.partition = p.ntp.tp.partition;
+        auto added_replicas = cluster::subtract_replica_sets(
+          p.current_assignment, p.previous_assignment);
+        // we are only interested in reconfigurations where one replica was
+        // added to the node
+        if (added_replicas.size() != 1) {
+            continue;
+        }
+        ss::httpd::broker_json::broker_shard moving_to{};
+        moving_to.node_id = added_replicas.front().node_id();
+        moving_to.core = added_replicas.front().shard;
+        status.moving_to = moving_to;
+        size_t left_to_move = 0;
+        size_t already_moved = 0;
+        for (auto replica_status : p.already_transferred_bytes) {
+            left_to_move += (p.current_partition_size - replica_status.bytes);
+            already_moved += replica_status.bytes;
+        }
+        status.bytes_left_to_move = left_to_move;
+        status.bytes_moved = already_moved;
+        status.partition_size = p.current_partition_size;
+        // if no information from partitions is present yet, we may indicate
+        // that everything have to be moved
+        if (already_moved == 0 && left_to_move == 0) {
+            status.bytes_left_to_move = p.current_partition_size;
+        }
+        ret.partitions.push(status);
+    }
+
+    co_return ret;
+}
+
 ss::future<ss::json::json_return_type> admin_server::recomission_broker_handler(
   std::unique_ptr<ss::httpd::request> req) {
     model::node_id id = parse_broker_id(*req);
@@ -2014,6 +2165,12 @@ void admin_server::register_broker_routes() {
       ss::httpd::broker_json::get_broker,
       [this](std::unique_ptr<ss::httpd::request> req) {
           return get_broker_handler(std::move(req));
+      });
+
+    register_route<user>(
+      ss::httpd::broker_json::get_decommission,
+      [this](std::unique_ptr<ss::httpd::request> req) {
+          return get_decommission_progress_handler(std::move(req));
       });
 
     register_route<superuser>(
@@ -3202,6 +3359,28 @@ void admin_server::register_shadow_indexing_routes() {
       });
 }
 
+constexpr std::string_view to_string_view(service_kind kind) {
+    switch (kind) {
+    case service_kind::schema_registry:
+        return "schema-registry";
+    }
+    return "invalid";
+}
+
+template<typename E>
+std::enable_if_t<std::is_enum_v<E>, std::optional<E>>
+  from_string_view(std::string_view);
+
+template<>
+constexpr std::optional<service_kind>
+from_string_view<service_kind>(std::string_view sv) {
+    return string_switch<std::optional<service_kind>>(sv)
+      .match(
+        to_string_view(service_kind::schema_registry),
+        service_kind::schema_registry)
+      .default_match(std::nullopt);
+}
+
 ss::future<> admin_server::restart_redpanda_service(service_kind service) {
     if (service == service_kind::schema_registry) {
         // Checks specific to schema registry
@@ -3213,7 +3392,11 @@ ss::future<> admin_server::restart_redpanda_service(service_kind service) {
 
         try {
             co_await _schema_registry->restart();
-        } catch (...) {
+        } catch (const std::exception& ex) {
+            vlog(
+              logger.error,
+              "Unknown issue restarting schema_registry: {}",
+              ex.what());
             throw ss::httpd::server_error_exception(
               "Unknown issue restarting schema_registry");
         }
@@ -3228,10 +3411,10 @@ admin_server::redpanda_services_restart_handler(
       service_param);
     if (!service.has_value()) {
         throw ss::httpd::not_found_exception(
-          fmt::format("Invalid service: {}", service));
+          fmt::format("Invalid service: {}", service_param));
     }
 
-    vlog(logger.info, "Restart redpanda service: {}", service);
+    vlog(logger.info, "Restart redpanda service: {}", to_string_view(*service));
     co_await restart_redpanda_service(*service);
     co_return ss::json::json_return_type(ss::json::json_void());
 }

@@ -25,3 +25,5 @@ collectors:
     command: kubectl get clusters -o jsonpath={@} -n $NAMESPACE
   - type: command
     command: kubectl get pods -o jsonpath={@} -n $NAMESPACE
+  - type: command
+    command: kind export logs --name kind tests/_e2e_artifacts/endpoint-template

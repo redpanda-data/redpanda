@@ -82,6 +82,8 @@ struct follower_index_metadata {
     follower_index_metadata& operator=(const follower_index_metadata&) = delete;
     follower_index_metadata(follower_index_metadata&&) = default;
     follower_index_metadata& operator=(follower_index_metadata&&) = delete;
+    // resets the follower state i.e. all indicies and sequence numbers
+    void reset();
 
     vnode node_id;
     // index of last known log for this follower
@@ -765,6 +767,9 @@ struct scheduling_config {
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
 std::ostream& operator<<(std::ostream& o, const append_entries_reply::status&);
+
+using with_learner_recovery_throttle
+  = ss::bool_class<struct with_recovery_throttle_tag>;
 } // namespace raft
 
 namespace reflection {

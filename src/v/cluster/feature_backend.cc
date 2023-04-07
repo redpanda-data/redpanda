@@ -11,6 +11,7 @@
 
 #include "feature_backend.h"
 
+#include "cluster/logger.h"
 #include "features/feature_table.h"
 #include "features/feature_table_snapshot.h"
 #include "seastar/core/coroutine.hh"
@@ -68,10 +69,24 @@ feature_backend::apply_feature_update_command(feature_update_cmd update) {
     }
 }
 
+bool feature_backend::has_snapshot() {
+    return _storage.local()
+      .kvs()
+      .get(
+        storage::kvstore::key_space::controller,
+        features::feature_table_snapshot::kvstore_key())
+      .has_value();
+}
+
 ss::future<> feature_backend::save_snapshot() {
     // kvstore is shard-local: must be on a consistent shard every
     // time for snapshot storage to work.
     vassert(ss::this_shard_id() == ss::shard_id{0}, "wrong shard");
+
+    vlog(
+      clusterlog.info,
+      "Saving feature_table_snapshot at version {}...",
+      _feature_table.local().get_active_version());
 
     auto snapshot = features::feature_table_snapshot::from(
       _feature_table.local());

@@ -129,8 +129,8 @@ public:
       model::offset lo,
       model::offset lco,
       model::offset insync,
-      const std::vector<segment_t>& segments,
-      const std::vector<segment_t>& replaced)
+      const fragmented_vector<segment_t>& segments,
+      const fragmented_vector<segment_t>& replaced)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _last_offset(lo)
@@ -165,6 +165,8 @@ public:
 
     // Get last offset
     const model::offset get_last_offset() const;
+    const std::optional<kafka::offset> get_last_kafka_offset() const;
+    const std::optional<kafka::offset> get_next_kafka_offset() const;
 
     // Get insync offset of the archival_metadata_stm
     //
@@ -299,7 +301,9 @@ private:
 
     /// Move segments from _segments to _replaced
     void move_aligned_offset_range(
-      model::offset begin_inclusive, model::offset end_inclusive);
+      model::offset begin_inclusive,
+      model::offset end_inclusive,
+      const segment_meta& replacing_segment);
 
     model::ntp _ntp;
     model::initial_revision_id _rev;

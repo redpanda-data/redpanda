@@ -17,7 +17,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
 	res "github.com/redpanda-data/redpanda/src/go/k8s/pkg/resources"
 	"github.com/stretchr/testify/assert"
-	policyv1beta1 "k8s.io/api/policy/v1beta1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -34,12 +34,12 @@ func TestEnsure_PDB(t *testing.T) {
 		Enabled:      true,
 		MinAvailable: &one,
 	}
-	pdb := &policyv1beta1.PodDisruptionBudget{
+	pdb := &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
 			Name:      cluster.Name,
 		},
-		Spec: policyv1beta1.PodDisruptionBudgetSpec{
+		Spec: policyv1.PodDisruptionBudgetSpec{
 			Selector:     labels.ForCluster(cluster).AsAPISelector(),
 			MinAvailable: &one,
 		},
@@ -52,7 +52,7 @@ func TestEnsure_PDB(t *testing.T) {
 		name           string
 		existingObject client.Object
 		pandaCluster   *redpandav1alpha1.Cluster
-		expectedObject *policyv1beta1.PodDisruptionBudget
+		expectedObject *policyv1.PodDisruptionBudget
 	}{
 		{"none existing", nil, cluster, pdb},
 		{"update to cluster with minAvailable 2", pdb, clusterTwo, pdbTwo},
@@ -84,7 +84,7 @@ func TestEnsure_PDB(t *testing.T) {
 			err = pdb.Ensure(context.Background())
 			assert.NoError(t, err, tt.name)
 
-			actual := &policyv1beta1.PodDisruptionBudget{}
+			actual := &policyv1.PodDisruptionBudget{}
 			err = c.Get(context.Background(), pdb.Key(), actual)
 			assert.NoError(t, err, tt.name)
 			assert.Equal(t, tt.expectedObject.Spec, actual.Spec)

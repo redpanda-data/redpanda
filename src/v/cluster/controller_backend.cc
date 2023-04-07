@@ -794,6 +794,8 @@ controller_backend::execute_partition_op(const topic_table::delta& delta) {
           "be handled by coproc::reconciliation_backend");
     case op_t::del:
         return delete_partition(delta.ntp, rev, partition_removal_mode::global)
+          .then(
+            [this, &delta, rev]() { return cleanup_orphan_files(delta, rev); })
           .then([] { return std::error_code(errc::success); });
     case op_t::update:
     case op_t::force_abort_update:
@@ -1211,7 +1213,11 @@ ss::future<std::error_code> controller_backend::dispatch_update_finished(
 
 ss::future<> controller_backend::finish_partition_update(
   model::ntp ntp, const partition_assignment& current, model::revision_id rev) {
-    vlog(clusterlog.trace, "[{}] processing finished update command", ntp);
+    vlog(
+      clusterlog.trace,
+      "[{}] processing finished update command, revision: {}",
+      ntp,
+      rev);
     // if there is no local replica in replica set but,
     // partition with requested ntp exists on this broker core
     // it has to be removed after new configuration is stable
@@ -1226,7 +1232,12 @@ ss::future<> controller_backend::finish_partition_update(
     if (!partition) {
         return ss::make_ready_future<>();
     }
-    vlog(clusterlog.trace, "[{}] removing partition replica", ntp);
+
+    vlog(
+      clusterlog.trace,
+      "[{}] removing partition replica, revision: {}",
+      ntp,
+      rev);
     return delete_partition(
       std::move(ntp), rev, partition_removal_mode::local_only);
 }
@@ -1551,27 +1562,32 @@ ss::future<std::error_code> controller_backend::shutdown_on_current_shard(
     }
 }
 
+ss::future<> controller_backend::cleanup_orphan_files(
+  const topic_table::delta& delta, model::revision_id rev) {
+    if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
+        return ss::now();
+    }
+    return _storage.local().log_mgr().remove_orphan(
+      _data_directory, delta.ntp, rev);
+}
+
 ss::future<> controller_backend::delete_partition(
   model::ntp ntp, model::revision_id rev, partition_removal_mode mode) {
-    auto part = _partition_manager.local().get(ntp);
-    auto is_partition_replicated_locally = part.get() != nullptr;
-
     // The partition leaders table contains partition leaders for all
     // partitions accross the cluster. For this reason, when deleting a
     // partition (i.e. removal mode is global), we need to delete from the table
     // regardless of whether a replica of 'ntp' is present on the node.
-    if (
-      mode == partition_removal_mode::global
-      || is_partition_replicated_locally) {
+    if (mode == partition_removal_mode::global) {
         co_await _partition_leaders_table.invoke_on_all(
           [ntp, rev](partition_leaders_table& leaders) {
               leaders.remove_leader(ntp, rev);
           });
     }
 
+    auto part = _partition_manager.local().get(ntp);
     // partition is not replicated locally or it was already recreated with
     // greater rev, do nothing
-    if (!is_partition_replicated_locally || part->get_revision_id() > rev) {
+    if (part.get() == nullptr || part->get_revision_id() > rev) {
         co_return;
     }
 

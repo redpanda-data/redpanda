@@ -8,10 +8,6 @@ spec:
     spec:
       activeDeadlineSeconds: 90
       volumes:
-        - name: tlsadmin
-          secret:
-            defaultMode: 420
-            secretName: centralized-configuration-tls-admin-api-client
         - name: tlsadminca
           secret:
             defaultMode: 420
@@ -31,14 +27,12 @@ spec:
           args:
             - >
               url=https://centralized-configuration-tls-0.centralized-configuration-tls.$NAMESPACE.svc.cluster.local:9644/v1/config
-              res=$(curl --cacert /etc/tls/certs/admin/ca/ca.crt --cert /etc/tls/certs/admin/tls.crt --key /etc/tls/certs/admin/tls.key --silent -L $url | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$') &&
+              res=$(curl --cacert /etc/tls/certs/admin/ca/ca.crt --silent -L $url | grep -o '\"segment_appender_flush_timeout_ms\":[^,}]*' | grep -o '[^:]*$') &&
               echo $res > /dev/termination-log &&
               if [[ "$res" != "1003" ]]; then
                 exit 1;
               fi
           volumeMounts:
-            - mountPath: /etc/tls/certs/admin
-              name: tlsadmin
             - mountPath: /etc/tls/certs/admin/ca
               name: tlsadminca
       restartPolicy: Never

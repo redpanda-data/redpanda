@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -59,6 +60,7 @@ const (
 	datadirName                  = "datadir"
 	archivalCacheIndexAnchorName = "shadow-index-cache"
 	defaultDatadirCapacity       = "100Gi"
+	trueString                   = "true"
 )
 
 var (
@@ -101,6 +103,7 @@ type StatefulSetResource struct {
 	adminAPIClientFactory    adminutils.AdminAPIClientFactory
 	decommissionWaitInterval time.Duration
 	logger                   logr.Logger
+	metricsTimeout           time.Duration
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -121,8 +124,9 @@ func NewStatefulSet(
 	adminAPIClientFactory adminutils.AdminAPIClientFactory,
 	decommissionWaitInterval time.Duration,
 	logger logr.Logger,
+	metricsTimeout time.Duration,
 ) *StatefulSetResource {
-	return &StatefulSetResource{
+	ssr := &StatefulSetResource{
 		client,
 		scheme,
 		pandaCluster,
@@ -138,8 +142,13 @@ func NewStatefulSet(
 		adminAPIClientFactory,
 		decommissionWaitInterval,
 		logger.WithValues("Kind", statefulSetKind()),
+		defaultAdminAPITimeout,
 		nil,
 	}
+	if metricsTimeout != 0 {
+		ssr.metricsTimeout = metricsTimeout
+	}
+	return ssr
 }
 
 // Ensure will manage kubernetes v1.StatefulSet for redpanda.vectorized.io custom resource
@@ -335,7 +344,7 @@ func (r *StatefulSetResource) obj(
 				Spec: corev1.PodSpec{
 					ServiceAccountName: r.getServiceAccountName(),
 					SecurityContext: &corev1.PodSecurityContext{
-						FSGroup: pointer.Int64Ptr(fsGroup),
+						FSGroup: pointer.Int64(fsGroup),
 					},
 					Volumes: append([]corev1.Volume{
 						{
@@ -433,10 +442,14 @@ func (r *StatefulSetResource) obj(
 									Name:  "RACK_AWARENESS",
 									Value: strconv.FormatBool(featuregates.RackAwareness(r.pandaCluster.Spec.Version)),
 								},
+								{
+									Name:  "VALIDATE_MOUNTED_VOLUME",
+									Value: strconv.FormatBool(r.pandaCluster.Spec.InitialValidationForVolume != nil && *r.pandaCluster.Spec.InitialValidationForVolume),
+								},
 							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
-								RunAsUser:  pointer.Int64Ptr(userID),
-								RunAsGroup: pointer.Int64Ptr(groupID),
+								RunAsUser:  pointer.Int64(userID),
+								RunAsGroup: pointer.Int64(groupID),
 							},
 							Resources: corev1.ResourceRequirements{
 								Limits:   r.pandaCluster.Spec.Resources.Limits,
@@ -466,7 +479,8 @@ func (r *StatefulSetResource) obj(
 								r.portsConfiguration(),
 							}, prepareAdditionalArguments(
 								r.pandaCluster.Spec.Configuration.DeveloperMode,
-								r.pandaCluster.Spec.Resources)...),
+								r.pandaCluster.Spec.Resources,
+								r.pandaCluster.Spec.Configuration.AdditionalCommandlineArguments)...),
 							Env: []corev1.EnvVar{
 								{
 									Name:  "REDPANDA_ENVIRONMENT",
@@ -507,8 +521,8 @@ func (r *StatefulSetResource) obj(
 								},
 							}, r.getPorts()...),
 							SecurityContext: &corev1.SecurityContext{
-								RunAsUser:  pointer.Int64Ptr(userID),
-								RunAsGroup: pointer.Int64Ptr(groupID),
+								RunAsUser:  pointer.Int64(userID),
+								RunAsGroup: pointer.Int64(groupID),
 							},
 							Resources: corev1.ResourceRequirements{
 								Limits:   r.pandaCluster.Spec.Resources.Limits,
@@ -596,8 +610,8 @@ func (r *StatefulSetResource) obj(
 }
 
 // getPrestopHook creates a hook that drains the node before shutting down.
-func (r *StatefulSetResource) getHook(script string) *corev1.Handler {
-	return &corev1.Handler{
+func (r *StatefulSetResource) getHook(script string) *corev1.LifecycleHandler {
+	return &corev1.LifecycleHandler{
 		Exec: &corev1.ExecAction{
 			Command: []string{
 				scriptMountPath + "/" + script,
@@ -629,6 +643,17 @@ func setVolumes(ss *appsv1.StatefulSet, cluster *redpandav1alpha1.Cluster) {
 				MountPath: dataDirectory,
 			}
 			containers[i].VolumeMounts = append(containers[i].VolumeMounts, volMount)
+		}
+	}
+
+	initContainer := ss.Spec.Template.Spec.InitContainers
+	for i := range initContainer {
+		if initContainer[i].Name == configuratorContainerName {
+			volMount := corev1.VolumeMount{
+				Name:      datadirName,
+				MountPath: dataDirectory,
+			}
+			initContainer[i].VolumeMounts = append(initContainer[i].VolumeMounts, volMount)
 		}
 	}
 
@@ -686,52 +711,62 @@ func (r *StatefulSetResource) rpkStatusContainer(
 func prepareAdditionalArguments(
 	developerMode bool,
 	originalRequests redpandav1alpha1.RedpandaResourceRequirements,
+	additionalCommandlineArguments map[string]string,
 ) []string {
 	requests := originalRequests.DeepCopy()
 
 	requestedCores := requests.RedpandaCPU().Value()
 	requestedMemory := requests.RedpandaMemory().Value()
 
-	args := []string{}
+	args := make(map[string]string)
 	if developerMode {
-		args = append(args,
-			"--overprovisioned",
-			"--kernel-page-cache=true",
-			"--default-log-level=debug",
-		)
+		args["overprovisioned"] = ""
+		args["kernel-page-cache"] = trueString
+		args["default-log-level"] = "debug"
 	} else {
-		args = append(args, "--default-log-level=info")
+		args["default-log-level"] = "info"
 	}
 
 	// When cpu is not set, all cores are used
 	if requestedCores > 0 {
-		args = append(args, "--smp="+strconv.FormatInt(requestedCores, 10))
+		args["smp"] = strconv.FormatInt(requestedCores, 10)
 	}
 
 	// When memory is not set, all of the host memory is used minus max(1.5Gi, 7%)
 	if requestedMemory > 0 {
-		args = append(args,
-			// Both of these flags shouldn't be set at the same time:
-			// https://github.com/scylladb/seastar/issues/375
-			//
-			// However, this allows explicitly setting the amount of memory to
-			// the required value, and the code in seastar hasn't changed in
-			// years.
-			//
-			// The correct way to do it is to set just --reserve-memory
-			// taking into account:
-			// * Seastar sees the total host memory
-			// * k8s has an allocatable amount of memory
-			// * DefaultRequestBaseMemory reservation
-			// * Memory buffer for the cgroup
-			//
-			// All of which doesn't feel much less fragile or intuitive.
-			"--memory="+strconv.FormatInt(requestedMemory, 10),
-			"--reserve-memory=0M",
-		)
+		// Both of these flags shouldn't be set at the same time:
+		// https://github.com/scylladb/seastar/issues/375
+		//
+		// However, this allows explicitly setting the amount of memory to
+		// the required value, and the code in seastar hasn't changed in
+		// years.
+		//
+		// The correct way to do it is to set just --reserve-memory
+		// taking into account:
+		// * Seastar sees the total host memory
+		// * k8s has an allocatable amount of memory
+		// * DefaultRequestBaseMemory reservation
+		// * Memory buffer for the cgroup
+		//
+		// All of which doesn't feel much less fragile or intuitive.
+		args["memory"] = strconv.FormatInt(requestedMemory, 10)
+		args["reserve-memory"] = "0M"
 	}
 
-	return args
+	for k, v := range additionalCommandlineArguments {
+		args[k] = v
+	}
+
+	out := make([]string, 0)
+	for k, v := range args {
+		if v == "" {
+			out = append(out, fmt.Sprintf("--%s", k))
+		} else {
+			out = append(out, fmt.Sprintf("--%s=%s", k, v))
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (r *StatefulSetResource) pandaproxyEnvVars() []corev1.EnvVar {

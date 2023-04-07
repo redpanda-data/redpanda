@@ -278,11 +278,13 @@ static ss::future<std::optional<std::error_code>> get_file_range(
       "Invalid upload candidate {}",
       upl);
     upl->content_length = upl->final_file_offset - upl->file_offset;
-    vassert(
-      upl->content_length <= segment->reader().file_size(),
-      "Incorrect content length in {}, file size {}",
-      upl,
-      fsize);
+    if (upl->content_length > segment->reader().file_size()) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Incorrect content length in {}, file size {}",
+          upl,
+          segment->reader().file_size()));
+    }
     vlog(
       archival_log.debug,
       "Partial segment upload {}, original file size: {}",
@@ -426,7 +428,7 @@ archival_policy::get_next_compacted_segment(
         * compacted_segment_size_multiplier};
 
     compacted_segment_collector.collect_segments();
-    if (!compacted_segment_collector.can_replace_manifest_segment()) {
+    if (!compacted_segment_collector.should_replace_manifest_segment()) {
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 

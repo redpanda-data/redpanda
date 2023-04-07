@@ -15,6 +15,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
 #include "config/node_config.h"
@@ -25,6 +26,10 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+
+#include <absl/container/flat_hash_map.h>
+
+#include <algorithm>
 
 namespace cluster {
 
@@ -54,12 +59,14 @@ config_manager::config_manager(
   ss::sharded<rpc::connection_cache>& cc,
   ss::sharded<partition_leaders_table>& pl,
   ss::sharded<features::feature_table>& ft,
+  ss::sharded<cluster::members_table>& mt,
   ss::sharded<ss::abort_source>& as)
   : _self(*config::node().node_id())
   , _frontend(cf)
   , _connection_cache(cc)
   , _leaders(pl)
   , _feature_table(ft)
+  , _members(mt)
   , _as(as) {
     if (ss::this_shard_id() == controller_stm_shard) {
         // Only the controller stm shard handles updates: leave these
@@ -210,12 +217,29 @@ ss::future<> config_manager::start() {
         vlog(clusterlog.warn, "Exception from reconcile_status: {}", e);
     });
 
+    _member_removed_notification
+      = _members.local().register_members_updated_notification(
+        [this](auto current_members) {
+            handle_cluster_members_update(std::move(current_members));
+        });
+
     return ss::now();
+}
+void config_manager::handle_cluster_members_update(
+  const std::vector<model::node_id>& member_ids) {
+    std::erase_if(status, [&member_ids](const auto& status_pair) {
+        // it is fine to look up every time as the members list is usually short
+        return std::find(
+                 member_ids.begin(), member_ids.end(), status_pair.first)
+               == member_ids.end();
+    });
 }
 
 ss::future<> config_manager::stop() {
     vlog(clusterlog.info, "Stopping Config Manager...");
     _reconcile_wait.broken();
+    _members.local().unregister_members_updated_notification(
+      _member_removed_notification);
     co_await _gate.close();
 }
 
@@ -829,16 +853,15 @@ config_manager::apply_status(cluster_config_status_cmd&& cmd) {
     auto node_id = cmd.key;
     auto data = std::move(cmd.value);
 
-    // TODO: hook into node decom to remove nodes from
-    // the status map.
-
     vlog(
       clusterlog.trace,
       "apply_status: updating node {}: {}",
       node_id,
       data.status);
-
-    status[node_id] = data.status;
+    // do not apply status to the map if node is removed
+    if (_members.local().contains(node_id)) {
+        status[node_id] = data.status;
+    }
 
     co_return errc::success;
 }

@@ -62,5 +62,26 @@ struct segment_path {
         };
     }
 };
+struct ntp_directory_path {
+    struct metadata {
+        model::partition_id partition_id;
+        model::revision_id revision_id;
+    };
+
+    /// Parse ntp directory name
+    static std::optional<metadata>
+    parse_partition_directory(const ss::sstring& name) {
+        const std::regex re(R"(^(\d+)_(\d+)$)");
+        std::cmatch match;
+        if (!std::regex_match(name.c_str(), match, re)) {
+            return std::nullopt;
+        }
+        return metadata{
+          .partition_id = model::partition_id(
+            boost::lexical_cast<uint64_t>(match[1].str())),
+          .revision_id = model::revision_id(
+            boost::lexical_cast<uint64_t>(match[2].str()))};
+    }
+};
 
 } // namespace storage

@@ -256,7 +256,10 @@ ss::future<> cache::clean_up_cache() {
                 // leak
                 _access_time_tracker.remove_timestamp(
                   std::string_view(filename_to_remove));
-            } catch (std::exception& e) {
+            } catch (const ss::gate_closed_exception&) {
+                // We are shutting down, stop iterating and propagate
+                throw;
+            } catch (const std::exception& e) {
                 vlog(
                   cst_log.error,
                   "Cache eviction couldn't delete {}: {}.",

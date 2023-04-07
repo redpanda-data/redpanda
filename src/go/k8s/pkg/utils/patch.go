@@ -13,7 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/banzaicloud/k8s-objectmatcher/patch"
+	"github.com/cisco-open/k8s-objectmatcher/patch"
 	jsoniter "github.com/json-iterator/go"
 )
 

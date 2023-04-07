@@ -58,6 +58,7 @@ materialized_segments::materialized_segments()
 }
 
 ss::future<> materialized_segments::stop() {
+    cst_log.debug("Stopping materialized_segments...");
     _stm_timer.cancel();
     _cvar.broken();
 
@@ -76,6 +77,7 @@ ss::future<> materialized_segments::stop() {
           },
           rs);
     }
+    cst_log.debug("Stopped materialized_segments...");
 }
 ss::future<> materialized_segments::start() {
     // Fiber that consumes from _eviction_list and calls stop

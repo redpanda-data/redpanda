@@ -161,12 +161,12 @@ model::offset partition::start_cloud_offset() const {
       _cloud_storage_partition->first_uploaded_offset());
 }
 
-model::offset partition::last_cloud_offset() const {
+model::offset partition::next_cloud_offset() const {
     vassert(
       cloud_data_available(),
       "Method can only be called if cloud data is available, ntp: {}",
       _raft->ntp());
-    return _cloud_storage_partition->last_uploaded_offset();
+    return kafka::offset_cast(_cloud_storage_partition->next_kafka_offset());
 }
 
 ss::future<storage::translating_reader> partition::make_cloud_reader(
@@ -305,45 +305,92 @@ ss::future<> partition::start() {
 }
 
 ss::future<> partition::stop() {
+    auto partition_ntp = ntp();
+    vlog(clusterlog.debug, "Stopping partition: {}", partition_ntp);
     _as.request_abort();
 
-    auto f = ss::now();
-
     if (_id_allocator_stm) {
-        return _id_allocator_stm->stop();
+        vlog(
+          clusterlog.debug,
+          "Stopping id_allocator_stm on partition: {}",
+          partition_ntp);
+        co_await _id_allocator_stm->stop();
     }
 
     if (_log_eviction_stm) {
-        f = _log_eviction_stm->stop();
+        vlog(
+          clusterlog.debug,
+          "Stopping log_eviction_stm on partition: {}",
+          partition_ntp);
+        co_await _log_eviction_stm->stop();
     }
 
     if (_rm_stm) {
-        f = f.then([this] { return _rm_stm->stop(); });
+        vlog(
+          clusterlog.debug, "Stopping rm_stm on partition: {}", partition_ntp);
+        co_await _rm_stm->stop();
     }
 
     if (_tm_stm) {
-        f = f.then([this] { return _tm_stm->stop(); });
+        vlog(
+          clusterlog.debug, "Stopping tm_stm on partition: {}", partition_ntp);
+        co_await _tm_stm->stop();
     }
-
     if (_archival_meta_stm) {
-        f = f.then([this] { return _archival_meta_stm->stop(); });
+        vlog(
+          clusterlog.debug,
+          "Stopping archival_meta_stm on partition: {}",
+          partition_ntp);
+        co_await _archival_meta_stm->stop();
     }
 
     if (_cloud_storage_partition) {
-        f = f.then([this] { return _cloud_storage_partition->stop(); });
+        vlog(
+          clusterlog.debug,
+          "Stopping cloud_storage_partition on partition: {}",
+          partition_ntp);
+        co_await _cloud_storage_partition->stop();
     }
 
-    // no state machine
-    return f;
+    vlog(clusterlog.debug, "Stopped partition {}", partition_ntp);
 }
 
 ss::future<std::optional<storage::timequery_result>>
 partition::timequery(storage::timequery_config cfg) {
+    const bool is_read_replica
+      = _raft->log_config().is_read_replica_mode_enabled();
+    const bool query_before_raft_log_start = _raft->log().start_timestamp()
+                                             > cfg.time;
+
     std::optional<storage::timequery_result> result;
-    bool is_read_replica = _raft->log_config().is_read_replica_mode_enabled();
-    if (
-      _cloud_storage_partition && _cloud_storage_partition->is_data_available()
-      && (is_read_replica || _raft->log().start_timestamp() >= cfg.time)) {
+
+    if (is_read_replica || query_before_raft_log_start) {
+        // We have data in the remote partition, and all the data in the raft
+        // log is ahead of the query timestamp or the topic is a read replica,
+        // so proceed to query the remote partition to try and find the earliest
+        // data that has timestamp >= the query time.
+        co_return co_await cloud_storage_timequery(cfg);
+    }
+
+    result = co_await local_timequery(cfg);
+
+    // It's possible that during the query, our local log was GCed, and the
+    // result may not actually reflect the correct offset for this
+    // partition. If the local log doesn't look like it can serve the query
+    // anymore, query the remote log.
+    if (_raft->log().start_timestamp() > cfg.time) {
+        co_return co_await cloud_storage_timequery(cfg);
+    } else {
+        co_return result;
+    }
+}
+
+ss::future<std::optional<storage::timequery_result>>
+partition::cloud_storage_timequery(storage::timequery_config cfg) {
+    const bool may_read_from_cloud
+      = _cloud_storage_partition
+        && _cloud_storage_partition->is_data_available();
+    if (may_read_from_cloud) {
         // We have data in the remote partition, and all the data in the raft
         // log is ahead of the query timestamp or the topic is a read replica,
         // so proceed to query the remote partition to try and find the earliest
@@ -357,15 +404,25 @@ partition::timequery(storage::timequery_config cfg) {
 
         // remote_partition pre-translates offsets for us, so no call into
         // the offset translator here
-        auto cloud_result = co_await _cloud_storage_partition->timequery(cfg);
-        if (cloud_result) {
-            co_return cloud_result;
+        auto result = co_await _cloud_storage_partition->timequery(cfg);
+        if (result) {
+            vlog(
+              clusterlog.debug,
+              "timequery (cloud) {} t={} max_offset(r)={} result(r)={}",
+              _raft->ntp(),
+              cfg.time,
+              cfg.max_offset,
+              result->offset);
         }
 
-        // Fall-through: if cfg.time is ahead of the end of the remote_partition
-        // data, search for it in the local data.
+        co_return result;
     }
 
+    co_return std::nullopt;
+}
+
+ss::future<std::optional<storage::timequery_result>>
+partition::local_timequery(storage::timequery_config cfg) {
     vlog(
       clusterlog.debug,
       "timequery (raft) {} t={} max_offset(k)={}",
@@ -373,10 +430,10 @@ partition::timequery(storage::timequery_config cfg) {
       cfg.time,
       cfg.max_offset);
 
-    // Translate input (kafka) offset into raft offset
     cfg.max_offset = _raft->get_offset_translator_state()->to_log_offset(
       cfg.max_offset);
-    result = co_await _raft->timequery(cfg);
+
+    auto result = co_await _raft->timequery(cfg);
     if (result) {
         vlog(
           clusterlog.debug,
@@ -403,8 +460,8 @@ partition::get_term_last_offset(model::term_id term) const {
     if (!o) {
         return std::nullopt;
     }
-    // Kafka defines leader epoch last offset as a first offset of next leader
-    // epoch
+    // Kafka defines leader epoch last offset as a first offset of next
+    // leader epoch
     return model::next_offset(*o);
 }
 
@@ -414,8 +471,8 @@ partition::get_cloud_term_last_offset(model::term_id term) const {
     if (!o) {
         return std::nullopt;
     }
-    // Kafka defines leader epoch last offset as a first offset of next leader
-    // epoch
+    // Kafka defines leader epoch last offset as a first offset of next
+    // leader epoch
     return model::next_offset(kafka::offset_cast(*o));
 }
 
@@ -451,9 +508,11 @@ ss::future<> partition::remove_remote_persistent_state() {
           get_ntp_config().is_archival_enabled(),
           get_ntp_config().is_read_replica_mode_enabled());
         co_await _cloud_storage_partition->erase();
-    } else {
+    } else if (_cloud_storage_partition && tiered_storage) {
         vlog(
-          clusterlog.info, "Leaving S3 objects behind for partition {}", ntp());
+          clusterlog.info,
+          "Leaving tiered storage objects behind for partition {}",
+          ntp());
     }
 }
 

@@ -250,6 +250,14 @@ const model::offset partition_manifest::get_last_offset() const {
     return _last_offset;
 }
 
+const std::optional<kafka::offset>
+partition_manifest::get_next_kafka_offset() const {
+    if (_segments.empty()) {
+        return std::nullopt;
+    }
+    return _segments.rbegin()->second.next_kafka_offset();
+}
+
 const model::offset partition_manifest::get_insync_offset() const {
     return _insync_offset;
 }
@@ -285,42 +293,43 @@ partition_manifest::get_start_kafka_offset() const {
 partition_manifest::const_iterator
 partition_manifest::segment_containing(kafka::offset o) const {
     vlog(cst_log.debug, "Metadata lookup using kafka offset {}", o);
+    if (_segments.empty()) {
+        return end();
+    }
     // Kafka offset is always <= log offset.
     // To find a segment by its kafka offset we can simply query
     // manifest by log offset and then traverse forward until we
-    // will find matching segment.
-    auto it = segment_containing(kafka::offset_cast(o));
-    if (it == end()) {
-        return it;
-    }
-    auto prev = end();
+    // find a matching segment.
+    auto it = _segments.lower_bound(kafka::offset_cast(o));
+    // We need to find first element which has greater kafka offset than
+    // the target and step back. It is possible to have a segment that
+    // doesn't have data batches. This scan has to skip segments like that.
     while (it != end()) {
-        auto base = it->second.base_offset - it->second.delta_offset;
-        if (base > o) {
-            // We need to find first element which has greater kafka
-            // offset then the target and step back. It is possible
-            // to have a segment that doesn't have data batches. This
-            // scan has to skip segments like that.
-            break;
+        if (it->second.base_kafka_offset() > o) {
+            // The beginning of the manifest already has a base offset that
+            // doesn't satisfy the query.
+            if (it == begin()) {
+                return end();
+            }
+            // On the first segment we see with a base kafka offset higher than
+            // 'o', return its previous segment.
+            return std::prev(it);
         }
-        prev = it;
         it = std::next(it);
     }
-    if (it == end()) {
-        if (prev->second.delta_offset_end != model::offset_delta{}) {
-            // In case if 'prev' points to the last segment it's not guaranteed
-            // that the segment contains the required kafka offset. We need an
-            // extra check using delta_offset_end. If the field is not set then
-            // we will return the last segment. This is OK since
-            // delta_offset_end will always be set for new segments.
-            auto m = prev->second.committed_offset
-                     - prev->second.delta_offset_end;
-            if (m < o) {
-                prev = end();
-            }
+    // All segments had base kafka offsets lower than 'o'.
+    auto back = std::prev(it);
+    if (back->second.delta_offset_end != model::offset_delta{}) {
+        // If 'prev' points to the last segment, it's not guaranteed that
+        // the segment contains the required kafka offset. We need an extra
+        // check using delta_offset_end. If the field is not set then we
+        // will return the last segment. This is OK since delta_offset_end
+        // will always be set for new segments.
+        if (back->second.next_kafka_offset() <= o) {
+            return end();
         }
     }
-    return prev;
+    return back;
 }
 
 model::offset partition_manifest::get_last_uploaded_compacted_offset() const {
@@ -474,13 +483,27 @@ size_t partition_manifest::replaced_segments_count() const {
 }
 
 void partition_manifest::move_aligned_offset_range(
-  model::offset begin_inclusive, model::offset end_inclusive) {
+  model::offset begin_inclusive,
+  model::offset end_inclusive,
+  const segment_meta& replacing_segment) {
+    auto replacing_path = generate_remote_segment_name(replacing_segment);
     auto it = _segments.lower_bound(begin_inclusive);
     while (it != _segments.end()
            // The segment is considered replaced only if all its
            // offsets are covered by new segment's offset range
            && it->second.base_offset >= begin_inclusive
            && it->second.committed_offset <= end_inclusive) {
+        if (generate_remote_segment_name(it->second) == replacing_path) {
+            // The replacing segment shouldn't be exactly the same as the
+            // one that we already have in the manifest. Attempt to re-add
+            // same segment twice leads to data loss.
+            vlog(
+              cst_log.warn,
+              "{} segment is already added {}",
+              _ntp,
+              replacing_segment);
+            break;
+        }
         _replaced.push_back(lw_segment_meta::convert(it->second));
         it = _segments.erase(it);
     }
@@ -493,7 +516,7 @@ bool partition_manifest::add(
         // to the manifest or if all data was removed previously.
         _start_offset = meta.base_offset;
     }
-    move_aligned_offset_range(meta.base_offset, meta.committed_offset);
+    move_aligned_offset_range(meta.base_offset, meta.committed_offset, meta);
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
     if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
         it->second.ntp_revision = _rev;
@@ -1312,7 +1335,6 @@ partition_manifest::segment_containing(model::offset o) const {
         return end();
     }
 
-    // Make sure to only compare based on the offset and not the term.
     auto it = _segments.upper_bound(o);
     if (it == _segments.begin()) {
         return end();

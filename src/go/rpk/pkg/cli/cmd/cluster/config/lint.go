@@ -21,6 +21,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// clusterConfigN represents a redpanda configuration.
+type clusterConfigN map[string]yaml.Node
+
+// A custom unmarshal is needed because go-yaml parse "YYYY-MM-DD" as a full
+// timestamp, writing YYYY-MM-DD HH:MM:SS +0000 UTC when encoding, so we are
+// going to treat timestamps as strings.
+// See: https://github.com/go-yaml/yaml/issues/770
+
+func (c *clusterConfigN) UnmarshalYAML(n *yaml.Node) error {
+	replaceTimestamp(n)
+
+	var a map[string]yaml.Node
+	err := n.Decode(&a)
+	if err != nil {
+		return err
+	}
+	*c = a
+	return nil
+}
+
 func newLintCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "lint",
@@ -52,8 +72,8 @@ central configuration store (and via 'rpk cluster config edit').
 
 			// Decode into intermediate yaml.Node representation to preserve comments
 			// when writing the linted file back out.
-			inputDoc := make(map[string]yaml.Node)
-			err = yaml.Unmarshal(configIn, inputDoc)
+			var inputDoc clusterConfigN
+			err = yaml.Unmarshal(configIn, &inputDoc)
 			out.MaybeDie(err, "unable to parse config file: %v", err)
 
 			cleanedDoc := make(map[string]yaml.Node)

@@ -9,7 +9,14 @@
 
 package utils
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	"fmt"
+	"strconv"
+
+	corev1 "k8s.io/api/core/v1"
+)
+
+var ErrInvalidInputParameters = fmt.Errorf("invalid input parameters")
 
 // IsPodReady tells if a given pod is ready looking at its status.
 func IsPodReady(pod *corev1.Pod) bool {
@@ -20,4 +27,19 @@ func IsPodReady(pod *corev1.Pod) bool {
 	}
 
 	return false
+}
+
+func GetPodOrdinal(podName, clusterName string) (int64, error) {
+	// Pod name needs to have at least 2 more characters
+	if len(podName) < len(clusterName)+2 {
+		return -1, fmt.Errorf("pod name (%s) and cluster name (%s): %w", podName, clusterName, ErrInvalidInputParameters)
+	}
+
+	// The +1 is for the separator between stateful set name and pod ordinal
+	ordinalStr := podName[len(clusterName)+1:]
+	ordinal, err := strconv.ParseInt(ordinalStr, 10, 0)
+	if err != nil {
+		return -1, fmt.Errorf("parsing int failed (%s): %w", ordinalStr, err)
+	}
+	return ordinal, nil
 }

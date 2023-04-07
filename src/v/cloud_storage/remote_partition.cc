@@ -107,10 +107,10 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
             mit = _manifest.segment_containing(ko);
         }
         if (mit == _manifest.end()) {
-            // Segment that matches exactly can't be found
-            // in the manifest. In this case we want to start
-            // scanning from the begining of the partition if
-            // some conditions are met.
+            // Segment that matches exactly can't be found in the manifest. In
+            // this case we want to start scanning from the begining of the
+            // partition if the start of the manifest is contained by the scan
+            // range.
             auto so = _manifest.get_start_kafka_offset().value_or(
               kafka::offset::min());
             if (config.start_offset < so && config.max_offset > so) {
@@ -127,8 +127,8 @@ remote_partition::borrow_result_t remote_partition::borrow_next_reader(
                 break;
             }
             auto b = mit->second.base_kafka_offset();
-            auto m = mit->second.committed_kafka_offset();
-            if (b != m) {
+            auto end = mit->second.next_kafka_offset() - kafka::offset(1);
+            if (b != end) {
                 break;
             }
             mit++;
@@ -180,6 +180,8 @@ public:
       , _partition(std::move(part))
       , _ot_state(std::move(ot_state))
       , _gate_guard(_partition->_gate) {
+        auto ntp = _partition->get_ntp();
+        vlog(_ctxlog.trace, "Constructing reader {}", ntp);
         if (config.abort_source) {
             vlog(_ctxlog.debug, "abort_source is set");
             auto sub = config.abort_source->get().subscribe([this]() noexcept {
@@ -198,6 +200,8 @@ public:
     }
 
     ~partition_record_batch_reader_impl() noexcept override {
+        auto ntp = _partition->get_ntp();
+        vlog(_ctxlog.trace, "Destructing reader {}", ntp);
         _partition->_probe.reader_destroyed();
         if (_reader) {
             // We must not destroy this reader: it is not safe to do so
@@ -264,6 +268,49 @@ public:
                     co_await set_end_of_stream();
                     co_return storage_t{};
                 }
+                auto reader_delta = _reader->current_delta();
+                if (
+                  !_ot_state->empty()
+                  && _ot_state->last_delta() > reader_delta) {
+                    // It's not safe to call 'read_sone' with the current
+                    // offset translator state becuase delta offset of the
+                    // current reader is below last delta registred by the
+                    // offset translator. The offset translator contains data
+                    // from the previous segment and there is an inconsistency
+                    // between them.
+                    //
+                    // If the reader never produced any data we can simply reset
+                    // the offset translator state and continue. Otherwise, we
+                    // need to stop producing.
+                    //
+                    // This trick should guarantee us forward progress. If the
+                    // reader will stop right away before it will be able to
+                    // produce any batches (in the first branch) that belong to
+                    // the current segment the next fetch request will likely
+                    // have start_offset that corresponds to the previous
+                    // segment. In this case the reader will have to skip all
+                    // previously seen batches and _first_produced_offset will
+                    // be set to default value. This will allow reader to reset
+                    // the ot_state and move to the current segment in the
+                    // second branch. This is safe because the ot_state won't
+                    // have any information about the previous segment.
+                    vlog(
+                      _ctxlog.info,
+                      "Detected inconsistency. Reader config: {}, delta offset "
+                      "of the current reader: {}, delta offset of the offset "
+                      "translator: {}, first offset produced by this reader: "
+                      "{}",
+                      _reader->config(),
+                      reader_delta,
+                      _ot_state->last_delta(),
+                      _first_produced_offset);
+                    if (_first_produced_offset != model::offset{}) {
+                        co_await set_end_of_stream();
+                        co_return storage_t{};
+                    } else {
+                        _ot_state->reset();
+                    }
+                }
                 vlog(
                   _ctxlog.debug,
                   "Invoking 'read_some' on current log reader with config: "
@@ -284,13 +331,15 @@ public:
                       batch.header().size_bytes);
                     _partition->_probe.add_records_read(batch.record_count());
                 }
+                if (_first_produced_offset == model::offset{} && !d.empty()) {
+                    _first_produced_offset = d.front().base_offset();
+                }
                 co_return storage_t{std::move(d)};
             }
         } catch (const ss::gate_closed_exception&) {
             vlog(
               _ctxlog.debug,
               "gate_closed_exception while reading from remote_partition");
-            _reader = {};
         } catch (const std::exception& e) {
             vlog(
               _ctxlog.warn,
@@ -299,13 +348,14 @@ public:
             unknown_exception_ptr = std::current_exception();
         }
 
-        // The reader may have been left in an indeterminate state.
-        // Re-set the pointer to it to ensure that it will not be reused.
+        // If we've made it through the above try block without returning,
+        // we've thrown an exception. Regardless of which error, the reader may
+        // have been left in an indeterminate state. Re-set the pointer to it
+        // to ensure that it will not be reused.
+        if (_reader) {
+            co_await set_end_of_stream();
+        }
         if (unknown_exception_ptr) {
-            if (_reader) {
-                co_await set_end_of_stream();
-            }
-
             std::rethrow_exception(unknown_exception_ptr);
         }
 
@@ -464,6 +514,9 @@ private:
     /// Guard for the partition gate
     gate_guard _gate_guard;
     model::offset _next_segment_base_offset{};
+    /// Contains offset of the first produced record batch or min()
+    /// if no data were produced yet
+    model::offset _first_produced_offset{};
 };
 
 remote_partition::remote_partition(
@@ -488,12 +541,14 @@ kafka::offset remote_partition::first_uploaded_offset() {
     return so;
 }
 
-model::offset remote_partition::last_uploaded_offset() {
+kafka::offset remote_partition::next_kafka_offset() {
     vassert(
       _manifest.size() > 0,
       "The manifest for {} is not expected to be empty",
       _manifest.get_ntp());
-    return _manifest.get_last_offset();
+    auto next = _manifest.get_next_kafka_offset().value();
+    vlog(_ctxlog.debug, "remote partition next_kafka_offset: {}", next);
+    return next;
 }
 
 const model::ntp& remote_partition::get_ntp() const {
@@ -526,8 +581,9 @@ remote_partition::get_term_last_offset(model::term_id term) const {
         }
     }
     // if last segment term is equal to the one we look for return it
-    if (_manifest.rbegin()->second.segment_term == term) {
-        return _manifest.rbegin()->second.committed_kafka_offset();
+    auto last = _manifest.rbegin()->second;
+    if (last.segment_term == term) {
+        return last.next_kafka_offset() - kafka::offset(1);
     }
 
     return std::nullopt;
@@ -542,6 +598,10 @@ remote_partition::aborted_transactions(offset_range offsets) {
     std::vector<model::tx_range> result;
     auto first_it = _manifest.segment_containing(offsets.begin);
     for (auto it = first_it; it != _manifest.end(); it++) {
+        if (it->second.base_offset > offsets.end_rp) {
+            break;
+        }
+
         // Segment might be materialized, we need a
         // second map lookup to learn if this is the case.
         auto m = _segments.find(it->first);
@@ -551,10 +611,6 @@ remote_partition::aborted_transactions(offset_range offsets) {
         auto tx = co_await m->second->segment->aborted_transactions(
           offsets.begin_rp, offsets.end_rp);
         std::copy(tx.begin(), tx.end(), std::back_inserter(result));
-
-        if (it->second.base_offset > offsets.end_rp) {
-            break;
-        }
     }
 
     // Adjacent segments might return the same transaction record.
@@ -603,6 +659,7 @@ ss::future<> remote_partition::stop() {
     // stopping readers is fast, the queue is not usually long, and destroying
     // partitions is relatively infrequent.
     co_await materialized().flush_evicted();
+    vlog(_ctxlog.debug, "remote partition stopped");
 }
 
 /// Return reader back to segment_state

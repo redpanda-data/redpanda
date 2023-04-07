@@ -565,7 +565,7 @@ ntp_archiver::upload_tx(upload_candidate candidate) {
 
     auto path = segment_path_for_candidate(candidate);
 
-    cloud_storage::tx_range_manifest manifest(path, tx_range);
+    cloud_storage::tx_range_manifest manifest(path, std::move(tx_range));
 
     co_return co_await _remote.upload_manifest(
       _bucket, manifest, fib, _tx_tags);
@@ -680,9 +680,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
     start_upload_offset = offset + model::offset(1);
     auto ot_state = _partition->get_offset_translator_state();
     auto delta = base - model::offset_cast(ot_state->from_log_offset(base));
-    auto delta_offset_end = upload.final_offset
-                            - model::offset_cast(
-                              ot_state->from_log_offset(upload.final_offset));
+    auto delta_offset_next = ot_state->next_offset_delta(upload.final_offset);
 
     // The upload is successful only if both segment and tx_range are uploaded.
     auto upl_fut
@@ -716,7 +714,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
         .ntp_revision = _rev,
         .archiver_term = _start_term,
         .segment_term = upload.term,
-        .delta_offset_end = delta_offset_end,
+        .delta_offset_end = delta_offset_next,
         .sname_format = cloud_storage::segment_name_format::v2,
       },
       .name = upload.exposed_name, .delta = offset - base,
@@ -731,10 +729,16 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
     // The manifest's last offset contains dirty_offset of the
     // latest uploaded segment but '_policy' requires offset that
     // belongs to the next offset or the gap. No need to do this
-    // if there is no segments.
-    auto start_upload_offset = manifest().size() ? manifest().get_last_offset()
-                                                     + model::offset(1)
-                                                 : model::offset(0);
+    // if we haven't uploaded anything.
+    //
+    // When there are no segments but there is a non-zero 'last_offset', all
+    // cloud segments have been removed for retention. In that case, we still
+    // need to take into accout 'last_offset'.
+    auto last_offset = manifest().get_last_offset();
+    auto start_upload_offset = manifest().size() == 0
+                                   && last_offset == model::offset(0)
+                                 ? model::offset(0)
+                                 : last_offset + model::offset(1);
 
     auto compacted_segments_upload_start = model::next_offset(
       manifest().get_last_uploaded_compacted_offset());

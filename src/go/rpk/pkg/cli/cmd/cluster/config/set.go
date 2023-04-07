@@ -21,6 +21,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// anySlice represents a slice of any value type.
+type anySlice []any
+
+// A custom unmarshal is needed because go-yaml parse "YYYY-MM-DD" as a full
+// timestamp, writing YYYY-MM-DD HH:MM:SS +0000 UTC when encoding, so we are
+// going to treat timestamps as strings.
+// See: https://github.com/go-yaml/yaml/issues/770
+
+func (s *anySlice) UnmarshalYAML(n *yaml.Node) error {
+	replaceTimestamp(n)
+
+	var a []any
+	err := n.Decode(&a)
+	if err != nil {
+		return err
+	}
+	*s = a
+	return nil
+}
+
 func newSetCommand(fs afero.Fs) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set <key> <value>",
@@ -70,7 +90,7 @@ If an empty string is given as the value, the property is reset to its default.`
 				// are reset to default
 				remove = append(remove, key)
 			} else if meta.Type == "array" {
-				var a []interface{}
+				var a anySlice
 				err = yaml.Unmarshal([]byte(value), &a)
 				out.MaybeDie(err, "invalid list syntax")
 				upsert[key] = a

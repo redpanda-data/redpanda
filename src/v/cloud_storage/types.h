@@ -140,7 +140,9 @@ struct segment_meta {
     model::term_id archiver_term;
     /// Term of the segment (included in segment file name)
     model::term_id segment_term;
-    /// Offset translation delta at the end of the range
+    /// Offset translation delta just past the end of this segment. This is
+    /// useful in determining the next Kafka offset, e.g. when reporting the
+    /// high watermark.
     model::offset_delta delta_offset_end;
     /// Segment name format specifier
     segment_name_format sname_format{segment_name_format::v1};
@@ -156,17 +158,23 @@ struct segment_meta {
         return base_offset - delta;
     }
 
-    kafka::offset committed_kafka_offset() const {
+    // NOTE: in older versions of Redpanda, delta_offset_end may have been
+    // under-reported by 1 if the last segment contained no data batches,
+    // meaning next_kafka_offset could over-report the next offset by 1.
+    kafka::offset next_kafka_offset() const {
         // Manifests created with the old version of redpanda won't have the
         // delta_offset_end field. In this case offset translation couldn't be
         // performed.
         auto delta = delta_offset_end == model::offset_delta::min()
                        ? model::offset_delta(0)
                        : delta_offset_end;
-        return committed_offset - delta;
+        // NOTE: delta_offset_end is a misnomer and actually refers to the
+        // offset delta of the next offset after this segment.
+        return model::next_offset(committed_offset) - delta;
     }
 
     auto operator<=>(const segment_meta&) const = default;
 };
+std::ostream& operator<<(std::ostream& o, const segment_meta& r);
 
 } // namespace cloud_storage

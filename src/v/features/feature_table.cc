@@ -57,6 +57,8 @@ std::string_view to_string_view(feature f) {
         return "tm_stm_cache";
     case feature::test_alpha:
         return "__test_alpha";
+    case feature::test_bravo:
+        return "__test_alpha";
     }
     __builtin_unreachable();
 }
@@ -182,6 +184,40 @@ void feature_table::set_active_version(cluster_version v) {
 
     for (auto& fs : _feature_state) {
         fs.notify_version(v);
+    }
+
+    on_update();
+}
+
+/**
+ * The "normal" set_active_version method increments the version but does
+ * not activate features (though it may make them available).  This is
+ * because activating features on upgrade is optional, and that optionality
+ * is respected at time of writing to the controller log, not replaying it.
+ *
+ * The reason for making auto-activation optional is to enable cautious
+ * upgrades, but during cluster bootstrap this motivation goes away, so
+ * we will unconditionally switch on all the available features when we
+ * see the bootstrap message's cluster version in the controller log.  That
+ * is what this function does, as well as calling through to set_active_version.
+ */
+void feature_table::bootstrap_active_version(cluster_version v) {
+    if (ss::this_shard_id() == ss::shard_id{0}) {
+        vlog(
+          featureslog.info, "Activating features from bootstrap version {}", v);
+    }
+    set_active_version(v);
+
+    for (auto& fs : _feature_state) {
+        if (
+          fs.get_state() == feature_state::state::available
+          && fs.spec.available_rule == feature_spec::available_policy::always
+          && _active_version >= fs.spec.require_version) {
+            // Intentionally do not pass through the 'preparing' state, as
+            // that is for upgrade handling, and we are replaying the bootstrap
+            // of a cluster that started at this version.
+            fs.transition_active();
+        }
     }
 
     on_update();

@@ -76,14 +76,9 @@ public:
         }
     }
 
-    void remove_leader(const model::ntp& ntp, model::revision_id revision) {
-        auto it = _leaders.find(
-          leader_key_view{model::topic_namespace_view(ntp), ntp.tp.partition});
-        // ignore updates with old revision
-        if (it != _leaders.end() && it->second.partition_revision <= revision) {
-            _leaders.erase(it);
-        }
-    }
+    void remove_leader(const model::ntp&, model::revision_id);
+
+    void reset();
 
     void update_partition_leader(
       const model::ntp&, model::term_id, std::optional<model::node_id>);
@@ -93,8 +88,6 @@ public:
       model::revision_id,
       model::term_id,
       std::optional<model::node_id>);
-
-    void reset() { _leaders.clear(); }
 
     struct leader_info_t {
         model::topic_namespace tp_ns;

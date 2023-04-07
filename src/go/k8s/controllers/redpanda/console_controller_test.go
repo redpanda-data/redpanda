@@ -49,8 +49,7 @@ var _ = Describe("Console controller", func() {
 	const (
 		ClusterName = "test-cluster"
 
-		ConsoleName      = "test-console"
-		ConsoleNamespace = "default"
+		ConsoleName = "test-console"
 
 		timeout  = time.Second * 30
 		interval = time.Millisecond * 100
@@ -60,13 +59,24 @@ var _ = Describe("Console controller", func() {
 		enableConnect        = false
 	)
 
+	var (
+		ConsoleNamespace string
+		key              types.NamespacedName
+		redpandaCluster  *redpandav1alpha1.Cluster
+		namespace        *corev1.Namespace
+	)
+
 	BeforeEach(func() {
 		ctx := context.Background()
-		key, _, redpandaCluster := getInitialTestCluster(ClusterName)
-		if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: key.Namespace, Name: key.Name}, &redpandav1alpha1.Cluster{}); err != nil {
+		if redpandaCluster == nil {
+			key, _, redpandaCluster, namespace = getInitialTestCluster(ClusterName)
+			ConsoleNamespace = key.Namespace
+		}
+		if err := k8sClient.Get(ctx, key, &redpandav1alpha1.Cluster{}); err != nil {
 			if !apierrors.IsNotFound(err) {
 				Expect(err).To(Equal(nil))
 			}
+			Expect(k8sClient.Create(ctx, namespace)).Should(Succeed())
 			Expect(k8sClient.Create(ctx, redpandaCluster)).Should(Succeed())
 			Eventually(clusterConfiguredConditionStatusGetter(key), timeout, interval).Should(BeTrue())
 		}
@@ -193,13 +203,22 @@ var _ = Describe("Console controller", func() {
 	Context("When updating Console", func() {
 		ctx := context.Background()
 		It("Should not create new ConfigMap if no change on spec", func() {
+			var configmapNsn string
+
 			By("Getting Console")
 			consoleLookupKey := types.NamespacedName{Name: ConsoleName, Namespace: ConsoleNamespace}
-			createdConsole := &redpandav1alpha1.Console{}
-			Expect(k8sClient.Get(ctx, consoleLookupKey, createdConsole)).Should(Succeed())
+			Eventually(func() bool {
+				createdConsole := &redpandav1alpha1.Console{}
+				if err := k8sClient.Get(ctx, consoleLookupKey, createdConsole); err != nil {
+					return false
+				}
 
-			ref := createdConsole.Status.ConfigMapRef
-			configmapNsn := fmt.Sprintf("%s/%s", ref.Namespace, ref.Name)
+				if ref := createdConsole.Status.ConfigMapRef; ref != nil {
+					configmapNsn = fmt.Sprintf("%s/%s", ref.Namespace, ref.Name)
+					return true
+				}
+				return false
+			}, timeout, interval).Should(BeTrue(), "Console %s/%s should be present with ConfigMap reference in the Status stanza", ConsoleNamespace, ConsoleName)
 
 			By("Adding label to Console")
 			Eventually(consoleUpdater(consoleLookupKey, func(console *redpandav1alpha1.Console) {

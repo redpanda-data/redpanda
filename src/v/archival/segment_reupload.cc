@@ -34,7 +34,7 @@ segment_collector::segment_collector(
 void segment_collector::collect_segments() {
     if (_manifest.size() == 0) {
         vlog(
-          archival_log.info,
+          archival_log.debug,
           "No segments to collect for ntp {}, manifest empty",
           _manifest.get_ntp());
         return;
@@ -230,8 +230,41 @@ const storage::ntp_config* segment_collector::ntp_cfg() const {
     return _ntp_cfg;
 }
 
-bool segment_collector::can_replace_manifest_segment() const {
-    return _can_replace_manifest_segment && _begin_inclusive < _end_inclusive;
+bool segment_collector::should_replace_manifest_segment() const {
+    const bool valid_collection = _can_replace_manifest_segment
+                                  && _begin_inclusive < _end_inclusive;
+
+    // If we have selected only one segment for collection, ensure
+    // that its compacted size is smaller than the size associated
+    // with the selected segment in the manifest. This guards against,
+    // name clashing between the existing segment and the re-uploaded segment.
+    if (valid_collection && _segments.size() == 1) {
+        auto segment_to_replace = _manifest.segment_containing(
+          _begin_inclusive);
+
+        // This branch is *not* taken if the begin and/or end offsets of the
+        // collected range are in a manifest gap. In that scenario, a name
+        // clash is not possible.
+        if (
+          segment_to_replace != _manifest.end()
+          && _begin_inclusive == segment_to_replace->second.base_offset
+          && _end_inclusive == segment_to_replace->second.committed_offset) {
+            const bool should = _collected_size
+                                < segment_to_replace->second.size_bytes;
+
+            if (!should) {
+                vlog(
+                  archival_log.debug,
+                  "Skipping re-upload of compacted segment as its size has "
+                  "not decreased as a result of self-compaction: {}",
+                  *(_segments.front()));
+            }
+
+            return should;
+        }
+    }
+
+    return valid_collection;
 }
 
 cloud_storage::segment_name segment_collector::adjust_segment_name() const {
@@ -320,6 +353,19 @@ segment_collector::make_upload_candidate(
         co_return upload_candidate_with_locks{upload_candidate{}, {}};
     }
 
+    // Take the locks before opening any readers on the segments.
+    auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
+    std::vector<ss::future<ss::rwlock::holder>> locks;
+    locks.reserve(_segments.size());
+    std::transform(
+      _segments.begin(),
+      _segments.end(),
+      std::back_inserter(locks),
+      [&deadline](auto& seg) { return seg->read_lock(deadline); });
+
+    auto locks_resolved = co_await ss::when_all_succeed(
+      locks.begin(), locks.end());
+
     auto first = _segments.front();
     auto head_seek_result = co_await storage::convert_begin_offset_to_file_pos(
       _begin_inclusive,
@@ -345,18 +391,6 @@ segment_collector::make_upload_candidate(
     size_t content_length = _collected_size
                             - (head_seek.bytes + last->size_bytes());
     content_length += tail_seek.bytes;
-
-    auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
-    std::vector<ss::future<ss::rwlock::holder>> locks;
-    locks.reserve(_segments.size());
-    std::transform(
-      _segments.begin(),
-      _segments.end(),
-      std::back_inserter(locks),
-      [&deadline](auto& seg) { return seg->read_lock(deadline); });
-
-    auto locks_resolved = co_await ss::when_all_succeed(
-      locks.begin(), locks.end());
 
     auto starting_offset = head_seek.offset;
     if (starting_offset != _begin_inclusive) {

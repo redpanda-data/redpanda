@@ -79,7 +79,11 @@ ss::future<> wait_for_topics(
                    })
             .then([&md_cache, &results, timeout]() {
                 return wait_for_leaders(md_cache, results, timeout)
-                  .discard_result();
+                  .discard_result()
+                  .handle_exception_type([](const ss::timed_out_error&) {
+                      // discard timed out exception, even tho waiting failed
+                      // the topic is created
+                  });
             });
       });
 }

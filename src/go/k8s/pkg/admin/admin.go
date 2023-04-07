@@ -89,13 +89,17 @@ type AdminAPIClient interface {
 
 	GetFeatures(ctx context.Context) (admin.FeaturesResponse, error)
 	SetLicense(ctx context.Context, license interface{}) error
+	GetLicenseInfo(ctx context.Context) (admin.License, error)
 
 	Brokers(ctx context.Context) ([]admin.Broker, error)
+	Broker(ctx context.Context, nodeID int) (admin.Broker, error)
 	DecommissionBroker(ctx context.Context, node int) error
 	RecommissionBroker(ctx context.Context, node int) error
 
 	EnableMaintenanceMode(ctx context.Context, node int) error
 	DisableMaintenanceMode(ctx context.Context, node int) error
+
+	GetHealthOverview(ctx context.Context) (admin.ClusterHealthOverview, error)
 }
 
 var _ AdminAPIClient = &admin.AdminAPI{}

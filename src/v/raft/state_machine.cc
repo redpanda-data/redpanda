@@ -34,7 +34,10 @@ ss::future<> state_machine::start() {
     return ss::now();
 }
 
-void state_machine::set_next(model::offset offset) { _next = offset; }
+void state_machine::set_next(model::offset offset) {
+    _next = offset;
+    _waiters.notify(model::prev_offset(offset));
+}
 
 ss::future<> state_machine::handle_eviction() {
     vlog(

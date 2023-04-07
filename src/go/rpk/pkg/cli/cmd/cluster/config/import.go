@@ -35,6 +35,40 @@ func (fe *formattedError) Error() string {
 	return fe.s
 }
 
+// clusterConfig represents a redpanda configuration.
+type clusterConfig map[string]any
+
+// A custom unmarshal is needed because go-yaml parse "YYYY-MM-DD" as a full
+// timestamp, writing YYYY-MM-DD HH:MM:SS +0000 UTC when encoding, so we are
+// going to treat timestamps as strings.
+// See: https://github.com/go-yaml/yaml/issues/770
+
+func replaceTimestamp(n *yaml.Node) {
+	if len(n.Content) == 0 {
+		return
+	}
+	for _, innerNode := range n.Content {
+		if innerNode.Tag == "!!map" {
+			replaceTimestamp(innerNode)
+		}
+		if innerNode.Tag == "!!timestamp" {
+			innerNode.Tag = "!!str"
+		}
+	}
+}
+
+func (c *clusterConfig) UnmarshalYAML(n *yaml.Node) error {
+	replaceTimestamp(n)
+
+	var a map[string]any
+	err := n.Decode(&a)
+	if err != nil {
+		return err
+	}
+	*c = a
+	return nil
+}
+
 func importConfig(
 	ctx context.Context,
 	client *admin.AdminAPI,
@@ -48,7 +82,7 @@ func importConfig(
 	if err != nil {
 		return fmt.Errorf("error reading file %s: %v", filename, err)
 	}
-	var readbackConfig admin.Config
+	var readbackConfig clusterConfig
 	err = yaml.Unmarshal(readbackBytes, &readbackConfig)
 	if err != nil {
 		return fmt.Errorf("error parsing edited config: %v", err)
@@ -113,26 +147,37 @@ func importConfig(
 			continue
 		}
 
+		addProperty := func(old interface{}) {
+			upsert[k] = v
+
+			// If the value is not [secret], the user changed the redacted sentinel
+			// value and is changing the secret. We redact the value that we store
+			// to our to-be-printed propertyDeltas.
+			if meta, ok := schema[k]; ok {
+				if v != nil && meta.IsSecret && fmt.Sprintf("%v", v) != "[secret]" {
+					v = "[redacted]"
+				}
+			}
+			propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", old), fmt.Sprintf("%v", v)})
+		}
+
 		if haveOldVal {
 			// Since the admin endpoint will redact secret fields, ignore any
 			// such sentinel strings we've been given, to avoid accidentally
 			// setting configs to this value.
-			// TODO: why doesn't this work with DeepEqual?
 			if fmt.Sprintf("%v", oldVal) == "[secret]" && fmt.Sprintf("%v", v) == "[secret]" {
 				continue
 			}
 			// If value changed, add it to list of updates.
 			// DeepEqual because values can be slices.
 			if !reflect.DeepEqual(oldVal, v) {
-				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldVal), fmt.Sprintf("%v", v)})
-				upsert[k] = v
+				addProperty(oldVal)
 			}
 		} else {
 			// Present in input but not original config, insert if it differs
 			// from the materialized current value (which may be a default)
 			if !haveOldValMaterialized || !reflect.DeepEqual(oldValMaterialized, v) {
-				upsert[k] = v
-				propertyDeltas = append(propertyDeltas, propertyDelta{k, fmt.Sprintf("%v", oldValMaterialized), fmt.Sprintf("%v", v)})
+				addProperty(oldValMaterialized)
 			}
 		}
 	}

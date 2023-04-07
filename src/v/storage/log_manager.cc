@@ -31,6 +31,7 @@
 #include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
 #include "utils/file_sanitizer.h"
+#include "utils/gate_guard.h"
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
@@ -45,7 +46,9 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/coroutine/parallel_for_each.hh>
+#include <seastar/util/file.hh>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <fmt/format.h>
 
 #include <chrono>
@@ -135,22 +138,23 @@ log_manager::log_manager(
         _jitter = simple_time_jitter<ss::lowres_clock>{
           _config.compaction_interval()};
         if (_compaction_timer.cancel()) {
+            // rearm is behind the result of cancel, to ensure that no more
+            // than one trigger_housekeeping is in flight
             _compaction_timer.rearm(_jitter());
         }
     });
 }
 void log_manager::trigger_housekeeping() {
     ssx::background = ssx::spawn_with_gate_then(_open_gate, [this] {
-                          auto next_housekeeping = _jitter();
-                          return housekeeping().finally(
-                            [this, next_housekeeping] {
-                                // all of these *MUST* be in the finally
-                                if (_open_gate.is_closed()) {
-                                    return;
-                                }
-
-                                _compaction_timer.rearm(next_housekeeping);
-                            });
+                          return housekeeping().finally([this] {
+                              // all of these *MUST* be in the finally
+                              if (_open_gate.is_closed()) {
+                                  return;
+                              }
+                              // _jitter is queried in the same execution
+                              // context to fix an interleaving bug issue/8492
+                              _compaction_timer.rearm(_jitter());
+                          });
                       }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
     });
@@ -204,6 +208,10 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
     }
 
     while ((_logs_list.front().flags & bflags::compacted) == bflags::none) {
+        if (_abort_source.abort_requested()) {
+            co_return;
+        }
+
         auto& current_log = _logs_list.front();
 
         _logs_list.pop_front();
@@ -370,35 +378,125 @@ ss::future<> log_manager::shutdown(model::ntp ntp) {
         co_return;
     }
     co_await clean_close(handle.mapped()->handle);
+    vlog(stlog.debug, "Shutdown: {}", ntp);
 }
 
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
-    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
-        auto handle = _logs.extract(ntp);
-        _resources.update_partition_count(_logs.size());
-        if (handle.empty()) {
-            return ss::make_ready_future<>();
+    gate_guard g(_open_gate);
+    auto handle = _logs.extract(ntp);
+    _resources.update_partition_count(_logs.size());
+    if (handle.empty()) {
+        co_return;
+    }
+    // 'ss::shared_ptr<>' make a copy
+    storage::log lg = handle.mapped()->handle;
+    vlog(stlog.info, "Removing: {}", lg);
+    // NOTE: it is ok to *not* externally synchronize the log here
+    // because remove, takes a write lock on each individual segments
+    // waiting for all of them to be closed before actually removing the
+    // underlying log. If there is a background operation like
+    // compaction or so, it will block correctly.
+    auto ntp_dir = lg.config().work_directory();
+    ss::sstring topic_dir = lg.config().topic_directory().string();
+    co_await lg.remove();
+    directory_walker walker;
+    co_await walker.walk(
+      ntp_dir, [&ntp_dir](const ss::directory_entry& de) -> ss::future<> {
+          // Concurrent truncations and compactions may conflict with each
+          // other, resulting in a mutual inability to use their staging files.
+          // If this has happened, clean up all staging files so we can fully
+          // remove the NTP directory.
+          //
+          // TODO: we should more consistently clean up the staging operations
+          // to clean up after themselves on failure.
+          if (boost::algorithm::ends_with(de.name, ".staging")) {
+              // It isn't necessarily problematic to get here since we can
+              // proceed with removal, but it points to a missing cleanup which
+              // can be problematic for users, as it needlessly consumes space.
+              // Log verbosely to make it easier to catch.
+              auto file_path = fmt::format("{}/{}", ntp_dir, de.name);
+              vlog(
+                stlog.error,
+                "Leftover staging file found, removing: {}",
+                file_path);
+              return ss::remove_file(file_path);
+          }
+          return ss::make_ready_future<>();
+      });
+    co_await remove_file(ntp_dir);
+    // We always dispatch topic directory deletion to core 0 as requests may
+    // come from different cores
+    co_await dispatch_topic_dir_deletion(topic_dir);
+}
+
+ss::future<> log_manager::remove_orphan(
+  ss::sstring data_directory_path, model::ntp ntp, model::revision_id rev) {
+    vlog(stlog.info, "Asked to remove orphan for: {} revision: {}", ntp, rev);
+    if (_logs.contains(ntp)) {
+        co_return;
+    }
+
+    const auto topic_directory_path
+      = (std::filesystem::path(data_directory_path) / ntp.topic_path())
+          .string();
+
+    auto topic_directory_exist = co_await ss::file_exists(topic_directory_path);
+    if (!topic_directory_exist) {
+        co_return;
+    }
+
+    std::exception_ptr eptr;
+    try {
+        co_await directory_walker::walk(
+          topic_directory_path,
+          [&ntp, &topic_directory_path, &rev](ss::directory_entry entry) {
+              auto ntp_directory_data
+                = ntp_directory_path::parse_partition_directory(entry.name);
+              if (!ntp_directory_data) {
+                  return ss::now();
+              }
+              if (
+                ntp_directory_data->partition_id == ntp.tp.partition
+                && ntp_directory_data->revision_id <= rev) {
+                  auto ntp_directory = std::filesystem::path(
+                                         topic_directory_path)
+                                       / std::filesystem::path(entry.name);
+                  vlog(
+                    stlog.info,
+                    "Cleaning up ntp [{}] rev {} directory {} ",
+                    ntp,
+                    ntp_directory_data->revision_id,
+                    ntp_directory);
+                  return ss::recursive_remove_directory(ntp_directory);
+              }
+              return ss::now();
+          });
+    } catch (std::filesystem::filesystem_error const&) {
+        eptr = std::current_exception();
+    } catch (ss::broken_promise const&) {
+        // List directory can throw ss::broken_promise exception when directory
+        // was deleted while list directory is processing
+        eptr = std::current_exception();
+    }
+    if (eptr) {
+        topic_directory_exist = co_await ss::file_exists(topic_directory_path);
+        if (topic_directory_exist) {
+            std::rethrow_exception(eptr);
+        } else {
+            vlog(
+              stlog.debug,
+              "Cleaning orphan. Topic directory was deleted: {}",
+              topic_directory_path);
+            co_return;
         }
-        // 'ss::shared_ptr<>' make a copy
-        storage::log lg = handle.mapped()->handle;
-        vlog(stlog.info, "Removing: {}", lg);
-        // NOTE: it is ok to *not* externally synchronize the log here
-        // because remove, takes a write lock on each individual segments
-        // waiting for all of them to be closed before actually removing the
-        // underlying log. If there is a background operation like
-        // compaction or so, it will block correctly.
-        auto ntp_dir = lg.config().work_directory();
-        ss::sstring topic_dir = lg.config().topic_directory().string();
-        return lg.remove()
-          .then([dir = std::move(ntp_dir)] { return ss::remove_file(dir); })
-          .then([this, dir = std::move(topic_dir)]() mutable {
-              // We always dispatch topic directory deletion to core 0 as
-              // requests may come from different cores
-              return dispatch_topic_dir_deletion(std::move(dir));
-          })
-          .finally([lg] {});
-    });
+    }
+    vlog(
+      stlog.info,
+      "Trying to clean up orphan topic directory: {}",
+      topic_directory_path);
+    co_await dispatch_topic_dir_deletion(std::move(topic_directory_path));
+    co_return;
 }
 
 ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {

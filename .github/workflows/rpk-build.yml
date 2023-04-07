@@ -67,7 +67,7 @@ jobs:
          echo "" > /tmp/empty_notes
 
       - name: Invoke goreleaser
-        uses: goreleaser/goreleaser-action@v3
+        uses: goreleaser/goreleaser-action@v4
         env:
           QUILL_SIGN_P12: ${{ secrets.QUILL_SIGN_P12_BASE64 }}
           QUILL_SIGN_PASSWORD: ${{ secrets.QUILL_SIGN_PASSWORD }}
@@ -75,11 +75,12 @@ jobs:
           QUILL_NOTARY_KEY: ${{ secrets.QUILL_NOTARY_KEY_BASE64 }}
           QUILL_NOTARY_ISSUER: ${{ secrets.QUILL_NOTARY_ISSUER }}
           GITHUB_TOKEN: ${{ secrets.VBOT_GITHUB_API_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
         with:
           distribution: goreleaser
           version: ${{ env.GITHUB_REF_NAME }}
           workdir: src/go/rpk/
-          args: release --rm-dist --release-notes /tmp/empty_notes
+          args: release --clean --release-notes /tmp/empty_notes
 
       - name: Archive quill output
         if: failure()

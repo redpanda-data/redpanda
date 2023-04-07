@@ -14,15 +14,15 @@
 #include "cloud_roles/aws_sts_refresh_impl.h"
 #include "cloud_roles/gcp_refresh_impl.h"
 #include "cloud_roles/logger.h"
-#include "cloud_roles/request_response_helpers.h"
 #include "config/configuration.h"
-#include "config/node_config.h"
 #include "model/metadata.h"
 #include "net/tls.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
+
+#include <exception>
 
 namespace cloud_roles {
 
@@ -36,7 +36,8 @@ struct override_api_endpoint_env_vars {
 /// Multiplier to derive sleep duration from expiry time. Leaves 0.1 * expiry
 /// seconds as buffer to make API calls. For default expiry of 1 hour, this
 /// results in a fetch after 54 minutes.
-static constexpr float sleep_from_expiry_multiplier = 0.9;
+constexpr float sleep_from_expiry_multiplier = 0.9;
+constexpr std::chrono::milliseconds max_retry_interval_ms{300000};
 
 refresh_credentials::refresh_credentials(
   std::unique_ptr<impl> impl,
@@ -59,12 +60,16 @@ ss::future<> refresh_credentials::do_start() {
     return ss::do_until(
       [this] { return _gate.is_closed() || _as.abort_requested(); },
       [this] {
-          return fetch_and_update_credentials().handle_exception_type(
-            [](const ss::sleep_aborted& ex) {
+          return fetch_and_update_credentials()
+            .handle_exception_type([](const ss::sleep_aborted& ex) {
                 vlog(
                   clrl_log.info,
                   "stopping refresh_credentials loop: {}",
                   ex.what());
+            })
+            .handle_exception([this](const std::exception_ptr& ex) {
+                vlog(clrl_log.error, "error refreshing credentials: {}", ex);
+                _impl->increment_retries();
             });
       });
 }
@@ -208,7 +213,19 @@ std::chrono::milliseconds refresh_credentials::impl::calculate_sleep_duration(
 void refresh_credentials::impl::increment_retries() {
     _retries += 1;
     auto sleep_ms = _retry_params.backoff_ms * (2 * _retries);
-    vlog(clrl_log.info, "retry after {} ms", sleep_ms);
+    vlog(
+      clrl_log.debug,
+      "Failed to refresh credentials, will retry after {}",
+      sleep_ms);
+    if (sleep_ms > max_retry_interval_ms) {
+        sleep_ms = max_retry_interval_ms;
+        vlog(
+          clrl_log.warn,
+          "Retry interval capped to {} after {} failed attempts to refresh "
+          "credentials",
+          sleep_ms,
+          _retries);
+    }
     _sleep_duration = sleep_ms;
 }
 
