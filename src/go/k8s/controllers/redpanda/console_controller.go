@@ -13,6 +13,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -25,11 +26,16 @@ import (
 	netv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 // ConsoleReconciler reconciles a Console object
@@ -265,6 +271,11 @@ func (r *ConsoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.Deployment{}).
 		Owns(&corev1.Service{}).
 		Owns(&netv1.Ingress{}).
+		Watches(
+			&source.Kind{Type: &redpandav1alpha1.Cluster{}},
+			handler.EnqueueRequestsFromMapFunc(r.reconcileConsoleForCluster),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Complete(r)
 }
 
@@ -274,4 +285,34 @@ func (r *ConsoleReconciler) WithClusterDomain(
 ) *ConsoleReconciler {
 	r.clusterDomain = clusterDomain
 	return r
+}
+
+func (r *ConsoleReconciler) reconcileConsoleForCluster(c client.Object) []reconcile.Request {
+	// Since Console is a managed Object, list requests should be handled at
+	// the level of client cache, so no real request to the cluster API.
+	// We set a strict timeout for this reason.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cs := redpandav1alpha1.ConsoleList{}
+	err := r.Client.List(ctx, &cs) // all namespaces
+	if err != nil {
+		r.Log.Error(err, "unexpected: could not list consoles for propagating reconcile events")
+		return nil
+	}
+
+	var res []reconcile.Request
+	for i := range cs.Items {
+		cns := &cs.Items[i]
+		if cns.Spec.ClusterRef.Namespace == c.GetNamespace() && cns.Spec.ClusterRef.Name == c.GetName() {
+			res = append(res, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: cns.Namespace,
+					Name:      cns.Name,
+				},
+			})
+		}
+	}
+
+	return res
 }
