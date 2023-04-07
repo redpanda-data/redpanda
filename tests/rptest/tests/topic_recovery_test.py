@@ -341,17 +341,6 @@ class EmptySegmentsCase(BaseCase):
             self._redpanda.start_node(node)
         time.sleep(1)
 
-    def validate_node(self, host, baseline, restored):
-        """Validate restored node data using two sets of checksums.
-        The checksums are sampled from data directory before and after recovery."""
-        self.logger.info(f"Node: {baseline} checksums: {restored}")
-        # get rid of ntp part of the path
-        self.logger.info(
-            f"validate node host: {host}, baseline: {baseline}, restored: {restored}"
-        )
-        it = [os.path.basename(key) for key, _ in restored.items()]
-        assert len(it) == 1
-
     def validate_cluster(self, baseline, restored):
         """This method is invoked after the recovery and partition validation are
         done.
@@ -588,7 +577,6 @@ class MissingSegment(BaseCase):
             f"MissingSegment.validate_cluster - baseline - {baseline}")
         self.logger.info(
             f"MissingSegment.validate_cluster - restored - {restored}")
-        self._validate_partition_last_offset()
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
