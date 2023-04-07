@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
@@ -80,7 +80,7 @@ func TestStopCommand(t *testing.T) {
 
 			var out bytes.Buffer
 			p := new(config.Params)
-			c := cli.NewStopCommand(fs, p)
+			c := redpanda.NewStopCommand(fs, p)
 			c.Flags().StringVar(&p.ConfigPath, "config", "", "this is done in root.go, but we need it here for the tests setting args")
 			args := append([]string{"--config", conf.FileLocation()}, tt.args...)
 			c.SetArgs(args)
