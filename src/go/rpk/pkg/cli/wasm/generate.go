@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/wasm/template"
 	vos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	log "github.com/sirupsen/logrus"

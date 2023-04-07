@@ -23,7 +23,7 @@ import (
 
 	"github.com/avast/retry-go"
 	"github.com/docker/docker/api/types"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"

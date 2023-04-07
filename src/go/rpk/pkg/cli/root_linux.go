@@ -7,11 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package cli
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/iotune"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/redpanda"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/iotune"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda"
 	rp "github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"

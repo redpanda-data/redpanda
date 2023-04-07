@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package cmd
+package cli
 
 import (
 	"bytes"
@@ -24,18 +24,18 @@ import (
 
 	"github.com/fatih/color"
 	mTerm "github.com/moby/term"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/acl"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/container"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
-	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/plugin"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/topic"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/version"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/acl"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/group"
+	plugincmd "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/plugin"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/topic"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/wasm"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"

@@ -9,8 +9,8 @@
 
 package main
 
-import "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd"
+import "github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 
 func main() {
-	cmd.Execute()
+	cli.Execute()
 }

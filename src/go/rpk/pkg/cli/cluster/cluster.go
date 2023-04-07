@@ -10,14 +10,14 @@
 package cluster
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/config"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/license"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/maintenance"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/partitions"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/selftest"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/storage"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/group"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/config"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/license"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/maintenance"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/partitions"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/selftest"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/storage"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/group"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )

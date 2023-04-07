@@ -28,7 +28,7 @@ import (
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate/graf"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/sirupsen/logrus"

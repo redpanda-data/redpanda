@@ -10,7 +10,7 @@
 package debug
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/debug/bundle"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug/bundle"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )

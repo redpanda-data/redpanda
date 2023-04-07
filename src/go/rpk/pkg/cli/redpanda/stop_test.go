@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
@@ -79,7 +79,7 @@ func TestStopCommand(t *testing.T) {
 			require.NoError(t, err)
 
 			var out bytes.Buffer
-			c := cmd.NewStopCommand(fs)
+			c := cli.NewStopCommand(fs)
 			args := append([]string{"--config", conf.FileLocation()}, tt.args...)
 			c.SetArgs(args)
 

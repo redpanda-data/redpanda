@@ -10,7 +10,7 @@
 package storage
 
 import (
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cluster/storage/recovery"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster/storage/recovery"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
