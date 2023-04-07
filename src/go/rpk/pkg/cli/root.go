@@ -96,17 +96,47 @@ func Execute() {
 	})
 
 	p := new(config.Params)
+	paramsHelp := func(*cobra.Command, []string) {
+		for _, o := range p.FlagOverrides {
+			switch {
+			case o == "help":
+				fmt.Print(config.ParamsHelp())
+			case o == "list":
+				fmt.Print(config.ParamsList())
+			default:
+				return
+			}
+			os.Exit(0)
+		}
+	}
 	root := &cobra.Command{
 		Use:   "rpk",
 		Short: "rpk is the Redpanda CLI & toolbox",
 		Long:  "",
 
-		CompletionOptions: cobra.CompletionOptions{
-			DisableDefaultCmd: true,
-		},
+		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
+		PersistentPreRun:  paramsHelp,
+		Run:               paramsHelp,
 	}
-	root.PersistentFlags().BoolVarP(&verbose, config.FlagVerbose, "v", false, "Enable verbose logging (default: false)")
-	root.PersistentFlags().StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
+	pf := root.PersistentFlags()
+	pf.BoolVarP(&verbose, config.FlagVerbose, "v", false, "Enable verbose logging (default: false)")
+	pf.StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
+	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
+
+	root.RegisterFlagCompletionFunc("config-opt", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		var opts []string
+		for _, line := range strings.Split(config.ParamsList(), "\n") {
+			opt := strings.SplitN(line, "=", 2)
+			if len(opt) != 2 {
+				continue
+			}
+			if !strings.HasPrefix(opt[0], toComplete) {
+				continue
+			}
+			opts = append(opts, opt[0]+"=")
+		}
+		return opts, cobra.ShellCompDirectiveNoSpace
+	})
 
 	root.AddCommand(
 		acl.NewCommand(fs, p),
