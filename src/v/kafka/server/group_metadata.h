@@ -30,7 +30,7 @@ enum group_metadata_type {
     noop,
 };
 
-group_metadata_type decode_metadata_type(protocol::request_reader& key_reader);
+group_metadata_type decode_metadata_type(protocol::decoder& key_reader);
 
 using group_metadata_version = named_type<int16_t, struct md_versio_tag>;
 
@@ -61,7 +61,7 @@ struct member_state {
 
     friend bool operator==(const member_state&, const member_state&) = default;
 
-    static member_state decode(protocol::request_reader&);
+    static member_state decode(protocol::decoder&);
     static void encode(protocol::response_writer&, const member_state&);
 };
 
@@ -75,7 +75,7 @@ struct group_metadata_key {
     friend std::ostream& operator<<(std::ostream&, const group_metadata_key&);
     friend bool operator==(const group_metadata_key&, const group_metadata_key&)
       = default;
-    static group_metadata_key decode(protocol::request_reader&);
+    static group_metadata_key decode(protocol::decoder&);
     static void encode(protocol::response_writer&, const group_metadata_key&);
 };
 
@@ -114,7 +114,7 @@ struct group_metadata_value {
     operator==(const group_metadata_value&, const group_metadata_value&)
       = default;
 
-    static group_metadata_value decode(protocol::request_reader&);
+    static group_metadata_value decode(protocol::decoder&);
     static void encode(protocol::response_writer&, const group_metadata_value&);
 };
 
@@ -128,7 +128,7 @@ struct offset_metadata_key {
     friend bool
     operator==(const offset_metadata_key&, const offset_metadata_key&)
       = default;
-    static offset_metadata_key decode(protocol::request_reader&);
+    static offset_metadata_key decode(protocol::decoder&);
     static void encode(protocol::response_writer&, const offset_metadata_key&);
 };
 
@@ -157,7 +157,7 @@ struct offset_metadata_value {
     friend bool
     operator==(const offset_metadata_value&, const offset_metadata_value&)
       = default;
-    static offset_metadata_value decode(protocol::request_reader&);
+    static offset_metadata_value decode(protocol::decoder&);
     static void encode(protocol::response_writer&, const offset_metadata_value&);
 };
 
@@ -171,7 +171,7 @@ struct group_metadata_kv {
     std::optional<group_metadata_value> value;
 };
 
-inline group_metadata_version read_metadata_version(protocol::request_reader& reader) {
+inline group_metadata_version read_metadata_version(protocol::decoder& reader) {
     return group_metadata_version{reader.read_int16()};
 }
 

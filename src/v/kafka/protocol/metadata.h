@@ -33,7 +33,7 @@ struct metadata_request {
         data.encode(writer, version);
     }
 
-    void decode(protocol::request_reader& reader, api_version version) {
+    void decode(protocol::decoder& reader, api_version version) {
         data.decode(reader, version);
         if (version > api_version(0)) {
             list_all_topics = !data.topics;

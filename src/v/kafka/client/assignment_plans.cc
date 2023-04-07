@@ -44,11 +44,11 @@ assignment assignment_plan::decode(const bytes& b) const {
     if (b.empty()) {
         return {};
     }
-    protocol::request_reader reader(bytes_to_iobuf(b));
-    auto result = reader.read_array([](protocol::request_reader& reader) {
+    protocol::decoder reader(bytes_to_iobuf(b));
+    auto result = reader.read_array([](protocol::decoder& reader) {
         auto topic = model::topic(reader.read_string());
         return std::make_pair(
-          std::move(topic), reader.read_array([](protocol::request_reader& reader) {
+          std::move(topic), reader.read_array([](protocol::decoder& reader) {
               return model::partition_id(reader.read_int32());
           }));
     });

@@ -41,7 +41,7 @@ struct fixture {
         kafka::protocol::response_writer writer(buffer);
         T::encode(writer, value);
 
-        kafka::protocol::request_reader reader(std::move(buffer));
+        kafka::protocol::decoder reader(std::move(buffer));
 
         auto decoded = T::decode(reader);
         logger.info("decoded: {}", decoded);

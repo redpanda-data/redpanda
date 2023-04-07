@@ -3346,7 +3346,7 @@ absl::node_hash_set<model::topic>
 group::decode_consumer_subscriptions(iobuf data) {
     constexpr auto max_topic_name_length = 32_KiB;
 
-    protocol::request_reader reader(std::move(data));
+    protocol::decoder reader(std::move(data));
 
     /* version intentionally ignored */
     reader.read_int16();

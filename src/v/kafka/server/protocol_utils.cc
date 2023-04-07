@@ -32,7 +32,7 @@ parse_v1_header(ss::input_stream<char>& src) {
 
     iobuf data;
     data.append(std::move(buf));
-    protocol::request_reader reader(std::move(data));
+    protocol::decoder reader(std::move(data));
 
     request_header header;
     header.key = api_key(reader.read_int16());

@@ -35,9 +35,9 @@ class input_stream;
 
 namespace kafka::protocol {
 
-class request_reader {
+class decoder {
 public:
-    explicit request_reader(iobuf io) noexcept
+    explicit decoder(iobuf io) noexcept
       : _parser(std::move(io)) {}
 
     size_t bytes_left() const { return _parser.bytes_left(); }
@@ -176,7 +176,7 @@ public:
 
     template<
       typename ElementParser,
-      typename T = std::invoke_result_t<ElementParser, request_reader&>>
+      typename T = std::invoke_result_t<ElementParser, decoder&>>
     std::vector<T> read_array(ElementParser&& parser) {
         auto len = read_int32();
         if (len < 0) {
@@ -188,7 +188,7 @@ public:
 
     template<
       typename ElementParser,
-      typename T = std::invoke_result_t<ElementParser, request_reader&>>
+      typename T = std::invoke_result_t<ElementParser, decoder&>>
     std::vector<T> read_flex_array(ElementParser&& parser) {
         auto len = read_unsigned_varint();
         if (len == 0) {
@@ -200,7 +200,7 @@ public:
 
     template<
       typename ElementParser,
-      typename T = std::invoke_result_t<ElementParser, request_reader&>>
+      typename T = std::invoke_result_t<ElementParser, decoder&>>
     std::optional<std::vector<T>> read_nullable_array(ElementParser&& parser) {
         auto len = read_int32();
         if (len < 0) {
@@ -211,7 +211,7 @@ public:
 
     template<
       typename ElementParser,
-      typename T = std::invoke_result_t<ElementParser, request_reader&>>
+      typename T = std::invoke_result_t<ElementParser, decoder&>>
     std::optional<std::vector<T>>
     read_nullable_flex_array(ElementParser&& parser) {
         auto len = read_unsigned_varint();
@@ -271,8 +271,8 @@ private:
 
     template<
       typename ElementParser,
-      typename T = std::invoke_result_t<ElementParser, request_reader&>>
-    requires requires(ElementParser parser, request_reader& rr) {
+      typename T = std::invoke_result_t<ElementParser, decoder&>>
+    requires requires(ElementParser parser, decoder& rr) {
         { parser(rr) } -> std::same_as<T>;
     }
     std::vector<T> do_read_array(int32_t len, ElementParser&& parser) {

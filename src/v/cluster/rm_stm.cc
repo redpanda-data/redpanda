@@ -190,7 +190,7 @@ parse_control_batch(const model::record_batch& b) {
     auto r = b.copy_records();
     auto& record = *r.begin();
     auto key = record.release_key();
-    kafka::protocol::request_reader key_reader(std::move(key));
+    kafka::protocol::decoder key_reader(std::move(key));
     auto version = model::control_record_version(key_reader.read_int16());
     vassert(
       version == model::current_control_record_version,
