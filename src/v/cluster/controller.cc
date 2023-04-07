@@ -17,6 +17,7 @@
 #include "cluster/controller_backend.h"
 #include "cluster/controller_log_limiter.h"
 #include "cluster/controller_service.h"
+#include "cluster/controller_stm.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/feature_backend.h"
 #include "cluster/feature_manager.h"
@@ -55,6 +56,7 @@
 #include "security/ephemeral_credential_store.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
 
@@ -531,6 +533,14 @@ ss::future<> controller::stop() {
         auto stop_leader_balancer = _leader_balancer ? _leader_balancer->stop()
                                                      : ss::now();
         return stop_leader_balancer
+          .then([this] {
+              return ss::smp::submit_to(controller_stm_shard, [&stm = _stm] {
+                  if (stm.local_is_initialized()) {
+                      return stm.local().shutdown();
+                  }
+                  return ss::now();
+              });
+          })
           .then([this] { return _partition_balancer.stop(); })
           .then([this] { return _metrics_reporter.stop(); })
           .then([this] { return _feature_manager.stop(); })
@@ -547,13 +557,13 @@ ss::future<> controller::stop() {
           .then([this] { return _members_frontend.stop(); })
           .then([this] { return _config_frontend.stop(); })
           .then([this] { return _feature_backend.stop(); })
-          .then([this] { return _stm.stop(); })
           .then([this] { return _bootstrap_backend.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _ephemeral_credentials.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
           .then([this] { return _members_manager.stop(); })
+          .then([this] { return _stm.stop(); })
           .then([this] { return _drain_manager.stop(); })
           .then([this] { return _partition_balancer_state.stop(); })
           .then([this] { return _partition_allocator.stop(); })

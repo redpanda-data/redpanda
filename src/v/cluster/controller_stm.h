@@ -61,6 +61,8 @@ public:
     requires ControllerCommand<Cmd>
     bool throttle() { return _limiter.throttle<Cmd>(); }
 
+    ss::future<> shutdown();
+
     virtual ss::future<> stop() final;
 
 private:
