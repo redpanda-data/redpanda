@@ -146,7 +146,7 @@ void check_kafka_binary_format(
             return;
         }
         iobuf iob;
-        kafka::protocol::response_writer rw(iob);
+        kafka::protocol::encoder rw(iob);
         r.encode(rw, version);
         b = iobuf_to_bytes(iob);
     }

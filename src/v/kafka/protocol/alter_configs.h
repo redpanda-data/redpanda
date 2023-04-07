@@ -28,7 +28,7 @@ struct alter_configs_request final {
 
     alter_configs_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -47,7 +47,7 @@ struct alter_configs_response final {
 
     alter_configs_response_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

@@ -29,7 +29,7 @@ struct metadata_request {
 
     bool list_all_topics{false};
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -62,7 +62,7 @@ struct metadata_response {
 
     metadata_response_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

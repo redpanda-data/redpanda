@@ -20,7 +20,7 @@ using namespace kafka; // NOLINT
                               ">");                                            \
         auto val = value;                                                      \
         auto out = iobuf();                                                    \
-        kafka::protocol::response_writer w(out);                                         \
+        kafka::protocol::encoder w(out);                                         \
         w.write((type_cast)val);                                               \
         kafka::protocol::decoder r(std::move(out));                               \
         BOOST_REQUIRE_EQUAL(val, (r.*read_method)());                          \

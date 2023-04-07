@@ -27,7 +27,7 @@ struct describe_log_dirs_request final {
 
     describe_log_dirs_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -46,7 +46,7 @@ struct describe_log_dirs_response final {
 
     describe_log_dirs_response_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

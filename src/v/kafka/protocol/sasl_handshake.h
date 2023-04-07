@@ -26,7 +26,7 @@ struct sasl_handshake_request final {
 
     sasl_handshake_request() = default;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -53,7 +53,7 @@ struct sasl_handshake_response final {
         data.mechanisms = std::move(mechanisms);
     }
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

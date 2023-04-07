@@ -38,7 +38,7 @@ struct fixture {
     void roundtrip_test(const T& value) {
         iobuf buffer;
         logger.info("encoding: {}", value);
-        kafka::protocol::response_writer writer(buffer);
+        kafka::protocol::encoder writer(buffer);
         T::encode(writer, value);
 
         kafka::protocol::decoder reader(std::move(buffer));

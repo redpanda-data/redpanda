@@ -148,7 +148,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
         auto data = co_await read_iobuf_exactly(conn->input(), size);
         sasl_authenticate_request request;
         request.data.auth_bytes = iobuf_to_bytes(data);
-        protocol::response_writer writer(request_buf);
+        protocol::encoder writer(request_buf);
         request.encode(writer, version);
     }
 
@@ -184,7 +184,7 @@ ss::future<> connection_context::handle_auth_v0(const size_t size) {
     }
 
     iobuf data;
-    protocol::response_writer writer(data);
+    protocol::encoder writer(data);
     writer.write(response.data.auth_bytes);
     auto msg = iobuf_as_scattered(std::move(data));
     co_await conn->write(std::move(msg));

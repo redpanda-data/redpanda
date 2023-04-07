@@ -161,7 +161,7 @@ public:
 
     template<typename ResponseType>
     requires requires(
-      ResponseType r, protocol::response_writer& writer, api_version version) {
+      ResponseType r, protocol::encoder& writer, api_version version) {
         { r.encode(writer, version) } -> std::same_as<void>;
     }
     ss::future<response_ptr> respond(ResponseType r) {

@@ -33,7 +33,7 @@ struct fetch_request final {
 
     fetch_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -184,7 +184,7 @@ struct fetch_response final {
     // Used for usage/metering to relay this value back to the connection layer
     size_t internal_topic_bytes{0};
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

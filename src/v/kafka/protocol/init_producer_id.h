@@ -29,7 +29,7 @@ struct init_producer_id_request final {
 
     init_producer_id_request_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 
@@ -48,7 +48,7 @@ struct init_producer_id_response final {
 
     init_producer_id_response_data data;
 
-    void encode(protocol::response_writer& writer, api_version version) {
+    void encode(protocol::encoder& writer, api_version version) {
         data.encode(writer, version);
     }
 

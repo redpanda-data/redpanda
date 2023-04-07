@@ -62,7 +62,7 @@ struct member_state {
     friend bool operator==(const member_state&, const member_state&) = default;
 
     static member_state decode(protocol::decoder&);
-    static void encode(protocol::response_writer&, const member_state&);
+    static void encode(protocol::encoder&, const member_state&);
 };
 
 /**
@@ -76,7 +76,7 @@ struct group_metadata_key {
     friend bool operator==(const group_metadata_key&, const group_metadata_key&)
       = default;
     static group_metadata_key decode(protocol::decoder&);
-    static void encode(protocol::response_writer&, const group_metadata_key&);
+    static void encode(protocol::encoder&, const group_metadata_key&);
 };
 
 /**
@@ -115,7 +115,7 @@ struct group_metadata_value {
       = default;
 
     static group_metadata_value decode(protocol::decoder&);
-    static void encode(protocol::response_writer&, const group_metadata_value&);
+    static void encode(protocol::encoder&, const group_metadata_value&);
 };
 
 struct offset_metadata_key {
@@ -129,7 +129,7 @@ struct offset_metadata_key {
     operator==(const offset_metadata_key&, const offset_metadata_key&)
       = default;
     static offset_metadata_key decode(protocol::decoder&);
-    static void encode(protocol::response_writer&, const offset_metadata_key&);
+    static void encode(protocol::encoder&, const offset_metadata_key&);
 };
 
 /**
@@ -158,7 +158,7 @@ struct offset_metadata_value {
     operator==(const offset_metadata_value&, const offset_metadata_value&)
       = default;
     static offset_metadata_value decode(protocol::decoder&);
-    static void encode(protocol::response_writer&, const offset_metadata_value&);
+    static void encode(protocol::encoder&, const offset_metadata_value&);
 };
 
 struct offset_metadata_kv {

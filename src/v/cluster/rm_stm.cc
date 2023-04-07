@@ -107,12 +107,12 @@ static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
 static model::record_batch make_tx_control_batch(
   model::producer_identity pid, model::control_record_type crt) {
     iobuf key;
-    kafka::protocol::response_writer kw(key);
+    kafka::protocol::encoder kw(key);
     kw.write(model::current_control_record_version());
     kw.write(static_cast<int16_t>(crt));
 
     iobuf value;
-    kafka::protocol::response_writer vw(value);
+    kafka::protocol::encoder vw(value);
     vw.write(static_cast<int16_t>(0));
     vw.write(static_cast<int32_t>(0));
 
