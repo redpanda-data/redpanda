@@ -116,16 +116,16 @@ const (
 // config-setting -X flag, as well as upper-cased, dot-to-underscore replaced
 // env variables.
 const (
-	xKafkaBrokers = "kafka.brokers"
+	xKafkaBrokers = "brokers"
 
-	xKafkaTLSEnabled = "kafka.tls.enabled"
-	xKafkaCACert     = "kafka.tls.ca_cert_path"
-	xKafkaClientCert = "kafka.tls.client_cert_path"
-	xKafkaClientKey  = "kafka.tls.client_key_path"
+	xKafkaTLSEnabled = "brokers.tls.enabled"
+	xKafkaCACert     = "brokers.tls.ca_cert_path"
+	xKafkaClientCert = "brokers.tls.client_cert_path"
+	xKafkaClientKey  = "brokers.tls.client_key_path"
 
-	xKafkaSASLMechanism = "kafka.sasl.mechanism"
-	xKafkaSASLUser      = "kafka.sasl.user"
-	xKafkaSASLPass      = "kafka.sasl.pass"
+	xKafkaSASLMechanism = "brokers.sasl.mechanism"
+	xKafkaSASLUser      = "brokers.sasl.user"
+	xKafkaSASLPass      = "brokers.sasl.pass"
 
 	xAdminHosts      = "admin.hosts"
 	xAdminTLSEnabled = "admin.tls.enabled"
@@ -152,7 +152,196 @@ type Params struct {
 	//
 	// This is unused until step (2) in the refactoring process.
 	FlagOverrides []string
+
+	// BACKCOMPAT FLAGS
+	//
+	// Note that some of these will move to standard persistent flags,
+	// but are backcompat flags for the -X transition.
+
+	brokers       []string
+	user          string
+	password      string
+	saslMechanism string
+
+	enableKafkaTLS bool
+	kafkaCAFile    string
+	kafkaCertFile  string
+	kafkaKeyFile   string
+
+	adminURLs      []string
+	enableAdminTLS bool
+	adminCAFile    string
+	adminCertFile  string
+	adminKeyFile   string
 }
+
+func ParamsHelp() string {
+	return `The -X flag can be used to override any rpk specific configuration option.
+As an example, -X brokers.tls.enabled=true enables TLS for the Kafka API.
+
+The following options are available, with an example value for each option:
+
+brokers=127.0.0.1:9092,localhost:9094
+  A comma separated list of host:ports that rpk talks to for the Kafka API.
+  By default, this is 127.0.0.1:9092.
+
+brokers.tls.enabled=true
+  A boolean that enableenables rpk to speak TLS to your broker's Kafka API listeners.
+  You can use this if you have well known certificates setup on your Kafka API.
+  If you use mTLS, specifying mTLS certificate filepaths automatically opts
+  into TLS enabled.
+
+brokers.tls.ca_cert_path=/path/to/ca.pem
+  A filepath to a PEM encoded CA certificate file to talk to your broker's
+  Kafka API listeners with mTLS. You may also need this if your listeners are
+  using a certificate by a well known authority that is not yet bundled on your
+  operating system.
+
+brokers.tls.client_cert_path=/path/to/cert.pem
+  A filepath to a PEM encoded client certificate file to talk to your broker's
+  Kafka API listeners with mTLS.
+
+brokers.tls.client_key_path=/path/to/key.pem
+  A filepath to a PEM encoded client key file to talk to your broker's Kafka
+  API listeners with mTLS.
+
+brokers.sasl.mechanism=SCRAM-SHA-256
+  The SASL mechanism to use for authentication. This can be either SCRAM-SHA-256
+  or SCRAM-SHA-512. Note that with Redpanda, the Admin API can be configured to
+  require basic authentication with your Kafka API SASL credentials.
+
+brokers.sasl.user=username
+  The SASL username to use for authentication.
+
+brokers.sasl.pass=password
+  The SASL password to use for authentication.
+
+admin.hosts=localhost:9644,rp.example.com:9644
+  A comma separated list of host:ports that rpk talks to for the Admin API.
+  By default, this is 127.0.0.1:9644.
+
+admin.tls.enabled=false
+  A boolean that enables rpk to speak TLS to your broker's Admin API listeners.
+  You can use this if you have well known certificates setup on your admin API.
+  If you use mTLS, specifying mTLS certificate filepaths automatically opts
+  into TLS enabled.
+
+admin.tls.ca_cert_path=/path/to/ca.pem
+  A filepath to a PEM encoded CA certificate file to talk to your broker's
+  Admin API listeners with mTLS. You may also need this if your listeners are
+  using a certificate by a well known authority that is not yet bundled on your
+  operating system.
+
+admin.tls.client_cert_path=/path/to/cert.pem
+  A filepath to a PEM encoded client certificate file to talk to your broker's
+  Admin API listeners with mTLS.
+
+admin.tls.client_key_path=/path/to/key.pem
+  A filepath to a PEM encoded client key file to talk to your broker's Admin
+  API listeners with mTLS.
+`
+}
+
+func ParamsList() string {
+	return `brokers=comma,delimited,host:ports
+brokers.tls.enabled=boolean
+brokers.tls.ca_cert_path=/path/to/ca.pem
+brokers.tls.client_cert_path=/path/to/cert.pem
+brokers.tls.client_key_path=/path/to/key.pem
+brokers.sasl.mechanism=SCRAM-SHA-256 or SCRAM-SHA-512
+brokers.sasl.user=username
+brokers.sasl.pass=password
+admin.hosts=comma,delimited,host:ports
+admin.tls.enabled=boolean
+admin.tls.ca_cert_path=/path/to/ca.pem
+admin.tls.client_cert_path=/path/to/cert.pem
+admin.tls.client_key_path=/path/to/key.pem
+`
+}
+
+//////////////////////
+// BACKCOMPAT FLAGS //
+//////////////////////
+
+func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
+	pf := cmd.PersistentFlags()
+	pf.StringSliceVar(&p.brokers, "brokers", nil, "Comma separated list of broker host:ports")
+	pf.StringVar(&p.user, "user", "", "SASL user to be used for authentication")
+	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
+	pf.StringVar(&p.saslMechanism, FlagSASLMechanism, "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+
+	p.InstallTLSFlags(cmd)
+}
+
+func (p *Params) InstallTLSFlags(cmd *cobra.Command) {
+	pf := cmd.PersistentFlags()
+	pf.BoolVar(&p.enableKafkaTLS, FlagEnableTLS, false, "Enable TLS for the Kafka API (not necessary if specifying custom certs)")
+	pf.StringVar(&p.kafkaCAFile, FlagTLSCA, "", "The CA certificate to be used for TLS communication with the broker")
+	pf.StringVar(&p.kafkaCertFile, FlagTLSCert, "", "The certificate to be used for TLS authentication with the broker")
+	pf.StringVar(&p.kafkaKeyFile, FlagTLSKey, "", "The certificate key to be used for TLS authentication with the broker")
+}
+
+func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
+	f := cmd.PersistentFlags()
+	f.StringSliceVar(&p.adminURLs, FlagAdminHosts2, nil, "Comma separated list of admin API host:ports")
+	f.StringSliceVar(&p.adminURLs, FlagAdminHosts1, nil, "")
+	f.MarkDeprecated(FlagAdminHosts1, fmt.Sprintf("Deprecated; use --%v", FlagAdminHosts2)) // Hosts2 is far more common; Hosts1 is only used in rpk redpanda admin
+	f.StringSliceVar(&p.adminURLs, "admin-url", nil, "")
+	f.MarkDeprecated("admin-url", fmt.Sprintf("Deprecated; use --%v", FlagAdminHosts2)) // only used in the debug bundle
+
+	f.BoolVar(&p.enableAdminTLS, FlagEnableAdminTLS, false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
+	f.StringVar(&p.adminCAFile, FlagAdminTLSCA, "", "The CA certificate  to be used for TLS communication with the admin API")
+	f.StringVar(&p.adminCertFile, FlagAdminTLSCert, "", "The certificate to be used for TLS authentication with the admin API")
+	f.StringVar(&p.adminKeyFile, FlagAdminTLSKey, "", "The certificate key to be used for TLS authentication with the admin API")
+}
+
+func (p *Params) backcompatFlagsToOverrides() {
+	if len(p.brokers) > 0 {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaBrokers, strings.Join(p.brokers, ",")))
+	}
+	if p.user != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLUser, p.user))
+	}
+	if p.password != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLPass, p.password))
+	}
+	if p.saslMechanism != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLMechanism, p.saslMechanism))
+	}
+
+	if p.enableKafkaTLS {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%t", xKafkaTLSEnabled, p.enableKafkaTLS))
+	}
+	if p.kafkaCAFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaCACert, p.kafkaCAFile))
+	}
+	if p.kafkaCertFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaClientCert, p.kafkaCertFile))
+	}
+	if p.kafkaKeyFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaClientKey, p.kafkaKeyFile))
+	}
+
+	if len(p.adminURLs) > 0 {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminHosts, strings.Join(p.adminURLs, ",")))
+	}
+	if p.enableAdminTLS {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%t", xAdminTLSEnabled, p.enableAdminTLS))
+	}
+	if p.adminCAFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminCACert, p.adminCAFile))
+	}
+	if p.adminCertFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientCert, p.adminCertFile))
+	}
+	if p.adminKeyFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientKey, p.adminKeyFile))
+	}
+}
+
+////////////////////////////////////
+// BACKCOMPAT PARAMS FROM COMMAND //
+////////////////////////////////////
 
 // ParamsFromCommand is an intermediate function to be used while refactoring
 // rpk to have a top-down passed Params function. See the docs at the top of
@@ -231,6 +420,10 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 	return &p
 }
 
+///////////////////////
+// LOADING & WRITING //
+///////////////////////
+
 // Load returns the param's config file. In order, this
 //
 //   - Finds the config file, per the --config flag or the default search set.
@@ -239,6 +432,8 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 //   - Processes env and flag overrides.
 //   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
+	p.backcompatFlagsToOverrides()
+
 	// If we have a config path loaded (through --config flag) the user
 	// expect to load or create the file from this directory.
 	if p.ConfigPath != "" {
@@ -438,9 +633,9 @@ func (p *Params) processOverrides(c *Config) error {
 		}
 	)
 
-	// To override, we lookup any override key (e.g., kafka.tls.enabled or
-	// admin.hosts) into this map. If the key exists, we processes the
-	// value as appropriate (per the value function in the map).
+	// To override, we lookup any override key (e.g., brokers.tls.enabled
+	// or admin_api.hosts) into this map. If the key exists, we processes
+	// the value as appropriate (per the value function in the map).
 	fns := map[string]func(string) error{
 		xKafkaBrokers: func(v string) error { return splitCommaIntoStrings(v, &k.Brokers) },
 
