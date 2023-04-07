@@ -27,7 +27,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/acl"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cluster"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/common"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate"
@@ -158,14 +157,6 @@ func Execute() {
 	root.SetUsageTemplate(usageTemplate)
 
 	err := root.Execute()
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "check":
-			fallthrough
-		case "tune":
-			log.Info(common.FeedbackMsg)
-		}
-	}
 	if err != nil {
 		os.Exit(1)
 	}
