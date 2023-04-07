@@ -52,3 +52,13 @@ rp_test(
   LIBRARIES Boost::unit_test_framework v::utils absl::flat_hash_map
   LABELS utils
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME nt_unit
+  SOURCES
+    named_type_mini.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::utils v::json
+  LABELS utils
+)

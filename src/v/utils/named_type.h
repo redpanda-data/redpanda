@@ -9,6 +9,10 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "named_base.h"
+
+#include <seastar/core/sstring.hh>
+
 #include <cstdint>
 #include <limits>
 #include <ostream>
