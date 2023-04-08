@@ -119,7 +119,7 @@ func Execute() {
 		Run:               paramsHelp,
 	}
 	pf := root.PersistentFlags()
-	pf.BoolVarP(&verbose, config.FlagVerbose, "v", false, "Enable verbose logging (default: false)")
+	pf.BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging (default: false)")
 	pf.StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
 	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
 
