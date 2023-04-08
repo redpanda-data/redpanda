@@ -20,8 +20,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"golang.org/x/term"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -95,14 +100,21 @@ type Params struct {
 	// This is unused until step (2) in the refactoring process.
 	ConfigPath string
 
-	// Verbose tracks the -v flag. This will be swapped with --log-level in
-	// the future.
-	Verbose bool
+	// LogLevel can be either none (default), error, warn, info, or debug,
+	// or any prefix of those strings, upper or lower case.
+	//
+	// This field is meant to be set, to actually get a logger after the
+	// field is set, use Logger().
+	LogLevel string
 
 	// FlagOverrides are any flag-specified config overrides.
 	//
 	// This is unused until step (2) in the refactoring process.
 	FlagOverrides []string
+
+	loggerOnce sync.Once
+	logger     *zap.Logger
+	loggerErr  error
 
 	// BACKCOMPAT FLAGS
 	//
@@ -346,7 +358,120 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 	c.addUnsetDefaults()
+
+	if _, err := p.Logger(); err != nil { // ensure our logger is loaded so MustLogger can be used
+		return nil, err
+	}
 	return c, nil
+}
+
+// LoadedLogger is like Logger, but panics on error. This can be used if you
+// are sure Load has been called, which internally sets the logger and returns
+// the logger error, if any.
+func (p *Params) LoadedLogger() *zap.Logger {
+	logger, err := p.Logger()
+	if err != nil {
+		panic(err)
+	}
+	return logger
+}
+
+// SugarLogger returns LoadedLogger().Sugar().
+func (p *Params) SugarLogger() *zap.SugaredLogger {
+	return p.LoadedLogger().Sugar()
+}
+
+// Logger parses p.LogLevel and returns the corresponding zap logger or an
+// error.
+func (p *Params) Logger() (*zap.Logger, error) {
+	p.loggerOnce.Do(func() {
+		// First we normalize the level. We support prefixes such
+		// that "w" means warn.
+		p.LogLevel = strings.TrimSpace(strings.ToLower(p.LogLevel))
+		if p.LogLevel == "" {
+			p.LogLevel = "none"
+		}
+		var ok bool
+		for _, level := range []string{"none", "error", "warn", "info", "debug"} {
+			if strings.HasPrefix(level, p.LogLevel) {
+				p.LogLevel, ok = level, true
+				break
+			}
+		}
+		if !ok {
+			p.loggerErr = fmt.Errorf("invalid log level: %s", p.LogLevel)
+			return
+		}
+		var level zapcore.Level
+		switch p.LogLevel {
+		case "none":
+			p.logger = zap.NewNop()
+			return
+		case "error":
+			level = zap.ErrorLevel
+		case "warn":
+			level = zap.WarnLevel
+		case "info":
+			level = zap.InfoLevel
+		case "debug":
+			level = zap.DebugLevel
+		}
+
+		// Now the zap config. We want to to the console and make the logs
+		// somewhat nice. The log time is effectively time.TimeMillisOnly.
+		// We disable logging the callsite and sampling, we shorten the log
+		// level to three letters, and we only add color if this is a
+		// terminal.
+		zcfg := zap.NewProductionConfig()
+		zcfg.Level = zap.NewAtomicLevelAt(level)
+		zcfg.DisableCaller = true
+		zcfg.DisableStacktrace = true
+		zcfg.Sampling = nil
+		zcfg.Encoding = "console"
+		zcfg.EncoderConfig.EncodeTime = zapcore.TimeEncoder(func(t time.Time, pae zapcore.PrimitiveArrayEncoder) {
+			pae.AppendString(t.Format("15:04:05.000"))
+		})
+		zcfg.EncoderConfig.EncodeDuration = zapcore.StringDurationEncoder
+		zcfg.EncoderConfig.ConsoleSeparator = "  "
+
+		// https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+		const (
+			red     = 31
+			yellow  = 33
+			blue    = 34
+			magenta = 35
+		)
+
+		// Zap's OutputPaths bydefault is []string{"stderr"}, so we
+		// only need to check os.Stderr.
+		tty := term.IsTerminal(int(os.Stderr.Fd()))
+		color := func(n int, s string) string {
+			if !tty {
+				return s
+			}
+			return fmt.Sprintf("\x1b[%dm%s\x1b[0m", n, s)
+		}
+		colors := map[zapcore.Level]string{
+			zapcore.ErrorLevel: color(red, "ERR"),
+			zapcore.WarnLevel:  color(yellow, "WRN"),
+			zapcore.InfoLevel:  color(blue, "INF"),
+			zapcore.DebugLevel: color(magenta, "DBG"),
+		}
+		zcfg.EncoderConfig.EncodeLevel = func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+			switch l {
+			case zapcore.ErrorLevel,
+				zapcore.WarnLevel,
+				zapcore.InfoLevel,
+				zapcore.DebugLevel:
+			default:
+				l = zapcore.ErrorLevel
+			}
+			enc.AppendString(colors[l])
+		}
+
+		p.logger, p.loggerErr = zcfg.Build()
+	})
+	return p.logger, p.loggerErr
 }
 
 // isSameLoaded checks if the config object content is the same as the one
