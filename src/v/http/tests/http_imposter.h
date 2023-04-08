@@ -26,7 +26,7 @@ public:
 
 public:
     using request_predicate
-      = ss::noncopyable_function<bool(const ss::httpd::request&)>;
+      = ss::noncopyable_function<bool(const ss::http::request&)>;
 
     using predicates = std::vector<request_predicate>;
 

@@ -118,7 +118,7 @@ proxy::proxy(
   , _server(
       "pandaproxy",
       "rest_proxy",
-      ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
+      ss::httpd::api_registry_builder20(_config.api_doc_dir(), "/v1"),
       "header",
       "/definitions",
       _ctx,

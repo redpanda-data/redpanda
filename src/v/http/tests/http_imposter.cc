@@ -98,7 +98,7 @@ static ss::sstring remove_query_params(std::string_view url) {
 void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
     using namespace ss::httpd;
     _handler = std::make_unique<function_handler>(
-      [this](const_req req, reply& repl) -> ss::sstring {
+      [this](const_req req, ss::http::reply& repl) -> ss::sstring {
           if (_masking_active) {
               if (
                 ss::lowres_clock::now() - _masking_active->started
@@ -142,11 +142,11 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
 
           if (req._method == "PUT") {
               when().request(req._url).then_reply_with(req.content);
-              repl.set_status(ss::httpd::reply::status_type::ok);
+              repl.set_status(ss::http::reply::status_type::ok);
               return "";
           }
           if (req._method == "DELETE") {
-              repl.set_status(reply::status_type::no_content);
+              repl.set_status(ss::http::reply::status_type::no_content);
               return "";
           } else {
               auto lookup_r = ri;

@@ -101,6 +101,7 @@
 #include <seastar/http/httpd.hh>
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
+#include <seastar/http/url.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -159,7 +160,7 @@ model::ntp parse_ntp_from_request(ss::httpd::parameters& param) {
 }
 
 model::ntp
-parse_ntp_from_query_param(const std::unique_ptr<ss::httpd::request>& req) {
+parse_ntp_from_query_param(const std::unique_ptr<ss::http::request>& req) {
     auto ns = req->get_query_param("namespace");
     auto topic = req->get_query_param("topic");
     auto partition_str = req->get_query_param("partition_id");
@@ -240,7 +241,7 @@ ss::future<> admin_server::stop() {
 }
 
 void admin_server::configure_admin_routes() {
-    auto rb = ss::make_shared<ss::api_registry_builder20>(
+    auto rb = ss::make_shared<ss::httpd::api_registry_builder20>(
       _cfg.admin_api_docs_dir, "/v1");
 
     auto insert_comma = [](ss::output_stream<char>& os) {
@@ -322,7 +323,7 @@ static json::validator make_set_replicas_validator() {
  * as an empty request body causes a redpanda crash via a rapidjson
  * assertion when trying to GetObject on the resulting document.
  */
-static json::Document parse_json_body(ss::httpd::request const& req) {
+static json::Document parse_json_body(ss::http::request const& req) {
     json::Document doc;
     doc.Parse(req.content.data());
     if (doc.Parse(req.content.data()).HasParseError()) {
@@ -358,14 +359,14 @@ apply_validator(json::validator& validator, json::Document const& doc) {
  * be treated as false if absent, or true if "true" (case insensitive) or "1"
  */
 static bool
-get_boolean_query_param(const ss::httpd::request& req, std::string_view name) {
+get_boolean_query_param(const ss::http::request& req, std::string_view name) {
     auto key = ss::sstring(name);
     if (!req.query_parameters.contains(key)) {
         return false;
     }
 
     const ss::sstring& str_param = req.query_parameters.at(key);
-    return ss::httpd::request::case_insensitive_cmp()(str_param, "true")
+    return ss::http::request::case_insensitive_cmp()(str_param, "true")
            || str_param == "1";
 }
 
@@ -448,7 +449,7 @@ ss::future<> admin_server::configure_listeners() {
 }
 
 void admin_server::log_request(
-  const ss::httpd::request& req, const request_auth_result& auth_state) const {
+  const ss::http::request& req, const request_auth_result& auth_state) const {
     vlog(
       logger.debug,
       "[{}] {} {}",
@@ -462,7 +463,7 @@ void admin_server::log_exception(
   const ss::sstring& url,
   const request_auth_result& auth_state,
   std::exception_ptr eptr) const {
-    using http_status = ss::httpd::reply::status_type;
+    using http_status = ss::http::reply::status_type;
     using http_status_ut = std::underlying_type_t<http_status>;
     const auto log_ex = [&](
                           std::optional<http_status_ut> status = std::nullopt) {
@@ -531,7 +532,7 @@ void admin_server::log_level_timer_handler() {
 }
 
 ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
-  ss::httpd::request& req, model::ntp const& ntp) const {
+  ss::http::request& req, model::ntp const& ntp) const {
     auto leader_id_opt = _metadata_cache.local().get_leader_id(ntp);
 
     if (!leader_id_opt.has_value()) {
@@ -540,7 +541,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
         throw ss::httpd::base_exception(
           fmt::format(
             "Partition {} does not have a leader, cannot redirect", ntp),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
 
     if (leader_id_opt.value() == *config::node().node_id()) {
@@ -550,7 +551,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
           leader_id_opt.value());
         throw ss::httpd::base_exception(
           fmt::format("Leader not available"),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
 
     auto leader_opt = _metadata_cache.local().get_node_metadata(
@@ -561,7 +562,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
             "Partition {} leader {} metadata not available",
             ntp,
             leader_id_opt.value()),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
     auto leader = leader_opt.value();
 
@@ -653,7 +654,7 @@ ss::future<ss::httpd::redirect_exception> admin_server::redirect_to_leader(
       logger.info, "Redirecting admin API call to {} leader at {}", ntp, url);
 
     co_return ss::httpd::redirect_exception(
-      url, ss::httpd::reply::status_type::temporary_redirect);
+      url, ss::http::reply::status_type::temporary_redirect);
 }
 
 namespace {
@@ -664,13 +665,13 @@ bool need_redirect_to_leader(
         throw ss::httpd::base_exception(
           fmt::format(
             "Partition {} does not have a leader, cannot redirect", ntp),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
 
     return leader_id_opt.value() != *config::node().node_id();
 }
 
-model::node_id parse_broker_id(const ss::httpd::request& req) {
+model::node_id parse_broker_id(const ss::http::request& req) {
     try {
         return model::node_id(
           boost::lexical_cast<model::node_id::type>(req.param["id"]));
@@ -742,7 +743,7 @@ get_brokers(cluster::controller* const controller) {
                 fmt::format(
                   "Unable to get cluster health: {}",
                   h_report.error().message()),
-                ss::httpd::reply::status_type::service_unavailable);
+                ss::http::reply::status_type::service_unavailable);
           }
 
           std::map<model::node_id, ss::httpd::broker_json::broker> broker_map;
@@ -829,7 +830,7 @@ get_brokers(cluster::controller* const controller) {
  *            node and would like it referenced in per-node cluster errors
  */
 ss::future<> admin_server::throw_on_error(
-  ss::httpd::request& req,
+  ss::http::request& req,
   std::error_code ec,
   model::ntp const& ntp,
   model::node_id id) const {
@@ -850,7 +851,7 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::timeout:
             throw ss::httpd::base_exception(
               fmt::format("Timeout: {}", ec.message()),
-              ss::httpd::reply::status_type::gateway_timeout);
+              ss::http::reply::status_type::gateway_timeout);
         case cluster::errc::replication_error:
         case cluster::errc::update_in_progress:
         case cluster::errc::leadership_changed:
@@ -859,7 +860,7 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::shutting_down:
             throw ss::httpd::base_exception(
               fmt::format("Service unavailable ({})", ec.message()),
-              ss::httpd::reply::status_type::service_unavailable);
+              ss::http::reply::status_type::service_unavailable);
         case cluster::errc::not_leader:
             throw co_await redirect_to_leader(req, ntp);
         case cluster::errc::not_leader_controller:
@@ -871,7 +872,7 @@ ss::future<> admin_server::throw_on_error(
         case cluster::errc::throttling_quota_exceeded:
             throw ss::httpd::base_exception(
               fmt::format("Too many requests: {}", ec.message()),
-              ss::httpd::reply::status_type::too_many_requests);
+              ss::http::reply::status_type::too_many_requests);
         default:
             throw ss::httpd::server_error_exception(
               fmt::format("Unexpected cluster error: {}", ec.message()));
@@ -886,11 +887,11 @@ ss::future<> admin_server::throw_on_error(
         case raft::errc::replicated_entry_truncated:
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
-              ss::httpd::reply::status_type::service_unavailable);
+              ss::http::reply::status_type::service_unavailable);
         case raft::errc::timeout:
             throw ss::httpd::base_exception(
               fmt::format("Timeout: {}", ec.message()),
-              ss::httpd::reply::status_type::gateway_timeout);
+              ss::http::reply::status_type::gateway_timeout);
         case raft::errc::transfer_to_current_leader:
             co_return;
         case raft::errc::not_leader:
@@ -936,12 +937,12 @@ ss::future<> admin_server::throw_on_error(
         case rpc::errc::exponential_backoff:
             throw ss::httpd::base_exception(
               fmt::format("Not ready: {}", ec.message()),
-              ss::httpd::reply::status_type::service_unavailable);
+              ss::http::reply::status_type::service_unavailable);
         case rpc::errc::client_request_timeout:
         case rpc::errc::connection_timeout:
             throw ss::httpd::base_exception(
               fmt::format("Timeout: {}", ec.message()),
-              ss::httpd::reply::status_type::gateway_timeout);
+              ss::http::reply::status_type::gateway_timeout);
         case rpc::errc::service_error:
         case rpc::errc::missing_node_rpc_client:
         case rpc::errc::method_not_found:
@@ -958,7 +959,7 @@ ss::future<> admin_server::throw_on_error(
 
 ss::future<ss::json::json_return_type>
 admin_server::cancel_node_partition_moves(
-  ss::httpd::request& req, cluster::partition_move_direction direction) {
+  ss::http::request& req, cluster::partition_move_direction direction) {
     auto node_id = parse_broker_id(req);
     auto res = co_await _controller->get_topics_frontend()
                  .local()
@@ -984,19 +985,19 @@ bool str_to_bool(std::string_view s) {
 
 void admin_server::register_config_routes() {
     register_route_raw<superuser>(
-      ss::httpd::config_json::get_config, [](ss::const_req, ss::reply& reply) {
+      ss::httpd::config_json::get_config, [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
           config::shard_local_cfg().to_json(
             writer, config::redact_secrets::yes);
 
-          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          reply.set_status(ss::http::reply::status_type::ok, buf.GetString());
           return "";
       });
 
     register_route_raw<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config,
-      [](ss::const_req req, ss::reply& reply) {
+      [](ss::httpd::const_req req, ss::http::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
 
@@ -1013,23 +1014,23 @@ void admin_server::register_config_routes() {
                 return include_defaults || !p.is_default();
             });
 
-          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          reply.set_status(ss::http::reply::status_type::ok, buf.GetString());
           return "";
       });
 
     register_route_raw<superuser>(
       ss::httpd::config_json::get_node_config,
-      [](ss::const_req, ss::reply& reply) {
+      [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
           config::node().to_json(writer, config::redact_secrets::yes);
 
-          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          reply.set_status(ss::http::reply::status_type::ok, buf.GetString());
           return "";
       });
 
     register_route_raw<superuser>(
-      ss::httpd::config_json::get_loggers, [](ss::const_req, ss::reply& reply) {
+      ss::httpd::config_json::get_loggers, [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
           writer.StartArray();
@@ -1041,15 +1042,15 @@ void admin_server::register_config_routes() {
               writer.EndObject();
           }
           writer.EndArray();
-          reply.set_status(ss::httpd::reply::status_type::ok, buf.GetString());
+          reply.set_status(ss::http::reply::status_type::ok, buf.GetString());
           return "";
       });
 
     register_route<superuser>(
       ss::httpd::config_json::set_log_level,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           ss::sstring name;
-          if (!ss::httpd::connection::url_decode(req->param["name"], name)) {
+          if (!ss::http::internal::url_decode(req->param["name"], name)) {
               throw ss::httpd::bad_param_exception(fmt::format(
                 "Invalid parameter 'name' got {{{}}}", req->param["name"]));
           }
@@ -1272,7 +1273,7 @@ void config_multi_property_validation(
 void admin_server::register_cluster_config_routes() {
     register_route<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config_status,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           auto& cfg = _controller->get_config_manager();
           return cfg
             .invoke_on(
@@ -1309,7 +1310,7 @@ void admin_server::register_cluster_config_routes() {
 
     register_route<publik>(
       ss::httpd::cluster_config_json::get_cluster_config_schema,
-      [](std::unique_ptr<ss::httpd::request>) {
+      [](std::unique_ptr<ss::http::request>) {
           return ss::make_ready_future<ss::json::json_return_type>(
             util::generate_json_schema(config::shard_local_cfg()));
       });
@@ -1317,7 +1318,7 @@ void admin_server::register_cluster_config_routes() {
     register_route<superuser, true>(
       ss::httpd::cluster_config_json::patch_cluster_config,
       [this](
-        std::unique_ptr<ss::httpd::request> req,
+        std::unique_ptr<ss::http::request> req,
         request_auth_result const& auth_state) {
           return patch_cluster_config_handler(std::move(req), auth_state);
       });
@@ -1325,7 +1326,7 @@ void admin_server::register_cluster_config_routes() {
 
 ss::future<ss::json::json_return_type>
 admin_server::patch_cluster_config_handler(
-  std::unique_ptr<ss::httpd::request> req,
+  std::unique_ptr<ss::http::request> req,
   request_auth_result const& auth_state) {
     static thread_local auto cluster_config_validator(
       make_cluster_config_validator());
@@ -1494,7 +1495,7 @@ admin_server::patch_cluster_config_handler(
 
             throw ss::httpd::base_exception(
               buf.GetString(),
-              ss::httpd::reply::status_type::bad_request,
+              ss::http::reply::status_type::bad_request,
               "json");
         }
     }
@@ -1551,7 +1552,7 @@ admin_server::patch_cluster_config_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::raft_transfer_leadership_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     raft::group_id group_id;
     try {
         group_id = raft::group_id(std::stoll(req->param["group_id"]));
@@ -1613,7 +1614,7 @@ admin_server::raft_transfer_leadership_handler(
 void admin_server::register_raft_routes() {
     register_route<superuser>(
       ss::httpd::raft_json::raft_transfer_leadership,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return raft_transfer_leadership_handler(std::move(req));
       });
 }
@@ -1691,7 +1692,7 @@ bool is_no_op_user_write(
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::create_user_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
@@ -1742,7 +1743,7 @@ admin_server::create_user_handler(std::unique_ptr<ss::httpd::request> req) {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::delete_user_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
@@ -1769,7 +1770,7 @@ admin_server::delete_user_handler(std::unique_ptr<ss::httpd::request> req) {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::update_user_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::update_user_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         // In order that we can do a reliably ordered validation of
         // the request (and drop no-op requests), run on controller leader;
@@ -1802,25 +1803,25 @@ admin_server::update_user_handler(std::unique_ptr<ss::httpd::request> req) {
 void admin_server::register_security_routes() {
     register_route<superuser>(
       ss::httpd::security_json::create_user,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return create_user_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::delete_user,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return delete_user_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::update_user,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return update_user_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::security_json::list_users,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           bool include_ephemeral = req->get_query_param("include_ephemeral")
                                    == "true";
           constexpr auto is_ephemeral =
@@ -1846,7 +1847,7 @@ void admin_server::register_security_routes() {
 
 ss::future<ss::json::json_return_type>
 admin_server::kafka_transfer_leadership_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     auto ntp = parse_ntp_from_request(req->param);
 
     std::optional<model::node_id> target;
@@ -1895,7 +1896,7 @@ admin_server::kafka_transfer_leadership_handler(
 void admin_server::register_kafka_routes() {
     register_route<superuser>(
       ss::httpd::partition_json::kafka_transfer_leadership,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return kafka_transfer_leadership_handler(std::move(req));
       });
 }
@@ -1903,7 +1904,7 @@ void admin_server::register_kafka_routes() {
 void admin_server::register_status_routes() {
     register_route<publik>(
       ss::httpd::status_json::ready,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           std::unordered_map<ss::sstring, ss::sstring> status_map{
             {"status", _ready ? "ready" : "booting"}};
           return ss::make_ready_future<ss::json::json_return_type>(status_map);
@@ -1928,7 +1929,7 @@ static json::validator make_feature_put_validator() {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::put_feature_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::put_feature_handler(std::unique_ptr<ss::http::request> req) {
     static thread_local auto feature_put_validator(
       make_feature_put_validator());
 
@@ -1972,7 +1973,7 @@ admin_server::put_feature_handler(std::unique_ptr<ss::httpd::request> req) {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::put_license_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::put_license_handler(std::unique_ptr<ss::http::request> req) {
     auto& raw_license = req->content;
     if (raw_license.empty()) {
         throw ss::httpd::bad_request_exception(
@@ -2023,7 +2024,7 @@ admin_server::put_license_handler(std::unique_ptr<ss::httpd::request> req) {
 void admin_server::register_features_routes() {
     register_route<user>(
       ss::httpd::features_json::get_features,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           ss::httpd::features_json::features_response res;
 
           const auto& ft = _controller->get_feature_table().local();
@@ -2087,13 +2088,13 @@ void admin_server::register_features_routes() {
 
     register_route<superuser>(
       ss::httpd::features_json::put_feature,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return put_feature_handler(std::move(req));
       });
 
     register_route<user>(
       ss::httpd::features_json::get_license,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           if (!_controller->get_feature_table().local().is_active(
                 features::feature::license)) {
               throw ss::httpd::bad_request_exception(
@@ -2120,13 +2121,13 @@ void admin_server::register_features_routes() {
 
     register_route<superuser>(
       ss::httpd::features_json::put_license,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return put_license_handler(std::move(req));
       });
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::get_broker_handler(std::unique_ptr<ss::http::request> req) {
     model::node_id id = parse_broker_id(*req);
     auto node_meta = _metadata_cache.local().get_node_metadata(id);
     if (!node_meta) {
@@ -2142,7 +2143,7 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
         throw ss::httpd::base_exception(
           fmt::format(
             "Unexpected error: {}", maybe_drain_status.error().message()),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
 
     ss::httpd::broker_json::broker ret;
@@ -2162,7 +2163,7 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
 }
 
 ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     model::node_id id = parse_broker_id(*req);
 
     auto ec
@@ -2175,7 +2176,7 @@ ss::future<ss::json::json_return_type> admin_server::decomission_broker_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::get_decommission_progress_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     model::node_id id = parse_broker_id(*req);
     auto res
       = co_await _controller->get_api().local().get_node_decommission_progress(
@@ -2184,11 +2185,11 @@ admin_server::get_decommission_progress_handler(
         if (res.error() == cluster::errc::node_does_not_exists) {
             throw ss::httpd::base_exception(
               fmt::format("Node {} does not exists", id),
-              ss::httpd::reply::status_type::not_found);
+              ss::http::reply::status_type::not_found);
         } else if (res.error() == cluster::errc::invalid_node_operation) {
             throw ss::httpd::base_exception(
               fmt::format("Node {} is not decommissioning", id),
-              ss::httpd::reply::status_type::bad_request);
+              ss::http::reply::status_type::bad_request);
         }
 
         throw ss::httpd::base_exception(
@@ -2196,7 +2197,7 @@ admin_server::get_decommission_progress_handler(
             "Unable to get decommission status for {} - {}",
             id,
             res.error().message()),
-          ss::httpd::reply::status_type::internal_server_error);
+          ss::http::reply::status_type::internal_server_error);
     }
     ss::httpd::broker_json::decommission_status ret;
     auto& decommission_progress = res.value();
@@ -2241,7 +2242,7 @@ admin_server::get_decommission_progress_handler(
 }
 
 ss::future<ss::json::json_return_type> admin_server::recomission_broker_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     model::node_id id = parse_broker_id(*req);
 
     auto ec
@@ -2253,7 +2254,7 @@ ss::future<ss::json::json_return_type> admin_server::recomission_broker_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::start_broker_maintenance_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     if (!_controller->get_feature_table().local().is_active(
           features::feature::maintenance_mode)) {
         throw ss::httpd::bad_request_exception(
@@ -2277,7 +2278,7 @@ admin_server::start_broker_maintenance_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::stop_broker_maintenance_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     if (!_controller->get_feature_table().local().is_active(
           features::feature::maintenance_mode)) {
         throw ss::httpd::bad_request_exception(
@@ -2295,7 +2296,7 @@ admin_server::stop_broker_maintenance_handler(
 void admin_server::register_broker_routes() {
     register_route<user>(
       ss::httpd::broker_json::get_cluster_view,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           return get_brokers(_controller)
             .then([this](std::vector<ss::httpd::broker_json::broker> brokers) {
                 auto& members_table = _controller->get_members_table().local();
@@ -2310,7 +2311,7 @@ void admin_server::register_broker_routes() {
 
     register_route<user>(
       ss::httpd::broker_json::get_brokers,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           return get_brokers(_controller)
             .then([](std::vector<ss::httpd::broker_json::broker> brokers) {
                 return ss::json::json_return_type(std::move(brokers));
@@ -2319,37 +2320,37 @@ void admin_server::register_broker_routes() {
 
     register_route<user>(
       ss::httpd::broker_json::get_broker,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return get_broker_handler(std::move(req));
       });
 
     register_route<user>(
       ss::httpd::broker_json::get_decommission,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return get_decommission_progress_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::decommission,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return decomission_broker_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::recommission,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return recomission_broker_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::start_broker_maintenance,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return start_broker_maintenance_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::broker_json::stop_broker_maintenance,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return stop_broker_maintenance_handler(std::move(req));
       });
 
@@ -2361,7 +2362,7 @@ void admin_server::register_broker_routes() {
      */
     register_route<superuser>(
       ss::httpd::broker_json::start_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           return _controller->get_drain_manager()
             .invoke_on_all(
               [](cluster::drain_manager& dm) { return dm.drain(); })
@@ -2371,7 +2372,7 @@ void admin_server::register_broker_routes() {
 
     register_route<superuser>(
       ss::httpd::broker_json::stop_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           return _controller->get_drain_manager()
             .invoke_on_all(
               [](cluster::drain_manager& dm) { return dm.restore(); })
@@ -2381,7 +2382,7 @@ void admin_server::register_broker_routes() {
 
     register_route<superuser>(
       ss::httpd::broker_json::get_local_maintenance,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           return _controller->get_drain_manager().local().status().then(
             [](auto status) {
                 ss::httpd::broker_json::maintenance_status res;
@@ -2407,14 +2408,14 @@ void admin_server::register_broker_routes() {
       });
     register_route<superuser>(
       ss::httpd::broker_json::cancel_partition_moves,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return cancel_node_partition_moves(
             *req, cluster::partition_move_direction::all);
       });
 }
 
 ss::future<ss::json::json_return_type> admin_server::get_transactions_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     const model::ntp ntp = parse_ntp_from_request(req->param);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
@@ -2441,7 +2442,7 @@ ss::future<ss::json::json_return_type>
 admin_server::get_transactions_inner_handler(
   cluster::partition_manager& pm,
   model::ntp ntp,
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     auto partition = pm.get(ntp);
     if (!partition) {
         throw ss::httpd::server_error_exception(
@@ -2508,7 +2509,7 @@ admin_server::get_transactions_inner_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::mark_transaction_expired_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     const model::ntp ntp = parse_ntp_from_request(req->param);
 
     model::producer_identity pid;
@@ -2582,7 +2583,7 @@ admin_server::mark_transaction_expired_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::cancel_partition_reconfig_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     const auto ntp = parse_ntp_from_request(req->param);
 
     if (ntp == model::controller_ntp) {
@@ -2607,7 +2608,7 @@ admin_server::cancel_partition_reconfig_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::unclean_abort_partition_reconfig_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     const auto ntp = parse_ntp_from_request(req->param);
 
     if (ntp == model::controller_ntp) {
@@ -2632,7 +2633,7 @@ admin_server::unclean_abort_partition_reconfig_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::set_partition_replicas_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     auto ntp = parse_ntp_from_request(req->param);
 
     if (ntp == model::controller_ntp) {
@@ -2735,7 +2736,7 @@ void admin_server::register_partition_routes() {
      */
     register_route<user>(
       ss::httpd::partition_json::get_partitions,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           using summary = ss::httpd::partition_json::partition_summary;
           auto get_summaries =
             [](auto& partition_manager, bool materialized, auto get_leader) {
@@ -2778,7 +2779,7 @@ void admin_server::register_partition_routes() {
 
     register_route<user>(
       ss::httpd::partition_json::get_partitions_local_summary,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           // This type mirrors partitions_local_summary, but satisfies
           // the seastar map_reduce requirement of being nothrow move
           // constructible.
@@ -2820,7 +2821,7 @@ void admin_server::register_partition_routes() {
       });
     register_route<user>(
       ss::httpd::partition_json::get_topic_partitions,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return get_topic_partitions_handler(std::move(req));
       });
 
@@ -2829,7 +2830,7 @@ void admin_server::register_partition_routes() {
      */
     register_route<user>(
       ss::httpd::partition_json::get_partition,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return get_partition_handler(std::move(req));
       });
 
@@ -2838,7 +2839,7 @@ void admin_server::register_partition_routes() {
      */
     register_route<user>(
       ss::httpd::partition_json::get_transactions,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return get_transactions_handler(std::move(req));
       });
 
@@ -2847,35 +2848,35 @@ void admin_server::register_partition_routes() {
      */
     register_route<superuser>(
       ss::httpd::partition_json::mark_transaction_expired,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return mark_transaction_expired_handler(std::move(req));
       });
     register_route<superuser>(
       ss::httpd::partition_json::cancel_partition_reconfiguration,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return cancel_partition_reconfig_handler(std::move(req));
       });
     register_route<superuser>(
       ss::httpd::partition_json::unclean_abort_partition_reconfiguration,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return unclean_abort_partition_reconfig_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::partition_json::set_partition_replicas,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return set_partition_replicas_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::partition_json::trigger_partitions_rebalance,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return trigger_on_demand_rebalance_handler(std::move(req));
       });
 
     register_route<user>(
       ss::httpd::partition_json::get_partition_reconfigurations,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           using reconfiguration = ss::httpd::partition_json::reconfiguration;
           std::vector<reconfiguration> ret;
           auto& in_progress
@@ -2939,7 +2940,7 @@ build_controller_partition(cluster::metadata_cache& cache) {
 } // namespace
 
 ss::future<ss::json::json_return_type>
-admin_server::get_partition_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::get_partition_handler(std::unique_ptr<ss::http::request> req) {
     const model::ntp ntp = parse_ntp_from_request(req->param);
     const bool is_controller = ntp == model::controller_ntp;
 
@@ -2991,7 +2992,7 @@ admin_server::get_partition_handler(std::unique_ptr<ss::httpd::request> req) {
 }
 ss::future<ss::json::json_return_type>
 admin_server::get_topic_partitions_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     model::topic_namespace tp_ns(
       model::ns(req->param["namespace"]), model::topic(req->param["topic"]));
     const bool is_controller_topic = tp_ns.ns == model::controller_ntp.ns
@@ -3050,7 +3051,7 @@ admin_server::get_topic_partitions_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::trigger_on_demand_rebalance_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     auto ec = co_await _controller->get_members_backend().invoke_on(
       cluster::controller_stm_shard, [](cluster::members_backend& backend) {
           return backend.request_rebalance();
@@ -3070,7 +3071,7 @@ void admin_server::register_hbadger_routes() {
     if constexpr (!finjector::honey_badger::is_enabled()) {
         register_route<user>(
           ss::httpd::hbadger_json::get_failure_probes,
-          [](std::unique_ptr<ss::httpd::request>) {
+          [](std::unique_ptr<ss::http::request>) {
               ss::httpd::hbadger_json::failure_injector_status status;
               status.enabled = false;
               return ss::make_ready_future<ss::json::json_return_type>(
@@ -3081,7 +3082,7 @@ void admin_server::register_hbadger_routes() {
 
     register_route<user>(
       ss::httpd::hbadger_json::get_failure_probes,
-      [](std::unique_ptr<ss::httpd::request>) {
+      [](std::unique_ptr<ss::http::request>) {
           auto modules = finjector::shard_local_badger().modules();
           ss::httpd::hbadger_json::failure_injector_status status;
           status.enabled = true;
@@ -3107,7 +3108,7 @@ void admin_server::register_hbadger_routes() {
 
     register_route<superuser>(
       ss::httpd::hbadger_json::set_failure_probe,
-      [](std::unique_ptr<ss::httpd::request> req) {
+      [](std::unique_ptr<ss::http::request> req) {
           auto m = req->param["module"];
           auto p = req->param["point"];
           auto type = req->param["type"];
@@ -3148,7 +3149,7 @@ void admin_server::register_hbadger_routes() {
      */
     register_route<superuser>(
       ss::httpd::hbadger_json::delete_failure_probe,
-      [](std::unique_ptr<ss::httpd::request> req) {
+      [](std::unique_ptr<ss::http::request> req) {
           auto m = req->param["module"];
           auto p = req->param["point"];
           vlog(
@@ -3165,7 +3166,7 @@ void admin_server::register_hbadger_routes() {
 
 ss::future<ss::json::json_return_type>
 admin_server::get_all_transactions_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     if (!config::shard_local_cfg().enable_transactions) {
         throw ss::httpd::bad_request_exception("Transaction are disabled");
     }
@@ -3241,7 +3242,7 @@ admin_server::get_all_transactions_handler(
 }
 
 ss::future<ss::json::json_return_type> admin_server::delete_partition_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
     }
@@ -3287,13 +3288,13 @@ ss::future<ss::json::json_return_type> admin_server::delete_partition_handler(
 void admin_server::register_transaction_routes() {
     register_route<user>(
       ss::httpd::transaction_json::get_all_transactions,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return get_all_transactions_handler(std::move(req));
       });
 
     register_route<user>(
       ss::httpd::transaction_json::delete_partition,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return delete_partition_handler(std::move(req));
       });
 }
@@ -3330,7 +3331,7 @@ static json::validator make_self_test_start_validator() {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::self_test_start_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::self_test_start_handler(std::unique_ptr<ss::http::request> req) {
     static thread_local json::validator self_test_start_validator(
       make_self_test_start_validator());
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
@@ -3384,12 +3385,12 @@ admin_server::self_test_start_handler(std::unique_ptr<ss::httpd::request> req) {
     } catch (const std::exception& ex) {
         throw ss::httpd::base_exception(
           fmt::format("Failed to start self test, reason: {}", ex),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::self_test_stop_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::self_test_stop_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
         vlog(logger.info, "Need to redirect self_test_stop request");
         throw co_await redirect_to_leader(*req, model::controller_ntp);
@@ -3402,7 +3403,7 @@ admin_server::self_test_stop_handler(std::unique_ptr<ss::httpd::request> req) {
           fmt::format(
             "Failed to stop one or more self_test jobs: {}",
             r.active_participant_ids()),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
     vlog(logger.info, "Request to stop self test succeeded");
     co_return ss::json::json_void();
@@ -3438,7 +3439,7 @@ self_test_result_to_json(const cluster::self_test_result& str) {
 
 ss::future<ss::json::json_return_type>
 admin_server::self_test_get_results_handler(
-  std::unique_ptr<ss::httpd::request>) {
+  std::unique_ptr<ss::http::request>) {
     namespace dbg_ns = ss::httpd::debug_json;
     std::vector<dbg_ns::self_test_node_report> reports;
     auto status = co_await _self_test_frontend.invoke_on(
@@ -3462,26 +3463,26 @@ admin_server::self_test_get_results_handler(
 void admin_server::register_self_test_routes() {
     register_route<superuser>(
       ss::httpd::debug_json::self_test_start,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return self_test_start_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::debug_json::self_test_stop,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return self_test_stop_handler(std::move(req));
       });
 
     register_route<user>(
       ss::httpd::debug_json::self_test_status,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return self_test_get_results_handler(std::move(req));
       });
 }
 
 ss::future<ss::json::json_return_type>
 admin_server::cloud_storage_usage_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     auto batch_size
       = cluster::topic_table_partition_generator::default_batch_size;
     if (auto batch_size_param = req->get_query_param("batch_size");
@@ -3522,7 +3523,7 @@ admin_server::cloud_storage_usage_handler(
         throw ss::httpd::base_exception(
           fmt::format("Failed to generate total cloud storage usage. "
                       "Please retry."),
-          ss::httpd::reply::status_type::service_unavailable);
+          ss::http::reply::status_type::service_unavailable);
     }
 }
 
@@ -3559,7 +3560,7 @@ static ss::json::json_return_type raw_data_to_usage_response(
 void admin_server::register_usage_routes() {
     register_route<user>(
       ss::httpd::usage_json::get_usage,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           if (!config::shard_local_cfg().enable_usage()) {
               throw ss::httpd::bad_request_exception(
                 "Usage tracking is not enabled");
@@ -3586,7 +3587,7 @@ void admin_server::register_usage_routes() {
 void admin_server::register_debug_routes() {
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           vlog(logger.info, "Request to reset leaders info");
           return _metadata_cache
             .invoke_on_all([](auto& mc) { mc.reset_leaders(); })
@@ -3596,7 +3597,7 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       ss::httpd::debug_json::refresh_disk_health_info,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           vlog(logger.info, "Request to refresh disk health info");
           return _metadata_cache.local().refresh_health_monitor().then_wrapped(
             [](ss::future<> f) {
@@ -3618,7 +3619,7 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       ss::httpd::debug_json::get_leaders_info,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           vlog(logger.info, "Request to get leaders info");
           using result_t = ss::httpd::debug_json::leader_info;
           std::vector<result_t> ans;
@@ -3648,7 +3649,7 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       seastar::httpd::debug_json::get_peer_status,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           model::node_id id = parse_broker_id(*req);
           auto node_status = _node_status_table.local().get_node_status(id);
 
@@ -3668,14 +3669,14 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       seastar::httpd::debug_json::is_node_isolated,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           return ss::make_ready_future<ss::json::json_return_type>(
             _metadata_cache.local().is_node_isolated());
       });
 
     register_route<user>(
       seastar::httpd::debug_json::get_controller_status,
-      [this](std::unique_ptr<ss::httpd::request>)
+      [this](std::unique_ptr<ss::http::request>)
         -> ss::future<ss::json::json_return_type> {
           return _controller->get_last_applied_offset().then(
             [this](auto offset) {
@@ -3690,14 +3691,14 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       seastar::httpd::debug_json::get_cloud_storage_usage,
-      [this](std::unique_ptr<ss::httpd::request> req)
+      [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
           return cloud_storage_usage_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::debug_json::blocked_reactor_notify_ms,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           std::chrono::milliseconds timeout;
           if (auto e = req->get_query_param("timeout"); !e.empty()) {
               try {
@@ -3757,14 +3758,14 @@ void admin_server::register_debug_routes() {
 
     register_route<user>(
       ss::httpd::debug_json::restart_service,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return restart_service_handler(std::move(req));
       });
 }
 
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_balancer_status_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     vlog(logger.debug, "Requested partition balancer status");
 
     using result_t = std::variant<
@@ -3859,7 +3860,7 @@ admin_server::get_partition_balancer_status_handler(
 
 ss::future<ss::json::json_return_type>
 admin_server::cancel_all_partitions_reconfigs_handler(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     vlog(
       logger.info, "Requested cancellation of all ongoing partition movements");
 
@@ -3877,7 +3878,7 @@ admin_server::cancel_all_partitions_reconfigs_handler(
 void admin_server::register_cluster_routes() {
     register_route<publik>(
       ss::httpd::cluster_json::get_cluster_health_overview,
-      [this](std::unique_ptr<ss::httpd::request>) {
+      [this](std::unique_ptr<ss::http::request>) {
           vlog(logger.debug, "Requested cluster status");
           return _controller->get_health_monitor()
             .local()
@@ -3920,13 +3921,13 @@ void admin_server::register_cluster_routes() {
 
     register_route<publik>(
       ss::httpd::cluster_json::get_partition_balancer_status,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return get_partition_balancer_status_handler(std::move(req));
       });
 
     register_route<superuser>(
       ss::httpd::cluster_json::cancel_all_partitions_reconfigurations,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return cancel_all_partitions_reconfigs_handler(std::move(req));
       });
 
@@ -3946,7 +3947,7 @@ void admin_server::register_cluster_routes() {
 }
 
 ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
-  std::unique_ptr<ss::httpd::request> request) {
+  std::unique_ptr<ss::http::request> request) {
     struct manifest_reducer {
         ss::future<>
         operator()(std::optional<cloud_storage::partition_manifest>&& value) {
@@ -3989,9 +3990,9 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
     co_return ss::json::json_return_type(ss::json::json_void());
 }
 
-ss::future<std::unique_ptr<ss::reply>>
+ss::future<std::unique_ptr<ss::http::reply>>
 admin_server::initiate_topic_scan_and_recovery(
-  std::unique_ptr<ss::request> request, std::unique_ptr<ss::reply> reply) {
+  std::unique_ptr<ss::http::request> request, std::unique_ptr<ss::http::reply> reply) {
     reply->set_content_type("json");
 
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
@@ -4007,7 +4008,7 @@ admin_server::initiate_topic_scan_and_recovery(
       cloud_storage::topic_recovery_service::shard_id,
       [&request](auto& svc) { return svc.start_recovery(*request); });
 
-    if (result.status_code != ss::reply::status_type::accepted) {
+    if (result.status_code != ss::http::reply::status_type::accepted) {
         throw ss::httpd::base_exception{result.message, result.status_code};
     }
 
@@ -4058,7 +4059,7 @@ static ss::json::json_return_type serialize_topic_recovery_status(
 }
 
 ss::future<ss::json::json_return_type> admin_server::query_automated_recovery(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     ss::httpd::shadow_indexing_json::topic_recovery_status ret;
     ret.state = "inactive";
 
@@ -4137,7 +4138,7 @@ map_status_to_json(cluster::partition_cloud_storage_status status) {
 
 ss::future<ss::json::json_return_type>
 admin_server::get_partition_cloud_storage_status(
-  std::unique_ptr<ss::httpd::request> req) {
+  std::unique_ptr<ss::http::request> req) {
     const model::ntp ntp = parse_ntp_from_request(
       req->param, model::kafka_namespace);
 
@@ -4178,7 +4179,7 @@ admin_server::get_partition_cloud_storage_status(
 void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
-      [this](std::unique_ptr<ss::httpd::request> req) {
+      [this](std::unique_ptr<ss::http::request> req) {
           return sync_local_state_handler(std::move(req));
       });
 
@@ -4263,7 +4264,7 @@ ss::future<> admin_server::restart_redpanda_service(service_kind service) {
 }
 
 ss::future<ss::json::json_return_type>
-admin_server::restart_service_handler(std::unique_ptr<ss::httpd::request> req) {
+admin_server::restart_service_handler(std::unique_ptr<ss::http::request> req) {
     auto service_param = req->get_query_param("service");
     std::optional<service_kind> service = from_string_view<service_kind>(
       service_param);

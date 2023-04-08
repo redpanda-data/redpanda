@@ -347,7 +347,7 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
     fail_request_if(
       [](const auto&) { return true; },
       http_test_utils::response{
-        "not found", ss::httpd::reply::status_type::not_found});
+        "not found", ss::http::reply::status_type::not_found});
 
     listen();
 
@@ -414,7 +414,7 @@ FIXTURE_TEST(test_handle_bad_response, http_imposter_fixture) {
     fail_request_if(
       [](const auto&) { return true; },
       http_test_utils::response{
-        "{broken response", ss::httpd::reply::status_type::ok});
+        "{broken response", ss::http::reply::status_type::ok});
 
     listen();
 
@@ -465,7 +465,7 @@ FIXTURE_TEST(test_intermittent_error, http_imposter_fixture) {
     fail_request_if(
       [&idx](const auto&) { return idx++ == 0; },
       http_test_utils::response{
-        "failed!", ss::httpd::reply::status_type::internal_server_error});
+        "failed!", ss::http::reply::status_type::internal_server_error});
 
     listen();
 

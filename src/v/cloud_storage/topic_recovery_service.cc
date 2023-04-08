@@ -147,12 +147,12 @@ ss::future<> topic_recovery_service::shutdown_recovery() {
 }
 
 init_recovery_result
-topic_recovery_service::start_recovery(const ss::httpd::request& req) {
+topic_recovery_service::start_recovery(const ss::http::request& req) {
     try {
         if (is_active()) {
             vlog(cst_log.warn, "A recovery is already active");
             return {
-              .status_code = ss::httpd::reply::status_type::conflict,
+              .status_code = ss::http::reply::status_type::conflict,
               .message = "A recovery is already active"};
         }
 
@@ -172,16 +172,16 @@ topic_recovery_service::start_recovery(const ss::httpd::request& req) {
             });
         });
         return {
-          .status_code = ss::httpd::reply::status_type::accepted,
+          .status_code = ss::http::reply::status_type::accepted,
           .message = "recovery started"};
     } catch (const bad_request& ex) {
         return {
-          .status_code = ss::httpd::reply::status_type::bad_request,
+          .status_code = ss::http::reply::status_type::bad_request,
           .message = fmt::format(
             "bad recovery request payload: {}", ex.what())};
     } catch (const std::exception& ex) {
         return {
-          .status_code = ss::httpd::reply::status_type::internal_server_error,
+          .status_code = ss::http::reply::status_type::internal_server_error,
           .message = fmt::format(
             "recovery init failed with error: {}", ex.what())};
     }

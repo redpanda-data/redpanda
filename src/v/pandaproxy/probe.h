@@ -29,8 +29,8 @@ public:
           : _p(p)
           , _m(std::move(m)) {}
 
-        void set_status(ss::httpd::reply::status_type s) {
-            using status_type = ss::httpd::reply::status_type;
+        void set_status(ss::http::reply::status_type s) {
+            using status_type = ss::http::reply::status_type;
             if (s < status_type{300}) {
                 return;
             }

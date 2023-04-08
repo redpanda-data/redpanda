@@ -322,7 +322,7 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
 
           return client.remove_consumer(group_id, member_id)
             .then([rp{std::move(rp)}]() mutable {
-                rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+                rp.rep->set_status(ss::http::reply::status_type::no_content);
                 return std::move(rp);
             });
       });
@@ -368,7 +368,7 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
             .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
             .then([res_fmt, rp{std::move(rp)}]() mutable {
                 rp.mime_type = res_fmt;
-                rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+                rp.rep->set_status(ss::http::reply::status_type::no_content);
                 return std::move(rp);
             });
       });
@@ -504,7 +504,7 @@ post_consumer_offsets(server::request_t rq, server::reply_t rp) {
           return client
             .consumer_offset_commit(group_id, member_id, std::move(req_data))
             .then([rp{std::move(rp)}](auto) mutable {
-                rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+                rp.rep->set_status(ss::http::reply::status_type::no_content);
                 return std::move(rp);
             });
       });
@@ -517,7 +517,7 @@ status_ready(proxy::server::request_t rq, proxy::server::reply_t rp) {
     };
 
     auto res = co_await rq.dispatch(make_metadata_req);
-    rp.rep->set_status(ss::httpd::reply::status_type::ok);
+    rp.rep->set_status(ss::http::reply::status_type::ok);
     co_return rp;
 }
 
