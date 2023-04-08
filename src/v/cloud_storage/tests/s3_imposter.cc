@@ -66,12 +66,12 @@ uint16_t s3_imposter_fixture::httpd_port_number() {
     return unit_test_httpd_port_number();
 }
 
-const std::vector<ss::httpd::request>&
+const std::vector<http_test_utils::request_info>&
 s3_imposter_fixture::get_requests() const {
     return _requests;
 }
 
-const std::multimap<ss::sstring, ss::httpd::request>&
+const std::multimap<ss::sstring, http_test_utils::request_info>&
 s3_imposter_fixture::get_targets() const {
     return _targets;
 }
@@ -107,8 +107,9 @@ void s3_imposter_fixture::set_routes(
                             <Resource>resource</Resource>
                             <RequestId>requestid</RequestId>
                         </Error>)xml";
-            fixture._requests.push_back(request);
-            fixture._targets.insert(std::make_pair(request._url, request));
+            http_test_utils::request_info ri(request);
+            fixture._requests.push_back(ri);
+            fixture._targets.insert(std::make_pair(ri.url, ri));
             vlog(
               fixt_log.trace,
               "S3 imposter request {} - {} - {}",
