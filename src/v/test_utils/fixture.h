@@ -22,7 +22,7 @@
 #define __FIXTURE_JOIN_(a, b) a ##_## b
 #define __FIXTURE_JOIN(a, b) __FIXTURE_JOIN_(a, b)
 // clang-format on
-#define FIXTURE_TEST_EXPECTED_FAILURES(method, klass, failures)                \
+#define FIXTURE_TEST(method, klass)                                            \
     class __FIXTURE_JOIN(klass, method) final : klass {                        \
     public:                                                                    \
         void fixture_test();                                                   \
@@ -38,13 +38,10 @@
     private:                                                                   \
         static inline ss::logger g_seastar_test_log{"" #klass "::" #method};   \
     };                                                                         \
-    SEASTAR_THREAD_TEST_CASE_EXPECTED_FAILURES(method, failures) {             \
+    SEASTAR_THREAD_TEST_CASE(method) {                                         \
         BOOST_TEST_CHECKPOINT("" << #klass << "::" << #method << "()");        \
         __FIXTURE_JOIN(klass, method) _fixture_driver;                         \
         _fixture_driver.fixture_test();                                        \
         BOOST_TEST_CHECKPOINT("~" << #klass << "::" << #method << "()");       \
     }                                                                          \
     void ::__FIXTURE_JOIN(klass, method)::fixture_test()
-
-#define FIXTURE_TEST(method, klass)                                            \
-    FIXTURE_TEST_EXPECTED_FAILURES(method, klass, 0)
