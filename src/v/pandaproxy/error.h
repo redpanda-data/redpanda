@@ -35,6 +35,7 @@ enum class reply_error_code : uint16_t {
     nonauthoritative_information = 203,
     no_content = 204,
     reset_content = 205,
+    partial_content = 206,
     multiple_choices = 300,
     moved_permanently = 301,
     moved_temporarily = 302,
