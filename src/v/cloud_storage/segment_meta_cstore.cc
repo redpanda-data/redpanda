@@ -332,23 +332,33 @@ public:
 
         // construct a column_store with the frames and hints that are before
         // the replacements
-        auto first_replacement_index
-          = _base_offset.find(offset_seg_it->first()).index();
+        auto first_replacement_index = [&]() -> std::optional<size_t> {
+            auto candidate = _base_offset.find(offset_seg_it->first());
+            if (candidate.is_end()) {
+                return std::nullopt;
+            }
+            return candidate.index();
+        }();
         // tuple of [begin, end] iterators to std::list<frame_t>
         auto to_clone_frames = std::apply(
           [&](auto&... col) {
               return std::tuple{std::tuple{
                 col._frames.begin(),
-                col.get_frame_iterator_by_element_index(
-                  first_replacement_index)}...};
+                first_replacement_index.has_value()
+                  ? col.get_frame_iterator_by_element_index(
+                    first_replacement_index.value())
+                  : col._frames.end()}...};
           },
           columns());
 
         // extract the end iterator for hints, to cover only the frames that
         // will be cloned
         auto end_hints = [&] {
-            auto frame_it = _base_offset.get_frame_iterator_by_element_index(
-              first_replacement_index);
+            auto frame_it
+              = first_replacement_index.has_value()
+                  ? _base_offset.get_frame_iterator_by_element_index(
+                    first_replacement_index.value())
+                  : _base_offset._frames.end();
             if (frame_it == _base_offset._frames.begin()) {
                 // no hint will be saved
                 return _hints.begin();
@@ -748,6 +758,18 @@ public:
 
     bool equal(const impl& other) const { return _iters == other._iters; }
 
+    size_t index() const {
+        return std::get<static_cast<size_t>(segment_meta_ix::base_offset)>(
+                 _iters)
+          .index();
+    }
+
+    bool is_end() const {
+        return std::get<static_cast<size_t>(segment_meta_ix::base_offset)>(
+                 _iters)
+          .is_end();
+    }
+
 private:
     column_store::iterators_t _iters;
     mutable std::optional<segment_meta> _curr;
@@ -778,6 +800,13 @@ bool segment_meta_materializing_iterator::equal(
     return _impl->equal(*other._impl);
 }
 
+size_t segment_meta_materializing_iterator::index() const {
+    return _impl->index();
+}
+
+bool segment_meta_materializing_iterator::is_end() const {
+    return _impl->is_end();
+}
 /// Column store implementation
 class segment_meta_cstore::impl
   : public serde::envelope<
@@ -992,6 +1021,14 @@ void segment_meta_cstore::prefix_truncate(model::offset new_start_offset) {
 segment_meta_cstore::const_iterator
 segment_meta_cstore::at_index(size_t ix) const {
     return const_iterator(_impl->at_index(ix));
+}
+
+auto segment_meta_cstore::prev(const_iterator const& it) const
+  -> const_iterator {
+#ifndef NDEBUG
+    vassert(it != begin(), "prev called on a begin() iterator");
+#endif
+    return at_index((it.is_end() ? size() : it.index()) - 1);
 }
 
 void segment_meta_cstore::from_iobuf(iobuf in) {

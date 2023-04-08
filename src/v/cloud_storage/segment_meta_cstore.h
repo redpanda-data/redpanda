@@ -371,11 +371,14 @@ private:
     }
 
     const value_t& dereference() const {
-        vassert(_inner_end != _inner_it, "Can't dereference iterator");
+        vassert(!is_end(), "Can't dereference iterator");
         return *_inner_it;
     }
 
     void increment() {
+#ifndef NDEBUG
+        vassert(!is_end(), "can't increment iterator");
+#endif
         ++_ix_column;
         ++_inner_it;
         if (_inner_it == _inner_end) {
@@ -438,7 +441,13 @@ public:
       : _outer_it(_snapshot.end()) {}
 
     // Current index
-    uint32_t index() const { return _ix_column; }
+    size_t index() const { return _ix_column; }
+
+    bool is_end() const {
+        // Invariant: _inner_it is never equal to _inner_end
+        // unless the iterator points to the end.
+        return _inner_end == _inner_it;
+    }
 
 private:
     iter_list_t _snapshot;
@@ -449,7 +458,7 @@ private:
     // because all 'end' iterators are equal.
     frame_iter_t _inner_end{};
     // Current position inside the column
-    uint32_t _ix_column{0};
+    size_t _ix_column{0};
 };
 
 /// Column that represents a single field
@@ -850,6 +859,13 @@ public:
 
     ~segment_meta_materializing_iterator();
 
+    /**
+     * @return the index into the segment_meta_cstore for this iterator
+     */
+    size_t index() const;
+
+    bool is_end() const;
+
 private:
     friend class boost::iterator_core_access;
     const segment_meta& dereference() const;
@@ -900,6 +916,7 @@ public:
     const_iterator upper_bound(model::offset) const;
     const_iterator lower_bound(model::offset) const;
     const_iterator at_index(size_t ix) const;
+    const_iterator prev(const_iterator const& it) const;
 
     void insert(const segment_meta&);
 
