@@ -68,7 +68,8 @@ public:
     const std::vector<http_test_utils::request_info>& get_requests() const;
 
     /// Access all http requests ordered by target url
-    const std::multimap<ss::sstring, http_test_utils::request_info>& get_targets() const;
+    const std::multimap<ss::sstring, http_test_utils::request_info>&
+    get_targets() const;
 
     cloud_storage_clients::s3_configuration get_configuration();
 
