@@ -76,7 +76,6 @@ func (rpkLogFormatter) getPrinter(lvl logrus.Level) func(io.Writer, ...interface
 }
 
 func Execute() {
-	verbose := false
 	fs := afero.NewOsFs()
 
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
@@ -85,18 +84,8 @@ func Execute() {
 	log.SetFormatter(new(rpkLogFormatter))
 	log.SetOutput(os.Stdout)
 
-	cobra.OnInitialize(func() {
-		// This is only executed when a subcommand (e.g. rpk check) is
-		// specified.
-		if verbose {
-			log.SetLevel(log.DebugLevel)
-		} else {
-			log.SetLevel(log.InfoLevel)
-		}
-	})
-
 	p := new(config.Params)
-	paramsHelp := func(*cobra.Command, []string) {
+	cobra.OnInitialize(func() {
 		for _, o := range p.FlagOverrides {
 			switch {
 			case o == "help":
@@ -108,20 +97,19 @@ func Execute() {
 			}
 			os.Exit(0)
 		}
-	}
+	})
 	root := &cobra.Command{
 		Use:   "rpk",
 		Short: "rpk is the Redpanda CLI & toolbox",
 		Long:  "",
 
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
-		PersistentPreRun:  paramsHelp,
-		Run:               paramsHelp,
 	}
 	pf := root.PersistentFlags()
-	pf.BoolVarP(&verbose, "verbose", "v", false, "Enable verbose logging (default: false)")
 	pf.StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
 	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
+	pf.StringVarP(&p.LogLevel, "verbose", "v", "none", "Log level (none, error, warn, info, debug)")
+	pf.Lookup("verbose").NoOptDefVal = "info"
 
 	root.RegisterFlagCompletionFunc("config-opt", func(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		var opts []string
