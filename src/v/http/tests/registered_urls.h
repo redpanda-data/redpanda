@@ -22,7 +22,7 @@
 namespace http_test_utils {
 struct response {
     ss::sstring body;
-    ss::httpd::reply::status_type status;
+    ss::http::reply::status_type status;
 };
 
 struct request_info {
@@ -44,7 +44,7 @@ struct request_info {
     ss::sstring h_prefix;
     bool has_q_delete;
 
-    explicit request_info(const ss::httpd::request& req)
+    explicit request_info(const ss::http::request& req)
       : method(req._method)
       , url(req._url)
       , content(req.content)
@@ -80,12 +80,12 @@ struct registered_urls {
             ss::sstring request_content;
 
             void then_reply_with(ss::sstring content);
-            void then_reply_with(ss::httpd::reply::status_type status);
+            void then_reply_with(ss::http::reply::status_type status);
 
             void then_reply_with(
-              ss::sstring content, ss::httpd::reply::status_type status);
+              ss::sstring content, ss::http::reply::status_type status);
 
-            add_mapping_when& with_method(ss::operation_type m);
+            add_mapping_when& with_method(ss::httpd::operation_type m);
 
             add_mapping_when& with_content(ss::sstring content);
         };

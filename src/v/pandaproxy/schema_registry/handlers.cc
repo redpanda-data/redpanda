@@ -523,7 +523,7 @@ compatibility_subject_version(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t>
 status_ready(server::request_t rq, server::reply_t rp) {
     co_await rq.service().writer().read_sync();
-    rp.rep->set_status(ss::httpd::reply::status_type::ok);
+    rp.rep->set_status(ss::http::reply::status_type::ok);
     co_return rp;
 }
 

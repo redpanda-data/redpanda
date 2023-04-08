@@ -98,7 +98,7 @@ private:
      * the credential (or pass if authentication is disabled).
      */
     template<auth_level required_auth>
-    request_auth_result apply_auth(ss::const_req req) {
+    request_auth_result apply_auth(ss::httpd::const_req req) {
         auto auth_state = _auth.authenticate(req);
         if constexpr (required_auth == auth_level::superuser) {
             auth_state.require_superuser();
@@ -139,7 +139,7 @@ private:
     void register_route(ss::httpd::path_description const& path, F handler) {
         path.set(
           _server._routes,
-          [this, handler](std::unique_ptr<ss::httpd::request> req)
+          [this, handler](std::unique_ptr<ss::http::request> req)
             -> ss::future<ss::json::json_return_type> {
               auto auth_state = apply_auth<required_auth>(*req);
 
@@ -208,7 +208,7 @@ private:
       ss::httpd::path_description const& path,
       ss::httpd::handle_function handler) {
         auto handler_f = new ss::httpd::function_handler{
-          [this, handler](ss::const_req req, ss::reply& reply) {
+          [this, handler](ss::httpd::const_req req, ss::http::reply& reply) {
               auto auth_state = apply_auth<required_auth>(req);
 
               log_request(req, auth_state);
@@ -228,8 +228,8 @@ private:
     }
 
     using request_handler_fn
-      = ss::noncopyable_function<ss::future<std::unique_ptr<ss::reply>>(
-        std::unique_ptr<ss::request>, std::unique_ptr<ss::reply>)>;
+      = ss::noncopyable_function<ss::future<std::unique_ptr<ss::http::reply>>(
+        std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>)>;
 
     /**
      * Handler implementation to allow control over the reply. Accepts a handler
@@ -242,10 +242,10 @@ private:
           : _server{server}
           , _handler{std::move(handler)} {}
 
-        ss::future<std::unique_ptr<ss::httpd::reply>> handle(
+        ss::future<std::unique_ptr<ss::http::reply>> handle(
           [[maybe_unused]] const ss::sstring& path,
-          std::unique_ptr<ss::request> request,
-          std::unique_ptr<ss::reply> reply) override {
+          std::unique_ptr<ss::http::request> request,
+          std::unique_ptr<ss::http::reply> reply) override {
             auto auth_state = _server.apply_auth<required_auth>(*request);
             _server.log_request(*request, auth_state);
 
@@ -271,7 +271,7 @@ private:
     }
 
     void log_request(
-      const ss::httpd::request& req,
+      const ss::http::request& req,
       const request_auth_result& auth_state) const;
 
     ss::future<> configure_listeners();
@@ -295,117 +295,117 @@ private:
     void register_shadow_indexing_routes();
 
     ss::future<ss::json::json_return_type> patch_cluster_config_handler(
-      std::unique_ptr<ss::httpd::request>, const request_auth_result&);
+      std::unique_ptr<ss::http::request>, const request_auth_result&);
 
     /// Raft routes
     ss::future<ss::json::json_return_type>
-      raft_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
+      raft_transfer_leadership_handler(std::unique_ptr<ss::http::request>);
 
     /// Security routes
     ss::future<ss::json::json_return_type>
-      create_user_handler(std::unique_ptr<ss::httpd::request>);
+      create_user_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      delete_user_handler(std::unique_ptr<ss::httpd::request>);
+      delete_user_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      update_user_handler(std::unique_ptr<ss::httpd::request>);
+      update_user_handler(std::unique_ptr<ss::http::request>);
 
     /// Kafka routes
     ss::future<ss::json::json_return_type>
-      kafka_transfer_leadership_handler(std::unique_ptr<ss::httpd::request>);
+      kafka_transfer_leadership_handler(std::unique_ptr<ss::http::request>);
 
     /// Feature routes
     ss::future<ss::json::json_return_type>
-      put_feature_handler(std::unique_ptr<ss::httpd::request>);
+      put_feature_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      put_license_handler(std::unique_ptr<ss::httpd::request>);
+      put_license_handler(std::unique_ptr<ss::http::request>);
 
     /// Broker routes
     ss::future<ss::json::json_return_type>
-      get_broker_handler(std::unique_ptr<ss::httpd::request>);
+      get_broker_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      decomission_broker_handler(std::unique_ptr<ss::httpd::request>);
+      decomission_broker_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      get_decommission_progress_handler(std::unique_ptr<ss::httpd::request>);
+      get_decommission_progress_handler(std::unique_ptr<ss::http::request>);
 
     ss::future<ss::json::json_return_type>
-      recomission_broker_handler(std::unique_ptr<ss::httpd::request>);
+      recomission_broker_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      start_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
+      start_broker_maintenance_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      stop_broker_maintenance_handler(std::unique_ptr<ss::httpd::request>);
+      stop_broker_maintenance_handler(std::unique_ptr<ss::http::request>);
 
     /// Register partition routes
     ss::future<ss::json::json_return_type>
-      get_partition_handler(std::unique_ptr<ss::httpd::request>);
+      get_partition_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      get_topic_partitions_handler(std::unique_ptr<ss::httpd::request>);
+      get_topic_partitions_handler(std::unique_ptr<ss::http::request>);
 
     ss::future<ss::json::json_return_type>
-      get_transactions_handler(std::unique_ptr<ss::httpd::request>);
+      get_transactions_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type> get_transactions_inner_handler(
       cluster::partition_manager&,
       model::ntp,
-      std::unique_ptr<ss::httpd::request>);
+      std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      mark_transaction_expired_handler(std::unique_ptr<ss::httpd::request>);
+      mark_transaction_expired_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      cancel_partition_reconfig_handler(std::unique_ptr<ss::httpd::request>);
+      cancel_partition_reconfig_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       unclean_abort_partition_reconfig_handler(
-        std::unique_ptr<ss::httpd::request>);
+        std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      set_partition_replicas_handler(std::unique_ptr<ss::httpd::request>);
+      set_partition_replicas_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      trigger_on_demand_rebalance_handler(std::unique_ptr<ss::httpd::request>);
+      trigger_on_demand_rebalance_handler(std::unique_ptr<ss::http::request>);
 
     /// Transaction routes
     ss::future<ss::json::json_return_type>
-      get_all_transactions_handler(std::unique_ptr<ss::httpd::request>);
+      get_all_transactions_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      delete_partition_handler(std::unique_ptr<ss::httpd::request>);
+      delete_partition_handler(std::unique_ptr<ss::http::request>);
 
     /// Cluster routes
     ss::future<ss::json::json_return_type>
       get_partition_balancer_status_handler(
-        std::unique_ptr<ss::httpd::request>);
+        std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
       cancel_all_partitions_reconfigs_handler(
-        std::unique_ptr<ss::httpd::request>);
+        std::unique_ptr<ss::http::request>);
 
     /// Shadow indexing routes
     ss::future<ss::json::json_return_type>
-      sync_local_state_handler(std::unique_ptr<ss::httpd::request>);
-    ss::future<std::unique_ptr<ss::reply>> initiate_topic_scan_and_recovery(
-      std::unique_ptr<ss::request>, std::unique_ptr<ss::reply>);
+      sync_local_state_handler(std::unique_ptr<ss::http::request>);
+    ss::future<std::unique_ptr<ss::http::reply>> initiate_topic_scan_and_recovery(
+      std::unique_ptr<ss::http::request>, std::unique_ptr<ss::http::reply>);
     ss::future<ss::json::json_return_type>
-    query_automated_recovery(std::unique_ptr<ss::httpd::request> req);
+    query_automated_recovery(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type>
-    get_partition_cloud_storage_status(std::unique_ptr<ss::httpd::request> req);
+    get_partition_cloud_storage_status(std::unique_ptr<ss::http::request> req);
 
     /// Self test routes
     ss::future<ss::json::json_return_type>
-      self_test_start_handler(std::unique_ptr<ss::httpd::request>);
+      self_test_start_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      self_test_stop_handler(std::unique_ptr<ss::httpd::request>);
+      self_test_stop_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      self_test_get_results_handler(std::unique_ptr<ss::httpd::request>);
+      self_test_get_results_handler(std::unique_ptr<ss::http::request>);
 
     // Debug routes
     ss::future<ss::json::json_return_type>
-      cloud_storage_usage_handler(std::unique_ptr<ss::httpd::request>);
+      cloud_storage_usage_handler(std::unique_ptr<ss::http::request>);
     ss::future<ss::json::json_return_type>
-      restart_service_handler(std::unique_ptr<ss::httpd::request>);
+      restart_service_handler(std::unique_ptr<ss::http::request>);
 
     ss::future<> throw_on_error(
-      ss::httpd::request& req,
+      ss::http::request& req,
       std::error_code ec,
       model::ntp const& ntp,
       model::node_id id = model::node_id{-1}) const;
     ss::future<ss::httpd::redirect_exception>
-    redirect_to_leader(ss::httpd::request& req, model::ntp const& ntp) const;
+    redirect_to_leader(ss::http::request& req, model::ntp const& ntp) const;
 
     ss::future<ss::json::json_return_type> cancel_node_partition_moves(
-      ss::httpd::request& req, cluster::partition_move_direction direction);
+      ss::http::request& req, cluster::partition_move_direction direction);
 
     struct level_reset {
         using time_point = ss::timer<>::clock::time_point;
@@ -426,7 +426,7 @@ private:
 
     ss::future<> restart_redpanda_service(service_kind service);
 
-    ss::http_server _server;
+    ss::httpd::http_server _server;
     admin_server_cfg _cfg;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<coproc::partition_manager>& _cp_partition_manager;

@@ -688,13 +688,13 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
 
     // Fail the first compacted upload
     fail_request_if(
-      [](const ss::httpd::request& request) {
+      [](const ss::http::request& request) {
           return request._url.find("0-19-") != ss::sstring::npos
                  && request._url.find("-1-v1.log") != ss::sstring::npos;
       },
       {.body
        = {archival_tests::error_payload.data(), archival_tests::error_payload.size()},
-       .status = ss::httpd::reply::status_type::not_found});
+       .status = ss::http::reply::status_type::not_found});
 
     // The non-compacted uploads proceed as normal, the compacted upload fails.
     expected = archival::ntp_archiver::batch_result{{1, 0, 0}, {0, 1, 0}};

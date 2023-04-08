@@ -120,6 +120,7 @@ constexpr auto delete_objects_payload_error = R"xml(
 
 void set_routes(ss::httpd::routes& r) {
     using namespace ss::httpd;
+    using reply = ss::http::reply;
     auto empty_put_response = new function_handler(
       [](const_req req) {
           BOOST_REQUIRE(!req.get_header("x-amz-content-sha256").empty());

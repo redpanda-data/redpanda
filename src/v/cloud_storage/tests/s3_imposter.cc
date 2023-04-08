@@ -90,6 +90,7 @@ void s3_imposter_fixture::set_routes(
   ss::httpd::routes& r,
   const std::vector<s3_imposter_fixture::expectation>& expectations) {
     using namespace ss::httpd;
+    using reply = ss::http::reply;
     struct content_handler {
         content_handler(
           const std::vector<expectation>& exp, s3_imposter_fixture& imp)

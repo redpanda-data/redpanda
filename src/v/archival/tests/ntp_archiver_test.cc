@@ -344,7 +344,7 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
 
     // Fail the second deletion request received.
     fail_request_if(
-      [delete_request_idx = 0](const ss::httpd::request& req) mutable {
+      [delete_request_idx = 0](const ss::http::request& req) mutable {
           if (req._method == "DELETE") {
               return 2 == ++delete_request_idx;
           }
@@ -353,7 +353,7 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       },
       {.body
        = {archival_tests::forbidden_payload.data(), archival_tests::forbidden_payload.size()},
-       .status = ss::httpd::reply::status_type::bad_request});
+       .status = ss::http::reply::status_type::bad_request});
 
     archiver.apply_retention().get();
     archiver.garbage_collect().get();

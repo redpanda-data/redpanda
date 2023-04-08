@@ -24,7 +24,7 @@ namespace pandaproxy {
 inline credential_t maybe_authenticate_request(
   config::rest_authn_method authn_method,
   request_authenticator& authenticator,
-  const ss::httpd::request& req) {
+  const ss::http::request& req) {
     credential_t user;
 
     if (authn_method == config::rest_authn_method::http_basic) {

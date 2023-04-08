@@ -24,7 +24,7 @@ FIXTURE_TEST(test_get, http_imposter_fixture) {
     when()
       .request("/foo")
       .with_method(ss::httpd::GET)
-      .then_reply_with("bar", ss::httpd::reply::status_type::ok);
+      .then_reply_with("bar", ss::http::reply::status_type::ok);
 
     listen();
 
@@ -56,7 +56,7 @@ FIXTURE_TEST(test_post, http_imposter_fixture) {
     when()
       .request("/foo")
       .with_method(ss::httpd::POST)
-      .then_reply_with("bar", ss::httpd::reply::status_type::ok);
+      .then_reply_with("bar", ss::http::reply::status_type::ok);
 
     listen();
 
@@ -89,7 +89,7 @@ FIXTURE_TEST(test_forbidden, http_imposter_fixture) {
     when()
       .request("/super-secret-area")
       .with_method(ss::httpd::GET)
-      .then_reply_with(ss::httpd::reply::status_type::forbidden);
+      .then_reply_with(ss::http::reply::status_type::forbidden);
 
     listen();
 
