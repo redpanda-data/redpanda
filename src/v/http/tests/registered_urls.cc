@@ -80,15 +80,15 @@ registered_urls::request(ss::sstring url) {
     return request(std::move(url), ss::httpd::GET, default_content.data());
 }
 
-response registered_urls::lookup(ss::httpd::const_req& req) const {
-    auto url = req._url;
+response registered_urls::lookup(const request_info& req) const {
+    auto url = req.url;
     auto it = request_response_map.find(url);
     if (it == request_response_map.end()) {
         return not_found;
     }
 
     auto method_mapping = it->second;
-    auto m_it = method_mapping.find(ss::httpd::str2type(req._method));
+    auto m_it = method_mapping.find(ss::httpd::str2type(req.method));
     if (m_it == method_mapping.end()) {
         return not_found;
     }
