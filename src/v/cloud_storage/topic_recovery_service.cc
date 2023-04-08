@@ -147,7 +147,7 @@ ss::future<> topic_recovery_service::shutdown_recovery() {
 }
 
 init_recovery_result
-topic_recovery_service::start_recovery(ss::httpd::request req) {
+topic_recovery_service::start_recovery(const ss::httpd::request& req) {
     try {
         if (is_active()) {
             vlog(cst_log.warn, "A recovery is already active");
@@ -156,7 +156,7 @@ topic_recovery_service::start_recovery(ss::httpd::request req) {
               .message = "A recovery is already active"};
         }
 
-        recovery_request request{std::move(req)};
+        recovery_request request(req);
         ssx::spawn_with_gate(_gate, [this, r = std::move(request)]() mutable {
             return start_bg_recovery_task(std::move(r)).then([](auto result) {
                 if (result.has_error()) {
