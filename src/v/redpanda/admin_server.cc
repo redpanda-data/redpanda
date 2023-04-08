@@ -985,7 +985,8 @@ bool str_to_bool(std::string_view s) {
 
 void admin_server::register_config_routes() {
     register_route_raw<superuser>(
-      ss::httpd::config_json::get_config, [](ss::httpd::const_req, ss::http::reply& reply) {
+      ss::httpd::config_json::get_config,
+      [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
           config::shard_local_cfg().to_json(
@@ -1030,7 +1031,8 @@ void admin_server::register_config_routes() {
       });
 
     register_route_raw<superuser>(
-      ss::httpd::config_json::get_loggers, [](ss::httpd::const_req, ss::http::reply& reply) {
+      ss::httpd::config_json::get_loggers,
+      [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
           json::Writer<json::StringBuffer> writer(buf);
           writer.StartArray();
@@ -2414,8 +2416,8 @@ void admin_server::register_broker_routes() {
       });
 }
 
-ss::future<ss::json::json_return_type> admin_server::get_transactions_handler(
-  std::unique_ptr<ss::http::request> req) {
+ss::future<ss::json::json_return_type>
+admin_server::get_transactions_handler(std::unique_ptr<ss::http::request> req) {
     const model::ntp ntp = parse_ntp_from_request(req->param);
 
     if (need_redirect_to_leader(ntp, _metadata_cache)) {
@@ -3241,8 +3243,8 @@ admin_server::get_all_transactions_handler(
     co_return ss::json::json_return_type(ans);
 }
 
-ss::future<ss::json::json_return_type> admin_server::delete_partition_handler(
-  std::unique_ptr<ss::http::request> req) {
+ss::future<ss::json::json_return_type>
+admin_server::delete_partition_handler(std::unique_ptr<ss::http::request> req) {
     if (need_redirect_to_leader(model::tx_manager_ntp, _metadata_cache)) {
         throw co_await redirect_to_leader(*req, model::tx_manager_ntp);
     }
@@ -3992,7 +3994,8 @@ ss::future<ss::json::json_return_type> admin_server::sync_local_state_handler(
 
 ss::future<std::unique_ptr<ss::http::reply>>
 admin_server::initiate_topic_scan_and_recovery(
-  std::unique_ptr<ss::http::request> request, std::unique_ptr<ss::http::reply> reply) {
+  std::unique_ptr<ss::http::request> request,
+  std::unique_ptr<ss::http::reply> reply) {
     reply->set_content_type("json");
 
     if (need_redirect_to_leader(model::controller_ntp, _metadata_cache)) {
@@ -4058,8 +4061,8 @@ static ss::json::json_return_type serialize_topic_recovery_status(
     return status_log;
 }
 
-ss::future<ss::json::json_return_type> admin_server::query_automated_recovery(
-  std::unique_ptr<ss::http::request> req) {
+ss::future<ss::json::json_return_type>
+admin_server::query_automated_recovery(std::unique_ptr<ss::http::request> req) {
     ss::httpd::shadow_indexing_json::topic_recovery_status ret;
     ret.state = "inactive";
 
