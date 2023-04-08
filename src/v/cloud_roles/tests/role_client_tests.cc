@@ -58,7 +58,7 @@ FIXTURE_TEST(test_bad_response_handling, http_imposter_fixture) {
 FIXTURE_TEST(test_gateway_down, http_imposter_fixture) {
     when()
       .request(cloud_role_tests::gcp_url)
-      .then_reply_with(ss::httpd::reply::status_type::gateway_timeout);
+      .then_reply_with(ss::http::reply::status_type::gateway_timeout);
     listen();
     ss::abort_source as;
 

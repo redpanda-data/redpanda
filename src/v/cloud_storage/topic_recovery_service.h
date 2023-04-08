@@ -33,7 +33,7 @@ class topic_table;
 namespace cloud_storage {
 
 struct init_recovery_result {
-    ss::httpd::reply::status_type status_code;
+    ss::http::reply::status_type status_code;
     ss::sstring message;
 
     bool operator==(const init_recovery_result&) const = default;
@@ -97,7 +97,7 @@ struct topic_recovery_service
     /// recovery process is initiated.
     /// \return A result object with an HTTP status code and a message string,
     /// suitable for being returned as response to an HTTP call.
-    init_recovery_result start_recovery(const ss::httpd::request&);
+    init_recovery_result start_recovery(const ss::http::request&);
 
     /// \brief Stops the download check task. Intended to be stopped before the
     /// cloud storage API is stopped, so that any HTTP calls are not made using

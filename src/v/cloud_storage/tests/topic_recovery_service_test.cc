@@ -141,14 +141,14 @@ public:
 };
 
 FIXTURE_TEST(start_with_bad_request, fixture) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content = "++";
     r.content_length = 2;
     r._headers["Content-Type"] = "application/json";
 
     auto result = app.topic_recovery_service.local().start_recovery(r);
     auto expected = cloud_storage::init_recovery_result{
-      .status_code = ss::httpd::reply::status_type::bad_request,
+      .status_code = ss::http::reply::status_type::bad_request,
       .message = "bad recovery request payload: Invalid value."};
     BOOST_REQUIRE_EQUAL(result, expected);
 }
@@ -156,7 +156,7 @@ FIXTURE_TEST(start_with_bad_request, fixture) {
 FIXTURE_TEST(start_with_good_request, fixture) {
     auto result = app.topic_recovery_service.local().start_recovery({});
     auto expected = cloud_storage::init_recovery_result{
-      .status_code = ss::httpd::reply::status_type::accepted,
+      .status_code = ss::http::reply::status_type::accepted,
       .message = "recovery started"};
     BOOST_REQUIRE_EQUAL(result, expected);
 }
@@ -169,7 +169,7 @@ FIXTURE_TEST(recovery_with_no_topics_exits_early, fixture) {
     auto result = service.local().start_recovery({});
 
     auto expected = cloud_storage::init_recovery_result{
-      .status_code = ss::httpd::reply::status_type::accepted,
+      .status_code = ss::http::reply::status_type::accepted,
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
@@ -194,7 +194,7 @@ void do_test(fixture& f) {
     auto result = service.local().start_recovery({});
 
     auto expected = cloud_storage::init_recovery_result{
-      .status_code = ss::httpd::reply::status_type::accepted,
+      .status_code = ss::http::reply::status_type::accepted,
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
@@ -252,7 +252,7 @@ FIXTURE_TEST(recovery_with_existing_topic, fixture) {
     auto result = service.local().start_recovery({});
 
     auto expected = cloud_storage::init_recovery_result{
-      .status_code = ss::httpd::reply::status_type::accepted,
+      .status_code = ss::http::reply::status_type::accepted,
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
@@ -279,7 +279,7 @@ FIXTURE_TEST(recovery_where_topic_is_created, fixture) {
     auto result = service.local().start_recovery({});
 
     auto expected = cloud_storage::init_recovery_result{
-      .status_code = ss::httpd::reply::status_type::accepted,
+      .status_code = ss::http::reply::status_type::accepted,
       .message = "recovery started"};
 
     BOOST_REQUIRE_EQUAL(result, expected);
@@ -366,7 +366,7 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_without_match, fixture) {
       meta_level,
     });
 
-    ss::httpd::request r;
+    ss::http::request r;
     r._headers = {{"Content-Type", "application/json"}};
     r.content = R"JSON({"topic_names_pattern": "abc*"})JSON";
     r.content_length = 1;
@@ -386,7 +386,7 @@ FIXTURE_TEST(recovery_with_topic_name_pattern_with_match, fixture) {
     set_expectations_and_listen(
       {root_level, meta_level, manifest, recovery_state});
 
-    ss::httpd::request r;
+    ss::http::request r;
     r._headers = {{"Content-Type", "application/json"}};
     r.content_length = 1;
     r.content = R"JSON({"topic_names_pattern": ".*es*"})JSON";
@@ -401,7 +401,7 @@ FIXTURE_TEST(recovery_with_retention_ms_override, fixture) {
     set_expectations_and_listen(
       {root_level, meta_level, manifest, recovery_state});
 
-    ss::httpd::request r;
+    ss::http::request r;
     r._headers = {{"Content-Type", "application/json"}};
     r.content_length = 1;
     r.content
@@ -424,7 +424,7 @@ FIXTURE_TEST(recovery_with_retention_bytes_override, fixture) {
     set_expectations_and_listen(
       {root_level, meta_level, manifest, recovery_state});
 
-    ss::httpd::request r;
+    ss::http::request r;
     r._headers = {{"Content-Type", "application/json"}};
     r.content_length = 1;
     r.content
@@ -447,7 +447,7 @@ FIXTURE_TEST(recovery_status, fixture) {
     set_expectations_and_listen(
       {root_level, meta_level, manifest, recovery_state});
 
-    ss::httpd::request r;
+    ss::http::request r;
     r._headers = {{"Content-Type", "application/json"}};
     r.content_length = 1;
     r.content
