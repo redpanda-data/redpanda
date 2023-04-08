@@ -56,7 +56,8 @@ public:
     size_t get_request_count(const ss::sstring& url) const;
 
     /// Access all http requests ordered by target url
-    const std::multimap<ss::sstring, http_test_utils::request_info>& get_targets() const;
+    const std::multimap<ss::sstring, http_test_utils::request_info>&
+    get_targets() const;
 
     /// Starting point for URL registration fluent API
     /// Example usage:
@@ -108,7 +109,8 @@ public:
         return (... && s(std::forward<Urls>(urls)));
     }
 
-    http_test_utils::response lookup(const http_test_utils::request_info& req) const {
+    http_test_utils::response
+    lookup(const http_test_utils::request_info& req) const {
         return _urls.lookup(req);
     }
 
