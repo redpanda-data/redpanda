@@ -28,87 +28,39 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// This file contains the Params type, which will eventually be created in
-// rpk's root command and passed to every command. This new params type is what
-// will be used to load and parse configuration.
-//
-// The goal of the proposed refactoring is so that commands only have to take a
-// Params variable, which will load a finalized configuration that needs no
-// further setting. This will replace the current usages of deducing sections
-// when some fields are missing, defaulting in separate areas, passing closures
-// through many commands so that we have partial evaluation in one area, full
-// evaluation in another, etc.
-//
-// The following are the steps to refactoring:
-//
-//  1) For every command, convert the command to using ParamsFromCommand.
-//
-// Once this step is complete, we can remove individual levels of flags and
-// instead use flags from root itself.
-//
-//  2) In the rpk section of our config,
-//      * drop _api from kafka_api and admin_api
-//      * rename key_file to client_key_path
-//      * rename cert_file to client_cert_path
-//      * rename truststore_file to ca_cert_path
-//      * rename password to pass
-//      * rename admin's addresses to hosts
-//
-// We can do these renames in a backwards compatible way: rather than simple
-// renames, we will add new fields and, when we load the config, if the new
-// fields are empty, use the old. The purpose of these renames is to make the
-// config map directly to our new configuration keys, to make the tls fields
-// more explicit as to that they are, and to simplify some terminology.
-//
-//  3) Introduce `func (p *Params) InstallDeprecatedFlags(cmd *cobra.Command)`.
-//     As well, introduce a global -X configuration flag.
-//
-// This function will entirely replace ParamsFromCommand, and will instead run
-// on the root command only. This function will install all old flags, hide
-// them, and mark them deprecated.
-//
-// The new -X flag will simply add to Params.FlagOverrides.
-//
-// Once step (3) is complete, we will officially deprecate anything old and
-// remove the old at minimum 6 months later.
-
 const (
-	// FlagConfig is rpk config flag.
-	FlagConfig = "config"
+	// The following flags exist for backcompat purposes and should not be
+	// used elsewhere within rpk.
+	flagConfig         = "config"
+	flagBrokers        = "brokers"
+	flagSASLMechanism  = "sasl-mechanism"
+	flagSASLPass       = "password"
+	flagAdminHosts1    = "hosts"
+	flagAdminHosts2    = "api-urls"
+	flagEnableAdminTLS = "admin-api-tls-enabled"
+	flagAdminTLSCA     = "admin-api-tls-truststore"
+	flagAdminTLSCert   = "admin-api-tls-cert"
+	flagAdminTLSKey    = "admin-api-tls-key"
 
-	// FlagVerbose opts in to verbose logging. This is to be replaced with
-	// a log-level flag later, with `-v` meaning DEBUG for backcompat.
-	FlagVerbose = "verbose"
+	// The following flags are currently used in some areas of rpk
+	// (and ideally will be deprecated / removed in the future).
+	FlagEnableTLS = "tls-enabled"
+	FlagTLSCA     = "tls-truststore"
+	FlagTLSCert   = "tls-cert"
+	FlagTLSKey    = "tls-key"
+	FlagSASLUser  = "user"
 
-	// This entire block is filled with our current flags and environment
-	// variables. These will all eventually be hidden.
-
-	FlagBrokers        = "brokers"
-	FlagEnableTLS      = "tls-enabled"
-	FlagTLSCA          = "tls-truststore"
-	FlagTLSCert        = "tls-cert"
-	FlagTLSKey         = "tls-key"
-	FlagSASLMechanism  = "sasl-mechanism"
-	FlagSASLUser       = "user"
-	FlagSASLPass       = "password"
-	FlagAdminHosts1    = "hosts"
-	FlagAdminHosts2    = "api-urls"
-	FlagEnableAdminTLS = "admin-api-tls-enabled"
-	FlagAdminTLSCA     = "admin-api-tls-truststore"
-	FlagAdminTLSCert   = "admin-api-tls-cert"
-	FlagAdminTLSKey    = "admin-api-tls-key"
-
-	EnvBrokers       = "REDPANDA_BROKERS"
-	EnvTLSCA         = "REDPANDA_TLS_TRUSTSTORE"
-	EnvTLSCert       = "REDPANDA_TLS_CERT"
-	EnvTLSKey        = "REDPANDA_TLS_KEY"
-	EnvSASLMechanism = "REDPANDA_SASL_MECHANISM"
-	EnvSASLUser      = "REDPANDA_SASL_USERNAME"
-	EnvSASLPass      = "REDPANDA_SASL_PASSWORD"
-	EnvAdminHosts    = "REDPANDA_API_ADMIN_ADDRS"
-	EnvAdminTLSCA    = "REDPANDA_ADMIN_TLS_TRUSTSTORE"
-	EnvAdminTLSCert  = "REDPANDA_ADMIN_TLS_CERT"
-	EnvAdminTLSKey   = "REDPANDA_ADMIN_TLS_KEY"
+	envBrokers       = "REDPANDA_BROKERS"
+	envTLSCA         = "REDPANDA_TLS_TRUSTSTORE"
+	envTLSCert       = "REDPANDA_TLS_CERT"
+	envTLSKey        = "REDPANDA_TLS_KEY"
+	envSASLMechanism = "REDPANDA_SASL_MECHANISM"
+	envSASLUser      = "REDPANDA_SASL_USERNAME"
+	envSASLPass      = "REDPANDA_SASL_PASSWORD"
+	envAdminHosts    = "REDPANDA_API_ADMIN_ADDRS"
+	envAdminTLSCA    = "REDPANDA_ADMIN_TLS_TRUSTSTORE"
+	envAdminTLSCert  = "REDPANDA_ADMIN_TLS_CERT"
+	envAdminTLSKey   = "REDPANDA_ADMIN_TLS_KEY"
 )
 
 // This block contains what will eventually be used as keys in the global
@@ -174,6 +126,7 @@ type Params struct {
 	adminKeyFile   string
 }
 
+// ParamsHelp returns the long help text for -X help.
 func ParamsHelp() string {
 	return `The -X flag can be used to override any rpk specific configuration option.
 As an example, -X brokers.tls.enabled=true enables TLS for the Kafka API.
@@ -241,6 +194,7 @@ admin.tls.client_key_path=/path/to/key.pem
 `
 }
 
+// ParamsList returns the short help text for -X list.
 func ParamsList() string {
 	return `brokers=comma,delimited,host:ports
 brokers.tls.enabled=boolean
@@ -262,36 +216,45 @@ admin.tls.client_key_path=/path/to/key.pem
 // BACKCOMPAT FLAGS //
 //////////////////////
 
+// InstallKafkaFlags adds the original rpk Kafka API set of flags to this
+// command and all subcommands.
 func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
-	pf.StringSliceVar(&p.brokers, "brokers", nil, "Comma separated list of broker host:ports")
-	pf.StringVar(&p.user, "user", "", "SASL user to be used for authentication")
-	pf.StringVar(&p.password, "password", "", "SASL password to be used for authentication")
-	pf.StringVar(&p.saslMechanism, FlagSASLMechanism, "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+
+	pf.StringSliceVar(&p.brokers, flagBrokers, nil, "Comma separated list of broker host:ports")
+	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
+	pf.StringVar(&p.password, flagSASLPass, "", "SASL password to be used for authentication")
+	pf.StringVar(&p.saslMechanism, flagSASLMechanism, "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
 
 	p.InstallTLSFlags(cmd)
 }
 
+// InstallTLSFlags adds the original rpk Kafka API TLS set of flags to this
+// command and all subcommands. This is only used by the prometheus dashboard
+// generation; all other Kafka API flag backcompat commands use
+// InstallKafkaFlags. This command does not mark the added flags as deprecated.
 func (p *Params) InstallTLSFlags(cmd *cobra.Command) {
 	pf := cmd.PersistentFlags()
+
 	pf.BoolVar(&p.enableKafkaTLS, FlagEnableTLS, false, "Enable TLS for the Kafka API (not necessary if specifying custom certs)")
 	pf.StringVar(&p.kafkaCAFile, FlagTLSCA, "", "The CA certificate to be used for TLS communication with the broker")
 	pf.StringVar(&p.kafkaCertFile, FlagTLSCert, "", "The certificate to be used for TLS authentication with the broker")
 	pf.StringVar(&p.kafkaKeyFile, FlagTLSKey, "", "The certificate key to be used for TLS authentication with the broker")
 }
 
+// InstallAdminFlags adds the original rpk Admin API set of flags to this
+// command and all subcommands.
 func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
-	f := cmd.PersistentFlags()
-	f.StringSliceVar(&p.adminURLs, FlagAdminHosts2, nil, "Comma separated list of admin API host:ports")
-	f.StringSliceVar(&p.adminURLs, FlagAdminHosts1, nil, "")
-	f.MarkDeprecated(FlagAdminHosts1, fmt.Sprintf("Deprecated; use --%v", FlagAdminHosts2)) // Hosts2 is far more common; Hosts1 is only used in rpk redpanda admin
-	f.StringSliceVar(&p.adminURLs, "admin-url", nil, "")
-	f.MarkDeprecated("admin-url", fmt.Sprintf("Deprecated; use --%v", FlagAdminHosts2)) // only used in the debug bundle
+	pf := cmd.PersistentFlags()
 
-	f.BoolVar(&p.enableAdminTLS, FlagEnableAdminTLS, false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
-	f.StringVar(&p.adminCAFile, FlagAdminTLSCA, "", "The CA certificate  to be used for TLS communication with the admin API")
-	f.StringVar(&p.adminCertFile, FlagAdminTLSCert, "", "The certificate to be used for TLS authentication with the admin API")
-	f.StringVar(&p.adminKeyFile, FlagAdminTLSKey, "", "The certificate key to be used for TLS authentication with the admin API")
+	pf.StringSliceVar(&p.adminURLs, flagAdminHosts2, nil, "Comma separated list of admin API host:ports")
+	pf.StringSliceVar(&p.adminURLs, flagAdminHosts1, nil, "")
+	pf.StringSliceVar(&p.adminURLs, "admin-url", nil, "")
+
+	pf.BoolVar(&p.enableAdminTLS, flagEnableAdminTLS, false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
+	pf.StringVar(&p.adminCAFile, flagAdminTLSCA, "", "The CA certificate  to be used for TLS communication with the admin API")
+	pf.StringVar(&p.adminCertFile, flagAdminTLSCert, "", "The certificate to be used for TLS authentication with the admin API")
+	pf.StringVar(&p.adminKeyFile, flagAdminTLSKey, "", "The certificate key to be used for TLS authentication with the admin API")
 }
 
 func (p *Params) backcompatFlagsToOverrides() {
@@ -607,17 +570,17 @@ func (p *Params) processOverrides(c *Config) error {
 		old       string
 		targetKey string
 	}{
-		{EnvBrokers, xKafkaBrokers},
-		{EnvTLSCA, xKafkaCACert},
-		{EnvTLSCert, xKafkaClientCert},
-		{EnvTLSKey, xKafkaClientKey},
-		{EnvSASLMechanism, xKafkaSASLMechanism},
-		{EnvSASLUser, xKafkaSASLUser},
-		{EnvSASLPass, xKafkaSASLPass},
-		{EnvAdminHosts, xAdminHosts},
-		{EnvAdminTLSCA, xAdminCACert},
-		{EnvAdminTLSCert, xAdminClientCert},
-		{EnvAdminTLSKey, xAdminClientKey},
+		{envBrokers, xKafkaBrokers},
+		{envTLSCA, xKafkaCACert},
+		{envTLSCert, xKafkaClientCert},
+		{envTLSKey, xKafkaClientKey},
+		{envSASLMechanism, xKafkaSASLMechanism},
+		{envSASLUser, xKafkaSASLUser},
+		{envSASLPass, xKafkaSASLPass},
+		{envAdminHosts, xAdminHosts},
+		{envAdminTLSCA, xAdminCACert},
+		{envAdminTLSCert, xAdminClientCert},
+		{envAdminTLSKey, xAdminClientKey},
 	} {
 		if v, exists := os.LookupEnv(envMapping.old); exists {
 			envOverrides = append(envOverrides, envMapping.targetKey+"="+v)
@@ -761,6 +724,10 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 	*dst = append(*dst, mtlsPrivate...)
 	*dst = append(*dst, mtlsPublic...)
 }
+
+///////////////////
+// FIELD SETTING //
+///////////////////
 
 // Set allow to set a single configuration field by passing a key value pair
 //
