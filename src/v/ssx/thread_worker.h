@@ -68,11 +68,11 @@ public:
             if constexpr (std::is_void_v<value_type>) {
                 _func();
                 ss::alien::run_on(
-                  alien, shard, [this]() { _promise.set_value(); });
+                  alien, shard, [this]() noexcept { _promise.set_value(); });
             } else {
                 auto v = _func();
                 ss::alien::run_on(
-                  alien, shard, [this, v{std::move(v)}]() mutable {
+                  alien, shard, [this, v{std::move(v)}]() mutable noexcept {
                       _promise.set_value(std::move(v));
                   });
             }
@@ -86,7 +86,7 @@ public:
       ss::shard_id shard,
       std::exception_ptr p) final {
         ss::alien::run_on(
-          alien, shard, [this, p]() mutable { _promise.set_exception(p); });
+          alien, shard, [this, p]() noexcept { _promise.set_exception(p); });
     }
 
 private:
