@@ -357,6 +357,8 @@ github.com/twmb/franz-go/pkg/kadm v1.7.0 h1:TAgcS+t5q+9jnm8INCD2OJ1MD9y4Ij6pD5CY
 github.com/twmb/franz-go/pkg/kadm v1.7.0/go.mod h1:sI9BjVkpjyYssIlVa+WIwseaUjJqPsR/8gmJi6aDyEk=
 github.com/twmb/franz-go/pkg/kmsg v1.5.0 h1:eqVJquFQLdBNLrRMWX03pPDPpngn6PTjGZLlZnagouk=
 github.com/twmb/franz-go/pkg/kmsg v1.5.0/go.mod h1:se9Mjdt0Nwzc9lnjJ0HyDtLyBnaBDAd7pCje47OhSyw=
+github.com/twmb/franz-go/plugin/kzap v1.1.2 h1:0arX5xJ0soUPX1LlDay6ZZoxuWkWk1lggQ5M/IgRXAE=
+github.com/twmb/franz-go/plugin/kzap v1.1.2/go.mod h1:53Cl9Uz1pbdOPDvUISIxLrZIWSa2jCuY1bTMauRMBmo=
 github.com/twmb/tlscfg v1.2.1 h1:IU2efmP9utQEIV2fufpZjPq7xgcZK4qu25viD51BB44=
 github.com/twmb/tlscfg v1.2.1/go.mod h1:GameEQddljI+8Es373JfQEBvtI4dCTLKWGJbqT2kErs=
 github.com/twmb/types v1.1.6 h1:PnQYJ8fMHkjPR4mgJkzqX1lYhfamNl5I2zuVBSZwLuE=

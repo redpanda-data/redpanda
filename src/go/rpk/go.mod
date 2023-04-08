@@ -34,6 +34,7 @@ require (
 	github.com/twmb/franz-go v1.13.2
 	github.com/twmb/franz-go/pkg/kadm v1.7.0
 	github.com/twmb/franz-go/pkg/kmsg v1.5.0
+	github.com/twmb/franz-go/plugin/kzap v1.1.2
 	github.com/twmb/tlscfg v1.2.1
 	github.com/twmb/types v1.1.6
 	go.uber.org/zap v1.24.0
