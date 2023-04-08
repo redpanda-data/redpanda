@@ -10,10 +10,8 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,42 +36,11 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
-	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 	"golang.org/x/term"
 )
-
-// TODO: replace logrus with zap, initialized in config.Params
-type rpkLogFormatter struct {
-	logrus.Formatter
-}
-
-func (f rpkLogFormatter) Format(entry *logrus.Entry) ([]byte, error) {
-	var b *bytes.Buffer
-	if entry.Buffer != nil {
-		b = entry.Buffer
-	} else {
-		b = &bytes.Buffer{}
-	}
-
-	printer := f.getPrinter(entry.Level)
-	printer(b, entry.Message)
-	return b.Bytes(), nil
-}
-
-var logLevelColorMap = map[logrus.Level]*color.Color{
-	logrus.WarnLevel:  color.New(color.FgYellow),
-	logrus.ErrorLevel: color.New(color.FgRed),
-}
-
-func (rpkLogFormatter) getPrinter(lvl logrus.Level) func(io.Writer, ...interface{}) (int, error) {
-	if color, exists := logLevelColorMap[lvl]; exists {
-		return color.Fprintln
-	}
-	return fmt.Fprintln
-}
 
 func Execute() {
 	fs := afero.NewOsFs()
@@ -81,9 +48,6 @@ func Execute() {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
 	}
-	log.SetFormatter(new(rpkLogFormatter))
-	log.SetOutput(os.Stdout)
-
 	p := new(config.Params)
 	cobra.OnInitialize(func() {
 		for _, o := range p.FlagOverrides {
@@ -97,6 +61,7 @@ func Execute() {
 			}
 			os.Exit(0)
 		}
+		zap.ReplaceGlobals(p.Logger())
 	})
 	root := &cobra.Command{
 		Use:   "rpk",
@@ -271,16 +236,16 @@ func addPluginWithExec(
 		Env:  os.Environ(),
 	}).Output()
 	if err != nil {
-		log.Debugf("unable to run %s: %v", plugin.FlagAutoComplete, err)
+		zap.L().Sugar().Debugf("unable to run %s: %v", plugin.FlagAutoComplete, err)
 		return
 	}
 	var helps []pluginHelp
 	if err = json.Unmarshal(out, &helps); err != nil {
-		log.Debugf("unable to parse %s return: %v", plugin.FlagAutoComplete, err)
+		zap.L().Sugar().Debugf("unable to parse %s return: %v", plugin.FlagAutoComplete, err)
 		return
 	}
 	if len(helps) == 0 {
-		log.Debugf("plugin that supports %s did not return any help", plugin.FlagAutoComplete)
+		zap.L().Sugar().Debugf("plugin that supports %s did not return any help", plugin.FlagAutoComplete)
 		return
 	}
 
@@ -325,17 +290,17 @@ func addPluginHelp(
 		piece0 := strings.Split(h.Path, "_")[0]
 		h.Path = pluginName + strings.TrimPrefix(h.Path, piece0)
 		if _, exists := uniques[h.Path]; exists {
-			log.Debugf("invalid plugin help returned duplicate path %s", h.Path)
+			zap.L().Sugar().Debugf("invalid plugin help returned duplicate path %s", h.Path)
 			return
 		}
 		uniques[h.Path] = h
 
 		if !strings.HasPrefix(h.Path, childPrefix) && h.Path != pluginName {
-			log.Debugf("invalid plugin help has path %s missing required prefix %s", h.Path, childPrefix)
+			zap.L().Sugar().Debugf("invalid plugin help has path %s missing required prefix %s", h.Path, childPrefix)
 			return
 		}
 		if !rePlugin.MatchString(h.Path) {
-			log.Debugf("invalid plugin help path %s is not %s", h.Path, rePluginString)
+			zap.L().Sugar().Debugf("invalid plugin help path %s is not %s", h.Path, rePluginString)
 			return
 		}
 	}
@@ -355,12 +320,12 @@ func addPluginHelp(
 	// level must be our plugin name. This is a double-check of the logic
 	// at the start of the function and the logic entering this function.
 	if l := len(subcommands.inner); l != 1 {
-		log.Debugf("invalid plugin help specified multiple (%d) top-level subcommands", l)
+		zap.L().Sugar().Debugf("invalid plugin help specified multiple (%d) top-level subcommands", l)
 		return
 	}
 	us, exists := subcommands.inner[pluginName]
 	if !exists {
-		log.Debugf("invalid plugin help specified different top level subcommand than %s", pluginName)
+		zap.L().Sugar().Debugf("invalid plugin help specified different top level subcommand than %s", pluginName)
 		return
 	}
 

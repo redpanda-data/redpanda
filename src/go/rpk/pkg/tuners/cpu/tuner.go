@@ -19,8 +19,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type tuner struct {
@@ -51,7 +51,7 @@ func NewCPUTuner(
 
 func (tuner *tuner) Tune() tuners.TuneResult {
 	grubUpdated := false
-	log.Debug("Running CPU tuner...")
+	zap.L().Sugar().Debug("Running CPU tuner...")
 	allCpusMask, err := tuner.cpuMasks.GetAllCpusMask()
 	if err != nil {
 		return tuners.NewTuneError(err)
@@ -61,7 +61,7 @@ func (tuner *tuner) Tune() tuners.TuneResult {
 		return tuners.NewTuneError(err)
 	}
 	tuner.pus, err = tuner.cpuMasks.GetNumberOfPUs(allCpusMask)
-	log.Debugf("Running on system with '%d' cores and '%d' PUs",
+	zap.L().Sugar().Debugf("Running on system with '%d' cores and '%d' PUs",
 		tuner.cores, tuner.pus)
 	if err != nil {
 		return tuners.NewTuneError(err)
@@ -116,7 +116,7 @@ func (tuner *tuner) CheckIfSupported() (supported bool, reason string) {
 }
 
 func (tuner *tuner) getMaxCState() (uint, error) {
-	log.Debugf("Getting max allowed CState")
+	zap.L().Sugar().Debugf("Getting max allowed CState")
 	// Possible errors while reading max_cstate:
 	// File doesn't exist or reading error.
 	lines, err := utils.ReadFileLines(tuner.fs,
@@ -137,7 +137,7 @@ func (tuner *tuner) getMaxCState() (uint, error) {
 }
 
 func (tuner *tuner) disableCStates() error {
-	log.Info("Disabling CPU C-States ")
+	fmt.Println("Disabling CPU C-States ")
 	return tuner.grub.AddCommandLineOptions(
 		[]string{
 			"intel_idle.max_cstate=0",
@@ -146,7 +146,7 @@ func (tuner *tuner) disableCStates() error {
 }
 
 func (tuner *tuner) checkIfPStateIsEnabled() (bool, error) {
-	log.Debugf("Checking if Intel P-States are enabled")
+	zap.L().Sugar().Debugf("Checking if Intel P-States are enabled")
 	lines, err := utils.ReadFileLines(tuner.fs,
 		"/sys/devices/system/cpu/cpu0/cpufreq/scaling_driver")
 	if err != nil {
@@ -160,7 +160,7 @@ func (tuner *tuner) checkIfPStateIsEnabled() (bool, error) {
 }
 
 func (tuner *tuner) disablePStates() error {
-	log.Info("Disabling CPU P-States")
+	fmt.Println("Disabling CPU P-States")
 	/* According to the Intel's documentation disabling P-States
 	   (only available in Xenon CPUs) sets the cores frequency to constant
 	   max non Turbo value (max non turbo P-State).
@@ -172,7 +172,7 @@ func (tuner *tuner) disablePStates() error {
 }
 
 func (tuner *tuner) setupCPUGovernors() error {
-	log.Debugf("Setting up ACPI based CPU governors")
+	zap.L().Sugar().Debugf("Setting up ACPI based CPU governors")
 	if exists, _ := afero.Exists(tuner.fs, "/sys/devices/system/cpu/cpufreq/boost"); exists {
 		err := tuner.executor.Execute(
 			commands.NewWriteFileCmd(tuner.fs,
@@ -181,7 +181,7 @@ func (tuner *tuner) setupCPUGovernors() error {
 			return err
 		}
 	} else {
-		log.Debugf("CPU frequency boost is not available in this system")
+		zap.L().Sugar().Debugf("CPU frequency boost is not available in this system")
 	}
 	for i := uint(0); i < tuner.cores; i = i + 1 {
 		policyPath := fmt.Sprintf(
@@ -193,7 +193,7 @@ func (tuner *tuner) setupCPUGovernors() error {
 				return err
 			}
 		} else {
-			log.Debugf("Unable to set CPU governor policy for CPU %d", i)
+			zap.L().Sugar().Debugf("Unable to set CPU governor policy for CPU %d", i)
 		}
 	}
 	return nil

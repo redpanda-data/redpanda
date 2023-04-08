@@ -25,7 +25,6 @@ require (
 	github.com/prometheus/common v0.39.0
 	github.com/safchain/ethtool v0.2.0
 	github.com/sethgrid/pester v1.2.0
-	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/afero v1.9.3
 	github.com/spf13/cobra v1.6.1
 	github.com/spf13/pflag v1.0.5

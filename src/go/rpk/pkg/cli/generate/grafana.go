@@ -31,8 +31,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate/graf"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
-	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -207,12 +205,6 @@ func decompressAndPrint(fs fs.FS, path string, writer io.Writer) error {
 	return nil
 }
 
-type noopFormatter struct{}
-
-func (*noopFormatter) Format(e *logrus.Entry) ([]byte, error) {
-	return []byte(e.Message), nil
-}
-
 func executeGrafanaDashboard(metricsEndpoint string, datasource string) (string, error) {
 	if !(strings.HasPrefix(metricsEndpoint, "http://") ||
 		strings.HasPrefix(metricsEndpoint, "https://")) {
@@ -232,12 +224,6 @@ func executeGrafanaDashboard(metricsEndpoint string, datasource string) (string,
 	jsonSpec, err := json.MarshalIndent(dashboard, "", " ")
 	if err != nil {
 		return "", err
-	}
-	log.SetFormatter(new(noopFormatter))
-	// The logger's default stream is stderr, which prevents piping to files
-	// from working without redirecting them with '2>&1'.
-	if log.StandardLogger().Out == os.Stderr {
-		log.SetOutput(os.Stdout)
 	}
 	return string(jsonSpec), nil
 }

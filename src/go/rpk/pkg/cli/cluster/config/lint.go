@@ -10,12 +10,12 @@
 package config
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -99,11 +99,11 @@ central configuration store (and via 'rpk cluster config edit').
 			}
 
 			if len(cleanedProperties) > 0 {
-				log.Info("Cleaned up cluster configuration properties:")
+				fmt.Println("Cleaned up cluster configuration properties:")
 				for _, key := range cleanedProperties {
-					log.Infof(" - %s", key)
+					fmt.Printf(" - %s\n", key)
 				}
-				log.Info("") // Blank line
+				fmt.Println("") // Blank line
 			}
 
 			configOut, err := yaml.Marshal(cleanedDoc)
@@ -113,11 +113,11 @@ central configuration store (and via 'rpk cluster config edit').
 			backupFile := filepath.Join(filepath.Dir(configFile), backupFileName)
 			err = afero.WriteFile(fs, backupFile, configIn, 0o755)
 			out.MaybeDie(err, "error writing backup config %q: %v", backupFile, err)
-			log.Infof("Backed up configuration file to %q", backupFileName)
+			fmt.Printf("Backed up configuration file to %q\n", backupFileName)
 
 			err = afero.WriteFile(fs, configFile, configOut, 0o755)
 			out.MaybeDie(err, "error writing config: %v", err)
-			log.Infof("Rewrote configuration file %q", configFile)
+			fmt.Printf("Rewrote configuration file %q\n", configFile)
 		},
 	}
 

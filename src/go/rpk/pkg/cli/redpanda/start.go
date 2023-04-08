@@ -30,10 +30,10 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/factory"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/iotune"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"go.uber.org/zap"
 )
 
 type prestartConfig struct {
@@ -489,7 +489,7 @@ func buildRedpandaFlags(
 			// to deduce the IO props.
 			ioProps, err := ioResolver(conf, skipChecks)
 			if err != nil {
-				log.Warn(err)
+				zap.L().Sugar().Warn(err)
 			} else if ioProps != nil {
 				json, err := iotune.ToJSON(*ioProps)
 				if err != nil {
@@ -610,7 +610,7 @@ func resolveWellKnownIo(
 	if skipChecks {
 		return nil, nil
 	}
-	log.Info("Detecting the current cloud vendor and VM")
+	fmt.Println("Detecting the current cloud vendor and VM")
 	vendor, err := cloud.AvailableVendor()
 	if err != nil {
 		return nil, errors.New("Could not detect the current cloud vendor")
@@ -659,10 +659,10 @@ func tuneAll(
 			continue
 		}
 		if !supported {
-			log.Debugf("Tuner '%s' is not supported - %s", tunerName, reason)
+			zap.L().Sugar().Debugf("Tuner '%s' is not supported - %s", tunerName, reason)
 			continue
 		}
-		log.Debugf("Tuner parameters %+v", params)
+		zap.L().Sugar().Debugf("Tuner parameters %+v", params)
 		result := tuner.Tune()
 		if result.IsFailed() {
 			return result.Error()

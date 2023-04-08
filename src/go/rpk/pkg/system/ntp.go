@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type NtpQuery interface {
@@ -41,23 +41,23 @@ type ntpQuery struct {
 func (q *ntpQuery) IsNtpSynced() (bool, error) {
 	_, err := exec.LookPath("timedatectl")
 	if err != nil {
-		log.Debug(err)
+		zap.L().Sugar().Debug(err)
 	}
 	synced, err := q.checkWithTimedateCtl()
 	if err == nil {
 		return synced, nil
 	}
-	log.Debug(err)
+	zap.L().Sugar().Debug(err)
 
 	_, err = exec.LookPath("ntpstat")
 	if err != nil {
-		log.Debug(err)
+		zap.L().Sugar().Debug(err)
 	}
 	synced, err = q.checkWithNtpstat()
 	if err == nil {
 		return synced, nil
 	}
-	log.Debug(err)
+	zap.L().Sugar().Debug(err)
 
 	return false, errors.New("couldn't check NTP with timedatectl or ntpstat")
 }
@@ -69,7 +69,7 @@ func (q *ntpQuery) checkWithTimedateCtl() (bool, error) {
 	}
 	clockSyncedLinePattern := regexp.MustCompile("^.* synchronized: (.*)$")
 	for _, outLine := range output {
-		log.Debugf("Parsing timedatectl output '%s'", outLine)
+		zap.L().Sugar().Debugf("Parsing timedatectl output '%s'", outLine)
 		matches := clockSyncedLinePattern.FindAllStringSubmatch(outLine, -1)
 		if matches != nil {
 			return matches[0][1] == "yes", nil
@@ -79,11 +79,11 @@ func (q *ntpQuery) checkWithTimedateCtl() (bool, error) {
 }
 
 func (q *ntpQuery) checkWithNtpstat() (bool, error) {
-	log.Debugf("Checking NTP sync with ntpstat")
+	zap.L().Sugar().Debugf("Checking NTP sync with ntpstat")
 	_, err := q.proc.RunWithSystemLdPath(q.timeout, "ntpstat")
 	// ntpstat exits with status other than 0 when NTP is not synced
 	if err != nil {
-		log.Debugf("ntpstat returned an error '%s'", err.Error())
+		zap.L().Sugar().Debugf("ntpstat returned an error '%s'", err.Error())
 		return false, err
 	}
 	return true, nil

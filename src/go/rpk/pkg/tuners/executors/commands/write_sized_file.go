@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"os"
 
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
@@ -37,7 +37,7 @@ func NewWriteSizedFileCmd(path string, sizeBytes int64) Command {
 }
 
 func (c *writeSizedFileCommand) Execute() error {
-	log.Debugf("Creating '%s' (%d B)", c.path, c.sizeBytes)
+	zap.L().Sugar().Debugf("Creating '%s' (%d B)", c.path, c.sizeBytes)
 
 	// the 'os' package needs to be used instead of 'afero', because the file
 	// handles returned by afero don't have a way to get their file descriptor

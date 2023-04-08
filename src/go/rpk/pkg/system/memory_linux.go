@@ -12,8 +12,8 @@ package system
 import (
 	"syscall"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 func getMemInfo(fs afero.Fs) (*MemInfo, error) {
@@ -31,7 +31,7 @@ func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 		//
 		// We do not need the cgroup memory limit, so this  error is
 		// non-fatal.
-		log.Debugf("Unable to query memory -- cgroups is likely not supported; err: %v", err)
+		zap.L().Sugar().Debugf("Unable to query memory -- cgroups is likely not supported; err: %v", err)
 	}
 	return &MemInfo{
 		MemTotal:  si.Totalram * uint64(si.Unit),

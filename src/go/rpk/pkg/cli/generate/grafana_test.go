@@ -19,13 +19,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPrometheusURLFlagDeprecation(t *testing.T) {
-	var out bytes.Buffer
-	logrus.SetOutput(&out)
 	cmd := newGrafanaDashboardCmd()
 	cmd.SetArgs([]string{
 		"--prometheus-url", "localhost:8888/metrics",

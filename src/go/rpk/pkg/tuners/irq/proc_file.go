@@ -15,8 +15,8 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type ProcFile interface {
@@ -34,7 +34,7 @@ type procFile struct {
 }
 
 func (procFile *procFile) GetIRQProcFileLinesMap() (map[int]string, error) {
-	log.Debugf("Reading '/proc/interrupts' file...")
+	zap.L().Sugar().Debugf("Reading '/proc/interrupts' file...")
 	lines, err := utils.ReadFileLines(procFile.fs, "/proc/interrupts")
 	if err != nil {
 		return nil, err
@@ -50,9 +50,6 @@ func (procFile *procFile) GetIRQProcFileLinesMap() (map[int]string, error) {
 			return nil, err
 		}
 		linesByIRQ[irq] = line
-	}
-	for irq, line := range linesByIRQ {
-		log.Tracef("IRQ -> /proc/interrupts %d - %s", irq, line)
 	}
 	return linesByIRQ, nil
 }

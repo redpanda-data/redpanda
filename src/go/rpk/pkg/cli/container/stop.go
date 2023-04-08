@@ -11,11 +11,11 @@ package container
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -41,26 +41,26 @@ func stopCluster(c common.Client) error {
 		return err
 	}
 	if len(nodes) == 0 {
-		log.Info(
-			`No cluster available.
-You may start a new cluster with 'rpk container start'`,
-		)
+		fmt.Print("No cluster available.\nYou may start a new cluster with 'rpk container start'\n")
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(len(nodes))
 	for _, node := range nodes {
+		var mu sync.Mutex
+		printf := func(msg string, args ...interface{}) {
+			mu.Lock()
+			defer mu.Unlock()
+			fmt.Printf(msg+"\n", args...)
+		}
 		go func(state *common.NodeState) {
 			defer wg.Done()
 			// If the node was stopped already, do nothing.
 			if !state.Running {
-				log.Infof(
-					"Node %d was stopped already.",
-					state.ID,
-				)
+				printf("Node %d was stopped already.", state.ID)
 				return
 			}
-			log.Infof("Stopping node %d", state.ID)
+			printf("Stopping node %d", state.ID)
 			ctx := context.Background()
 			// Redpanda sometimes takes a while to stop, so 20
 			// seconds is a safe estimate
@@ -73,8 +73,7 @@ You may start a new cluster with 'rpk container start'`,
 				},
 			)
 			if err != nil {
-				log.Errorf("Couldn't stop node %d", state.ID)
-				log.Debug(err)
+				printf("Unable to stop node %d: %v", state.ID, err)
 				return
 			}
 		}(node)

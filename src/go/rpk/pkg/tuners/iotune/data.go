@@ -14,7 +14,6 @@ import (
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
-	log "github.com/sirupsen/logrus"
 )
 
 type IoProperties struct {
@@ -52,7 +51,7 @@ func DataForVendor(
 	if err != nil {
 		return nil, fmt.Errorf("Couldn't get the current VM type for vendor '%s'", v.Name())
 	}
-	log.Infof("Detected vendor '%s' and VM type '%s'", v.Name(), vmType)
+	fmt.Printf("Detected vendor '%s' and VM type '%s'\n", v.Name(), vmType)
 	return DataFor(mountpoint, v.Name(), vmType, "default")
 }
 

@@ -28,8 +28,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/sethgrid/pester"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 // ErrNoAdminAPILeader happen when there's no leader for the Admin API.
@@ -151,7 +151,7 @@ func newAdminAPI(
 	client.LogHook = func(e pester.ErrEntry) {
 		// Only log from here when retrying: a final error propagates to caller
 		if e.Err != nil && e.Retry <= client.MaxRetries {
-			log.Infof("Retrying %s for error: %s", e.Verb, e.Err.Error())
+			fmt.Printf("Retrying %s for error: %s\n", e.Verb, e.Err.Error())
 		}
 	}
 
@@ -226,7 +226,7 @@ func (a *AdminAPI) mapBrokerIDsToURLs(ctx context.Context) {
 		return nil
 	})
 	if err != nil {
-		log.Warn(fmt.Sprintf("failed to map brokerID to URL for 1 or more brokers: %v", err))
+		zap.L().Sugar().Warn(fmt.Sprintf("failed to map brokerID to URL for 1 or more brokers: %v", err))
 	}
 }
 
@@ -264,7 +264,7 @@ func (a *AdminAPI) sendAny(ctx context.Context, method, path string, body, into 
 
 		// If err is set, we are retrying after a failure on the previous node
 		if err != nil {
-			log.Infof("Request error, trying another node: %s", err.Error())
+			fmt.Printf("Request error, trying another node: %s\n", err.Error())
 			var httpErr *HTTPResponseError
 			if errors.As(err, &httpErr) {
 				status := httpErr.Response.StatusCode

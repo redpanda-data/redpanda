@@ -13,7 +13,7 @@ import (
 	"errors"
 	"fmt"
 
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 func NewCheckedTunable(
@@ -42,14 +42,14 @@ func (t *checkedTunable) CheckIfSupported() (supported bool, reason string) {
 }
 
 func (t *checkedTunable) Tune() TuneResult {
-	log.Debugf("Checking '%s'", t.checker.GetDesc())
+	zap.L().Sugar().Debugf("Checking '%s'", t.checker.GetDesc())
 	result := t.checker.Check()
 	if result.Err != nil {
 		return NewTuneError(result.Err)
 	}
 
 	if result.IsOk {
-		log.Debugf("Check '%s' passed, skipping tuning", t.checker.GetDesc())
+		zap.L().Sugar().Debugf("Check '%s' passed, skipping tuning", t.checker.GetDesc())
 		return NewTuneResult(false)
 	}
 

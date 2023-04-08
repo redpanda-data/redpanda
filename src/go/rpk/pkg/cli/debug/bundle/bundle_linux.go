@@ -41,10 +41,10 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/system/syslog"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v3"
 )
@@ -154,10 +154,10 @@ func executeBundle(ctx context.Context, bp bundleParams) error {
 		if err != nil {
 			errs = multierror.Append(errs, err)
 		}
-		log.Info(errs.Error())
+		fmt.Println(errs.Error())
 	}
 
-	log.Infof("Debug bundle saved to '%s'", bp.path)
+	fmt.Printf("Debug bundle saved to '%s'\n", bp.path)
 	return nil
 }
 
@@ -292,7 +292,7 @@ func writeCommandOutputToZipLimit(
 		if !strings.Contains(err.Error(), "broken pipe") {
 			return fmt.Errorf("couldn't save '%s': %w", filename, err)
 		}
-		log.Debugf(
+		zap.L().Sugar().Debugf(
 			"Got '%v' while running '%s'. This is probably due to the"+
 				" command's output exceeding its limit in bytes.",
 			err,
@@ -340,7 +340,7 @@ func stringifyKadmErr(err error) []string {
 
 func saveKafkaMetadata(rootCtx context.Context, ps *stepParams, cl *kgo.Client) step {
 	return func() error {
-		log.Debug("Reading Kafka information")
+		zap.L().Sugar().Debug("Reading Kafka information")
 
 		ctx, cancel := context.WithTimeout(rootCtx, 10*time.Second)
 		defer cancel()
@@ -571,8 +571,8 @@ func saveNTPDrift(ps *stepParams) step {
 			retry.Delay(1*time.Second),
 			retry.LastErrorOnly(true),
 			retry.OnRetry(func(n uint, err error) {
-				log.Debugf("Couldn't retrieve NTP data from %s: %v", host, err)
-				log.Debugf("Retrying (%d retries left)", retries-n)
+				zap.L().Sugar().Debugf("Couldn't retrieve NTP data from %s: %v", host, err)
+				zap.L().Sugar().Debugf("Retrying (%d retries left)", retries-n)
 			}),
 		)
 

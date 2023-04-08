@@ -14,15 +14,15 @@ import (
 	"os"
 	"path/filepath"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
 func NewDevice(dev uint64, fs afero.Fs) (BlockDevice, error) {
 	maj := unix.Major(dev)
 	min := unix.Minor(dev)
-	log.Debugf("Creating block device from number {%d, %d}", maj, min)
+	zap.L().Sugar().Debugf("Creating block device from number {%d, %d}", maj, min)
 	syspath, err := readSyspath(maj, min)
 	if err != nil {
 		return nil, err

@@ -25,9 +25,9 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/factory"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 type result struct {
@@ -160,7 +160,7 @@ func tune(
 			exit1 = exit1 || enabled && !supported && !(tunerName == "disk_write_cache" || tunerName == "clocksource")
 			continue
 		}
-		log.Debugf("Tuner parameters %+v", params)
+		zap.L().Sugar().Debugf("Tuner parameters %+v", params)
 		res := tuner.Tune()
 		includeErr = includeErr || res.IsFailed()
 		rebootRequired = rebootRequired || res.IsRebootRequired()

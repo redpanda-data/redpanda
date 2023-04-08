@@ -13,7 +13,6 @@
 package redpanda_test
 
 import (
-	"bytes"
 	"fmt"
 	"os/exec"
 	"strconv"
@@ -23,7 +22,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
@@ -78,14 +76,12 @@ func TestStopCommand(t *testing.T) {
 			err = conf.Write(fs)
 			require.NoError(t, err)
 
-			var out bytes.Buffer
 			p := new(config.Params)
 			c := redpanda.NewStopCommand(fs, p)
 			c.Flags().StringVar(&p.ConfigPath, "config", "", "this is done in root.go, but we need it here for the tests setting args")
 			args := append([]string{"--config", conf.FileLocation()}, tt.args...)
 			c.SetArgs(args)
 
-			logrus.SetOutput(&out)
 			err = c.Execute()
 			require.NoError(t, err)
 

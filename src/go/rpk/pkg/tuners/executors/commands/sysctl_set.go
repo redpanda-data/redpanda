@@ -14,7 +14,7 @@ import (
 	"fmt"
 
 	"github.com/lorenzosaino/go-sysctl"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 type sysctlSetCommand struct {
@@ -31,7 +31,7 @@ func NewSysctlSetCmd(key string, value string) Command {
 }
 
 func (c *sysctlSetCommand) Execute() error {
-	log.Debugf("Setting key '%s' to '%s' with systemctl", c.key, c.value)
+	zap.L().Sugar().Debugf("Setting key '%s' to '%s' with systemctl", c.key, c.value)
 	return sysctl.Set(c.key, c.value)
 }
 

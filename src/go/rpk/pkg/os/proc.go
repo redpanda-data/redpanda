@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type Proc interface {
@@ -93,7 +93,7 @@ func SystemLdPathEnv() []string {
 func run(
 	timeout time.Duration, command string, env []string, args ...string,
 ) ([]string, error) {
-	log.Debugf("Running command '%s' with arguments '%s'", command, args)
+	zap.L().Sugar().Debugf("Running command '%s' with arguments '%s'", command, args)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, command, args...)

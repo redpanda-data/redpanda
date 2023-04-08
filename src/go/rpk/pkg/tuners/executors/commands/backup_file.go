@@ -14,8 +14,8 @@ import (
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type backupFileCommand struct {
@@ -32,10 +32,10 @@ func NewBackupFileCmd(fs afero.Fs, path string) Command {
 }
 
 func (c *backupFileCommand) Execute() error {
-	log.Debugf("Creating backup of '%s'", c.path)
+	zap.L().Sugar().Debugf("Creating backup of '%s'", c.path)
 	bckFile, err := utils.BackupFile(c.fs, c.path)
 	if err == nil {
-		log.Debugf("Backup created '%s'", bckFile)
+		zap.L().Sugar().Debugf("Backup created '%s'", bckFile)
 	}
 	return err
 }

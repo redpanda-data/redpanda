@@ -26,7 +26,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 var (
@@ -197,10 +197,7 @@ func CreateNetwork(c Client) (string, error) {
 		}
 	}
 
-	log.Debugf(
-		"Docker network '%s' doesn't exist, creating.",
-		redpandaNetwork,
-	)
+	fmt.Printf("Creating network %s\n", redpandaNetwork)
 	resp, err := c.NetworkCreate(
 		ctx, redpandaNetwork, types.NetworkCreate{
 			Driver: "bridge",
@@ -219,7 +216,7 @@ func CreateNetwork(c Client) (string, error) {
 		return "", err
 	}
 	if resp.Warning != "" {
-		log.Debug(resp.Warning)
+		fmt.Printf("Network creation warning: %v\n", resp.Warning)
 	}
 	return resp.ID, nil
 }
@@ -367,7 +364,7 @@ func CreateNode(
 }
 
 func PullImage(c Client, image string) error {
-	log.Debugf("Pulling image: %s", image)
+	fmt.Printf("Pulling image: %s\n", image)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	res, err := c.ImagePull(ctx, image, types.ImagePullOptions{})
@@ -375,7 +372,7 @@ func PullImage(c Client, image string) error {
 		defer res.Close()
 		buf := bytes.Buffer{}
 		buf.ReadFrom(res)
-		log.Debug(buf.String())
+		zap.L().Sugar().Debug(buf.String())
 	}
 	if err != nil {
 		return err
@@ -448,13 +445,12 @@ func nodeIP(c Client, netID string, id uint) (string, error) {
 
 func WrapIfConnErr(err error) error {
 	if client.IsErrConnectionFailed(err) {
-		msg := `Couldn't connect to docker.
+		msg := `Unable to connect to docker.
 This can happen for a couple of reasons:
 - The Docker daemon isn't running.
-- You are running 'rpk container' as a user that can't execute Docker commands.
-- You haven't installed Docker. Please follow the instructions at https://docs.docker.com/engine/install/ to install it and then try again.
+- You are running 'rpk container' as a user that cannot execute Docker commands.
+- You have not installed Docker. Please follow the instructions at https://docs.docker.com/engine/install/ to install it and then try again.
 `
-		log.Debug(err)
 		return errors.New(msg)
 	}
 	return err
