@@ -15,11 +15,11 @@ import (
 	"net/http"
 	"time"
 
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 func IsAWSi3MetalInstance() bool {
-	log.Debug("Checking if we are running on i3.metal amazon instance type")
+	zap.L().Sugar().Debug("Checking if we are running on i3.metal amazon instance type")
 	timeout := 500 * time.Millisecond
 	client := http.Client{
 		Timeout: timeout,
@@ -31,22 +31,22 @@ func IsAWSi3MetalInstance() bool {
 		nil,
 	)
 	if err != nil {
-		log.Debugf("error creating the request: %v", err)
+		zap.L().Sugar().Debugf("error creating the request: %v", err)
 		return false
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Debug("Can not contact AWS meta-data API, not running in EC2")
+		zap.L().Sugar().Debug("Can not contact AWS meta-data API, not running in EC2")
 		return false
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	instanceType := string(body)
 	if err != nil {
-		log.Debug("Can not read AWS meta-data API response body")
+		zap.L().Sugar().Debug("Can not read AWS meta-data API response body")
 		return false
 	}
-	log.Debugf("Running on '%s' EC2 instance", instanceType)
+	zap.L().Sugar().Debugf("Running on '%s' EC2 instance", instanceType)
 
 	return instanceType == "i3.metal"
 }

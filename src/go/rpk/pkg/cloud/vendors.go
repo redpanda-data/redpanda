@@ -16,7 +16,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/aws"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/gcp"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cloud/vendor"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 func vendors() map[string]vendor.Vendor {
@@ -64,7 +64,7 @@ func availableVendorFrom(
 		if res.err == nil {
 			v = res.vendor
 		} else {
-			log.Debug(res.err)
+			zap.L().Sugar().Debug(res.err)
 		}
 		wg.Done()
 	}

@@ -13,14 +13,12 @@
 package redpanda
 
 import (
-	"bytes"
 	"os"
 	"testing"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/iotune"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
@@ -1657,8 +1655,6 @@ func TestStartCommand(t *testing.T) {
 			if tt.before != nil {
 				require.NoError(st, tt.before(fs))
 			}
-			var out bytes.Buffer
-			logrus.SetOutput(&out)
 			p := new(config.Params)
 			c := NewStartCommand(fs, p, launcher)
 			c.Flags().StringVar(&p.ConfigPath, "config", "", "this is done in root.go, but we need it here for the tests setting args")

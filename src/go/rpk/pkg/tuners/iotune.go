@@ -15,8 +15,8 @@ import (
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/iotune"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type ioTuner struct {
@@ -60,7 +60,7 @@ func (tuner *ioTuner) Tune() TuneResult {
 	}
 	output, err := ioTune.Run(args)
 	for _, outLine := range output {
-		log.Debug(outLine)
+		zap.L().Sugar().Debug(outLine)
 	}
 	if err != nil {
 		return NewTuneError(err)

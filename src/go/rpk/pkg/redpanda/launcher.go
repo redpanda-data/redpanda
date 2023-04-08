@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strings"
 
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 )
 
@@ -58,7 +57,7 @@ func (*launcher) Start(installDir string, args *RedpandaArgs) error {
 			rpEnv = append(rpEnv, ev)
 		}
 	}
-	log.Infof("Running:\n%s %s", binary, strings.Join(redpandaArgs, " "))
+	fmt.Printf("Running:\n%s %s\n", binary, strings.Join(redpandaArgs, " "))
 	return unix.Exec(binary, redpandaArgs, rpEnv)
 }
 

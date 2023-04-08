@@ -11,10 +11,11 @@ package container
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
 	"github.com/docker/docker/api/types"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/container/common"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -42,10 +43,7 @@ func purgeCluster(c common.Client) error {
 		return err
 	}
 	if len(nodes) == 0 {
-		log.Info(
-			`No nodes to remove.
-You may start a new local cluster with 'rpk container start'`,
-		)
+		fmt.Print("No nodes to remove.\nYou may start a new local cluster with 'rpk container start'\n")
 		return nil
 	}
 	err = stopCluster(c)
@@ -55,6 +53,12 @@ You may start a new local cluster with 'rpk container start'`,
 	grp, _ := errgroup.WithContext(context.Background())
 	for _, node := range nodes {
 		id := node.ID
+		var mu sync.Mutex
+		printf := func(msg string, args ...interface{}) {
+			mu.Lock()
+			defer mu.Unlock()
+			fmt.Printf(msg+"\n", args...)
+		}
 		grp.Go(func() error {
 			ctx, _ := common.DefaultCtx()
 			name := common.Name(id)
@@ -70,10 +74,10 @@ You may start a new local cluster with 'rpk container start'`,
 				if !c.IsErrNotFound(err) {
 					return err
 				}
-				log.Debug(err)
+				printf("Unable to remove container %s (node %d)", name, id, err)
+			} else {
+				printf("Removed container %s (node %d)", name, id)
 			}
-			log.Debugf("Removed node '%d'", id)
-			log.Debugf("Removed container '%s'", name)
 			return nil
 		})
 	}
@@ -85,6 +89,6 @@ You may start a new local cluster with 'rpk container start'`,
 	if err != nil {
 		return err
 	}
-	log.Info("Deleted cluster data.")
+	fmt.Println("Deleted cluster data.")
 	return nil
 }

@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"os"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 const defaultMode os.FileMode = 0o644
@@ -38,7 +38,7 @@ func NewWriteFileCmd(fs afero.Fs, path string, content string) Command {
 }
 
 func (c *writeFileCommand) Execute() error {
-	log.Debugf("Writing '%s' to file '%s'", c.content, c.path)
+	zap.L().Sugar().Debugf("Writing '%s' to file '%s'", c.content, c.path)
 	mode := c.mode
 	info, err := c.fs.Stat(c.path)
 	if err != nil {

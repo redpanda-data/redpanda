@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 func UnameAndDistro(timeout time.Duration) (string, error) {
@@ -26,10 +26,10 @@ func UnameAndDistro(timeout time.Duration) (string, error) {
 	p := os.NewProc()
 	ls, err := p.RunWithSystemLdPath(timeout, cmd, "-d", "-s")
 	if err != nil {
-		log.Debugf("%s failed", cmd)
+		zap.L().Sugar().Debugf("%s failed", cmd)
 	}
 	if len(ls) == 0 {
-		log.Debugf("%s didn't return any output", cmd)
+		zap.L().Sugar().Debugf("%s didn't return any output", cmd)
 	} else {
 		res += " " + ls[0]
 	}

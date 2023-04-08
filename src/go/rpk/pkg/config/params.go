@@ -114,7 +114,6 @@ type Params struct {
 
 	loggerOnce sync.Once
 	logger     *zap.Logger
-	loggerErr  error
 
 	// BACKCOMPAT FLAGS
 	//
@@ -359,31 +358,17 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 	}
 	c.addUnsetDefaults()
 
-	if _, err := p.Logger(); err != nil { // ensure our logger is loaded so MustLogger can be used
-		return nil, err
-	}
 	return c, nil
 }
 
-// LoadedLogger is like Logger, but panics on error. This can be used if you
-// are sure Load has been called, which internally sets the logger and returns
-// the logger error, if any.
-func (p *Params) LoadedLogger() *zap.Logger {
-	logger, err := p.Logger()
-	if err != nil {
-		panic(err)
-	}
-	return logger
-}
-
-// SugarLogger returns LoadedLogger().Sugar().
+// SugarLogger returns Logger().Sugar().
 func (p *Params) SugarLogger() *zap.SugaredLogger {
-	return p.LoadedLogger().Sugar()
+	return p.Logger().Sugar()
 }
 
-// Logger parses p.LogLevel and returns the corresponding zap logger or an
-// error.
-func (p *Params) Logger() (*zap.Logger, error) {
+// Logger parses p.LogLevel and returns the corresponding zap logger or
+// a NopLogger if the log level is invalid.
+func (p *Params) Logger() *zap.Logger {
 	p.loggerOnce.Do(func() {
 		// First we normalize the level. We support prefixes such
 		// that "w" means warn.
@@ -399,7 +384,7 @@ func (p *Params) Logger() (*zap.Logger, error) {
 			}
 		}
 		if !ok {
-			p.loggerErr = fmt.Errorf("invalid log level: %s", p.LogLevel)
+			p.logger = zap.NewNop()
 			return
 		}
 		var level zapcore.Level
@@ -469,9 +454,9 @@ func (p *Params) Logger() (*zap.Logger, error) {
 			enc.AppendString(colors[l])
 		}
 
-		p.logger, p.loggerErr = zcfg.Build()
+		p.logger, _ = zcfg.Build() // this configuration does not error
 	})
-	return p.logger, p.loggerErr
+	return p.logger
 }
 
 // isSameLoaded checks if the config object content is the same as the one

@@ -27,7 +27,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/twmb/franz-go/pkg/kadm"
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -133,40 +132,25 @@ func startCluster(
 	}
 	// If a cluster was restarted, there's nothing else to do.
 	if len(restarted) != 0 {
-		log.Info("\nFound an existing cluster:\n")
+		fmt.Print("Found an existing cluster:\n\n")
 		renderClusterInfo(c)
 		if len(restarted) != int(n) {
-			log.Infof(
-				"\nTo change the number of nodes, first purge" +
-					" the existing cluster:\n\n" +
-					"rpk container purge\n",
-			)
+			fmt.Print("\nTo change the number of nodes, first purge the existing cluster with\n'rpk container purge'.\n\n")
 		}
 		return nil
 	}
 
-	log.Debug("Checking for a local image.")
+	fmt.Println("Checking for a local image...")
 	present, checkErr := common.CheckIfImgPresent(c, image)
 	if checkErr != nil {
-		log.Debugf("Error trying to list local images: %v", err)
+		fmt.Printf("Error trying to list local images: %v\n", err)
 	}
 	if !present {
 		// If the image isn't present locally, try to pull it.
-		log.Info("Downloading latest version of Redpanda")
+		fmt.Println("Downloading latest version of redpanda")
 		err = common.PullImage(c, image)
 		if err != nil {
-			msg := "Couldn't pull image and a local one wasn't found either"
-			if c.IsErrConnectionFailed(err) {
-				log.Debug(err)
-				msg += ".\nPlease check your internet connection" +
-					" and try again."
-				return errors.New(msg)
-			}
-			return fmt.Errorf(
-				"%s: %v",
-				msg,
-				err,
-			)
+			return err
 		}
 	}
 
@@ -208,7 +192,7 @@ func startCluster(
 		return err
 	}
 
-	log.Info("Starting cluster")
+	fmt.Println("Starting cluster...")
 	err = startNode(
 		c,
 		seedState.ContainerID,
@@ -261,12 +245,6 @@ func startCluster(
 			if err != nil {
 				return err
 			}
-			log.Debugf(
-				"Created container with NodeID=%d, IP=%s, ID='%s",
-				id,
-				state.ContainerIP,
-				state.ContainerID,
-			)
 			err = startNode(
 				c,
 				state.ContainerID,
@@ -293,7 +271,7 @@ func startCluster(
 		return err
 	}
 
-	log.Infof("Cluster started!")
+	fmt.Println("Cluster started!")
 	dockerNodes, err := renderClusterInfo(c)
 	if err != nil {
 		return err
@@ -388,17 +366,13 @@ func checkBrokers(nodes []node) func() error {
 }
 
 func waitForCluster(check func() error, retries uint) error {
-	log.Info("Waiting for the cluster to be ready...")
+	fmt.Printf("Waiting for the cluster to be ready...\n\n")
 	return retry.Do(
 		check,
 		retry.Attempts(retries),
 		retry.DelayType(retry.FixedDelay),
 		retry.Delay(1*time.Second),
 		retry.LastErrorOnly(true),
-		retry.OnRetry(func(n uint, err error) {
-			log.Debugf("Cluster didn't stabilize: %v", err)
-			log.Debugf("Retrying (%d retries left)", retries-n)
-		}),
 	)
 }
 
@@ -408,7 +382,7 @@ func renderClusterInfo(c common.Client) ([]*common.NodeState, error) {
 		return nil, err
 	}
 	if len(nodes) == 0 {
-		log.Info("No Redpanda nodes detected - use `rpk container start` or check `docker ps` if you expected nodes")
+		fmt.Println("No Redpanda nodes detected - use `rpk container start` or check `docker ps` if you expected nodes")
 		return nil, nil
 	}
 
@@ -464,7 +438,7 @@ broker addresses:
 	rpk cluster info
 `
 	b := strings.Join(brokers, ",")
-	log.Infof(m, b, b)
+	fmt.Printf(m, b, b)
 }
 
 func nodeAddr(port uint) string {

@@ -13,8 +13,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/disk"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type disksIRQsTuner struct {
@@ -46,7 +46,7 @@ func NewDiskIRQTuner(
 	numberOfCpus int,
 	executor executors.Executor,
 ) Tunable {
-	log.Debugf("Creating disk IRQs tuner with mode '%s', cpu mask '%s', directories '%s' and devices '%s'",
+	zap.L().Sugar().Debugf("Creating disk IRQs tuner with mode '%s', cpu mask '%s', directories '%s' and devices '%s'",
 		mode, cpuMask, dirs, devices)
 
 	return &disksIRQsTuner{
@@ -170,7 +170,7 @@ func GetExpectedIRQsDistribution(
 	cpuMask string,
 	cpuMasks irq.CPUMasks,
 ) (map[int]string, error) {
-	log.Debugf("Getting %v IRQs distribution with mode %s and CPU mask %s",
+	zap.L().Sugar().Debugf("Getting %v IRQs distribution with mode %s and CPU mask %s",
 		devices,
 		mode, cpuMask)
 	finalCPUMask, err := cpuMasks.BaseCPUMask(cpuMask)
@@ -220,7 +220,7 @@ func GetExpectedIRQsDistribution(
 			devicesIRQsDistribution[IRQ] = mask
 		}
 	}
-	log.Debugf("Calculated IRQs distribution %v", devicesIRQsDistribution)
+	zap.L().Sugar().Debugf("Calculated IRQs distribution %v", devicesIRQsDistribution)
 	return devicesIRQsDistribution, nil
 }
 
@@ -229,7 +229,7 @@ func GetDefaultMode(
 	diskInfoByType map[disk.DiskType]disk.DevicesIRQs,
 	cpuMasks irq.CPUMasks,
 ) (irq.Mode, error) {
-	log.Debug("Calculating default mode for Disk IRQs")
+	zap.L().Sugar().Debug("Calculating default mode for Disk IRQs")
 	nonNvmeDiskIRQs := diskInfoByType[disk.NonNvme]
 	if len(nonNvmeDiskIRQs.Devices) == 0 {
 		return irq.Mq, nil
@@ -242,7 +242,7 @@ func GetDefaultMode(
 	if err != nil {
 		return "", err
 	}
-	log.Debugf("Considering '%d' cores and '%d' PUs", numOfCores, numOfPUs)
+	zap.L().Sugar().Debugf("Considering '%d' cores and '%d' PUs", numOfCores, numOfPUs)
 	if numOfPUs <= 4 {
 		return irq.Mq, nil
 	} else if numOfCores <= 4 {

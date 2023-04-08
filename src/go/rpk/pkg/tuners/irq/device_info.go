@@ -17,8 +17,8 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type DeviceInfo interface {
@@ -40,11 +40,11 @@ type deviceInfo struct {
 func (deviceInfo *deviceInfo) GetIRQs(
 	irqConfigDir string, xenDeviceName string,
 ) ([]int, error) {
-	log.Debugf("Reading IRQs of '%s', with deviceInfo name pattern '%s'", irqConfigDir, xenDeviceName)
+	zap.L().Sugar().Debugf("Reading IRQs of '%s', with deviceInfo name pattern '%s'", irqConfigDir, xenDeviceName)
 	msiIRQsDirName := path.Join(irqConfigDir, "msi_irqs")
 	var irqs []int
 	if exists, _ := afero.Exists(deviceInfo.fs, msiIRQsDirName); exists {
-		log.Debugf("Device '%s' uses MSI IRQs", irqConfigDir)
+		zap.L().Sugar().Debugf("Device '%s' uses MSI IRQs", irqConfigDir)
 		files := utils.ListFilesInPath(deviceInfo.fs, msiIRQsDirName)
 		for _, file := range files {
 			irq, err := strconv.Atoi(file)
@@ -56,7 +56,7 @@ func (deviceInfo *deviceInfo) GetIRQs(
 	} else {
 		irqFileName := path.Join(irqConfigDir, "irq")
 		if exists, _ := afero.Exists(deviceInfo.fs, irqFileName); exists {
-			log.Debugf("Device '%s' uses INT#x IRQs", irqConfigDir)
+			zap.L().Sugar().Debugf("Device '%s' uses INT#x IRQs", irqConfigDir)
 			lines, err := utils.ReadFileLines(deviceInfo.fs, irqFileName)
 			if err != nil {
 				return nil, err
@@ -83,7 +83,7 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				return nil, err
 			}
 			if strings.Contains(modAlias, "virtio") {
-				log.Debugf("Device '%s' is a virtio device type", irqConfigDir)
+				zap.L().Sugar().Debugf("Device '%s' is a virtio device type", irqConfigDir)
 				fileNames := utils.ListFilesInPath(deviceInfo.fs, path.Join(irqConfigDir, "driver"))
 				for _, name := range fileNames {
 					if strings.Contains(name, "virtio") {
@@ -93,13 +93,13 @@ func (deviceInfo *deviceInfo) GetIRQs(
 				}
 			} else {
 				if strings.Contains(modAlias, "xen:") {
-					log.Debugf("Reading '%s' device IRQs from /proc/interrupts", irqConfigDir)
+					zap.L().Sugar().Debugf("Reading '%s' device IRQs from /proc/interrupts", irqConfigDir)
 					irqs = deviceInfo.getIRQsForLinesMatching(xenDeviceName, irqProcFileLines)
 				}
 			}
 		}
 	}
-	log.Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
+	zap.L().Sugar().Debugf("DeviceInfo '%s' IRQs '%v'", irqConfigDir, irqs)
 	return irqs, nil
 }
 

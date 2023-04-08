@@ -22,9 +22,9 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 func NewStopCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -52,12 +52,12 @@ func executeStop(fs afero.Fs, cfg *config.Config, timeout time.Duration) error {
 	pidFile := cfg.PIDFile()
 	isLocked, err := os.CheckLocked(pidFile)
 	if err != nil {
-		log.Debugf("error checking if the PID file is locked: %v", err)
+		zap.L().Sugar().Debugf("error checking if the PID file is locked: %v", err)
 	}
 	if !isLocked {
 		// If the file isn't locked or doesn't exist, that means
 		// redpanda isn't running, so there's nothing to do.
-		log.Debugf(
+		zap.L().Sugar().Debugf(
 			"'%s' isn't locked, which means redpanda isn't running. Nothing to do.",
 			pidFile,
 		)
@@ -82,7 +82,7 @@ func signalAndWait(pid int, timeout time.Duration) error {
 		}
 		signal := signals[0]
 		pending := signals[1:]
-		log.Debugf(
+		zap.L().Sugar().Debugf(
 			"Sending %s to redpanda (PID %d).\n",
 			signal,
 			pid,
@@ -120,7 +120,7 @@ func poll(pid int, stop <-chan bool, stoppedRunning chan<- bool) {
 		default:
 			isRunning, err := os.IsRunningPID(afero.NewOsFs(), pid)
 			if err != nil {
-				log.Error(err)
+				zap.L().Sugar().Error(err)
 			} else if !isRunning {
 				stoppedRunning <- true
 				return

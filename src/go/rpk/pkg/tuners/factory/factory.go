@@ -30,8 +30,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 var allTuners = map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
@@ -328,8 +328,8 @@ func FillTunerParamsWithValuesFromConfig(
 		return err
 	}
 	params.Nics = nics
-	log.Infof("Redpanda uses '%v' NICs", params.Nics)
-	log.Infof("Redpanda data directory '%s'", conf.Redpanda.Directory)
+	zap.L().Sugar().Debugf("Redpanda uses '%v' NICs", params.Nics)
+	zap.L().Sugar().Debugf("Redpanda data directory '%s'", conf.Redpanda.Directory)
 	params.Directories = []string{conf.Redpanda.Directory}
 	return nil
 }

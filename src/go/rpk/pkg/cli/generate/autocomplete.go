@@ -12,8 +12,8 @@ package generate
 import (
 	"os"
 
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 func newShellCompletionCommand() *cobra.Command {
@@ -78,7 +78,7 @@ To enable autocompletion in any fish session, run:
 			case "fish":
 				cmd.Root().GenFishCompletion(os.Stdout, true)
 			default:
-				log.Fatalf("unrecognized shell %s", shell)
+				zap.L().Sugar().Fatalf("unrecognized shell %s", shell)
 			}
 		},
 	}

@@ -90,11 +90,7 @@ func NewFranzClient(fs afero.Fs, p *config.Params, cfg *config.Config, extraOpts
 	if tc != nil {
 		opts = append(opts, kgo.DialTLSConfig(tc))
 	}
-	logger, err := p.Logger()
-	if err != nil {
-		return nil, err
-	}
-	opts = append(opts, kgo.WithLogger(kzap.New(logger)))
+	opts = append(opts, kgo.WithLogger(kzap.New(p.Logger())))
 	opts = append(opts, extraOpts...)
 
 	return kgo.NewClient(opts...)

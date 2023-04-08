@@ -18,9 +18,9 @@ import (
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
 )
 
 func newInstallCommand(fs afero.Fs) *cobra.Command {
@@ -65,7 +65,7 @@ If --dir is not present, rpk will create $HOME/.local/bin if it does not exist.
 				// direct download path.
 				body, err = tryDirectDownload(cmd.Context(), name, version)
 				if err != nil {
-					log.Debugf("unable to download: %v", err)
+					zap.L().Sugar().Debugf("unable to download: %v", err)
 				}
 			}
 			if body == nil {
