@@ -26,7 +26,7 @@ public:
 
 public:
     using request_predicate
-      = ss::noncopyable_function<bool(ss::httpd::request)>;
+      = ss::noncopyable_function<bool(const ss::httpd::request&)>;
 
     using predicates = std::vector<request_predicate>;
 
@@ -46,17 +46,17 @@ public:
     void listen();
 
     /// Access all http requests ordered by time
-    const std::vector<ss::httpd::request>& get_requests() const;
+    const std::vector<http_test_utils::request_info>& get_requests() const;
 
     /// Get the latest request to a particular URL
-    std::optional<std::reference_wrapper<const ss::httpd::request>>
+    std::optional<std::reference_wrapper<const http_test_utils::request_info>>
     get_latest_request(const ss::sstring& url) const;
 
     /// Get the number of requests to a particular URL
     size_t get_request_count(const ss::sstring& url) const;
 
     /// Access all http requests ordered by target url
-    const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
+    const std::multimap<ss::sstring, http_test_utils::request_info>& get_targets() const;
 
     /// Starting point for URL registration fluent API
     /// Example usage:
@@ -89,7 +89,7 @@ public:
         template<typename T>
         bool operator()(T&& url) {
             auto found = std::find_if(
-              _begin, _end, [&url](const auto& u) { return u._url == url; });
+              _begin, _end, [&url](const auto& u) { return u.url == url; });
             if (found == _end) {
                 return false;
             }
@@ -108,7 +108,7 @@ public:
         return (... && s(std::forward<Urls>(urls)));
     }
 
-    http_test_utils::response lookup(ss::httpd::const_req& req) const {
+    http_test_utils::response lookup(const http_test_utils::request_info& req) const {
         return _urls.lookup(req);
     }
 
@@ -136,9 +136,9 @@ private:
 
     std::unique_ptr<ss::httpd::handler_base> _handler;
     /// Contains saved requests
-    std::vector<ss::httpd::request> _requests;
+    std::vector<http_test_utils::request_info> _requests;
     /// Contains all accessed target urls
-    std::multimap<ss::sstring, ss::httpd::request> _targets;
+    std::multimap<ss::sstring, http_test_utils::request_info> _targets;
 
     http_test_utils::registered_urls _urls;
     predicates _fail_requests_when;

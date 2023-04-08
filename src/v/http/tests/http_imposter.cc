@@ -56,12 +56,12 @@ void http_imposter_fixture::start_request_masking(
     _masking_active = {canned_response, duration, ss::lowres_clock::now()};
 }
 
-const std::vector<ss::httpd::request>&
+const std::vector<http_test_utils::request_info>&
 http_imposter_fixture::get_requests() const {
     return _requests;
 }
 
-std::optional<std::reference_wrapper<const ss::httpd::request>>
+std::optional<std::reference_wrapper<const http_test_utils::request_info>>
 http_imposter_fixture::get_latest_request(const ss::sstring& url) const {
     auto i = _targets.upper_bound(url);
     if (i == _targets.begin()) {
@@ -78,7 +78,7 @@ size_t http_imposter_fixture::get_request_count(const ss::sstring& url) const {
     return len;
 }
 
-const std::multimap<ss::sstring, ss::httpd::request>&
+const std::multimap<ss::sstring, http_test_utils::request_info>&
 http_imposter_fixture::get_targets() const {
     return _targets;
 }
@@ -110,8 +110,9 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
               }
           }
 
-          _requests.push_back(req);
-          _targets.insert(std::make_pair(req._url, req));
+          http_test_utils::request_info ri(req);
+          _requests.push_back(ri);
+          _targets.insert(std::make_pair(ri.url, ri));
 
           const auto& fp = _fail_requests_when;
           for (size_t i = 0; i < fp.size(); ++i) {
@@ -148,8 +149,8 @@ void http_imposter_fixture::set_routes(ss::httpd::routes& r) {
               repl.set_status(reply::status_type::no_content);
               return "";
           } else {
-              ss::httpd::request lookup_r{req};
-              lookup_r._url = remove_query_params(req._url);
+              auto lookup_r = ri;
+              lookup_r.url = remove_query_params(req._url);
 
               auto response = lookup(lookup_r);
               repl.set_status(response.status);
@@ -164,7 +165,7 @@ bool http_imposter_fixture::has_call(std::string_view url) const {
     return std::find_if(
              _requests.cbegin(),
              _requests.cend(),
-             [&url](const auto& r) { return r._url == url; })
+             [&url](const auto& r) { return r.url == url; })
            != _requests.cend();
 }
 
@@ -186,8 +187,8 @@ void http_imposter_fixture::log_requests() const {
           http_imposter_log.info,
           "{}: {} - {} ({} bytes)",
           _id,
-          req._method,
-          req._url,
+          req.method,
+          req.url,
           req.content_length);
     }
 }

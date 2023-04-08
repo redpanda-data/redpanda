@@ -186,7 +186,7 @@ struct reupload_fixture : public archiver_fixture {
         BOOST_REQUIRE(req_opt.has_value());
         auto req = req_opt.value().get();
 
-        BOOST_REQUIRE_EQUAL(req._method, "PUT");
+        BOOST_REQUIRE_EQUAL(req.method, "PUT");
         verify_manifest_content(req.content);
         cloud_storage::partition_manifest manifest = load_manifest(req.content);
         BOOST_REQUIRE(manifest == partition.archival_meta_stm()->manifest());
@@ -203,7 +203,7 @@ struct reupload_fixture : public archiver_fixture {
         auto it = get_targets().find("/" + s_url().string());
         BOOST_REQUIRE(it != get_targets().end());
         const auto& [url, req] = *it;
-        BOOST_REQUIRE_EQUAL(req._method, method);
+        BOOST_REQUIRE_EQUAL(req.method, method);
         verify_segment(manifest_ntp, s_name, req.content);
     }
 
@@ -218,7 +218,7 @@ struct reupload_fixture : public archiver_fixture {
         auto it = get_targets().find("/" + s_url().string());
         BOOST_REQUIRE(it != get_targets().end());
         const auto& [url, req] = *it;
-        BOOST_REQUIRE_EQUAL(req._method, method);
+        BOOST_REQUIRE_EQUAL(req.method, method);
         std::vector<segment_name> segment_names;
         segment_names.reserve(names.size());
         std::transform(

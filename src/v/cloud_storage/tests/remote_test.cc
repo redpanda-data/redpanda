@@ -513,10 +513,10 @@ FIXTURE_TEST(test_list_bucket_with_prefix, remote_fixture) {
     BOOST_REQUIRE_EQUAL(items[0].key, "a");
     BOOST_REQUIRE_EQUAL(items[1].key, "b");
     auto request = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(request._method, "GET");
-    BOOST_REQUIRE_EQUAL(request.get_query_param("list-type"), "2");
-    BOOST_REQUIRE_EQUAL(request.get_query_param("prefix"), "x");
-    BOOST_REQUIRE_EQUAL(request.get_header("prefix"), "x");
+    BOOST_REQUIRE_EQUAL(request.method, "GET");
+    BOOST_REQUIRE_EQUAL(request.q_list_type, "2");
+    BOOST_REQUIRE_EQUAL(request.q_prefix, "x");
+    BOOST_REQUIRE_EQUAL(request.h_prefix, "x");
 }
 
 FIXTURE_TEST(test_list_bucket_with_filter, remote_fixture) {
@@ -552,7 +552,7 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
 
     auto request = get_requests()[0];
-    BOOST_REQUIRE(request._method == "PUT");
+    BOOST_REQUIRE(request.method == "PUT");
     BOOST_REQUIRE(request.content == "p");
 }
 
@@ -568,9 +568,9 @@ FIXTURE_TEST(test_delete_objects, remote_fixture) {
     auto result = remote.local().delete_objects(bucket, to_delete, fib).get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
     auto request = get_requests()[0];
-    BOOST_REQUIRE_EQUAL(request._method, "POST");
-    BOOST_REQUIRE_EQUAL(request._url, "/?delete");
-    BOOST_REQUIRE(request.query_parameters.contains("delete"));
+    BOOST_REQUIRE_EQUAL(request.method, "POST");
+    BOOST_REQUIRE_EQUAL(request.url, "/?delete");
+    BOOST_REQUIRE(request.has_q_delete);
 }
 
 FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
@@ -600,13 +600,13 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
     auto first_delete = get_requests()[2];
 
     std::unordered_set<ss::sstring> expected_urls{"/p", "/q"};
-    BOOST_REQUIRE_EQUAL(first_delete._method, "DELETE");
-    BOOST_REQUIRE(expected_urls.contains(first_delete._url));
+    BOOST_REQUIRE_EQUAL(first_delete.method, "DELETE");
+    BOOST_REQUIRE(expected_urls.contains(first_delete.url));
 
-    expected_urls.erase(first_delete._url);
+    expected_urls.erase(first_delete.url);
     auto second_delete = get_requests()[3];
-    BOOST_REQUIRE_EQUAL(second_delete._method, "DELETE");
-    BOOST_REQUIRE(expected_urls.contains(second_delete._url));
+    BOOST_REQUIRE_EQUAL(second_delete.method, "DELETE");
+    BOOST_REQUIRE(expected_urls.contains(second_delete.url));
 }
 
 FIXTURE_TEST(
