@@ -149,10 +149,12 @@ ss::future<> recovery_stm::do_recover(ss::io_priority_class iopc) {
         co_return;
     }
 
-    co_await replicate(
-      std::move(*reader),
-      should_flush(follower_committed_match_index),
-      std::move(read_memory_units));
+    auto flush = should_flush(follower_committed_match_index);
+    if (flush == append_entries_request::flush_after_append::yes) {
+        _recovered_bytes_since_flush = 0;
+    }
+
+    co_await replicate(std::move(*reader), flush, std::move(read_memory_units));
 
     meta = get_follower_meta();
 }
@@ -169,6 +171,8 @@ bool recovery_stm::state_changed() {
 
 append_entries_request::flush_after_append
 recovery_stm::should_flush(model::offset follower_committed_match_index) const {
+    constexpr size_t checkpoint_flush_size = 1_MiB;
+
     auto lstats = _ptr->_log.offsets();
 
     /**
@@ -190,9 +194,17 @@ recovery_stm::should_flush(model::offset follower_committed_match_index) const {
     const bool last_replicate_with_quorum = _ptr->_last_write_consistency_level
                                             == consistency_level::quorum_ack;
 
+    const bool is_last
+      = is_last_batch
+        && (follower_has_batches_to_commit || last_replicate_with_quorum);
+
+    // Flush every `checkpoint_flush_size` bytes recovered to ensure that the
+    // follower's stms can apply batches from the cache rather than disk.
+    const bool should_checkpoint_flush = _recovered_bytes_since_flush
+                                         >= checkpoint_flush_size;
+
     return append_entries_request::flush_after_append(
-      is_last_batch
-      && (follower_has_batches_to_commit || last_replicate_with_quorum));
+      is_last || should_checkpoint_flush);
 }
 
 ss::future<std::optional<model::record_batch_reader>>
@@ -240,14 +252,16 @@ recovery_stm::read_range_for_recovery(
         _base_batch_offset = gap_filled_batches.begin()->base_offset();
         _last_batch_offset = gap_filled_batches.back().last_offset();
 
+        const auto size = std::accumulate(
+          gap_filled_batches.cbegin(),
+          gap_filled_batches.cend(),
+          size_t{0},
+          [](size_t acc, const auto& batch) {
+              return acc + batch.size_bytes();
+          });
+        _recovered_bytes_since_flush += size;
+
         if (is_learner && _ptr->_recovery_throttle) {
-            const auto size = std::accumulate(
-              gap_filled_batches.cbegin(),
-              gap_filled_batches.cend(),
-              size_t{0},
-              [](size_t acc, const auto& batch) {
-                  return acc + batch.size_bytes();
-              });
             vlog(
               _ctxlog.trace,
               "Requesting throttle for {} bytes, available in throttle: {}",
