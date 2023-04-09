@@ -64,8 +64,36 @@ func ProdDefault() *Config {
 	return setProduction(cfg)
 }
 
+// FileOrDefaults return the configuration as read from the file or
+// the default configuration if there is no file loaded.
+func (c *Config) FileOrDefaults() *Config {
+	if c.File() != nil {
+		return c.File()
+	} else {
+		cfg := DevDefault()
+		// --config set but the file doesn't exist yet:
+		if c.fileLocation != "" {
+			cfg.fileLocation = c.fileLocation
+		}
+		return cfg // no file, write the defaults
+	}
+}
+
+///////////
+// MODES //
+///////////
+
+func AvailableModes() []string {
+	return []string{
+		ModeDev,
+		"development",
+		ModeProd,
+		"production",
+	}
+}
+
 func SetMode(mode string, conf *Config) (*Config, error) {
-	m, err := NormalizeMode(mode)
+	m, err := normalizeMode(mode)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +149,7 @@ func setProduction(conf *Config) *Config {
 	return conf
 }
 
-func NormalizeMode(mode string) (string, error) {
+func normalizeMode(mode string) (string, error) {
 	switch mode {
 	case "":
 		fallthrough
@@ -141,29 +169,9 @@ func NormalizeMode(mode string) (string, error) {
 	}
 }
 
-func AvailableModes() []string {
-	return []string{
-		ModeDev,
-		"development",
-		ModeProd,
-		"production",
-	}
-}
-
-// FileOrDefaults return the configuration as read from the file or
-// the default configuration if there is no file loaded.
-func (c *Config) FileOrDefaults() *Config {
-	if c.File() != nil {
-		return c.File()
-	} else {
-		cfg := DevDefault()
-		// --config set but the file doesn't exist yet:
-		if c.fileLocation != "" {
-			cfg.fileLocation = c.fileLocation
-		}
-		return cfg // no file, write the defaults
-	}
-}
+////////////////
+// VALIDATION // -- this is only used in redpanda_checkers, and could be stronger -- this is essentially just a config validation
+////////////////
 
 // Check checks if the redpanda and rpk configuration is valid before running
 // the tuners. See: redpanda_checkers.
