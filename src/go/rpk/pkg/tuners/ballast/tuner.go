@@ -24,20 +24,19 @@ import (
 )
 
 type ballastTuner struct {
-	conf     config.Config
+	filepath string
+	filesize string
 	executor executors.Executor
 }
 
-func NewBallastFileTuner(
-	conf config.Config, executor executors.Executor,
-) tuners.Tunable {
-	return &ballastTuner{conf, executor}
+func NewBallastFileTuner(filepath string, filesize string, executor executors.Executor) tuners.Tunable {
+	return &ballastTuner{filepath, filesize, executor}
 }
 
 func (t *ballastTuner) Tune() tuners.TuneResult {
 	path := config.DefaultBallastFilePath
-	if t.conf.Rpk.Tuners.BallastFilePath != "" {
-		path = t.conf.Rpk.Tuners.BallastFilePath
+	if t.filepath != "" {
+		path = t.filepath
 	}
 	abspath, err := filepath.Abs(path)
 	if err != nil {
@@ -49,8 +48,8 @@ func (t *ballastTuner) Tune() tuners.TuneResult {
 	}
 
 	size := config.DefaultBallastFileSize
-	if t.conf.Rpk.Tuners.BallastFileSize != "" {
-		size = t.conf.Rpk.Tuners.BallastFileSize
+	if t.filesize != "" {
+		size = t.filesize
 	}
 	sizeBytes, err := units.FromHumanSize(size)
 	if err != nil {

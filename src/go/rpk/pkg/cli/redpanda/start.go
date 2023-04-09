@@ -627,7 +627,7 @@ func tuneAll(
 	fs afero.Fs, cpuSet string, conf *config.Config, timeout time.Duration,
 ) error {
 	params := &factory.TunerParams{}
-	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, *conf, timeout)
+	tunerFactory := factory.NewDirectExecutorTunersFactory(fs, conf.Rpk.Tuners, timeout)
 	hw := hwloc.NewHwLocCmd(vos.NewProc(), timeout)
 	if cpuSet == "" {
 		cpuMask, err := hw.All()

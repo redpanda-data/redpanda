@@ -65,7 +65,7 @@ type TunersFactory interface {
 
 type tunersFactory struct {
 	fs                afero.Fs
-	conf              config.Config
+	conf              config.RpkNodeTuners
 	irqDeviceInfo     irq.DeviceInfo
 	cpuMasks          irq.CPUMasks
 	irqBalanceService irq.BalanceService
@@ -76,9 +76,7 @@ type tunersFactory struct {
 	executor          executors.Executor
 }
 
-func NewDirectExecutorTunersFactory(
-	fs afero.Fs, conf config.Config, timeout time.Duration,
-) TunersFactory {
+func NewDirectExecutorTunersFactory(fs afero.Fs, conf config.RpkNodeTuners, timeout time.Duration) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
@@ -86,9 +84,7 @@ func NewDirectExecutorTunersFactory(
 	return newTunersFactory(fs, conf, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
-func NewScriptRenderingTunersFactory(
-	fs afero.Fs, conf config.Config, out string, timeout time.Duration,
-) TunersFactory {
+func NewScriptRenderingTunersFactory(fs afero.Fs, conf config.RpkNodeTuners, out string, timeout time.Duration) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
@@ -98,7 +94,7 @@ func NewScriptRenderingTunersFactory(
 
 func newTunersFactory(
 	fs afero.Fs,
-	conf config.Config,
+	conf config.RpkNodeTuners,
 	irqProcFile irq.ProcFile,
 	proc os.Proc,
 	irqDeviceInfo irq.DeviceInfo,
@@ -283,18 +279,16 @@ func (factory *tunersFactory) newTHPTuner(_ *TunerParams) tuners.Tunable {
 }
 
 func (factory *tunersFactory) newCoredumpTuner(_ *TunerParams) tuners.Tunable {
-	return coredump.NewCoredumpTuner(factory.fs, factory.conf, factory.executor)
+	return coredump.NewCoredumpTuner(factory.fs, factory.conf.CoredumpDir, factory.executor)
 }
 
 func (factory *tunersFactory) newBallastFileTuner(
 	_ *TunerParams,
 ) tuners.Tunable {
-	return ballast.NewBallastFileTuner(factory.conf, factory.executor)
+	return ballast.NewBallastFileTuner(factory.conf.BallastFilePath, factory.conf.BallastFileSize, factory.executor)
 }
 
-func MergeTunerParamsConfig(
-	params *TunerParams, conf *config.Config,
-) (*TunerParams, error) {
+func MergeTunerParamsConfig(params *TunerParams, conf *config.Config) (*TunerParams, error) {
 	if len(params.Nics) == 0 {
 		addrs := []string{conf.Redpanda.RPCServer.Address}
 		if len(conf.Redpanda.KafkaAPI) > 0 {
@@ -314,9 +308,7 @@ func MergeTunerParamsConfig(
 	return params, nil
 }
 
-func FillTunerParamsWithValuesFromConfig(
-	params *TunerParams, conf *config.Config,
-) error {
+func FillTunerParamsWithValuesFromConfig(params *TunerParams, conf *config.Config) error {
 	addrs := []string{conf.Redpanda.RPCServer.Address}
 	if len(conf.Redpanda.KafkaAPI) > 0 {
 		addrs = append(addrs, conf.Redpanda.KafkaAPI[0].Address)
