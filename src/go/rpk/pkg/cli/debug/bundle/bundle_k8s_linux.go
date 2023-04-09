@@ -198,7 +198,7 @@ func getClusterDomain() string {
 func saveClusterAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, cfg *config.Config, adminAddresses []string) step {
 	return func() error {
 		allCfg := &config.Config{
-			Rpk: config.RpkConfig{
+			Rpk: config.RpkNodeConfig{
 				AdminAPI: config.RpkAdminAPI{
 					Addresses: adminAddresses,
 					TLS:       cfg.Rpk.AdminAPI.TLS,
@@ -243,7 +243,7 @@ func saveSingleAdminAPICalls(ctx context.Context, ps *stepParams, fs afero.Fs, c
 		for _, a := range adminAddresses {
 			a := a
 			c := &config.Config{
-				Rpk: config.RpkConfig{
+				Rpk: config.RpkNodeConfig{
 					AdminAPI: config.RpkAdminAPI{
 						Addresses: []string{a},
 						TLS:       cfg.Rpk.AdminAPI.TLS,

@@ -1060,7 +1060,7 @@ rpk:
 					},
 					SchemaRegistryReplicationFactor: func() *int { i := 3; return &i }(),
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					TLS:                  &TLS{KeyFile: "~/certs/key.pem"},
 					SASL:                 &SASL{User: "user", Password: "pass"},
 					AdditionalStartFlags: []string{"--overprovisioned"},
@@ -1379,7 +1379,7 @@ rpk:
 					},
 					SchemaRegistryReplicationFactor: func() *int { i := 3; return &i }(),
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					TLS:                  &TLS{KeyFile: "~/certs/key.pem"},
 					SASL:                 &SASL{User: "user", Password: "pass"},
 					AdditionalStartFlags: []string{"--overprovisioned"},

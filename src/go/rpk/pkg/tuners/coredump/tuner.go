@@ -71,7 +71,7 @@ func (*tuner) CheckIfSupported() (supported bool, reason string) {
 	return true, ""
 }
 
-func renderTemplate(templateStr string, conf config.RpkConfig) (string, error) {
+func renderTemplate(templateStr string, conf config.RpkNodeConfig) (string, error) {
 	tmpl, err := template.New("template").Parse(templateStr)
 	if err != nil {
 		return "", err

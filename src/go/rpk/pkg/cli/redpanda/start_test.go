@@ -1744,21 +1744,21 @@ func Test_buildRedpandaFlags(t *testing.T) {
 		{
 			name: "err when ioPropertiesFlag and wellKnownIo are set",
 			args: args{
-				conf:  &config.Config{Rpk: config.RpkConfig{WellKnownIo: "some io"}},
+				conf:  &config.Config{Rpk: config.RpkNodeConfig{WellKnownIo: "some io"}},
 				flags: map[string]string{ioPropertiesFlag: "{some:value}"},
 			},
 			expErr: true,
 		}, {
 			name: "err when ioPropertiesFileFlag and wellKnownIo are set",
 			args: args{
-				conf:  &config.Config{Rpk: config.RpkConfig{WellKnownIo: "some io"}},
+				conf:  &config.Config{Rpk: config.RpkNodeConfig{WellKnownIo: "some io"}},
 				flags: map[string]string{ioPropertiesFileFlag: ""},
 			},
 			expErr: true,
 		}, {
 			name: "setting the properties from the config file ",
 			args: args{
-				conf: &config.Config{Rpk: config.RpkConfig{
+				conf: &config.Config{Rpk: config.RpkNodeConfig{
 					Overprovisioned:      true,
 					EnableMemoryLocking:  false,
 					SMP:                  intPtr(2),
@@ -1775,7 +1775,7 @@ func Test_buildRedpandaFlags(t *testing.T) {
 			name: "err if flag and additional_start_flags are present",
 			args: args{
 				flags: map[string]string{maxIoRequestsFlag: "2"},
-				conf: &config.Config{Rpk: config.RpkConfig{
+				conf: &config.Config{Rpk: config.RpkNodeConfig{
 					AdditionalStartFlags: []string{"--max-io-requests=3"},
 				}},
 			},
