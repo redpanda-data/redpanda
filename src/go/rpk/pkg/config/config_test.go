@@ -135,9 +135,7 @@ func TestSet(t *testing.T) {
 			value:  "123991",
 			format: "json",
 			check: func(st *testing.T, c *Config) {
-				// json.unmarshal stores numbers as float 64.
-				// see https://pkg.go.dev/encoding/json#Unmarshal
-				require.Exactly(st, float64(123991), c.Redpanda.Other["timeout_test"])
+				require.Exactly(st, 123991, c.Redpanda.Other["timeout_test"])
 			},
 		},
 		{

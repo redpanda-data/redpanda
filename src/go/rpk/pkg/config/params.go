@@ -10,7 +10,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -879,16 +878,11 @@ func (c *Config) Set(key, value, format string) error {
 
 	var unmarshal func([]byte, interface{}) error
 	switch strings.ToLower(format) {
-	case "yaml", "single", "": // single is deprecated; it is kept for backcompat
+	case "yaml", "single", "", "json": // single is deprecated and kept for backcompat; json is a subset of yaml
 		if isOther {
 			value = fmt.Sprintf("%s: %s", finalTag, value)
 		}
 		unmarshal = yaml.Unmarshal
-	case "json":
-		if isOther {
-			value = fmt.Sprintf("{%q: %s}", finalTag, value)
-		}
-		unmarshal = json.Unmarshal
 	default:
 		return fmt.Errorf("unsupported format %s", format)
 	}
@@ -978,14 +972,19 @@ func getField(tags []string, parentRawTag string, v reflect.Value) (reflect.Valu
 //  2. if tag is not found _but_ the struct has "Other" field, return Other.
 //  3. Error if it can't find the given tag and "Other" field is unavailable.
 func getFieldByTag(tag string, v reflect.Value) (reflect.Value, reflect.Value, error) {
-	t := v.Type()
-	var other bool
+	var (
+		t       = v.Type()
+		other   bool
+		inlines []int
+	)
+
 	// Loop struct to get the field that match tag.
 	for i := 0; i < v.NumField(); i++ {
 		// rpk allows blindly setting unknown configuration parameters in
 		// Other map[string]interface{} fields
 		if t.Field(i).Name == "Other" {
 			other = true
+			continue
 		}
 		yt := t.Field(i).Tag.Get("yaml")
 
@@ -993,10 +992,23 @@ func getFieldByTag(tag string, v reflect.Value) (reflect.Value, reflect.Value, e
 		// when tag.Get("yaml") is called it will return
 		//   "my_tag,omitempty"
 		// so we only need first parameter of the string slice.
-		ft := strings.Split(yt, ",")[0]
+		pieces := strings.Split(yt, ",")
+		ft := pieces[0]
 
 		if ft == tag {
 			return v.Field(i), reflect.Value{}, nil
+		}
+		for _, p := range pieces {
+			if p == "inline" {
+				inlines = append(inlines, i)
+				break
+			}
+		}
+	}
+
+	for _, i := range inlines {
+		if v, _, err := getFieldByTag(tag, v.Field(i)); err == nil {
+			return v, reflect.Value{}, err
 		}
 	}
 
@@ -1052,11 +1064,7 @@ func tryValueAsSlice0(v reflect.Value, format string, err error) (reflect.Value,
 	}
 
 	switch format {
-	case "json":
-		if te := (*json.UnmarshalTypeError)(nil); !errors.As(err, &te) || te.Type.Kind() != reflect.Slice {
-			return v, false
-		}
-	case "yaml":
+	case "json", "yaml":
 		if !strings.Contains(err.Error(), "cannot unmarshal !!") {
 			return v, false
 		}
