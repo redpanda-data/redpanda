@@ -131,34 +131,34 @@ func IsTunerAvailable(tuner string) bool {
 	return allTuners[tuner] != nil
 }
 
-func IsTunerEnabled(tuner string, rpkConfig config.RpkNodeConfig) bool {
+func IsTunerEnabled(tuner string, tuneCfg config.RpkNodeTuners) bool {
 	switch tuner {
 	case "disk_irq":
-		return rpkConfig.TuneDiskIrq
+		return tuneCfg.TuneDiskIrq
 	case "disk_scheduler":
-		return rpkConfig.TuneDiskScheduler
+		return tuneCfg.TuneDiskScheduler
 	case "disk_nomerges":
-		return rpkConfig.TuneNomerges
+		return tuneCfg.TuneNomerges
 	case "disk_write_cache":
-		return rpkConfig.TuneDiskWriteCache
+		return tuneCfg.TuneDiskWriteCache
 	case "fstrim":
-		return rpkConfig.TuneFstrim
+		return tuneCfg.TuneFstrim
 	case "net":
-		return rpkConfig.TuneNetwork
+		return tuneCfg.TuneNetwork
 	case "cpu":
-		return rpkConfig.TuneCPU
+		return tuneCfg.TuneCPU
 	case "aio_events":
-		return rpkConfig.TuneAioEvents
+		return tuneCfg.TuneAioEvents
 	case "clocksource":
-		return rpkConfig.TuneClocksource
+		return tuneCfg.TuneClocksource
 	case "swappiness":
-		return rpkConfig.TuneSwappiness
+		return tuneCfg.TuneSwappiness
 	case "transparent_hugepages":
-		return rpkConfig.TuneTransparentHugePages
+		return tuneCfg.TuneTransparentHugePages
 	case "coredump":
-		return rpkConfig.TuneCoredump
+		return tuneCfg.TuneCoredump
 	case "ballast_file":
-		return rpkConfig.TuneBallastFile
+		return tuneCfg.TuneBallastFile
 	}
 	return false
 }

@@ -381,7 +381,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, 39, *conf.Redpanda.ID)
 			require.Exactly(st, expectedAdmin, conf.Redpanda.AdminAPI)
 			require.Exactly(st, expectedKafkaAPI, conf.Redpanda.KafkaAPI)
-			require.Exactly(st, true, conf.Rpk.TuneNetwork)
+			require.Exactly(st, true, conf.Rpk.Tuners.TuneNetwork)
 		},
 	}, {
 		name: "it should still save values passed through field-specific flags, and prioritize them if they overlap with values set with --set",
@@ -594,7 +594,7 @@ func TestStartCommand(t *testing.T) {
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			require.Exactly(st, "aws:i3xlarge:default", conf.Rpk.WellKnownIo)
+			require.Exactly(st, "aws:i3xlarge:default", conf.Rpk.Tuners.WellKnownIo)
 		},
 	}, {
 		name: "it should leave rpk.well_known_io untouched if --well-known-io" +
@@ -604,7 +604,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		before: func(fs afero.Fs) error {
 			conf, _ := new(config.Params).Load(fs)
-			conf.Rpk.WellKnownIo = "gcp:n2standard:ssd"
+			conf.Rpk.Tuners.WellKnownIo = "gcp:n2standard:ssd"
 			return conf.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
@@ -613,7 +613,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				"gcp:n2standard:ssd",
-				conf.Rpk.WellKnownIo,
+				conf.Rpk.Tuners.WellKnownIo,
 			)
 		},
 	}, {
@@ -629,7 +629,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, false, conf.Rpk.Overprovisioned)
+			require.Exactly(st, false, conf.Rpk.Tuners.Overprovisioned)
 		},
 	}, {
 		name: "it should leave rpk.overprovisioned untouched if --overprovisioned wasn't passed",
@@ -646,8 +646,8 @@ func TestStartCommand(t *testing.T) {
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
-				config.DevDefault().Rpk.Overprovisioned,
-				conf.Rpk.Overprovisioned,
+				config.DevDefault().Rpk.Tuners.Overprovisioned,
+				conf.Rpk.Tuners.Overprovisioned,
 			)
 		},
 	}, {
@@ -661,7 +661,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, true, conf.Rpk.EnableMemoryLocking)
+			require.Exactly(st, true, conf.Rpk.Tuners.EnableMemoryLocking)
 		},
 	}, {
 		name: "it should leave rpk.enable_memory_locking untouched if" +
@@ -671,7 +671,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		before: func(fs afero.Fs) error {
 			conf, _ := new(config.Params).Load(fs)
-			conf.Rpk.EnableMemoryLocking = true
+			conf.Rpk.Tuners.EnableMemoryLocking = true
 			return conf.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
@@ -681,7 +681,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				true,
-				conf.Rpk.EnableMemoryLocking,
+				conf.Rpk.Tuners.EnableMemoryLocking,
 			)
 		},
 	}, {
@@ -1744,14 +1744,14 @@ func Test_buildRedpandaFlags(t *testing.T) {
 		{
 			name: "err when ioPropertiesFlag and wellKnownIo are set",
 			args: args{
-				conf:  &config.Config{Rpk: config.RpkNodeConfig{WellKnownIo: "some io"}},
+				conf:  &config.Config{Rpk: config.RpkNodeConfig{Tuners: config.RpkNodeTuners{WellKnownIo: "some io"}}},
 				flags: map[string]string{ioPropertiesFlag: "{some:value}"},
 			},
 			expErr: true,
 		}, {
 			name: "err when ioPropertiesFileFlag and wellKnownIo are set",
 			args: args{
-				conf:  &config.Config{Rpk: config.RpkNodeConfig{WellKnownIo: "some io"}},
+				conf:  &config.Config{Rpk: config.RpkNodeConfig{Tuners: config.RpkNodeTuners{WellKnownIo: "some io"}}},
 				flags: map[string]string{ioPropertiesFileFlag: ""},
 			},
 			expErr: true,
@@ -1759,10 +1759,12 @@ func Test_buildRedpandaFlags(t *testing.T) {
 			name: "setting the properties from the config file ",
 			args: args{
 				conf: &config.Config{Rpk: config.RpkNodeConfig{
-					Overprovisioned:      true,
-					EnableMemoryLocking:  false,
-					SMP:                  intPtr(2),
 					AdditionalStartFlags: []string{"--abort-on-seastar-bad-alloc=true"},
+					Tuners: config.RpkNodeTuners{
+						Overprovisioned:     true,
+						EnableMemoryLocking: false,
+						SMP:                 intPtr(2),
+					},
 				}},
 			},
 			exp: map[string]string{

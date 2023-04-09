@@ -256,7 +256,9 @@ func TestRedpandaSampleFile(t *testing.T) {
 			DeveloperMode: true,
 		},
 		Rpk: RpkNodeConfig{
-			CoredumpDir: "/var/lib/redpanda/coredump",
+			Tuners: RpkNodeTuners{
+				CoredumpDir: "/var/lib/redpanda/coredump",
+			},
 		},
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},

@@ -36,8 +36,8 @@ func NewBallastFileTuner(
 
 func (t *ballastTuner) Tune() tuners.TuneResult {
 	path := config.DefaultBallastFilePath
-	if t.conf.Rpk.BallastFilePath != "" {
-		path = t.conf.Rpk.BallastFilePath
+	if t.conf.Rpk.Tuners.BallastFilePath != "" {
+		path = t.conf.Rpk.Tuners.BallastFilePath
 	}
 	abspath, err := filepath.Abs(path)
 	if err != nil {
@@ -49,8 +49,8 @@ func (t *ballastTuner) Tune() tuners.TuneResult {
 	}
 
 	size := config.DefaultBallastFileSize
-	if t.conf.Rpk.BallastFileSize != "" {
-		size = t.conf.Rpk.BallastFileSize
+	if t.conf.Rpk.Tuners.BallastFileSize != "" {
+		size = t.conf.Rpk.Tuners.BallastFileSize
 	}
 	sizeBytes, err := units.FromHumanSize(size)
 	if err != nil {
