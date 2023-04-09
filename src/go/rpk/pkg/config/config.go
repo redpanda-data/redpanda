@@ -50,8 +50,10 @@ func DevDefault() *Config {
 			DeveloperMode: true,
 		},
 		Rpk: RpkNodeConfig{
-			CoredumpDir:     "/var/lib/redpanda/coredump",
-			Overprovisioned: true,
+			Tuners: RpkNodeTuners{
+				CoredumpDir:     "/var/lib/redpanda/coredump",
+				Overprovisioned: true,
+			},
 		},
 		// enable pandaproxy and schema_registry by default
 		Pandaproxy:     &Pandaproxy{},
@@ -123,29 +125,31 @@ func setDevelopment(conf *Config) *Config {
 		KafkaAPI:             conf.Rpk.KafkaAPI,
 		AdminAPI:             conf.Rpk.AdminAPI,
 		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
-		CoredumpDir:          conf.Rpk.CoredumpDir,
-		SMP:                  DevDefault().Rpk.SMP,
-		BallastFilePath:      conf.Rpk.BallastFilePath,
-		BallastFileSize:      conf.Rpk.BallastFileSize,
-		Overprovisioned:      true,
+		Tuners: RpkNodeTuners{
+			CoredumpDir:     conf.Rpk.Tuners.CoredumpDir,
+			SMP:             DevDefault().Rpk.Tuners.SMP,
+			BallastFilePath: conf.Rpk.Tuners.BallastFilePath,
+			BallastFileSize: conf.Rpk.Tuners.BallastFileSize,
+			Overprovisioned: true,
+		},
 	}
 	return conf
 }
 
 func setProduction(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = false
-	conf.Rpk.TuneNetwork = true
-	conf.Rpk.TuneDiskScheduler = true
-	conf.Rpk.TuneNomerges = true
-	conf.Rpk.TuneDiskIrq = true
-	conf.Rpk.TuneFstrim = false
-	conf.Rpk.TuneCPU = true
-	conf.Rpk.TuneAioEvents = true
-	conf.Rpk.TuneClocksource = true
-	conf.Rpk.TuneSwappiness = true
-	conf.Rpk.Overprovisioned = false
-	conf.Rpk.TuneDiskWriteCache = true
-	conf.Rpk.TuneBallastFile = true
+	conf.Rpk.Tuners.TuneNetwork = true
+	conf.Rpk.Tuners.TuneDiskScheduler = true
+	conf.Rpk.Tuners.TuneNomerges = true
+	conf.Rpk.Tuners.TuneDiskIrq = true
+	conf.Rpk.Tuners.TuneFstrim = false
+	conf.Rpk.Tuners.TuneCPU = true
+	conf.Rpk.Tuners.TuneAioEvents = true
+	conf.Rpk.Tuners.TuneClocksource = true
+	conf.Rpk.Tuners.TuneSwappiness = true
+	conf.Rpk.Tuners.Overprovisioned = false
+	conf.Rpk.Tuners.TuneDiskWriteCache = true
+	conf.Rpk.Tuners.TuneBallastFile = true
 	return conf
 }
 
@@ -234,7 +238,7 @@ func checkRedpandaConfig(cfg *Config) []error {
 
 func checkRpkNodeConfig(cfg *Config) []error {
 	var errs []error
-	if cfg.Rpk.TuneCoredump && cfg.Rpk.CoredumpDir == "" {
+	if cfg.Rpk.Tuners.TuneCoredump && cfg.Rpk.Tuners.CoredumpDir == "" {
 		errs = append(errs, fmt.Errorf("if rpk.tune_coredump is set to true, rpk.coredump_dir can't be empty"))
 	}
 	return errs

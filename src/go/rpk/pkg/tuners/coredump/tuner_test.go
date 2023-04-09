@@ -19,14 +19,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func validConfig() *config.Config {
-	conf := config.DevDefault()
-	conf.Rpk.TuneCoredump = true
-	conf.Rpk.CoredumpDir = "/var/lib/redpanda/coredumps"
-	return conf
-}
-
 func TestTune(t *testing.T) {
+	testDir := "/var/lib/redpanda/coredumps"
+	validConfig := func() *config.Config {
+		conf := config.DevDefault()
+		conf.Rpk.Tuners.TuneCoredump = true
+		conf.Rpk.Tuners.CoredumpDir = testDir
+		return conf
+	}
 	tests := []struct {
 		name string
 		pre  func(afero.Fs) error
@@ -65,7 +65,7 @@ func TestTune(t *testing.T) {
 			// Check that the script is world-readable, writable and executable
 			expectedMode := os.FileMode(int(0o777))
 			require.Equal(t, expectedMode, info.Mode())
-			expectedScript, err := renderTemplate(coredumpScriptTmpl, conf.Rpk)
+			expectedScript, err := renderTemplate(coredumpScriptTmpl, testDir)
 			require.NoError(t, err)
 			buf := make([]byte, len(expectedScript))
 			_, err = script.Read(buf)

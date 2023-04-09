@@ -24,7 +24,7 @@ type (
 		rawFile      []byte
 
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda,omitempty" json:"redpanda"`
-		Rpk                  RpkNodeConfig          `yaml:"rpk,omitempty" json:"rpk"`
+		Rpk                  RpkNodeConfig      `yaml:"rpk,omitempty" json:"rpk"`
 		Pandaproxy           *Pandaproxy        `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
 		PandaproxyClient     *KafkaClient       `yaml:"pandaproxy_client,omitempty" json:"pandaproxy_client,omitempty"`
 		SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
@@ -134,29 +134,34 @@ type (
 		// Deprecated 2021-07-1
 		SASL *SASL `yaml:"sasl,omitempty" json:"sasl,omitempty"`
 
-		KafkaAPI                 RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
-		AdminAPI                 RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
-		AdditionalStartFlags     []string    `yaml:"additional_start_flags,omitempty"  json:"additional_start_flags"`
-		TuneNetwork              bool        `yaml:"tune_network,omitempty" json:"tune_network"`
-		TuneDiskScheduler        bool        `yaml:"tune_disk_scheduler,omitempty" json:"tune_disk_scheduler"`
-		TuneNomerges             bool        `yaml:"tune_disk_nomerges,omitempty" json:"tune_disk_nomerges"`
-		TuneDiskWriteCache       bool        `yaml:"tune_disk_write_cache,omitempty" json:"tune_disk_write_cache"`
-		TuneDiskIrq              bool        `yaml:"tune_disk_irq,omitempty" json:"tune_disk_irq"`
-		TuneFstrim               bool        `yaml:"tune_fstrim,omitempty" json:"tune_fstrim"`
-		TuneCPU                  bool        `yaml:"tune_cpu,omitempty" json:"tune_cpu"`
-		TuneAioEvents            bool        `yaml:"tune_aio_events,omitempty" json:"tune_aio_events"`
-		TuneClocksource          bool        `yaml:"tune_clocksource,omitempty" json:"tune_clocksource"`
-		TuneSwappiness           bool        `yaml:"tune_swappiness,omitempty" json:"tune_swappiness"`
-		TuneTransparentHugePages bool        `yaml:"tune_transparent_hugepages,omitempty" json:"tune_transparent_hugepages"`
-		EnableMemoryLocking      bool        `yaml:"enable_memory_locking,omitempty" json:"enable_memory_locking"`
-		TuneCoredump             bool        `yaml:"tune_coredump,omitempty" json:"tune_coredump"`
-		CoredumpDir              string      `yaml:"coredump_dir,omitempty" json:"coredump_dir"`
-		TuneBallastFile          bool        `yaml:"tune_ballast_file,omitempty" json:"tune_ballast_file"`
-		BallastFilePath          string      `yaml:"ballast_file_path,omitempty" json:"ballast_file_path"`
-		BallastFileSize          string      `yaml:"ballast_file_size,omitempty" json:"ballast_file_size"`
-		WellKnownIo              string      `yaml:"well_known_io,omitempty" json:"well_known_io"`
-		Overprovisioned          bool        `yaml:"overprovisioned,omitempty" json:"overprovisioned"`
-		SMP                      *int        `yaml:"smp,omitempty" json:"smp,omitempty"`
+		KafkaAPI             RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
+		AdminAPI             RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
+		AdditionalStartFlags []string    `yaml:"additional_start_flags,omitempty"  json:"additional_start_flags"`
+
+		Tuners RpkNodeTuners `yaml:",inline"`
+	}
+
+	RpkNodeTuners struct {
+		TuneNetwork              bool   `yaml:"tune_network,omitempty" json:"tune_network"`
+		TuneDiskScheduler        bool   `yaml:"tune_disk_scheduler,omitempty" json:"tune_disk_scheduler"`
+		TuneNomerges             bool   `yaml:"tune_disk_nomerges,omitempty" json:"tune_disk_nomerges"`
+		TuneDiskWriteCache       bool   `yaml:"tune_disk_write_cache,omitempty" json:"tune_disk_write_cache"`
+		TuneDiskIrq              bool   `yaml:"tune_disk_irq,omitempty" json:"tune_disk_irq"`
+		TuneFstrim               bool   `yaml:"tune_fstrim,omitempty" json:"tune_fstrim"`
+		TuneCPU                  bool   `yaml:"tune_cpu,omitempty" json:"tune_cpu"`
+		TuneAioEvents            bool   `yaml:"tune_aio_events,omitempty" json:"tune_aio_events"`
+		TuneClocksource          bool   `yaml:"tune_clocksource,omitempty" json:"tune_clocksource"`
+		TuneSwappiness           bool   `yaml:"tune_swappiness,omitempty" json:"tune_swappiness"`
+		TuneTransparentHugePages bool   `yaml:"tune_transparent_hugepages,omitempty" json:"tune_transparent_hugepages"`
+		EnableMemoryLocking      bool   `yaml:"enable_memory_locking,omitempty" json:"enable_memory_locking"`
+		TuneCoredump             bool   `yaml:"tune_coredump,omitempty" json:"tune_coredump"`
+		CoredumpDir              string `yaml:"coredump_dir,omitempty" json:"coredump_dir"`
+		TuneBallastFile          bool   `yaml:"tune_ballast_file,omitempty" json:"tune_ballast_file"`
+		BallastFilePath          string `yaml:"ballast_file_path,omitempty" json:"ballast_file_path"`
+		BallastFileSize          string `yaml:"ballast_file_size,omitempty" json:"ballast_file_size"`
+		WellKnownIo              string `yaml:"well_known_io,omitempty" json:"well_known_io"`
+		Overprovisioned          bool   `yaml:"overprovisioned,omitempty" json:"overprovisioned"`
+		SMP                      *int   `yaml:"smp,omitempty" json:"smp,omitempty"`
 	}
 
 	RpkKafkaAPI struct {

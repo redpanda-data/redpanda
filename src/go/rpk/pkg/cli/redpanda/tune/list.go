@@ -64,7 +64,7 @@ You may use 'rpk redpanda config set' to enable or disable a tuner.
 
 			for _, name := range factory.AvailableTuners() {
 				tuner := tunerFactory.CreateTuner(name, params)
-				enabled := factory.IsTunerEnabled(name, cfg.Rpk)
+				enabled := factory.IsTunerEnabled(name, cfg.Rpk.Tuners)
 				supported, reason := tuner.CheckIfSupported()
 				list = append(list, tunerInfo{name, enabled, supported, reason})
 			}

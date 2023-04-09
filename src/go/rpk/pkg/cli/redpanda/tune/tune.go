@@ -147,7 +147,7 @@ func tune(
 	)
 
 	for _, tunerName := range tunerNames {
-		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
+		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk.Tuners)
 		allDisabled = allDisabled && !enabled
 		tuner := tunersFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()

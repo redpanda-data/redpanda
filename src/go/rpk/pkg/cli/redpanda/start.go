@@ -83,13 +83,13 @@ const (
 
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
 	if flags.Changed(lockMemoryFlag) {
-		conf.Rpk.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
+		conf.Rpk.Tuners.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
 	}
 	if flags.Changed(wellKnownIOFlag) {
-		conf.Rpk.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
+		conf.Rpk.Tuners.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
 	}
 	if flags.Changed(overprovisionedFlag) {
-		conf.Rpk.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
+		conf.Rpk.Tuners.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
 	}
 	if flags.Changed(nodeIDFlag) {
 		conf.Redpanda.ID = new(int)
@@ -461,7 +461,7 @@ func buildRedpandaFlags(
 	skipChecks bool,
 	ioResolver func(*config.Config, bool) (*iotune.IoProperties, error),
 ) (*rp.RedpandaArgs, error) {
-	wellKnownIOSet := conf.Rpk.WellKnownIo != ""
+	wellKnownIOSet := conf.Rpk.Tuners.WellKnownIo != ""
 	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
 	if wellKnownIOSet && ioPropsSet {
 		return nil, errors.New(
@@ -536,11 +536,11 @@ func buildRedpandaFlags(
 func flagsFromConf(
 	conf *config.Config, flagsMap map[string]interface{}, flags *pflag.FlagSet,
 ) map[string]interface{} {
-	flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
-	flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
+	flagsMap[overprovisionedFlag] = conf.Rpk.Tuners.Overprovisioned
+	flagsMap[lockMemoryFlag] = conf.Rpk.Tuners.EnableMemoryLocking
 	// Setting SMP to 0 doesn't make sense.
-	if !flags.Changed(smpFlag) && conf.Rpk.SMP != nil && *conf.Rpk.SMP != 0 {
-		flagsMap[smpFlag] = *conf.Rpk.SMP
+	if !flags.Changed(smpFlag) && conf.Rpk.Tuners.SMP != nil && *conf.Rpk.Tuners.SMP != 0 {
+		flagsMap[smpFlag] = *conf.Rpk.Tuners.SMP
 	}
 	return flagsMap
 }
@@ -586,8 +586,8 @@ func resolveWellKnownIo(
 	conf *config.Config, skipChecks bool,
 ) (*iotune.IoProperties, error) {
 	var ioProps *iotune.IoProperties
-	if conf.Rpk.WellKnownIo != "" {
-		wellKnownIoTokens := strings.Split(conf.Rpk.WellKnownIo, ":")
+	if conf.Rpk.Tuners.WellKnownIo != "" {
+		wellKnownIoTokens := strings.Split(conf.Rpk.Tuners.WellKnownIo, ":")
 		if len(wellKnownIoTokens) != 3 {
 			err := errors.New(
 				"--well-known-io should have the format '<vendor>:<vm type>:<storage type>'",
@@ -651,7 +651,7 @@ func tuneAll(
 	availableTuners := factory.AvailableTuners()
 
 	for _, tunerName := range availableTuners {
-		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
+		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk.Tuners)
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()
 		if !enabled {
