@@ -13,7 +13,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -21,20 +20,12 @@ import (
 
 func TestTune(t *testing.T) {
 	testDir := "/var/lib/redpanda/coredumps"
-	validConfig := func() *config.Config {
-		conf := config.DevDefault()
-		conf.Rpk.Tuners.TuneCoredump = true
-		conf.Rpk.Tuners.CoredumpDir = testDir
-		return conf
-	}
 	tests := []struct {
 		name string
 		pre  func(afero.Fs) error
-		conf func() *config.Config
 	}{
 		{
 			name: "it should install the coredump config file",
-			conf: validConfig,
 		},
 		{
 			name: "it should not fail to install if the coredump config file already exists",
@@ -42,18 +33,16 @@ func TestTune(t *testing.T) {
 				_, err := fs.Create(corePatternFilePath)
 				return err
 			},
-			conf: validConfig,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			conf := tt.conf()
 			if tt.pre != nil {
 				err := tt.pre(fs)
 				require.NoError(t, err)
 			}
-			tuner := NewCoredumpTuner(fs, *conf, executors.NewDirectExecutor())
+			tuner := NewCoredumpTuner(fs, testDir, executors.NewDirectExecutor())
 			res := tuner.Tune()
 			require.NoError(t, res.Error())
 			pattern, err := fs.Open(corePatternFilePath)

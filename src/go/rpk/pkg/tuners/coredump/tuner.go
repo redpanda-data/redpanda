@@ -13,7 +13,6 @@ import (
 	"bytes"
 	"text/template"
 
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
@@ -40,19 +39,19 @@ cat - > "${COREDUMP_PATH}"
 )
 
 type tuner struct {
-	fs       afero.Fs
-	conf     config.Config
-	executor executors.Executor
+	fs          afero.Fs
+	coredumpDir string
+	executor    executors.Executor
 }
 
 func NewCoredumpTuner(
-	fs afero.Fs, conf config.Config, executor executors.Executor,
+	fs afero.Fs, coredumpDir string, executor executors.Executor,
 ) tuners.Tunable {
-	return &tuner{fs, conf, executor}
+	return &tuner{fs, coredumpDir, executor}
 }
 
 func (t *tuner) Tune() tuners.TuneResult {
-	script, err := renderTemplate(coredumpScriptTmpl, t.conf.Rpk.Tuners.CoredumpDir)
+	script, err := renderTemplate(coredumpScriptTmpl, t.coredumpDir)
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}

@@ -92,11 +92,9 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 			out.MaybeDie(err, "unable to load config: %v", err)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
-				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, *cfg, outTuneScriptFile, timeout)
+				tunerFactory = factory.NewScriptRenderingTunersFactory(fs, cfg.Rpk.Tuners, outTuneScriptFile, timeout)
 			} else {
-				tunerFactory = factory.NewDirectExecutorTunersFactory(
-					fs, *cfg, timeout)
+				tunerFactory = factory.NewDirectExecutorTunersFactory(fs, cfg.Rpk.Tuners, timeout)
 			}
 			exit1, err := tune(cfg, tuners, tunerFactory, &tunerParams)
 			out.MaybeDieErr(err)
