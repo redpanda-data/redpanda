@@ -24,7 +24,7 @@ type (
 		rawFile      []byte
 
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda,omitempty" json:"redpanda"`
-		Rpk                  RpkConfig          `yaml:"rpk,omitempty" json:"rpk"`
+		Rpk                  RpkNodeConfig          `yaml:"rpk,omitempty" json:"rpk"`
 		Pandaproxy           *Pandaproxy        `yaml:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
 		PandaproxyClient     *KafkaClient       `yaml:"pandaproxy_client,omitempty" json:"pandaproxy_client,omitempty"`
 		SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry,omitempty" json:"schema_registry,omitempty"`
@@ -128,7 +128,7 @@ type (
 		Other             map[string]interface{} `yaml:",inline" `
 	}
 
-	RpkConfig struct {
+	RpkNodeConfig struct {
 		// Deprecated 2021-07-1
 		TLS *TLS `yaml:"tls,omitempty" json:"tls"`
 		// Deprecated 2021-07-1

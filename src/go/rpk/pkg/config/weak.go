@@ -299,7 +299,7 @@ func (ss *seedServers) UnmarshalYAML(n *yaml.Node) error {
 func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda"`
-		Rpk                  RpkConfig          `yaml:"rpk"`
+		Rpk                  RpkNodeConfig          `yaml:"rpk"`
 		Pandaproxy           *Pandaproxy        `yaml:"pandaproxy"`
 		PandaproxyClient     *KafkaClient       `yaml:"pandaproxy_client"`
 		SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry"`
@@ -403,7 +403,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-func (rpkc *RpkConfig) UnmarshalYAML(n *yaml.Node) error {
+func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		// Deprecated 2021-07-1
 		TLS *TLS `yaml:"tls"`

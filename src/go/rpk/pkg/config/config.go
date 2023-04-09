@@ -49,7 +49,7 @@ func DevDefault() *Config {
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
-		Rpk: RpkConfig{
+		Rpk: RpkNodeConfig{
 			CoredumpDir:     "/var/lib/redpanda/coredump",
 			Overprovisioned: true,
 		},
@@ -117,7 +117,7 @@ func SetMode(mode string, conf *Config) (*Config, error) {
 func setDevelopment(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = true
 	// Defaults to setting all tuners to false
-	conf.Rpk = RpkConfig{
+	conf.Rpk = RpkNodeConfig{
 		TLS:                  conf.Rpk.TLS,
 		SASL:                 conf.Rpk.SASL,
 		KafkaAPI:             conf.Rpk.KafkaAPI,
@@ -179,7 +179,7 @@ func (c *Config) Check() (bool, []error) {
 	errs := checkRedpandaConfig(c)
 	errs = append(
 		errs,
-		checkRpkConfig(c)...,
+		checkRpkNodeConfig(c)...,
 	)
 	ok := len(errs) == 0
 	return ok, errs
@@ -232,7 +232,7 @@ func checkRedpandaConfig(cfg *Config) []error {
 	return errs
 }
 
-func checkRpkConfig(cfg *Config) []error {
+func checkRpkNodeConfig(cfg *Config) []error {
 	var errs []error
 	if cfg.Rpk.TuneCoredump && cfg.Rpk.CoredumpDir == "" {
 		errs = append(errs, fmt.Errorf("if rpk.tune_coredump is set to true, rpk.coredump_dir can't be empty"))

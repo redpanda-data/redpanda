@@ -24,7 +24,7 @@ func getValidConfig() *Config {
 		{Host: SocketAddress{"127.0.0.1", 33146}},
 	}
 	conf.Redpanda.DeveloperMode = false
-	conf.Rpk = RpkConfig{
+	conf.Rpk = RpkNodeConfig{
 		TuneNetwork:              true,
 		TuneDiskScheduler:        true,
 		TuneDiskWriteCache:       true,
@@ -176,7 +176,7 @@ func TestSet(t *testing.T) {
 tune_cpu: true`,
 			format: "yaml",
 			check: func(st *testing.T, c *Config) {
-				expected := RpkConfig{
+				expected := RpkNodeConfig{
 					Overprovisioned:          false,
 					TuneNetwork:              false,
 					TuneDiskScheduler:        false,
@@ -460,7 +460,7 @@ func TestDevDefault(t *testing.T) {
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
-		Rpk: RpkConfig{
+		Rpk: RpkNodeConfig{
 			CoredumpDir:     "/var/lib/redpanda/coredump",
 			Overprovisioned: true,
 		},
@@ -489,7 +489,7 @@ func TestProdDefault(t *testing.T) {
 			SeedServers:   []SeedServer{},
 			DeveloperMode: false,
 		},
-		Rpk: RpkConfig{
+		Rpk: RpkNodeConfig{
 			CoredumpDir:        "/var/lib/redpanda/coredump",
 			Overprovisioned:    false,
 			TuneAioEvents:      true,
@@ -614,7 +614,7 @@ schema_registry: {}
 			name: "write if empty struct is passed",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk = RpkConfig{}
+				c.Rpk = RpkNodeConfig{}
 				return c
 			},
 			wantErr: false,
@@ -718,12 +718,12 @@ schema_registry: {}
 }
 
 func TestSetMode(t *testing.T) {
-	fillRpkConfig := func(mode string) func() *Config {
+	fillRpkNodeConfig := func(mode string) func() *Config {
 		return func() *Config {
 			conf := DevDefault()
 			val := mode == ModeProd
 			conf.Redpanda.DeveloperMode = !val
-			conf.Rpk = RpkConfig{
+			conf.Rpk = RpkNodeConfig{
 				TuneNetwork:        val,
 				TuneDiskScheduler:  val,
 				TuneNomerges:       val,
@@ -752,27 +752,27 @@ func TestSetMode(t *testing.T) {
 		{
 			name:           "it should disable all tuners for dev mode",
 			mode:           ModeDev,
-			expectedConfig: fillRpkConfig(ModeDev),
+			expectedConfig: fillRpkNodeConfig(ModeDev),
 		},
 		{
 			name:           "it should disable all tuners for dev mode ('development')",
 			mode:           "development",
-			expectedConfig: fillRpkConfig(ModeDev),
+			expectedConfig: fillRpkNodeConfig(ModeDev),
 		},
 		{
 			name:           "it should disable all tuners for dev mode ('')",
 			mode:           "",
-			expectedConfig: fillRpkConfig(ModeDev),
+			expectedConfig: fillRpkNodeConfig(ModeDev),
 		},
 		{
 			name:           "it should enable all the default tuners for prod mode",
 			mode:           ModeProd,
-			expectedConfig: fillRpkConfig(ModeProd),
+			expectedConfig: fillRpkNodeConfig(ModeProd),
 		},
 		{
 			name:           "it should enable all the default tuners for prod mode ('production')",
 			mode:           ModeProd,
-			expectedConfig: fillRpkConfig(ModeProd),
+			expectedConfig: fillRpkNodeConfig(ModeProd),
 		},
 		{
 			name:           "it should return an error for invalid modes",
@@ -798,7 +798,7 @@ func TestSetMode(t *testing.T) {
 			},
 			mode: ModeProd,
 			expectedConfig: func() *Config {
-				conf := fillRpkConfig(ModeProd)()
+				conf := fillRpkNodeConfig(ModeProd)()
 				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
 				}

@@ -23,11 +23,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func fillRpkConfig(path, mode string) *config.Config {
+func fillRpkNodeConfig(path, mode string) *config.Config {
 	conf := config.DevDefault()
 	val := mode == config.ModeProd
 	conf.Redpanda.DeveloperMode = !val
-	conf.Rpk = config.RpkConfig{
+	conf.Rpk = config.RpkNodeConfig{
 		TuneNetwork:        val,
 		TuneDiskScheduler:  val,
 		TuneDiskWriteCache: val,
@@ -58,61 +58,61 @@ func TestModeCommand(t *testing.T) {
 			name: "development mode should disable all fields in the rpk config",
 			args: []string{"development", "--config", configPath},
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(fillRpkConfig(configPath, config.ModeProd))
+				bs, err := yaml.Marshal(fillRpkNodeConfig(configPath, config.ModeProd))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
-			exp: fillRpkConfig(configPath, config.ModeDev),
+			exp: fillRpkNodeConfig(configPath, config.ModeDev),
 		},
 		{
 			name: "production mode should enable all fields in the rpk config",
 			args: []string{"production", "--config", configPath},
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(fillRpkConfig(configPath, config.ModeDev))
+				bs, err := yaml.Marshal(fillRpkNodeConfig(configPath, config.ModeDev))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
-			exp: fillRpkConfig(configPath, config.ModeProd),
+			exp: fillRpkNodeConfig(configPath, config.ModeProd),
 		},
 		{
 			name: "the development mode alias, 'dev', should work the same",
 			args: []string{"dev", "--config", configPath},
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(fillRpkConfig(configPath, config.ModeProd))
+				bs, err := yaml.Marshal(fillRpkNodeConfig(configPath, config.ModeProd))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
-			exp: fillRpkConfig(configPath, config.ModeDev),
+			exp: fillRpkNodeConfig(configPath, config.ModeDev),
 		},
 		{
 			name: "the production mode alias, 'prod', should work the same",
 			args: []string{"prod", "--config", configPath},
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(fillRpkConfig(configPath, config.ModeDev))
+				bs, err := yaml.Marshal(fillRpkNodeConfig(configPath, config.ModeDev))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
-			exp: fillRpkConfig(configPath, config.ModeProd),
+			exp: fillRpkNodeConfig(configPath, config.ModeProd),
 		},
 		{
 			name: "mode should work if --config isn't passed, but the file is in $PWD or /etc/redpanda/redpanda.yaml",
 			args: []string{"prod"},
 			before: func(fs afero.Fs) (string, error) {
-				bs, err := yaml.Marshal(fillRpkConfig(configPath, config.ModeDev))
+				bs, err := yaml.Marshal(fillRpkNodeConfig(configPath, config.ModeDev))
 				if err != nil {
 					return "", err
 				}
 				return configPath, afero.WriteFile(fs, configPath, bs, 0o644)
 			},
-			exp: fillRpkConfig(configPath, config.ModeProd),
+			exp: fillRpkNodeConfig(configPath, config.ModeProd),
 		},
 		{
 			name: "mode lists the available modes if the one passed is not valid",
@@ -123,7 +123,7 @@ func TestModeCommand(t *testing.T) {
 					t.Fatal(err)
 				}
 				wdConfigPath := filepath.Join(dir, "/redpanda.yaml")
-				bs, err := yaml.Marshal(fillRpkConfig(wdConfigPath, config.ModeDev))
+				bs, err := yaml.Marshal(fillRpkNodeConfig(wdConfigPath, config.ModeDev))
 				if err != nil {
 					return "", err
 				}
