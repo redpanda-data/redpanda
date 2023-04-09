@@ -807,7 +807,7 @@ configuration::configuration()
       "raft_transfer_leader_recovery_timeout_ms",
       "Timeout waiting for follower recovery when transferring leadership",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      10s)
+      25ms)
   , release_cache_on_segment_roll(
       *this,
       "release_cache_on_segment_roll",
