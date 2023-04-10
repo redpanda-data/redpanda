@@ -288,9 +288,6 @@ public:
     /// Find element of the manifest by offset
     const_iterator find(model::offset o) const;
 
-    /// Get insert iterator for segments set
-    std::insert_iterator<segment_map> get_insert_iterator();
-
     /// Update manifest file from input_stream (remote set)
     ss::future<> update(ss::input_stream<char> is) override;
 

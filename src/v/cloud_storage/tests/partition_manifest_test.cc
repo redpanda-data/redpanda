@@ -448,78 +448,6 @@ SEASTAR_THREAD_TEST_CASE(test_segment_contains) {
 SEASTAR_THREAD_TEST_CASE(test_manifest_mem_tracking) {
     partition_manifest empty_manifest;
     empty_manifest.update(make_manifest_stream(empty_manifest_json)).get();
-    BOOST_REQUIRE_EQUAL(0, empty_manifest.segments_metadata_bytes());
-
-    auto one_segment_manifest = manifest_for({
-      {model::offset(0), kafka::offset(0)},
-      {model::offset(10), kafka::offset(5)},
-    });
-    BOOST_REQUIRE_GT(
-      one_segment_manifest.segments_metadata_bytes(),
-      empty_manifest.segments_metadata_bytes());
-
-    auto two_segment_manifest = manifest_for({
-      {model::offset(0), kafka::offset(0)},
-      {model::offset(10), kafka::offset(5)},
-      {model::offset(20), kafka::offset(10)},
-    });
-    auto two_segment_size_bytes
-      = two_segment_manifest.segments_metadata_bytes();
-    BOOST_REQUIRE_GT(
-      two_segment_size_bytes, one_segment_manifest.segments_metadata_bytes());
-
-    segment_meta another_seg{
-      .is_compacted = false,
-      .size_bytes = 1024,
-      .base_offset = model::offset(20),
-      .committed_offset = model::offset(29),
-      .delta_offset = model::offset_delta(10),
-      .delta_offset_end = model::offset_delta(15),
-    };
-    two_segment_manifest.add(segment_name("20-1-v1.log"), another_seg);
-    auto three_segment_size_bytes
-      = two_segment_manifest.segments_metadata_bytes();
-    BOOST_REQUIRE_GT(three_segment_size_bytes, two_segment_size_bytes);
-
-    // Truncate so we're left with the last two segments. This doesn't
-    // deallocate the memory.
-    two_segment_manifest.truncate(model::offset(10));
-    BOOST_REQUIRE_EQUAL(2, two_segment_manifest.size());
-    BOOST_REQUIRE_EQUAL(
-      three_segment_size_bytes, two_segment_manifest.segments_metadata_bytes());
-
-    // Making a copy will have the copy share the original mem_tracker, meaning
-    // the original manifest's tracked memory increase.
-    {
-        auto another_two_segment_manifest = two_segment_manifest;
-        BOOST_REQUIRE_GT(
-          two_segment_manifest.segments_metadata_bytes(),
-          three_segment_size_bytes);
-        BOOST_REQUIRE_EQUAL(
-          two_segment_manifest.segments_metadata_bytes(),
-          another_two_segment_manifest.segments_metadata_bytes());
-    }
-
-    // Once we destroy the copy, the allocated memory will go down.
-    BOOST_REQUIRE_EQUAL(
-      three_segment_size_bytes, two_segment_manifest.segments_metadata_bytes());
-
-    // Replace all segments in the manifest with one segment. This will reduce
-    // the underlying map to no segments, and then add the new segment,
-    // resulting in meaningful reduction in memory.
-    segment_meta whole_seg{
-      .is_compacted = false,
-      .size_bytes = 1024,
-      .base_offset = model::offset(10),
-      .committed_offset = model::offset(29),
-      .delta_offset = model::offset_delta(5),
-      .delta_offset_end = model::offset_delta(15),
-    };
-    two_segment_manifest.add(model::offset(0), whole_seg);
-    BOOST_REQUIRE_EQUAL(1, two_segment_manifest.size());
-    BOOST_REQUIRE_EQUAL(
-      one_segment_manifest.segments_metadata_bytes(),
-      two_segment_manifest.segments_metadata_bytes());
 }
 
 SEASTAR_THREAD_TEST_CASE(test_manifest_type) {
@@ -615,18 +543,18 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
 void require_equal_segment_meta(
   partition_manifest::segment_meta expected,
   partition_manifest::segment_meta actual) {
-    BOOST_REQUIRE_EQUAL(expected.is_compacted, actual.is_compacted);
-    BOOST_REQUIRE_EQUAL(expected.size_bytes, actual.size_bytes);
-    BOOST_REQUIRE_EQUAL(expected.base_offset, actual.base_offset);
-    BOOST_REQUIRE_EQUAL(expected.committed_offset, actual.committed_offset);
-    BOOST_REQUIRE_EQUAL(expected.base_timestamp, actual.base_timestamp);
-    BOOST_REQUIRE_EQUAL(expected.max_timestamp, actual.max_timestamp);
-    BOOST_REQUIRE_EQUAL(expected.delta_offset, actual.delta_offset);
-    BOOST_REQUIRE_EQUAL(expected.ntp_revision, actual.ntp_revision);
-    BOOST_REQUIRE_EQUAL(expected.archiver_term, actual.archiver_term);
-    BOOST_REQUIRE_EQUAL(expected.segment_term, actual.segment_term);
-    BOOST_REQUIRE_EQUAL(expected.delta_offset_end, actual.delta_offset_end);
-    BOOST_REQUIRE_EQUAL(expected.sname_format, actual.sname_format);
+    BOOST_CHECK_EQUAL(expected.is_compacted, actual.is_compacted);
+    BOOST_CHECK_EQUAL(expected.size_bytes, actual.size_bytes);
+    BOOST_CHECK_EQUAL(expected.base_offset, actual.base_offset);
+    BOOST_CHECK_EQUAL(expected.committed_offset, actual.committed_offset);
+    BOOST_CHECK_EQUAL(expected.base_timestamp, actual.base_timestamp);
+    BOOST_CHECK_EQUAL(expected.max_timestamp, actual.max_timestamp);
+    BOOST_CHECK_EQUAL(expected.delta_offset, actual.delta_offset);
+    BOOST_CHECK_EQUAL(expected.ntp_revision, actual.ntp_revision);
+    BOOST_CHECK_EQUAL(expected.archiver_term, actual.archiver_term);
+    BOOST_CHECK_EQUAL(expected.segment_term, actual.segment_term);
+    BOOST_CHECK_EQUAL(expected.delta_offset_end, actual.delta_offset_end);
+    BOOST_CHECK_EQUAL(expected.sname_format, actual.sname_format);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {

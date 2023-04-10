@@ -837,11 +837,6 @@ partition_manifest::find(model::offset o) const {
     return it;
 }
 
-std::insert_iterator<partition_manifest::segment_map>
-partition_manifest::get_insert_iterator() {
-    return std::inserter(_segments, _segments.begin());
-}
-
 //@formatter:off
 // clang-format off
 /**
