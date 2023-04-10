@@ -1059,9 +1059,8 @@ func TestCreation(t *testing.T) {
 
 		caCertSecret := &corev1.Secret{}
 		caCertName := "pandaproxy-client-valid-ca-cert"
-		ns := "test"
 		caCertSecret.SetName(caCertName)
-		caCertSecret.SetNamespace(ns)
+		caCertSecret.SetNamespace(redpandaCluster.Namespace)
 		certData, err := os.ReadFile("./testdata/ca.crt.pem")
 		assert.NoError(t, err)
 
@@ -1076,10 +1075,9 @@ func TestCreation(t *testing.T) {
 				TLS: v1alpha1.PandaproxyAPITLS{
 					Enabled:           true,
 					RequireClientAuth: true,
-					ClientCACertRef: &corev1.ObjectReference{
-						Name:      caCertName,
-						Kind:      "secret",
-						Namespace: ns,
+					ClientCACertRef: &corev1.TypedLocalObjectReference{
+						Name: caCertName,
+						Kind: "secret",
 					},
 				},
 			},
@@ -1094,9 +1092,8 @@ func TestCreation(t *testing.T) {
 
 		caCertSecret := &corev1.Secret{}
 		caCertName := "pandaproxy-client-not-ca-cert"
-		ns := "test"
 		caCertSecret.SetName(caCertName)
-		caCertSecret.SetNamespace(ns)
+		caCertSecret.SetNamespace(redpandaCluster.Namespace)
 		caCertSecret.Data = map[string][]byte{"ca.crt": []byte("invalid cert")}
 		err := fakeK8sClient.Create(context.TODO(), caCertSecret)
 		assert.NoError(t, err)
@@ -1108,10 +1105,9 @@ func TestCreation(t *testing.T) {
 				TLS: v1alpha1.PandaproxyAPITLS{
 					Enabled:           true,
 					RequireClientAuth: true,
-					ClientCACertRef: &corev1.ObjectReference{
-						Name:      caCertName,
-						Kind:      "secret",
-						Namespace: ns,
+					ClientCACertRef: &corev1.TypedLocalObjectReference{
+						Name: caCertName,
+						Kind: "secret",
 					},
 				},
 			},
@@ -1475,7 +1471,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			TLS: &v1alpha1.SchemaRegistryAPITLS{
 				Enabled:           true,
 				RequireClientAuth: true,
-				ClientCACertRef:   &corev1.ObjectReference{},
+				ClientCACertRef:   &corev1.TypedLocalObjectReference{},
 			},
 		}
 
@@ -1491,7 +1487,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			TLS: &v1alpha1.SchemaRegistryAPITLS{
 				Enabled:           true,
 				RequireClientAuth: true,
-				ClientCACertRef: &corev1.ObjectReference{
+				ClientCACertRef: &corev1.TypedLocalObjectReference{
 					Name: "test",
 					Kind: "configmap",
 				},
@@ -1511,7 +1507,7 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			TLS: &v1alpha1.SchemaRegistryAPITLS{
 				Enabled:           true,
 				RequireClientAuth: true,
-				ClientCACertRef: &corev1.ObjectReference{
+				ClientCACertRef: &corev1.TypedLocalObjectReference{
 					Name: "does-not-exist",
 					Kind: "secret",
 				},
@@ -1528,9 +1524,8 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		v1alpha1.SetK8sClient(fakeK8sClient)
 		caCertSecret := &corev1.Secret{}
 		caCertName := "schema-registry-client-ca-cert-no-ca-crt"
-		ns := "test"
 		caCertSecret.SetName(caCertName)
-		caCertSecret.SetNamespace(ns)
+		caCertSecret.SetNamespace(redpandaCluster.Namespace)
 		caCertSecret.Data = map[string][]byte{"no.ca.crt": []byte("no.ca.crt")}
 		err := fakeK8sClient.Create(context.TODO(), caCertSecret)
 		assert.NoError(t, err)
@@ -1540,10 +1535,8 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			TLS: &v1alpha1.SchemaRegistryAPITLS{
 				Enabled:           true,
 				RequireClientAuth: true,
-				ClientCACertRef: &corev1.ObjectReference{
-					Name:      caCertName,
-					Kind:      "secret",
-					Namespace: ns,
+				ClientCACertRef: &corev1.TypedLocalObjectReference{
+					Name: caCertName,
 				},
 			},
 		}
@@ -1558,9 +1551,8 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		v1alpha1.SetK8sClient(fakeK8sClient)
 		caCertSecret := &corev1.Secret{}
 		caCertName := "schema-registry-client-ca-cert-invalid-pem"
-		ns := "test"
 		caCertSecret.SetName(caCertName)
-		caCertSecret.SetNamespace(ns)
+		caCertSecret.SetNamespace(redpandaCluster.Namespace)
 		caCertSecret.Data = map[string][]byte{"ca.crt": []byte("not-in-pem")}
 		err := fakeK8sClient.Create(context.TODO(), caCertSecret)
 		assert.NoError(t, err)
@@ -1570,10 +1562,9 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			TLS: &v1alpha1.SchemaRegistryAPITLS{
 				Enabled:           true,
 				RequireClientAuth: true,
-				ClientCACertRef: &corev1.ObjectReference{
-					Name:      caCertName,
-					Kind:      "secret",
-					Namespace: ns,
+				ClientCACertRef: &corev1.TypedLocalObjectReference{
+					Name: caCertName,
+					Kind: "secret",
 				},
 			},
 		}
@@ -1589,9 +1580,8 @@ func TestSchemaRegistryValidations(t *testing.T) {
 
 		caCertSecret := &corev1.Secret{}
 		caCertName := "schema-registry-client-ca-cert-not-ca-cert"
-		ns := "test"
 		caCertSecret.SetName(caCertName)
-		caCertSecret.SetNamespace(ns)
+		caCertSecret.SetNamespace(redpandaCluster.Namespace)
 		certData, err := os.ReadFile("./testdata/not.ca.crt.pem")
 		assert.NoError(t, err)
 
@@ -1604,10 +1594,9 @@ func TestSchemaRegistryValidations(t *testing.T) {
 			TLS: &v1alpha1.SchemaRegistryAPITLS{
 				Enabled:           true,
 				RequireClientAuth: true,
-				ClientCACertRef: &corev1.ObjectReference{
-					Name:      caCertName,
-					Kind:      "secret",
-					Namespace: ns,
+				ClientCACertRef: &corev1.TypedLocalObjectReference{
+					Name: caCertName,
+					Kind: "secret",
 				},
 			},
 		}

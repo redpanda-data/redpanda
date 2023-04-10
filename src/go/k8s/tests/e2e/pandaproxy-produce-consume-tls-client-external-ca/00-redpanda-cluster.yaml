@@ -1,22 +1,8 @@
-# Kuttl creates a random namespace per test, and there's no way to refer to it
-# within these resource manifests.
-# Therefore, we need to create a namespace for testing the scenario in which the secret
-# is copied to the namespace of Cluster CR.
-kind: Namespace
-apiVersion: v1
-metadata:
-  name: pandaproxy-external-tls
-
----
-
 # The CA cert "provided" by the customer.
 apiVersion: v1
 kind: Secret
 metadata:
   name: ca-cert
-  # Create it in the default namespace to test that the operator copies it over to the namespace
-  # where Redpanda pods are run.
-  namespace: pandaproxy-external-tls
   labels:
     app.kubernetes.io/component: redpanda
     app.kubernetes.io/name: redpanda
@@ -80,6 +66,6 @@ spec:
         requireClientAuth: true
         clientCACertRef:
           kind: Secret
-          namespace: pandaproxy-external-tls
           name: ca-cert
+          apiGroup: ""
     developerMode: true
