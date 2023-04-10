@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright 2022 Redpanda Data, Inc.
 #
 # Use of this software is governed by the Business Source License
@@ -8,9 +10,10 @@
 # by the Apache License, Version 2.0
 
 import argparse
+import json
 import logging
 from collections import OrderedDict
-from enum import Enum
+from enum import IntEnum
 from uuid import uuid4
 
 from confluent_kafka import DeserializingConsumer, SerializingProducer
@@ -21,6 +24,11 @@ from confluent_kafka.schema_registry.protobuf import ProtobufDeserializer, Proto
 
 from google.protobuf.descriptor_pb2 import FieldDescriptorProto
 from google.protobuf import proto_builder
+
+
+class SchemaType(IntEnum):
+    AVRO = 1
+    PROTOBUF = 2
 
 
 class AvroPayload(OrderedDict):
@@ -51,11 +59,6 @@ def make_protobuf_payload(val: int):
     p = ProtobufPayloadClass()
     p.val = val
     return p
-
-
-class SchemaType(Enum):
-    AVRO = 1
-    PROTOBUF = 2
 
 
 class SerdeClient:
@@ -200,42 +203,56 @@ def main(args):
     logger = logging.getLogger("SerdeClient")
     logger.addHandler(handler)
 
+    security_dict = None
+    if args.security is not None:
+        security_dict = json.loads(args.security)
+
     p = SerdeClient(args.bootstrap_servers,
                     args.schema_registry,
                     SchemaType[args.protocol],
                     topic=args.topic,
                     group=args.group,
-                    logger=logger)
+                    logger=logger,
+                    security_config=security_dict)
     p.run(args.count)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="SerdeClient")
     parser.add_argument('-b',
+                        '--brokers',
                         dest="bootstrap_servers",
                         required=True,
                         help="Bootstrap broker(s) (host[:port])")
     parser.add_argument('-s',
+                        '--schema-registry',
                         dest="schema_registry",
                         required=True,
                         help="Schema Registry (http(s)://host[:port]")
     parser.add_argument('-p',
+                        '--protocol',
                         dest="protocol",
                         default=SchemaType.AVRO.name,
                         choices=SchemaType._member_names_,
                         help="Topic name")
     parser.add_argument('-t',
+                        '--topic',
                         dest="topic",
                         default=str(uuid4()),
                         help="Topic name")
     parser.add_argument('-g',
+                        '--consumer-group',
                         dest="group",
                         default=str(uuid4()),
                         help="Topic name")
     parser.add_argument('-c',
+                        '--count',
                         dest="count",
                         default=1,
                         type=int,
                         help="Number of messages to send")
+    parser.add_argument('--security',
+                        dest="security",
+                        help="JSON formatted security string")
 
     main(parser.parse_args())

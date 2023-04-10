@@ -32,11 +32,11 @@ RUN /opt/ducktape-deps.sh install_kafka_streams_examples
 # Install the OMB tool
 RUN /opt/ducktape-deps.sh install_omb
 
-
 # Install Kafka Java test clients / workloads
 RUN mkdir -p /opt/redpanda-tests/java
 COPY --chown=0:0 tests/java/e2e-verifiers /opt/redpanda-tests/java/e2e-verifiers
 COPY --chown=0:0 tests/java/verifiers /opt/redpanda-tests/java/verifiers
+COPY --chown=0:0 tests/java/kafka-serde /opt/redpanda-tests/java/kafka-serde
 RUN /opt/ducktape-deps.sh install_java_test_clients
 
 # - install distro-packaged depedencies

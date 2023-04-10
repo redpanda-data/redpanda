@@ -8,7 +8,11 @@ function install_java_client_deps() {
     build-essential \
     default-jdk \
     git \
-    maven
+    maven \
+    cmake \
+    curl
+
+  install_protobuf_compiler
 }
 
 function install_system_deps() {
@@ -17,9 +21,7 @@ function install_system_deps() {
     bind9-utils \
     bind9-dnsutils \
     bsdmainutils \
-    curl \
     dmidecode \
-    cmake \
     krb5-admin-server \
     krb5-kdc \
     krb5-user \
@@ -171,12 +173,25 @@ function install_arroyo() {
 function install_java_test_clients() {
   mvn clean package --batch-mode --file /opt/redpanda-tests/java/e2e-verifiers --define buildDir=/opt/e2e-verifiers
   mvn clean package --batch-mode --file /opt/redpanda-tests/java/verifiers --define buildDir=/opt/verifiers
+  mvn clean package --batch-mode --file /opt/redpanda-tests/java/kafka-serde --define buildDir=/opt/kafka-serde
 }
 
 function install_go_test_clients() {
   cd /opt/redpanda-tests/go/sarama/produce_test
   go mod tidy
   go build
+
+  cd /opt/redpanda-tests/go/go-kafka-serde
+  GOPATH=${HOME}/go make clean all
+}
+
+function install_protobuf_compiler() {
+  mkdir /tmp/protobuf
+  curl -SL "https://vectorized-public.s3.amazonaws.com/dependencies/protobuf-cpp-3.21.8.tar.gz" | tar --no-same-owner -xz --strip-components=1 -C /tmp/protobuf
+  cd /tmp/protobuf
+  cmake -Dprotobuf_BUILD_TESTS=OFF -DCMAKE_INSTALL_PREFIX=/usr
+  make -j$(nproc)
+  make install
 }
 
 $@
