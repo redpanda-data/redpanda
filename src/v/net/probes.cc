@@ -99,8 +99,8 @@ void server_probe::setup_metrics(
         sm::make_gauge(
           "requests_pending",
           [this] { return _requests_received - _requests_completed; },
-          sm::description(ssx::sformat(
-            "{}: Number of requests being processed by server", proto)))
+          sm::description(
+            ssx::sformat("{}: Number of requests pending in the queue", proto)))
           .aggregate(aggregate_labels),
         sm::make_counter(
           "connections_wait_rate",
