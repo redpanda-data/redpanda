@@ -863,7 +863,7 @@ static void remove_segment_from_s3(
     static ss::abort_source never_abort;
 
     auto meta = m.get(o);
-    BOOST_REQUIRE(meta != nullptr);
+    BOOST_REQUIRE(meta.has_value());
     auto path = m.generate_segment_path(*meta);
     retry_chain_node fib(never_abort, 60s, 1s);
     auto res = api

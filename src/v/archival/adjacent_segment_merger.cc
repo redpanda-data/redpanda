@@ -85,13 +85,12 @@ std::optional<adjacent_segment_run> adjacent_segment_merger::scan_manifest(
 
     adjacent_segment_run run(_archiver.get_ntp());
     for (auto it = manifest.segment_containing(so); it != manifest.end();
-         it++) {
-        if (!_is_local && it->second.committed_offset >= local_start_offset) {
+         ++it) {
+        if (!_is_local && it->committed_offset >= local_start_offset) {
             // We're looking for the remote segment
             break;
         }
-        auto [key, meta] = *it;
-        if (run.maybe_add_segment(meta, max_segment_size)) {
+        if (run.maybe_add_segment(*it, max_segment_size)) {
             // We have found a run whith the size close to max_segment_size
             // and can proceed early.
             break;

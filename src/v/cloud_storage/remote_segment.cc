@@ -98,7 +98,10 @@ inline void expiry_handler_impl(ss::promise<ss::file>& pr) {
 static ss::sstring generate_log_prefix(
   const partition_manifest& m, const partition_manifest::key& key) {
     auto meta = m.get(key);
-    vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
+    vassert(
+      meta.has_value(),
+      "Can't find segment metadata in manifest, key: {}",
+      key);
     return ssx::sformat(
       "{} [{}:{}]",
       m.get_ntp().path(),
@@ -122,7 +125,10 @@ remote_segment::remote_segment(
   , _wait_list(expiry_handler_impl)
   , _cache_backoff_jitter(cache_thrash_backoff) {
     auto meta = m.get(key);
-    vassert(meta, "Can't find segment metadata in manifest, key: {}", key);
+    vassert(
+      meta.has_value(),
+      "Can't find segment metadata in manifest, key: {}",
+      key);
 
     _path = m.generate_segment_path(*meta);
 

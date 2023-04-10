@@ -164,10 +164,9 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
     BOOST_REQUIRE(
-      archival_stm->manifest().begin()->second.base_offset == model::offset(0));
+      archival_stm->manifest().begin()->base_offset == model::offset(0));
     BOOST_REQUIRE(
-      archival_stm->manifest().begin()->second.committed_offset
-      == model::offset(99));
+      archival_stm->manifest().begin()->committed_offset == model::offset(99));
 
     // Adding segments should have marked the stm dirty
     BOOST_REQUIRE(
@@ -208,8 +207,7 @@ FIXTURE_TEST(
       archival_stm->manifest().get_last_uploaded_compacted_offset(),
       model::offset{99});
     BOOST_REQUIRE_EQUAL(
-      archival_stm->manifest().begin()->second.committed_offset,
-      model::offset(99));
+      archival_stm->manifest().begin()->committed_offset, model::offset(99));
 }
 
 FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
@@ -481,7 +479,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(backlog.size(), 1);
     auto name = cloud_storage::generate_local_segment_name(
       backlog[0].base_offset, backlog[0].segment_term);
-    BOOST_REQUIRE(pm.get(name) != nullptr);
+    BOOST_REQUIRE(pm.get(name).has_value());
     BOOST_REQUIRE(backlog[0] == lw_segment_meta::convert(*pm.get(name)));
 
     // Truncate the STM, next segment should be added to the backlog
@@ -495,7 +493,7 @@ FIXTURE_TEST(
     for (const auto& it : backlog) {
         auto name = cloud_storage::generate_local_segment_name(
           it.base_offset, it.segment_term);
-        BOOST_REQUIRE(pm.get(name) != nullptr);
+        BOOST_REQUIRE(pm.get(name).has_value());
         BOOST_REQUIRE(it == lw_segment_meta::convert(*pm.get(name)));
     }
 }
@@ -529,7 +527,7 @@ old_segments_from_manifest(const cloud_storage::partition_manifest& m) {
     std::vector<old::segment> segments;
     segments.reserve(m.size() + m.size());
 
-    for (auto [key, meta] : m) {
+    for (auto meta : m) {
         if (meta.ntp_revision == model::initial_revision_id{}) {
             meta.ntp_revision = m.get_revision_id();
         }
@@ -658,8 +656,7 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
     BOOST_REQUIRE(archival_stm->manifest().replaced_segments().size() == 0);
     BOOST_REQUIRE(
-      archival_stm->manifest().begin()->second.archiver_term
-      == model::term_id(2));
+      archival_stm->manifest().begin()->archiver_term == model::term_id(2));
 }
 
 FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {

@@ -283,7 +283,7 @@ get_retention_policy(const storage::ntp_config::default_overrides& prop) {
 static auto build_offset_map(const partition_manifest& manifest) {
     absl::btree_map<model::offset, segment_meta> offset_map;
     for (const auto& segm : manifest) {
-        offset_map.insert_or_assign(segm.second.base_offset, segm.second);
+        offset_map.insert_or_assign(segm.base_offset, segm);
     }
     return offset_map;
 }
@@ -323,7 +323,7 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
           .clean_download = true,
           .min_offset = model::offset{0},
           .max_offset = model::offset{0},
-          .manifest = mat.partition_manifest,
+          .manifest = std::move(mat.partition_manifest),
           .ot_state = nullptr,
         };
         co_return result;
@@ -373,7 +373,7 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
       .clean_download = part.clean_download,
       .min_offset = part.range.min_offset,
       .max_offset = part.range.max_offset,
-      .manifest = mat.partition_manifest,
+      .manifest = std::move(mat.partition_manifest),
       .ot_state = part.ot_state,
     };
     co_return result;

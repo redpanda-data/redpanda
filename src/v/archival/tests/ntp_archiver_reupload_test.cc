@@ -42,7 +42,7 @@ static void verify_stm_manifest(
         const auto& segment = segment_spec[i];
         auto it = manifest.begin();
         std::advance(it, i);
-        BOOST_CHECK_EQUAL(segment.base_offset, it->second.base_offset);
+        BOOST_CHECK_EQUAL(segment.base_offset, it->base_offset);
     }
 }
 
@@ -331,8 +331,7 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
     upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    manifest = part->archival_meta_stm()->manifest();
-    verify_segment_request("0-1-v1.log", manifest);
+    verify_segment_request("0-1-v1.log", part->archival_meta_stm()->manifest());
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
@@ -352,8 +351,8 @@ FIXTURE_TEST(test_upload_compacted_segments, reupload_fixture) {
 
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    manifest = part->archival_meta_stm()->manifest();
-    verify_segment_request("1000-4-v1.log", manifest);
+    verify_segment_request(
+      "1000-4-v1.log", part->archival_meta_stm()->manifest());
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
@@ -415,8 +414,8 @@ FIXTURE_TEST(test_upload_compacted_segments_concat, reupload_fixture) {
     BOOST_REQUIRE_EQUAL(replaced[0].base_offset, model::offset{0});
     BOOST_REQUIRE_EQUAL(replaced[1].base_offset, model::offset{1000});
 
-    manifest = part->archival_meta_stm()->manifest();
-    verify_concat_segment_request({"0-1-v1.log", "1000-4-v1.log"}, manifest);
+    verify_concat_segment_request(
+      {"0-1-v1.log", "1000-4-v1.log"}, part->archival_meta_stm()->manifest());
 }
 
 FIXTURE_TEST(
@@ -625,9 +624,9 @@ FIXTURE_TEST(test_upload_both_compacted_and_non_compacted, reupload_fixture) {
     upload_and_verify(archiver.value(), expected, model::offset::max());
     BOOST_REQUIRE_EQUAL(get_requests().size(), 5);
 
-    manifest = part->archival_meta_stm()->manifest();
-    verify_segment_request("0-1-v1.log", manifest);
-    verify_segment_request("30-5-v1.log", manifest);
+    verify_segment_request("0-1-v1.log", part->archival_meta_stm()->manifest());
+    verify_segment_request(
+      "30-5-v1.log", part->archival_meta_stm()->manifest());
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),
@@ -703,8 +702,8 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
     log_requests();
     BOOST_REQUIRE_EQUAL(get_requests().size(), 4);
 
-    manifest = part->archival_meta_stm()->manifest();
-    verify_segment_request("30-5-v1.log", manifest);
+    verify_segment_request(
+      "30-5-v1.log", part->archival_meta_stm()->manifest());
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
@@ -875,11 +874,14 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     upload_and_verify(archiver.value(), expected, model::offset::max());
     BOOST_REQUIRE_EQUAL(get_requests().size(), 9);
 
-    manifest = part->archival_meta_stm()->manifest();
-    verify_segment_request("40-1-v1.log", manifest);
-    verify_segment_request("50-2-v1.log", manifest);
-    verify_segment_request("60-2-v1.log", manifest);
-    verify_segment_request("70-2-v1.log", manifest);
+    verify_segment_request(
+      "40-1-v1.log", part->archival_meta_stm()->manifest());
+    verify_segment_request(
+      "50-2-v1.log", part->archival_meta_stm()->manifest());
+    verify_segment_request(
+      "60-2-v1.log", part->archival_meta_stm()->manifest());
+    verify_segment_request(
+      "70-2-v1.log", part->archival_meta_stm()->manifest());
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(), model::offset{});
@@ -893,7 +895,6 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
     upload_and_verify(archiver.value(), expected);
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
-    manifest = part->archival_meta_stm()->manifest();
     verify_concat_segment_request(
       {
         "0-1-v1.log",
@@ -901,7 +902,7 @@ FIXTURE_TEST(test_upload_limit, reupload_fixture) {
         "20-1-v1.log",
         "30-1-v1.log",
       },
-      manifest);
+      part->archival_meta_stm()->manifest());
 
     BOOST_REQUIRE_EQUAL(
       stm_manifest.get_last_uploaded_compacted_offset(),

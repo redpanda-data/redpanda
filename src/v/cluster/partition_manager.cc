@@ -115,13 +115,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::keep_snapshotted_log keep_snapshotted_log) {
     gate_guard guard(_gate);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
-    auto
-      [logs_recovered,
-       clean_download,
-       min_offset,
-       max_offset,
-       manifest,
-       ot_state]
+    auto& [logs_recovered, clean_download, min_offset, max_offset, manifest, ot_state]
       = dl_result;
     if (logs_recovered) {
         vlog(

@@ -353,8 +353,7 @@ copy_subsegment(const in_memory_segment& src, size_t shift, size_t length) {
 std::vector<in_memory_segment>
 make_segments(const partition_manifest& manifest) {
     std::vector<in_memory_segment> segments;
-    for (const auto& s : manifest) {
-        const auto& meta = s.second;
+    for (const auto& meta : manifest) {
         auto num_config_records = meta.delta_offset_end() - meta.delta_offset();
         auto num_records = meta.committed_offset() - meta.base_offset() + 1;
         std::vector<batch_t> all_batches;

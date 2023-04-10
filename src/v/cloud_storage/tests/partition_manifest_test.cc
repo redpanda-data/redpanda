@@ -328,12 +328,12 @@ SEASTAR_THREAD_TEST_CASE(test_segment_contains_by_kafka_offset) {
         bool success = it != m.end()
                        // Check that the segment base offsets match the segment
                        // we were expecting...
-                       && it->second.base_offset == expected_base_mo
-                       && it->second.base_kafka_offset() == expected_base_ko
+                       && it->base_offset == expected_base_mo
+                       && it->base_kafka_offset() == expected_base_ko
                        // ...and as a sanity check, make sure the kafka::offset
                        // falls in the segment.
-                       && it->second.base_kafka_offset() <= ko
-                       && it->second.next_kafka_offset() > ko;
+                       && it->base_kafka_offset() <= ko
+                       && it->next_kafka_offset() > ko;
         if (success) {
             return true;
         }
@@ -345,7 +345,7 @@ SEASTAR_THREAD_TEST_CASE(test_segment_contains_by_kafka_offset) {
           "segment {} doesn't match the expected base model::offset {} or "
           "kafka::offset {}, or doesn't include "
           "{} in its range",
-          it->second,
+          *it,
           expected_base_mo,
           expected_base_ko,
           ko);
@@ -354,17 +354,17 @@ SEASTAR_THREAD_TEST_CASE(test_segment_contains_by_kafka_offset) {
 
     // Returns true if a kafka::offset lookup returns that no such segment is
     // returned.
-    const auto check_no_offset =
-      [](const partition_manifest& m, kafka::offset ko) {
-          const auto it = m.segment_containing(ko);
-          bool success = it == m.end();
-          if (success) {
-              return true;
-          }
-          test_log.error(
-            "unexpected segment for kafka::offset {}: {}", ko, it->second);
-          return false;
-      };
+    const auto check_no_offset = [](
+                                   const partition_manifest& m,
+                                   kafka::offset ko) {
+        const auto it = m.segment_containing(ko);
+        bool success = it == m.end();
+        if (success) {
+            return true;
+        }
+        test_log.error("unexpected segment for kafka::offset {}: {}", ko, *it);
+        return false;
+    };
 
     // mo: 0      10     20     30
     //     [a    ][b    ][c    ]end
@@ -437,11 +437,14 @@ SEASTAR_THREAD_TEST_CASE(test_segment_contains) {
       m.segment_containing(model::offset{38}) == std::next(m.begin(), 2));
     BOOST_REQUIRE(m.segment_containing(model::offset{42}) == m.end());
     BOOST_REQUIRE(
-      m.segment_containing(model::offset{50}) == std::prev(m.end()));
+      m.segment_containing(model::offset{50})
+      == std::next(m.begin(), m.size() - 1));
     BOOST_REQUIRE(
-      m.segment_containing(model::offset{52}) == std::prev(m.end()));
+      m.segment_containing(model::offset{52})
+      == std::next(m.begin(), m.size() - 1));
     BOOST_REQUIRE(
-      m.segment_containing(model::offset{59}) == std::prev(m.end()));
+      m.segment_containing(model::offset{59})
+      == std::next(m.begin(), m.size() - 1));
 }
 
 // Test for the partition manifest tracked memory.
@@ -641,10 +644,10 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     };
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.second.base_offset, actual.second.segment_term);
+          actual.base_offset, actual.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
-        require_equal_segment_meta(it->second, actual.second);
+        require_equal_segment_meta(it->second, actual);
     }
 }
 
@@ -672,10 +675,10 @@ SEASTAR_THREAD_TEST_CASE(test_max_segment_meta_update) {
 
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.second.base_offset, actual.second.segment_term);
+          actual.base_offset, actual.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
-        require_equal_segment_meta(it->second, actual.second);
+        require_equal_segment_meta(it->second, actual);
     }
 }
 
@@ -745,10 +748,10 @@ SEASTAR_THREAD_TEST_CASE(test_metas_get_smaller) {
     };
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.second.base_offset, actual.second.segment_term);
+          actual.base_offset, actual.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
-        require_equal_segment_meta(it->second, actual.second);
+        require_equal_segment_meta(it->second, actual);
     }
 }
 
@@ -785,10 +788,10 @@ SEASTAR_THREAD_TEST_CASE(test_fields_after_segments) {
 
     for (const auto& actual : m) {
         auto sn = generate_local_segment_name(
-          actual.second.base_offset, actual.second.segment_term);
+          actual.base_offset, actual.segment_term);
         auto it = expected.find(sn());
         BOOST_REQUIRE(it != expected.end());
-        require_equal_segment_meta(it->second, actual.second);
+        require_equal_segment_meta(it->second, actual);
     }
 }
 
@@ -1185,7 +1188,7 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_serialization_roundtrip) {
 
     for (const auto& expected : expected_segments) {
         auto actual = restored.find(expected.second.base_offset);
-        require_equal_segment_meta(expected.second, actual->second);
+        require_equal_segment_meta(expected.second, *actual);
     }
 
     for (const auto& expected : expected_replaced_segments) {
@@ -1405,7 +1408,7 @@ SEASTAR_THREAD_TEST_CASE(
 
     for (const auto& expected : expected_segments) {
         auto actual = restored.find(expected.second.base_offset);
-        require_equal_segment_meta(expected.second, actual->second);
+        require_equal_segment_meta(expected.second, *actual);
     }
 
     BOOST_REQUIRE(restored.get_start_offset() == model::offset(100));
@@ -1586,8 +1589,8 @@ std::optional<partition_manifest::segment_meta>
 reference_timequery(const partition_manifest& m, model::timestamp t) {
     auto segment_iter = m.begin();
     while (segment_iter != m.end()) {
-        auto base_timestamp = segment_iter->second.base_timestamp;
-        auto max_timestamp = segment_iter->second.max_timestamp;
+        auto base_timestamp = segment_iter->base_timestamp;
+        auto max_timestamp = segment_iter->max_timestamp;
         if (base_timestamp > t || max_timestamp >= t) {
             break;
         } else {
@@ -1598,7 +1601,7 @@ reference_timequery(const partition_manifest& m, model::timestamp t) {
     if (segment_iter == m.end()) {
         return std::nullopt;
     } else {
-        return segment_iter->second;
+        return *segment_iter;
     }
 }
 
@@ -1622,15 +1625,13 @@ void reference_check_timequery(
 void scan_ts_segments_general(partition_manifest const& m) {
     // Before range: should get first segment
     reference_check_timequery(
-      m, model::timestamp{m.begin()->second.base_timestamp() - 100});
+      m, model::timestamp{m.begin()->base_timestamp() - 100});
 
     for (partition_manifest::const_iterator i = m.begin(); i != m.end(); ++i) {
-        auto& s = i->second;
-
         // Time queries on times within the segment's range should return
         // this segment.
-        reference_check_timequery(m, s.base_timestamp);
-        reference_check_timequery(m, s.max_timestamp);
+        reference_check_timequery(m, i->base_timestamp);
+        reference_check_timequery(m, i->max_timestamp);
     }
 
     // After range: should get null
@@ -1654,19 +1655,14 @@ void expect_ts_segment(
 void scan_ts_segments(partition_manifest const& m) {
     // Before range: should get first segment
     expect_ts_segment(
-      m.timequery(model::timestamp{m.begin()->second.base_timestamp() - 100}),
-      m.begin()->second.base_offset);
+      m.timequery(model::timestamp{m.begin()->base_timestamp() - 100}),
+      m.begin()->base_offset);
 
-    partition_manifest::const_iterator previous;
     for (partition_manifest::const_iterator i = m.begin(); i != m.end(); ++i) {
-        auto& s = i->second;
-
         // Time queries on times within the segment's range should return
         // this segment.
-        expect_ts_segment(m.timequery(s.base_timestamp), s.base_offset);
-        expect_ts_segment(m.timequery(s.max_timestamp), s.base_offset);
-
-        previous = i;
+        expect_ts_segment(m.timequery(i->base_timestamp), i->base_offset);
+        expect_ts_segment(m.timequery(i->max_timestamp), i->base_offset);
     }
 
     // After range: should get null
@@ -1879,14 +1875,13 @@ SEASTAR_THREAD_TEST_CASE(test_timequery_out_of_order) {
 
     // Before range: should get first segment
     expect_ts_segment(
-      m.timequery(model::timestamp{m.begin()->second.base_timestamp() - 100}),
-      m.begin()->second.base_offset);
+      m.timequery(model::timestamp{m.begin()->base_timestamp() - 100}),
+      m.begin()->base_offset);
 
     for (partition_manifest::const_iterator i = m.begin(); i != m.end(); ++i) {
-        auto& s = i->second;
         // Not checking results: undefined for out of order data.
-        m.timequery(s.base_timestamp);
-        m.timequery(s.max_timestamp);
+        m.timequery(i->base_timestamp);
+        m.timequery(i->max_timestamp);
     }
 
     // After range: should get null
@@ -1958,8 +1953,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "9b367cb7/test-ns/test-topic/42_1/10-1-v1.log.1");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->second);
-        auto actual2 = m.generate_segment_path(s->second);
+          m.get_ntp(), *s);
+        auto actual2 = m.generate_segment_path(*s);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
@@ -1970,8 +1965,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "96c6b7a9/test-ns/test-topic/42_1/20-29-2048-1-v1.log.2");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->second);
-        auto actual2 = m.generate_segment_path(s->second);
+          m.get_ntp(), *s);
+        auto actual2 = m.generate_segment_path(*s);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
@@ -1982,8 +1977,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "df1262f5/test-ns/test-topic/42_1/30-1-v1.log");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->second);
-        auto actual2 = m.generate_segment_path(s->second);
+          m.get_ntp(), *s);
+        auto actual2 = m.generate_segment_path(*s);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
@@ -1994,8 +1989,8 @@ SEASTAR_THREAD_TEST_CASE(test_generate_segment_name_format) {
         auto expected = remote_segment_path(
           "e44e8104/test-ns/test-topic/42_1/40-42-4096-2-v1.log");
         auto actual1 = partition_manifest::generate_remote_segment_path(
-          m.get_ntp(), s->second);
-        auto actual2 = m.generate_segment_path(s->second);
+          m.get_ntp(), *s);
+        auto actual2 = m.generate_segment_path(*s);
         BOOST_REQUIRE_EQUAL(expected, actual1);
         BOOST_REQUIRE_EQUAL(expected, actual2);
     }
@@ -2153,9 +2148,9 @@ SEASTAR_THREAD_TEST_CASE(test_readd_protection) {
       .delta_offset_end = model::offset_delta(24),
       .sname_format = segment_name_format::v2,
     };
-    BOOST_REQUIRE(m.add(s.base_offset, s));
+    BOOST_REQUIRE(m.add(s));
     auto size = m.cloud_log_size();
-    BOOST_REQUIRE(m.add(s.base_offset, s) == false);
+    BOOST_REQUIRE(m.add(s) == false);
     BOOST_REQUIRE(m.cloud_log_size() == size);
     auto backlog = m.replaced_segments();
     BOOST_REQUIRE(backlog.empty());

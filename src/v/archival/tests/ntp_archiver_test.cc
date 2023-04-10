@@ -183,7 +183,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         auto it = stm_manifest.begin();
         std::advance(it, i);
 
-        BOOST_CHECK_EQUAL(segment.base_offset, it->second.base_offset);
+        BOOST_CHECK_EQUAL(segment.base_offset, it->base_offset);
     }
 }
 
@@ -841,7 +841,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     // Simulate pre-existing state in the snapshot
     std::vector<cloud_storage::segment_meta> old_segments;
     for (const auto& s : old_manifest) {
-        old_segments.push_back(s.second);
+        old_segments.push_back(s);
     }
     part->archival_meta_stm()
       ->add_segments(
@@ -1035,7 +1035,7 @@ static void test_partial_upload_impl(
     manifest.add(s1name, segment_meta);
     std::vector<cloud_storage::segment_meta> all_segments;
     for (const auto& s : manifest) {
-        all_segments.push_back(s.second);
+        all_segments.push_back(s);
     }
     part->archival_meta_stm()
       ->add_segments(
@@ -1132,7 +1132,7 @@ static void test_partial_upload_impl(
             if (key == "PUT") {
                 auto new_manifest = load_manifest(it->second.content);
                 if (new_manifest.size() > manifest.size()) {
-                    manifest = new_manifest;
+                    manifest = std::move(new_manifest);
                 }
             }
         }

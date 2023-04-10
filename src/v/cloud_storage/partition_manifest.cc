@@ -222,7 +222,7 @@ partition_manifest::partition_manifest()
   : _ntp()
   , _rev()
   , _mem_tracker(ss::make_shared<util::mem_tracker>(""))
-  , _segments(util::mem_tracked::map<absl::btree_map, key, value>(_mem_tracker))
+  , _segments()
   , _last_offset(0) {}
 
 partition_manifest::partition_manifest(
@@ -234,7 +234,7 @@ partition_manifest::partition_manifest(
   , _mem_tracker(
       partition_mem_tracker ? partition_mem_tracker->create_child("manifest")
                             : ss::make_shared<util::mem_tracker>(""))
-  , _segments(util::mem_tracked::map<absl::btree_map, key, value>(_mem_tracker))
+  , _segments()
   , _last_offset(0) {}
 
 // NOTE: the methods that generate remote paths use the xxhash function
@@ -316,17 +316,16 @@ partition_manifest::get_start_kafka_offset() const {
     if (_start_offset != model::offset{}) {
         auto iter = _segments.find(_start_offset);
         if (iter != _segments.end()) {
-            auto delta = iter->second.delta_offset;
+            auto delta = iter->delta_offset;
             return _start_offset - delta;
         } else {
             // If start offset points outside a segment, then we cannot
             // translate it.  If there are any segments ahead of it, then
             // those may be considered the start of the remote log.
-            if (
-              !_segments.empty()
-              && _segments.begin()->second.base_offset >= _start_offset) {
-                const auto& seg = _segments.begin()->second;
-                return seg.base_offset - seg.delta_offset;
+            if (auto front_it = _segments.begin();
+                front_it != _segments.end()
+                && front_it->base_offset >= _start_offset) {
+                return front_it->base_offset - front_it->delta_offset;
             } else {
                 return std::nullopt;
             }
@@ -350,7 +349,7 @@ partition_manifest::segment_containing(kafka::offset o) const {
     // the target and step back. It is possible to have a segment that
     // doesn't have data batches. This scan has to skip segments like that.
     while (it != end()) {
-        if (it->second.base_kafka_offset() > o) {
+        if (it->base_kafka_offset() > o) {
             // The beginning of the manifest already has a base offset that
             // doesn't satisfy the query.
             if (it == begin()) {
@@ -358,19 +357,19 @@ partition_manifest::segment_containing(kafka::offset o) const {
             }
             // On the first segment we see with a base kafka offset higher than
             // 'o', return its previous segment.
-            return std::prev(it);
+            return _segments.prev(it);
         }
-        it = std::next(it);
+        ++it;
     }
     // All segments had base kafka offsets lower than 'o'.
-    auto back = std::prev(it);
-    if (back->second.delta_offset_end != model::offset_delta{}) {
+    auto back = _segments.prev(it);
+    if (back->delta_offset_end != model::offset_delta{}) {
         // If 'prev' points to the last segment, it's not guaranteed that
         // the segment contains the required kafka offset. We need an extra
         // check using delta_offset_end. If the field is not set then we
         // will return the last segment. This is OK since delta_offset_end
         // will always be set for new segments.
-        if (back->second.next_kafka_offset() <= o) {
+        if (back->next_kafka_offset() <= o) {
             return end();
         }
     }
@@ -406,7 +405,7 @@ segment_name partition_manifest::generate_remote_segment_name(
     case segment_name_format::v2:
         [[fallthrough]];
     case segment_name_format::v3:
-        // Use new stlyle format ".../base-committed-term-size-v1.log"
+        // Use new style format ".../base-committed-term-size-v1.log"
         return segment_name(ssx::sformat(
           "{}-{}-{}-{}-v1.log",
           val.base_offset(),
@@ -453,7 +452,7 @@ std::optional<segment_meta> partition_manifest::last_segment() const {
     if (_segments.empty()) {
         return std::nullopt;
     }
-    return _segments.rbegin()->second;
+    return _segments.last_segment();
 }
 
 bool partition_manifest::empty() const { return _segments.size() == 0; }
@@ -461,21 +460,16 @@ bool partition_manifest::empty() const { return _segments.size() == 0; }
 size_t partition_manifest::size() const { return _segments.size(); }
 
 size_t partition_manifest::segments_metadata_bytes() const {
-    return _mem_tracker->consumption();
+    return _segments.inflated_actual_size().second;
 }
 
 uint64_t partition_manifest::compute_cloud_log_size() const {
-    auto start_iter = find(_start_offset);
-
-    // No addresable segments
-    if (start_iter == end()) {
-        return 0;
-    }
-
     return std::transform_reduce(
-      start_iter, end(), uint64_t{0}, std::plus{}, [](const auto& seg) {
-          return seg.second.size_bytes;
-      });
+      find(_start_offset),
+      end(),
+      uint64_t{0},
+      std::plus{},
+      [](const auto& seg) { return seg.size_bytes; });
 }
 
 uint64_t partition_manifest::cloud_log_size() const {
@@ -610,7 +604,7 @@ bool partition_manifest::advance_start_kafka_offset(
           _start_offset);
         return true;
     }
-    auto moved = advance_start_offset(it->second.base_offset);
+    auto moved = advance_start_offset(it->base_offset);
     // 'advance_start_offset' resets _start_kafka_offset value
     // so it's important to set it after this call.
     _start_kafka_offset = std::max(new_start_offset, _start_kafka_offset);
@@ -633,14 +627,17 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
             return false;
         }
 
-        auto new_head_segment = std::prev(it);
-        if (new_head_segment->second.committed_offset < new_start_offset) {
-            new_head_segment = std::next(new_head_segment);
-        }
+        auto new_head_segment = [&] {
+            auto prev = _segments.prev(it);
+            if (prev->committed_offset >= new_start_offset) {
+                return prev;
+            }
+            return std::move(it);
+        }();
 
-        model::offset advanced_start_offset
-          = new_head_segment == end() ? new_start_offset
-                                      : new_head_segment->second.base_offset;
+        model::offset advanced_start_offset = new_head_segment == end()
+                                                ? new_start_offset
+                                                : new_head_segment->base_offset;
 
         if (previous_start_offset > advanced_start_offset) {
             vlog(
@@ -674,8 +671,9 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         // the case when two `truncate` commands are applied sequentially,
         // without a `cleanup_metadata` command in between to trim the list of
         // segments.
-        for (auto it = previous_head_segment; it != new_head_segment; ++it) {
-            subtract_from_cloud_log_size(it->second.size_bytes);
+        for (auto it = std::move(previous_head_segment); it != new_head_segment;
+             ++it) {
+            subtract_from_cloud_log_size(it->size_bytes);
         }
 
         // Reset start kafka offset so it will be aligned by segment boundary
@@ -704,19 +702,21 @@ size_t partition_manifest::replaced_segments_count() const {
     return _replaced.size();
 }
 
-size_t partition_manifest::move_aligned_offset_range(
+std::optional<size_t> partition_manifest::move_aligned_offset_range(
   model::offset begin_inclusive,
   model::offset end_inclusive,
   const segment_meta& replacing_segment) {
     size_t total_replaced_size = 0;
     auto replacing_path = generate_remote_segment_name(replacing_segment);
-    auto it = _segments.lower_bound(begin_inclusive);
-    while (it != _segments.end()
-           // The segment is considered replaced only if all its
-           // offsets are covered by new segment's offset range
-           && it->second.base_offset >= begin_inclusive
-           && it->second.committed_offset <= end_inclusive) {
-        if (generate_remote_segment_name(it->second) == replacing_path) {
+    for (auto it = _segments.lower_bound(begin_inclusive),
+              end_it = _segments.end();
+         it != end_it
+         // The segment is considered replaced only if all its
+         // offsets are covered by new segment's offset range
+         && it->base_offset >= begin_inclusive
+         && it->committed_offset <= end_inclusive;
+         ++it) {
+        if (generate_remote_segment_name(*it) == replacing_path) {
             // The replacing segment shouldn't be exactly the same as the
             // one that we already have in the manifest. Attempt to re-add
             // same segment twice leads to data loss.
@@ -725,18 +725,16 @@ size_t partition_manifest::move_aligned_offset_range(
               "{} segment is already added {}",
               _ntp,
               replacing_segment);
-            break;
+            return std::nullopt;
         }
-        _replaced.push_back(lw_segment_meta::convert(it->second));
-        total_replaced_size += it->second.size_bytes;
-        it = _segments.erase(it);
+        _replaced.push_back(lw_segment_meta::convert(*it));
+        total_replaced_size += it->size_bytes;
     }
 
     return total_replaced_size;
 }
 
-bool partition_manifest::add(
-  const partition_manifest::key& key, const segment_meta& meta) {
+bool partition_manifest::add(segment_meta meta) {
     if (_start_offset == model::offset{} && _segments.empty()) {
         // This can happen if this is the first time we add something
         // to the manifest or if all data was removed previously.
@@ -744,31 +742,31 @@ bool partition_manifest::add(
     }
     const auto total_replaced_size = move_aligned_offset_range(
       meta.base_offset, meta.committed_offset, meta);
-    auto [it, ok] = _segments.insert(std::make_pair(key, meta));
-    if (ok && it->second.ntp_revision == model::initial_revision_id{}) {
-        it->second.ntp_revision = _rev;
+
+    if (!total_replaced_size) {
+        return false;
     }
+
+    if (meta.ntp_revision == model::initial_revision_id{}) {
+        meta.ntp_revision = _rev;
+    }
+    _segments.insert(meta);
+
     _last_offset = std::max(meta.committed_offset, _last_offset);
     if (meta.is_compacted) {
         _last_uploaded_compacted_offset = std::max(
           meta.committed_offset, _last_uploaded_compacted_offset);
     }
 
-    if (ok) {
-        // If the segment does not replace the one that we have we will
-        // fail to insert it into the map. In this case we shouldn't
-        // modify the total cloud size.
-        subtract_from_cloud_log_size(total_replaced_size);
-        _cloud_log_size_bytes += meta.size_bytes;
-    }
-
-    return ok;
+    subtract_from_cloud_log_size(total_replaced_size.value());
+    _cloud_log_size_bytes += meta.size_bytes;
+    return true;
 }
 
 bool partition_manifest::add(
   const segment_name& name, const segment_meta& meta) {
     if (meta.segment_term != model::term_id{}) {
-        return add(meta.base_offset, meta);
+        return add(meta);
     }
     auto maybe_key = parse_segment_name(name);
     if (!maybe_key) {
@@ -777,7 +775,7 @@ bool partition_manifest::add(
     }
     auto m = meta;
     m.segment_term = maybe_key->term;
-    return add(meta.base_offset, m);
+    return add(m);
 }
 
 partition_manifest
@@ -793,14 +791,18 @@ partition_manifest::truncate(model::offset starting_rp_offset) {
 
 partition_manifest partition_manifest::truncate() {
     partition_manifest removed(_ntp, _rev);
-    for (auto it : _segments) {
-        if (it.second.committed_offset < _start_offset) {
-            removed.add(it.first, it.second);
-        }
+    // copy segments that will be removed by the truncate op
+    for (auto it = _segments.begin(),
+              end_it = _segments.lower_bound(_start_offset);
+         it != end_it && it->committed_offset < _start_offset;
+         ++it) {
+        // it->committed_offset < _start_offset should be true for the whole
+        // [it, end_it) range
+        removed.add(*it);
     }
-    for (auto s : removed._segments) {
-        _segments.erase(s.first);
-    }
+
+    _segments.prefix_truncate(_start_offset);
+
     if (_segments.empty()) {
         // start offset only makes sense if we have segments
         _start_offset = model::offset{};
@@ -809,16 +811,16 @@ partition_manifest partition_manifest::truncate() {
     return removed;
 }
 
-const partition_manifest::segment_meta*
+std::optional<partition_manifest::segment_meta>
 partition_manifest::get(const partition_manifest::key& key) const {
     auto it = _segments.find(key);
     if (it == _segments.end()) {
-        return nullptr;
+        return std::nullopt;
     }
-    return &it->second;
+    return *it;
 }
 
-const partition_manifest::segment_meta*
+std::optional<partition_manifest::segment_meta>
 partition_manifest::get(const segment_name& name) const {
     auto maybe_key = parse_segment_name(name);
     if (!maybe_key) {
@@ -831,7 +833,7 @@ partition_manifest::get(const segment_name& name) const {
 partition_manifest::const_iterator
 partition_manifest::find(model::offset o) const {
     auto it = _segments.lower_bound(o);
-    if (it == _segments.end() || it->second.base_offset != o) {
+    if (it == _segments.end() || it->base_offset != o) {
         return end();
     }
     return it;
@@ -1122,14 +1124,9 @@ struct partition_manifest_handler
               .metadata_size_hint = _metadata_size_hint.value_or(0)};
             if (_state == state::expect_segment_meta_key) {
                 if (!_segments) {
-                    _segments = std::make_unique<segment_map>(
-                      util::mem_tracked::map<
-                        absl::btree_map,
-                        partition_manifest::key,
-                        partition_manifest::value>(_manifest_mem_tracker));
+                    _segments = std::make_unique<segment_map>();
                 }
-                _segments->insert(
-                  std::make_pair(_segment_key.base_offset, _meta));
+                _segments->insert(_meta);
                 _state = state::expect_segment_path;
             } else {
                 if (!_replaced) {
@@ -1428,7 +1425,7 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
         if (handler._start_offset == std::nullopt && !_segments.empty()) {
             // Backward compatibility. Old manifest format doesn't have
             // start_offset field. In this case we need to set it implicitly.
-            _start_offset = _segments.begin()->second.base_offset;
+            _start_offset = _segments.begin()->base_offset;
         }
     }
     if (handler._replaced) {
@@ -1698,17 +1695,16 @@ void partition_manifest::serialize_segments(
         // The method is called first time
         w.Key("segments");
         w.StartObject();
-        cursor->next_offset = _segments.begin()->second.base_offset;
+        cursor->next_offset = _segments.begin()->base_offset;
     }
     if (!_segments.empty()) {
         auto it = _segments.lower_bound(cursor->next_offset);
-        for (; it != _segments.end(); it++) {
-            const auto& [key, meta] = *it;
-            serialize_segment_meta(meta, cursor);
+        for (; it != _segments.end(); ++it) {
+            serialize_segment_meta(*it, cursor);
             cursor->segments_serialized++;
             if (cursor->segments_serialized >= cursor->max_segments_per_call) {
                 cursor->segments_serialized = 0;
-                it++;
+                ++it;
                 break;
             }
         }
@@ -1718,7 +1714,7 @@ void partition_manifest::serialize_segments(
             // We hit the limit on number of serialized segment
             // metadata objects and 'it' points to the first segment
             // which is not serialized yet.
-            cursor->next_offset = it->second.base_offset;
+            cursor->next_offset = it->base_offset;
         }
     }
     if (cursor->next_offset == _last_offset && !_segments.empty()) {
@@ -1763,8 +1759,8 @@ partition_manifest::segment_containing(model::offset o) const {
         return end();
     }
 
-    it = std::prev(it);
-    if (it->second.base_offset <= o && it->second.committed_offset >= o) {
+    it = _segments.prev(it);
+    if (it->base_offset <= o && it->committed_offset >= o) {
         return it;
     }
 
@@ -1791,27 +1787,28 @@ partition_manifest::segment_containing(model::offset o) const {
  * 3. Do linear search backward or forward from the location
  *    we probed, to find the right segment.
  */
-std::optional<std::reference_wrapper<const partition_manifest::segment_meta>>
+std::optional<partition_manifest::segment_meta>
 partition_manifest::timequery(model::timestamp t) const {
     if (_segments.empty()) {
         return std::nullopt;
     }
 
-    auto base_t = _segments.begin()->second.base_timestamp;
-    auto max_t = _segments.rbegin()->second.max_timestamp;
-    auto base_offset = _segments.begin()->second.base_offset;
-    auto max_offset = _segments.rbegin()->second.committed_offset;
+    auto first_segment = *_segments.begin();
+    auto base_t = first_segment.base_timestamp;
+    auto max_t = _segments.last_segment().value().max_timestamp;
+    auto base_offset = first_segment.base_offset;
+    auto max_offset = _segments.last_segment().value().committed_offset;
 
     // Fast handling of bounds/edge cases to simplify subsequent
     // arithmetic steps
     if (t < base_t) {
-        return _segments.begin()->second;
+        return first_segment;
     } else if (t > max_t) {
         return std::nullopt;
     } else if (max_t == base_t) {
         // This is plausible in the case of a single segment with
         // a single batch using LogAppendTime.
-        return _segments.begin()->second;
+        return first_segment;
     }
 
     // Single-offset case should have hit max_t==base_t above
@@ -1825,66 +1822,60 @@ partition_manifest::timequery(model::timestamp t) const {
 
     // From this point on, we have finite positive differences between
     // base and max for both offset and time.
-    model::offset interpolated_offset
-      = base_offset
-        + model::offset{
-          (float(t() - base_t()) / float(max_t() - base_t()))
-          * float(max_offset() - base_offset())};
+    model::offset interpolated_offset = model::offset{std::lerp(
+      base_offset(),
+      max_offset(),
+      float(t() - base_t()) / float(max_t() - base_t()))};
 
     vlog(
       cst_log.debug, "timequery t={} offset guess {}", t, interpolated_offset);
 
     // 2. Convert offset guess into segment guess.  This is not a strictly
     // correct offset lookup, we just want something close.
-    auto segment_iter = _segments.lower_bound(interpolated_offset);
-    if (segment_iter == _segments.end()) {
-        segment_iter = --_segments.end();
-    }
+    auto segment_iter = [&] {
+        auto candidate = _segments.lower_bound(interpolated_offset);
+        if (candidate != _segments.end()) {
+            return candidate;
+        }
+        return _segments.at_index(_segments.size() - 1);
+    }();
     vlog(
       cst_log.debug,
       "timequery t={} segment initial guess {}",
       t,
-      segment_iter->second);
+      *segment_iter);
 
     // 3. Do linear search backward or forward from the location
     //    we probed, to find the right segment.
-    if (segment_iter->second.base_timestamp < t) {
+    if (segment_iter->base_timestamp < t) {
         // Our guess's base_timestamp is before the search point, so our
         // result must be this segment or a later one: search forward
-        for (; segment_iter != _segments.end(); ++segment_iter) {
-            auto base_timestamp = segment_iter->second.base_timestamp;
-            auto max_timestamp = segment_iter->second.max_timestamp;
-            if (max_timestamp >= t) {
-                // We found a segment bounding the search point
-                break;
-            } else if (base_timestamp > t) {
-                // We found the first segment after the search point
-                break;
-            }
-        }
-
-        return segment_iter->second;
+        return *std::find_if(
+          std::move(segment_iter),
+          _segments.at_index(_segments.size() - 1),
+          [&](auto const& s) {
+              // We found a segment bounding the search point - or -
+              // We found the first segment after the search point
+              return s.max_timestamp >= t || s.base_timestamp > t;
+          });
     } else {
         // Search backwards: we must peek at each preceding segment
         // to see if its max_timestamp is >= the query t, before
         // deciding whether to walk back to it.
-        vlog(
-          cst_log.debug, "timequery t={} reverse {}", t, segment_iter->second);
+        vlog(cst_log.debug, "timequery t={} reverse {}", t, *segment_iter);
 
         while (segment_iter != _segments.begin()) {
-            vlog(
-              cst_log.debug,
-              "timequery t={} reverse {}",
-              t,
-              segment_iter->second);
-            auto prev = std::prev(segment_iter);
-            if (prev->second.max_timestamp >= t) {
-                segment_iter = prev;
+            vlog(cst_log.debug, "timequery t={} reverse {}", t, *segment_iter);
+            // NOTE segment_iter is a ForwardIterator. backward walking is
+            // implemented in this slightly awkward way
+            auto prev = _segments.prev(segment_iter);
+            if (prev->max_timestamp >= t) {
+                segment_iter = std::move(prev);
             } else {
                 break;
             }
         }
-        return segment_iter->second;
+        return *segment_iter;
     }
 }
 

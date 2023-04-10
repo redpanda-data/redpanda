@@ -540,15 +540,15 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         }
 
         std::vector<cloud_storage::segment_meta> mdiff;
-        // Several things has to be done:
+        // Several things have to be done:
         // - Add all segments between old last_offset and new last_offset
         // - Compare all segments below last compacted offset with their
         //   counterparts in the old manifest and re-add them if they are
         //   diferent.
         // - Apply new start_offset if it's different
         auto offset = model::next_offset(manifest().get_last_offset());
-        for (auto it = m.segment_containing(offset); it != m.end(); it++) {
-            mdiff.push_back(it->second);
+        for (auto it = m.segment_containing(offset); it != m.end(); ++it) {
+            mdiff.push_back(*it);
         }
 
         bool needs_cleanup = false;
@@ -556,17 +556,16 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
         auto new_start_offset = m.get_start_offset();
         for (const auto& s : m) {
             if (
-              s.second.committed_offset
-                <= m.get_last_uploaded_compacted_offset()
-              && s.second.base_offset >= new_start_offset) {
+              s.committed_offset <= m.get_last_uploaded_compacted_offset()
+              && s.base_offset >= new_start_offset) {
                 // Re-uploaded segments has to be aligned with one of
                 // the existing segments in the manifest. This is guaranteed
                 // by the archiver. Because of that we can simply lookup
                 // the base offset of the segment in the manifest and
                 // compare them.
-                auto iter = manifest().get(s.first);
-                if (iter && *iter != s.second) {
-                    mdiff.push_back(s.second);
+                auto iter = manifest().get(s.base_offset);
+                if (iter && *iter != s) {
+                    mdiff.push_back(s);
                     needs_cleanup = true;
                 }
             } else {
@@ -623,8 +622,7 @@ void ntp_archiver::update_probe() {
     const auto first_addressable = man.first_addressable_segment();
     const auto truncated_seg_count = first_addressable == man.end()
                                        ? 0
-                                       : std::distance(
-                                         man.begin(), first_addressable);
+                                       : first_addressable.index();
 
     _probe->segments_to_delete(
       truncated_seg_count + man.replaced_segments_count());
@@ -695,7 +693,7 @@ ntp_archiver::download_manifest() {
           _parent.term());
     }
 
-    co_return std::make_pair(tmp, result);
+    co_return std::make_pair(std::move(tmp), result);
 }
 
 /**
@@ -1714,7 +1712,7 @@ ntp_archiver::maybe_truncate_manifest() {
     vlog(ctxlog.info, "archival metadata cleanup started");
     model::offset adjusted_start_offset = model::offset::min();
     const auto& m = manifest();
-    for (const auto& [key, meta] : m) {
+    for (const auto& meta : m) {
         retry_chain_node fib(
           _conf->manifest_upload_timeout,
           _conf->upload_loop_initial_backoff,
