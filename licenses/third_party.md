@@ -122,4 +122,51 @@ please keep this up to date with every new library use.
 | k8s.io/utils                              | Apache License 2          |
 | sigs.k8s.io/controller-runtime            | Apache License 2          |
 
+# Redpanda Console (go) deps _used_ in production in K8S (exclude all test dependencies)
+
+| Dependency                          | License      |
+| ----------------------------------- | ------------ |
+| github.com/cloudhut/common          | Apache-2.0   |
+| github.com/cloudhut/kowl/backend    | Apache-2.0   |
+| github.com/coreos/go-oidc           | Apache-2.0   |
+| github.com/okta/okta-sdk-golang/v2  | Apache-2.0   |
+| github.com/square/go-jose/v3        | Apache-2.0   |
+| gopkg.in/yaml.v2                    | Apache-2.0   |
+| github.com/cloudhut/common          | Apache-2.0   |
+| github.com/cloudhut/connect-client  | Apache-2.0   |
+| github.com/go-git/go-billy/v5       | Apache-2.0   |
+| github.com/go-git/go-git/v5         | Apache-2.0   |
+| github.com/jcmturner/gokrb5/v8      | Apache-2.0   |
+| github.com/jhump/protoreflect       | Apache-2.0   |
+| github.com/linkedin/goavro/v2       | Apache-2.0   |
+| github.com/prometheus/client_golang | Apache-2.0   |
+| golang.org/x/oauth2                 | BSD-3-Clause |
+| google.golang.org/api               | BSD-3-Clause |
+| google.golang.org/grpc              | BSD-3-Clause |
+| golang.org/x/net                    | BSD-3-Clause |
+| golang.org/x/sync                   | BSD-3-Clause |
+| github.com/go-chi/chi               | MIT          |
+| github.com/golang-jwt/jwt/v4        | MIT          |
+| github.com/knadh/koanf              | MIT          |
+| github.com/mitchellh/mapstructure   | MIT          |
+| go.uber.org/zap                     | MIT          |
+| github.com/basgys/goxml2json        | MIT          |
+| github.com/bmizerany/assert         | MIT          |
+| github.com/dop251/goja              | MIT          |
+| github.com/go-chi/chi               | MIT          |
+| github.com/go-resty/resty/v2        | MIT          |
+| github.com/jarcoal/httpmock         | MIT          |
+| github.com/knadh/koanf              | MIT          |
+| github.com/mitchellh/mapstructure   | MIT          |
+| github.com/stretchr/testify         | MIT          |
+| go.uber.org/zap                     | MIT          |
+| github.com/hashicorp/go-uuid        | MPL-2.0      |
+| github.com/gorilla/websocket        | bsd-2-clause |
+| github.com/pkg/errors               | bsd-2-clause |
+| github.com/vmihailenco/msgpack/v5   | bsd-2-clause |
+| github.com/google/go-github/v32     | bsd-3-clause |
+| github.com/gorilla/schema           | bsd-3-clause |
+| github.com/twmb/franz-go            | bsd-3-clause |
+| github.com/twmb/franz-go/pkg/kmsg   | bsd-3-clause |
+
 
