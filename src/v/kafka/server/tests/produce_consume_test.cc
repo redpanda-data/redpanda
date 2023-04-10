@@ -382,7 +382,7 @@ FIXTURE_TEST(test_node_throughput_limits_static, throughput_limits_fixure) {
       "kafka_throughput_limit_node_out_bps",
       std::make_optional(pershard_rate_limit_out * ss::smp::count));
     config_set("fetch_max_bytes", batch_size);
-    config_set("max_kafka_throttle_delay_ms", 60'000ms);
+    config_set("max_kafka_throttle_delay_ms", 30'000ms);
     config_set_window_width(200ms);
     config_set_balancer_period(0ms);
     config_set_rate_minimum(0);
@@ -414,7 +414,7 @@ FIXTURE_TEST(test_node_throughput_limits_balanced, throughput_limits_fixure) {
       "kafka_throughput_limit_node_out_bps",
       std::make_optional(rate_limit_out));
     config_set("fetch_max_bytes", batch_size);
-    config_set("max_kafka_throttle_delay_ms", 60'000ms);
+    config_set("max_kafka_throttle_delay_ms", 30'000ms);
     config_set("kafka_quota_balancer_min_shard_throughput_ratio", 0.);
     config_set_window_width(100ms);
     config_set_balancer_period(50ms);
