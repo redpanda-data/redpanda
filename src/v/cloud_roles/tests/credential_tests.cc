@@ -10,8 +10,9 @@
 
 #include "cloud_roles/apply_credentials.h"
 
-#include <boost/test/unit_test.hpp>
 #include <seastar/testing/thread_test_case.hh>
+
+#include <boost/test/unit_test.hpp>
 
 namespace bh = boost::beast::http;
 
@@ -49,7 +50,6 @@ SEASTAR_THREAD_TEST_CASE(test_aws_headers) {
         bh::request_header<> h{};
         h.method(bh::verb::put);
         applier.add_auth(h);
-        fmt::print("{}", h);
         BOOST_REQUIRE_EQUAL(h.at("x-amz-security-token"), "tok");
         // put request contains unsigned payload
         BOOST_REQUIRE_EQUAL(h.at("x-amz-content-sha256"), "UNSIGNED-PAYLOAD");
@@ -65,7 +65,6 @@ SEASTAR_THREAD_TEST_CASE(test_aws_headers) {
         bh::request_header<> h{};
         h.method(bh::verb::get);
         applier.add_auth(h);
-        fmt::print("{}", h);
         BOOST_REQUIRE_EQUAL(h.at("x-amz-security-token"), "tok2");
         // get request contains empty signature
         BOOST_REQUIRE_EQUAL(

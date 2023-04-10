@@ -28,10 +28,9 @@
 #include <system_error>
 
 namespace {
-constexpr auto iso_8061_date_fmt = FMT_COMPILE("{:%Y%m%d}");
-constexpr auto iso_8061_datetime_fmt = FMT_COMPILE("{:%Y%m%dT%H%M%SZ}");
-constexpr auto rfc_9110_datetime_fmt = FMT_COMPILE(
-  "{:%a, %d %b %Y %H:%M:%S %Z}");
+constexpr auto iso_8061_date_fmt = "{:%Y%m%d}";
+constexpr auto iso_8061_datetime_fmt = "{:%Y%m%dT%H%M%SZ}";
+constexpr auto rfc_9110_datetime_fmt = "{:%a, %d %b %Y %H:%M:%S %Z}";
 } // namespace
 
 namespace cloud_roles {
@@ -143,8 +142,8 @@ ss::sstring time_source::format(auto fmt) const {
     const auto point = _gettime_fn();
     const std::time_t time = std::chrono::system_clock::to_time_t(point);
     const std::tm gm = fmt::gmtime(time);
-
-    return fmt::format(fmt, gm);
+    auto f = fmt::format(fmt, gm);
+    return f;
 }
 
 ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
@@ -379,10 +378,7 @@ std::error_code signature_v4::sign_header(
     auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
     auto cred_scope = ssx::sformat(
       "{}/{}/{}/aws4_request", date_str, _region(), service);
-    vlog(clrl_log.trace, "debugging:: {}", date_str);
-    vlog(clrl_log.trace, "debugging:: {}", _region());
-    vlog(clrl_log.trace, "debugging:: {}", cred_scope);
-    vlog(clrl_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
+    // vlog(clrl_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
     header.set("x-amz-content-sha256", {sha256.data(), sha256.size()});
@@ -395,7 +391,8 @@ std::error_code signature_v4::sign_header(
     if (!canonical_req) {
         return canonical_req.error();
     }
-    vlog(clrl_log.trace, "\n[canonical-request]\n{}\n", canonical_req.value());
+    // vlog(clrl_log.trace, "\n[canonical-request]\n{}\n",
+    // canonical_req.value());
     auto str_to_sign = get_string_to_sign(
       amz_date, cred_scope, canonical_req.value());
     auto digest = hmac(sign_key, str_to_sign);
@@ -407,7 +404,7 @@ std::error_code signature_v4::sign_header(
       canonical_headers.value().signed_headers,
       hexdigest(digest));
     header.set(boost::beast::http::field::authorization, auth_header);
-    vlog(clrl_log.trace, "\n[signed-header]\n\n{}", header);
+    // vlog(clrl_log.trace, "\n[signed-header]\n\n{}", header);
     return {};
 }
 
