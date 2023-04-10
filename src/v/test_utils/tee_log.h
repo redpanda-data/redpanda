@@ -11,22 +11,35 @@
 
 #pragma once
 
+#include <seastar/util/log.hh>
+
 #include <boost/iostreams/stream.hpp>
 #include <boost/iostreams/tee.hpp>
 
 #include <iostream>
 #include <sstream>
 
+/*
+ * A utility for capturing seastar::logger output.
+ *
+ * TODO: ideally this introspects the installed logger so that the proper logger
+ * could be reinstalled in the destructor. The default logger for seastar is
+ * std::cerr which is used here. As long as this utility is only used in unit
+ * tests then this default behavior should be sufficient.
+ */
 struct tee_wrapper {
     using device_t
       = boost::iostreams::tee_device<std::ostream, std::stringstream>;
 
     using stream_t = boost::iostreams::stream<device_t>;
 
-    tee_wrapper()
+    explicit tee_wrapper(seastar::logger& logger)
       : sstr{}
-      , device{std::cout, sstr}
-      , stream{device} {}
+      , device{std::cerr, sstr}
+      , stream{device}
+      , logger(logger) {
+        logger.set_ostream(stream);
+    }
 
     tee_wrapper(const tee_wrapper&) = delete;
     tee_wrapper& operator=(const tee_wrapper&) = delete;
@@ -34,6 +47,7 @@ struct tee_wrapper {
     tee_wrapper& operator=(tee_wrapper&&) = delete;
 
     ~tee_wrapper() {
+        logger.set_ostream(std::cerr);
         if (stream.is_open()) {
             stream->flush();
             stream->close();
@@ -45,4 +59,5 @@ struct tee_wrapper {
     std::stringstream sstr;
     device_t device;
     stream_t stream;
+    seastar::logger& logger;
 };
