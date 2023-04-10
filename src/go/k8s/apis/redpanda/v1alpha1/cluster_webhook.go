@@ -844,7 +844,7 @@ func validateListener(
 	tlsEnabled, requireClientAuth bool,
 	issuerRef *cmmeta.ObjectReference,
 	nodeSecretRef *corev1.ObjectReference,
-	clientCACertRef *corev1.ObjectReference,
+	clientCACertRef *corev1.TypedLocalObjectReference,
 	path *field.Path,
 	external *ExternalConnectivityConfig,
 	externalPath *field.Path,
@@ -872,76 +872,77 @@ func validateListener(
 				external.Subdomain,
 				"TLS requires specifying a subdomain"))
 	}
-	if tlsEnabled && clientCACertRef != nil {
-		if !requireClientAuth {
-			allErrs = append(allErrs,
-				field.Invalid(
-					path.Child("requireClientAuth"),
-					requireClientAuth,
-					"Enabled has to be set to true for RequireClientAuth if ClientCACertRef is set"))
-		}
+	if !tlsEnabled || clientCACertRef == nil {
+		return allErrs
+	}
 
-		if clientCACertRef.Name == "" {
+	if !requireClientAuth {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("requireClientAuth"),
+				requireClientAuth,
+				"Enabled has to be set to true for RequireClientAuth if ClientCACertRef is set"))
+	}
+
+	if clientCACertRef.Name == "" {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("clientCACertRef"),
+				clientCACertRef,
+				"Name must be provided if ClientCACertRef is set"))
+	}
+
+	if clientCACertRef.Kind != "" && !strings.EqualFold(clientCACertRef.Kind, "Secret") {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("clientCACertRef"),
+				clientCACertRef,
+				"Kind must be set to secret if set in ClientCACertRef"))
+	}
+
+	if len(allErrs) > 0 {
+		return allErrs
+	}
+
+	secret := &corev1.Secret{}
+	err := kclient.Get(context.TODO(), types.NamespacedName{Name: clientCACertRef.Name, Namespace: clusterNamespace}, secret)
+	if err != nil {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("clientCACertRef"),
+				clientCACertRef,
+				"Failed to get secret: "+err.Error()))
+		return allErrs
+	}
+
+	crt, found := secret.Data[cmmeta.TLSCAKey]
+	if !found {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("clientCACertRef"),
+				clientCACertRef,
+				"ca.crt must be set in the client CA secret"))
+		return allErrs
+	}
+
+	pb, _ := pem.Decode(crt)
+	if pb == nil {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("clientCACertRef"),
+				clientCACertRef,
+				"Invalid certificate in the client CA secret"))
+	} else {
+		_, err := x509.ParseCertificate(pb.Bytes)
+		if err != nil {
 			allErrs = append(allErrs,
 				field.Invalid(
 					path.Child("clientCACertRef"),
 					clientCACertRef,
-					"Name must be provided if ClientCACertRef is set"))
-		}
-
-		if clientCACertRef.Kind != "" && !strings.EqualFold(clientCACertRef.Kind, "Secret") {
-			allErrs = append(allErrs,
-				field.Invalid(
-					path.Child("clientCACertRef"),
-					clientCACertRef,
-					"Kind must be set to secret if set in ClientCACertRef"))
-		}
-
-		if len(allErrs) == 0 {
-			if clientCACertRef.Namespace == "" {
-				clientCACertRef.Namespace = clusterNamespace
-			}
-
-			secret := &corev1.Secret{}
-			err := kclient.Get(context.TODO(), types.NamespacedName{Name: clientCACertRef.Name, Namespace: clientCACertRef.Namespace}, secret)
-			if err != nil {
-				allErrs = append(allErrs,
-					field.Invalid(
-						path.Child("clientCACertRef"),
-						clientCACertRef,
-						"Failed to get secret: "+err.Error()))
-				return allErrs
-			}
-
-			crt, found := secret.Data[cmmeta.TLSCAKey]
-			if !found {
-				allErrs = append(allErrs,
-					field.Invalid(
-						path.Child("clientCACertRef"),
-						clientCACertRef,
-						"ca.crt must be set in the client CA secret"))
-				return allErrs
-			}
-
-			pb, _ := pem.Decode(crt)
-			if pb == nil {
-				allErrs = append(allErrs,
-					field.Invalid(
-						path.Child("clientCACertRef"),
-						clientCACertRef,
-						"Invalid certificate in the client CA secret"))
-			} else {
-				_, err := x509.ParseCertificate(pb.Bytes)
-				if err != nil {
-					allErrs = append(allErrs,
-						field.Invalid(
-							path.Child("clientCACertRef"),
-							clientCACertRef,
-							"Invalid certificate in the client CA secret: "+err.Error()))
-				}
-			}
+					"Invalid certificate in the client CA secret: "+err.Error()))
 		}
 	}
+
 	return allErrs
 }
 

@@ -343,7 +343,7 @@ func TestClusterCertificates(t *testing.T) {
 								TLS: v1alpha1.PandaproxyAPITLS{
 									Enabled:           true,
 									RequireClientAuth: true,
-									ClientCACertRef: &corev1.ObjectReference{
+									ClientCACertRef: &corev1.TypedLocalObjectReference{
 										Name: "client-ca-secret",
 									},
 								},
@@ -366,7 +366,7 @@ func TestClusterCertificates(t *testing.T) {
 								TLS: v1alpha1.PandaproxyAPITLS{
 									Enabled:           true,
 									RequireClientAuth: true,
-									ClientCACertRef: &corev1.ObjectReference{
+									ClientCACertRef: &corev1.TypedLocalObjectReference{
 										Name: "client-ca-secret",
 									},
 									IssuerRef: &cmmetav1.ObjectReference{
@@ -474,7 +474,7 @@ func TestClusterCertificates(t *testing.T) {
 							TLS: &v1alpha1.SchemaRegistryAPITLS{
 								Enabled:           true,
 								RequireClientAuth: true,
-								ClientCACertRef: &corev1.ObjectReference{
+								ClientCACertRef: &corev1.TypedLocalObjectReference{
 									Name: "client-ca-secret",
 								},
 							},
@@ -494,7 +494,7 @@ func TestClusterCertificates(t *testing.T) {
 							TLS: &v1alpha1.SchemaRegistryAPITLS{
 								Enabled:           true,
 								RequireClientAuth: true,
-								ClientCACertRef: &corev1.ObjectReference{
+								ClientCACertRef: &corev1.TypedLocalObjectReference{
 									Name: "client-ca-secret",
 								},
 								IssuerRef: &cmmetav1.ObjectReference{

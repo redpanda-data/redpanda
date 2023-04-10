@@ -933,8 +933,8 @@ func (in *PandaproxyAPITLS) DeepCopyInto(out *PandaproxyAPITLS) {
 	}
 	if in.ClientCACertRef != nil {
 		in, out := &in.ClientCACertRef, &out.ClientCACertRef
-		*out = new(v1.ObjectReference)
-		**out = **in
+		*out = new(v1.TypedLocalObjectReference)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -1224,8 +1224,8 @@ func (in *SchemaRegistryAPITLS) DeepCopyInto(out *SchemaRegistryAPITLS) {
 	}
 	if in.ClientCACertRef != nil {
 		in, out := &in.ClientCACertRef, &out.ClientCACertRef
-		*out = new(v1.ObjectReference)
-		**out = **in
+		*out = new(v1.TypedLocalObjectReference)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
@@ -1550,8 +1550,8 @@ func (in *TLSConfig) DeepCopyInto(out *TLSConfig) {
 	}
 	if in.ClientCACertRef != nil {
 		in, out := &in.ClientCACertRef, &out.ClientCACertRef
-		*out = new(v1.ObjectReference)
-		**out = **in
+		*out = new(v1.TypedLocalObjectReference)
+		(*in).DeepCopyInto(*out)
 	}
 }
 
