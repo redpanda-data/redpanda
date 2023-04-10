@@ -370,7 +370,6 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
     const auto units = co_await _balancer_mx.get_units();
     _balancer_gate.check();
     _balancer_timer_last_ran = ss::lowres_clock::now();
-    vlog(klog.trace, "qb - Step");
     _probe.rec_balancer_step();
 
     // determine the borrowers and whether any balancing is needed now
@@ -391,14 +390,14 @@ ss::future<> snc_quota_manager::quota_balancer_step() {
       [](const ingress_egress_state<shard_count_t>& s, const borrower_t& b) {
           return s + b.borrowers_count;
       });
+    if (is_zero(borrowers_count)) {
+        co_return;
+    }
     vlog(
       klog.trace,
       "qb - Borrowers count: {}, borrowers:",
       borrowers_count,
       borrowers);
-    if (is_zero(borrowers_count)) {
-        co_return;
-    }
 
     // collect quota from lenders
     const ingress_egress_state<quota_t> collected
