@@ -341,8 +341,7 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
 }
 
 FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
-    tee_wrapper wrapper;
-    cloud_roles::clrl_log.set_ostream(wrapper.stream);
+    tee_wrapper wrapper(cloud_roles::clrl_log);
 
     fail_request_if(
       [](const auto&) { return true; },
@@ -379,8 +378,7 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
     // refresh operation will attempt to retry. In order not to expose the retry
     // counter or make similar changes to the class just for testing, this test
     // scans the log for the message emitted when a ss::timed_out_error is seen.
-    tee_wrapper wrapper;
-    cloud_roles::clrl_log.set_ostream(wrapper.stream);
+    tee_wrapper wrapper(cloud_roles::clrl_log);
     ss::abort_source as;
     std::optional<cloud_roles::credentials> c;
 
@@ -408,8 +406,7 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
 }
 
 FIXTURE_TEST(test_handle_bad_response, http_imposter_fixture) {
-    tee_wrapper wrapper;
-    cloud_roles::clrl_log.set_ostream(wrapper.stream);
+    tee_wrapper wrapper(cloud_roles::clrl_log);
 
     fail_request_if(
       [](const auto&) { return true; },
@@ -449,8 +446,7 @@ FIXTURE_TEST(test_intermittent_error, http_imposter_fixture) {
     // successful request. The refresh credentials object should retry after the
     // first failure.
 
-    tee_wrapper wrapper;
-    cloud_roles::clrl_log.set_ostream(wrapper.stream);
+    tee_wrapper wrapper(cloud_roles::clrl_log);
 
     when()
       .request(cloud_role_tests::aws_role_query_url)
