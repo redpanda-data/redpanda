@@ -11,11 +11,12 @@
 #include "cloud_roles/refresh_credentials.h"
 
 #include <seastar/core/gate.hh>
+#include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/test/unit_test.hpp>
 
-BOOST_AUTO_TEST_CASE(test_override_address) {
+SEASTAR_THREAD_TEST_CASE(test_override_address) {
     ss::abort_source as;
     cloud_roles::aws_region_name region{"atlantis"};
 
@@ -39,7 +40,7 @@ BOOST_AUTO_TEST_CASE(test_override_address) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_override_address_fails_on_bad_address) {
+SEASTAR_THREAD_TEST_CASE(test_override_address_fails_on_bad_address) {
     ss::abort_source as;
     cloud_roles::aws_region_name region{"atlantis"};
 
