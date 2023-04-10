@@ -23,6 +23,21 @@ rp_test(
     categorization_tests.cc
     fetch_credentials_tests.cc
     credential_tests.cc
+    DEFINITIONS BOOST_TEST_DYN_LINK
+    LIBRARIES
+    v::seastar_testing_main
+    v::cloud_roles
+    Boost::unit_test_framework
+    v::http_test_utils
+    ARGS "-- -c 1"
+    LABELS cloud_roles
+)
+
+rp_test(
+    UNIT_TEST
+    BINARY_NAME
+    test_cloud_roles_env
+    SOURCES
     env_override_tests.cc
     DEFINITIONS BOOST_TEST_DYN_LINK
     LIBRARIES
