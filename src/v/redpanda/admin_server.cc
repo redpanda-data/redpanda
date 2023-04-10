@@ -700,6 +700,9 @@ get_brokers(cluster::controller* const controller) {
               b.is_alive = true;
               b.maintenance_status = fill_maintenance_status(std::nullopt);
 
+              b.internal_rpc_address = nm.broker.rpc_address().host();
+              b.internal_rpc_port = nm.broker.rpc_address().port();
+
               broker_map[id] = b;
           }
 
@@ -2089,6 +2092,8 @@ admin_server::get_broker_handler(std::unique_ptr<ss::httpd::request> req) {
 
     ss::httpd::broker_json::broker ret;
     ret.node_id = node_meta->broker.id();
+    ret.internal_rpc_address = node_meta->broker.rpc_address().host();
+    ret.internal_rpc_port = node_meta->broker.rpc_address().port();
     ret.num_cores = node_meta->broker.properties().cores;
     if (node_meta->broker.rack()) {
         ret.rack = node_meta->broker.rack().value();
