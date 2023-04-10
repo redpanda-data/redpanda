@@ -564,7 +564,7 @@ ss::future<client::response_stream_ref> client::request(
               fsend = ss::do_with(
                 request->as_output_stream(),
                 [&input](ss::output_stream<char>& output) {
-                    return ss::copy(input, output).then([&output] {
+                    return ss::copy(input, output).finally([&output] {
                         return output.close();
                     });
                 });
