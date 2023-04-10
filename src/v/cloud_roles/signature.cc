@@ -379,6 +379,9 @@ std::error_code signature_v4::sign_header(
     auto sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
     auto cred_scope = ssx::sformat(
       "{}/{}/{}/aws4_request", date_str, _region(), service);
+    vlog(clrl_log.trace, "debugging:: {}", date_str);
+    vlog(clrl_log.trace, "debugging:: {}", _region());
+    vlog(clrl_log.trace, "debugging:: {}", cred_scope);
     vlog(clrl_log.trace, "Credentials updated:\n[scope]\n{}\n", cred_scope);
     auto amz_date = _sig_time.format_datetime();
     header.set("x-amz-date", {amz_date.data(), amz_date.size()});
