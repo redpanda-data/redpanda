@@ -755,4 +755,3 @@ class NodesDecommissioningTest(EndToEndTest):
                                  auto_assign_node_id=new_bootstrap)
 
         assert len(admin.get_brokers(node=self.redpanda.nodes[0])) == 4
-ssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssssss
