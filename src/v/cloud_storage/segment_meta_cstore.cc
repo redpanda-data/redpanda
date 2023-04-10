@@ -754,10 +754,18 @@ private:
 };
 
 segment_meta_materializing_iterator::segment_meta_materializing_iterator(
+  segment_meta_materializing_iterator&&)
+  = default;
+segment_meta_materializing_iterator&
+segment_meta_materializing_iterator::operator=(
+  segment_meta_materializing_iterator&&)
+  = default;
+segment_meta_materializing_iterator::segment_meta_materializing_iterator(
   std::unique_ptr<impl> i)
   : _impl(std::move(i)) {}
 
-segment_meta_materializing_iterator::~segment_meta_materializing_iterator() {}
+segment_meta_materializing_iterator::~segment_meta_materializing_iterator()
+  = default;
 
 const segment_meta& segment_meta_materializing_iterator::dereference() const {
     return _impl->dereference();
@@ -919,7 +927,19 @@ private:
 segment_meta_cstore::segment_meta_cstore()
   : _impl(std::make_unique<impl>()) {}
 
-segment_meta_cstore::~segment_meta_cstore() {}
+segment_meta_cstore::~segment_meta_cstore() = default;
+
+segment_meta_cstore::segment_meta_cstore(
+  segment_meta_cstore&&) noexcept = default;
+segment_meta_cstore&
+segment_meta_cstore::operator=(segment_meta_cstore&&) noexcept = default;
+
+bool segment_meta_cstore::operator==(segment_meta_cstore const& oth) const {
+    // this overload of std::equal in clang stdlib works with const_iterator
+    // because it does not perform a copy of the iterator
+    return size() == oth.size()
+           && std::equal(begin(), end(), oth.begin(), std::equal_to{});
+}
 
 segment_meta_cstore::const_iterator segment_meta_cstore::begin() const {
     return const_iterator(_impl->begin());

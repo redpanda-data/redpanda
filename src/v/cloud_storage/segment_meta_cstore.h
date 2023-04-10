@@ -38,7 +38,7 @@ class segment_meta_frame_const_iterator
     using self_t = segment_meta_frame_const_iterator<value_t, decoder_t>;
 
 public:
-    /// Create iterator that points to the begining
+    /// Create iterator that points to the beginning
     explicit segment_meta_frame_const_iterator(
       decoder_t decoder,
       const std::array<value_t, buffer_depth>& head,
@@ -843,11 +843,9 @@ public:
     segment_meta_materializing_iterator&
     operator=(const segment_meta_materializing_iterator&)
       = delete;
-    segment_meta_materializing_iterator(segment_meta_materializing_iterator&&)
-      = default;
+    segment_meta_materializing_iterator(segment_meta_materializing_iterator&&);
     segment_meta_materializing_iterator&
-    operator=(segment_meta_materializing_iterator&&)
-      = default;
+    operator=(segment_meta_materializing_iterator&&);
     explicit segment_meta_materializing_iterator(std::unique_ptr<impl>);
 
     ~segment_meta_materializing_iterator();
@@ -874,8 +872,11 @@ public:
     using const_iterator = segment_meta_materializing_iterator;
 
     segment_meta_cstore();
+    segment_meta_cstore(segment_meta_cstore&&) noexcept;
+    segment_meta_cstore& operator=(segment_meta_cstore&&) noexcept;
     ~segment_meta_cstore();
 
+    bool operator==(segment_meta_cstore const& oth) const;
     /// Return iterator
     const_iterator begin() const;
     const_iterator end() const;
