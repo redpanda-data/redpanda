@@ -11,10 +11,11 @@
 #include "cloud_roles/apply_credentials.h"
 
 #include <boost/test/unit_test.hpp>
+#include <seastar/testing/thread_test_case.hh>
 
 namespace bh = boost::beast::http;
 
-BOOST_AUTO_TEST_CASE(test_gcp_headers) {
+SEASTAR_THREAD_TEST_CASE(test_gcp_headers) {
     auto applier = cloud_roles::make_credentials_applier(
       cloud_roles::gcp_credentials{
         .oauth_token = cloud_roles::oauth_token_str{"a-token"}});
@@ -36,7 +37,7 @@ BOOST_AUTO_TEST_CASE(test_gcp_headers) {
     }
 }
 
-BOOST_AUTO_TEST_CASE(test_aws_headers) {
+SEASTAR_THREAD_TEST_CASE(test_aws_headers) {
     auto applier = cloud_roles::make_credentials_applier(
       cloud_roles::aws_credentials{
         .access_key_id = cloud_roles::public_key_str{"pub"},
