@@ -2118,6 +2118,7 @@ ss::future<> rm_stm::handle_eviction() {
           _log_state = {};
           _mem_state = {};
           set_next(_c->start_offset());
+          _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });
 }

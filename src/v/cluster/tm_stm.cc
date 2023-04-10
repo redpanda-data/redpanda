@@ -583,6 +583,7 @@ ss::future<> tm_stm::handle_eviction() {
           _mem_txes.clear();
           _pid_tx_id.clear();
           set_next(_c->start_offset());
+          _insync_offset = model::prev_offset(_raft->start_offset());
           return ss::now();
       });
 }
