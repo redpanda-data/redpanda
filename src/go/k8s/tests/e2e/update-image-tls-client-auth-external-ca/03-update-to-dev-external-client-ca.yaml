@@ -44,6 +44,7 @@ spec:
         clientCACertRef:
           kind: Secret
           name: ca-cert
+          apiGroup: ""
     schemaRegistry:
       port: 8081
       external: {}
@@ -53,3 +54,4 @@ spec:
         clientCACertRef:
           kind: Secret
           name: ca-cert
+          apiGroup: ""

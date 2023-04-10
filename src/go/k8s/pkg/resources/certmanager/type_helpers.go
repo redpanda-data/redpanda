@@ -152,7 +152,7 @@ type apiCertificates struct {
 
 	// CR allows to specify node certificate, if not provided this will be nil
 	externalNodeCertificate     *corev1.ObjectReference
-	externalClientCACertificate *corev1.ObjectReference
+	externalClientCACertificate *corev1.TypedLocalObjectReference
 
 	// all certificates need to exist in this namespace for mounting of secrets to work
 	clusterNamespace string
@@ -334,9 +334,6 @@ func (cc *ClusterCertificates) prepareAPI(
 
 	result.externalClientCACertificate = firstTLSListener.ClientCACertRef
 	if result.externalClientCACertificate != nil {
-		if result.externalClientCACertificate.Namespace == "" {
-			result.externalClientCACertificate.Namespace = cc.pandaCluster.Namespace
-		}
 		result.caCertificateBundle = NewCACertificateBundle(cc.client, cc.scheme, cc.pandaCluster,
 			[]*types.NamespacedName{
 				result.clientCACertificateName(),
@@ -524,7 +521,7 @@ func (ac *apiCertificates) clientCACertificateName() *types.NamespacedName {
 	}
 	return &types.NamespacedName{
 		Name:      ac.externalClientCACertificate.Name,
-		Namespace: ac.externalClientCACertificate.Namespace,
+		Namespace: ac.clusterNamespace,
 	}
 }
 

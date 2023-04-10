@@ -62,5 +62,6 @@ spec:
         clientCACertRef:
           kind: Secret
           name: ca-cert
+          apiGroup: ""
     developerMode: true
 
