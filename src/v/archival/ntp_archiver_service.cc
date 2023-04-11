@@ -349,7 +349,7 @@ ss::future<> ntp_archiver::upload_until_term_change() {
     {
         auto units = co_await ss::get_units(_uploads_active, 1);
         co_await maybe_upload_manifest(upload_loop_prologue_ctx_label);
-        co_await maybe_flush_manifest_clean_offset();
+        co_await flush_manifest_clean_offset();
     }
 
     while (may_begin_uploads()) {
@@ -430,6 +430,11 @@ ss::future<> ntp_archiver::upload_until_term_change() {
         // inline with segment uploads: this path will be taken on e.g. restarts
         // or unclean leadership changes.
         if (co_await maybe_upload_manifest(upload_loop_epilogue_ctx_label)) {
+            co_await flush_manifest_clean_offset();
+        } else {
+            // No manifest upload, but if some background task had incremented
+            // the projected clean offset without flushing it, flush it for
+            // them.
             co_await maybe_flush_manifest_clean_offset();
         }
 
@@ -753,6 +758,15 @@ ss::future<bool> ntp_archiver::maybe_upload_manifest(const char* upload_ctx) {
 }
 
 ss::future<> ntp_archiver::maybe_flush_manifest_clean_offset() {
+    if (
+      _projected_manifest_clean_at.has_value()
+      && ss::lowres_clock::now() - _last_marked_clean_time
+           > _manifest_upload_interval()) {
+        co_return co_await flush_manifest_clean_offset();
+    }
+}
+
+ss::future<> ntp_archiver::flush_manifest_clean_offset() {
     if (!_projected_manifest_clean_at.has_value()) {
         co_return;
     }
@@ -777,6 +791,7 @@ ss::future<> ntp_archiver::maybe_flush_manifest_clean_offset() {
           "Marked archival_metadata_stm clean at offset {}",
           clean_offset);
         _projected_manifest_clean_at.reset();
+        _last_marked_clean_time = ss::lowres_clock::now();
     }
 }
 
@@ -1342,7 +1357,7 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
           > _parent.archival_meta_stm()->get_last_clean_at()) {
             // If we have a projected clean offset, take this opportunity to
             // persist that to the stm.  This is equivalent to what
-            // maybe_flush_manifest_clean_offset does, but we're doing it
+            // flush_manifest_clean_offset does, but we're doing it
             // inline with our segment-adding batch.
             manifest_clean_offset = _projected_manifest_clean_at;
         }
@@ -1358,6 +1373,9 @@ ss::future<ntp_archiver::upload_group_result> ntp_archiver::wait_uploads(
               error.message());
         } else {
             // We have flushed projected clean offset if it was set
+            if (_projected_manifest_clean_at.has_value()) {
+                _last_marked_clean_time = ss::lowres_clock::now();
+            }
             _projected_manifest_clean_at.reset();
         }
 
@@ -1604,7 +1622,7 @@ ss::future<> ntp_archiver::housekeeping() {
             const auto gc_updated_manifest = co_await garbage_collect();
             if (retention_updated_manifest || gc_updated_manifest) {
                 co_await upload_manifest(housekeeping_ctx_label);
-                co_await maybe_flush_manifest_clean_offset();
+                co_await flush_manifest_clean_offset();
             }
         }
     } catch (std::exception& e) {
@@ -1947,7 +1965,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
     } else {
         // Write to archival_metadata_stm to mark our updated clean offset
         // as a result of uploading the manifest successfully.
-        co_await maybe_flush_manifest_clean_offset();
+        co_await flush_manifest_clean_offset();
     }
     co_return true;
 }
@@ -1997,7 +2015,7 @@ ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
     // the stm.  This is an optimization: if it fails then the leader transfer
     // will still proceed smoothly, there just may be an extra manifest upload
     // on the new leader.
-    co_await maybe_flush_manifest_clean_offset();
+    co_await flush_manifest_clean_offset();
 
     co_return true;
 }
