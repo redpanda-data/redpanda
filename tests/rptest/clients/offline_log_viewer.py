@@ -37,6 +37,16 @@ class OfflineLogViewer:
             self._redpanda.logger.error(f"Invalid JSON output: {json_out}")
             raise
 
+    def inspect_data_directory(self, node):
+        cmd = f"python3 /opt/scripts/offline_log_viewer/data_directory_inspector.py --path {self._redpanda.DATA_DIR}"
+        json_out = node.account.ssh_output(cmd, combine_stderr=False)
+        try:
+            return json.loads(json_out)
+        except json.decoder.JSONDecodeError:
+            # Log the bad output before re-raising
+            self._redpanda.logger.error(f"Invalid JSON output: {json_out}")
+            raise
+
     def read_controller(self, node):
         return self._json_cmd(node, "--type controller")
 

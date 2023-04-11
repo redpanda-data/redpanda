@@ -14,7 +14,10 @@ from ducktape.mark.resource import ClusterUseMetadata
 from ducktape.mark._mark import Mark
 
 
-def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
+def cluster(log_allow_list=None,
+            check_allowed_error_logs=True,
+            check_unknown_data_directory_files=True,
+            **kwargs):
     """
     Drop-in replacement for Ducktape `cluster` that imposes additional
     redpanda-specific checks and defaults.
@@ -86,6 +89,15 @@ def cluster(log_allow_list=None, check_allowed_error_logs=True, **kwargs):
                         try:
                             redpanda.raise_on_bad_logs(
                                 allow_list=log_allow_list)
+
+                            redpanda.raise_on_unknown_data_directory_file()
+                        except:
+                            redpanda.cloud_storage_diagnostics()
+                            raise
+
+                    if check_unknown_data_directory_files:
+                        try:
+                            redpanda.raise_on_unknown_data_directory_file()
                         except:
                             redpanda.cloud_storage_diagnostics()
                             raise
