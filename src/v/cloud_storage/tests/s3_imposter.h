@@ -12,6 +12,7 @@
 
 #include "cloud_storage/base_manifest.h"
 #include "config/configuration.h"
+#include "http/tests/registered_urls.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -64,10 +65,11 @@ public:
     set_expectations_and_listen(const std::vector<expectation>& expectations);
 
     /// Access all http requests ordered by time
-    const std::vector<ss::httpd::request>& get_requests() const;
+    const std::vector<http_test_utils::request_info>& get_requests() const;
 
     /// Access all http requests ordered by target url
-    const std::multimap<ss::sstring, ss::httpd::request>& get_targets() const;
+    const std::multimap<ss::sstring, http_test_utils::request_info>&
+    get_targets() const;
 
     cloud_storage_clients::s3_configuration get_configuration();
 
@@ -80,9 +82,9 @@ private:
 
     std::unique_ptr<ss::httpd::handler_base> _handler;
     /// Contains saved requests
-    std::vector<ss::httpd::request> _requests;
+    std::vector<http_test_utils::request_info> _requests;
     /// Contains all accessed target urls
-    std::multimap<ss::sstring, ss::httpd::request> _targets;
+    std::multimap<ss::sstring, http_test_utils::request_info> _targets;
 };
 
 class enable_cloud_storage_fixture {

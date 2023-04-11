@@ -46,9 +46,8 @@ constexpr std::string_view request_schema = R"(
 
 namespace cloud_storage {
 
-recovery_request::recovery_request(ss::httpd::request req)
-  : _request(std::move(req)) {
-    parse_request_body();
+recovery_request::recovery_request(const ss::http::request& req) {
+    parse_request_body(req);
 }
 
 std::optional<ss::sstring> recovery_request::topic_names_pattern() const {
@@ -77,9 +76,9 @@ static std::optional<ss::sstring> find_content_type(const headers& h) {
     return std::nullopt;
 }
 
-void recovery_request::parse_request_body() {
-    if (_request.content_length > 0) {
-        auto content_type = find_content_type(_request._headers);
+void recovery_request::parse_request_body(const ss::http::request& request) {
+    if (request.content_length > 0) {
+        auto content_type = find_content_type(request._headers);
         if (!content_type) {
             throw bad_request{"missing content type"};
         }
@@ -88,7 +87,7 @@ void recovery_request::parse_request_body() {
               fmt::format("invalid content type {}", content_type.value())};
         }
         json::Document document;
-        document.Parse(_request.content.data());
+        document.Parse(request.content.data());
         if (document.HasParseError()) {
             throw bad_request{fmt::format(
               "{}", rapidjson::GetParseError_En(document.GetParseError()))};

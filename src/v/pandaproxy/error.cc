@@ -41,6 +41,8 @@ struct reply_error_category final : std::error_category {
             return "HTTP 204 No Content";
         case reply_error_code::reset_content:
             return "HTTP 205 Reset Content";
+        case reply_error_code::partial_content:
+            return "HTTP 206 Partial Content";
         case reply_error_code::multiple_choices:
             return "HTTP 300 Multiple Choices";
         case reply_error_code::moved_permanently:
@@ -299,9 +301,9 @@ std::error_condition make_error_condition(reply_error_code ec) {
     return {static_cast<int>(ec), reply_error_category};
 }
 
-std::error_condition make_error_condition(ss::httpd::reply::status_type st) {
+std::error_condition make_error_condition(ss::http::reply::status_type st) {
     using rec = reply_error_code;
-    using sec = ss::httpd::reply::status_type;
+    using sec = ss::http::reply::status_type;
 
     switch (st) {
     case sec::continue_:
@@ -384,6 +386,8 @@ std::error_condition make_error_condition(ss::httpd::reply::status_type st) {
         return rec::http_version_not_supported;
     case sec::insufficient_storage:
         return rec::insufficient_storage;
+    case sec::partial_content:
+        return rec::partial_content;
     }
     return rec::kafka_bad_request;
 }

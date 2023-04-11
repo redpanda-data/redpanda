@@ -22,7 +22,38 @@
 namespace http_test_utils {
 struct response {
     ss::sstring body;
-    ss::httpd::reply::status_type status;
+    ss::http::reply::status_type status;
+};
+
+struct request_info {
+    // common request state
+    ss::sstring method;
+    ss::sstring url;
+    ss::sstring content;
+    size_t content_length;
+
+    /*
+     * an ugly hack for cloud_storage remote_test.cc. these are cherry-picked
+     * out of the request for convenience rather than copying over the entire
+     * header and query parameter data structures and search routines for those
+     * containers. if more request info was needed it might be worth copying
+     * over all the state and the accessors.
+     */
+    ss::sstring q_list_type;
+    ss::sstring q_prefix;
+    ss::sstring h_prefix;
+    bool has_q_delete;
+
+    explicit request_info(const ss::http::request& req)
+      : method(req._method)
+      , url(req._url)
+      , content(req.content)
+      , content_length(req.content_length) {
+        q_list_type = req.get_query_param("list-type");
+        q_prefix = req.get_query_param("prefix");
+        h_prefix = req.get_header("prefix");
+        has_q_delete = req.query_parameters.contains("delete");
+    }
 };
 
 std::ostream& operator<<(std::ostream& os, const response& resp);
@@ -49,12 +80,12 @@ struct registered_urls {
             ss::sstring request_content;
 
             void then_reply_with(ss::sstring content);
-            void then_reply_with(ss::httpd::reply::status_type status);
+            void then_reply_with(ss::http::reply::status_type status);
 
             void then_reply_with(
-              ss::sstring content, ss::httpd::reply::status_type status);
+              ss::sstring content, ss::http::reply::status_type status);
 
-            add_mapping_when& with_method(ss::operation_type m);
+            add_mapping_when& with_method(ss::httpd::operation_type m);
 
             add_mapping_when& with_content(ss::sstring content);
         };
@@ -70,6 +101,6 @@ struct registered_urls {
 
     add_mapping::add_mapping_when request(ss::sstring url);
 
-    response lookup(ss::httpd::const_req& req) const;
+    response lookup(const request_info&) const;
 };
 } // namespace http_test_utils

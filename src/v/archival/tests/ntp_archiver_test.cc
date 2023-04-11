@@ -132,7 +132,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     for (auto [url, req] : get_targets()) {
-        vlog(test_log.info, "{} {}", req._method, req._url);
+        vlog(test_log.info, "{} {}", req.method, req.url);
     }
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
@@ -142,7 +142,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         auto req_opt = get_latest_request(manifest_url);
         BOOST_REQUIRE(req_opt.has_value());
         auto req = req_opt.value().get();
-        BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
+        BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
         verify_manifest_content(req.content);
         manifest = load_manifest(req.content);
         BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
@@ -154,7 +154,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         auto req_opt = get_latest_request("/" + segment1_url().string());
         BOOST_REQUIRE(req_opt.has_value());
         auto req = req_opt.value().get();
-        BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
+        BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
         verify_segment(manifest_ntp, segment1_name, req.content);
     }
 
@@ -164,7 +164,7 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
         auto it = get_targets().find("/" + segment2_url().string());
         BOOST_REQUIRE(it != get_targets().end());
         const auto& [url, req] = *it;
-        BOOST_REQUIRE_EQUAL(req._method, "PUT"); // NOLINT
+        BOOST_REQUIRE_EQUAL(req.method, "PUT"); // NOLINT
         verify_segment(manifest_ntp, segment2_name, req.content);
     }
 
@@ -259,7 +259,7 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
     config::shard_local_cfg().delete_retention_ms.reset();
 
     for (auto [url, req] : get_targets()) {
-        vlog(test_log.info, "{} {}", req._method, req._url);
+        vlog(test_log.info, "{} {}", req.method, req.url);
     }
 
     for (const auto& [url, deletion_expected] : segment_urls) {
@@ -269,7 +269,7 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
                                  req_begin,
                                  req_end,
                                  [](auto entry) {
-                                     return entry.second._method == "DELETE";
+                                     return entry.second.method == "DELETE";
                                  })
                                != req_end;
 
@@ -344,7 +344,7 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
 
     // Fail the second deletion request received.
     fail_request_if(
-      [delete_request_idx = 0](const ss::httpd::request& req) mutable {
+      [delete_request_idx = 0](const ss::http::request& req) mutable {
           if (req._method == "DELETE") {
               return 2 == ++delete_request_idx;
           }
@@ -353,13 +353,13 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
       },
       {.body
        = {archival_tests::forbidden_payload.data(), archival_tests::forbidden_payload.size()},
-       .status = ss::httpd::reply::status_type::bad_request});
+       .status = ss::http::reply::status_type::bad_request});
 
     archiver.apply_retention().get();
     archiver.garbage_collect().get();
 
     for (auto [url, req] : get_targets()) {
-        vlog(test_log.info, "{} {}", req._method, req._url);
+        vlog(test_log.info, "{} {}", req.method, req.url);
     }
 
     const auto& manifest_after_retention
@@ -718,7 +718,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     BOOST_REQUIRE_EQUAL(compacted_result.num_failed, 0);
 
     for (auto req : get_requests()) {
-        vlog(test_log.info, "{} {}", req._method, req._url);
+        vlog(test_log.info, "{} {}", req.method, req.url);
     }
     BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
 
@@ -726,7 +726,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     {
         BOOST_REQUIRE_EQUAL(1, get_request_count(manifest_url));
         auto req = get_latest_request(manifest_url).value().get();
-        BOOST_REQUIRE(req._method == "PUT");
+        BOOST_REQUIRE(req.method == "PUT");
         manifest = load_manifest(req.content);
         BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
@@ -736,7 +736,7 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
         auto url = "/" + get_segment_path(manifest, s2name)().string();
         BOOST_REQUIRE_EQUAL(1, get_request_count(url));
         auto req = get_latest_request(url).value().get();
-        BOOST_REQUIRE(req._method == "PUT"); // NOLINT
+        BOOST_REQUIRE(req.method == "PUT"); // NOLINT
     }
 
     BOOST_REQUIRE(part->archival_meta_stm());
@@ -797,7 +797,7 @@ public:
 };
 
 static counting_batch_consumer::stream_stats
-calculate_segment_stats(const ss::httpd::request& req) {
+calculate_segment_stats(const http_test_utils::request_info& req) {
     iobuf stream_body;
     stream_body.append(req.content.data(), req.content_length);
     auto stream = make_iobuf_input_stream(std::move(stream_body));
@@ -930,7 +930,7 @@ static void test_partial_upload_impl(
         auto [begin, end] = test.get_targets().equal_range(manifest_url);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
-        BOOST_REQUIRE(begin->second._method == "PUT");
+        BOOST_REQUIRE(begin->second.method == "PUT");
         manifest = load_manifest(begin->second.content);
         BOOST_REQUIRE(manifest == part->archival_meta_stm()->manifest());
     }
@@ -941,7 +941,7 @@ static void test_partial_upload_impl(
         auto [begin, end] = test.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
-        BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
+        BOOST_REQUIRE(begin->second.method == "PUT"); // NOLINT
 
         // check that the uploaded log contains the right
         // offsets
@@ -971,7 +971,7 @@ static void test_partial_upload_impl(
         BOOST_REQUIRE_EQUAL(len, 2);
         std::multiset<ss::sstring> expected = {"PUT", "PUT"};
         for (auto it = begin; it != end; it++) {
-            auto key = it->second._method;
+            auto key = it->second.method;
             BOOST_REQUIRE(expected.contains(key));
             auto i = expected.find(key);
             expected.erase(i);
@@ -993,14 +993,14 @@ static void test_partial_upload_impl(
         auto [begin, end] = test.get_targets().equal_range(url2);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
-        BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
+        BOOST_REQUIRE(begin->second.method == "PUT"); // NOLINT
     }
     {
         ss::sstring url3 = "/" + get_segment_path(manifest, s3name)().string();
         auto [begin, end] = test.get_targets().equal_range(url3);
         size_t len = std::distance(begin, end);
         BOOST_REQUIRE_EQUAL(len, 1);
-        BOOST_REQUIRE(begin->second._method == "PUT"); // NOLINT
+        BOOST_REQUIRE(begin->second.method == "PUT"); // NOLINT
 
         // check that the uploaded log contains the right offsets
         auto stats = calculate_segment_stats(begin->second);

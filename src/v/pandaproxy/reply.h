@@ -31,7 +31,7 @@
 
 namespace pandaproxy {
 
-inline ss::httpd::reply::status_type
+inline ss::http::reply::status_type
 error_code_to_status(std::error_condition ec) {
     vassert(
       ec.category() == reply_category(),
@@ -39,7 +39,7 @@ error_code_to_status(std::error_condition ec) {
       ec.category().name());
 
     if (!ec) {
-        return ss::httpd::reply::status_type::ok;
+        return ss::http::reply::status_type::ok;
     }
 
     // Errors are either in the range of
@@ -52,42 +52,42 @@ error_code_to_status(std::error_condition ec) {
       value >= 400 && value < 600,
       "unexpected reply_category value: {}",
       ec.value());
-    return static_cast<ss::httpd::reply::status_type>(value);
+    return static_cast<ss::http::reply::status_type>(value);
 }
 
-inline ss::httpd::reply& set_reply_unavailable(ss::httpd::reply& rep) {
-    return rep.set_status(ss::httpd::reply::status_type::service_unavailable)
+inline ss::http::reply& set_reply_unavailable(ss::http::reply& rep) {
+    return rep.set_status(ss::http::reply::status_type::service_unavailable)
       .add_header("Retry-After", "0");
 }
 
-inline std::unique_ptr<ss::httpd::reply> reply_unavailable() {
-    auto rep = std::make_unique<ss::httpd::reply>(ss::httpd::reply{});
+inline std::unique_ptr<ss::http::reply> reply_unavailable() {
+    auto rep = std::make_unique<ss::http::reply>(ss::http::reply{});
     set_reply_unavailable(*rep);
     return rep;
 }
 
-inline std::unique_ptr<ss::httpd::reply>
+inline std::unique_ptr<ss::http::reply>
 errored_body(std::error_condition ec, ss::sstring msg) {
     pandaproxy::json::error_body body{.ec = ec, .message = std::move(msg)};
-    auto rep = std::make_unique<ss::httpd::reply>();
+    auto rep = std::make_unique<ss::http::reply>();
     rep->set_status(error_code_to_status(ec));
     auto b = json::rjson_serialize(body);
     rep->write_body("json", b);
     return rep;
 }
 
-inline std::unique_ptr<ss::httpd::reply>
+inline std::unique_ptr<ss::http::reply>
 errored_body(std::error_code ec, ss::sstring msg) {
     return errored_body(make_error_condition(ec), std::move(msg));
 }
 
-inline std::unique_ptr<ss::httpd::reply> unprocessable_entity(ss::sstring msg) {
+inline std::unique_ptr<ss::http::reply> unprocessable_entity(ss::sstring msg) {
     return errored_body(
       make_error_condition(reply_error_code::kafka_bad_request),
       std::move(msg));
 }
 
-inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
+inline std::unique_ptr<ss::http::reply> exception_reply(std::exception_ptr e) {
     try {
         std::rethrow_exception(e);
     } catch (const ss::gate_closed_exception& e) {
@@ -119,7 +119,7 @@ inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
 
 struct exception_replier {
     ss::sstring mime_type;
-    std::unique_ptr<ss::httpd::reply> operator()(const std::exception_ptr& e) {
+    std::unique_ptr<ss::http::reply> operator()(const std::exception_ptr& e) {
         auto res = exception_reply(e);
         res->set_mime_type(mime_type);
         return res;

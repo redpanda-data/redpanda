@@ -19,6 +19,7 @@
 
 #include <seastar/http/httpd.hh>
 #include <seastar/http/request.hh>
+#include <seastar/http/url.hh>
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/constants.hpp>
@@ -86,15 +87,15 @@ inline ppj::serialization_format parse_serialization_format(
 } // namespace detail
 
 template<typename T>
-T header(const ss::httpd::request& req, const ss::sstring& name) {
+T header(const ss::http::request& req, const ss::sstring& name) {
     return detail::parse_param<T>("header", name, req.get_header(name));
 }
 
 template<typename T>
-T request_param(const ss::httpd::request& req, const ss::sstring& name) {
+T request_param(const ss::http::request& req, const ss::sstring& name) {
     const auto& param{req.param[name]};
     ss::sstring value;
-    if (!ss::httpd::connection::url_decode(param, value)) {
+    if (!ss::http::internal::url_decode(param, value)) {
         throw error(
           error_code::invalid_param,
           fmt::format("Invalid parameter '{}' got '{}'", name, param));
@@ -103,12 +104,12 @@ T request_param(const ss::httpd::request& req, const ss::sstring& name) {
 }
 
 template<typename T>
-T query_param(const ss::httpd::request& req, const ss::sstring& name) {
+T query_param(const ss::http::request& req, const ss::sstring& name) {
     return detail::parse_param<T>("parameter", name, req.get_query_param(name));
 }
 
 inline json::serialization_format accept_header(
-  const seastar::httpd::request& req,
+  const seastar::http::request& req,
   const std::vector<json::serialization_format>& supported) {
     auto accept = req.get_header("Accept");
     auto fmt = detail::parse_serialization_format(accept, supported);
@@ -119,7 +120,7 @@ inline json::serialization_format accept_header(
 }
 
 inline json::serialization_format content_type_header(
-  const seastar::httpd::request& req,
+  const seastar::http::request& req,
   const std::vector<json::serialization_format>& supported) {
     auto content_type = req.get_header("Content-Type");
     auto fmt = detail::parse_serialization_format(content_type, supported);

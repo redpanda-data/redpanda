@@ -15,7 +15,7 @@
 #include <boost/test/unit_test.hpp>
 
 BOOST_AUTO_TEST_CASE(recovery_request_invalid_json) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content = "-";
     r.content_length = 1;
     r._headers = {{"Content-Type", "application/json"}};
@@ -28,7 +28,7 @@ BOOST_AUTO_TEST_CASE(recovery_request_invalid_json) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_missing_fields) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content = "{}";
     r.content_length = 1;
     r._headers = {{"Content-Type", "application/json"}};
@@ -43,7 +43,7 @@ BOOST_AUTO_TEST_CASE(recovery_request_missing_fields) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_missing_content_type) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content = "{}";
     r.content_length = 1;
     BOOST_REQUIRE_EXCEPTION(
@@ -55,7 +55,7 @@ BOOST_AUTO_TEST_CASE(recovery_request_missing_content_type) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_pattern) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content = R"JSON({"topic_names_pattern": "asdf"})JSON";
     r.content_length = 1;
     r._headers = {{"Content-Type", "application/json"}};
@@ -64,7 +64,7 @@ BOOST_AUTO_TEST_CASE(recovery_request_pattern) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_pattern_and_bytes) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content
       = R"JSON({"topic_names_pattern": "asdf", "retention_bytes": 1})JSON";
     r.content_length = 1;
@@ -75,7 +75,7 @@ BOOST_AUTO_TEST_CASE(recovery_request_pattern_and_bytes) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_pattern_and_ms) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content = R"JSON({"topic_names_pattern": "asdf", "retention_ms": 1})JSON";
     r.content_length = 1;
     r._headers = {{"Content-Type", "application/json"}};
@@ -85,7 +85,7 @@ BOOST_AUTO_TEST_CASE(recovery_request_pattern_and_ms) {
 }
 
 BOOST_AUTO_TEST_CASE(recovery_request_invalid_combination) {
-    ss::httpd::request r;
+    ss::http::request r;
     r.content
       = R"JSON({"topic_names_pattern": "asdf", "retention_ms": 1, "retention_bytes": 1})JSON";
     r.content_length = 1;

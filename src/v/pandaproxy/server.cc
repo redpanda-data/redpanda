@@ -26,7 +26,7 @@
 namespace pandaproxy {
 
 namespace {
-void set_mime_type(ss::httpd::reply& rep, json::serialization_format fmt) {
+void set_mime_type(ss::http::reply& rep, json::serialization_format fmt) {
     if (fmt != json::serialization_format::none) {
         rep.set_mime_type(ss::sstring(name(fmt)));
     } else { // TODO(Ben Pope): Remove this branch when endpoints are migrated
@@ -42,7 +42,7 @@ void set_mime_type(ss::httpd::reply& rep, json::serialization_format fmt) {
  * @return a string_view to the header value, if it exists or empty string_view
  */
 std::string_view
-get_header(const ss::httpd::request& req, const ss::sstring& name) {
+get_header(const ss::http::request& req, const ss::sstring& name) {
     auto res = req._headers.find(name);
     if (res == req._headers.end()) {
         return std::string_view();
@@ -50,7 +50,7 @@ get_header(const ss::httpd::request& req, const ss::sstring& name) {
     return res->second;
 }
 
-size_t get_request_size(const ss::httpd::request& req) {
+size_t get_request_size(const ss::http::request& req) {
     const size_t fixed_overhead{1024};
 
     auto content_length_hdr{get_header(req, "Content-Length")};
@@ -77,10 +77,10 @@ struct handler_adaptor : ss::httpd::handler_base {
       , _probe(path_desc, metrics_group_name)
       , _exceptional_mime_type(exceptional_mime_type) {}
 
-    ss::future<std::unique_ptr<ss::reply>> handle(
+    ss::future<std::unique_ptr<ss::http::reply>> handle(
       const ss::sstring&,
-      std::unique_ptr<ss::request> req,
-      std::unique_ptr<ss::reply> rep) final {
+      std::unique_ptr<ss::http::request> req,
+      std::unique_ptr<ss::http::reply> rep) final {
         auto measure = _probe.auto_measure();
         auto guard = ss::gate::holder(_pending_requests);
         server::request_t rq{std::move(req), this->_ctx};
@@ -114,7 +114,7 @@ struct handler_adaptor : ss::httpd::handler_base {
 server::server(
   const ss::sstring& server_name,
   const ss::sstring& public_metrics_group_name,
-  ss::api_registry_builder20&& api20,
+  ss::httpd::api_registry_builder20&& api20,
   const ss::sstring& header,
   const ss::sstring& definitions,
   context_t& ctx,

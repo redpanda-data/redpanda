@@ -75,7 +75,7 @@ public:
     };
 
     struct request_t {
-        std::unique_ptr<ss::httpd::request> req;
+        std::unique_ptr<ss::http::request> req;
         context_t& ctx;
         credential_t user;
         config::rest_authn_method authn_method;
@@ -83,7 +83,7 @@ public:
     };
 
     struct reply_t {
-        std::unique_ptr<ss::httpd::reply> rep;
+        std::unique_ptr<ss::http::reply> rep;
         json::serialization_format mime_type;
         // will contain other extensions passed to user specific handler.
     };
@@ -92,7 +92,7 @@ public:
       = ss::noncopyable_function<ss::future<reply_t>(request_t, reply_t)>;
 
     struct route_t {
-        ss::path_description path_desc;
+        ss::httpd::path_description path_desc;
         function_handler handler;
     };
 
@@ -111,7 +111,7 @@ public:
     server(
       const ss::sstring& server_name,
       const ss::sstring& public_metrics_group_name,
-      ss::api_registry_builder20&& api20,
+      ss::httpd::api_registry_builder20&& api20,
       const ss::sstring& header,
       const ss::sstring& definitions,
       context_t& ctx,
@@ -130,7 +130,7 @@ private:
     ss::httpd::http_server _server;
     ss::sstring _public_metrics_group_name;
     ss::gate _pending_reqs;
-    ss::api_registry_builder20 _api20;
+    ss::httpd::api_registry_builder20 _api20;
     bool _has_routes;
     context_t& _ctx;
     json::serialization_format _exceptional_mime_type;

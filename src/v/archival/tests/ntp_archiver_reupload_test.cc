@@ -186,7 +186,7 @@ struct reupload_fixture : public archiver_fixture {
         BOOST_REQUIRE(req_opt.has_value());
         auto req = req_opt.value().get();
 
-        BOOST_REQUIRE_EQUAL(req._method, "PUT");
+        BOOST_REQUIRE_EQUAL(req.method, "PUT");
         verify_manifest_content(req.content);
         cloud_storage::partition_manifest manifest = load_manifest(req.content);
         BOOST_REQUIRE(manifest == partition.archival_meta_stm()->manifest());
@@ -203,7 +203,7 @@ struct reupload_fixture : public archiver_fixture {
         auto it = get_targets().find("/" + s_url().string());
         BOOST_REQUIRE(it != get_targets().end());
         const auto& [url, req] = *it;
-        BOOST_REQUIRE_EQUAL(req._method, method);
+        BOOST_REQUIRE_EQUAL(req.method, method);
         verify_segment(manifest_ntp, s_name, req.content);
     }
 
@@ -218,7 +218,7 @@ struct reupload_fixture : public archiver_fixture {
         auto it = get_targets().find("/" + s_url().string());
         BOOST_REQUIRE(it != get_targets().end());
         const auto& [url, req] = *it;
-        BOOST_REQUIRE_EQUAL(req._method, method);
+        BOOST_REQUIRE_EQUAL(req.method, method);
         std::vector<segment_name> segment_names;
         segment_names.reserve(names.size());
         std::transform(
@@ -688,13 +688,13 @@ FIXTURE_TEST(test_both_uploads_with_one_failing, reupload_fixture) {
 
     // Fail the first compacted upload
     fail_request_if(
-      [](const ss::httpd::request& request) {
+      [](const ss::http::request& request) {
           return request._url.find("0-19-") != ss::sstring::npos
                  && request._url.find("-1-v1.log") != ss::sstring::npos;
       },
       {.body
        = {archival_tests::error_payload.data(), archival_tests::error_payload.size()},
-       .status = ss::httpd::reply::status_type::not_found});
+       .status = ss::http::reply::status_type::not_found});
 
     // The non-compacted uploads proceed as normal, the compacted upload fails.
     expected = archival::ntp_archiver::batch_result{{1, 0, 0}, {0, 1, 0}};

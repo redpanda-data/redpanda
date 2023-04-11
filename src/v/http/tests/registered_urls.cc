@@ -14,7 +14,7 @@
 
 namespace {
 const auto not_found = http_test_utils::response{
-  .body = "not found", .status = ss::httpd::reply::status_type::not_found};
+  .body = "not found", .status = ss::http::reply::status_type::not_found};
 
 constexpr std::string_view default_content = "DEFAULT";
 constexpr std::string_view default_response = "canned-response";
@@ -23,16 +23,16 @@ constexpr std::string_view default_response = "canned-response";
 namespace http_test_utils {
 void registered_urls::add_mapping::add_mapping_when::then_reply_with(
   ss::sstring content) {
-    then_reply_with(std::move(content), ss::httpd::reply::status_type::ok);
+    then_reply_with(std::move(content), ss::http::reply::status_type::ok);
 }
 
 void registered_urls::add_mapping::add_mapping_when::then_reply_with(
-  ss::httpd::reply::status_type status) {
+  ss::http::reply::status_type status) {
     then_reply_with(default_response.data(), status);
 }
 
 void registered_urls::add_mapping::add_mapping_when::then_reply_with(
-  ss::sstring content, ss::httpd::reply::status_type status) {
+  ss::sstring content, ss::http::reply::status_type status) {
     if (!r.contains(url)) {
         r[url] = method_reply_map{};
     }
@@ -47,7 +47,7 @@ void registered_urls::add_mapping::add_mapping_when::then_reply_with(
 
 registered_urls::add_mapping::add_mapping_when&
 registered_urls::add_mapping::add_mapping_when::with_method(
-  ss::operation_type m) {
+  ss::httpd::operation_type m) {
     method = m;
     return *this;
 }
@@ -80,15 +80,15 @@ registered_urls::request(ss::sstring url) {
     return request(std::move(url), ss::httpd::GET, default_content.data());
 }
 
-response registered_urls::lookup(ss::httpd::const_req& req) const {
-    auto url = req._url;
+response registered_urls::lookup(const request_info& req) const {
+    auto url = req.url;
     auto it = request_response_map.find(url);
     if (it == request_response_map.end()) {
         return not_found;
     }
 
     auto method_mapping = it->second;
-    auto m_it = method_mapping.find(ss::httpd::str2type(req._method));
+    auto m_it = method_mapping.find(ss::httpd::str2type(req.method));
     if (m_it == method_mapping.end()) {
         return not_found;
     }

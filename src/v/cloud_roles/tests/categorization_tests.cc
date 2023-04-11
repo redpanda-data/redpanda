@@ -13,12 +13,11 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
-
-#include <boost/test/unit_test.hpp>
+#include <seastar/testing/thread_test_case.hh>
 
 inline ss::logger test_log("test"); // NOLINT
 
-BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
+SEASTAR_THREAD_TEST_CASE(test_refresh_client_built_according_to_source) {
     ss::abort_source as;
     cloud_roles::aws_region_name region{"atlantis"};
     {
@@ -66,7 +65,7 @@ BOOST_AUTO_TEST_CASE(test_refresh_client_built_according_to_source) {
       std::invalid_argument);
 }
 
-BOOST_AUTO_TEST_CASE(
+SEASTAR_THREAD_TEST_CASE(
   test_credential_applier_built_according_to_credential_kind) {
     {
         cloud_roles::gcp_credentials gc{};
