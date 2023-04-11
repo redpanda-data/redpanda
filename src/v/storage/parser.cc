@@ -256,8 +256,16 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
       });
 }
 
+static constexpr std::array<parser_errc, 3> benign_error_codes{
+  {parser_errc::none,
+   parser_errc::end_of_stream,
+   parser_errc::fallocated_file_read_zero_bytes_for_header}};
+
 ss::future<result<size_t>> continuous_batch_parser::consume() {
-    if (unlikely(_err != parser_errc::none)) {
+    if (unlikely(!std::any_of(
+          benign_error_codes.begin(),
+          benign_error_codes.end(),
+          [v = _err](parser_errc e) { return e == v; }))) {
         return ss::make_ready_future<result<size_t>>(_err);
     }
     return ss::repeat([this] {
@@ -280,10 +288,6 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
               // support partial reads
               return result<size_t>(_bytes_consumed);
           }
-          constexpr std::array<parser_errc, 3> benign_error_codes{
-            {parser_errc::none,
-             parser_errc::end_of_stream,
-             parser_errc::fallocated_file_read_zero_bytes_for_header}};
           if (std::any_of(
                 benign_error_codes.begin(),
                 benign_error_codes.end(),

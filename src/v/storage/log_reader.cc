@@ -309,10 +309,25 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
       .then([this, timeout](result<records_t> recs) -> ss::future<storage_t> {
           if (!recs) {
               set_end_of_stream();
-              vlog(
-                stlog.info,
-                "stopped reading stream: {}",
-                recs.error().message());
+
+              if (!_lease->range.empty()) {
+                  // Readers do not know their ntp directly: discover
+                  // it by checking the segments in our lease
+                  auto seg_ptr = *(_lease->range.begin());
+                  vlog(
+                    stlog.info,
+                    "stopped reading stream[{}]: {}",
+                    seg_ptr->path().get_ntp(),
+                    recs.error().message());
+              } else {
+                  // Leases should always have a segment, but this is
+                  // not a strict invariant at present, so handle the
+                  // empty case.
+                  vlog(
+                    stlog.info,
+                    "stopped reading stream: {}",
+                    recs.error().message());
+              }
 
               auto const batch_parse_err
                 = recs.error() == parser_errc::header_only_crc_missmatch
