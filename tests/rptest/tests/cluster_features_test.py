@@ -528,7 +528,7 @@ class FeaturesUpgradeAssertionTest(FeaturesTestBase):
             self.redpanda.start_node(upgrade_node)
 
         # Don't assume that the asserted node will have exited promptly: explicitly kill it.
-        self.redpanda.stop_node(upgrade_node)
+        self.redpanda.stop_node(upgrade_node, forced=True)
 
         # With the config set to override checks, start should succeed
         self.redpanda.start_node(
