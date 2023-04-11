@@ -32,15 +32,15 @@ type Config struct {
 	file   fileCfg
 	exists bool
 
-	ClientID     string `yaml:"client_id,omitempty"`
-	ClientSecret string `yaml:"client_secret,omitempty"`
+	ClientID     string `yaml:"client_id,omitempty"`     // The user's client ID.
+	ClientSecret string `yaml:"client_secret,omitempty"` // The user's client secret.
 	AuthToken    string `yaml:"auth_token,omitempty"`
 
-	AuthURL          string `yaml:"-"`
-	AuthAudience     string `yaml:"-"`
-	CloudURL         string `yaml:"-"`
-	AuthAppClientID  string `yaml:"-"`
-	SkipVersionCheck string `yaml:"-"`
+	AuthURL          string `yaml:"-"` // The authentication server URL.
+	AuthAudience     string `yaml:"-"` // The Auth0 audience.
+	CloudURL         string `yaml:"-"` // The Cloud API URL.
+	AuthClientID     string `yaml:"-"` // The ClientID of rpk to authenticate against the auth server.
+	SkipVersionCheck string `yaml:"-"` // If true, rpk won't validate the plugin version against the Cloud API.
 }
 
 func (c *Config) fileCfg() fileCfg {
@@ -81,6 +81,20 @@ func (c *Config) SaveAll(fs afero.Fs) error {
 		return nil // no changes
 	}
 	return c.save(fs)
+}
+
+// SaveIDAndToken saves the in-memory token and the client ID to the config
+// file, preserving what's in the config file already.
+func (c *Config) SaveIDAndToken(fs afero.Fs) error {
+	if c.AuthToken == c.file.authToken && c.ClientID == c.file.clientID {
+		return nil // no changes
+	}
+	return (&Config{
+		path:         c.path,
+		ClientSecret: c.file.clientSecret,
+		ClientID:     c.ClientID,
+		AuthToken:    c.AuthToken,
+	}).save(fs)
 }
 
 // SaveToken saves only the in-memory token to the config file, preserving the
