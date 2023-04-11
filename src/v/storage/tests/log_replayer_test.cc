@@ -115,7 +115,7 @@ public:
               for (auto& b : batches) {
                   b.header().header_crc = model::internal_header_only_crc(
                     b.header());
-                  storage::write(appender, b).get();
+                  appender.append(b).get();
               }
           },
           batches.begin()->base_offset());

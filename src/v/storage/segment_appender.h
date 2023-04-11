@@ -14,6 +14,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "likely.h"
+#include "model/record.h"
 #include "seastarx.h"
 #include "storage/segment_appender_chunk.h"
 #include "storage/storage_resources.h"
@@ -72,6 +73,7 @@ public:
         return _committed_offset + _bytes_flush_pending;
     }
 
+    ss::future<> append(const model::record_batch& batch);
     ss::future<> append(const char* buf, const size_t n);
     ss::future<> append(bytes_view s);
     ss::future<> append(const iobuf& io);

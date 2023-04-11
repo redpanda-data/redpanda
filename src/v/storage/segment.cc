@@ -506,33 +506,33 @@ ss::future<append_result> segment::do_append(const model::record_batch& b) {
     }
     const auto start_physical_offset = _appender->file_byte_offset();
     _generation_id++;
-    // proxy serialization to segment_appender_utils
-    auto write_fut
-      = write(*_appender, b).then([this, &b, start_physical_offset] {
-            _tracker.dirty_offset = b.last_offset();
-            const auto end_physical_offset = _appender->file_byte_offset();
-            const auto expected_end_physical = start_physical_offset
-                                               + b.header().size_bytes;
-            vassert(
-              end_physical_offset == expected_end_physical,
-              "size must be deterministic: end_offset:{}, expected:{}, "
-              "batch.header:{} - {}",
-              end_physical_offset,
-              expected_end_physical,
-              b.header(),
-              *this);
-            // inflight index. trimmed on every dma_write in appender
-            _inflight.emplace(end_physical_offset, b.last_offset());
-            // index the write
-            _idx.maybe_track(b.header(), start_physical_offset);
-            auto ret = append_result{
-              .base_offset = b.base_offset(),
-              .last_offset = b.last_offset(),
-              .byte_size = (size_t)b.size_bytes()};
-            // cache always copies the batch
-            cache_put(b);
-            return ret;
-        });
+    // proxy serialization to segment_appender
+    auto write_fut = _appender->append(b).then(
+      [this, &b, start_physical_offset] {
+          _tracker.dirty_offset = b.last_offset();
+          const auto end_physical_offset = _appender->file_byte_offset();
+          const auto expected_end_physical = start_physical_offset
+                                             + b.header().size_bytes;
+          vassert(
+            end_physical_offset == expected_end_physical,
+            "size must be deterministic: end_offset:{}, expected:{}, "
+            "batch.header:{} - {}",
+            end_physical_offset,
+            expected_end_physical,
+            b.header(),
+            *this);
+          // inflight index. trimmed on every dma_write in appender
+          _inflight.emplace(end_physical_offset, b.last_offset());
+          // index the write
+          _idx.maybe_track(b.header(), start_physical_offset);
+          auto ret = append_result{
+            .base_offset = b.base_offset(),
+            .last_offset = b.last_offset(),
+            .byte_size = (size_t)b.size_bytes()};
+          // cache always copies the batch
+          cache_put(b);
+          return ret;
+      });
     auto index_fut = compaction_index_batch(b);
     return ss::when_all(std::move(write_fut), std::move(index_fut))
       .then([this, batch_type = b.header().type](

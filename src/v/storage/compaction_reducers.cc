@@ -273,7 +273,7 @@ ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
             || batch.header().type == model::record_batch_type::raft_data)) {
         _acc = 0;
     }
-    co_await storage::write(*_appender, batch);
+    co_await _appender->append(batch);
     vassert(
       _appender->file_byte_offset() == start_offset + header_size,
       "Size must be deterministic. Expected:{} == {}",

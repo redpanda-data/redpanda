@@ -11,9 +11,11 @@
 
 #include "config/configuration.h"
 #include "likely.h"
+#include "reflection/adl.h"
 #include "ssx/semaphore.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
+#include "storage/segment_appender_utils.h"
 #include "storage/storage_resources.h"
 #include "vassert.h"
 #include "vlog.h"
@@ -106,6 +108,14 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _inactive_timer([this] { handle_inactive_timer(); })
   , _chunk_size(o._chunk_size) {
     o._closed = true;
+}
+
+ss::future<> segment_appender::append(const model::record_batch& batch) {
+    auto hdrbuf = std::make_unique<iobuf>(
+      storage::disk_header_to_iobuf(batch.header()));
+    auto ptr = hdrbuf.get();
+    return append(*ptr).then(
+      [this, &batch, cpy = std::move(hdrbuf)] { return append(batch.data()); });
 }
 
 ss::future<> segment_appender::append(bytes_view s) {
