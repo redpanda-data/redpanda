@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 from collections import defaultdict
-import random
+import random, math
 from rptest.services.admin import Admin
 from rptest.services.cluster import cluster
 from ducktape.utils.util import wait_until
@@ -43,6 +43,22 @@ class ScalingUpTest(EndToEndTest):
 
         return node_replicas
 
+    # Returns (count of replicas)[allocation_domain][node]
+    def _replicas_per_domain_node(self):
+        kafkacat = KafkaCat(self.redpanda)
+        replicas = {}
+        md = kafkacat.metadata()
+        self.redpanda.logger.debug(f"metadata: {md}")
+        for topic in md['topics']:
+            domain = -1 if topic['topic'] == '__consumer_offsets' else 0
+            in_domain = replicas.setdefault(domain, {})
+            for p in topic['partitions']:
+                for r in p['replicas']:
+                    id = r['id']
+                    in_domain.setdefault(id, 0)
+                    in_domain[id] += 1
+        return replicas
+
     def _topic_replicas_per_node(self):
         kafkacat = KafkaCat(self.redpanda)
         topic_replicas = defaultdict(lambda: defaultdict(int))
@@ -57,28 +73,41 @@ class ScalingUpTest(EndToEndTest):
         return topic_replicas
 
     def wait_for_partitions_rebalanced(self, total_replicas, timeout_sec):
-
-        expected_per_node = total_replicas / len(self.redpanda.started_nodes())
-        expected_range = [0.8 * expected_per_node, 1.2 * expected_per_node]
-
         def partitions_rebalanced():
-            per_node = self._replicas_per_node()
+            per_domain_node = self._replicas_per_domain_node()
             self.redpanda.logger.info(
-                f"replicas per node: {per_node}, expected range: [{expected_range[0]},{expected_range[1]}]"
+                f"replicas per domain per node: "
+                f"{dict([(k,dict(sorted(v.items()))) for k,v in sorted(per_domain_node.items())])}"
             )
+            per_node = {}
+
+            # make sure # of replicas is level within each domain separately
+            for domain, in_domain in per_domain_node.items():
+                expected_per_node = sum(in_domain.values()) / len(
+                    self.redpanda.started_nodes())
+                expected_range = [
+                    math.floor(0.8 * expected_per_node),
+                    math.ceil(1.2 * expected_per_node)
+                ]
+                if not all(expected_range[0] <= p[1] <= expected_range[1]
+                           for p in in_domain.items()):
+                    self.redpanda.logger.debug(
+                        f"In domain {domain}, not all nodes' partition counts "
+                        f"fall within the expected range {expected_range}. "
+                        f"Nodes: {len(self.redpanda.started_nodes())}")
+                    return False
+                for n in in_domain:
+                    per_node[n] = per_node.get(n, 0) + in_domain[n]
+
+            self.redpanda.logger.debug(
+                f"replicas per node: {dict(sorted(per_node.items()))}")
             if len(per_node) < len(self.redpanda.started_nodes()):
                 return False
-
-            replicas = sum(per_node.values())
-            if replicas != total_replicas:
+            if sum(per_node.values()) != total_replicas:
                 return False
-
-            if not all(expected_range[0] <= p[1] <= expected_range[1]
-                       for p in per_node.items()):
-                return False
-            admin = Admin(self.redpanda)
 
             # make sure that all reconfigurations are finished
+            admin = Admin(self.redpanda)
             return len(admin.list_reconfigurations()) == 0
 
         wait_until(partitions_rebalanced,
