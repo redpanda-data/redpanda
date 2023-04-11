@@ -90,6 +90,7 @@ public:
     std::optional<model::term_id> get_term(model::offset) const final;
     std::optional<model::offset>
     get_term_last_offset(model::term_id term) const final;
+    std::optional<model::offset> index_lower_bound(model::offset o) const final;
     std::ostream& print(std::ostream&) const final;
 
     ss::future<> maybe_roll(

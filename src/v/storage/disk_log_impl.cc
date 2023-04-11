@@ -1318,6 +1318,26 @@ disk_log_impl::get_term_last_offset(model::term_id term) const {
     return std::nullopt;
 }
 
+std::optional<model::offset>
+disk_log_impl::index_lower_bound(model::offset o) const {
+    if (unlikely(_segs.empty())) {
+        return std::nullopt;
+    }
+    auto it = _segs.lower_bound(o);
+    if (it == _segs.end()) {
+        return std::nullopt;
+    }
+    auto& idx = (*it)->index();
+    if (idx.max_offset() == o) {
+        // input already lies on a boundary
+        return o;
+    }
+    if (auto entry = idx.find_nearest(o)) {
+        return model::prev_offset(entry->offset);
+    }
+    return std::nullopt;
+}
+
 ss::future<std::optional<timequery_result>>
 disk_log_impl::timequery(timequery_config cfg) {
     vassert(!_closed, "timequery on closed log - {}", *this);
