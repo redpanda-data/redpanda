@@ -386,3 +386,49 @@ FIXTURE_TEST(pandaproxy_fetch_binary_with_json2, pandaproxy_test_fixture) {
           R"({"error_code":40801,"message":"Unable to serialize value of record at offset 1 in topic:partition t:0"})");
     }
 }
+
+FIXTURE_TEST(pandaproxy_fetch_compressed, pandaproxy_test_fixture) {
+    wait_for_controller_leadership().get();
+
+    auto tp = model::topic_partition(model::topic("t"), model::partition_id(0));
+    auto ntp = make_default_ntp(tp.topic, tp.partition);
+    auto log_config = make_default_config();
+    {
+        using namespace storage;
+        storage::disk_log_builder builder(log_config);
+        storage::ntp_config ntp_cfg(
+          ntp,
+          log_config.base_dir,
+          nullptr,
+          get_next_partition_revision_id().get());
+        builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
+          | add_random_batch(model::offset(0), 10, maybe_compress_batches::yes)
+          | stop();
+    }
+
+    add_topic(model::topic_namespace_view(ntp)).get();
+    auto shard = app.shard_table.local().shard_for(ntp);
+
+    tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp] {
+        return app.partition_manager.invoke_on(
+          *shard, [ntp](cluster::partition_manager& mgr) {
+              auto partition = mgr.get(ntp);
+              return partition
+                     && partition->committed_offset() >= model::offset(1);
+          });
+    }).get();
+
+    auto client = make_proxy_client();
+    {
+        info("Fetching offset 0 from topic {}", tp);
+        auto res = http_request(
+          client,
+          "/topics/t/partitions/0/records?offset=0&max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::v2,
+          ppj::serialization_format::binary_v2);
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+    }
+}
