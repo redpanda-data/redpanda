@@ -127,6 +127,11 @@ private:
         return _committed_offset + (_head ? _head->bytes_pending() : 0);
     }
 
+    // Reset the bit-map tracking unwritten batch types in the `_head` chunk.
+    void reset_batch_types_to_write() { _batch_types_to_write = 0; }
+
+    uint32_t batch_types_to_write() const { return _batch_types_to_write; }
+
     ss::file _out;
     options _opts;
     bool _closed{false};
@@ -171,6 +176,11 @@ private:
     void handle_inactive_timer();
 
     size_t _chunk_size{0};
+
+    // Bit-map tracking the types of batches in the `_head` chunk that have
+    // not been written to disk yet.
+    static_assert(static_cast<uint8_t>(model::record_batch_type::MAX) <= 32);
+    uint32_t _batch_types_to_write{0};
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };

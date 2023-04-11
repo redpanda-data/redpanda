@@ -111,6 +111,8 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
 }
 
 ss::future<> segment_appender::append(const model::record_batch& batch) {
+    _batch_types_to_write |= 1U << static_cast<uint8_t>(batch.header().type);
+
     auto hdrbuf = std::make_unique<iobuf>(
       storage::disk_header_to_iobuf(batch.header()));
     auto ptr = hdrbuf.get();
