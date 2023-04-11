@@ -12,6 +12,7 @@
 
 #include "absl/container/btree_map.h"
 #include "absl/container/node_hash_map.h"
+#include "cluster/scheduling/leader_balancer_types.h"
 #include "cluster/types.h"
 #include "raft/types.h"
 
@@ -31,28 +32,19 @@ public:
      * a leader of the group. For convenience, the data structure also contains
      * the replica set of each group.
      */
-    using index_type = absl::node_hash_map<
-      model::broker_shard,
-      absl::btree_map<raft::group_id, std::vector<model::broker_shard>>>;
+    using index_type = leader_balancer_types::index_type;
 
     virtual ~leader_balancer_strategy() = default;
 
     /*
      * Represent leadership transfer for a group.
      */
-    struct reassignment {
-        raft::group_id group;
-        model::broker_shard from;
-        model::broker_shard to;
-    };
+    using reassignment = leader_balancer_types::reassignment;
 
     /*
      * Leaders per shard.
      */
-    struct shard_load {
-        model::broker_shard shard;
-        size_t leaders;
-    };
+    using shard_load = leader_balancer_types::shard_load;
 
     /*
      * Compute error for the current leadership configuration.
@@ -66,7 +58,9 @@ public:
      * Find a group reassignment that reduces total error.
      */
     virtual std::optional<reassignment>
-    find_movement(const absl::flat_hash_set<raft::group_id>& skip) const = 0;
+    find_movement(const absl::flat_hash_set<raft::group_id>& skip) = 0;
+
+    virtual void apply_movement(const reassignment& reassignment) = 0;
 
     /*
      * Return current strategy stats.
