@@ -142,7 +142,7 @@ func Update(
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
 		patch.IgnorePDBSelector(),
-		utils.IgnoreAnnotation(patch.LastAppliedConfig),
+		utils.IgnoreAnnotation(redpandaAnnotatorKey),
 		utils.IgnoreAnnotation(LastAppliedConfigurationAnnotationKey),
 	}
 	annotator := patch.NewAnnotator(redpandaAnnotatorKey)
