@@ -99,6 +99,9 @@ class ConsumerGroupTest(RedpandaTest):
     def consumed_at_least(consumers, count):
         return all([len(c._messages) > count for c in consumers])
 
+    def group_consumed_at_least(consumers, count):
+        return sum([len(c._messages) for c in consumers]) >= count
+
     def validate_group_state(self, group, expected_state, static_members):
         rpk = RpkTool(self.redpanda)
         # validate group state
@@ -144,8 +147,9 @@ class ConsumerGroupTest(RedpandaTest):
 
         self.start_producer()
         # wait for some messages
-        wait_until(lambda: ConsumerGroupTest.consumed_at_least(consumers, 50),
-                   30, 2)
+        wait_until(
+            lambda: ConsumerGroupTest.group_consumed_at_least(
+                consumers, 50 * len(consumers)), 30, 2)
         self.validate_group_state(group,
                                   expected_state="Stable",
                                   static_members=static_members)
