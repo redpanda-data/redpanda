@@ -26,11 +26,17 @@ ss::logger checklog{"syschecks"};
 ss::future<> disk(const ss::sstring& path) {
     return ss::check_direct_io_support(path).then([path] {
         return ss::file_system_at(path).then([path](auto fs) {
-            if (fs != ss::fs_type::xfs) {
+            if (fs == ss::fs_type::ext4) {
+                checklog.warn(
+                  "Path: `{}' is on ext4, not XFS. This will probably work, "
+                  "but Redpanda is only tested on XFS and XFS is recommended "
+                  "for best performance.",
+                  path);
+            } else if (fs != ss::fs_type::xfs) {
                 checklog.error(
-                  "Path: `{}' is not on XFS. This is a non-supported "
-                  "setup. "
-                  "Expect poor performance.",
+                  "Path: `{}' is not on XFS or ext4. This is a non-supported "
+                  "configuration. You may experience poor performance or "
+                  "instability.",
                   path);
             }
         });
