@@ -7,11 +7,14 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import requests
+
 from rptest.services.admin import Admin
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.pandaproxy_test import PandaProxyEndpoints
 from rptest.clients.rpk import RpkTool
 from rptest.services.cluster import cluster
-from rptest.services.redpanda import SaslCredentials
+from rptest.services.redpanda import SaslCredentials, SecurityConfig
 from rptest.util import expect_exception, expect_http_error
 
 from ducktape.utils.util import wait_until
@@ -182,3 +185,36 @@ class AdminApiAuthEnablementTest(RedpandaTest):
             "superusers":
             [self.redpanda.SUPERUSER_CREDENTIALS.username, ALICE.username]
         })
+
+
+class AdminApiListUsersTest(PandaProxyEndpoints):
+    def __init__(self, context):
+        security = SecurityConfig()
+        security.kafka_enable_authorization = True
+        security.endpoint_authn_method = 'sasl'
+        security.auto_auth = True
+
+        super(AdminApiListUsersTest, self).__init__(context, security=security)
+
+        self.superuser = self.redpanda.SUPERUSER_CREDENTIALS
+        self.superuser_admin = Admin(self.redpanda,
+                                     auth=(self.superuser.username,
+                                           self.superuser.password))
+
+    @cluster(num_nodes=3)
+    def test_list_users(self):
+        # Create ephemeral users for each pandaproxy instance
+        pp_hosts = [node.account.hostname for node in self.redpanda.nodes]
+        for host in pp_hosts:
+            res = requests.get(f"http://{host}:8082/status/ready")
+            assert res.status_code == requests.codes.ok
+
+        users = self.superuser_admin.list_users()
+        ephemeral_users = self.superuser_admin.list_users(
+            include_ephemeral=True)
+
+        self.logger.debug(
+            f"users: {users}\n:ephemeral_users: {ephemeral_users}\npp_hosts: {pp_hosts}"
+        )
+        assert len(pp_hosts) > 0
+        assert len(ephemeral_users) - len(users) == len(pp_hosts)

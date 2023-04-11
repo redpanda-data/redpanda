@@ -46,7 +46,7 @@ public:
     const bytes& server_key() const { return _server_key; }
     const bytes& stored_key() const { return _stored_key; }
     int iterations() const { return _iterations; }
-    const std::optional<acl_principal>& principal() { return _principal; }
+    const std::optional<acl_principal>& principal() const { return _principal; }
 
     bool operator==(const scram_credential&) const = default;
 
