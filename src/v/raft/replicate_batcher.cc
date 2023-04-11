@@ -72,14 +72,25 @@ replicate_batcher::cache_and_wait_for_result(
          * replicate batcher stop method
          *
          */
-        ssx::background
-          = ssx::spawn_with_gate_then(_bg, [this]() {
-                return _lock.get_units().then([this](auto units) {
-                    return flush(std::move(units), false);
-                });
-            }).handle_exception([item](const std::exception_ptr& e) {
-                item->set_exception(e);
+        if (!_flush_pending) {
+            _flush_pending = true;
+            ssx::background = ssx::spawn_with_gate_then(_bg, [this]() {
+                return _lock.get_units()
+                  .then([this](auto units) {
+                      return flush(std::move(units), false);
+                  })
+                  .handle_exception([this](const std::exception_ptr& e) {
+                      // an exception here is quite unlikely, since the flush()
+                      // method generally catches all its exceptions and
+                      // propagates them to the promises associated with the
+                      // items being flushed
+                      vlog(
+                        _ptr->_ctxlog.error,
+                        "Error in background flush: {}",
+                        e);
+                  });
             });
+        }
     } catch (...) {
         // exception in caching phase
         enqueued.set_to_current_exception();
@@ -179,10 +190,14 @@ replicate_batcher::do_cache_with_backpressure(
 ss::future<> replicate_batcher::flush(
   ssx::semaphore_units batcher_units, bool const transfer_flush) {
     auto item_cache = std::exchange(_item_cache, {});
-    if (item_cache.empty()) {
-        co_return;
-    }
+    // this function should not throw, nor return exceptional futures,
+    // since it is usually invoked in the background and there is
+    // nowhere suitable to
     try {
+        _flush_pending = false;
+        if (item_cache.empty()) {
+            co_return;
+        }
         auto u = co_await _ptr->_op_lock.get_units();
 
         if (!transfer_flush && _ptr->_transferring_leadership) {
