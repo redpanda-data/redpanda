@@ -395,6 +395,12 @@ private:
 
     /// If we have a projected manifest clean offset, then flush it to
     /// the persistent stm clean offset.
+    ss::future<> flush_manifest_clean_offset();
+
+    /// Lazy variant of flush_manifest_clean_offset, for use in situations
+    /// where we didn't just upload the manifest, but want to make sure we
+    /// will eventually flush projected_manifest_clean_at in case it was
+    /// set by some background operation.
     ss::future<> maybe_flush_manifest_clean_offset();
 
     /// Upload manifest to the pre-defined S3 location
@@ -478,8 +484,15 @@ private:
     simple_time_jitter<ss::lowres_clock> _backoff_jitter{100ms};
     size_t _concurrency{4};
 
-    // When we last wrote the partition manifest to object storage
+    // When we last wrote the partition manifest to object storage: this
+    // is used to limit the frequency with which we do uploads.
     ss::lowres_clock::time_point _last_manifest_upload_time;
+
+    // When we last wrote the last_clean_at attribute of archival_metadata_stm,
+    // this is used to avoid emitting a mark_clean record to the raft log
+    // every time we upload a manifest, as under load we can always inline
+    // these writes with add_segments records.
+    ss::lowres_clock::time_point _last_marked_clean_time;
 
     // When we last wrote a segment
     ss::lowres_clock::time_point _last_segment_upload_time;
