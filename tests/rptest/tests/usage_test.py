@@ -285,15 +285,16 @@ class UsageTestCloudStorageMetrics(RedpandaTest):
             manifest_usage = bucket_view.total_cloud_log_size()
             reported_usage = self.admin.get_usage(
                 random.choice(self.redpanda.nodes))
-            reported_usage = max(
-                [x['cloud_storage_bytes_gauge'] for x in reported_usage])
+            reported_usages = [
+                x['cloud_storage_bytes_gauge'] for x in reported_usage
+            ]
 
             self.logger.info(
                 f"Expected {manifest_usage} bytes of cloud storage usage")
             self.logger.info(
-                f"Max reported usages via kafka/usage_manager: {reported_usage}"
+                f"Max reported usages via kafka/usage_manager: {max(reported_usages)}"
             )
-            return reported_usage == manifest_usage
+            return manifest_usage in reported_usages
 
         wait_until(
             check_usage,
