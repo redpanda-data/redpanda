@@ -314,8 +314,11 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
                   // Readers do not know their ntp directly: discover
                   // it by checking the segments in our lease
                   auto seg_ptr = *(_lease->range.begin());
-                  vlog(stlog.info, "stopped reading stream[{}]: {}",
-                        seg_ptr->path().get_ntp(), recs.error().message());
+                  vlog(
+                    stlog.info,
+                    "stopped reading stream[{}]: {}",
+                    seg_ptr->path().get_ntp(),
+                    recs.error().message());
               } else {
                   // Leases should always have a segment, but this is
                   // not a strict invariant at present, so handle the
