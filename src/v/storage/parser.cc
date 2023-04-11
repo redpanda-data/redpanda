@@ -221,18 +221,16 @@ continuous_batch_parser::read_header() {
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
-    return consume_header().then([this](result<stop_parser> st) {
-        if (!st) {
-            return ss::make_ready_future<result<stop_parser>>(st.error());
-        }
-        if (st.value() == stop_parser::yes) {
-            return ss::make_ready_future<result<stop_parser>>(st.value());
-        }
-        return consume_records().then([this](result<stop_parser> r) {
-            add_bytes_and_reset();
-            return r;
-        });
-    });
+    auto st = co_await consume_header();
+    if (!st) {
+        co_return result<stop_parser>(st.error());
+    }
+    if (st.value() == stop_parser::yes) {
+        co_return result<stop_parser>(st.value());
+    }
+    auto r = co_await consume_records();
+    add_bytes_and_reset();
+    co_return r;
 }
 
 size_t continuous_batch_parser::consumed_batch_bytes() const {
@@ -245,53 +243,47 @@ void continuous_batch_parser::add_bytes_and_reset() {
 }
 ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header->size_bytes - model::packed_record_batch_header_size;
-    return verify_read_iobuf(
-             get_stream(), sz, "parser::consume_records", _recovery)
-      .then([this](result<iobuf> record) -> result<stop_parser> {
-          if (!record) {
-              return record.error();
-          }
-          _consumer->consume_records(std::move(record.value()));
-          return result<stop_parser>(_consumer->consume_batch_end());
-      });
+    auto& st = get_stream();
+    auto record = co_await verify_read_iobuf(
+      st, sz, "parser::consumer_records", _recovery);
+    if (!record) {
+        co_return record.error();
+    }
+    _consumer->consume_records(std::move(record.value()));
+    co_return result<stop_parser>(_consumer->consume_batch_end());
 }
 
 ss::future<result<size_t>> continuous_batch_parser::consume() {
     if (unlikely(_err != parser_errc::none)) {
-        return ss::make_ready_future<result<size_t>>(_err);
+        co_return result<size_t>(_err);
     }
-    return ss::repeat([this] {
-               return consume_one().then([this](result<stop_parser> s) {
-                   if (!s) {
-                       _err = parser_errc(s.error().value());
-                       return ss::stop_iteration::yes;
-                   }
-                   if (get_stream().eof()) {
-                       return ss::stop_iteration::yes;
-                   }
-                   if (s.value() == stop_parser::yes) {
-                       return ss::stop_iteration::yes;
-                   }
-                   return ss::stop_iteration::no;
-               });
-           })
-      .then([this] {
-          if (_bytes_consumed) {
-              // support partial reads
-              return result<size_t>(_bytes_consumed);
-          }
-          constexpr std::array<parser_errc, 3> benign_error_codes{
-            {parser_errc::none,
-             parser_errc::end_of_stream,
-             parser_errc::fallocated_file_read_zero_bytes_for_header}};
-          if (std::any_of(
-                benign_error_codes.begin(),
-                benign_error_codes.end(),
-                [v = _err](parser_errc e) { return e == v; })) {
-              return result<size_t>(_bytes_consumed);
-          }
-          return result<size_t>(_err);
-      });
+    while (true) {
+        auto s = co_await consume_one();
+        if (!s) {
+            _err = parser_errc(s.error().value());
+            break;
+        }
+        if (get_stream().eof()) {
+            break;
+        }
+        if (s.value() == stop_parser::yes) {
+            break;
+        }
+    }
+    if (_bytes_consumed) {
+        co_return result<size_t>(_bytes_consumed);
+    }
+    constexpr std::array<parser_errc, 3> benign_error_codes{
+      {parser_errc::none,
+       parser_errc::end_of_stream,
+       parser_errc::fallocated_file_read_zero_bytes_for_header}};
+    if (std::any_of(
+          benign_error_codes.begin(),
+          benign_error_codes.end(),
+          [v = _err](parser_errc e) { return e == v; })) {
+        co_return result<size_t>(_bytes_consumed);
+    }
+    co_return result<size_t>(_err);
 }
 
 class copy_helper {
