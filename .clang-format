@@ -55,3 +55,8 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 BreakBeforeBinaryOperators: All
 BreakBeforeBraces: Attach
+---
+Language: Proto
+BasedOnStyle: Google
+ColumnLimit: 80
+IndentWidth: 4
