@@ -1,12 +1,70 @@
-apiVersion: batch/v1
-kind: Job
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
-  name: create-test-topic
+  name: cluster-proxy
+status:
+  readyReplicas: 1
+  replicas: 1
+  upgrading: false
+  restarting: false
+  conditions:
+  - type: ClusterConfigured
+    status: "True"
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cluster-proxy-proxy-api-trusted-client-ca
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-proxy-proxy-selfsigned-issuer
 status:
   conditions:
-    - status: "True"
-      type: Complete
-  succeeded: 1
+    - reason: IsReady
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-proxy-proxy-root-issuer
+status:
+  conditions:
+    - reason: KeyPairVerified
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-proxy-proxy-root-certificate
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-proxy-proxy-api-node
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
 
 ---
 

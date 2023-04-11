@@ -1,10 +1,10 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: update-img-external-client-ca
+  name: cluster-proxy
 spec:
-  image: "vectorized/redpanda"
-  version: "v23.1.1"
+  image: "localhost/redpanda"
+  version: "dev"
   replicas: 1
   resources:
     requests:
@@ -26,10 +26,8 @@ spec:
       tls:
         enabled: true
         requireClientAuth: true
-    schemaRegistry:
-      port: 8081
-      external: {}
-      tls:
-        enabled: true
-        requireClientAuth: true
+        clientCACertRef:
+          kind: Secret
+          name: ca-cert
+          apiGroup: ""
     developerMode: true

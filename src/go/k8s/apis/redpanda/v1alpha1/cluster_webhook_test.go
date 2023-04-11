@@ -1464,6 +1464,10 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		err := schemaReg.ValidateCreate()
 		assert.Error(t, err)
 	})
+}
+
+func TestSchemaRegistryTLSExternalCAConfigValidations(t *testing.T) {
+	redpandaCluster := validRedpandaCluster()
 
 	t.Run("if schema registry mTLS enabled and clientCACertRef is set, name must be provided in clientCACertRef", func(t *testing.T) {
 		schemaReg := redpandaCluster.DeepCopy()
@@ -1519,6 +1523,30 @@ func TestSchemaRegistryValidations(t *testing.T) {
 		err = schemaReg.ValidateUpdate(schemaReg)
 		assert.Error(t, err)
 	})
+
+	t.Run("if schema registry mTLS enabled, clientCACertRef is set and cluster is being deleted, skip update validation", func(t *testing.T) {
+		v1alpha1.SetK8sClient(fakeK8sClient)
+		schemaReg := redpandaCluster.DeepCopy()
+		deleteTime := metav1.Now()
+		schemaReg.DeletionTimestamp = &deleteTime
+		schemaReg.Spec.Configuration.SchemaRegistry = &v1alpha1.SchemaRegistryAPI{
+			TLS: &v1alpha1.SchemaRegistryAPITLS{
+				Enabled:           true,
+				RequireClientAuth: true,
+				ClientCACertRef: &corev1.TypedLocalObjectReference{
+					Name: "does-not-exist",
+					Kind: "secret",
+				},
+			},
+		}
+
+		err := schemaReg.ValidateUpdate(schemaReg)
+		assert.NoError(t, err)
+	})
+}
+
+func TestSchemaRegistryTLSExternalCACertValidations(t *testing.T) {
+	redpandaCluster := validRedpandaCluster()
 
 	t.Run("if schema registry mTLS enabled and clientCACertRef is set, the CA certificate secret must provide ca.crt", func(t *testing.T) {
 		v1alpha1.SetK8sClient(fakeK8sClient)

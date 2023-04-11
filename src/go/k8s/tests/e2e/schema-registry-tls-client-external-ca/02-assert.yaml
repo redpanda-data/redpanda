@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: retrieve-schema-client-external-ca-mtls
+  name: create-schema-client-external-ca-mtls
 status:
   conditions:
     - status: "True"
