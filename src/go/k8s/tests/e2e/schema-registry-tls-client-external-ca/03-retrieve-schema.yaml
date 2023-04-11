@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: retrieve-schema-untrusted-client
+  name: retrieve-schema-client-external-ca-mtls
 spec:
   template:
     spec:
@@ -9,7 +9,7 @@ spec:
         - name: tlscertkey
           secret:
             defaultMode: 420
-            secretName: schema-registry-client-self-signed-cert-key
+            secretName: client-cert-key
         - name: tlscacert
           secret:
             defaultMode: 420
@@ -27,7 +27,7 @@ spec:
             - -c
           args:
             - >
-              curl -vv
+              curl -vv --silent
               --cacert /etc/tls/certs/schema-registry/ca/ca.crt
               --cert /etc/tls/certs/schema-registry/tls.crt
               --key /etc/tls/certs/schema-registry/tls.key
@@ -39,6 +39,6 @@ spec:
             - mountPath: /etc/tls/certs/schema-registry/ca
               name: tlscacert
       restartPolicy: Never
-  backoffLimit: 2
+  backoffLimit: 6
   parallelism: 1
   completions: 1

@@ -1,20 +1,6 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: ca-cert
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
-  name: client-cert-key
-
----
-
-apiVersion: v1
-kind: Secret
-metadata:
   name: update-img-external-client-ca-schema-registry-trusted-client-ca
 
 ---
@@ -147,3 +133,11 @@ status:
   - type: ClusterConfigured
     status: "True"
 
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1

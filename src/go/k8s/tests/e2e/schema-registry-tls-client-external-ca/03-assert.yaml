@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-schema-client-without-cert
+  name: retrieve-schema-client-external-ca-mtls
 status:
   conditions:
     - status: "True"
-      type: Failed
-  failed: 3
+      type: Complete
+  succeeded: 1
 
 ---
 

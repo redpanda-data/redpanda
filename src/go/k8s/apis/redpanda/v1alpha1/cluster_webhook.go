@@ -216,6 +216,16 @@ func (r *Cluster) ValidateCreate() error {
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	log.Info("validate update", "name", r.Name)
+
+	// Don't validate if the cluster is being deleted.
+	// After receiving delete, the controller will update the cluster CR to remove the finalzer.
+	// If we validated in this scenario, some of the validations will fail, such that
+	// the clientCACertRef can fail with secret not found if the referenced secret
+	// has already been deleted as part of the cluster deletion.
+	if !r.GetDeletionTimestamp().IsZero() {
+		return nil
+	}
+
 	oldCluster := old.(*Cluster)
 	allErrs := r.validateCommon()
 
@@ -876,6 +886,17 @@ func validateListener(
 		return allErrs
 	}
 
+	return validateExternalCA(requireClientAuth, clientCACertRef, path, clusterNamespace)
+}
+
+func validateExternalCA(
+	requireClientAuth bool,
+	clientCACertRef *corev1.TypedLocalObjectReference,
+	path *field.Path,
+	clusterNamespace string,
+) field.ErrorList {
+	var allErrs field.ErrorList
+
 	if !requireClientAuth {
 		allErrs = append(allErrs,
 			field.Invalid(
@@ -887,7 +908,7 @@ func validateListener(
 	if clientCACertRef.Name == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
-				path.Child("clientCACertRef"),
+				path.Child("clientCACertRef").Child("name"),
 				clientCACertRef,
 				"Name must be provided if ClientCACertRef is set"))
 	}
@@ -895,7 +916,7 @@ func validateListener(
 	if clientCACertRef.Kind != "" && !strings.EqualFold(clientCACertRef.Kind, "Secret") {
 		allErrs = append(allErrs,
 			field.Invalid(
-				path.Child("clientCACertRef"),
+				path.Child("clientCACertRef").Child("kind"),
 				clientCACertRef,
 				"Kind must be set to secret if set in ClientCACertRef"))
 	}

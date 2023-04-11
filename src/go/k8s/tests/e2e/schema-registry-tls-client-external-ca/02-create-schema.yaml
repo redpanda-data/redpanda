@@ -9,7 +9,7 @@ spec:
       - name: tlscertkey
         secret:
           defaultMode: 420
-          secretName: schema-registry-client-cert-key
+          secretName: client-cert-key
       - name: tlscacert
         secret:
           defaultMode: 420
