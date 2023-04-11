@@ -2,6 +2,7 @@ package certmanager_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -22,16 +23,22 @@ import (
 	fake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-var fakeK8sClient = fake.NewClientBuilder().Build()
+var errNotSecret = errors.New("not secret")
+
+const (
+	bundleCACertSecretSuffix = "ca-bundle"
+	clusterName              = "test-cluster-create"
+	ns                       = "default"
+)
 
 func init() {
-	v1alpha1.AddToScheme(fakeK8sClient.Scheme())
+	fakeK8sClient := fake.NewClientBuilder().Build()
+	_ = v1alpha1.AddToScheme(fakeK8sClient.Scheme())
 }
 
 func TestCreateCACertBundle(t *testing.T) {
+	fakeK8sClient := fake.NewClientBuilder().Build()
 	nsPrefix := "test-ns"
-	bundleCACertSecretSuffix := "ca-bundle"
-	clusterName := "test-cluster-create"
 
 	pandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -91,7 +98,7 @@ func TestCreateCACertBundle(t *testing.T) {
 			caCertBundle := certmanager.NewCACertificateBundle(fakeK8sClient, fakeK8sClient.Scheme(), pandaCluster,
 				tt.certs, bundleCACertSecretSuffix, logr.Discard())
 
-			err := caCertBundle.Ensure(context.TODO())
+			err = caCertBundle.Ensure(context.TODO())
 			assert.NoError(t, err)
 
 			var bundledCASecret corev1.Secret
@@ -100,17 +107,10 @@ func TestCreateCACertBundle(t *testing.T) {
 			assert.Equal(t, tt.expectedBundleCA, bundledCASecret.Data["ca.crt"])
 		})
 	}
-
-	err = fakeK8sClient.Delete(context.TODO(), caCert)
-	assert.NoError(t, err)
-	err = fakeK8sClient.Delete(context.TODO(), tlsCert)
-	assert.NoError(t, err)
 }
 
 func TestUpdateCACertBundle(t *testing.T) {
-	ns := "default"
-	bundleCACertSecretSuffix := "ca-bundle"
-	clusterName := "test-cluster-update"
+	fakeK8sClient := fake.NewClientBuilder().Build()
 
 	pandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -167,17 +167,10 @@ func TestUpdateCACertBundle(t *testing.T) {
 	err = fakeK8sClient.Get(context.TODO(), types.NamespacedName{Name: fmt.Sprintf("%s-%s", clusterName, bundleCACertSecretSuffix), Namespace: ns}, &bundledCASecret)
 	assert.NoError(t, err)
 	assert.Equal(t, expectedThreeCACertData, bundledCASecret.Data["ca.crt"])
-
-	err = fakeK8sClient.Delete(context.TODO(), caCert)
-	assert.NoError(t, err)
-	err = fakeK8sClient.Delete(context.TODO(), tlsCert)
-	assert.NoError(t, err)
 }
 
 func TestCACertBundleFailures(t *testing.T) {
-	ns := "default"
-	bundleCACertSecretSuffix := "ca-bundle"
-	clusterName := "test-cluster-failure"
+	fakeK8sClient := fake.NewClientBuilder().Build()
 
 	pandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -221,11 +214,6 @@ func TestCACertBundleFailures(t *testing.T) {
 	assert.NoError(t, err)
 	err = caCertBundle.Ensure(context.TODO())
 	assert.NoError(t, err)
-
-	err = fakeK8sClient.Delete(context.TODO(), caCert)
-	assert.NoError(t, err)
-	err = fakeK8sClient.Delete(context.TODO(), tlsCert)
-	assert.NoError(t, err)
 }
 
 func getCertSecretFromFile(filePath string) (*corev1.Secret, error) {
@@ -241,7 +229,7 @@ func getCertSecretFromFile(filePath string) (*corev1.Secret, error) {
 
 	secret, ok := obj.(*corev1.Secret)
 	if !ok {
-		return nil, fmt.Errorf("not secret: %+v", obj.GetObjectKind())
+		return nil, errNotSecret
 	}
 
 	return secret, nil

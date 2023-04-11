@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: retrieve-schema-client-external-ca-mtls
+  name: delete-schema-client-external-ca-mtls
 spec:
   template:
     spec:
@@ -9,7 +9,8 @@ spec:
         - name: tlscertkey
           secret:
             defaultMode: 420
-            secretName: schema-registry-client-cert-key
+            # The cert issued by the updated CA at Step 05.
+            secretName: client-cert-key1
         - name: tlscacert
           secret:
             defaultMode: 420
@@ -27,7 +28,7 @@ spec:
             - -c
           args:
             - >
-              curl -vv --silent
+              curl -vv
               --cacert /etc/tls/certs/schema-registry/ca/ca.crt
               --cert /etc/tls/certs/schema-registry/tls.crt
               --key /etc/tls/certs/schema-registry/tls.key

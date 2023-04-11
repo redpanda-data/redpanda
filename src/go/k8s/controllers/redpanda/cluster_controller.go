@@ -263,7 +263,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	if errSetInit := r.setInitialSuperUserPassword(ctx, adminAPI, secrets); errSetInit != nil {
 		// we capture all errors here, do not return the error, just requeue
-		log.Info(errSetInit.Error())
+		log.Error(errSetInit, "failed to set initial super user password")
 		return ctrl.Result{RequeueAfter: resources.RequeueDuration}, nil
 	}
 
@@ -739,33 +739,12 @@ func (r *ClusterReconciler) reconcileClusterForExternalCASecret(s client.Object)
 		return nil
 	}
 
-	clusterList := &redpandav1alpha1.ClusterList{}
-	err := retry.OnError(retry.DefaultRetry,
-		func(err error) bool {
-			return err != nil
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{
+			Namespace: s.GetNamespace(),
+			Name:      clusterName,
 		},
-		func() error {
-			return r.List(context.TODO(), clusterList)
-		})
-	if err != nil {
-		r.Log.Error(err, "failed to list cluster resources")
-		return nil
-	}
-
-	req := []reconcile.Request{}
-	for _, cluster := range clusterList.Items {
-		if cluster.GetName() == clusterName {
-			req = append(req,
-				reconcile.Request{
-					NamespacedName: types.NamespacedName{
-						Namespace: cluster.GetNamespace(),
-						Name:      clusterName,
-					},
-				})
-		}
-	}
-
-	return req
+	}}
 }
 
 // WithConfiguratorSettings set the configurator image settings

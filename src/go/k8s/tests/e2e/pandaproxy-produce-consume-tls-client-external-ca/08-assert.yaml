@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: get-topic-test-untrusted-ca
+  name: get-topic-test-updated-ca
 status:
   conditions:
     - status: "True"
-      type: Failed
-  failed: 3
+      type: Complete
+  succeeded: 1
 
 ---
 

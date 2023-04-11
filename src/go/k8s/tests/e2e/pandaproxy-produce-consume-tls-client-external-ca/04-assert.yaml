@@ -1,12 +1,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message-fail
+  name: consume-message
 status:
   conditions:
     - status: "True"
-      type: Failed
-  failed: 3
+      type: Complete
+  succeeded: 1
 
 ---
 

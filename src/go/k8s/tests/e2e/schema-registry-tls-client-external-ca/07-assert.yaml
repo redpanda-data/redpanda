@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: consume-message-fail
+  name: retrieve-schema-untrusted-client
 status:
   conditions:
     - status: "True"
