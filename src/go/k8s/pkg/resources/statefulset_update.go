@@ -367,7 +367,7 @@ func (r *StatefulSetResource) shouldUpdate(
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
-		utils.IgnoreAnnotation(patch.LastAppliedConfig),
+		utils.IgnoreAnnotation(redpandaAnnotatorKey),
 		utils.IgnoreAnnotation(CentralizedConfigurationHashAnnotationKey),
 	}
 	patchResult, err := patch.NewPatchMaker(patch.NewAnnotator(redpandaAnnotatorKey), &patch.K8sStrategicMergePatcher{}, &patch.BaseJSONMergePatcher{}).Calculate(current, modified, opts...)
