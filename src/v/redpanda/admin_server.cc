@@ -13,6 +13,7 @@
 
 #include "archival/ntp_archiver_service.h"
 #include "cloud_storage/partition_manifest.h"
+#include "cloud_storage/remote_partition.h"
 #include "cloud_storage/topic_recovery_service.h"
 #include "cluster/cloud_storage_size_reducer.h"
 #include "cluster/cluster_utils.h"
@@ -4181,6 +4182,67 @@ admin_server::get_partition_cloud_storage_status(
     co_return map_status_to_json(*status);
 }
 
+ss::future<std::unique_ptr<ss::http::reply>> admin_server::get_manifest(
+  std::unique_ptr<ss::http::request> req,
+  std::unique_ptr<ss::http::reply> rep) {
+    model::ntp ntp = parse_ntp_from_request(req->param, model::kafka_namespace);
+
+    if (!_metadata_cache.local().contains(ntp)) {
+        throw ss::httpd::not_found_exception(
+          fmt::format("Could not find {} on the cluster", ntp));
+    }
+
+    if (need_redirect_to_leader(ntp, _metadata_cache)) {
+        throw co_await redirect_to_leader(*req, ntp);
+    }
+
+    const auto shard = _shard_table.local().shard_for(ntp);
+    if (!shard) {
+        throw ss::httpd::not_found_exception(fmt::format(
+          "Could not find {} on node {}", ntp, config::node().node_id.value()));
+    }
+
+    co_return co_await _partition_manager.invoke_on(
+      *shard,
+      [rep = std::move(rep), ntp = std::move(ntp), shard](auto& pm) mutable {
+          auto partition = pm.get(ntp);
+          if (!partition) {
+              throw ss::httpd::not_found_exception(
+                fmt::format("Could not find {} on shard {}", ntp, *shard));
+          }
+
+          if (!partition->remote_partition()) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("Cluster is not configured for cloud storage"));
+          }
+
+          // The 'remote_partition' 'ss::shared_ptr' belongs to the
+          // shard with sid '*shard'. Hence, we need to ensure that
+          // when Seastar calls into the labmda provided by read body,
+          // all access to the pointer happens on its home shard.
+          rep->write_body(
+            "json",
+            [part = std::move(partition),
+             sid = *shard](ss::output_stream<char>&& output_stream) mutable {
+                return ss::smp::submit_to(
+                  sid,
+                  [os = std::move(output_stream),
+                   part = std::move(part)]() mutable {
+                      return ss::do_with(
+                        std::move(os),
+                        std::move(part),
+                        [](auto& os, auto& part) mutable {
+                            return part->serialize_manifest_to_output_stream(os)
+                              .finally([&os] { return os.close(); });
+                        });
+                  });
+            });
+
+          return ss::make_ready_future<std::unique_ptr<ss::http::reply>>(
+            std::move(rep));
+      });
+}
+
 void admin_server::register_shadow_indexing_routes() {
     register_route<superuser>(
       ss::httpd::shadow_indexing_json::sync_local_state,
@@ -4205,6 +4267,14 @@ void admin_server::register_shadow_indexing_routes() {
       ss::httpd::shadow_indexing_json::get_partition_cloud_storage_status,
       [this](auto req) {
           return get_partition_cloud_storage_status(std::move(req));
+      });
+
+    register_route_raw_async<user>(
+      ss::httpd::shadow_indexing_json::get_manifest,
+      [this](
+        std::unique_ptr<ss::http::request> req,
+        std::unique_ptr<ss::http::reply> rep) {
+          return get_manifest(std::move(req), std::move(rep));
       });
 }
 

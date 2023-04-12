@@ -897,3 +897,10 @@ class Admin:
         return self._request("GET",
                              f"cloud_storage/status/{topic}/{partition}",
                              node=node).json()
+
+    def get_partition_manifest(self, topic: str, partition: int):
+        """
+        Get the in-memory partition manifest for the requested ntp
+        """
+        return self._request(
+            "GET", f"cloud_storage/manifest/{topic}/{partition}").json()
