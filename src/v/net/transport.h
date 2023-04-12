@@ -70,6 +70,7 @@ public:
 
     ss::future<> stop();
     void shutdown() noexcept;
+    ss::future<> wait_input_shutdown();
 
     [[gnu::always_inline]] bool is_valid() const {
         return _fd && !_shutdown && !_in.eof();

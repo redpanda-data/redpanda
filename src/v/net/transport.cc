@@ -123,4 +123,10 @@ void base_transport::shutdown() noexcept {
     }
 }
 
+ss::future<> base_transport::wait_input_shutdown() {
+    if (_fd && _shutdown) {
+        co_return co_await _fd->wait_input_shutdown();
+    }
+}
+
 } // namespace net
