@@ -29,6 +29,10 @@ RUN /opt/ducktape-deps.sh install_java_client_deps && \
 # on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
 RUN /opt/ducktape-deps.sh install_kafka_streams_examples
 
+# Install Protobuf for test clients / workloads
+RUN mkdir -p /opt/redpanda-tests
+COPY --chown=0:0 tests/protobuf /opt/redpanda-tests/protobuf
+
 # Install our in-tree Java test clientst
 RUN mkdir -p /opt/redpanda-tests
 COPY --chown=0:0 tests/java /opt/redpanda-tests/java
