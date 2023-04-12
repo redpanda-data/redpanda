@@ -78,6 +78,7 @@ class SerdeClient(BackgroundThreadService):
     def _worker(self, idx, node):
 
         if self._serde_client_type == SerdeClientType.Python:
+            inject_remote_script(node, "payload_pb2.py")
             script_path = inject_remote_script(
                 node, "python_librdkafka_serde_client.py")
             script_path = f"{PYTHON_EXEC} {script_path}"
