@@ -67,7 +67,7 @@ void available_memory::register_metrics() {
     }
 
     auto& m = _metrics.emplace();
-    m.groups.add_group(
+    m.add_group(
       prometheus_sanitize::metrics_name("memory"),
       {ss::metrics::make_gauge(
          "available_memory",
