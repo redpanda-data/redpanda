@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import os
+
 from rptest.services.cluster import cluster
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk_remote import RpkRemoteTool
@@ -93,6 +95,11 @@ transparent_hugepages  true     true
             "clocksource            true     true       ",
             "clocksource            true     false      Clocksource setting not available for this architecture"
         ) if is_not_x86 else expected
+
+        expected = expected.replace(
+            "disk_write_cache       true     false      Disk write cache tuner is only supported in GCP",
+            "disk_write_cache       true     true       ") if os.environ.get(
+                'CDT_CLOUD_PROVIDER', None) == 'gcp' else expected
 
         output = rpk.tune("list")
         self.logger.debug(output)
