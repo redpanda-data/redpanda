@@ -262,7 +262,14 @@ abs_client::abs_client(
   , _client(conf, &as, conf._probe, conf.max_idle_time)
   , _probe(conf._probe) {}
 
-ss::future<> abs_client::stop() { return _client.stop(); }
+ss::future<> abs_client::stop() {
+    vlog(abs_log.debug, "Stopping ABS client");
+
+    co_await _client.stop();
+    co_await _client.wait_input_shutdown();
+
+    vlog(abs_log.debug, "Stopped ABS client");
+}
 
 void abs_client::shutdown() { _client.shutdown(); }
 
