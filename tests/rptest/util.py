@@ -219,8 +219,11 @@ def wait_for_local_storage_truncate(redpanda,
                                     timeout_sec: Optional[int] = None,
                                     nodes: Optional[list] = None):
     """
-    For use in tiered storage tests: wait until the locally etained data
-    size for this partition is below a threshold on all nodes.
+    For use in tiered storage tests: wait until the locally retained data
+    size for this partition is as close to the target threshold on all nodes.
+    Size-based retention will not reclaim more than the target threshold, and
+    since we reclaim with segment granularity, we can check that we the as close
+    as possible property by examining the remaining segments.
     """
 
     if timeout_sec is None:
@@ -245,7 +248,15 @@ def wait_for_local_storage_truncate(redpanda,
                 redpanda.logger.debug(
                     f"    {topic}/{partition_idx} node {node_partition.node.name} {s.name} {s.size}"
                 )
-            sizes.append(total_size)
+
+            # size-based retention policy does not remove a segment if its
+            # removal would exceed the retention target. so for the comparison
+            # to determine if we reached the goal we subtract off the size of
+            # the oldest segment
+            first_segment = min(node_partition.segments.values(),
+                                key=lambda s: s.offset)
+            first_segment_size = first_segment.size if first_segment.size else 0
+            sizes.append(total_size - first_segment_size)
 
         # The segment which is open for appends will differ in Redpanda's internal
         # sizing (exact) vs. what the filesystem reports for a falloc'd file (to the

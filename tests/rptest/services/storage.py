@@ -24,6 +24,10 @@ class Segment:
         # Size of data_file, if caller chooses to populate it via set_size
         self.size = None
 
+        m = re.match(r"^(\d+)\-\d+\-v\d+$", name)
+        assert m, f"Unexpected segment name {name}"
+        self.offset = m.group(1)
+
     def add_file(self, fn, ext):
         assert fn
         assert ext
