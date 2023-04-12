@@ -153,6 +153,10 @@ ss::future<std::vector<rm_stm::tx_range>> partition::aborted_transactions_cloud(
 }
 
 cluster::cloud_storage_mode partition::get_cloud_storage_mode() const {
+    if (!config::shard_local_cfg().cloud_storage_enabled()) {
+        return cluster::cloud_storage_mode::disabled;
+    }
+
     const auto& cfg = _raft->log_config();
 
     if (cfg.is_read_replica_mode_enabled()) {
@@ -209,7 +213,7 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
     status.local_log_last_offset = wrap_model_offset(
       local_log_offsets.committed_offset);
 
-    if (status.mode != cloud_storage_mode::disabled) {
+    if (status.mode != cloud_storage_mode::disabled && _archival_meta_stm) {
         const auto& manifest = _archival_meta_stm->manifest();
         status.cloud_metadata_update_pending
           = _archival_meta_stm->get_dirty()
