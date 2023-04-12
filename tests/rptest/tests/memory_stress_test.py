@@ -9,7 +9,7 @@
 
 from enum import Enum
 
-from ducktape.mark import ok_to_fail
+from ducktape.mark import ok_to_fail, parametrize
 from rptest.clients.types import TopicSpec
 from rptest.services.cluster import cluster
 from rptest.services.kaf_consumer import KafConsumer
@@ -36,10 +36,12 @@ class MemoryStressTest(RedpandaTest):
         # enabling each test case to customize its ResourceSettings
         pass
 
-    @ok_to_fail  # until the fix is delivered
     @cluster(num_nodes=5)
     @skip_debug_mode
-    def test_fetch_with_many_partitions(self):
+    @parametrize(memory_share_for_fetch=0.05)
+    @parametrize(memory_share_for_fetch=0.5)
+    @parametrize(memory_share_for_fetch=0.8)
+    def test_fetch_with_many_partitions(self, memory_share_for_fetch: float):
         """
         Exhaust memory by consuming from too many partitions in a single Fetch
         API request.
@@ -47,11 +49,15 @@ class MemoryStressTest(RedpandaTest):
         # memory_mb does not work with debug redpanda build, therefore the test
         # only makes sense with release redpanda, hence @skip_debug_mode
         self.redpanda.set_resource_settings(
-            ResourceSettings(memory_mb=256, num_cpus=1))
+            ResourceSettings(memory_mb=512, num_cpus=1))
         self.redpanda.set_seed_servers(self.redpanda.nodes)
+        self.redpanda.add_extra_rp_conf({
+            "kafka_batch_max_bytes":
+            10 * 1024 * 1024,
+            "kafka_memory_share_for_fetch":
+            memory_share_for_fetch
+        })
         self.redpanda.start(omit_seeds_on_idx_one=False)
-        self.redpanda.set_cluster_config(
-            {"kafka_batch_max_bytes": 10 * 1024 * 1024})
 
         # the maximum message size that does not make redpanda OOM with all
         # the other params as they are is 64 MiB
@@ -68,8 +74,9 @@ class MemoryStressTest(RedpandaTest):
             150 * 500_000)
         produce_timeout = msg_count * msg_size // 2184533
         self.logger.info(
-            f"Starting producer. msg_size={msg_size}, msg_count={msg_count}, partiton_count={partition_count}, rpk_response_timeout={rpk_response_timeout}, produce_timeout={produce_timeout}"
-        )
+            f"Starting producer. msg_size={msg_size}, msg_count={msg_count}, "
+            f"partiton_count={partition_count}, rpk_response_timeout={rpk_response_timeout}, "
+            f"produce_timeout={produce_timeout}")
 
         producer = RpkProducer(self.test_context,
                                self.redpanda,
