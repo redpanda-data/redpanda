@@ -19,6 +19,7 @@
 
 #include <seastar/core/coroutine.hh>
 
+#include <absl/container/flat_hash_set.h>
 #include <fmt/ostream.h>
 #include <google/protobuf/compiler/parser.h>
 #include <google/protobuf/descriptor.h>
@@ -31,6 +32,35 @@
 namespace pandaproxy::schema_registry {
 
 namespace pb = google::protobuf;
+
+struct descriptor_hasher {
+    using is_transparent = void;
+
+    std::size_t operator()(const pb::FileDescriptor* s) const {
+        return absl::Hash<std::string>()(s->name());
+    }
+    std::size_t operator()(const ss::sstring& s) const {
+        return absl::Hash<ss::sstring>()(s);
+    }
+};
+
+struct descriptor_equal {
+    using is_transparent = void;
+
+    bool operator()(
+      const pb::FileDescriptor* lhs, const pb::FileDescriptor* rhs) const {
+        return lhs->name() == rhs->name();
+    }
+
+    bool
+    operator()(const pb::FileDescriptor* lhs, const ss::sstring& rhs) const {
+        return lhs->name() == rhs;
+    }
+};
+
+using known_types_set = absl::
+  flat_hash_set<const pb::FileDescriptor*, descriptor_hasher, descriptor_equal>;
+static const known_types_set known_types;
 
 class io_error_collector final : public pb::io::ErrorCollector {
     enum class level {
@@ -160,6 +190,15 @@ private:
 const pb::FileDescriptor*
 build_file(pb::DescriptorPool& dp, const pb::FileDescriptorProto& fdp) {
     dp_error_collector dp_ec;
+    for (const auto& dep : fdp.dependency()) {
+        if (!dp.FindFileByName(dep)) {
+            if (auto it = known_types.find(dep); it != known_types.end()) {
+                google::protobuf::FileDescriptorProto p;
+                (*it)->CopyTo(&p);
+                build_file(dp, p);
+            }
+        }
+    }
     if (auto fd = dp.BuildFileCollectingErrors(fdp, &dp_ec); fd) {
         return fd;
     }
