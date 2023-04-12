@@ -547,7 +547,7 @@ class SISettings:
         self._expected_damage_types = damage_types
 
     def is_damage_expected(self, damage_types: set[str]):
-        return (damage_types & self._expected_damage_types) == damage_types
+        return damage_types.issubset(self._expected_damage_types)
 
 
 class TLSProvider:
