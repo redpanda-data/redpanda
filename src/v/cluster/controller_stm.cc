@@ -17,6 +17,8 @@
 #include "cluster/members_manager.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
+
 namespace cluster {
 
 ss::future<> controller_stm::on_batch_applied() {
@@ -34,10 +36,12 @@ ss::future<> controller_stm::on_batch_applied() {
     };
 }
 
-ss::future<> controller_stm::stop() {
+ss::future<> controller_stm::shutdown() {
     _snapshot_debounce_timer.cancel();
     return base_t::stop();
 }
+
+ss::future<> controller_stm::stop() { co_return; }
 
 void controller_stm::snapshot_timer_callback() {
     ssx::background
@@ -131,6 +135,11 @@ ss::future<> controller_stm::apply_snapshot(
           std::get<topic_updates_dispatcher&>(_state).apply_snapshot(
             offset, snapshot),
           std::get<security_manager&>(_state).apply_snapshot(offset, snapshot));
+    } catch (const seastar::abort_requested_exception&) {
+    } catch (const seastar::gate_closed_exception&) {
+    } catch (const seastar::broken_semaphore&) {
+    } catch (const seastar::broken_promise&) {
+    } catch (const seastar::broken_condition_variable&) {
     } catch (...) {
         vassert(
           false,
