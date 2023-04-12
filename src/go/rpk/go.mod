@@ -14,7 +14,6 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.5.0
 	github.com/fatih/color v1.14.1
-	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/lestrrat-go/jwx v1.2.25
 	github.com/lorenzosaino/go-sysctl v0.3.1
@@ -32,7 +31,6 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
 	github.com/tklauser/go-sysconf v0.3.11
-	github.com/trstringer/go-systemd-time v1.0.0
 	github.com/twmb/franz-go v1.12.0
 	github.com/twmb/franz-go/pkg/kadm v1.7.0
 	github.com/twmb/franz-go/pkg/kmsg v1.4.0
