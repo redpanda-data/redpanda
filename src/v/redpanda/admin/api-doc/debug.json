@@ -23,6 +23,72 @@
             ]
         },
         {
+            "path": "/v1/debug/stress_fiber_start",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Spawns fibers to artificially inflate CPU utilization",
+                    "type": "void",
+                    "nickname": "stress_fiber_start",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": [
+                        {
+                            "name": "min_spins_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "max_spins_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "min_ms_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "max_ms_per_scheduling_point",
+                            "in": "query",
+                            "required": false,
+                            "allowMultiple": false,
+                            "type": "long"
+                        },
+                        {
+                            "name": "num_fibers",
+                            "in": "query",
+                            "required": true,
+                            "allowMultiple": false,
+                            "type": "long"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "path": "/v1/debug/stress_fiber_stop",
+            "operations": [
+                {
+                    "method": "PUT",
+                    "summary": "Stops any stress fibers that may be running",
+                    "type": "void",
+                    "nickname": "stress_fiber_stop",
+                    "produces": [
+                        "application/json"
+                    ],
+                    "parameters": []
+                }
+            ]
+        },
+        {
             "path": "/v1/debug/partition_leaders_table",
             "operations": [
                 {

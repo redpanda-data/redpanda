@@ -24,6 +24,7 @@
 #include "cluster/tx_coordinator_mapper.h"
 #include "config/node_config.h"
 #include "features/fwd.h"
+#include "finjector/stress_fiber.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/fwd.h"
 #include "kafka/server/fwd.h"
@@ -95,6 +96,7 @@ public:
 
     smp_groups smp_service_groups;
     scheduling_groups sched_groups;
+    ss::sharded<stress_fiber_manager> stress_fiber_manager;
 
     // Sorted list of services (public members)
     ss::sharded<cloud_storage::cache> shadow_index_cache;
