@@ -893,6 +893,7 @@ class Admin:
                              "debug/refresh_disk_health_info",
                              node=node)
 
-    def get_partition_cloud_storage_status(self, topic, partition):
-        return self._request(
-            "GET", f"cloud_storage/status/{topic}/{partition}").json()
+    def get_partition_cloud_storage_status(self, topic, partition, node=None):
+        return self._request("GET",
+                             f"cloud_storage/status/{topic}/{partition}",
+                             node=node).json()

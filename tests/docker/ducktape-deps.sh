@@ -96,11 +96,17 @@ function install_kaf() {
   mv /root/go/bin/kaf /usr/local/bin/
 }
 
+# Alias so that vtools can be updated asynchronously.
 function install_client_swarm() {
+  install_rust_tools "$1"
+}
+
+function install_rust_tools() {
   dir="$1"
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
   export PATH="$dir/.cargo/bin:${PATH}"
   pushd /tmp
+
   git clone https://github.com/redpanda-data/client-swarm.git
   pushd client-swarm
   git reset --hard 9ef8e93
@@ -108,8 +114,18 @@ function install_client_swarm() {
   cp target/release/client-swarm /usr/local/bin
   popd
   rm -rf client-swarm
+
+  git clone https://github.com/jcsp/segment_toy.git
+  pushd segment_toy
+  git reset --hard 899c1310b0a55e1ade66237054faba81bb4223a4
+  cargo build --release
+  cp target/release/segments /usr/local/bin
+  popd
+  rm -rf segment_toy
+
   popd
   rm -rf $dir/.cargo
+  rm -rf $dir/.rustup
 }
 
 function install_sarama_examples() {

@@ -211,6 +211,9 @@ partition_cloud_storage_status partition::get_cloud_storage_status() const {
 
     if (status.mode != cloud_storage_mode::disabled) {
         const auto& manifest = _archival_meta_stm->manifest();
+        status.cloud_metadata_update_pending
+          = _archival_meta_stm->get_dirty()
+            == archival_metadata_stm::state_dirty::dirty;
         status.cloud_log_size_bytes = manifest.cloud_log_size();
         status.cloud_log_segment_count = manifest.size();
 

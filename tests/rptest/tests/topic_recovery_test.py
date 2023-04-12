@@ -1392,6 +1392,8 @@ class TopicRecoveryTest(RedpandaTest):
         """Test the handling of the missing segment. The segment is
         missing if it's present in the manifest but deleted from the
         bucket."""
+        self.redpanda.si_settings.set_expected_damage({"missing_segments"})
+
         test_case = MissingSegment(self.cloud_storage_client, self.kafka_tools,
                                    self.rpk, self.s3_bucket, self.logger,
                                    self.rpk_producer_maker)
