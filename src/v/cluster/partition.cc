@@ -194,6 +194,14 @@ ss::future<std::error_code> partition::prefix_truncate(
           _raft->ntp());
         co_return make_error_code(errc::topic_invalid_config);
     }
+    if (!feature_table().local().is_active(features::feature::delete_records)) {
+        vlog(
+          clusterlog.info,
+          "Cannot prefix-truncate topic/partition {} feature is currently "
+          "disabled",
+          _raft->ntp());
+        co_return make_error_code(cluster::errc::feature_disabled);
+    }
     co_return co_await _log_eviction_stm->truncate(
       truncation_offset, deadline, _as);
 }

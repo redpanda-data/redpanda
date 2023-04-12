@@ -331,6 +331,7 @@ ss::future<error_code> replicated_partition::prefix_truncate(
             kerr = error_code::request_timed_out;
             break;
         case cluster::errc::topic_invalid_config:
+        case cluster::errc::feature_disabled:
         default:
             vlog(
               klog.error,
