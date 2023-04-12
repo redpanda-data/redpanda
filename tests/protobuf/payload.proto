@@ -14,6 +14,7 @@ syntax = "proto3";
 package com.redpanda;
 
 option go_package = "./;main";
+option java_multiple_files = true;
 
 message Payload {
     int32 val = 1;
