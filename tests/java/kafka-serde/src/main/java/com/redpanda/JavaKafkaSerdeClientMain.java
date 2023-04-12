@@ -13,6 +13,7 @@ package com.redpanda;
 
 import java.util.*;
 import net.sourceforge.argparse4j.ArgumentParsers;
+import net.sourceforge.argparse4j.impl.Arguments;
 import net.sourceforge.argparse4j.inf.ArgumentParser;
 import net.sourceforge.argparse4j.inf.ArgumentParserException;
 import net.sourceforge.argparse4j.inf.Namespace;
@@ -56,11 +57,13 @@ public class JavaKafkaSerdeClientMain {
     String srAdr = ns.getString("schema_registry");
     String consumerGroup = ns.getString("consumer_group");
     int count = ns.getInt("count");
+    boolean skipKnownTypes = ns.getBoolean("skip_known_types");
 
     JavaKafkaSerdeClient.Protocol protocol = ns.get("protocol");
 
     JavaKafkaSerdeClient client = new JavaKafkaSerdeClient(
-        brokers, topic, srAdr, consumerGroup, protocol, securitySettings, log);
+        brokers, topic, srAdr, consumerGroup, protocol, securitySettings,
+        skipKnownTypes, log);
 
     try {
       client.run(count);
@@ -105,6 +108,11 @@ public class JavaKafkaSerdeClientMain {
         .setDefault(1)
         .type(Integer.class);
     parser.addArgument("--security").help("JSON formatted security string");
+    parser.addArgument("--skip-known-types")
+        .help("Whether to skip known types when resolving schema")
+        .setDefault(false)
+        .action(Arguments.storeTrue())
+        .type(Boolean.class);
 
     return parser;
   }
