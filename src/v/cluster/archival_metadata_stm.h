@@ -60,10 +60,12 @@ public:
     command_batch_builder& mark_clean(model::offset);
     /// Add truncate command to the batch
     command_batch_builder& truncate(model::offset start_rp_offset);
+    command_batch_builder& truncate(kafka::offset start_kafka_offset);
     /// Add spillover command to the batch
     command_batch_builder& spillover(model::offset start_rp_offset);
     /// Add truncate-archive-init command to the batch
-    command_batch_builder& truncate_archive_init(model::offset start_rp_offset);
+    command_batch_builder& truncate_archive_init(
+      model::offset start_rp_offset, model::offset_delta delta);
     /// Add truncate-archive-commit command to the batch
     command_batch_builder& cleanup_archive(model::offset start_rp_offset);
     /// Replicate the configuration batch
@@ -113,6 +115,10 @@ public:
       model::offset start_rp_offset,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+    ss::future<std::error_code> truncate(
+      kafka::offset start_kafka_offset,
+      ss::lowres_clock::time_point deadline,
+      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
     /// Truncate local snapshot
     ///
@@ -129,6 +135,7 @@ public:
     /// This method moves archive_start_offset forward.
     ss::future<std::error_code> truncate_archive_init(
       model::offset start_rp_offset,
+      model::offset_delta delta,
       ss::lowres_clock::time_point deadline,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
@@ -184,6 +191,7 @@ public:
     model::offset get_last_offset() const;
     model::offset get_archive_start_offset() const;
     model::offset get_archive_clean_offset() const;
+    kafka::offset get_start_kafka_offset() const;
 
     // Return list of all segments that has to be
     // removed from S3.
@@ -232,9 +240,11 @@ private:
 
     struct segment;
     struct start_offset;
+    struct start_offset_with_delta;
     struct add_segment_cmd;
     struct truncate_cmd;
     struct update_start_offset_cmd;
+    struct update_start_kafka_offset_cmd;
     struct cleanup_metadata_cmd;
     struct mark_clean_cmd;
     struct truncate_archive_init_cmd;
@@ -254,8 +264,9 @@ private:
     void apply_cleanup_metadata();
     void apply_mark_clean(model::offset);
     void apply_update_start_offset(const start_offset& so);
-    void apply_truncate_archive_init(const start_offset& so);
+    void apply_truncate_archive_init(const start_offset_with_delta& so);
     void apply_truncate_archive_commit(const start_offset& so);
+    void apply_update_start_kafka_offset(kafka::offset so);
 
 private:
     prefix_logger _logger;

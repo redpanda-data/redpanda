@@ -61,8 +61,17 @@ struct archival_metadata_stm::segment
 
 struct archival_metadata_stm::start_offset
   : public serde::
-      envelope<segment, serde::version<0>, serde::compat_version<0>> {
+      envelope<start_offset, serde::version<0>, serde::compat_version<0>> {
     model::offset start_offset;
+};
+
+struct archival_metadata_stm::start_offset_with_delta
+  : public serde::envelope<
+      start_offset_with_delta,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::offset start_offset;
+    model::offset_delta delta;
 };
 
 struct archival_metadata_stm::add_segment_cmd {
@@ -96,13 +105,19 @@ struct archival_metadata_stm::mark_clean_cmd {
 struct archival_metadata_stm::truncate_archive_init_cmd {
     static constexpr cmd_key key{5};
 
-    using value = start_offset;
+    using value = start_offset_with_delta;
 };
 
 struct archival_metadata_stm::truncate_archive_commit_cmd {
     static constexpr cmd_key key{6};
 
     using value = start_offset;
+};
+
+struct archival_metadata_stm::update_start_kafka_offset_cmd {
+    static constexpr cmd_key key{7};
+
+    using value = kafka::offset;
 };
 
 struct archival_metadata_stm::snapshot
@@ -201,6 +216,18 @@ command_batch_builder::truncate(model::offset start_rp_offset) {
 }
 
 command_batch_builder&
+command_batch_builder::truncate(kafka::offset start_kafka_offset) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::update_start_kafka_offset_cmd::key);
+    auto record_val
+      = archival_metadata_stm::update_start_kafka_offset_cmd::value{
+        start_kafka_offset};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder&
 command_batch_builder::spillover(model::offset start_rp_offset) {
     iobuf key_buf = serde::to_iobuf(archival_metadata_stm::truncate_cmd::key);
     auto record_val = archival_metadata_stm::truncate_cmd::value{
@@ -210,12 +237,12 @@ command_batch_builder::spillover(model::offset start_rp_offset) {
     return *this;
 }
 
-command_batch_builder&
-command_batch_builder::truncate_archive_init(model::offset start_rp_offset) {
+command_batch_builder& command_batch_builder::truncate_archive_init(
+  model::offset start_rp_offset, model::offset_delta delta) {
     iobuf key_buf = serde::to_iobuf(
       archival_metadata_stm::truncate_archive_init_cmd::key);
     auto record_val = archival_metadata_stm::truncate_archive_init_cmd::value{
-      .start_offset = start_rp_offset};
+      .start_offset = start_rp_offset, .delta = delta};
     iobuf val_buf = serde::to_iobuf(record_val);
     _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
     return *this;
@@ -429,6 +456,15 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
     co_return co_await builder.replicate();
 }
 
+ss::future<std::error_code> archival_metadata_stm::truncate(
+  kafka::offset start_kafka_offset,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto builder = batch_start(deadline, as);
+    builder.truncate(start_kafka_offset);
+    co_return co_await builder.replicate();
+}
+
 ss::future<std::error_code> archival_metadata_stm::spillover(
   model::offset start_rp_offset,
   ss::lowres_clock::time_point deadline,
@@ -443,13 +479,14 @@ ss::future<std::error_code> archival_metadata_stm::spillover(
 
 ss::future<std::error_code> archival_metadata_stm::truncate_archive_init(
   model::offset start_rp_offset,
+  model::offset_delta delta,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
     if (start_rp_offset < get_archive_start_offset()) {
         co_return errc::success;
     }
     auto builder = batch_start(deadline, as);
-    builder.truncate_archive_init(start_rp_offset);
+    builder.truncate_archive_init(start_rp_offset, delta);
     co_return co_await builder.replicate();
 }
 
@@ -653,6 +690,11 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         case truncate_archive_commit_cmd::key:
             apply_truncate_archive_commit(
               serde::from_iobuf<truncate_archive_commit_cmd::value>(
+                r.release_value()));
+            break;
+        case update_start_kafka_offset_cmd::key:
+            apply_update_start_kafka_offset(
+              serde::from_iobuf<update_start_kafka_offset_cmd::value>(
                 r.release_value()));
             break;
         };
@@ -922,14 +964,34 @@ void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
     }
 }
 
+void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
+    if (!_manifest->advance_start_kafka_offset(so)) {
+        vlog(
+          _logger.error,
+          "Can't truncate manifest up to kafka offset {}, offset out of range, "
+          "current start kafka offset: {}, start offset: {}, archive start "
+          "offset: {}",
+          so,
+          get_start_kafka_offset(),
+          get_start_offset(),
+          get_archive_start_offset());
+    } else {
+        vlog(
+          _logger.debug,
+          "Start kafka offset updated to {}, start offset updated to {}",
+          get_start_kafka_offset(),
+          get_start_offset());
+    }
+}
+
 void archival_metadata_stm::apply_truncate_archive_init(
-  const start_offset& so) {
+  const start_offset_with_delta& so) {
     vlog(
       _logger.debug,
       "Updating archive start offset, current value {}, update {}",
       get_archive_start_offset(),
       so.start_offset);
-    _manifest->set_archive_start_offset(so.start_offset);
+    _manifest->set_archive_start_offset(so.start_offset, so.delta);
 }
 
 void archival_metadata_stm::apply_truncate_archive_commit(
@@ -1028,6 +1090,10 @@ model::offset archival_metadata_stm::get_archive_start_offset() const {
 
 model::offset archival_metadata_stm::get_archive_clean_offset() const {
     return _manifest->get_archive_clean_offset();
+}
+
+kafka::offset archival_metadata_stm::get_start_kafka_offset() const {
+    return _manifest->get_start_kafka_offset().value_or(kafka::offset{});
 }
 
 /**

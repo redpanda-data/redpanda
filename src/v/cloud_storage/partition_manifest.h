@@ -13,6 +13,7 @@
 #include "absl/container/btree_map.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
@@ -311,7 +312,11 @@ public:
                && _last_uploaded_compacted_offset
                     == other._last_uploaded_compacted_offset
                && _insync_offset == other._insync_offset
-               && _replaced == other._replaced;
+               && _replaced == other._replaced
+               && _archive_clean_offset == other._archive_clean_offset
+               && _archive_start_offset == other._archive_start_offset
+               && _archive_start_offset_delta
+                    == other._archive_start_offset_delta;
     }
 
     manifest_type get_manifest_type() const override {
@@ -345,8 +350,10 @@ public:
     void disable_permanently();
 
     model::offset get_archive_start_offset() const;
+    kafka::offset get_archive_start_kafka_offset() const;
     model::offset get_archive_clean_offset() const;
-    void set_archive_start_offset(model::offset start_rp_offset);
+    void set_archive_start_offset(
+      model::offset start_rp_offset, model::offset_delta start_delta);
     void set_archive_clean_offset(model::offset start_rp_offset);
 
 private:
@@ -407,6 +414,7 @@ private:
     // First accessible offset of the 'archive' region. Default value means
     // that there is no archive.
     model::offset _archive_start_offset;
+    model::offset_delta _archive_start_offset_delta;
     // First offset of the 'archive'. The data between 'clean' and 'archive'
     // could be removed by the housekeeping. The invariant is that 'clean' is
     // less or equal to 'start'.
