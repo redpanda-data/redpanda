@@ -725,14 +725,38 @@ func (c *Config) addUnsetDefaults() {
 		namedAuthnToNamed(c.Redpanda.KafkaAPI),
 		c.Redpanda.KafkaAPITLS,
 		&c.Rpk.KafkaAPI.Brokers,
-		"127.0.0.1:9092",
 	)
 	defaultFromRedpanda(
 		c.Redpanda.AdminAPI,
 		c.Redpanda.AdminAPITLS,
 		&c.Rpk.AdminAPI.Addresses,
-		"127.0.0.1:9644",
 	)
+
+	if len(c.Rpk.KafkaAPI.Brokers) == 0 && len(c.Rpk.AdminAPI.Addresses) > 0 {
+		host, _, err := net.SplitHostPort(c.Rpk.AdminAPI.Addresses[0])
+		if err == nil {
+			host = net.JoinHostPort(host, strconv.Itoa(DefaultKafkaPort))
+			c.Rpk.KafkaAPI.Brokers = []string{host}
+			c.Rpk.KafkaAPI.TLS = c.Rpk.AdminAPI.TLS
+		}
+	}
+
+	if len(c.Rpk.AdminAPI.Addresses) == 0 && len(c.Rpk.KafkaAPI.Brokers) > 0 {
+		host, _, err := net.SplitHostPort(c.Rpk.KafkaAPI.Brokers[0])
+		if err == nil {
+			host = net.JoinHostPort(host, strconv.Itoa(DefaultAdminPort))
+			c.Rpk.AdminAPI.Addresses = []string{host}
+			c.Rpk.AdminAPI.TLS = c.Rpk.KafkaAPI.TLS
+		}
+	}
+
+	if len(c.Rpk.KafkaAPI.Brokers) == 0 {
+		c.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+	}
+
+	if len(c.Rpk.AdminAPI.Addresses) == 0 {
+		c.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+	}
 }
 
 // defaultFromRedpanda sets fields in our `rpk` config section if those fields
@@ -745,15 +769,10 @@ func (c *Config) addUnsetDefaults() {
 // We favor no TLS. The broker likely does not have client certs, so we cannot
 // set client TLS settings. If we have any non-TLS host, we do not use TLS
 // hosts.
-func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]string, fallback string) {
+func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]string) {
 	if len(*dst) != 0 {
 		return
 	}
-	defer func() {
-		if len(*dst) == 0 {
-			*dst = append(*dst, fallback)
-		}
-	}()
 
 	tlsNames := make(map[string]bool)
 	mtlsNames := make(map[string]bool)

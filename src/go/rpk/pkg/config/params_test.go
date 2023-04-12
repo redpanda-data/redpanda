@@ -617,6 +617,62 @@ func TestAddUnsetDefaults(t *testing.T) {
 				},
 			},
 		},
+
+		{
+			name: "assume the admin API when only Kafka API is available",
+			inCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+				},
+			},
+			expCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+				},
+				Rpk: RpkNodeConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{
+							"127.1.0.1:5555",
+						},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{
+							"127.1.0.1:9644",
+						},
+					},
+				},
+			},
+		},
+
+		{
+			name: "assume the Kafka API API when only admin API is available from rpk with TLS",
+			inCfg: &Config{
+				Rpk: RpkNodeConfig{
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"127.1.0.1:5555"},
+						TLS:       new(TLS),
+					},
+				},
+			},
+			expCfg: &Config{
+				Rpk: RpkNodeConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{"127.1.0.1:9092"},
+						TLS:     new(TLS),
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"127.1.0.1:5555"},
+						TLS:       new(TLS),
+					},
+				},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			test.inCfg.addUnsetDefaults()
