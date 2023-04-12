@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "pandaproxy/rest/fwd.h"
 #include "pandaproxy/schema_registry/fwd.h"
+#include "redpanda/busy_loop.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
 #include "utils/request_auth.h"
@@ -59,6 +60,7 @@ class admin_server {
 public:
     explicit admin_server(
       admin_server_cfg,
+      ss::sharded<busy_loop_manager>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<coproc::partition_manager>&,
       cluster::controller*,
@@ -472,6 +474,7 @@ private:
 
     ss::httpd::http_server _server;
     admin_server_cfg _cfg;
+    ss::sharded<busy_loop_manager>& _busy_loop_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<coproc::partition_manager>& _cp_partition_manager;
     cluster::controller* _controller;
