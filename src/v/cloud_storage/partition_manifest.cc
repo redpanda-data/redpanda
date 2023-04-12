@@ -26,6 +26,7 @@
 #include "storage/fs_utils.h"
 #include "utils/to_string.h"
 #include "vlog.h"
+#include "vlog_error.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/iostream.hh>
@@ -312,15 +313,15 @@ partition_manifest::get_start_kafka_offset() const {
             auto delta = iter->second.delta_offset;
             return _start_offset - delta;
         } else {
-            // If start offset points outside a segment, then we cannot
-            // translate it.  If there are any segments ahead of it, then
-            // those may be considered the start of the remote log.
-            if (
-              !_segments.empty()
-              && _segments.begin()->second.base_offset >= _start_offset) {
-                const auto& seg = _segments.begin()->second;
-                return seg.base_offset - seg.delta_offset;
+            if (_segments.empty()) {
+                return std::nullopt;
             } else {
+                vlog_error(
+                  cst_log,
+                  soft_assert::cloud_storage_start_offset_out_of_range,
+                  "Start offset {} below first segment base offset {}",
+                  _start_offset,
+                  _segments.begin()->second.base_offset);
                 return std::nullopt;
             }
         }
@@ -334,6 +335,13 @@ partition_manifest::segment_containing(kafka::offset o) const {
     if (_segments.empty()) {
         return end();
     }
+
+    if (o < get_start_kafka_offset()) {
+        // Even if the offset is within a segment that physically
+        // exists, refuse to service lookups below start_offset.
+        return end();
+    }
+
     // Kafka offset is always <= log offset.
     // To find a segment by its kafka offset we can simply query
     // manifest by log offset and then traverse forward until we
