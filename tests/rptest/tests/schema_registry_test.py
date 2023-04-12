@@ -1163,7 +1163,11 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Java)
     @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Golang)
     @parametrize(protocol=SchemaType.PROTOBUF,
-                 client_type=SerdeClientType.Python)
+                 client_type=SerdeClientType.Python,
+                 skip_known_types=False)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Python,
+                 skip_known_types=True)
     @parametrize(protocol=SchemaType.PROTOBUF,
                  client_type=SerdeClientType.Java,
                  skip_known_types=False)
