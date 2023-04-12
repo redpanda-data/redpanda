@@ -8,3 +8,4 @@
 !tools/consumer_offsets_recovery
 !tests/docker/ducktape-deps.sh
 !tests/rptest/remote_scripts
+!tests/protobuf
