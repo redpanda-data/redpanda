@@ -158,7 +158,7 @@ func makeReportTable(report admin.SelfTestNodeReport) [][]string {
 			continue
 		}
 		table = append(table, []string{"IOPS", fmt.Sprintf("%d req/sec", *sr.RequestsPerSec)})
-		throughput := ""
+		var throughput string
 		if sr.TestType == admin.NetcheckTagIdentifier {
 			throughput = system.BitsToHuman(float64(*sr.BytesPerSec))
 		} else {

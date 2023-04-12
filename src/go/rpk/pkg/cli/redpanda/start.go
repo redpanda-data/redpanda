@@ -59,7 +59,6 @@ type seastarFlags struct {
 }
 
 const (
-	configFlag            = "config"
 	memoryFlag            = "memory"
 	lockMemoryFlag        = "lock-memory"
 	reserveMemoryFlag     = "reserve-memory"

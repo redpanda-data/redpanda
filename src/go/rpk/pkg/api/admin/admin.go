@@ -337,22 +337,20 @@ func (a *AdminAPI) sendToLeader(
 				// Could not map any IDs: probably this is an old redpanda
 				// with no node_config endpoint.  Fall back to broadcast.
 				return a.sendAll(ctx, method, path, body, into)
-			} else if err != nil {
-				// Have ID mapping for some nodes but not the one that is
-				// allegedly the leader.  This leader ID is probably stale,
-				// e.g. if it just died a moment ago.  Try again.  This is
-				// a long timeout, because it's the sum of the time for nodes
-				// to start an election, followed by the worst cast number of
-				// election rounds
-				retries -= 1
-				if retries == 0 {
-					return err
-				}
-				time.Sleep(staleLeaderBackoff)
-			} else {
-				// Success: break out of retry loop
+			} else if err == nil {
 				break
 			}
+			// Have ID mapping for some nodes but not the one that is
+			// allegedly the leader.  This leader ID is probably stale,
+			// e.g. if it just died a moment ago.  Try again.  This is
+			// a long timeout, because it's the sum of the time for nodes
+			// to start an election, followed by the worst cast number of
+			// election rounds
+			retries -= 1
+			if retries == 0 {
+				return err
+			}
+			time.Sleep(staleLeaderBackoff)
 		}
 	}
 
@@ -489,6 +487,7 @@ func (a *AdminAPI) eachBroker(fn func(aa *AdminAPI) error) error {
 func maybeUnmarshalRespInto(
 	method, url string, resp *http.Response, into interface{},
 ) error {
+	defer resp.Body.Close()
 	if into == nil {
 		return nil
 	}
@@ -546,7 +545,7 @@ func (a *AdminAPI) sendAndReceive(
 	// Issue request to the appropriate client, depending on retry behaviour
 	var res *http.Response
 	if retryable {
-		res, err = a.retryClient.Do(req) //nolint:contextcheck // False positive in v1.0.9, will be fixed in next release.
+		res, err = a.retryClient.Do(req)
 	} else {
 		res, err = a.oneshotClient.Do(req)
 	}

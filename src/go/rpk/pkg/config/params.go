@@ -35,7 +35,6 @@ import (
 const (
 	// The following flags exist for backcompat purposes and should not be
 	// used elsewhere within rpk.
-	flagConfig         = "config"
 	flagBrokers        = "brokers"
 	flagSASLMechanism  = "sasl-mechanism"
 	flagSASLPass       = "password"
@@ -1027,7 +1026,7 @@ func getFieldByTag(tag string, v reflect.Value) (reflect.Value, reflect.Value, e
 
 	for _, i := range inlines {
 		if v, _, err := getFieldByTag(tag, v.Field(i)); err == nil {
-			return v, reflect.Value{}, err
+			return v, reflect.Value{}, nil
 		}
 	}
 
