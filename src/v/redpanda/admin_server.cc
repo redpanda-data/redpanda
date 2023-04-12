@@ -112,6 +112,7 @@ static ss::logger logger{"admin_api_server"};
 
 admin_server::admin_server(
   admin_server_cfg cfg,
+  ss::sharded<busy_loop_manager>& looper,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<coproc::partition_manager>& cpm,
   cluster::controller* controller,
@@ -127,6 +128,7 @@ admin_server::admin_server(
   : _log_level_timer([this] { log_level_timer_handler(); })
   , _server("admin")
   , _cfg(std::move(cfg))
+  , _busy_loop_manager(looper)
   , _partition_manager(pm)
   , _cp_partition_manager(cpm)
   , _controller(controller)
@@ -3317,6 +3319,75 @@ void admin_server::register_self_test_routes() {
 }
 
 void admin_server::register_debug_routes() {
+    register_route<user>(
+      ss::httpd::debug_json::busy_loop_stop,
+      [this](std::unique_ptr<ss::http::request>) {
+          vlog(logger.info, "Stopping busy loop");
+          return _busy_loop_manager
+            .invoke_on_all([](auto& looper) { return looper.stop(); })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
+    register_route<user>(
+      ss::httpd::debug_json::busy_loop_start,
+      [this](std::unique_ptr<ss::http::request> req) {
+          vlog(logger.info, "Requested busy loop");
+          int min_spins_per_scheduling_point = 0;
+          if (auto e = req->get_query_param("min_spins_per_scheduling_point");
+              !e.empty()) {
+              try {
+                  min_spins_per_scheduling_point = boost::lexical_cast<int>(e);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid parameter 'min_spins_per_scheduling_point' value "
+                    "{{{}}}",
+                    e));
+              }
+          }
+          int max_spins_per_scheduling_point = min_spins_per_scheduling_point;
+          if (auto e = req->get_query_param("max_spins_per_scheduling_point");
+              !e.empty()) {
+              try {
+                  max_spins_per_scheduling_point = boost::lexical_cast<int>(e);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid parameter 'max_spins_per_scheduling_point' value "
+                    "{{{}}}",
+                    e));
+              }
+              if (
+                max_spins_per_scheduling_point
+                < min_spins_per_scheduling_point) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid parameter 'max_spins_per_scheduling_point' value "
+                    "is too low: {} < {}",
+                    max_spins_per_scheduling_point,
+                    min_spins_per_scheduling_point));
+              }
+          }
+          int num_fibers = 1;
+          if (auto e = req->get_query_param("num_fibers"); !e.empty()) {
+              try {
+                  num_fibers = boost::lexical_cast<int>(e);
+              } catch (const boost::bad_lexical_cast&) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid parameter 'num_fibers' value {{{}}}", e));
+              }
+          }
+          return ss::smp::invoke_on_all([min_spins_per_scheduling_point,
+                                         max_spins_per_scheduling_point,
+                                         num_fibers,
+                                         this] {
+                     _busy_loop_manager.local().start(
+                       min_spins_per_scheduling_point,
+                       max_spins_per_scheduling_point,
+                       num_fibers);
+                 })
+            .then(
+              [] { return ss::json::json_return_type(ss::json::json_void()); });
+      });
+
     register_route<user>(
       ss::httpd::debug_json::reset_leaders_info,
       [this](std::unique_ptr<ss::httpd::request>) {

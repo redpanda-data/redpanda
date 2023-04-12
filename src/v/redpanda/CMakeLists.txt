@@ -43,6 +43,8 @@ v_cc_library(
     admin_server.cc
     cli_parser.cc
     application.cc
+    busy_loop.cc
+    monitor_unsafe_log_flag.cc
   DEPS
     Seastar::seastar
     v::cluster

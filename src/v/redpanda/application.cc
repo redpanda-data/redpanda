@@ -161,6 +161,9 @@ application::application(ss::sstring logger_name)
 application::~application() = default;
 
 void application::shutdown() {
+    // Stop any injected busy loops.
+    _busy_loop_manager.invoke_on_all(&busy_loop_manager::stop).get();
+
     // Stop accepting new requests.
     if (_kafka_server.local_is_initialized()) {
         _kafka_server.invoke_on_all(&net::server::shutdown_input).get();
@@ -817,6 +820,7 @@ void application::configure_admin_server() {
     construct_service(
       _admin,
       admin_server_cfg_from_global_cfg(_scheduling_groups),
+      std::ref(_busy_loop_manager),
       std::ref(partition_manager),
       std::ref(cp_partition_manager),
       controller.get(),
@@ -1517,6 +1521,7 @@ void application::wire_up_bootstrap_services() {
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
     }).get();
+    construct_service(_busy_loop_manager).get();
     syschecks::systemd_message("Constructing storage services").get();
     construct_single_service_sharded(storage_node).get();
     construct_single_service_sharded(
