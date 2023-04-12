@@ -19,29 +19,6 @@
 #include "random/generators.h"
 
 #include <seastar/core/coroutine.hh>
-#include <seastar/core/loop.hh>
-#include <seastar/core/metrics.hh>
-#include <seastar/core/sleep.hh>
-#include <seastar/core/sstring.hh>
-#include <seastar/util/later.hh>
-#include <seastar/util/optimized_optional.hh>
-
-#include <absl/container/node_hash_map.h>
-#include <absl/container/node_hash_set.h>
-#include <fmt/ostream.h>
-
-#include <algorithm>
-#include <bitset>
-#include <cstddef>
-#include <cstdint>
-#include <exception>
-#include <functional>
-#include <iterator>
-#include <limits>
-#include <optional>
-#include <ostream>
-#include <system_error>
-#include <vector>
 
 namespace cluster {
 namespace {
