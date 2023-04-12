@@ -20,15 +20,25 @@ client_pool::client_pool(
   , _policy(policy) {}
 
 ss::future<> client_pool::stop() {
+    vlog(pool_log.info, "Stopping client pool: {}", _pool.size());
+
     if (!_as.abort_requested()) {
         _as.request_abort();
     }
     _cvar.broken();
     // Wait until all leased objects are returned
     co_await _gate.close();
+
+    for (auto& it : _pool) {
+        co_await it->stop();
+    }
+
+    vlog(pool_log.info, "Stopped client pool");
 }
 
 void client_pool::shutdown_connections() {
+    vlog(pool_log.info, "Shutting down client pool: {}", _pool.size());
+
     _as.request_abort();
     _cvar.broken();
     for (auto& it : _leased) {
@@ -37,6 +47,8 @@ void client_pool::shutdown_connections() {
     for (auto& it : _pool) {
         it->shutdown();
     }
+
+    vlog(pool_log.info, "Shut down of client pool complete");
 }
 
 bool client_pool::shutdown_initiated() { return _as.abort_requested(); }
