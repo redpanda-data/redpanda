@@ -324,23 +324,47 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
         }
     }
 
-    auto results = co_await ssx::parallel_transform(
-      std::move(ntp_fetch_configs),
-      [&cluster_pm, &coproc_pm, deadline, foreign_read](
-        const ntp_fetch_config& ntp_cfg) {
-          auto p_id = ntp_cfg.ntp().tp.partition;
-          return do_read_from_ntp(
-                   cluster_pm, coproc_pm, ntp_cfg, foreign_read, deadline)
-            .then([p_id](read_result res) {
-                res.partition = p_id;
-                return res;
-            });
-      });
+    const size_t max_ntp_fetch_parallelism
+      = config::shard_local_cfg()
+          .kafka_fetch_max_partition_parallelism_per_shard()
+          .value_or(ntp_fetch_configs.size());
 
+    auto ntp_fetch_range_begin = std::make_move_iterator(
+      ntp_fetch_configs.begin());
+    const auto ntp_fetch_configs_end = std::make_move_iterator(
+      ntp_fetch_configs.end());
+
+    std::vector<read_result> results;
     size_t total_size = 0;
-    for (const auto& r : results) {
-        total_size += r.data_size_bytes();
+    while (total_size < max_bytes_per_fetch
+           && ntp_fetch_range_begin != ntp_fetch_configs_end) {
+        size_t range_size = std::min<size_t>(
+          max_ntp_fetch_parallelism,
+          std::distance(ntp_fetch_range_begin, ntp_fetch_configs_end));
+        const auto ntp_fetch_range_end = ntp_fetch_range_begin + range_size;
+
+        auto results_part = co_await ssx::parallel_transform(
+          ntp_fetch_range_begin,
+          ntp_fetch_range_end,
+          [&cluster_pm, &coproc_pm, deadline, foreign_read](
+            const ntp_fetch_config& ntp_cfg) {
+              auto p_id = ntp_cfg.ntp().tp.partition;
+              return do_read_from_ntp(
+                       cluster_pm, coproc_pm, ntp_cfg, foreign_read, deadline)
+                .then([p_id](read_result res) {
+                    res.partition = p_id;
+                    return res;
+                });
+          });
+
+        results.reserve(results.size() + results_part.size());
+        for (auto& r : results_part) {
+            total_size += r.data_size_bytes();
+            results.push_back(std::move(r));
+        }
+        ntp_fetch_range_begin = ntp_fetch_range_end;
     }
+
     vlog(
       klog.trace,
       "fetch_ntps_in_parallel: for {} partitions returning {} total bytes",
