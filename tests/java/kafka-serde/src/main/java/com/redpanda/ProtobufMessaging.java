@@ -18,6 +18,7 @@ import io.confluent.kafka.schemaregistry.protobuf.dynamic.MessageDefinition;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer;
+import io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializerConfig;
 import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
@@ -47,7 +48,7 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
   @Override
   public Properties getProducerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
-      boolean autoRegisterSchema) {
+      boolean autoRegisterSchema, boolean skipKnownTypes) {
     Properties prop = new Properties();
 
     prop.put("bootstrap.servers", brokers);
@@ -56,6 +57,8 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
     prop.put(
         AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS,
         autoRegisterSchema);
+    prop.put(
+        KafkaProtobufSerializerConfig.SKIP_KNOWN_TYPES_CONFIG, skipKnownTypes);
     prop.put(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, srAddr);
     if (securitySettings != null) {
       prop.putAll(securitySettings.toProperties());
