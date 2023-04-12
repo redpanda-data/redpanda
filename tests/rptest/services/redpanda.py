@@ -62,9 +62,12 @@ SaslCredentials = collections.namedtuple("SaslCredentials",
 FileToChecksumSize = dict[str, Tuple[str, int]]
 
 DEFAULT_LOG_ALLOW_LIST = [
-    # Tests currently don't run on XFS, although in future they should.
-    # https://github.com/redpanda-data/redpanda/issues/2376
+    # Tests may be run on workstations that do not have XFS filesystem volumes
+    # for containers.
+    # Pre-23.2 version of the message
     re.compile("not on XFS. This is a non-supported setup."),
+    # >= 23.2 version of the message
+    re.compile("not on XFS or ext4. This is a non-supported"),
 
     # This is expected when tests are intentionally run on low memory configurations
     re.compile(r"Memory: '\d+' below recommended"),
