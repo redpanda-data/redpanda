@@ -14,6 +14,7 @@ import json
 import logging
 from collections import OrderedDict
 from enum import IntEnum
+from typing import Optional
 from uuid import uuid4
 
 from confluent_kafka import DeserializingConsumer, SerializingProducer
@@ -70,7 +71,8 @@ class SerdeClient:
                  topic=str(uuid4()),
                  group=str(uuid4()),
                  logger=logging.getLogger("SerdeClient"),
-                 security_config: dict = None):
+                 security_config: dict = None,
+                 skip_known_types: Optional[bool] = None):
         self.logger = logger
         self.brokers = brokers
         self.sr_client = SchemaRegistryClient({'url': schema_registry_url})
@@ -82,6 +84,10 @@ class SerdeClient:
         self.acked = 0
         self.consumed = 0
 
+        self.serde_config = {'use.deprecated.format': False}
+        if skip_known_types is not None:
+            self.serde_config.update({'skip.known.types': skip_known_types})
+
         self.security_config = security_config
 
     def _make_serializer(self):
@@ -90,7 +96,7 @@ class SerdeClient:
             AvroSerializer(self.sr_client, AVRO_SCHEMA),
             SchemaType.PROTOBUF:
             ProtobufSerializer(ProtobufPayloadClass, self.sr_client,
-                               {'use.deprecated.format': False})
+                               self.serde_config)
         }[self.schema_type]
 
     def _make_deserializer(self):
@@ -249,5 +255,10 @@ if __name__ == '__main__':
     parser.add_argument('--security',
                         dest="security",
                         help="JSON formatted security string")
+
+    parser.add_argument('--skip-known-types',
+                        dest="skip_known_types",
+                        action='store_true',
+                        help="Optional bool")
 
     main(parser.parse_args())

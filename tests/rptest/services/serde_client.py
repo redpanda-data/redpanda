@@ -68,7 +68,7 @@ class SerdeClient(BackgroundThreadService):
         self._cmd_args += f" --count {count}"
 
         if skip_known_types is not None:
-            if self._serde_client_type == SerdeClientType.Java:
+            if self._serde_client_type != SerdeClientType.Golang:
                 self._cmd_args += " --skip-known-types"
             else:
                 assert False
