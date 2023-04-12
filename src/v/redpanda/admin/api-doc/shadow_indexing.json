@@ -92,6 +92,31 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/v1/cloud_storage/manifest/{topic}/{partition}",
+      "operations": [
+        {
+          "method": "GET",
+          "summary": "Get the in-memory partition manifest in JSON format",
+          "operationId": "get_manifest",
+          "nickname": "get_manifest",
+          "parameters": [
+            {
+              "name": "topic",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "partition",
+              "in": "path",
+              "required": true,
+              "type": "integer"
+            }
+          ]
+        }
+      ]
     }
   ],
   "models": {
