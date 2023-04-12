@@ -134,6 +134,7 @@ void reassign_replicas(
 double calculate_unevenness_error(
   const partition_allocator& allocator,
   const members_backend::update_meta& update,
+  const topic_table& topics,
   partition_allocation_domain domain) {
     static const std::vector<partition_allocation_domain> domains{
       partition_allocation_domains::consumer_offsets,
@@ -145,9 +146,40 @@ double calculate_unevenness_error(
     /**
      * adjust per node replicas with the replicas that are going to be removed
      * from the node after successful reallocation
+     * based on the state of reallocation the following adjustments are made:
+     *
+     * reallocation_state::initial - no adjustment required
+     * reallocation_state::reassigned - allocator already updated, adjusting
+     * reallocation_state::requested - allocator already updated, adjusting
+     * reallocation_state::finished - no adjustment required
+     *
+     * Do not need to care about the cancel related state here as no
+     * cancellations are requested when node is added to the cluster.
      */
+
     for (const auto& [ntp, r] : update.partition_reallocations) {
-        if (get_allocation_domain(ntp) == domain && r.allocation_units) {
+        using state = members_backend::reallocation_state;
+        /**
+         * In the initial or finished state the adjustment doesn't have
+         * to be taken into account as partition balancer is already updated.
+         */
+        if (
+          r.state == state::initial || r.state == state::finished
+          || r.state == state::cancelled || r.state == state::request_cancel) {
+            continue;
+        }
+        /**
+         * if a partition move was already requested it might have already been
+         * finished, consult topic table to check if the update is still in
+         * progress. If no move is in progress the adjustment must be skipped as
+         * allocator state is already up to date. Reallocation will be marked as
+         * finished in reconciliation loop pass.
+         */
+        if (r.state == state::requested && !topics.is_update_in_progress(ntp)) {
+            continue;
+        }
+
+        if (get_allocation_domain(ntp) == domain) {
             for (const auto& to_remove : r.replicas_to_remove) {
                 auto it = node_replicas.find(to_remove);
                 if (it != node_replicas.end()) {
@@ -414,10 +446,15 @@ void members_backend::default_reallocation_strategy::
     topic_table& topics,
     members_backend::update_meta& meta,
     partition_allocation_domain domain) {
-    size_t prev_reallocations_count = meta.partition_reallocations.size();
+    absl::flat_hash_set<model::ntp> previously_allocated_ntps;
+    previously_allocated_ntps.reserve(meta.partition_reallocations.size());
+    for (const auto& [ntp, _] : meta.partition_reallocations) {
+        previously_allocated_ntps.emplace(ntp);
+    }
     calculate_reallocations_batch(
       max_batch_size, allocator, topics, meta, domain);
-    auto current_error = calculate_unevenness_error(allocator, meta, domain);
+    auto current_error = calculate_unevenness_error(
+      allocator, meta, topics, domain);
     auto [it, _] = meta.last_unevenness_error.try_emplace(domain, 1.0);
 
     auto improvement = it->second - current_error;
@@ -429,15 +466,16 @@ void members_backend::default_reallocation_strategy::
       it->second,
       improvement);
 
-    it->second = current_error;
+    it->second = std::min(current_error, it->second);
 
-    // drop all reallocations if there is no improvement
+    // drop all new reallocations if there is no improvement
     if (improvement <= 0) {
-        meta.partition_reallocations.erase(
-          std::next(
-            meta.partition_reallocations.begin(),
-            static_cast<long>(prev_reallocations_count)),
-          meta.partition_reallocations.end());
+        absl::erase_if(
+          meta.partition_reallocations,
+          [domain, &previously_allocated_ntps](const auto& p) {
+              return !previously_allocated_ntps.contains(p.first)
+                     && domain == get_allocation_domain(p.first);
+          });
     }
 }
 
@@ -472,6 +510,8 @@ ss::future<> members_backend::calculate_reallocations_after_decommissioned(
         }
 
         for (const auto& pas : cfg.get_assignments()) {
+            // skip over reallocations that are already present
+
             // break when we already scheduled more than allowed reallocations
             if (
               meta.partition_reallocations.size()
@@ -483,6 +523,10 @@ ss::future<> members_backend::calculate_reallocations_after_decommissioned(
                 break;
             }
             model::ntp ntp(tp_ns.ns, tp_ns.tp, pas.id);
+            // skip over reallocation that is already requested
+            if (meta.partition_reallocations.contains(ntp)) {
+                continue;
+            }
             if (is_in_replica_set(pas.replicas, meta.update->id)) {
                 auto previous_replica_set
                   = _topics.local().get_previous_replica_set(ntp);
@@ -756,6 +800,10 @@ ss::future<> members_backend::calculate_reallocations_after_recommissioned(
     // decommissioned node
     meta.partition_reallocations.reserve(ntps.size());
     for (auto& ntp : ntps) {
+        // skip over reallocations that are already present
+        if (meta.partition_reallocations.contains(ntp)) {
+            continue;
+        }
         partition_reallocation reallocation;
         reallocation.state = reallocation_state::request_cancel;
         auto current_assignment = _topics.local().get_partition_assignment(ntp);
@@ -850,7 +898,7 @@ ss::future<std::error_code> members_backend::reconcile() {
     }
 
     // calculate necessary reallocations
-    if (meta.partition_reallocations.empty()) {
+    if (meta.partition_reallocations.size() < _max_concurrent_reallocations()) {
         co_await calculate_reallocations(meta);
         // if there is nothing to reallocate, just finish this update
         vlog(
