@@ -360,8 +360,6 @@ github.com/tklauser/go-sysconf v0.3.11 h1:89WgdJhk5SNwJfu+GKyYveZ4IaJ7xAkecBo+Kd
 github.com/tklauser/go-sysconf v0.3.11/go.mod h1:GqXfhXY3kiPa0nAXPDIQIWzJbMCB7AmcWpGR8lSZfqI=
 github.com/tklauser/numcpus v0.6.0 h1:kebhY2Qt+3U6RNK7UqpYNA+tJ23IBEGKkB7JQBfDYms=
 github.com/tklauser/numcpus v0.6.0/go.mod h1:FEZLMke0lhOUG6w2JadTzp0a+Nl8PF/GFkQ5UVIcaL4=
-github.com/trstringer/go-systemd-time v1.0.0 h1:85YYNtMuiDJtbnQveqN5M2+GHVKqYpPvOxLZMOLD4BY=
-github.com/trstringer/go-systemd-time v1.0.0/go.mod h1:zmxXIRFeksWrNr4tdJeHBvxev3nmViuoEZNs+OllX20=
 github.com/twmb/franz-go v1.12.0 h1:HWd7E9p/R15D0kofG5p6e3k3tWd/ewqs/IclKhpw+qc=
 github.com/twmb/franz-go v1.12.0/go.mod h1:Ofc5tSSUJKLmpRNUYSejUsAZKYAHDHywTS322KWdChQ=
 github.com/twmb/franz-go/pkg/kadm v1.7.0 h1:TAgcS+t5q+9jnm8INCD2OJ1MD9y4Ij6pD5CYfZ3tkbg=

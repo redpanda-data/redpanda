@@ -179,9 +179,9 @@ func TestParseJournalTime(t *testing.T) {
 			exp:    time.Date(2022, time.November, 9, 0o0, 15, 0, 0, time.Local),
 		}, {
 			name:   "- relative time",
-			inStr:  "-5day",
+			inStr:  "-48h",
 			inTime: time.Date(2022, time.February, 18, 8, 0, 0, 0, time.Local),
-			exp:    time.Date(2022, time.February, 13, 8, 0, 0, 0, time.Local),
+			exp:    time.Date(2022, time.February, 16, 8, 0, 0, 0, time.Local),
 		}, {
 			name:   "unrecognized relative time",
 			inStr:  "-5trillions",

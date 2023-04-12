@@ -32,7 +32,6 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.1
 	github.com/tklauser/go-sysconf v0.3.11
-	github.com/trstringer/go-systemd-time v1.0.0
 	github.com/twmb/franz-go v1.12.0
 	github.com/twmb/franz-go/pkg/kadm v1.7.0
 	github.com/twmb/franz-go/pkg/kmsg v1.4.0
