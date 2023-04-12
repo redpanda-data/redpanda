@@ -66,6 +66,8 @@ public:
     const_iterator begin() const { return _credentials.cbegin(); }
     const_iterator end() const { return _credentials.cend(); }
 
+    void clear() { _credentials.clear(); }
+
 private:
     container_type _credentials;
 };

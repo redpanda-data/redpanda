@@ -121,6 +121,15 @@ public:
           });
     }
 
+    ss::future<fragmented_vector<acl_binding>> all_bindings() const {
+        return _store.all_bindings();
+    }
+
+    ss::future<>
+    reset_bindings(const fragmented_vector<acl_binding>& bindings) {
+        return _store.reset_bindings(bindings);
+    }
+
 private:
     acl_store _store;
 

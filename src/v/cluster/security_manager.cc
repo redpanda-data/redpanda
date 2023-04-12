@@ -10,6 +10,7 @@
  */
 #include "cluster/security_manager.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/commands.h"
 #include "cluster/controller_snapshot.h"
 #include "model/metadata.h"
@@ -18,6 +19,7 @@
 #include "security/credential_store.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <iterator>
 #include <system_error>
@@ -145,13 +147,40 @@ ss::future<std::error_code> security_manager::dispatch_updates_to_cores(
       });
 }
 
-ss::future<> security_manager::fill_snapshot(controller_snapshot&) const {
-    return ss::now();
+ss::future<>
+security_manager::fill_snapshot(controller_snapshot& controller_snap) const {
+    auto& snapshot = controller_snap.security;
+
+    for (const auto& cred : _credentials.local()) {
+        ss::visit(cred.second, [&](security::scram_credential scram) {
+            snapshot.user_credentials.push_back(user_and_credential{
+              security::credential_user{cred.first}, std::move(scram)});
+        });
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    snapshot.acls = co_await _authorizer.local().all_bindings();
+
+    co_return;
 }
 
-ss::future<>
-security_manager::apply_snapshot(model::offset, const controller_snapshot&) {
-    return ss::now();
+ss::future<> security_manager::apply_snapshot(
+  model::offset, const controller_snapshot& controller_snap) {
+    const auto& snapshot = controller_snap.security;
+
+    co_await _credentials.invoke_on_all(
+      [&snapshot](security::credential_store& credentials) {
+          credentials.clear();
+          return ss::do_for_each(
+            snapshot.user_credentials, [&credentials](const auto& user) {
+                credentials.put(user.username, user.credential);
+            });
+      });
+
+    co_await _authorizer.invoke_on_all(
+      [&snapshot](security::authorizer& authorizer) {
+          return authorizer.reset_bindings(snapshot.acls);
+      });
 }
 
 } // namespace cluster

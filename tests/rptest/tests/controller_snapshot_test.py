@@ -173,6 +173,11 @@ class ControllerSnapshotTest(RedpandaTest):
 
         rpk.create_topic('test_topic')
 
+        admin.create_user(username='test',
+                          password='p4ssw0rd',
+                          algorithm='SCRAM-SHA-256')
+        rpk.acl_create_allow_cluster(username='test', op='describe')
+
         # wait for controller snapshots
         for n in seed_nodes:
             self.redpanda.wait_for_controller_snapshot(n)
@@ -186,9 +191,6 @@ class ControllerSnapshotTest(RedpandaTest):
         initial_features_map = get_features_map(initial_features)
         assert initial_features_map['controller_snapshots'][
             'state'] == 'active'
-
-        initial_config_resp = admin.get_cluster_config()
-        assert initial_config_resp['controller_snapshot_max_age_sec'] == 10
 
         def check_features_response(features):
             for k, v in initial_features.items():
@@ -204,6 +206,9 @@ class ControllerSnapshotTest(RedpandaTest):
                 assert new_v == v, \
                     f"features map mismatch (feature: {f}): got {new_v}, expected {v}"
 
+        initial_config_resp = admin.get_cluster_config()
+        assert initial_config_resp['controller_snapshot_max_age_sec'] == 10
+
         def check_config_response(config_resp):
             def to_set(resp):
                 return set((k, (v if not isinstance(v, list) else tuple(v)))
@@ -215,6 +220,18 @@ class ControllerSnapshotTest(RedpandaTest):
 
         initial_topics = set(rpk.list_topics())
         assert initial_topics == set(['test_topic'])
+
+        initial_users = set(admin.list_users())
+        assert initial_users == set(['admin', 'test'])
+        initial_acls = rpk.acl_list()
+        assert len(initial_acls.strip().split('\n')) == 2
+
+        def check_security(node):
+            users = set(admin.list_users(node=node))
+            assert users == initial_users
+
+            acls = rpk.acl_list()
+            assert acls == initial_acls
 
         def check(node):
             node_id = self.redpanda.node_id(node)
@@ -229,6 +246,7 @@ class ControllerSnapshotTest(RedpandaTest):
             check_features_response(admin.get_features(node=node))
             check_config_response(admin.get_cluster_config(node=node))
             assert set(rpk.list_topics()) == set(['test_topic'])
+            check_security(node)
 
         # make a node join and check it
 
