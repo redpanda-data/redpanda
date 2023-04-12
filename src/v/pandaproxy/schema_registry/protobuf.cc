@@ -21,11 +21,22 @@
 
 #include <absl/container/flat_hash_set.h>
 #include <fmt/ostream.h>
+#include <google/protobuf/any.pb.h>
+#include <google/protobuf/api.pb.h>
 #include <google/protobuf/compiler/parser.h>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/descriptor.pb.h>
+#include <google/protobuf/duration.pb.h>
+#include <google/protobuf/empty.pb.h>
+#include <google/protobuf/field_mask.pb.h>
 #include <google/protobuf/io/tokenizer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
+#include <google/protobuf/source_context.pb.h>
+#include <google/protobuf/struct.pb.h>
+#include <google/protobuf/timestamp.pb.h>
+#include <google/protobuf/type.pb.h>
+#include <google/protobuf/util/type_resolver.h>
+#include <google/protobuf/wrappers.pb.h>
 
 #include <unordered_set>
 
@@ -60,7 +71,19 @@ struct descriptor_equal {
 
 using known_types_set = absl::
   flat_hash_set<const pb::FileDescriptor*, descriptor_hasher, descriptor_equal>;
-static const known_types_set known_types;
+static const known_types_set known_types{
+  google::protobuf::SourceContext::GetDescriptor()->file(),
+  google::protobuf::Any::GetDescriptor()->file(),
+  google::protobuf::Option::GetDescriptor()->file(),
+  google::protobuf::DoubleValue::GetDescriptor()->file(),
+  google::protobuf::Type::GetDescriptor()->file(),
+  google::protobuf::Api::GetDescriptor()->file(),
+  google::protobuf::Duration::GetDescriptor()->file(),
+  google::protobuf::Empty::GetDescriptor()->file(),
+  google::protobuf::FieldMask::GetDescriptor()->file(),
+  google::protobuf::Struct::GetDescriptor()->file(),
+  google::protobuf::Timestamp::GetDescriptor()->file(),
+  google::protobuf::FieldDescriptorProto::GetDescriptor()->file()};
 
 class io_error_collector final : public pb::io::ErrorCollector {
     enum class level {

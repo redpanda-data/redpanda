@@ -171,22 +171,58 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_recursive_reference) {
 SEASTAR_THREAD_TEST_CASE(test_protobuf_well_known) {
     simple_sharded_store store;
 
-    auto schema1 = pps::canonical_schema{
-      pps::subject{"empty.proto"},
+    auto schema = pps::canonical_schema{
+      pps::subject{"test_auto_well_known"},
       pps::canonical_schema_definition{
-        R"(syntax =  "proto3";)", pps::schema_type::protobuf}};
-    auto schema2 = pps::canonical_schema{
-      pps::subject{"google/protobuf/timestamp.proto"},
-      pps::canonical_schema_definition{
-        R"(syntax =  "proto3"; package google.protobuf; message Timestamp { int64 seconds = 1;  int32 nanos = 2; })",
+        R"(
+syntax =  "proto3";
+package test;
+import "google/protobuf/any.proto";
+import "google/protobuf/api.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/source_context.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/type.proto";
+import "google/protobuf/wrappers.proto";
+
+message well_known_types {
+  google.protobuf.Any any = 1;
+  google.protobuf.Api api = 2;
+  google.protobuf.BoolValue bool_value = 3;
+  google.protobuf.BytesValue bytes_value = 4;
+  google.protobuf.DoubleValue double_value = 5;
+  google.protobuf.Duration duration = 6;
+  google.protobuf.Empty empty = 7;
+  google.protobuf.Enum enum = 8;
+  google.protobuf.EnumValue enum_value = 9;
+  google.protobuf.Field field = 10;
+  google.protobuf.FieldMask field_mask = 11;
+  google.protobuf.FloatValue float_value = 12;
+  google.protobuf.Int32Value int32_value = 13;
+  google.protobuf.Int64Value int64_value = 14;
+  google.protobuf.ListValue list_value = 15;
+  google.protobuf.Method method = 16;
+  google.protobuf.Mixin mixin = 17;
+  google.protobuf.NullValue null_value = 18;
+  google.protobuf.Option option = 19;
+  google.protobuf.SourceContext source_context = 20;
+  google.protobuf.StringValue string_value = 21;
+  google.protobuf.Struct struct = 22;
+  google.protobuf.Syntax syntax = 23;
+  google.protobuf.Timestamp timestamp = 24;
+  google.protobuf.Type type = 25;
+  google.protobuf.UInt32Value uint32_value = 26;
+  google.protobuf.UInt64Value uint64_value = 27;
+  google.protobuf.Value value = 28;
+})",
         pps::schema_type::protobuf}};
-    store.insert(schema1, pps::schema_version{1});
-    store.insert(schema2, pps::schema_version{1});
+    store.insert(schema, pps::schema_version{1});
 
     auto valid_empty
-      = pps::make_protobuf_schema_definition(store.store, schema1).get();
-    auto valid_timestamp
-      = pps::make_protobuf_schema_definition(store.store, schema2).get();
+      = pps::make_protobuf_schema_definition(store.store, schema).get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_empty) {
