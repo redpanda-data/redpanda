@@ -348,14 +348,17 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   const replica_selector& replica_selector,
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  std::optional<model::timeout_clock::time_point> deadline,
+  const size_t bytes_left) {
     size_t total_max_bytes = 0;
     for (const auto& c : ntp_fetch_configs) {
         total_max_bytes += c.cfg.max_bytes;
     }
 
-    auto max_bytes_per_fetch
-      = config::shard_local_cfg().kafka_max_bytes_per_fetch();
+    // bytes_left comes from the fetch plan and also accounts for the max_bytes
+    // field in the fetch request
+    const size_t max_bytes_per_fetch = std::min<size_t>(
+      config::shard_local_cfg().kafka_max_bytes_per_fetch(), bytes_left);
     if (total_max_bytes > max_bytes_per_fetch) {
         auto per_partition = max_bytes_per_fetch / ntp_fetch_configs.size();
         vlog(
@@ -429,7 +432,7 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
         return ss::now();
     }
 
-    bool foreign_read = shard != ss::this_shard_id();
+    const bool foreign_read = shard != ss::this_shard_id();
 
     // dispatch to remote core
     return octx.rctx.partition_manager()
@@ -440,12 +443,16 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
          deadline = octx.deadline,
          configs = std::move(fetch.requests),
          &octx](cluster::partition_manager& mgr) mutable {
+            // &octx is captured only to immediately use its accessors here so
+            // that there is a list of all objects accessed next to `invoke_on`.
+            // This is meant to help avoiding unintended cross shard access
             return fetch_ntps_in_parallel(
               mgr,
               octx.rctx.replica_selector(),
               std::move(configs),
               foreign_read,
-              deadline);
+              deadline,
+              octx.bytes_left);
         })
       .then([responses = std::move(fetch.responses),
              start_time = fetch.start_time,
