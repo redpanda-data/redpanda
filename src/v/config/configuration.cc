@@ -1910,7 +1910,17 @@ configuration::configuration()
       "Interval, in seconds, of how often a message informing the operator "
       "that unsafe strings are permitted",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      300s) {}
+      300s)
+  , kafka_fetch_max_partition_parallelism_per_shard(
+      *this,
+      "kafka_fetch_max_partition_parallelism_per_shard",
+      "When set, limits the number of partitions that are read simultatiously "
+      "in a single shard. This allows to control the pressure that large "
+      "number of partitons in fetch requests coupled with large batch sizes "
+      "can put on memory when processed concurrently",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      std::nullopt,
+      {.min = 1}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {

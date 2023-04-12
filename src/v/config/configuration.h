@@ -394,6 +394,9 @@ struct configuration final : public config_store {
     property<bool> legacy_permit_unsafe_log_operation;
     property<std::chrono::seconds> legacy_unsafe_log_warning_interval_sec;
 
+    bounded_property<std::optional<size_t>>
+      kafka_fetch_max_partition_parallelism_per_shard;
+
     configuration();
 
     error_map_t load(const YAML::Node& root_node);
