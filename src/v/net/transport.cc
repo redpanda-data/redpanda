@@ -41,6 +41,7 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
           server_address()));
     }
     try {
+        base_transport::reset_state();
         reset_state();
         auto resolved_address = co_await net::resolve_dns(server_address());
         ss::connected_socket fd = co_await connect_with_timeout(
@@ -110,10 +111,9 @@ ss::future<> base_transport::stop() {
 
 void base_transport::shutdown() noexcept {
     try {
-        if (_fd) {
+        if (_fd && !std::exchange(_shutdown, true)) {
             _fd->shutdown_input();
             _fd->shutdown_output();
-            _fd.reset();
         }
     } catch (...) {
         vlog(
