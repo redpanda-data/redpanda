@@ -15,6 +15,7 @@
 #include "storage/parser_errc.h"
 #include "vassert.h"
 #include "vlog.h"
+#include "vlog_error.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -212,8 +213,13 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
           return result<records_t>(std::move(tmp.buffer));
       })
       .handle_exception_type(
-        [](const std::system_error& ec) -> ss::future<result<records_t>> {
+        [this](const std::system_error& ec) -> ss::future<result<records_t>> {
             if (ec.code().value() == EIO) {
+                vlog_error(
+                  stlog,
+                  io_error::local_disk_eio,
+                  "EIO reading {}",
+                  _seg.filename());
                 vassert(false, "I/O error during read!  Disk failure?");
             } else {
                 return ss::make_exception_future<result<records_t>>(
