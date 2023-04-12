@@ -22,8 +22,7 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
 from confluent_kafka.schema_registry.protobuf import ProtobufDeserializer, ProtobufSerializer
 
-from google.protobuf.descriptor_pb2 import FieldDescriptorProto
-from google.protobuf import proto_builder
+from payload_pb2 import Payload as ProtobufPayloadClass
 
 
 class SchemaType(IntEnum):
@@ -49,10 +48,6 @@ AVRO_SCHEMA = '''{
   ]
 }
 '''
-
-ProtobufPayloadClass = proto_builder.MakeSimpleProtoClass(
-    OrderedDict([('val', FieldDescriptorProto.TYPE_INT64)]),
-    full_name="example.Payload")
 
 
 def make_protobuf_payload(val: int):
