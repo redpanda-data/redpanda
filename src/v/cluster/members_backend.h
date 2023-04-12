@@ -31,14 +31,10 @@ public:
 
     struct partition_reallocation {
         explicit partition_reallocation(
-          model::ntp ntp, uint16_t replication_factor)
-          : ntp(std::move(ntp))
-          , constraints(
-              partition_constraints(ntp.tp.partition, replication_factor)) {}
+          model::partition_id p_id, uint16_t replication_factor)
+          : constraints(partition_constraints(p_id, replication_factor)) {}
 
-        explicit partition_reallocation(model::ntp ntp)
-          : ntp(std::move(ntp)) {}
-
+        partition_reallocation() = default;
         void set_new_replicas(allocation_units units) {
             allocation_units = std::move(units);
             new_replica_set
@@ -47,7 +43,6 @@ public:
 
         void release_assignment_units() { allocation_units.reset(); }
 
-        model::ntp ntp;
         std::optional<partition_constraints> constraints;
         absl::node_hash_set<model::node_id> replicas_to_remove;
         std::optional<allocation_units> allocation_units;
@@ -70,8 +65,10 @@ public:
         // optional node update, if present the update comes from
         // members_manager, otherwise it is on demand update
         std::optional<members_manager::node_update> update;
-
-        std::vector<partition_reallocation> partition_reallocations;
+        // it is ok to use a flat hash map here as it it will be limited in
+        // size by the max concurrent reallocations batch size
+        absl::flat_hash_map<model::ntp, partition_reallocation>
+          partition_reallocations;
         bool finished = false;
         // unevenness error is normalized to be at most 1.0, set to max
         absl::flat_hash_map<partition_allocation_domain, double>
@@ -135,7 +132,8 @@ private:
     void start_reconciliation_loop();
     ss::future<> reconciliation_loop();
     ss::future<std::error_code> reconcile();
-    ss::future<> reallocate_replica_set(partition_reallocation&);
+    ss::future<>
+    reallocate_replica_set(const model::ntp&, partition_reallocation&);
 
     ss::future<> try_to_finish_update(update_meta&);
     ss::future<> calculate_reallocations(update_meta&);
