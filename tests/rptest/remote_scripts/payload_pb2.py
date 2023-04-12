@@ -11,9 +11,10 @@ from google.protobuf import symbol_database as _symbol_database
 _sym_db = _symbol_database.Default()
 
 
+from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rpayload.proto\x12\x0c\x63om.redpanda\"\x16\n\x07Payload\x12\x0b\n\x03val\x18\x01 \x01(\x05\x42\x0bP\x01Z\x07./;mainb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\rpayload.proto\x12\x0c\x63om.redpanda\x1a\x1fgoogle/protobuf/timestamp.proto\"E\n\x07Payload\x12\x0b\n\x03val\x18\x01 \x01(\x05\x12-\n\ttimestamp\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.TimestampB\x0bP\x01Z\x07./;mainb\x06proto3')
 
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, globals())
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'payload_pb2', globals())
@@ -21,6 +22,6 @@ if _descriptor._USE_C_DESCRIPTORS == False:
 
   DESCRIPTOR._options = None
   DESCRIPTOR._serialized_options = b'P\001Z\007./;main'
-  _PAYLOAD._serialized_start=31
-  _PAYLOAD._serialized_end=53
+  _PAYLOAD._serialized_start=64
+  _PAYLOAD._serialized_end=133
 # @@protoc_insertion_point(module_scope)

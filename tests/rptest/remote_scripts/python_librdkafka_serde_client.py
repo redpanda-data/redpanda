@@ -13,6 +13,7 @@ import argparse
 import json
 import logging
 from collections import OrderedDict
+from datetime import datetime
 from enum import IntEnum
 from typing import Optional
 from uuid import uuid4
@@ -54,6 +55,7 @@ AVRO_SCHEMA = '''{
 def make_protobuf_payload(val: int):
     p = ProtobufPayloadClass()
     p.val = val
+    p.timestamp.FromDatetime(datetime.now())
     return p
 
 

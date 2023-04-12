@@ -16,6 +16,7 @@ import (
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry/serde/protobuf"
 	log "github.com/sirupsen/logrus"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type ProtobufSerializer struct {
@@ -47,7 +48,8 @@ func NewProtobufSerializer(srClient *schemaregistry.Client) (s *ProtobufSerializ
 
 func (s *ProtobufSerializer) CreateSerializedData(msgNum int, topic *string) ([]byte, error) {
 	val := Payload{
-		Val: int32(msgNum),
+		Val:       int32(msgNum),
+		Timestamp: timestamppb.Now(),
 	}
 
 	return s.ser.Serialize(*topic, &val)
