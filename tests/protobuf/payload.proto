@@ -13,6 +13,8 @@ syntax = "proto3";
 
 package com.redpanda;
 
+option go_package = "./;main";
+
 message Payload {
     int32 val = 1;
 }

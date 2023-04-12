@@ -13,7 +13,7 @@ PROTOC_GEN_GO := $(GOPATH)/bin/protoc-gen-go
 $(PROTOC_GEN_GO):
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.30.0
 
-payload.pb.go: payload.proto | $(PROTOC_GEN_GO)
-	protoc --proto_path=. --go_out=. --go_opt=Mpayload.proto=. payload.proto
+payload.pb.go: ../../protobuf/payload.proto | $(PROTOC_GEN_GO)
+	protoc --proto_path=../../protobuf --go_out=. --go_opt=Mpayload.proto=. payload.proto
 
 compile: payload.pb.go
