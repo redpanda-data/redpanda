@@ -984,7 +984,7 @@ bool str_to_bool(std::string_view s) {
 }
 
 void admin_server::register_config_routes() {
-    register_route_raw<superuser>(
+    register_route_raw_sync<superuser>(
       ss::httpd::config_json::get_config,
       [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
@@ -996,7 +996,7 @@ void admin_server::register_config_routes() {
           return "";
       });
 
-    register_route_raw<superuser>(
+    register_route_raw_sync<superuser>(
       ss::httpd::cluster_config_json::get_cluster_config,
       [](ss::httpd::const_req req, ss::http::reply& reply) {
           json::StringBuffer buf;
@@ -1019,7 +1019,7 @@ void admin_server::register_config_routes() {
           return "";
       });
 
-    register_route_raw<superuser>(
+    register_route_raw_sync<superuser>(
       ss::httpd::config_json::get_node_config,
       [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
@@ -1030,7 +1030,7 @@ void admin_server::register_config_routes() {
           return "";
       });
 
-    register_route_raw<superuser>(
+    register_route_raw_sync<superuser>(
       ss::httpd::config_json::get_loggers,
       [](ss::httpd::const_req, ss::http::reply& reply) {
           json::StringBuffer buf;
