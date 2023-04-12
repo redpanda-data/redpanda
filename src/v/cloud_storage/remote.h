@@ -239,6 +239,8 @@ public:
       const cloud_storage_clients::object_tag_formatter& tags
       = default_segment_tags);
 
+    using existence_required = ss::bool_class<struct existence_required_tag>;
+
     /// \brief Download segment from S3
     ///
     /// The method downloads the segment while tolerating some errors. It can
@@ -247,11 +249,15 @@ public:
     /// segment's data
     /// \param name is a segment's name in S3
     /// \param manifest is a manifest that should have the segment metadata
+    /// \param require_exists if true, then we will log an error if the object
+    ///                       is not found: use this if absence indicates
+    ///                       corruption.
     ss::future<download_result> download_segment(
       const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& path,
       const try_consume_stream& cons_str,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      existence_required require_exists = existence_required::no);
 
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(

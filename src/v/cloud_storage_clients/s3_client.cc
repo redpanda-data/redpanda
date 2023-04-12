@@ -20,7 +20,7 @@
 #include "net/types.h"
 #include "ssx/sformat.h"
 #include "utils/base64.h"
-#include "vlog.h"
+#include "vlog_error.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
@@ -363,8 +363,11 @@ parse_rest_error_response(boost::beast::http::status result, iobuf&& buf) {
             rest_error_response err(code, msg, rid, res);
             return ss::make_exception_future<ResultT>(err);
         } catch (...) {
-            vlog(
-              s3_log.error, "!!error parse error {}", std::current_exception());
+            vlog_error(
+              s3_log,
+              io_error::cloud_storage_bad_response,
+              "error parsing error response body {}",
+              std::current_exception());
             throw;
         }
     }
@@ -390,7 +393,11 @@ ss::future<ResultT> parse_head_error_response(
           code, msg, ss::sstring(rid.data(), rid.size()), key().native());
         return ss::make_exception_future<ResultT>(err);
     } catch (...) {
-        vlog(s3_log.error, "!!error parse error {}", std::current_exception());
+        vlog_error(
+          s3_log,
+          io_error::cloud_storage_bad_response,
+          "error parsing HEAD error response body {}",
+          std::current_exception());
         throw;
     }
 }
@@ -411,8 +418,9 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
             vlog(s3_log.debug, "NoSuchKey response received {}", key);
             outcome = error_outcome::key_not_found;
         } else if (err.code() == s3_error_code::no_such_bucket) {
-            vlog(
-              s3_log.error,
+            vlog_error(
+              s3_log,
+              configuration_error::cloud_storage_missing_bucket,
               "The specified S3 bucket, {}, could not be found. Ensure that "
               "your bucket exists and that the cloud_storage_bucket and "
               "cloud_storage_region cluster configs are correct.",
@@ -429,11 +437,11 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
             vlog(s3_log.warn, "{} response received {}", err.code(), bucket);
             outcome = error_outcome::retry_slowdown;
         } else {
-            // Unexpected REST API error, we can't recover from this
-            // because the issue is not temporary (e.g. bucket doesn't
-            // exist)
+            // Unexpected REST API error, we have to assume this is not
+            // retryable.  Higher levels are responsible for deciding
+            // what to do.
             vlog(
-              s3_log.error,
+              s3_log.warn,
               "Accessing {}, unexpected REST API error \"{}\" detected, "
               "code: "
               "{}, request_id: {}, resource: {}",
@@ -841,8 +849,9 @@ static auto iobuf_to_delete_objects_result(iobuf&& buf) {
             }
         }
     } catch (...) {
-        vlog(
-          s3_log.error,
+        vlog_error(
+          s3_log,
+          io_error::cloud_storage_bad_response,
           "DeleteObjects response parse failed: {}",
           std::current_exception());
         throw;

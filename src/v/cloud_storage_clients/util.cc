@@ -12,6 +12,7 @@
 
 #include "bytes/iobuf_istreambuf.h"
 #include "net/connection.h"
+#include "vlog_error.h"
 
 #include <boost/property_tree/xml_parser.hpp>
 
@@ -33,13 +34,12 @@ error_outcome handle_client_transport_error(
         // - broken-pipe
         // - any other network error (no memory, bad socket, etc)
         if (net::is_reconnect_error(cerr)) {
-            vlog(
-              logger.warn,
-              "System error susceptible for retry {}",
-              cerr.what());
+            vlog(logger.info, "Retryable network error: {}", cerr.what());
 
         } else {
-            vlog(logger.error, "System error {}", cerr);
+            // Higher levels are responsible for deciding how impactful
+            // this is and potentially logging a structured error
+            vlog(logger.warn, "Un-retryable network error: {}", cerr);
             outcome = error_outcome::fail;
         }
     } catch (const ss::timed_out_error& terr) {
@@ -66,7 +66,14 @@ error_outcome handle_client_transport_error(
         vlog(logger.debug, "Abort requested");
         throw;
     } catch (...) {
-        vlog(logger.error, "Unexpected error {}", std::current_exception());
+        // This is a soft assertion because our code is meant to handle all
+        // the exception types that lower layers might raise, and it is a bug
+        // if we do not.
+        vlog_error(
+          logger,
+          soft_assert::cloud_storage_unhandled_client_error,
+          "Unexpected error {}",
+          std::current_exception());
         outcome = error_outcome::fail;
     }
 
@@ -129,7 +136,14 @@ boost::property_tree::ptree iobuf_to_ptree(iobuf&& buf, ss::logger& logger) {
         return res;
     } catch (...) {
         log_buffer_with_rate_limiting("unexpected reply", buf, logger);
-        vlog(logger.error, "!!parsing error {}", std::current_exception());
+        // Error severity because it indicates we either have a bug or we
+        // are running against a storage backend that doesn't implement
+        // the expected interface.
+        vlog_error(
+          logger,
+          io_error::cloud_storage_bad_response,
+          "parse error {}",
+          std::current_exception());
         throw;
     }
 }

@@ -24,6 +24,7 @@
 #include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "utils/gate_guard.h"
+#include "vlog_error.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file-types.hh>
@@ -208,8 +209,9 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
         //
         // Normally, this will happen when one of the partitions doesn't
         // have any data.
-        vlog(
-          _ctxlog.error,
+        vlog_error(
+          _ctxlog,
+          io_error::cloud_storage_recovery_fatal,
           "Error during log recovery: {}",
           std::current_exception());
     }

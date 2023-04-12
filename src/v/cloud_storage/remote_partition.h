@@ -18,6 +18,7 @@
 #include "cloud_storage/segment_state.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"

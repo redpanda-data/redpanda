@@ -29,6 +29,7 @@
 #include "storage/segment_index.h"
 #include "utils/retry_chain_node.h"
 #include "utils/stream_utils.h"
+#include "vlog_error.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -171,11 +172,11 @@ ss::future<> remote_segment::stop() {
     _bg_cvar.broken();
     co_await _gate.close();
     if (_data_file) {
-        co_await _data_file.close().handle_exception(
-          [this](std::exception_ptr err) {
-              vlog(
-                _ctxlog.error, "Error '{}' while closing the '{}'", err, _path);
-          });
+        co_await _data_file.close().handle_exception([this](
+                                                       std::exception_ptr err) {
+            // An error closing a read-only file is unexpected but non-fatal
+            vlog(_ctxlog.warn, "Error '{}' while closing the '{}'", err, _path);
+        });
     }
 
     _stopped = true;
@@ -331,7 +332,8 @@ ss::future<> remote_segment::do_hydrate_segment() {
       [this](uint64_t size_bytes, ss::input_stream<char> s) {
           return do_hydrate_segment_inner(size_bytes, std::move(s));
       },
-      local_rtc);
+      local_rtc,
+      remote::existence_required::yes);
 
     if (res != download_result::success) {
         vlog(
@@ -714,7 +716,11 @@ ss::future<> remote_segment::run_hydrate_bg() {
         set_waiter_errors(std::current_exception());
     } catch (...) {
         const auto err = std::current_exception();
-        vlog(_ctxlog.error, "Error in hydraton loop: {}", err);
+        vlog_error(
+          _ctxlog,
+          io_error::cloud_storage_hydration_fatal,
+          "Error in hydration loop: {}",
+          err);
         set_waiter_errors(err);
     }
 }

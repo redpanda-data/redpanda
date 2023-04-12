@@ -17,6 +17,7 @@
 #include "cloud_storage_clients/client_pool.h"
 #include "model/metadata.h"
 #include "utils/retry_chain_node.h"
+#include "vlog_error.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/loop.hh>
@@ -505,7 +506,8 @@ ss::future<download_result> remote::download_segment(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
   const try_consume_stream& cons_str,
-  retry_chain_node& parent) {
+  retry_chain_node& parent,
+  remote::existence_required require_exists) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -558,6 +560,14 @@ ss::future<download_result> remote::download_segment(
             result = download_result::failed;
             break;
         case cloud_storage_clients::error_outcome::key_not_found:
+            if (require_exists) {
+                vlog_error(
+                  ctxlog,
+                  consistency_error::cloud_storage_missing_segment,
+                  "Key {}:{} not found",
+                  bucket,
+                  path);
+            }
             result = download_result::notfound;
             break;
         }
@@ -696,6 +706,7 @@ ss::future<upload_result> remote::delete_object(
               std::chrono::duration_cast<std::chrono::milliseconds>(
                 permit.delay));
             co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
+
             permit = fib.retry();
             break;
         case cloud_storage_clients::error_outcome::bucket_not_found:
@@ -855,13 +866,14 @@ ss::future<upload_result> remote::delete_objects_sequentially(
                          });
                    })
             .handle_exception_type([](const std::exception& ex) {
-                vlog(cst_log.error, "Failed to delete keys: {}", ex.what());
+                vlog(cst_log.warn, "Failed to delete keys: {}", ex.what());
             })
             .then([&results] { return results; });
       });
 
     if (results.empty()) {
-        vlog(cst_log.error, "No keys were deleted");
+        // If all our individual delete_object calls failed
+        vlog(cst_log.warn, "No keys were deleted");
         co_return upload_result::failed;
     }
 
