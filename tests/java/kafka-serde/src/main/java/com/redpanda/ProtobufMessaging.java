@@ -11,10 +11,10 @@
 
 package com.redpanda;
 
-import com.google.protobuf.Descriptors;
+import static com.google.protobuf.util.Timestamps.fromMillis;
+import static java.lang.System.currentTimeMillis;
+
 import com.google.protobuf.DynamicMessage;
-import io.confluent.kafka.schemaregistry.protobuf.dynamic.DynamicSchema;
-import io.confluent.kafka.schemaregistry.protobuf.dynamic.MessageDefinition;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer;
@@ -114,6 +114,7 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
                 topic, UUID.randomUUID().toString(),
                 Payload.newBuilder()
                     .setVal(i)
+                    .setTimestamp(fromMillis(currentTimeMillis()))
                     .build()),
             (event, ex) -> {
               if (ex != null) {
