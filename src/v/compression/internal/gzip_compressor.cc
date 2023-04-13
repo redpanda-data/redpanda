@@ -76,9 +76,9 @@ private:
 };
 class gzip_decompression_codec {
 public:
-    gzip_decompression_codec(const char* src, size_t src_size) noexcept
-      : _input(src)
-      , _input_size(src_size) {}
+    gzip_decompression_codec(const iobuf& input) noexcept
+      : _input(input)
+      , _input_chunk(input.begin()) {}
     gzip_decompression_codec(const gzip_decompression_codec&) = delete;
     gzip_decompression_codec& operator=(const gzip_decompression_codec&)
       = delete;
@@ -91,8 +91,8 @@ public:
         _stream = default_zstream();
         // zlib is not const-correct
         // NOLINTNEXTLINE
-        _stream.next_in = (unsigned char*)_input;
-        _stream.avail_in = _input_size;
+        _stream.next_in = (unsigned char*)(_input_chunk->get());
+        _stream.avail_in = _input_chunk->size();
         throw_if_zstream_error(
           "gzip error with inflateInit2:{}", inflateInit2(&_stream, 15 + 32));
         // marking init must happen before gzip header
@@ -103,7 +103,7 @@ public:
           "gzip inflateGetHeader error:{}", inflateGetHeader(&_stream, &_hdr));
     }
 
-    void inflate_to(char* output, size_t out_size);
+    iobuf inflate_to_iobuf();
 
     ~gzip_decompression_codec() {
         if (_init) {
@@ -117,106 +117,115 @@ public:
 
 private:
     bool _init{false};
-    const char* _input;
-    size_t _input_size;
+
+    const iobuf& _input;
+    iobuf::const_iterator _input_chunk;
+
     gz_header _hdr; // needed for gzip
     z_stream _stream;
 };
 
 iobuf gzip_compressor::compress(const iobuf& b) {
-    ss::temporary_buffer<char> obuf;
-    {
-        gzip_compression_codec def;
-        def.reset();
-        z_stream& strm = def.stream();
-        /* Calculate maximum compressed size and
-         * allocate an output buffer accordingly, being
-         * prefixed with the Message header. */
-        const size_t output_size = deflateBound(&strm, b.size_bytes());
-        obuf = ss::temporary_buffer<char>(output_size);
+    const size_t max_chunk_size = details::io_allocation_size::max_chunk_size;
 
-        // NOLINTNEXTLINE
-        strm.next_out = (unsigned char*)obuf.get_write();
-        strm.avail_out = output_size;
+    gzip_compression_codec def;
+    def.reset();
+    z_stream& strm = def.stream();
 
-        /* Iterate through each segment and compress it. */
-        for (auto& io : b) {
-            // zlib is not const correct
-            // NOLINTNEXTLINE
-            strm.next_in = (unsigned char*)io.get();
-            strm.avail_in = io.size();
-            throw_if_zstream_error(
-              "gzip error compressing chunk: {}", deflate(&strm, Z_NO_FLUSH));
-        }
-        /* Finish the compression */
-        if (int ret = deflate(&strm, Z_FINISH); ret != Z_STREAM_END) {
-            throw_if_zstream_error("gzip error finishing compression: {}", ret);
-        }
-        obuf.trim(def.stream().total_out);
-        // trigger deflateEnd
-    }
+    const size_t output_size_estimate = deflateBound(&strm, b.size_bytes());
+    size_t output_chunk_size = std::min(max_chunk_size, output_size_estimate);
+
+    ss::temporary_buffer<char> obuf(output_chunk_size);
+    strm.next_out = reinterpret_cast<unsigned char*>(obuf.get_write());
+    strm.avail_out = obuf.size();
+
     iobuf ret;
+    auto frag_i = b.begin();
+    while (true) {
+        // If our input fragment is empty and we have more fragments, consume
+        // advance until we find a non-empty fragment.
+        while (strm.avail_in == 0 && frag_i != b.end()) {
+            strm.next_in = const_cast<unsigned char*>(
+              reinterpret_cast<const unsigned char*>(frag_i->get()));
+            strm.avail_in = frag_i->size();
+            frag_i++;
+        }
+
+        if (strm.avail_out == 0) {
+            obuf.trim(output_chunk_size - strm.avail_out);
+            ret.append(std::move(obuf));
+            output_chunk_size = std::min(output_chunk_size * 2, max_chunk_size);
+            obuf = ss::temporary_buffer<char>(output_chunk_size);
+            strm.next_out = reinterpret_cast<unsigned char*>(obuf.get_write());
+            strm.avail_out = obuf.size();
+        }
+
+        int flush = (strm.avail_in == 0) ? Z_FINISH : Z_NO_FLUSH;
+        int deflate_r = deflate(&strm, flush);
+        if (deflate_r == Z_STREAM_END) {
+            break;
+        }
+        throw_if_zstream_error("gzip error compressing chunk: {}", deflate_r);
+    }
+
+    obuf.trim(strm.total_out - ret.size_bytes());
     ret.append(std::move(obuf));
+
     return ret;
 }
 
-void gzip_decompression_codec::inflate_to(char* output, size_t out_size) {
-    size_t consumed_bytes = 0;
+iobuf gzip_decompression_codec::inflate_to_iobuf() {
+    // Max memory allocation
+    const size_t max_chunk_size = details::io_allocation_size::max_chunk_size;
+
+    // Rough guess at compression ratio to guess initial chunk size for
+    // small buffers.
+    size_t chunk_size = std::min(max_chunk_size, _input.size_bytes() * 3);
+
     int code = 0;
-    // NOLINTNEXTLINE
-    auto out = reinterpret_cast<unsigned char*>(output);
+    iobuf output;
     do {
-        // NOLINTNEXTLINE
-        _stream.next_out = out + consumed_bytes;
-        _stream.avail_out = out_size - consumed_bytes;
+        chunk_size = std::min(max_chunk_size, chunk_size * 2);
+
+        ss::temporary_buffer<char> tmp(chunk_size);
+        _stream.next_out = reinterpret_cast<unsigned char*>(tmp.get_write());
+        _stream.avail_out = chunk_size;
+
         code = inflate(&_stream, Z_NO_FLUSH);
         switch (code) {
         case Z_STREAM_ERROR:
         case Z_NEED_DICT:
         case Z_DATA_ERROR:
         case Z_MEM_ERROR:
-            throw_zstream_error("gzip uncmpress error:{}", code);
+            throw_zstream_error("gzip uncompress error:{}", code);
         default: /*do nothing*/;
         }
-        /* Advance output pointer (in pass 2). */
-        consumed_bytes = out_size - _stream.avail_out - consumed_bytes;
-    } while (_stream.avail_out == 0 && code != Z_STREAM_END);
-}
 
-static ss::temporary_buffer<char>
-buffer_for_input(const char* src, size_t src_size) {
-    auto codec = gzip_decompression_codec(src, src_size);
-    codec.reset();
-    std::array<char, 512> dummy_buf{};
-    // find gzip header
-    codec.inflate_to(dummy_buf.data(), dummy_buf.size());
-    return ss::temporary_buffer<char>(codec.stream().total_out);
-}
+        while (_stream.avail_in == 0 && _input_chunk != _input.end()) {
+            _input_chunk++;
+            if (_input_chunk != _input.end()) {
+                _stream.next_in = const_cast<unsigned char*>(
+                  reinterpret_cast<const unsigned char*>(_input_chunk->get()));
+                _stream.avail_in = _input_chunk->size();
+            }
+        }
 
-static iobuf do_uncompress(const char* src, size_t src_size) {
-    ss::temporary_buffer<char> buf;
-    {
-        auto codec = gzip_decompression_codec(src, src_size);
-        codec.reset();
-        buf = buffer_for_input(src, src_size);
-        // main data decompression
-        codec.inflate_to(buf.get_write(), buf.size());
+        size_t written_out_this_iter = chunk_size - _stream.avail_out;
+        tmp.trim(written_out_this_iter);
+        output.append(std::move(tmp));
+    } while (code == Z_OK && _stream.avail_in > 0);
+
+    if (code != Z_OK && code != Z_STREAM_END) {
+        throw_zstream_error("gzip uncompress error:{}", code);
     }
-    iobuf ret;
-    ret.append(std::move(buf));
-    return ret;
+
+    return output;
 }
 
 iobuf gzip_compressor::uncompress(const iobuf& b) {
-    if (std::distance(b.begin(), b.end()) == 1) {
-        return do_uncompress(b.begin()->get(), b.size_bytes());
-    }
-    // linearize buffer
-    // TODO: use streaming interface instead
-    auto linearized = iobuf_to_bytes(b);
-    return do_uncompress(
-      // NOLINTNEXTLINE
-      reinterpret_cast<const char*>(linearized.data()),
-      linearized.size());
+    auto codec = gzip_decompression_codec(b);
+    codec.reset();
+    return codec.inflate_to_iobuf();
 }
+
 } // namespace compression::internal
