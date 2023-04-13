@@ -48,7 +48,15 @@ static std::vector<size_t> get_test_sizes() {
         test_sizes.push_back(size);
     }
     test_sizes.push_back(details::io_allocation_size::alloc_table.back() * 2);
+    test_sizes.push_back(
+      details::io_allocation_size::alloc_table.back() * 2 - 1);
+    test_sizes.push_back(
+      details::io_allocation_size::alloc_table.back() * 2 + 1);
     test_sizes.push_back(details::io_allocation_size::alloc_table.back() * 3);
+    test_sizes.push_back(
+      details::io_allocation_size::alloc_table.back() * 3 + 1);
+    test_sizes.push_back(
+      details::io_allocation_size::alloc_table.back() * 3 - 1);
     return test_sizes;
 }
 
