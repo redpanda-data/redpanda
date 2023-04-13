@@ -717,6 +717,15 @@ class RedpandaServiceBase(Service):
     def add_extra_rp_conf(self, conf):
         self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
+    def get_node_memory_mb(self):
+        pass
+
+    def get_node_cpu_count(self):
+        pass
+
+    def get_node_disk_free(self):
+        pass
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
