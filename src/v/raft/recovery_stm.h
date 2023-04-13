@@ -66,6 +66,7 @@ private:
     // needed to early exit. (node down)
     bool _stop_requested = false;
     recovery_memory_quota& _memory_quota;
+    size_t _recovered_bytes_since_flush = 0;
 };
 
 } // namespace raft
