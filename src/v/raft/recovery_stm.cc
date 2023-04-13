@@ -222,9 +222,12 @@ recovery_stm::read_range_for_recovery(
       std::nullopt,
       _ptr->_as);
 
-    if (is_learner) {
+    if (is_learner || _ptr->estimate_recovering_followers() == 1) {
         // skip cache insertion on miss for learners which are throttled and
         // often catching up from the beginning of the log (e.g. new nodes)
+        //
+        // also skip if there is only one replica recovering as there is no
+        // need to add batches to the cache for read-once workloads.
         cfg.skip_batch_cache = true;
     }
 
