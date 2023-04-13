@@ -676,10 +676,22 @@ class SchemaRegistryConfig(TlsConfig):
 
 
 class RedpandaServiceBase(Service):
-    def __init__(self, context, num_brokers):
+    def __init__(
+        self,
+        context,
+        num_brokers,
+        extra_rp_conf=None,
+        si_settings=None,
+    ):
         super(RedpandaServiceBase, self).__init__(context,
                                                   num_nodes=num_brokers)
         self._context = context
+        self._extra_rp_conf = extra_rp_conf or dict()
+
+        if si_settings is not None:
+            self.set_si_settings(si_settings)
+        else:
+            self._si_settings = None
 
     def start_node(self, node, **kwargs):
         pass
@@ -689,6 +701,21 @@ class RedpandaServiceBase(Service):
 
     def clean_node(self, node, **kwargs):
         pass
+
+    def set_extra_rp_conf(self, conf):
+        self._extra_rp_conf = conf
+        if self._si_settings is not None:
+            self._extra_rp_conf = self._si_settings.update_rp_conf(
+                self._extra_rp_conf)
+
+    def set_si_settings(self, si_settings: SISettings):
+        si_settings.load_context(self.logger, self._context)
+        self._si_settings = si_settings
+        self._extra_rp_conf = self._si_settings.update_rp_conf(
+            self._extra_rp_conf)
+
+    def add_extra_rp_conf(self, conf):
+        self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
 
 class RedpandaService(RedpandaServiceBase):
@@ -785,8 +812,8 @@ class RedpandaService(RedpandaServiceBase):
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
                  disable_cloud_storage_diagnostics=False):
-        super(RedpandaService, self).__init__(context, num_brokers)
-        self._extra_rp_conf = extra_rp_conf or dict()
+        super(RedpandaService, self).__init__(context, num_brokers,
+                                              extra_rp_conf, si_settings)
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
@@ -844,11 +871,6 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.info(
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
-        if si_settings is not None:
-            self.set_si_settings(si_settings)
-        else:
-            self._si_settings = None
-
         # Disable saving cloud storage diagnostics. This may be useful for
         # tests that generate millions of objecst, as collecting diagnostics
         # may take a significant amount of time.
@@ -893,24 +915,9 @@ class RedpandaService(RedpandaServiceBase):
     def set_resource_settings(self, rs):
         self._resource_settings = rs
 
-    def set_extra_rp_conf(self, conf):
-        self._extra_rp_conf = conf
-        if self._si_settings is not None:
-            self._extra_rp_conf = self._si_settings.update_rp_conf(
-                self._extra_rp_conf)
-
-    def set_si_settings(self, si_settings: SISettings):
-        si_settings.load_context(self.logger, self._context)
-        self._si_settings = si_settings
-        self._extra_rp_conf = self._si_settings.update_rp_conf(
-            self._extra_rp_conf)
-
     @property
     def si_settings(self):
         return self._si_settings
-
-    def add_extra_rp_conf(self, conf):
-        self._extra_rp_conf = {**self._extra_rp_conf, **conf}
 
     def set_extra_node_conf(self, node, conf):
         assert node in self.nodes, f"where node is {node.name}"
