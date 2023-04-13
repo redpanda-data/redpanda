@@ -53,6 +53,8 @@ struct reply_error_category final : std::error_category {
             return "subject_version_soft_deleted";
         case reply_error_code::subject_version_not_deleted:
             return "subject_version_not_deleted";
+        case reply_error_code::serialization_error:
+            return "serialization_error";
         case reply_error_code::consumer_already_exists:
             return "Consumer with specified consumer ID already exists in the "
                    "specified consumer group.";
@@ -213,6 +215,8 @@ std::error_condition make_error_condition(std::error_code ec) {
         switch (static_cast<jec>(ec.value())) {
         case jec::invalid_json:
             return rec::unprocessable_entity;
+        case jec::unable_to_serialize:
+            return rec::serialization_error;
         }
         return {};
     }
