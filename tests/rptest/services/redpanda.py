@@ -729,6 +729,40 @@ class RedpandaServiceBase(Service):
     def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
         pass
 
+    def metrics(self,
+                node,
+                metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
+        assert node in self._started, f"where node is {node.name}"
+
+        metrics_endpoint = ("/metrics" if metrics_endpoint
+                            == MetricsEndpoint.METRICS else "/public_metrics")
+        url = f"http://{node.account.hostname}:9644{metrics_endpoint}"
+        resp = requests.get(url)
+        assert resp.status_code == 200
+        return text_string_to_metric_families(resp.text)
+
+    def metric_sum(self,
+                   metric_name,
+                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
+                   ns=None,
+                   topic=None):
+        """
+        Pings the 'metrics_endpoint' of each node and returns the summed values
+        of the given metric, optionally filtering by namespace and topic.
+        """
+        count = 0
+        for n in self.nodes:
+            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
+            for family in metrics:
+                for sample in family.samples:
+                    if ns and sample.labels["namespace"] != ns:
+                        continue
+                    if topic and sample.labels["topic"] != topic:
+                        continue
+                    if sample.name == metric_name:
+                        count += int(sample.value)
+        return count
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -2591,40 +2625,6 @@ class RedpandaService(RedpandaServiceBase):
             f"http://{n.account.hostname}:8081" for n in self._started[:limit]
         ]
         return ",".join(schema_reg)
-
-    def metrics(self,
-                node,
-                metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS):
-        assert node in self._started, f"where node is {node.name}"
-
-        metrics_endpoint = ("/metrics" if metrics_endpoint
-                            == MetricsEndpoint.METRICS else "/public_metrics")
-        url = f"http://{node.account.hostname}:9644{metrics_endpoint}"
-        resp = requests.get(url)
-        assert resp.status_code == 200
-        return text_string_to_metric_families(resp.text)
-
-    def metric_sum(self,
-                   metric_name,
-                   metrics_endpoint: MetricsEndpoint = MetricsEndpoint.METRICS,
-                   ns=None,
-                   topic=None):
-        """
-        Pings the 'metrics_endpoint' of each node and returns the summed values
-        of the given metric, optionally filtering by namespace and topic.
-        """
-        count = 0
-        for n in self.nodes:
-            metrics = self.metrics(n, metrics_endpoint=metrics_endpoint)
-            for family in metrics:
-                for sample in family.samples:
-                    if ns and sample.labels["namespace"] != ns:
-                        continue
-                    if topic and sample.labels["topic"] != topic:
-                        continue
-                    if sample.name == metric_name:
-                        count += int(sample.value)
-        return count
 
     def _extract_samples(self, metrics, sample_pattern: str,
                          node: ClusterNode) -> list[MetricSamples]:
