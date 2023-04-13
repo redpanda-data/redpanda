@@ -581,9 +581,13 @@ remote_partition::get_term_last_offset(model::term_id term) const {
         }
     }
     // if last segment term is equal to the one we look for return it
-    auto last = _manifest.rbegin()->second;
-    if (last.segment_term == term) {
-        return last.next_kafka_offset() - kafka::offset(1);
+    auto last = _manifest.last_segment();
+    vassert(
+      last.has_value(),
+      "The manifest for {} is not expected to be empty",
+      _manifest.get_ntp());
+    if (last->segment_term == term) {
+        return last->next_kafka_offset() - kafka::offset(1);
     }
 
     return std::nullopt;
@@ -732,6 +736,15 @@ remote_partition::timequery(storage::timequery_config cfg) {
         co_return storage::batch_timequery(*(batches.begin()), cfg.time);
     } else {
         co_return std::nullopt;
+    }
+}
+
+bool remote_partition::bounds_timestamp(model::timestamp t) const {
+    auto last_seg = _manifest.last_segment();
+    if (last_seg.has_value()) {
+        return t <= last_seg.value().max_timestamp;
+    } else {
+        return false;
     }
 }
 

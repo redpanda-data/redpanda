@@ -139,7 +139,7 @@ class BaseTimeQuery:
             ex(msg_count // 4),  # 25%th message
             ex(msg_count // 2),  # 50%th message
             ex(msg_count - 1),  # last message
-            ex(0, timestamps[0] - 1000),
+            ex(0, timestamps[0] - 1000),  # Before the start of the log
             ex(-1, timestamps[msg_count - 1] + 1000,
                False)  # After last message
         ]
@@ -207,6 +207,50 @@ class BaseTimeQuery:
         # no user data, to check that their timestamps don't
         # break out indexing.
 
+    def _test_timequery_below_start_offset(self, cluster):
+        """
+        Run a timequery for an offset that falls below the start offset
+        of the local log and ensure that -1 (i.e. not found) is returned.
+        """
+        total_segments = 3
+        local_retain_segments = 1
+        record_size = 1024
+        base_ts = 1664453149000
+        msg_count = (self.log_segment_size * total_segments) // record_size
+
+        topic, timestamps = self._create_and_produce(cluster, False,
+                                                     local_retain_segments,
+                                                     base_ts, record_size,
+                                                     msg_count)
+
+        self.client().alter_topic_config(
+            topic.name, 'retention.bytes',
+            self.log_segment_size * local_retain_segments)
+
+        rpk = RpkTool(cluster)
+
+        def start_offset():
+            return next(rpk.describe_topic(topic.name)).start_offset
+
+        wait_until(lambda: start_offset() > 0,
+                   timeout_sec=60,
+                   backoff_sec=5,
+                   err_msg="Start offset did not advance")
+
+        kcat = KafkaCat(cluster)
+        lwm_before = start_offset()
+        offset = kcat.query_offset(topic.name, 0, base_ts)
+        lwm_after = start_offset()
+
+        # When querying before the start of the log, we should get
+        # the offset of the start of the log.
+        assert offset >= 0
+        # The LWM can move during background housekeeping while we
+        # are doing timequery, so success condition is that if falls
+        # within a range.
+        assert offset >= lwm_before
+        assert offset <= lwm_after
+
 
 class TimeQueryTest(RedpandaTest, BaseTimeQuery):
     # We use small segments to enable quickly exercising the
@@ -260,6 +304,11 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         self._do_test_timequery(cloud_storage, batch_cache)
 
     @cluster(num_nodes=4)
+    def test_timequery_below_start_offset(self):
+        self.set_up_cluster(cloud_storage=False, batch_cache=False)
+        self._test_timequery_below_start_offset(cluster=self.redpanda)
+
+    @cluster(num_nodes=4)
     def test_timequery_with_local_gc(self):
         # Reduce the segment size so we generate more segments and are more
         # likely to race timequeries with GC.
@@ -283,6 +332,20 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
         errors = [0 for _ in range(num_threads)]
         should_stop = threading.Event()
 
+        failed_offsets = set()
+
+        def check_offset(kcat, o):
+            expected_offset = o
+            ts = timestamps[o]
+            offset = kcat.query_offset(topic.name, 0, ts)
+            if expected_offset != offset:
+                self.logger.exception(
+                    f"Timestamp {ts} returned {offset} instead of {expected_offset}"
+                )
+                return True
+            else:
+                return False
+
         def query_slices(tid):
             kcat = KafkaCat(self.redpanda)
             while not should_stop.is_set():
@@ -291,13 +354,8 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                 # Step 100 offsets at a time so we only end up with a few dozen
                 # queries per thread at a time.
                 for idx in range(start_idx, end_idx, 100):
-                    expected_offset = idx
-                    ts = timestamps[idx]
-                    offset = kcat.query_offset(topic.name, 0, ts)
-                    if expected_offset != offset:
-                        self.logger.exception(
-                            f"Timestamp {ts} returned {offset} instead of {expected_offset}"
-                        )
+                    if check_offset(kcat, idx):
+                        failed_offsets.add(idx)
                         errors[tid] += 1
 
         with concurrent.futures.ThreadPoolExecutor(
@@ -311,6 +369,21 @@ class TimeQueryTest(RedpandaTest, BaseTimeQuery):
                                           count=local_retain_segments)
             finally:
                 should_stop.set()
+
+        # Re-issue queries the failed offsets: this tells us if the error
+        # was transient, and if it happens again it gives us a cleaner
+        # log to analyze compared with the concurrent operations above.
+        # A transient failure is still a failure, but it's interesting
+        # to know that it was transient when investigating the bug.
+        if failed_offsets:
+            self.logger.info("Re-issuing queries on failed offsets...")
+            kcat = KafkaCat(self.redpanda)
+            for o in failed_offsets:
+                if check_offset(kcat, o):
+                    self.logger.info(f"Reproducible failure at {o}")
+                else:
+                    self.logger.info(f"Query at {o} succeeded on retry")
+
         assert not any([e > 0 for e in errors])
 
 
@@ -362,6 +435,10 @@ class TimeQueryKafkaTest(Test, BaseTimeQuery):
         self._test_timequery(cluster=self.kafka,
                              cloud_storage=False,
                              batch_cache=True)
+
+    @ducktape_cluster(num_nodes=5)
+    def test_timequery_below_start_offset(self):
+        self._test_timequery_below_start_offset(cluster=self.kafka)
 
 
 class TestReadReplicaTimeQuery(RedpandaTest):

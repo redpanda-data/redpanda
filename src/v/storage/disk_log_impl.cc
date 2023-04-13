@@ -866,7 +866,15 @@ offset_stats disk_log_impl::offsets() const {
 }
 
 model::timestamp disk_log_impl::start_timestamp() const {
-    auto seg = _segs.lower_bound(_start_offset);
+    if (_segs.empty()) {
+        return model::timestamp{};
+    }
+
+    const auto start_offset = _start_offset >= model::offset{0}
+                                ? _start_offset
+                                : _segs.front()->offsets().base_offset;
+
+    auto seg = _segs.lower_bound(start_offset);
     if (seg == _segs.end()) {
         return model::timestamp{};
     }
