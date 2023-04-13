@@ -144,7 +144,12 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
       "Adjacent segment merger run begin, last offset is {}",
       _last);
     for (int i = 0; i < max_reuploads_per_run; i++) {
-        if (!_enabled || _as.abort_requested()) {
+        if (
+          !_enabled || _as.abort_requested()
+          || _archiver.manifest().get_last_offset() == model::offset::max()) {
+            // Avoid reuploading anything if last offset is max. This can only
+            // happen if the recovery was incomplete and by reuploading any data
+            // we can corrupt metadata in the cloud.
             co_return result;
         }
         if (result.remaining <= 0) {
