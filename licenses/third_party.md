@@ -45,7 +45,7 @@ please keep this up to date with every new library use.
 | zstd            | BSD                                |
 | re2             | BSD 3-Clause                       |
  
-# GO deps _used_ in production in RPK (exclude all test dependencies)
+# Go deps _used_ in production in RPK (exclude all test dependencies)
 
 | software                                              | license                   |
 | :----------                                           | :------------:            |
@@ -64,7 +64,6 @@ please keep this up to date with every new library use.
 | github.com/lestrrat-go/jwx                            | MIT License               |
 | github.com/lorenzosaino/go-sysctl                     | BSD 3-Clause License      |
 | github.com/moby/term                                  | Apache License 2.0        |
-| github.com/olekukonko/tablewriter                     | MIT License               |
 | github.com/opencontainers/image-spec/specs-go         | Apache License 2.0        |
 | github.com/pkg/browser                                | BSD 2-Clause License      |
 | github.com/pkg/errors                                 | BSD 2-Clause License      |
@@ -72,7 +71,6 @@ please keep this up to date with every new library use.
 | github.com/prometheus/common                          | Apache License 2.0        |
 | github.com/safchain/ethtool                           | Apache License 2.0        |
 | github.com/sethgrid/pester                            | MIT License               |
-| github.com/sirupsen/logrus                            | MIT License               |
 | github.com/spf13/afero                                | Apache License 2.0        |
 | github.com/spf13/cobra                                | Apache License 2.0        |
 | github.com/spf13/pflag                                | BSD 3-Clause License      |
@@ -82,6 +80,7 @@ please keep this up to date with every new library use.
 | github.com/twmb/franz-go/pkg/kmsg                     | BSD 3-Clause License      |
 | github.com/twmb/tlscfg                                | BSD 3-Clause License      |
 | github.com/twmb/types                                 | BSD 3-Clause License      |
+| go.uber.org/zap                                       | MIT License               |
 | golang.org/x/sync/errgroup                            | BSD 3-Clause License      |
 | golang.org/x/sys/unix                                 | BSD 3-Clause License      |
 | golang.org/x/term                                     | BSD 3-Clause License      |
@@ -90,7 +89,7 @@ please keep this up to date with every new library use.
 | k8s.io/apimachinery/pkg                               | Apache License 2.0        |
 | k8s.io/client-go                                      | Apache License 2.0        |
 
-# GO deps _used_ in production in K8S (exclude all test dependencies)
+# Go deps _used_ in production in K8S (exclude all test dependencies)
 
 | software                                  | license                   |
 | :----------                               | :------------:            |
