@@ -872,16 +872,6 @@ partition::transfer_leadership(transfer_leadership_request req) {
       ntp(),
       target.value_or(model::node_id{-1}));
 
-    // Some state machines need a preparatory phase to efficiently transfer
-    // leadership: invoke this, and hold the lock that they return until
-    // the leadership transfer attempt is complete.
-    ss::basic_rwlock<>::holder stm_prepare_lock;
-    if (_rm_stm) {
-        stm_prepare_lock = co_await _rm_stm->prepare_transfer_leadership();
-    } else if (_tm_stm) {
-        stm_prepare_lock = co_await _tm_stm->prepare_transfer_leadership();
-    }
-
     std::optional<ss::deferred_action<std::function<void()>>> complete_archiver;
     auto archival_timeout
       = config::shard_local_cfg().cloud_storage_graceful_transfer_timeout_ms();
@@ -914,6 +904,16 @@ partition::transfer_leadership(transfer_leadership_request req) {
         }
     } else {
         vlog(clusterlog.trace, "transfer_leadership[{}]: no archiver", ntp());
+    }
+
+    // Some state machines need a preparatory phase to efficiently transfer
+    // leadership: invoke this, and hold the lock that they return until
+    // the leadership transfer attempt is complete.
+    ss::basic_rwlock<>::holder stm_prepare_lock;
+    if (_rm_stm) {
+        stm_prepare_lock = co_await _rm_stm->prepare_transfer_leadership();
+    } else if (_tm_stm) {
+        stm_prepare_lock = co_await _tm_stm->prepare_transfer_leadership();
     }
 
     co_return co_await _raft->do_transfer_leadership(req);
