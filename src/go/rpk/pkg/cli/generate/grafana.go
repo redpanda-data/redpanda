@@ -72,6 +72,11 @@ var (
 			"Provides throughput, read/write rates, and on-disk sizes of each/all topics.",
 			"6cfbd0d7bb51e2ef0d9b699388ab1e10b1d6ee91176e52594ee196187c1d4ef5",
 		},
+		"legacy": {
+			"",
+			"Generates dashboard based on selected metrics endpoint (--metrics-endpoint). Modify prometheus datasource and job-name with --datasource and --job-name flags.",
+			"",
+		},
 	}
 )
 
@@ -100,67 +105,80 @@ func newGrafanaDashboardCmd() *cobra.Command {
 		dashboard       string
 		datasource      string
 		metricsEndpoint string
-		skipDownload    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "grafana-dashboard",
 		Short: "Generate a Grafana dashboard for redpanda metrics",
+		Long: `Generate Grafana Dashboards for Redpanda Metrics
+
+Use this command to generate sample Grafana dashboards for Redpanda metrics. 
+These dashboards can be imported into a Grafana or Grafana Cloud instance.
+
+To select a specific dashboard, use the '--dashboard' flag followed by the 
+dashboard name. For example, to generate the operations dashboard, run:
+
+    rpk generate grafana-dashboard --dashboard operations
+
+The selected dashboard will be downloaded from our GitHub repository:
+
+  https://github.com/redpanda-data/observability
+
+Note that the legacy dashboard is still available as an option, and will not be 
+downloaded from github. Instead, the dashboard will be generated based on the 
+metrics endpoint used.
+
+To see a list of all available dashboards, use the '--dashboard help' flag.
+`,
 		Run: func(cmd *cobra.Command, args []string) {
-			if !skipDownload {
-				switch {
-				case dashboardMap[dashboard] != nil:
-					jsonOut, err := tryFromGithub(cmd.Context(), dashboard)
-					if err == nil {
-						fmt.Println(jsonOut)
-						return
-					}
-
-					fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; using static file...\n", err)
-
-					// The embedded dashboard file is compressed, and located
-					// under grafana-dashboard dir:
-					path := filepath.Join("grafana-dashboards", dashboardMap[dashboard].Location+".gz")
-					err = decompressAndPrint(dashFS, path, os.Stdout)
-					if err == nil {
-						return
-					}
-
-					fmt.Fprintf(os.Stderr, "unable to print the static file: %v; generating default dashboard...\n", err)
-				case dashboard == "help":
-					printDashboardHelp(dashboardMap)
-					return
-				default:
-					out.Die("unrecognized dashboard type name: %q; use --dashboard help for more info", dashboard)
+			switch {
+			case dashboard == "legacy":
+				if datasource == "" {
+					out.Die(`Error: required legacy flag "datasource" not set; please set the flag to the redpanda metrics endpoint where rpk should get the metrics metadata. i.e. redpanda_host:9644/public_metrics`)
 				}
-			}
+				jsonOut, err := executeGrafanaDashboard(metricsEndpoint, datasource)
+				out.MaybeDie(err, "unable to generate the grafana dashboard: %v", err)
 
-			// If downloading from GitHub failed or skip-download is enabled,
-			// then we go with the automatic dashboard generation.
-			if datasource == "" {
-				out.Die(`Error: required flag "datasource" not set`)
-			}
-			jsonOut, err := executeGrafanaDashboard(metricsEndpoint, datasource)
-			out.MaybeDie(err, "unable to generate the grafana dashboard: %v", err)
+				fmt.Println(jsonOut)
+			case dashboardMap[dashboard] != nil:
+				jsonOut, err := tryFromGithub(cmd.Context(), dashboard)
+				if err == nil {
+					fmt.Println(jsonOut)
+					return
+				}
+				fmt.Fprintf(os.Stderr, "unable to retrieve dashboard from github: %v; using static file...\n", err)
 
-			fmt.Println(jsonOut)
+				// The embedded dashboard file is compressed, and located
+				// under grafana-dashboard dir:
+				path := filepath.Join("grafana-dashboards", dashboardMap[dashboard].Location+".gz")
+				err = decompressAndPrint(dashFS, path, os.Stdout)
+
+				// This is unlikely and if we ever hit this must be investigated.
+				out.MaybeDie(err, "unable to print the static file: %v; as an alternative you still may use the legacy dashboard via '--dashboard legacy' flag", err)
+			case dashboard == "help":
+				printDashboardHelp(dashboardMap)
+				return
+			default:
+				out.Die("unrecognized dashboard type name: %q; use --dashboard help for more info", dashboard)
+			}
 		},
 	}
+
+	// Old Flags //
 	metricsEndpointFlag := "metrics-endpoint"
 	deprecatedPrometheusURLFlag := "prometheus-url"
-
 	for _, flag := range []string{metricsEndpointFlag, deprecatedPrometheusURLFlag} {
 		cmd.Flags().StringVar(&metricsEndpoint, flag, "http://localhost:9644/public_metrics", "The redpanda metrics endpoint where rpk should get the metrics metadata. i.e. redpanda_host:9644/metrics")
 	}
 	cmd.Flags().MarkDeprecated(deprecatedPrometheusURLFlag, fmt.Sprintf("Deprecated flag. Use --%v instead", metricsEndpointFlag))
-
-	datasourceFlag := "datasource"
-	cmd.Flags().StringVar(&datasource, datasourceFlag, "", "The name of the Prometheus datasource as configured in your grafana instance.")
+	cmd.Flags().StringVar(&datasource, "datasource", "", "The name of the Prometheus datasource as configured in your grafana instance.")
 	cmd.Flags().StringVar(&jobName, "job-name", "redpanda", "The prometheus job name by which to identify the redpanda nodes")
+	cmd.Flags().MarkHidden("datasource")
+	cmd.Flags().MarkHidden("job-name")
+	cmd.Flags().MarkHidden("metrics-endpoint")
 
-	dashboardFlag, skipDownloadFlag := "dashboard", "skip-download"
+	// New Flag //
+	dashboardFlag := "dashboard"
 	cmd.Flags().StringVar(&dashboard, dashboardFlag, "operations", "The name of the dashboard you wish to download; use --dashboard help for more info")
-	cmd.Flags().BoolVar(&skipDownload, skipDownloadFlag, false, "Skips the recommended dashboard download from the Redpanda repository and generates the dashboard automatically")
-	cmd.MarkFlagsMutuallyExclusive(dashboardFlag, skipDownloadFlag)
 
 	// This portion of code is to register the flag autocompletion.
 	cmd.RegisterFlagCompletionFunc(dashboardFlag, func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
