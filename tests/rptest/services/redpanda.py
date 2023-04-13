@@ -726,6 +726,9 @@ class RedpandaServiceBase(Service):
     def get_node_disk_free(self):
         pass
 
+    def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
+        pass
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
