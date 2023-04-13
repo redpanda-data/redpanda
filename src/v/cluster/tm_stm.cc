@@ -400,7 +400,7 @@ ss::future<stm_snapshot> tm_stm::take_snapshot() {
     }
 
     iobuf tm_ss_buf;
-    reflection::adl<tm_snapshot>{}.to(tm_ss_buf, tm_ss);
+    reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
 
     co_return stm_snapshot::create(
       supported_version, _insync_offset, std::move(tm_ss_buf));
@@ -517,7 +517,7 @@ ss::future<tm_stm::get_txs_result> tm_stm::get_all_transactions() {
         co_return tm_stm::op_status::unknown;
     }
 
-    std::vector<tm_transaction> ans;
+    fragmented_vector<tm_transaction> ans;
     for (const auto& [_, tx] : _mem_txes) {
         ans.push_back(tx);
     }

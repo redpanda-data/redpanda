@@ -1226,7 +1226,7 @@ tx_gateway_frontend::get_all_transactions() {
               co_return tx_errc::unknown_server_error;
           }
 
-          co_return res.value();
+          co_return std::move(res).value();
       });
 }
 
