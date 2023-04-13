@@ -812,6 +812,22 @@ class RedpandaServiceBase(Service):
 
         return result
 
+    def rolling_restart_nodes(self,
+                              nodes,
+                              override_cfg_params=None,
+                              start_timeout=None,
+                              stop_timeout=None,
+                              use_maintenance_mode=True,
+                              omit_seeds_on_idx_one=True):
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        restarter = RollingRestarter(self)
+        restarter.restart_nodes(nodes,
+                                override_cfg_params=override_cfg_params,
+                                start_timeout=start_timeout,
+                                stop_timeout=stop_timeout,
+                                use_maintenance_mode=use_maintenance_mode,
+                                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -2393,22 +2409,6 @@ class RedpandaService(RedpandaServiceBase):
                         timeout=start_timeout,
                         auto_assign_node_id=auto_assign_node_id,
                         omit_seeds_on_idx_one=omit_seeds_on_idx_one), nodes))
-
-    def rolling_restart_nodes(self,
-                              nodes,
-                              override_cfg_params=None,
-                              start_timeout=None,
-                              stop_timeout=None,
-                              use_maintenance_mode=True,
-                              omit_seeds_on_idx_one=True):
-        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
-        restarter = RollingRestarter(self)
-        restarter.restart_nodes(nodes,
-                                override_cfg_params=override_cfg_params,
-                                start_timeout=start_timeout,
-                                stop_timeout=stop_timeout,
-                                use_maintenance_mode=use_maintenance_mode,
-                                omit_seeds_on_idx_one=omit_seeds_on_idx_one)
 
     def get_node_by_id(self, node_id):
         """
