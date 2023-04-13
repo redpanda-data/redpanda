@@ -35,11 +35,12 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
         Test that Redpanda creates a controller snapshot some time after controller commands appear.
         """
         self.redpanda.start()
+        admin = Admin(self.redpanda)
 
         for n in self.redpanda.nodes:
-            assert self.redpanda.controller_start_offset(n) == 0
+            controller_status = admin.get_controller_status(n)
+            assert controller_status['start_offset'] == 0
 
-        admin = Admin(self.redpanda)
         admin.put_feature("controller_snapshots", {"state": "active"})
 
         # first snapshot will be triggered by the feature_update command
