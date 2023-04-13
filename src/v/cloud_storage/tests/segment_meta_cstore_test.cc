@@ -49,7 +49,7 @@ static constexpr size_t short_test_size = 10000;
 static constexpr size_t long_test_size = 100000;
 #else
 static constexpr size_t short_test_size = 1500;
-static constexpr size_t long_test_size = 3000;
+static constexpr size_t long_test_size = 10'000;
 #endif
 
 template<class column_t>

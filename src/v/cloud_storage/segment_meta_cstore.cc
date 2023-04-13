@@ -859,9 +859,12 @@ public:
     }
 
     auto inflated_actual_size() const {
-        // TODO how to deal with write_buffer? is it ok to return an approx
-        // value by not flushing?
-        return _col.inflated_actual_size();
+        auto res = _col.inflated_actual_size();
+        // approximate
+        res.first += _write_buffer.size() * sizeof(segment_meta);
+        res.second += _write_buffer.size()
+                      * sizeof(std::pair<model::offset, segment_meta>);
+        return res;
     }
 
     size_t size() const {
