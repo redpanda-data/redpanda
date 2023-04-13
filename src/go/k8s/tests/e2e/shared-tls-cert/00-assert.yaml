@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: shared-tls-cert
+status:
+  readyReplicas: 1
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: shared-tls-cert-redpanda
+status:
+  conditions:
+    - type: Ready
+      status: "True"
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1
