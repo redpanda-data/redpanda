@@ -785,6 +785,9 @@ class RedpandaServiceBase(Service):
                         counts[idx] += int(sample.value)
         return all(map(lambda count: count == 0, counts.values()))
 
+    def node_id(self, node, force_refresh=False, timeout_sec=30):
+        pass
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
