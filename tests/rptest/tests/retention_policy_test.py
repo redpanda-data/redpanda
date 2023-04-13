@@ -8,11 +8,12 @@
 # by the Apache License, Version 2.0
 
 from time import sleep
+import time
 from ducktape.errors import TimeoutError
 from ducktape.mark import matrix, parametrize
 from ducktape.utils.util import wait_until
 
-from rptest.clients.kafka_cat import KafkaCat
+from rptest.services.kgo_verifier_services import KgoVerifierProducer
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.rpk import RpkTool
 from rptest.clients.types import TopicSpec
@@ -568,3 +569,134 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
                    timeout_sec=10,
                    backoff_sec=2,
                    err_msg=f"Too many bytes in the cloud")
+
+
+class BogusTimestampTest(RedpandaTest):
+    segment_size = 1048576
+    topics = (
+        TopicSpec(
+            partition_count=1,
+            replication_factor=1,
+            cleanup_policy=TopicSpec.CLEANUP_DELETE,
+            # 1 megabyte segments
+            segment_bytes=segment_size,
+            # 1 second retention: any non-open segment should be collected almost immediately
+            retention_ms=1000), )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args,
+                         extra_rp_conf={'log_compaction_interval_ms': 1000},
+                         **kwargs)
+
+    @cluster(num_nodes=2)
+    @parametrize(mixed_timestamps=False)
+    @parametrize(mixed_timestamps=True)
+    def test_bogus_timestamps(self, mixed_timestamps):
+        """
+        :param mixed_timestamps: if true, test with a mixture of valid and invalid
+        timestamps in the same segment (i.e. timestamp adjustment should use the
+        valid timestamps rather than falling back to mtime)
+        """
+        self.client().alter_topic_config(self.topic, 'segment.bytes',
+                                         str(self.segment_size))
+
+        # A fictional artificial timestamp base in milliseconds
+        future_timestamp = (int(time.time()) + 24 * 3600) * 1000
+
+        # Produce a run of messages with CreateTime-style timestamps, each
+        # record having a timestamp 1ms greater than the last.
+        msg_size = 14000
+        segments_count = 10
+        msg_count = (self.segment_size // msg_size) * segments_count
+
+        if mixed_timestamps:
+            valid_records = (self.segment_size // msg_size) // 2
+
+            # Write enough valid-timestamped records that one should appear in the index
+            producer = KgoVerifierProducer(context=self.test_context,
+                                           redpanda=self.redpanda,
+                                           topic=self.topic,
+                                           msg_size=msg_size,
+                                           msg_count=valid_records,
+                                           batch_max_bytes=msg_size * 2)
+            producer.start()
+            producer.wait()
+            producer.free()
+
+            # Write the rest of the messages with invalid timestamps
+            producer = KgoVerifierProducer(context=self.test_context,
+                                           redpanda=self.redpanda,
+                                           topic=self.topic,
+                                           msg_size=msg_size,
+                                           msg_count=msg_count - valid_records,
+                                           fake_timestamp_ms=future_timestamp,
+                                           batch_max_bytes=msg_size * 2)
+            producer.start()
+            producer.wait()
+        else:
+            # Write msg_count messages with timestamps in the future
+            producer = KgoVerifierProducer(
+                context=self.test_context,
+                redpanda=self.redpanda,
+                topic=self.topic,
+                msg_size=msg_size,
+                msg_count=(self.segment_size // msg_size) * segments_count,
+                fake_timestamp_ms=future_timestamp,
+                batch_max_bytes=msg_size * 2)
+            producer.start()
+            producer.wait()
+
+        # We should have written the expected number of segments, and nothing can
+        # have been gc'd yet because all the segments have max timestmap in the future
+        segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+            "kafka", self.topic, 0)
+        self.logger.debug(f"Segments after write: {segs}")
+        assert len(segs) >= segments_count
+
+        # Give retention code some time to kick in: we are expecting that it does not
+        # remove anything because the timestamps are too far in the future.
+        with self.redpanda.monitor_log(self.redpanda.nodes[0]) as mon:
+            # Time period much larger than what we set log_compaction_interval_ms to
+            sleep(10)
+
+            # Even without setting the storage_ignore_timestamps_in_future_sec parameter,
+            # we should get warnings about the timestamps.
+            mon.wait_until("found segment with bogus retention timestamp",
+                           timeout_sec=30,
+                           backoff_sec=1)
+
+        # The GC should not have deleted anything
+        segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+            "kafka", self.topic, 0)
+        self.logger.debug(f"Segments after first GC: {segs}")
+        assert len(segs) >= segments_count
+
+        # Enable the escape hatch to tell Redpanda to correct timestamps that are
+        # too far in the future
+        with self.redpanda.monitor_log(self.redpanda.nodes[0]) as mon:
+            self.redpanda.set_cluster_config({
+                'storage_ignore_timestamps_in_future_sec':
+                60,
+            })
+
+            if mixed_timestamps:
+                mon.wait_until(
+                    "Adjusting retention timestamp.*to max valid record",
+                    timeout_sec=30,
+                    backoff_sec=1)
+            else:
+                mon.wait_until("Adjusting retention timestamp.*to file mtime",
+                               timeout_sec=30,
+                               backoff_sec=1)
+
+        def prefix_truncated():
+            segs = self.redpanda.node_storage(self.redpanda.nodes[0]).segments(
+                "kafka", self.topic, 0)
+            self.logger.debug(f"Segments: {segs}")
+            return len(segs) <= 1
+
+        # Segments should be cleaned up now that we've switched on force-correction
+        # of timestamps in the future
+        self.redpanda.wait_until(prefix_truncated,
+                                 timeout_sec=30,
+                                 backoff_sec=1)
