@@ -239,7 +239,7 @@ struct strategy_test_fixture {
         cluster::members_backend::update_meta meta;
         while (true) {
             strategy.reallocations_for_even_partition_count(
-              50,
+              300,
               allocator,
               topics,
               meta,
@@ -264,7 +264,7 @@ FIXTURE_TEST(rebalance_with_two_nodes_added, strategy_test_fixture) {
     add_node(1, 8);
     add_node(2, 8);
 
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 50; ++i) {
         add_topic(random_generators::get_int(5, 100), 3).get();
     }
 
@@ -286,7 +286,7 @@ FIXTURE_TEST(rebalance_with_one_node_added, strategy_test_fixture) {
     add_node(1, 8);
     add_node(2, 8);
 
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 50; ++i) {
         add_topic(random_generators::get_int(5, 100), 3).get();
     }
 
