@@ -27,6 +27,7 @@
 #include "raft/types.h"
 #include "storage/snapshot.h"
 #include "utils/expiring_promise.h"
+#include "utils/fragmented_vector.h"
 #include "utils/mutex.h"
 
 #include <absl/container/btree_set.h>
@@ -41,7 +42,7 @@ using use_tx_version_with_last_pid_bool
 
 struct tm_snapshot {
     model::offset offset;
-    std::vector<tm_transaction> transactions;
+    fragmented_vector<tm_transaction> transactions;
 };
 
 /**
@@ -156,7 +157,7 @@ public:
     absl::btree_set<kafka::transactional_id> get_expired_txs();
 
     using get_txs_result
-      = checked<std::vector<tm_transaction>, tm_stm::op_status>;
+      = checked<fragmented_vector<tm_transaction>, tm_stm::op_status>;
     ss::future<get_txs_result> get_all_transactions();
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>

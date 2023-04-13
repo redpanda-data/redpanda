@@ -203,8 +203,8 @@ public:
 
     void erase_log(kafka::transactional_id);
 
-    std::vector<tm_transaction> get_log_transactions() {
-        std::vector<tm_transaction> txes;
+    fragmented_vector<tm_transaction> get_log_transactions() {
+        fragmented_vector<tm_transaction> txes;
         for (auto& entry : _log_txes) {
             txes.push_back(entry.second);
         }
@@ -255,8 +255,8 @@ public:
         return ids;
     }
 
-    std::vector<tm_transaction> get_all_transactions() {
-        std::vector<tm_transaction> ans;
+    fragmented_vector<tm_transaction> get_all_transactions() {
+        fragmented_vector<tm_transaction> ans;
         if (_mem_term) {
             auto entry_it = _state.find(_mem_term.value());
             if (entry_it != _state.end()) {
