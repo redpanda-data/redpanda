@@ -10,9 +10,6 @@
 package cli
 
 import (
-	"fmt"
-
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/iotune"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/redpanda/tune"
@@ -34,21 +31,9 @@ func addPlatformDependentCmds(fs afero.Fs, p *config.Params, cmd *cobra.Command)
 		newConfigCommand(fs, p),
 		newModeCommand(fs, p),
 		newStartCommand(fs, p, rp.NewLauncher()),
-		newStatusCommand(),
 		newStopCommand(fs, p),
 		newTuneCommand(fs, p),
 	)
-}
-
-func deprecateCmd(newCmd *cobra.Command, newUse string) *cobra.Command {
-	newCmd.Deprecated = fmt.Sprintf("use %q instead", newUse)
-	newCmd.Hidden = true
-	if children := newCmd.Commands(); len(children) > 0 {
-		for _, child := range children {
-			deprecateCmd(child, newUse+" "+child.Name())
-		}
-	}
-	return newCmd
 }
 
 func newCheckCommand(fs afero.Fs, p *config.Params) *cobra.Command {
@@ -65,10 +50,6 @@ func newModeCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 
 func newStartCommand(fs afero.Fs, p *config.Params, launcher rp.Launcher) *cobra.Command {
 	return deprecateCmd(redpanda.NewStartCommand(fs, p, launcher), "rpk redpanda start")
-}
-
-func newStatusCommand() *cobra.Command {
-	return deprecateCmd(debug.NewInfoCommand(), "rpk debug info")
 }
 
 func newStopCommand(fs afero.Fs, p *config.Params) *cobra.Command {
