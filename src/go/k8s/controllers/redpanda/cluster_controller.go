@@ -20,6 +20,22 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/client-go/util/retry"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
 	redpandav1alpha1 "github.com/redpanda-data/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	adminutils "github.com/redpanda-data/redpanda/src/go/k8s/pkg/admin"
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/labels"
@@ -30,20 +46,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/k8s/pkg/utils"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/retry"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -256,17 +258,10 @@ func (r *ClusterReconciler) Reconcile(
 		secrets = append(secrets, schemaRegistrySu.Key())
 	}
 
-	err = r.setInitialSuperUserPassword(ctx, adminAPI, secrets)
-
-	var e *resources.RequeueAfterError
-	if errors.As(err, &e) {
-		log.Info(e.Error())
-		return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
-	}
-
-	if err != nil {
-		log.Error(err, "Failed to set up initial super user password")
-		return ctrl.Result{}, err
+	if errSetInit := r.setInitialSuperUserPassword(ctx, adminAPI, secrets); errSetInit != nil {
+		// we capture all errors here, do not return the error, just requeue
+		log.Info(errSetInit.Error())
+		return ctrl.Result{RequeueAfter: resources.RequeueDuration}, nil
 	}
 
 	schemaRegistryPort := config.DefaultSchemaRegPort
@@ -901,6 +896,7 @@ func (r *ClusterReconciler) handleClusterDeletion(
 	return ctrl.Result{}, nil
 }
 
+// setInitialSuperUserPassword should be idempotent, create user if not found, updates if found
 func (r *ClusterReconciler) setInitialSuperUserPassword(
 	ctx context.Context,
 	adminAPI adminutils.AdminAPIClient,
@@ -911,29 +907,80 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 		return nil
 	}
 
-	for _, obj := range objs {
-		var secret corev1.Secret
-		err := r.Get(ctx, types.NamespacedName{
-			Namespace: obj.Namespace,
-			Name:      obj.Name,
-		}, &secret)
-		if err != nil {
-			return fmt.Errorf("fetching Secret (%s) from namespace (%s): %w", obj.Name, obj.Namespace, err)
-		}
-
-		username := string(secret.Data[corev1.BasicAuthUsernameKey])
-		password := string(secret.Data[corev1.BasicAuthPasswordKey])
-
-		err = adminAPI.CreateUser(ctx, username, password, admin.ScramSha256)
-		// {"message": "Creating user: User already exists", "code": 400}
-		if err != nil && !strings.Contains(err.Error(), "already exists") { // TODO if user already exists, we only receive "400". Check for specific error code when available.
-			return &resources.RequeueAfterError{
-				RequeueAfter: resources.RequeueDuration,
-				Msg:          fmt.Sprintf("could not create user: %v", err),
-			}
+	// list out users here
+	users, err := adminAPI.ListUsers(ctx)
+	if err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "unavailable") {
+			return fmt.Errorf("could not fetch users from the Redpanda admin api: %w", err)
 		}
 	}
-	return nil
+
+	errs := make([]error, 0)
+	for _, obj := range objs {
+		// We first check that the secret has been created
+		// This should have been done by this point, if not
+		// requeue, this is created by the controller and is
+		// the source of truth, not the admin API
+		var secret *corev1.Secret
+		err := r.Get(ctx, obj, secret)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("could not fetch user secret (%s): %w", obj.String(), err))
+			continue
+		}
+		// if we do not find the user in the list, we should create them
+		userFound := false
+		expectedUser := string(secret.Data[corev1.BasicAuthUsernameKey])
+
+		for i := range users {
+			if users[i] == expectedUser {
+				userFound = true
+				break
+			}
+		}
+
+		if userFound {
+			// update the user here, we cannot retrieve password changes here to date
+			if updateErr := updateUserOnAdminAPI(ctx, adminAPI, secret); updateErr != nil {
+				errs = append(errs, fmt.Errorf("redpanda admin api: %w", updateErr))
+			}
+			continue
+		}
+
+		// we did not find user, so create them
+		if createErr := createUserOnAdminAPI(ctx, adminAPI, secret); createErr != nil {
+			errs = append(errs, fmt.Errorf("redpanda admin api: %w", createErr))
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+// createUserOnAdminAPI will return to requeue only when api error occurred
+func createUserOnAdminAPI(ctx context.Context, adminAPI adminutils.AdminAPIClient, secret *corev1.Secret) error {
+	username := string(secret.Data[corev1.BasicAuthUsernameKey])
+	password := string(secret.Data[corev1.BasicAuthPasswordKey])
+
+	err := adminAPI.CreateUser(ctx, username, password, admin.ScramSha256)
+	// {"message": "Creating user: User already exists", "code": 400}
+	if err != nil { // TODO if user already exists, we only receive "400". Check for specific error code when available.
+		if strings.Contains(err.Error(), "already exists") {
+			return nil
+		}
+		return fmt.Errorf("could not create user %q: %w", username, err)
+	}
+	return err
+}
+
+func updateUserOnAdminAPI(ctx context.Context, adminAPI adminutils.AdminAPIClient, secret *corev1.Secret) error {
+	username := string(secret.Data[corev1.BasicAuthUsernameKey])
+	password := string(secret.Data[corev1.BasicAuthPasswordKey])
+
+	err := adminAPI.UpdateUser(ctx, username, password, admin.ScramSha256)
+	if err != nil {
+		return fmt.Errorf("could not update user %q: %w", username, err)
+	}
+
+	return err
 }
 
 func needExternalIP(external redpandav1alpha1.ExternalConnectivityConfig) bool {

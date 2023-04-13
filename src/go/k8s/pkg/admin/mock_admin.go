@@ -171,6 +171,27 @@ func (m *MockAdminAPI) CreateUser(_ context.Context, _, _, _ string) error {
 	return nil
 }
 
+func (m *MockAdminAPI) UpdateUser(_ context.Context, _, _, _ string) error {
+	m.Log.WithName("UpdateUser").Info("called")
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	if m.unavailable {
+		return &unavailableError{}
+	}
+	return nil
+}
+
+func (m *MockAdminAPI) ListUsers(_ context.Context) ([]string, error) {
+	m.Log.WithName("ListUsers").Info("called")
+	users := make([]string, 0)
+	m.monitor.Lock()
+	defer m.monitor.Unlock()
+	if m.unavailable {
+		return users, &unavailableError{}
+	}
+	return users, nil
+}
+
 func (m *MockAdminAPI) DeleteUser(_ context.Context, _ string) error {
 	m.Log.WithName("DeleteUser").Info("called")
 	m.monitor.Lock()
