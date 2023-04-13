@@ -2,6 +2,7 @@
 
 #include "cluster/logger.h"
 #include "cluster/partition_manager.h"
+#include "cluster/types.h"
 #include "random/generators.h"
 #include "vlog.h"
 
@@ -197,7 +198,10 @@ ss::future<> drain_manager::do_drain() {
         std::vector<ss::future<std::error_code>> transfers;
         transfers.reserve(selected.size());
         for (auto& p : selected) {
-            transfers.push_back(p->transfer_leadership(std::nullopt));
+            auto req = transfer_leadership_request{
+              .group = p->group(),
+            };
+            transfers.push_back(p->transfer_leadership(req));
         }
         _status.transferring = transfers.size();
 
