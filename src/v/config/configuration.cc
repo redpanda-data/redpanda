@@ -775,7 +775,7 @@ configuration::configuration()
       "max_kafka_throttle_delay_ms",
       "Fail-safe maximum throttle delay on kafka requests",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      60'000ms)
+      30'000ms)
   , kafka_max_bytes_per_fetch(
       *this,
       "kafka_max_bytes_per_fetch",
