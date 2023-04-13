@@ -12,4 +12,5 @@ kind: TestAssert
 collectors:
 - type: pod
   selector: app.kubernetes.io/name=redpanda-console
+  namespace: superusers-prefix
   tail: -1
