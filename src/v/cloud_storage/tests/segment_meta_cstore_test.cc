@@ -734,6 +734,64 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_upper_bound) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_iterators) {
+    segment_meta_cstore store;
+
+    static auto constexpr segs = std::array{
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 1024,
+        .base_offset = model::offset{10},
+        .committed_offset = model::offset{19},
+      },
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 2048,
+        .base_offset = model::offset{20},
+        .committed_offset = model::offset{29},
+      },
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 4096,
+        .base_offset = model::offset{30},
+        .committed_offset = model::offset{39},
+      },
+      segment_meta{
+        .is_compacted = false,
+        .size_bytes = 4096,
+        .base_offset = model::offset{50},
+        .committed_offset = model::offset{59},
+      },
+    };
+    for (auto meta : segs) {
+        store.insert(meta);
+    }
+
+    BOOST_CHECK_EQUAL(store.size(), segs.size());
+
+    BOOST_CHECK(store.begin() == store.begin());
+    BOOST_CHECK(store.end() == store.end());
+    BOOST_CHECK(store.begin() == store.at_index(0));
+    BOOST_CHECK(++store.begin() == store.at_index(1));
+    BOOST_CHECK(store.end() == ++store.at_index(segs.size() - 1));
+    BOOST_CHECK(store.upper_bound(segs.back().base_offset) == store.end());
+    BOOST_CHECK(++store.begin() == store.upper_bound(segs.front().base_offset));
+    static_assert(segs[0].base_offset() > 0);
+    BOOST_REQUIRE(
+      store.upper_bound(segs.front().base_offset - model::offset{1})
+      == store.begin());
+    if constexpr (requires(segment_meta_cstore store) {
+                      store.begin().index();
+                  }) {
+        // this if constexpr is to quickly share this test between branches TODO
+        // remove later
+        BOOST_CHECK_EQUAL(store.at_index(0).index(), store.begin().index());
+        BOOST_CHECK(store.end().is_end());
+        BOOST_CHECK_EQUAL(
+          store.at_index(segs.size() - 1).index(), segs.size() - 1);
+    }
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_full_contains) {
     segment_meta_cstore store;
     auto manifest = generate_metadata(short_test_size);

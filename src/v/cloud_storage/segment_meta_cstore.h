@@ -389,16 +389,9 @@ private:
     }
 
     bool equal(const auto& other) const {
-        // Invariant: _inner_it is never equal to _inner_end
-        // unless the iterator points to the end.
-        bool end_this = _inner_end == _inner_it;
-        bool end_other = other._inner_end == other._inner_it;
-        if (end_this && end_other) {
-            // All 'end' iterators are equal
-            return true;
-        }
-        return _outer_it == other._outer_it && _inner_it == other._inner_it;
-        return true;
+        ssize_t idx = is_end() ? -1 : index();
+        ssize_t oth_idx = other.is_end() ? -1 : other.index();
+        return idx == oth_idx;
     }
 
 public:
@@ -446,7 +439,7 @@ public:
     bool is_end() const {
         // Invariant: _inner_it is never equal to _inner_end
         // unless the iterator points to the end.
-        return _inner_end == _inner_it;
+        return _inner_it == _inner_end;
     }
 
 private:
