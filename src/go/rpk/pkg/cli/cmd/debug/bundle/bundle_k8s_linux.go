@@ -26,7 +26,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/api/admin"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
-	"github.com/trstringer/go-systemd-time/pkg/systemdtime"
 	k8score "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -467,10 +466,11 @@ func parseJournalTime(str string, now time.Time) (time.Time, error) {
 
 	// This is either a relative time (+/-) or an error
 	default:
-		adjustedTime, err := systemdtime.AdjustTime(now, str)
+		dur, err := time.ParseDuration(str)
 		if err != nil {
 			return time.Time{}, fmt.Errorf("unable to parse time %q: %v", str, err)
 		}
+		adjustedTime := now.Add(dur)
 		return adjustedTime, nil
 	}
 }
