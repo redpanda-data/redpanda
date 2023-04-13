@@ -675,7 +675,23 @@ class SchemaRegistryConfig(TlsConfig):
         super(SchemaRegistryConfig, self).__init__()
 
 
-class RedpandaService(Service):
+class RedpandaServiceBase(Service):
+    def __init__(self, context, num_brokers):
+        super(RedpandaServiceBase, self).__init__(context,
+                                                  num_nodes=num_brokers)
+        self._context = context
+
+    def start_node(self, node, **kwargs):
+        pass
+
+    def stop_node(self, node, **kwargs):
+        pass
+
+    def clean_node(self, node, **kwargs):
+        pass
+
+
+class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
     NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
@@ -769,8 +785,7 @@ class RedpandaService(Service):
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
                  disable_cloud_storage_diagnostics=False):
-        super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
-        self._context = context
+        super(RedpandaService, self).__init__(context, num_brokers)
         self._extra_rp_conf = extra_rp_conf or dict()
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
