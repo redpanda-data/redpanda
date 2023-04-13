@@ -788,6 +788,30 @@ class RedpandaServiceBase(Service):
     def node_id(self, node, force_refresh=False, timeout_sec=30):
         pass
 
+    def partitions(self, topic_name=None):
+        """
+        Return partition metadata for the topic.
+        """
+        kc = KafkaCat(self)
+        md = kc.metadata()
+
+        result = []
+
+        def make_partition(topic_name, p):
+            index = p["partition"]
+            leader_id = p["leader"]
+            leader = None if leader_id == -1 else self.get_node(leader_id)
+            replicas = [self.get_node(r["id"]) for r in p["replicas"]]
+            return Partition(topic_name, index, leader, replicas)
+
+        for topic in md["topics"]:
+            if topic["topic"] == topic_name or topic_name is None:
+                result.extend(
+                    make_partition(topic["topic"], p)
+                    for p in topic["partitions"])
+
+        return result
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -2782,30 +2806,6 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
         self._node_id_by_idx[idx] = node_id
         return node_id
-
-    def partitions(self, topic_name=None):
-        """
-        Return partition metadata for the topic.
-        """
-        kc = KafkaCat(self)
-        md = kc.metadata()
-
-        result = []
-
-        def make_partition(topic_name, p):
-            index = p["partition"]
-            leader_id = p["leader"]
-            leader = None if leader_id == -1 else self.get_node(leader_id)
-            replicas = [self.get_node(r["id"]) for r in p["replicas"]]
-            return Partition(topic_name, index, leader, replicas)
-
-        for topic in md["topics"]:
-            if topic["topic"] == topic_name or topic_name is None:
-                result.extend(
-                    make_partition(topic["topic"], p)
-                    for p in topic["partitions"])
-
-        return result
 
     def cov_enabled(self):
         cov_option = self._context.globals.get(self.COV_KEY,
