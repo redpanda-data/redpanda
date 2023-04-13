@@ -75,6 +75,8 @@ public:
           [this](ssx::semaphore_units) { return do_get(); });
     }
 
+    size_t chunk_size() const { return _chunk_size; }
+
 private:
     ss::future<chunk_ptr> do_get() {
         if (auto c = pop_or_allocate(); c) {

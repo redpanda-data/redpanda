@@ -58,7 +58,7 @@ segment_appender::segment_appender(ss::file f, options opts)
   , _concurrent_flushes(ss::semaphore::max_counter(), "s/append-flush")
   , _prev_head_write(ss::make_lw_shared<ssx::semaphore>(1, head_sem_name))
   , _inactive_timer([this] { handle_inactive_timer(); })
-  , _chunk_size(config::shard_local_cfg().append_chunk_size()) {
+  , _chunk_size(internal::chunks().chunk_size()) {
     const auto alignment = _out.disk_write_dma_alignment();
     vassert(
       internal::chunk_cache::alignment % alignment == 0,
