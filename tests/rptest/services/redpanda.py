@@ -1207,14 +1207,14 @@ class RedpandaService(RedpandaServiceBase):
         """
         return 0.2 if first_start else 1.0
 
-    def wait_for_membership(self, first_start):
+    def wait_for_membership(self, first_start, timeout_sec=30):
         self.logger.info("Waiting for all brokers to join cluster")
         expected = set(self._started)
 
         wait_until(lambda: {n
                             for n in self._started
                             if self.registered(n)} == expected,
-                   timeout_sec=30,
+                   timeout_sec=timeout_sec,
                    backoff_sec=self._startup_poll_interval(first_start),
                    err_msg="Cluster membership did not stabilize")
 
