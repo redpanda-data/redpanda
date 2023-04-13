@@ -16,6 +16,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/metrics.hh>
+#include <seastar/core/metrics_registration.hh>
 
 namespace ssx::metrics {
 
@@ -48,6 +49,32 @@ struct public_metrics_group {
         groups.clear();
         return ss::make_ready_future<>();
     }
+};
+
+/**
+ * @brief A class bundling together public and internal metrics.
+ *
+ * Intended to replace an ss::metrics::metric_groups instance when
+ * you want a metric exposed on both the /metrics (aka "internal")
+ * and /public_metrics (aka "public") metrics endpoint.
+ */
+class all_metrics_groups {
+    ss::metrics::metric_groups _public{public_metrics_handle}, _internal;
+
+public:
+    /**
+     * @brief Adds the given metric group to public and internal metrics.
+     *
+     * The behavior is same as ss::metrics::metric_groups::add_group but for
+     * both metric endpoints.
+     */
+    all_metrics_groups& add_group(
+      const seastar::metrics::group_name_type& name,
+      const std::initializer_list<seastar::metrics::metric_definition>& l) {
+        _internal.add_group(name, l);
+        _public.add_group(name, l);
+        return *this;
+    };
 };
 
 } // namespace ssx::metrics

@@ -154,7 +154,7 @@ private:
       _local_instance; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
     intrusive_list<reporter, &reporter::hook> _reporters;
-    std::optional<ssx::metrics::public_metrics_group> _metrics;
+    std::optional<ssx::metrics::all_metrics_groups> _metrics;
     size_t _lwm;
 };
 
