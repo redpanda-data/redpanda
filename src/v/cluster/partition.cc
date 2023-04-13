@@ -751,7 +751,9 @@ void partition::set_topic_config(
 }
 
 ss::future<std::error_code>
-partition::transfer_leadership(std::optional<model::node_id> target) {
+partition::transfer_leadership(transfer_leadership_request req) {
+    auto target = req.target;
+
     vlog(
       clusterlog.debug,
       "Transferring {} leadership to {}",
@@ -802,7 +804,7 @@ partition::transfer_leadership(std::optional<model::node_id> target) {
         vlog(clusterlog.trace, "transfer_leadership[{}]: no archiver", ntp());
     }
 
-    co_return co_await _raft->do_transfer_leadership(target);
+    co_return co_await _raft->do_transfer_leadership(req);
 }
 
 std::ostream& operator<<(std::ostream& o, const partition& x) {

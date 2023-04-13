@@ -500,6 +500,10 @@ struct replicate_options {
     std::optional<std::chrono::milliseconds> timeout;
 };
 
+struct transfer_leadership_options {
+    std::chrono::milliseconds recovery_timeout;
+};
+
 using offset_translator_delta = named_type<int64_t, struct ot_delta_tag>;
 struct snapshot_metadata {
     // we start snasphot metadata version at 64 to leave room for configuration
@@ -715,21 +719,24 @@ struct timeout_now_reply
 struct transfer_leadership_request
   : serde::envelope<
       transfer_leadership_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     group_id group;
     std::optional<model::node_id> target;
+    std::optional<std::chrono::milliseconds> timeout;
+
     raft::group_id target_group() const { return group; }
 
     friend bool operator==(
       const transfer_leadership_request&, const transfer_leadership_request&)
       = default;
 
-    auto serde_fields() { return std::tie(group, target); }
+    auto serde_fields() { return std::tie(group, target, timeout); }
 
     friend std::ostream&
     operator<<(std::ostream& o, const transfer_leadership_request& r) {
-        fmt::print(o, "group {} target {}", r.group, r.target);
+        fmt::print(
+          o, "group {} target {} timeout {}", r.group, r.target, r.timeout);
         return o;
     }
 };

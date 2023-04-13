@@ -666,7 +666,7 @@ ss::future<transfer_leadership_reply> service::transfer_leadership(
                   return ss::make_ready_future<std::error_code>(
                     raft::errc::group_not_exists);
               } else {
-                  return partition_ptr->transfer_leadership(r.target);
+                  return partition_ptr->transfer_leadership(std::move(r));
               }
           });
         co_return transfer_leadership_reply{

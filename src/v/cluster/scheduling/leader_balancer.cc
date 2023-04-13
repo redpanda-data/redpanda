@@ -810,8 +810,12 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
               shard);
             return ss::make_ready_future<bool>(false);
         }
-        return partition->transfer_leadership(transfer.to.node_id)
-          .then([group = transfer.group](std::error_code err) {
+
+        transfer_leadership_request req{
+          .group = transfer.group, .target = transfer.to.node_id};
+
+        return partition->transfer_leadership(req).then(
+          [group = transfer.group](std::error_code err) {
               if (err) {
                   vlog(
                     clusterlog.info,

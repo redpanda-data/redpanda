@@ -118,12 +118,14 @@ struct compat_check<raft::transfer_leadership_request> {
       json::Writer<json::StringBuffer>& wr) {
         json_write(group);
         json_write(target);
+        json_write(timeout);
     }
 
     static raft::transfer_leadership_request from_json(json::Value& rd) {
         raft::transfer_leadership_request obj;
         json_read(group);
         json_read(target);
+        json_read(timeout);
         return obj;
     }
 

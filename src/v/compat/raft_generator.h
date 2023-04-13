@@ -130,6 +130,7 @@ struct instance_generator<raft::transfer_leadership_request> {
         return {
           .group = tests::random_named_int<raft::group_id>(),
           .target = tests::random_named_int<model::node_id>(),
+          .timeout = tests::random_duration_ms(),
         };
     }
 
@@ -138,22 +139,27 @@ struct instance_generator<raft::transfer_leadership_request> {
           {
             .group = tests::random_named_int<raft::group_id>(),
             .target = std::nullopt,
+            .timeout = std::nullopt,
           },
           {
             .group = raft::group_id::min(),
             .target = std::nullopt,
+            .timeout = std::nullopt,
           },
           {
             .group = raft::group_id::max(),
             .target = std::nullopt,
+            .timeout = std::nullopt,
           },
           {
             .group = raft::group_id::min(),
             .target = tests::random_named_int<model::node_id>(),
+            .timeout = tests::random_duration_ms(),
           },
           {
             .group = raft::group_id::max(),
             .target = tests::random_named_int<model::node_id>(),
+            .timeout = tests::random_duration_ms(),
           },
         };
     }

@@ -2786,7 +2786,7 @@ ss::future<transfer_leadership_reply>
 consensus::transfer_leadership(transfer_leadership_request req) {
     transfer_leadership_reply reply;
     try {
-        auto err = co_await do_transfer_leadership(req.target);
+        auto err = co_await do_transfer_leadership(req);
         if (err) {
             vlog(
               _ctxlog.warn,
@@ -2824,8 +2824,8 @@ consensus::transfer_leadership(transfer_leadership_request req) {
  * is sufficiently up to date that they will win the election when
  * they start it.
  */
-ss::future<std::error_code>
-consensus::prepare_transfer_leadership(vnode target_rni) {
+ss::future<std::error_code> consensus::prepare_transfer_leadership(
+  vnode target_rni, transfer_leadership_options opts) {
     /*
      * the follower's log needs to be up-to-date so that it will
      * receive votes when we ask it to trigger an immediate
@@ -2879,8 +2879,7 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
           _log.offsets().dirty_offset);
     }
 
-    auto timeout = ss::semaphore::clock::duration(
-      config::shard_local_cfg().raft_transfer_leader_recovery_timeout_ms());
+    auto timeout = ss::semaphore::clock::duration(opts.recovery_timeout);
 
     if (meta.is_recovering) {
         vlog(
@@ -2916,7 +2915,13 @@ consensus::prepare_transfer_leadership(vnode target_rni) {
 }
 
 ss::future<std::error_code>
-consensus::do_transfer_leadership(std::optional<model::node_id> target) {
+consensus::do_transfer_leadership(transfer_leadership_request req) {
+    auto target = req.target;
+    transfer_leadership_options opts{
+      .recovery_timeout = req.timeout.value_or(
+        config::shard_local_cfg().raft_transfer_leader_recovery_timeout_ms()),
+    };
+
     if (!is_elected_leader()) {
         vlog(_ctxlog.warn, "Cannot transfer leadership from non-leader");
         return seastar::make_ready_future<std::error_code>(
@@ -2985,7 +2990,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
       *target_rni,
       _term);
 
-    auto f = ss::with_gate(_bg, [this, target_rni = *target_rni] {
+    auto f = ss::with_gate(_bg, [this, target_rni = *target_rni, opts] {
         if (_transferring_leadership) {
             vlog(
               _ctxlog.warn,
@@ -3018,7 +3023,7 @@ consensus::do_transfer_leadership(std::optional<model::node_id> target) {
               make_error_code(errc::node_does_not_exists));
         }
 
-        return prepare_transfer_leadership(target_rni)
+        return prepare_transfer_leadership(target_rni, opts)
           .then([this, target_rni](std::error_code prepare_err) {
               if (prepare_err) {
                   return ss::make_ready_future<std::error_code>(prepare_err);
