@@ -196,15 +196,53 @@ private:
     }
 
     /**
-     * Variant of register_route for routes that use the raw `handle_function`
-     * callback interface (for returning raw strings) rather than the usual
-     * json handlers.
-     *
+     * Variant of register_route_raw_sync for routes that require async
+     * processing.
      * This is 'raw' in the sense that less auto-serialization is going on,
      * and the handler has direct access to the `reply` object
      */
+    template<auth_level required_auth, bool peek_auth = false, typename F>
+    void register_route_raw_async(
+      ss::httpd::path_description const& path, F handler) {
+        auto wrapped_handler = [this, handler](
+                                 std::unique_ptr<ss::http::request> req,
+                                 std::unique_ptr<ss::http::reply> rep)
+          -> ss::future<std::unique_ptr<ss::http::reply>> {
+            auto auth_state = apply_auth<required_auth>(*req);
+
+            // Note: a request is only logged if it does not throw
+            // from authenticate().
+            log_request(*req, auth_state);
+
+            // Intercept exceptions
+            const auto url = req->get_url();
+            if constexpr (peek_auth) {
+                return ss::futurize_invoke(
+                         handler, std::move(req), std::move(rep), auth_state)
+                  .handle_exception(
+                    exception_intercepter<
+                      decltype(handler(
+                                 std::move(req), std::move(rep), auth_state)
+                                 .get0())>(url, auth_state));
+
+            } else {
+                return ss::futurize_invoke(
+                         handler, std::move(req), std::move(rep))
+                  .handle_exception(
+                    exception_intercepter<
+                      decltype(handler(std::move(req), std::move(rep)).get0())>(
+                      url, auth_state));
+            }
+        };
+
+        auto handler_f = new ss::httpd::function_handler{
+          std::move(wrapped_handler), "json"};
+
+        path.set(_server._routes, handler_f);
+    }
+
     template<auth_level required_auth>
-    void register_route_raw(
+    void register_route_raw_sync(
       ss::httpd::path_description const& path,
       ss::httpd::handle_function handler) {
         auto handler_f = new ss::httpd::function_handler{
@@ -381,6 +419,9 @@ private:
     query_automated_recovery(std::unique_ptr<ss::http::request> req);
     ss::future<ss::json::json_return_type>
     get_partition_cloud_storage_status(std::unique_ptr<ss::http::request> req);
+    ss::future<std::unique_ptr<ss::http::reply>> get_manifest(
+      std::unique_ptr<ss::http::request> req,
+      std::unique_ptr<ss::http::reply> rep);
 
     /// Self test routes
     ss::future<ss::json::json_return_type>

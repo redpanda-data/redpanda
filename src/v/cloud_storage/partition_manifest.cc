@@ -540,7 +540,7 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
             // This branch should never be taken. It indicates that the
             // in-memory manifest may be is in some sort of inconsistent state.
             vlog(
-              cst_log.warn,
+              cst_log.error,
               "Previous start offset is not within segment in "
               "manifest for {}: previous_start_offset={}",
               _ntp,
@@ -1367,6 +1367,26 @@ void partition_manifest::serialize(std::ostream& out) const {
     }
     serialize_replaced(c);
     serialize_end(c);
+}
+
+ss::future<>
+partition_manifest::serialize(ss::output_stream<char>& output) const {
+    iobuf serialized;
+    iobuf_ostreambuf obuf(serialized);
+    std::ostream os(&obuf);
+    serialization_cursor_ptr c = make_cursor(os);
+    serialize_begin(c);
+    while (!c->segments_done) {
+        serialize_segments(c);
+
+        co_await write_iobuf_to_output_stream(
+          serialized.share(0, serialized.size_bytes()), output);
+        serialized.clear();
+    }
+    serialize_replaced(c);
+    serialize_end(c);
+
+    co_await write_iobuf_to_output_stream(std::move(serialized), output);
 }
 
 partition_manifest::serialization_cursor_ptr

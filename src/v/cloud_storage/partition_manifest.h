@@ -286,6 +286,13 @@ public:
     /// \param out output stream that should be used to output the json
     void serialize(std::ostream& out) const;
 
+    // Serialize the manifest to an ss::output_stream in JSON format
+    /// \param out output stream to serialize into; must be kept alive
+    /// by the caller until the returned future completes.
+    ///
+    /// \return a future that completes after serialization is done
+    ss::future<> serialize(ss::output_stream<char>& out) const;
+
     /// Compare two manifests for equality. Don't compare the mem_tracker.
     bool operator==(const partition_manifest& other) const {
         return _ntp == other._ntp && _rev == other._rev
