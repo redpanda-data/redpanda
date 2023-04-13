@@ -156,6 +156,11 @@ private:
     model::offset size_based_gc_max_offset(size_t);
     model::offset time_based_gc_max_offset(model::timestamp);
 
+    /// Conditionally adjust retention timestamp on any segment that appears
+    /// to have invalid timestamps, to ensure retention can proceed.
+    ss::future<>
+    retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
+
     bool is_front_segment(const segment_set::type&) const;
 
     compaction_config apply_overrides(compaction_config) const;

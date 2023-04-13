@@ -66,11 +66,21 @@ public:
     std::optional<entry> find_nearest(model::offset);
     std::optional<entry> find_nearest(model::timestamp);
 
+    /// Fallback timestamp search for if the recorded max ts appears to be
+    /// invalid, e.g. too far in the future
+    std::optional<model::timestamp>
+      find_highest_timestamp_before(model::timestamp) const;
+
     model::offset base_offset() const { return _state.base_offset; }
     model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
     model::timestamp base_timestamp() const { return _state.base_timestamp; }
     const ss::sstring& filename() const { return _name; }
+
+    void set_retention_timestamp(model::timestamp t) {
+        _retention_timestamp = t;
+    }
+    model::timestamp retention_timestamp() const;
 
     ss::future<bool> materialize_index();
     ss::future<> flush();
@@ -106,6 +116,10 @@ private:
      *  batches)
      */
     bool _is_internal;
+
+    // Override the timestamp used for retention, in case what's in
+    // the index _state is no good.
+    std::optional<model::timestamp> _retention_timestamp;
 
     /** Constructor with mock file content for unit testing */
     segment_index(

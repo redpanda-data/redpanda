@@ -164,6 +164,10 @@ public:
     generation_id get_generation_id() const { return _generation_id; }
     void advance_generation() { _generation_id++; }
 
+    /// Fallback timestamp method, for use if the timestamps in the index
+    /// appear to be invalid (e.g. too far in the future)
+    ss::future<model::timestamp> get_file_timestamp() const;
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);

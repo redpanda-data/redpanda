@@ -269,4 +269,36 @@ std::ostream& operator<<(std::ostream& o, const segment_index::entry& e) {
              << ", filepos:" << e.filepos << "}";
 }
 
+std::optional<model::timestamp>
+segment_index::find_highest_timestamp_before(model::timestamp t) const {
+    if (_state.base_timestamp > t || _state.empty()) {
+        return std::nullopt;
+    }
+
+    auto relative_t = (t - _state.base_timestamp).value();
+
+    for (int i = _state.size() - 1; i >= 0; --i) {
+        auto [relative_offset, offset_time, position] = _state.get_entry(i);
+        if (offset_time < relative_t) {
+            return model::timestamp(
+              _state.base_timestamp.value() + offset_time);
+        }
+    }
+
+    return std::nullopt;
+}
+
+model::timestamp segment_index::retention_timestamp() const {
+    if (unlikely(config::shard_local_cfg()
+                   .storage_ignore_timestamps_in_future_sec())) {
+        return _retention_timestamp.value_or(_state.max_timestamp);
+    } else {
+        // If storage_ignore_timestamps_in_future_sec is disabled, then
+        // we should not respect _retention_timestamp even if it has
+        // been set (this corresponds to the property being toggled on
+        // then off again at runtime).
+        return _state.max_timestamp;
+    }
+}
+
 } // namespace storage
