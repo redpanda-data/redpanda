@@ -22,6 +22,8 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>
 
+#include <chrono>
+
 using namespace std::chrono_literals;
 
 namespace cluster {
@@ -69,6 +71,14 @@ class leader_balancer {
      * in flight transfers successfully completes.
      */
     static constexpr clock_type::duration throttle_reactivation_delay = 5s;
+
+    /*
+     * Used to specify how long a leader should spend trying to recover a
+     * replica the balancer is trying to transfer leadership to.
+     */
+    static constexpr std::chrono::milliseconds
+      transfer_leadership_recovery_timeout
+      = 25ms;
 
 public:
     leader_balancer(
