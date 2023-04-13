@@ -178,6 +178,10 @@ public:
         return _first_write;
     }
 
+    /// Fallback timestamp method, for use if the timestamps in the index
+    /// appear to be invalid (e.g. too far in the future)
+    ss::future<model::timestamp> get_file_timestamp() const;
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);
