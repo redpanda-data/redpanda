@@ -8,14 +8,7 @@
 [<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://redpanda.com/redpanda)
 <img src="https://static.scarf.sh/a.png?x-pxid=3c187215-e862-4b67-8057-45aa9a779055" />
 
-Redpanda is a streaming platform for mission critical workloads. Kafka® compatible, 
-No Zookeeper®, no JVM, and no code changes required. Use all your favorite open source tooling - 10x faster.
-
-We are building a real-time streaming engine for modern applications - from the 
-enterprise to the solo dev prototyping a react application on her laptop. 
-We go beyond the Kafka protocol, into the future of streaming with inline WASM 
-transforms and geo-replicated hierarchical storage. A new platform that scales with 
-you from the smallest projects to petabytes of data distributed across the globe.
+Redpanda is a streaming data platform for developers. Kafka® API-compatible. ZooKeeper® free. JVM free. We built it from the ground up to eliminate complexity common to Apache Kafka, improve performance by up to 10x, and make the storage architecture safer, more resilient. The simpler devex lets you can focus on your code (instead of fighting Kafka) and develop new use cases that were never before possible. The business benefits from a significantly lower total cost and faster time to market. A new platform that scales with you from the smallest projects to petabytes of data distributed across the globe!
 
 # Community
 
