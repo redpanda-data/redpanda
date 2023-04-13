@@ -103,6 +103,8 @@ func Execute() {
 		topic.NewCommand(fs, p),
 		version.NewCommand(),
 		wasm.NewCommand(fs, p),
+
+		newStatusCommand(), // deprecated
 	)
 
 	addPlatformDependentCmds(fs, p, root)
