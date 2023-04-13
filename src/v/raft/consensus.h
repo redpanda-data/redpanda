@@ -338,9 +338,10 @@ public:
      */
     ss::future<transfer_leadership_reply>
       transfer_leadership(transfer_leadership_request);
-    ss::future<std::error_code> prepare_transfer_leadership(vnode);
     ss::future<std::error_code>
-      do_transfer_leadership(std::optional<model::node_id>);
+      prepare_transfer_leadership(vnode, transfer_leadership_options);
+    ss::future<std::error_code>
+      do_transfer_leadership(transfer_leadership_request);
 
     ss::future<> remove_persistent_state();
 

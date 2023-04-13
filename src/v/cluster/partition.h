@@ -166,7 +166,7 @@ public:
     }
 
     ss::future<std::error_code>
-    transfer_leadership(std::optional<model::node_id> target);
+      transfer_leadership(transfer_leadership_request);
 
     ss::future<std::error_code> update_replica_set(
       std::vector<raft::broker_revision> brokers,
