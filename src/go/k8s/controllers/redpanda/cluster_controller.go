@@ -921,10 +921,10 @@ func (r *ClusterReconciler) setInitialSuperUserPassword(
 		// This should have been done by this point, if not
 		// requeue, this is created by the controller and is
 		// the source of truth, not the admin API
-		var secret *corev1.Secret
-		err := r.Get(ctx, obj, secret)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("could not fetch user secret (%s): %w", obj.String(), err))
+		secret := &corev1.Secret{}
+		errGet := r.Get(ctx, obj, secret)
+		if errGet != nil {
+			errs = append(errs, fmt.Errorf("could not fetch user secret (%s): %w", obj.String(), errGet))
 			continue
 		}
 		// if we do not find the user in the list, we should create them
