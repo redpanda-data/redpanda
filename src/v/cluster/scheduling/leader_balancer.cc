@@ -812,7 +812,9 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
         }
 
         transfer_leadership_request req{
-          .group = transfer.group, .target = transfer.to.node_id};
+          .group = transfer.group,
+          .target = transfer.to.node_id,
+          .timeout = transfer_leadership_recovery_timeout};
 
         return partition->transfer_leadership(req).then(
           [group = transfer.group](std::error_code err) {
@@ -837,7 +839,9 @@ leader_balancer::do_transfer_local(reassignment transfer) const {
 ss::future<bool>
 leader_balancer::do_transfer_remote_legacy(reassignment transfer) {
     raft::transfer_leadership_request req{
-      .group = transfer.group, .target = transfer.to.node_id};
+      .group = transfer.group,
+      .target = transfer.to.node_id,
+      .timeout = transfer_leadership_recovery_timeout};
 
     vlog(
       clusterlog.debug,
@@ -875,7 +879,9 @@ leader_balancer::do_transfer_remote_legacy(reassignment transfer) {
 
 ss::future<bool> leader_balancer::do_transfer_remote(reassignment transfer) {
     transfer_leadership_request req{
-      .group = transfer.group, .target = transfer.to.node_id};
+      .group = transfer.group,
+      .target = transfer.to.node_id,
+      .timeout = transfer_leadership_recovery_timeout};
 
     auto res = co_await _connections.local()
                  .with_node_client<controller_client_protocol>(
