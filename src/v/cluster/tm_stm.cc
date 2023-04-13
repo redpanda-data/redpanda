@@ -759,7 +759,7 @@ ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
     tm_ss.transactions = _cache.local().get_log_transactions();
 
     iobuf tm_ss_buf;
-    reflection::adl<tm_snapshot>{}.to(tm_ss_buf, tm_ss);
+    reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
 
     co_return stm_snapshot::create(
       supported_version, _insync_offset, std::move(tm_ss_buf));
