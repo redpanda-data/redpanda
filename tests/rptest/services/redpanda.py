@@ -763,6 +763,28 @@ class RedpandaServiceBase(Service):
                         count += int(sample.value)
         return count
 
+    def healthy(self):
+        """
+        A primitive health check on all the nodes which returns True when all
+        nodes report that no under replicated partitions exist. This should
+        later be replaced by a proper / official start-up probe type check on
+        the health of a node after a restart.
+        """
+        counts = {self.idx(node): None for node in self.nodes}
+        for node in self.nodes:
+            try:
+                metrics = self.metrics(node)
+            except:
+                return False
+            idx = self.idx(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample.name == "vectorized_cluster_partition_under_replicated_replicas":
+                        if counts[idx] is None:
+                            counts[idx] = 0
+                        counts[idx] += int(sample.value)
+        return all(map(lambda count: count == 0, counts.values()))
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -2757,28 +2779,6 @@ class RedpandaService(RedpandaServiceBase):
         self.logger.info(f"Got node ID for {node.account.hostname}: {node_id}")
         self._node_id_by_idx[idx] = node_id
         return node_id
-
-    def healthy(self):
-        """
-        A primitive health check on all the nodes which returns True when all
-        nodes report that no under replicated partitions exist. This should
-        later be replaced by a proper / official start-up probe type check on
-        the health of a node after a restart.
-        """
-        counts = {self.idx(node): None for node in self.nodes}
-        for node in self.nodes:
-            try:
-                metrics = self.metrics(node)
-            except:
-                return False
-            idx = self.idx(node)
-            for family in metrics:
-                for sample in family.samples:
-                    if sample.name == "vectorized_cluster_partition_under_replicated_replicas":
-                        if counts[idx] is None:
-                            counts[idx] = 0
-                        counts[idx] += int(sample.value)
-        return all(map(lambda count: count == 0, counts.values()))
 
     def partitions(self, topic_name=None):
         """
