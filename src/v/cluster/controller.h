@@ -155,6 +155,8 @@ public:
         });
     }
 
+    model::offset get_start_offset() const { return _raft0->start_offset(); }
+
     model::offset get_commited_index() const {
         return _raft0->committed_offset();
     }
