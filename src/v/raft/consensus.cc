@@ -1951,13 +1951,15 @@ consensus::do_append_entries(append_entries_request&& r) {
 
 ss::future<install_snapshot_reply>
 consensus::install_snapshot(install_snapshot_request&& r) {
-    return _op_lock
-      .with([this, r = std::move(r)]() mutable {
-          return do_install_snapshot(std::move(r));
-      })
-      .handle_exception_type([this](const ss::broken_semaphore&) {
-          return install_snapshot_reply{.term = _term, .success = false};
-      });
+    return with_gate(_bg, [this, r = std::move(r)]() mutable {
+        return _op_lock
+          .with([this, r = std::move(r)]() mutable {
+              return do_install_snapshot(std::move(r));
+          })
+          .handle_exception_type([this](const ss::broken_semaphore&) {
+              return install_snapshot_reply{.term = _term, .success = false};
+          });
+    });
 }
 
 ss::future<> consensus::hydrate_snapshot() {
