@@ -164,6 +164,13 @@ private:
     std::vector<item_ptr> _item_cache;
     mutex _lock;
     ss::gate _bg;
+    // If true, a background flush must be pending. Used to coalesce
+    // background flush requests, since one flush dequeues all items
+    // in the item cache. Without this, a high rate of replication may
+    // cause the _item_cache to grow without bound since the rate of
+    // flush task execution can be lower than the rate at which new
+    // items are added to the cache.
+    bool _flush_pending = false;
 };
 
 } // namespace raft
