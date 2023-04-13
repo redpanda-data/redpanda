@@ -47,7 +47,9 @@ error_outcome handle_client_transport_error(
         // from the S3 endpoint and subsequent connection attmpts failed.
         vlog(logger.warn, "Connection timeout {}", terr.what());
     } catch (const boost::system::system_error& err) {
-        if (err.code() != boost::beast::http::error::short_read) {
+        if (
+          err.code() != boost::beast::http::error::short_read
+          && err.code() != boost::beast::http::error::partial_message) {
             vlog(logger.warn, "Connection failed {}", err.what());
             outcome = error_outcome::fail;
         } else {
