@@ -129,7 +129,8 @@ public:
      * last append. Configuration manager tracks number of bytes that were
      * appended since last write of `highest_known_offset` to kv-store
      */
-    ss::future<> maybe_store_highest_known_offset(model::offset, size_t);
+    void maybe_store_highest_known_offset_in_background(
+      model::offset, size_t bytes, ss::gate&);
 
     /**
      * Returns the highest offset for which the configuration manager
@@ -189,6 +190,8 @@ private:
 
     void add_configuration(model::offset, group_configuration);
 
+    ss::future<> do_maybe_store_highest_known_offset(size_t bytes);
+
     raft::group_id _group;
     underlying_t _configurations;
     /**
@@ -209,6 +212,9 @@ private:
     // Units issued by the storage resource manager to track how many bytes
     // of data is currently pending checkpoint.
     ssx::semaphore_units _bytes_since_last_offset_update_units;
+
+    // set to true when we checkpoint the highest known offset.
+    bool _hko_checkpoint_in_progress = false;
 
     model::revision_id _initial_revision{};
     ctx_log& _ctxlog;
