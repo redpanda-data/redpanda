@@ -798,4 +798,14 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
       });
 }
 
+ss::future<model::timestamp> segment::get_file_timestamp() const {
+    auto file_path = path().string();
+
+    auto stat = co_await ss::file_stat(file_path);
+    co_return model::timestamp(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+        stat.time_modified.time_since_epoch())
+        .count());
+}
+
 } // namespace storage
