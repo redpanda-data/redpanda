@@ -137,9 +137,9 @@ ss::future<consensus_ptr> partition_manager::manage(
         } else {
             // Manifest is not empty since we were able to recovery
             // some data.
-            vassert(manifest.size() != 0, "Manifest is empty");
-            auto last_segm_it = manifest.rbegin();
-            auto last_included_term = last_segm_it->second.archiver_term;
+            auto last_segment = manifest.last_segment();
+            vassert(last_segment.has_value(), "Manifest is empty");
+            auto last_included_term = last_segment->archiver_term;
 
             vlog(
               clusterlog.info,
