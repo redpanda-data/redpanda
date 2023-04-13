@@ -828,6 +828,13 @@ class RedpandaServiceBase(Service):
                                 use_maintenance_mode=use_maintenance_mode,
                                 omit_seeds_on_idx_one=omit_seeds_on_idx_one)
 
+    def set_cluster_config(self,
+                           values: dict,
+                           expect_restart: bool = False,
+                           admin_client: Optional[Admin] = None,
+                           timeout: int = 10):
+        pass
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
