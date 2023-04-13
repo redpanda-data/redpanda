@@ -48,8 +48,9 @@ func Execute() {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
 	}
+
 	p := new(config.Params)
-	cobra.OnInitialize(func() {
+	runXHelp := func() {
 		for _, o := range p.FlagOverrides {
 			switch {
 			case o == "help":
@@ -61,6 +62,9 @@ func Execute() {
 			}
 			os.Exit(0)
 		}
+	}
+	cobra.OnInitialize(func() {
+		runXHelp()
 		zap.ReplaceGlobals(p.Logger())
 	})
 	root := &cobra.Command{
@@ -135,6 +139,17 @@ func Execute() {
 	// See: spf13/cobra#480
 	walk(root, func(c *cobra.Command) {
 		c.Flags().BoolP("help", "h", false, "Help for "+c.Name())
+
+		// If a command has no Run, then -X help or -X list by default
+		// will just exit with the command's help text. We override
+		// that to always exit on -X help and -X list, and fallback to
+		// the old default of printing the command's help.
+		if c.Run == nil {
+			c.Run = func(cmd *cobra.Command, _ []string) {
+				runXHelp()
+				cmd.Help()
+			}
+		}
 	})
 
 	cobra.AddTemplateFunc("wrappedLocalFlagUsages", wrappedLocalFlagUsages)
