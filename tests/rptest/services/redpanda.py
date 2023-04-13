@@ -681,6 +681,7 @@ class RedpandaServiceBase(Service):
         context,
         num_brokers,
         extra_rp_conf=None,
+        resource_settings=None,
         si_settings=None,
     ):
         super(RedpandaServiceBase, self).__init__(context,
@@ -692,6 +693,10 @@ class RedpandaServiceBase(Service):
             self.set_si_settings(si_settings)
         else:
             self._si_settings = None
+
+        if resource_settings is None:
+            resource_settings = ResourceSettings()
+        self._resource_settings = resource_settings
 
     def start_node(self, node, **kwargs):
         pass
@@ -835,6 +840,9 @@ class RedpandaServiceBase(Service):
                            timeout: int = 10):
         pass
 
+    def set_resource_settings(self, rs):
+        self._resource_settings = rs
+
 
 class RedpandaService(RedpandaServiceBase):
     PERSISTENT_ROOT = "/var/lib/redpanda"
@@ -930,8 +938,9 @@ class RedpandaService(RedpandaServiceBase):
                  pandaproxy_config: Optional[PandaproxyConfig] = None,
                  schema_registry_config: Optional[SchemaRegistryConfig] = None,
                  disable_cloud_storage_diagnostics=False):
-        super(RedpandaService, self).__init__(context, num_brokers,
-                                              extra_rp_conf, si_settings)
+        super(RedpandaService,
+              self).__init__(context, num_brokers, extra_rp_conf,
+                             resource_settings, si_settings)
         self._security = security
         self._installer: RedpandaInstaller = RedpandaInstaller(self)
         self._pandaproxy_config = pandaproxy_config
@@ -983,9 +992,6 @@ class RedpandaService(RedpandaServiceBase):
 
         self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
-        if resource_settings is None:
-            resource_settings = ResourceSettings()
-        self._resource_settings = resource_settings
         self.logger.info(
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
@@ -1029,9 +1035,6 @@ class RedpandaService(RedpandaServiceBase):
 
     def set_environment(self, environment: dict[str, str]):
         self._environment.update(environment)
-
-    def set_resource_settings(self, rs):
-        self._resource_settings = rs
 
     @property
     def si_settings(self):
