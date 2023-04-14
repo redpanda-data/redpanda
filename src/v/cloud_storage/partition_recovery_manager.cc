@@ -109,7 +109,7 @@ ss::future<log_recovery_result> partition_recovery_manager::download_log(
       _gate,
       _root,
       _as);
-    auto result = co_await downloader.download_log();
+    auto result = co_await downloader.maybe_download_log();
     retry_chain_node fib{_as, download_timeout, initial_backoff};
     if (co_await is_topic_recovery_active()) {
         vlog(
@@ -170,7 +170,7 @@ partition_downloader::partition_downloader(
       ssx::sformat("[{}, rev: {}]", ntpc.ntp().path(), ntpc.get_revision()))
   , _as(as) {}
 
-ss::future<log_recovery_result> partition_downloader::download_log() {
+ss::future<log_recovery_result> partition_downloader::maybe_download_log() {
     vlog(_ctxlog.debug, "Check conditions for S3 recovery for {}", _ntpc);
     if (!_ntpc.has_overrides()) {
         vlog(_ctxlog.debug, "No overrides for {} found, skipping", _ntpc.ntp());
@@ -191,9 +191,7 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
     }
     vlog(_ctxlog.info, "Downloading log for {}", _ntpc.ntp());
     try {
-        auto topic_manifest_path = topic_manifest::get_topic_manifest_path(
-          _ntpc.ntp().ns, _ntpc.ntp().tp.topic);
-        co_return co_await download_log(topic_manifest_path);
+        co_return co_await download_log();
 
     } catch (const ss::abort_requested_exception&) {
         throw;
@@ -300,8 +298,7 @@ static model::offset get_prev_offset(model::offset o) {
 }
 
 // entry point for the whole thing
-ss::future<log_recovery_result>
-partition_downloader::download_log(const remote_manifest_path& manifest_key) {
+ss::future<log_recovery_result> partition_downloader::download_log() {
     auto prefix = std::filesystem::path(_ntpc.work_directory());
     auto retention = get_retention_policy(_ntpc.get_overrides());
     vlog(
@@ -310,7 +307,7 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
       prefix,
       _ntpc.get_revision(),
       retention);
-    auto mat = co_await find_recovery_material(manifest_key);
+    auto mat = co_await find_recovery_material();
     if (cst_log.is_enabled(ss::log_level::debug)) {
         std::stringstream ostr;
         mat.partition_manifest.serialize(ostr);
@@ -367,7 +364,9 @@ partition_downloader::download_log(const remote_manifest_path& manifest_key) {
           r.duration);
     }
     // Move parts to final destinations
-    co_await move_parts(part);
+    if (part.num_files > 0) {
+        co_await move_parts(part);
+    }
 
     log_recovery_result result{
       .logs_recovered = true,
@@ -432,19 +431,23 @@ partition_downloader::download_log_with_capped_size(
     model::offset start_offset{0};
     model::offset_delta start_delta{0};
     size_t total_size = 0;
-    for (auto it = offset_map.rbegin(); it != offset_map.rend(); it++) {
-        const auto& meta = it->second;
-        if (total_size + meta.size_bytes >= max_size) {
-            // At the moment we can't safely restore the partition without
-            // downloading at least one segment.
-            break;
+    if (!_ntpc.is_remote_fetch_enabled()) {
+        // Download logs only if tiered storage is disabled.
+        // Otherwise we should do shallow recovery.
+        for (auto it = offset_map.rbegin(); it != offset_map.rend(); it++) {
+            const auto& meta = it->second;
+            if (total_size + meta.size_bytes >= max_size) {
+                // At the moment we can't safely restore the partition without
+                // downloading at least one segment.
+                break;
+            }
+            total_size += meta.size_bytes;
+            staged_downloads.push_front(it->second);
+            start_offset = meta.base_offset;
+            start_delta = meta.delta_offset == model::offset_delta()
+                            ? start_delta
+                            : meta.delta_offset;
         }
-        total_size += meta.size_bytes;
-        staged_downloads.push_front(it->second);
-        start_offset = meta.base_offset;
-        start_delta = meta.delta_offset == model::offset_delta()
-                        ? start_delta
-                        : meta.delta_offset;
     }
 
     std::vector<offset_range> dloffsets;
@@ -513,33 +516,37 @@ partition_downloader::download_log_with_capped_time(
     std::deque<segment_meta> staged_downloads;
     model::offset start_offset{0};
     model::offset_delta start_delta{0};
-    for (auto it = offset_map.rbegin(); it != offset_map.rend(); it++) {
-        const auto& meta = it->second;
-        if (
-          meta.max_timestamp == model::timestamp::missing()
-          || meta.max_timestamp < time_threshold) {
-            // At least one segment has to be downloaded to guarantee successful
-            // recovery.
-            vlog(
-              _ctxlog.debug,
-              "Time threshold {} reached at {}, skipping {}",
-              time_threshold,
-              meta.max_timestamp,
-              it->second.base_offset);
-            break;
-        } else {
-            vlog(
-              _ctxlog.debug,
-              "Found {}, max_timestamp {} is within the time threshold {}",
-              it->second.base_offset,
-              meta.max_timestamp,
-              time_threshold);
+    if (!_ntpc.is_remote_fetch_enabled()) {
+        // Download logs only if tiered storage is disabled.
+        // Otherwise we should do shallow recovery.
+        for (auto it = offset_map.rbegin(); it != offset_map.rend(); it++) {
+            const auto& meta = it->second;
+            if (
+              meta.max_timestamp == model::timestamp::missing()
+              || meta.max_timestamp < time_threshold) {
+                // At least one segment has to be downloaded to guarantee
+                // successful recovery.
+                vlog(
+                  _ctxlog.debug,
+                  "Time threshold {} reached at {}, skipping {}",
+                  time_threshold,
+                  meta.max_timestamp,
+                  it->second.base_offset);
+                break;
+            } else {
+                vlog(
+                  _ctxlog.debug,
+                  "Found {}, max_timestamp {} is within the time threshold {}",
+                  it->second.base_offset,
+                  meta.max_timestamp,
+                  time_threshold);
+            }
+            staged_downloads.push_front(it->second);
+            start_offset = meta.base_offset;
+            start_delta = meta.delta_offset == model::offset_delta()
+                            ? start_delta
+                            : meta.delta_offset;
         }
-        staged_downloads.push_front(it->second);
-        start_offset = meta.base_offset;
-        start_delta = meta.delta_offset == model::offset_delta()
-                        ? start_delta
-                        : meta.delta_offset;
     }
     vlog(
       _ctxlog.info,
@@ -592,11 +599,13 @@ partition_downloader::download_log_with_capped_time(
 }
 
 ss::future<partition_downloader::recovery_material>
-partition_downloader::find_recovery_material(const remote_manifest_path& key) {
-    vlog(_ctxlog.info, "Downloading topic manifest {}", key);
+partition_downloader::find_recovery_material() {
     recovery_material recovery_mat;
-
     partition_manifest tmp(_ntpc.ntp(), _remote_revision_id);
+    vlog(
+      _ctxlog.info,
+      "Downloading partition manifest {}",
+      tmp.get_manifest_path());
     auto res = co_await _remote->download_manifest(
       _bucket, tmp.get_manifest_path(), tmp, _rtcnode);
     if (res == download_result::success) {

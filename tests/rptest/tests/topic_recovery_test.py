@@ -258,6 +258,7 @@ class BaseCase:
                 conf[cname] = val
         conf['redpanda.remote.recovery'] = 'true'
         conf['redpanda.remote.write'] = 'true'
+        conf['redpanda.remote.read'] = 'false'
         conf.update(overrides)
         self.logger.info(f"Confg: {conf}")
         self._rpk.create_topic(topic, npart, nrepl, conf)
@@ -974,6 +975,14 @@ class AdminApiBasedRestore(FastCheck):
             'accepted'], f'request status code: {response.status_code}'
         self._assert_duplicate_request_is_rejected()
         self._assert_status()
+
+    def validate_cluster(self, baseline, restored):
+        """Check that the topic is writeable"""
+        self.logger.info(
+            f"AdminApiBasedRestore.validate_cluster - baseline - {baseline}")
+        self.logger.info(
+            f"AdminApiBasedRestore.validate_cluster - restored - {restored}")
+        self._validate_partition_last_offset()
 
     def after_restart_validation(self):
         super().after_restart_validation()

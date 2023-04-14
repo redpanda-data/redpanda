@@ -131,12 +131,12 @@ public:
     /// \return download result struct that contains 'log_completed=true'
     ///         if actual download happened. The 'last_offset' field will
     ///         be set to max offset of the downloaded log.
-    ss::future<log_recovery_result> download_log();
+    ss::future<log_recovery_result> maybe_download_log();
 
 private:
-    /// Download full log based on manifest data
-    ss::future<log_recovery_result>
-    download_log(const remote_manifest_path& key);
+    /// Download log segments from S3 to the local storage
+    /// if required.
+    ss::future<log_recovery_result> download_log();
 
     ss::future<> download_log(
       const partition_manifest& manifest, const std::filesystem::path& prefix);
@@ -146,8 +146,7 @@ private:
     };
 
     /// Locate all data needed to recover single partition
-    ss::future<recovery_material>
-    find_recovery_material(const remote_manifest_path& key);
+    ss::future<recovery_material> find_recovery_material();
 
     struct offset_range {
         model::offset min_offset;
