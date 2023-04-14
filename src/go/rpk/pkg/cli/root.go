@@ -30,6 +30,7 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/topic"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/version"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/wasm"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	"github.com/spf13/afero"
@@ -133,7 +134,7 @@ func Execute() {
 	// Cobra creates help flag as: help for <command> if you want to override
 	// that message (capitalize the first letter) then this is the way.
 	// See: spf13/cobra#480
-	walk(root, func(c *cobra.Command) {
+	cobraext.Walk(root, func(c *cobra.Command) {
 		c.Flags().BoolP("help", "h", false, "Help for "+c.Name())
 
 		// If a command has no Run, then -X help or -X list by default
@@ -172,14 +173,6 @@ func osExec(path string, args []string) error {
 		}).Run()
 	}
 	return syscall.Exec(path, args, env)
-}
-
-// walk calls f for c and all of its children.
-func walk(c *cobra.Command, f func(*cobra.Command)) {
-	f(c)
-	for _, c := range c.Commands() {
-		walk(c, f)
-	}
 }
 
 func wrappedLocalFlagUsages(cmd *cobra.Command) string {
