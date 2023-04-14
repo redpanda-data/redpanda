@@ -162,6 +162,13 @@ std::ostream& operator<<(std::ostream& o, const segment_set& s) {
     return o << "]}";
 }
 
+static bool
+is_last_segment(segment* s, std::optional<ss::sstring> last_clean_segment) {
+    return last_clean_segment
+           && std::filesystem::path(s->filename()).filename().string()
+                == std::string(last_clean_segment.value());
+}
+
 // Recover the last segment. Whenever we close a segment, we will likely
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
@@ -205,6 +212,13 @@ static ss::future<segment_set> unsafe_do_recover(
                       "segment {}",
                       s);
                 } else {
+                    if (is_last_segment(&s, last_clean_segment)) {
+                        // skipping last_clean_segment is an optimization for
+                        // happy case; here we explicitly know that there is a
+                        // problem with index; skipping the optimization
+                        last_clean_segment = {};
+                    }
+
                     to_recover_set.insert(&s);
                 }
             } catch (...) {
@@ -215,6 +229,14 @@ static ss::future<segment_set> unsafe_do_recover(
                   s.index().path(),
                   s.filename(),
                   std::current_exception());
+
+                if (is_last_segment(&s, last_clean_segment)) {
+                    // skipping last_clean_segment is an optimization for
+                    // happy case; here we explicitly know that there is a
+                    // problem with index; skipping the optimization
+                    last_clean_segment = {};
+                }
+
                 to_recover_set.insert(&s);
             }
         }
@@ -273,10 +295,7 @@ static ss::future<segment_set> unsafe_do_recover(
                 return segment_set(std::move(good));
             }
 
-            if (
-              last_clean_segment
-              && std::filesystem::path(s->filename()).filename().string()
-                   == std::string(last_clean_segment.value())) {
+            if (is_last_segment(s.get(), last_clean_segment)) {
                 vlog(
                   stlog.debug,
                   "Skipping recovery of {}, it is marked clean",
