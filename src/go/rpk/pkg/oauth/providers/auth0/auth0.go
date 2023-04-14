@@ -52,6 +52,8 @@ func NewClient(cfg *cloudcfg.Config) *Client {
 	}
 	if auth0Endpoint.URL == "" && auth0Endpoint.Audience == "" {
 		auth0Endpoint = prodAuth0Endpoint
+		cfg.AuthURL = prodAuth0Endpoint.URL
+		cfg.AuthAudience = prodAuth0Endpoint.Audience
 	}
 
 	if cfg.AuthClientID == "" {
