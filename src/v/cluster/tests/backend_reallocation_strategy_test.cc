@@ -209,7 +209,7 @@ struct strategy_test_fixture {
 
     ss::future<>
     apply_reallocations(cluster::members_backend::update_meta& meta) {
-        for (auto& pr : meta.partition_reallocations) {
+        for (auto& [ntp, pr] : meta.partition_reallocations) {
             auto added = cluster::subtract_replica_sets(
               pr.new_replica_set, pr.current_replica_set);
             auto removed = cluster::subtract_replica_sets(
@@ -221,13 +221,13 @@ struct strategy_test_fixture {
               removed, cluster::partition_allocation_domains::common);
 
             auto ec = co_await topics.apply(
-              cluster::move_partition_replicas_cmd(pr.ntp, pr.new_replica_set),
+              cluster::move_partition_replicas_cmd(ntp, pr.new_replica_set),
               ++rev_offset);
             BOOST_REQUIRE(!ec);
 
             ec = co_await topics.apply(
               cluster::finish_moving_partition_replicas_cmd(
-                pr.ntp, pr.new_replica_set),
+                ntp, pr.new_replica_set),
               ++rev_offset);
             BOOST_REQUIRE(!ec);
         }
