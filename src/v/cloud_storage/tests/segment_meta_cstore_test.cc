@@ -924,6 +924,54 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_single_replacement) {
     BOOST_CHECK(*store.begin() == replacement_segment);
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_whole_range_replacement) {
+    segment_meta_cstore store{};
+    // replacements either start before or exactly at 0
+    constexpr auto seg1 = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(10)};
+
+    store.insert(seg1);
+
+    BOOST_CHECK_EQUAL(store.size(), 1);
+
+    constexpr auto seg2 = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 1024,
+      .base_offset = model::offset(11),
+      .committed_offset = model::offset(20)};
+
+    store.insert(seg2);
+
+    BOOST_CHECK_EQUAL(store.size(), 2);
+
+    constexpr auto merged_seg = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 2000,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(20),
+    };
+
+    store.insert(merged_seg);
+
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == merged_seg);
+
+    constexpr auto compacted_seg = segment_meta{
+      .is_compacted = true,
+      .size_bytes = 100,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(20),
+    };
+
+    store.insert(compacted_seg);
+
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == compacted_seg);
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
     // std::istringstream{"1868201168"} >> random_generators::internal::gen;
 
