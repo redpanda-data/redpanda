@@ -358,7 +358,10 @@ service::service(
   , _writer(sequencer)
   , _controller(controller)
   , _ensure_started{[this]() { return do_start(); }}
-  , _auth{config::always_true(), controller.get()} {}
+  , _auth{
+      config::always_true(),
+      config::shard_local_cfg().superusers.bind(),
+      controller.get()} {}
 
 ss::future<> service::start() {
     static std::vector<model::broker_endpoint> not_advertised{};

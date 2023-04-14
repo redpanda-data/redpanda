@@ -207,7 +207,10 @@ admin_server::admin_server(
   , _shard_table(st)
   , _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
-  , _auth(config::shard_local_cfg().admin_api_require_auth.bind(), _controller)
+  , _auth(
+      config::shard_local_cfg().admin_api_require_auth.bind(),
+      config::shard_local_cfg().superusers.bind(),
+      _controller)
   , _node_status_table(node_status_table)
   , _self_test_frontend(self_test_frontend)
   , _usage_manager(usage_manager)

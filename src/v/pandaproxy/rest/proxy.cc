@@ -114,7 +114,9 @@ proxy::proxy(
   , _mem_sem(max_memory, "pproxy/mem")
   , _client(client)
   , _client_cache(client_cache)
-  , _ctx{{{{}, _mem_sem, {}, smp_sg}, *this}, {config::always_true(), controller}, _config.pandaproxy_api.value()}
+  , _ctx{{{{}, _mem_sem, {}, smp_sg}, *this},
+        {config::always_true(), config::shard_local_cfg().superusers.bind(), controller},
+        _config.pandaproxy_api.value()}
   , _server(
       "pandaproxy",
       "rest_proxy",
