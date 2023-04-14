@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/partition_balancer_types.h"
+#include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/types.h"
 #include "model/metadata.h"
 
@@ -19,6 +20,8 @@
 namespace cluster {
 
 class allocation_state;
+
+static constexpr std::string_view rack_label = "rack";
 /**
  * make_soft_constraint adapts hard constraint to soft one by returning
  * max score for nodes that matches the soft constraint and 0 for
@@ -73,10 +76,67 @@ soft_constraint least_disk_filled(
   const absl::flat_hash_map<model::node_id, node_disk_space>&
     node_disk_reports);
 
-hard_constraint distinct_rack(const allocation_state&);
+template<
+  typename Mapper,
+  typename LabelType
+  = typename std::invoke_result_t<Mapper, model::node_id>::value_type>
+concept LabelMapper = requires(Mapper mapper, model::node_id id) {
+    { mapper(id) } -> std::convertible_to<std::optional<LabelType>>;
+};
 
-inline soft_constraint distinct_rack_preferred(const allocation_state& state) {
-    return make_soft_constraint(distinct_rack(state));
+template<
+  typename Mapper,
+  typename T =
+    typename std::invoke_result_t<Mapper, model::node_id>::value_type>
+requires LabelMapper<Mapper, T> soft_constraint
+distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
+    class impl : public soft_constraint::impl {
+    public:
+        impl(const char* label_name, Mapper&& mapper)
+          : _label_name(label_name)
+          , _mapper(std::forward<Mapper>(mapper)) {}
+
+        soft_constraint_evaluator
+        make_evaluator(const replicas_t& current_replicas) const final {
+            absl::flat_hash_map<T, size_t> frequency_map;
+
+            for (auto& r : current_replicas) {
+                auto const l = _mapper(r.node_id);
+                if (!l) {
+                    continue;
+                }
+                auto [it, _] = frequency_map.try_emplace(*l, 0);
+                it->second += 1;
+            }
+
+            return [this, frequency_map = std::move(frequency_map)](
+                     const allocation_node& candidate_node) -> uint64_t {
+                auto node_label = _mapper(candidate_node.id());
+                if (!node_label) {
+                    return (uint64_t)0;
+                }
+                auto it = frequency_map.find(*node_label);
+
+                if (it == frequency_map.end()) {
+                    return (uint64_t)soft_constraint::max_score;
+                }
+                return (uint64_t)soft_constraint::max_score / (it->second + 1);
+            };
+        }
+
+        ss::sstring name() const final {
+            return fmt::format("distinct {} labels preferred", _label_name);
+        }
+
+        const char* _label_name;
+
+        Mapper _mapper;
+    };
+
+    return soft_constraint(
+      std::make_unique<impl>(label_name, std::forward<Mapper>(mapper)));
 }
+
+soft_constraint distinct_rack_preferred(const allocation_state& state);
 
 } // namespace cluster

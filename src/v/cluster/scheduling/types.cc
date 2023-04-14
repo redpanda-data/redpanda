@@ -33,7 +33,13 @@ soft_constraint::make_evaluator(const replicas_t& current_replicas) const {
     auto ev = _impl->make_evaluator(current_replicas);
     return [this, ev = std::move(ev)](const allocation_node& node) {
         auto res = ev(node);
-        vlog(clusterlog.trace, "{}({}) = {}", name(), node.id(), res);
+        vlog(
+          clusterlog.trace,
+          "{}(node: {}) = {} ({})",
+          name(),
+          node.id(),
+          res,
+          (double)res / soft_constraint::max_score);
         return res;
     };
 };
