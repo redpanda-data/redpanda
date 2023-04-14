@@ -12,7 +12,6 @@
 #include "utils/request_auth.h"
 
 #include "cluster/controller.h"
-#include "config/configuration.h"
 #include "seastar/http/exception.hh"
 #include "security/credential_store.h"
 #include "security/scram_algorithm.h"
@@ -21,9 +20,12 @@
 static ss::logger logger{"request_auth"};
 
 request_authenticator::request_authenticator(
-  config::binding<bool> require_auth, cluster::controller* controller)
+  config::binding<bool> require_auth,
+  config::binding<std::vector<ss::sstring>> superusers,
+  cluster::controller* controller)
   : _controller(controller)
-  , _require_auth(std::move(require_auth)) {}
+  , _require_auth(std::move(require_auth))
+  , _superusers(std::move(superusers)) {}
 
 /**
  * Attempt to authenticate the request.
@@ -125,7 +127,7 @@ request_auth_result request_authenticator::do_authenticate(
                   "Unauthorized", ss::http::reply::status_type::unauthorized);
             } else {
                 vlog(logger.trace, "Authenticated user {}", username);
-                const auto& superusers = config::shard_local_cfg().superusers();
+                const auto& superusers = _superusers();
                 auto found = std::find(
                   superusers.begin(), superusers.end(), username);
                 bool superuser = (found != superusers.end()) || (!require_auth);
