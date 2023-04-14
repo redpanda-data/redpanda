@@ -340,29 +340,33 @@ partition_manifest::segment_containing(kafka::offset o) const {
     if (_segments.empty()) {
         return end();
     }
+
     // Kafka offset is always <= log offset.
     // To find a segment by its kafka offset we can simply query
     // manifest by log offset and then traverse forward until we
     // find a matching segment.
     auto it = _segments.lower_bound(kafka::offset_cast(o));
+    if (it == _segments.begin() && it->base_kafka_offset() > o) {
+        // The beginning of the manifest already has a base offset that
+        // doesn't satisfy the query.
+        return end();
+    }
+    // We can safely call _segments.prev(it) now
+
     // We need to find first element which has greater kafka offset than
     // the target and step back. It is possible to have a segment that
     // doesn't have data batches. This scan has to skip segments like that.
-    while (it != end()) {
+    auto end_it = end();
+    for (; it != end_it; ++it) {
         if (it->base_kafka_offset() > o) {
-            // The beginning of the manifest already has a base offset that
-            // doesn't satisfy the query.
-            if (it == begin()) {
-                return end();
-            }
             // On the first segment we see with a base kafka offset higher than
             // 'o', return its previous segment.
             return _segments.prev(it);
         }
-        ++it;
     }
+
     // All segments had base kafka offsets lower than 'o'.
-    auto back = _segments.prev(it);
+    auto back = _segments.prev(end_it);
     if (back->delta_offset_end != model::offset_delta{}) {
         // If 'prev' points to the last segment, it's not guaranteed that
         // the segment contains the required kafka offset. We need an extra
@@ -370,7 +374,7 @@ partition_manifest::segment_containing(kafka::offset o) const {
         // will return the last segment. This is OK since delta_offset_end
         // will always be set for new segments.
         if (back->next_kafka_offset() <= o) {
-            return end();
+            return end_it;
         }
     }
     return back;
