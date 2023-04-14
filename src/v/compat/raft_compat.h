@@ -15,6 +15,7 @@
 #include "compat/raft_json.h"
 #include "raft/types.h"
 
+#include <optional>
 #include <type_traits>
 
 namespace compat {
@@ -118,12 +119,14 @@ struct compat_check<raft::transfer_leadership_request> {
       json::Writer<json::StringBuffer>& wr) {
         json_write(group);
         json_write(target);
+        json_write(timeout);
     }
 
     static raft::transfer_leadership_request from_json(json::Value& rd) {
         raft::transfer_leadership_request obj;
         json_read(group);
         json_read(target);
+        json_read(timeout);
         return obj;
     }
 
@@ -134,7 +137,24 @@ struct compat_check<raft::transfer_leadership_request> {
 
     static void
     check(raft::transfer_leadership_request obj, compat_binary test) {
-        verify_adl_or_serde(obj, std::move(test));
+        if (test.name == "serde") {
+            verify_serde_only(obj, test);
+            return;
+        }
+        vassert(test.name == "adl", "Unknown compat_binary format encounterd");
+        iobuf_parser iobp(std::move(test.data));
+        auto reply = reflection::adl<raft::transfer_leadership_request>{}.from(
+          iobp);
+
+        obj.timeout = std::nullopt;
+
+        if (reply != obj) {
+            throw compat_error(fmt::format(
+              "Verify of {{raft::transfer_leadership_request}} ADL decoding "
+              "failed:\n Expected: {}\nDecoded: {}",
+              obj,
+              reply));
+        }
     }
 };
 

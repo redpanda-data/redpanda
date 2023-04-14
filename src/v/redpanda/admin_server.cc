@@ -1599,7 +1599,11 @@ admin_server::raft_transfer_leadership_handler(
               throw ss::httpd::not_found_exception();
           }
           const auto ntp = partition->ntp();
-          return partition->transfer_leadership(target).then(
+          auto r = raft::transfer_leadership_request{
+            .group = partition->group(),
+            .target = target,
+          };
+          return partition->transfer_leadership(r).then(
             [this, ntp, req = std::move(req)](auto err) {
                 return throw_on_error(*req, err, ntp).then([] {
                     return ss::json::json_return_type(ss::json::json_void());
@@ -1898,7 +1902,11 @@ admin_server::kafka_transfer_leadership_handler(
           if (!partition) {
               throw ss::httpd::not_found_exception();
           }
-          return partition->transfer_leadership(target).then(
+          auto r = raft::transfer_leadership_request{
+            .group = partition->group(),
+            .target = target,
+          };
+          return partition->transfer_leadership(r).then(
             [this, ntp, req = std::move(req)](auto err) {
                 return throw_on_error(*req, err, ntp).then([] {
                     return ss::json::json_return_type(ss::json::json_void());
