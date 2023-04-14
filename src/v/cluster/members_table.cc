@@ -52,6 +52,15 @@ members_table::get_node_metadata_ref(model::node_id id) const {
     return std::make_optional(std::cref(it->second));
 }
 
+std::optional<model::rack_id>
+members_table::get_node_rack_id(model::node_id id) const {
+    auto it = _nodes.find(id);
+    if (it == _nodes.end()) {
+        return std::nullopt;
+    }
+    return it->second.broker.rack();
+}
+
 std::optional<node_metadata>
 members_table::get_node_metadata(model::node_id id) const {
     auto it = _nodes.find(id);
