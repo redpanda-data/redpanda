@@ -199,21 +199,22 @@ ss::future<log_recovery_result> partition_downloader::download_log() {
         throw;
     } catch (const ss::gate_closed_exception&) {
         throw;
-    } catch (...) {
-        // We can get here if the parttion manifest is missing (or some
-        // other failure is preventing us from recovering the partition). In
+    } catch (const missing_partition_exception& err) {
+        // We can get here in case if manifest doesn't exist in S3. In
         // this case the exception can't be propagated since the partition
         // manager will retry and it will create an infinite loop.
         //
         // The only possible solution here is to discard the exception and
         // continue with normal partition creation process.
-        //
-        // Normally, this will happen when one of the partitions doesn't
-        // have any data.
+        vlog(_ctxlog.error, "Error during log recovery: {}", err);
+    } catch (...) {
+        // We can get here in case of transient download error.
+        // The controller will retry recovery after some time.
         vlog(
           _ctxlog.error,
           "Error during log recovery: {}",
           std::current_exception());
+        throw;
     }
     co_return log_recovery_result{};
 }
@@ -590,18 +591,6 @@ partition_downloader::download_log_with_capped_time(
     co_return dlpart;
 }
 
-ss::future<partition_manifest>
-partition_downloader::download_manifest(const remote_manifest_path& key) {
-    vlog(_ctxlog.info, "Downloading manifest {}", key);
-    partition_manifest manifest(_ntpc.ntp(), _ntpc.get_initial_revision());
-    auto result = co_await _remote->download_manifest(
-      _bucket, key, manifest, _rtcnode);
-    if (result != download_result::success) {
-        throw missing_partition_exception(_ntpc);
-    }
-    co_return manifest;
-}
-
 ss::future<partition_downloader::recovery_material>
 partition_downloader::find_recovery_material(const remote_manifest_path& key) {
     vlog(_ctxlog.info, "Downloading topic manifest {}", key);
@@ -610,11 +599,17 @@ partition_downloader::find_recovery_material(const remote_manifest_path& key) {
     partition_manifest tmp(_ntpc.ntp(), _remote_revision_id);
     auto res = co_await _remote->download_manifest(
       _bucket, tmp.get_manifest_path(), tmp, _rtcnode);
-    if (res != download_result::success) {
+    if (res == download_result::success) {
+        recovery_mat.partition_manifest = std::move(tmp);
+        co_return recovery_mat;
+    }
+    if (res == download_result::notfound) {
+        // Manifest is not available in the cloud
         throw missing_partition_exception(tmp.get_manifest_path());
     }
-    recovery_mat.partition_manifest = std::move(tmp);
-    co_return recovery_mat;
+    // Some other, possibly transient error
+    throw std::runtime_error(
+      fmt_with_ctx(fmt::format, "Can't download manifest: {}", res));
 }
 
 static ss::future<ss::output_stream<char>>

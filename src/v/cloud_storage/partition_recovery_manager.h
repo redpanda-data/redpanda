@@ -141,9 +141,6 @@ private:
     ss::future<> download_log(
       const partition_manifest& manifest, const std::filesystem::path& prefix);
 
-    ss::future<partition_manifest>
-    download_manifest(const remote_manifest_path& path);
-
     struct recovery_material {
         partition_manifest partition_manifest;
     };
