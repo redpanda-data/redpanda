@@ -21,7 +21,10 @@ public:
     static constexpr const char* name = "GSSAPI";
 
     gssapi_authenticator(
-      ssx::thread_worker& thread_worker, std::vector<gssapi_rule> rules);
+      ssx::thread_worker& thread_worker,
+      std::vector<gssapi_rule> rules,
+      ss::sstring principal,
+      ss::sstring keytab);
     ~gssapi_authenticator() override;
 
     ss::future<result<bytes>> authenticate(bytes) override;
