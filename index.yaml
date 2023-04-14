@@ -128,6 +128,27 @@ entries:
     - https://github.com/redpanda-data/redpanda/releases/download/v23.1.1/redpanda-operator-v23.1.1.tgz
     version: v23.1.1
   - apiVersion: v2
+    appVersion: v22.3.16
+    created: "2023-04-14T15:00:48.4041347Z"
+    dependencies:
+    - condition: monitoring.enabled
+      name: kube-prometheus-stack
+      repository: https://prometheus-community.github.io/helm-charts
+      version: 13.13.1
+    description: Redpanda operator helm chart
+    digest: 2873ad690a8288924642bba42895c027ea01b10deea8dafd85ac4ee72e8d45b9
+    home: https://vectorized.io
+    maintainers:
+    - email: support@vectorized.io
+      name: Vectorizedio
+    name: redpanda-operator
+    sources:
+    - https://github.com/redpanda-data/redpanda
+    type: application
+    urls:
+    - https://github.com/redpanda-data/redpanda/releases/download/v22.3.16/redpanda-operator-v22.3.16.tgz
+    version: v22.3.16
+  - apiVersion: v2
     appVersion: v22.3.15
     created: "2023-03-23T12:58:27.775529396Z"
     dependencies:
@@ -2173,4 +2194,4 @@ entries:
     urls:
     - https://github.com/vectorizedio/redpanda/releases/download/v21.3.7/redpanda-operator-v21.3.7.tgz
     version: v21.3.7
-generated: "2023-04-04T21:10:22.578654654Z"
+generated: "2023-04-14T15:00:48.405228719Z"
