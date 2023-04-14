@@ -47,6 +47,7 @@ bool is_reconnect_error(const std::system_error& e) {
         case ECONNRESET:
         case ENOTCONN:
         case ECONNABORTED:
+        case EAGAIN:
         case EPIPE:
             return true;
         default:
