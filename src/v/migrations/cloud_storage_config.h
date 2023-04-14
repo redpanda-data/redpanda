@@ -10,7 +10,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "features/feature_migrator.h"
+#include "migrations/feature_migrator.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

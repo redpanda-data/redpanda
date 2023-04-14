@@ -7,14 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "features/migrators/cloud_storage_config.h"
+#include "migrations/cloud_storage_config.h"
 
 #include "cluster/controller.h"
 #include "cluster/feature_manager.h"
 #include "cluster/topics_frontend.h"
-#include "features/feature_migrator.h"
 #include "features/feature_table.h"
 #include "features/logger.h"
+#include "migrations/feature_migrator.h"
 #include "ssx/future-util.h"
 #include "vlog.h"
 
