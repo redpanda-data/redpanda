@@ -115,7 +115,8 @@ func (r *ConsoleReconciler) Reconcile(
 				corev1.EventTypeWarning, ClusterNotConfiguredEvent,
 				"Unable to reconcile Console as the referenced Cluster %s is not yet configured", console.GetClusterRef(),
 			)
-			return ctrl.Result{Requeue: true}, nil
+			// When Cluster will be configured, Console will receive a notification trigger
+			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
