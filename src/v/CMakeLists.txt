@@ -36,6 +36,7 @@ add_subdirectory(cloud_roles)
 add_subdirectory(compat)
 add_subdirectory(rp_util)
 add_subdirectory(resource_mgmt)
+add_subdirectory(migrations)
 
 option(ENABLE_GIT_VERSION "Build with Git metadata" OFF)
 
