@@ -237,6 +237,12 @@ ss::future<> segment_index::flush() {
         return ss::now();
     }
     _needs_persistence = false;
+
+    // Flush is usually called when we either shrunk the index (truncate)
+    // or when we're no longer going to append (close): in either case,
+    // it is a good time to free speculatively allocated memory.
+    _state.shrink_to_fit();
+
     return with_file(open(), [this](ss::file backing_file) {
         return flush_to_file(std::move(backing_file));
     });
