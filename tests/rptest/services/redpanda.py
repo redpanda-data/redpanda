@@ -707,6 +707,31 @@ class RedpandaServiceBase(Service):
     def clean_node(self, node, **kwargs):
         pass
 
+    def restart_nodes(self,
+                      nodes,
+                      override_cfg_params=None,
+                      start_timeout=None,
+                      stop_timeout=None,
+                      auto_assign_node_id=False,
+                      omit_seeds_on_idx_one=True):
+
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        with concurrent.futures.ThreadPoolExecutor(
+                max_workers=len(nodes)) as executor:
+            # The list() wrapper is to cause futures to be evaluated here+now
+            # (including throwing any exceptions) and not just spawned in background.
+            list(
+                executor.map(lambda n: self.stop_node(n, timeout=stop_timeout),
+                             nodes))
+            list(
+                executor.map(
+                    lambda n: self.start_node(
+                        n,
+                        override_cfg_params,
+                        timeout=start_timeout,
+                        auto_assign_node_id=auto_assign_node_id,
+                        omit_seeds_on_idx_one=omit_seeds_on_idx_one), nodes))
+
     def set_extra_rp_conf(self, conf):
         self._extra_rp_conf = conf
         if self._si_settings is not None:
@@ -2394,31 +2419,6 @@ class RedpandaService(RedpandaServiceBase):
                 os.path.dirname(RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE))
             node.account.create_file(
                 RedpandaService.CLUSTER_BOOTSTRAP_CONFIG_FILE, conf_yaml)
-
-    def restart_nodes(self,
-                      nodes,
-                      override_cfg_params=None,
-                      start_timeout=None,
-                      stop_timeout=None,
-                      auto_assign_node_id=False,
-                      omit_seeds_on_idx_one=True):
-
-        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
-        with concurrent.futures.ThreadPoolExecutor(
-                max_workers=len(nodes)) as executor:
-            # The list() wrapper is to cause futures to be evaluated here+now
-            # (including throwing any exceptions) and not just spawned in background.
-            list(
-                executor.map(lambda n: self.stop_node(n, timeout=stop_timeout),
-                             nodes))
-            list(
-                executor.map(
-                    lambda n: self.start_node(
-                        n,
-                        override_cfg_params,
-                        timeout=start_timeout,
-                        auto_assign_node_id=auto_assign_node_id,
-                        omit_seeds_on_idx_one=omit_seeds_on_idx_one), nodes))
 
     def get_node_by_id(self, node_id):
         """
