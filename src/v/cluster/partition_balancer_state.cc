@@ -12,6 +12,7 @@
 
 #include "cluster/controller_snapshot.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
@@ -42,7 +43,7 @@ void partition_balancer_state::handle_ntp_update(
         absl::flat_hash_set<model::rack_id> racks;
         bool is_rack_constraint_violated = false;
         for (const auto& bs : next) {
-            auto rack = _partition_allocator.state().get_rack_id(bs.node_id);
+            auto rack = _members_table.get_node_rack_id(bs.node_id);
             if (rack) {
                 auto res = racks.insert(std::move(*rack));
                 if (!res.second) {

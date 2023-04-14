@@ -38,14 +38,11 @@ constexpr std::chrono::seconds node_unavailable_timeout = std::chrono::minutes(
 static constexpr uint32_t partitions_per_shard = 7000;
 static constexpr uint32_t partitions_reserve_shard0 = 2;
 
-static std::unique_ptr<cluster::allocation_node> create_allocation_node(
-  model::node_id nid,
-  uint32_t cores,
-  const std::optional<model::rack_id>& rack_id = std::nullopt) {
+static std::unique_ptr<cluster::allocation_node>
+create_allocation_node(model::node_id nid, uint32_t cores) {
     return std::make_unique<cluster::allocation_node>(
       nid,
       cores,
-      rack_id,
       config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
       config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}));
 }
@@ -192,8 +189,8 @@ struct partition_balancer_planner_fixture {
                 rack_id = model::rack_id{rack_ids[i]};
             }
 
-            workers.allocator.local().register_node(create_allocation_node(
-              model::node_id(last_node_idx), 4, rack_id));
+            workers.allocator.local().register_node(
+              create_allocation_node(model::node_id(last_node_idx), 4));
             new_brokers.push_back(model::broker(
               model::node_id(last_node_idx),
               net::unresolved_address{},

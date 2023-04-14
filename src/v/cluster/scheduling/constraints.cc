@@ -10,6 +10,7 @@
  */
 #include "cluster/scheduling/constraints.h"
 
+#include "cluster/members_table.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/allocation_state.h"
 #include "cluster/scheduling/types.h"
@@ -341,10 +342,10 @@ soft_constraint make_soft_constraint(hard_constraint constraint) {
     return soft_constraint(std::make_unique<impl>(std::move(constraint)));
 }
 
-soft_constraint distinct_rack_preferred(const allocation_state& state) {
+soft_constraint distinct_rack_preferred(const members_table& members) {
     return distinct_labels_preferred(
       rack_label.data(),
-      [&state](model::node_id id) { return state.get_rack_id(id); });
+      [&members](model::node_id id) { return members.get_node_rack_id(id); });
 }
 
 } // namespace cluster

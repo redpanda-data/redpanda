@@ -19,13 +19,11 @@ namespace cluster {
 allocation_node::allocation_node(
   model::node_id id,
   uint32_t cpus,
-  std::optional<model::rack_id> rack,
   config::binding<uint32_t> partitions_per_shard,
   config::binding<uint32_t> partitions_reserve_shard0)
   : _id(id)
   , _weights(cpus)
   , _max_capacity((cpus * partitions_per_shard()) - partitions_reserve_shard0())
-  , _rack(std::move(rack))
   , _partitions_per_shard(std::move(partitions_per_shard))
   , _partitions_reserve_shard0(std::move(partitions_reserve_shard0))
   , _cpus(cpus) {

@@ -891,8 +891,7 @@ FIXTURE_TEST(test_rack_awareness_repair, partition_balancer_planner_fixture) {
         BOOST_REQUIRE_EQUAL(new_replicas.size(), 3);
         absl::node_hash_set<model::rack_id> racks;
         for (const auto& bs : new_replicas) {
-            auto rack = workers.allocator.local().state().get_rack_id(
-              bs.node_id);
+            auto rack = workers.members.local().get_node_rack_id(bs.node_id);
             BOOST_REQUIRE(rack);
             racks.insert(*rack);
         }

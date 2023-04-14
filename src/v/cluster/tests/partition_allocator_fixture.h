@@ -11,12 +11,15 @@
 
 #pragma once
 
+#include "cluster/commands.h"
 #include "cluster/members_table.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/allocation_strategy.h"
 #include "cluster/scheduling/partition_allocator.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
+#include "net/unresolved_address.h"
 #include "random/fast_prng.h"
 #include "random/generators.h"
 #include "units.h"
@@ -43,20 +46,26 @@ struct partition_allocator_fixture {
 
     ~partition_allocator_fixture() { members.stop().get0(); }
 
-    void register_node(int id, int core_count) {
-        allocator.register_node(std::make_unique<cluster::allocation_node>(
+    void register_node(
+      int id,
+      uint32_t core_count,
+      std::optional<model::rack_id> rack = std::nullopt) {
+        model::broker broker(
           model::node_id(id),
-          core_count,
-          std::nullopt,
-          config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
-          config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
-    }
-
-    void register_node(int id, int core_count, model::rack_id rack) {
-        allocator.register_node(std::make_unique<cluster::allocation_node>(
-          model::node_id(id),
-          core_count,
+          net::unresolved_address("localhost", 9092 + id),
+          net::unresolved_address("localhost", 33145 + id),
           std::move(rack),
+          model::broker_properties{
+            .cores = core_count,
+            .available_memory_gb = 5 * core_count,
+            .available_disk_gb = 10 * core_count});
+
+        members.local().apply(
+          model::offset(0), cluster::add_node_cmd(0, broker));
+
+        allocator.register_node(std::make_unique<cluster::allocation_node>(
+          broker.id(),
+          broker.properties().cores,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
           config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0})));
     }
