@@ -134,7 +134,7 @@ private:
     ss::future<> reconciliation_loop();
     ss::future<std::error_code> reconcile();
     ss::future<>
-    reallocate_replica_set(const model::ntp&, partition_reallocation&);
+    reconcile_reallocation_state(const model::ntp&, partition_reallocation&);
 
     ss::future<> try_to_finish_update(update_meta&);
     ss::future<> calculate_reallocations(update_meta&);
