@@ -889,6 +889,41 @@ BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_serde_roundtrip) {
     }
 }
 
+BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_single_replacement) {
+    // only base/committed offset are interesting for this test
+    constexpr static auto base_segment = segment_meta{
+      .is_compacted = false,
+      .size_bytes = 812,
+      .base_offset = model::offset(10),
+      .committed_offset = model::offset(20),
+      .base_timestamp = model::timestamp(1646430092103),
+      .max_timestamp = model::timestamp(1646430092103),
+      .delta_offset = model::offset_delta(0),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(0),
+      .delta_offset_end = model::offset_delta(0),
+      .sname_format = segment_name_format::v3,
+      .metadata_size_hint = 0,
+    };
+    // this replacement spans more range and comes before base_segment
+    constexpr static auto replacement_segment = [] {
+        auto cpy = base_segment;
+        cpy.base_offset = model::offset{0};
+        return cpy;
+    }();
+    static_assert(
+      replacement_segment.base_offset < base_segment.base_offset
+      && replacement_segment.committed_offset == base_segment.committed_offset);
+
+    segment_meta_cstore store{};
+    store.insert(base_segment);
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == base_segment);
+    store.insert(replacement_segment);
+    BOOST_CHECK_EQUAL(store.size(), 1);
+    BOOST_CHECK(*store.begin() == replacement_segment);
+}
+
 BOOST_AUTO_TEST_CASE(test_segment_meta_cstore_insert_replacements) {
     // std::istringstream{"1868201168"} >> random_generators::internal::gen;
 

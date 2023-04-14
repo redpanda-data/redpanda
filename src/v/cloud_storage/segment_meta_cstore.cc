@@ -319,24 +319,31 @@ public:
      * commit_offset] aligned to local segments
      * @param offset_seg_it a [base_offset, segment_meta] iterator
      * @param offset_seg_end end sentinel for offset_seg_it
-     * @return a list of segment_meta that where evicted during the process
      */
     auto insert_entries(
       absl::btree_map<model::offset, segment_meta>::const_iterator
         offset_seg_it,
       absl::btree_map<model::offset, segment_meta>::const_iterator
-        offset_seg_end) -> fragmented_vector<segment_meta> {
+        offset_seg_end) {
         if (offset_seg_it == offset_seg_end) {
-            return {};
+            return;
         }
 
         // construct a column_store with the frames and hints that are before
         // the replacements
-        auto first_replacement_index = [&]() -> std::optional<size_t> {
+        auto first_replacement_index = [&] {
+            if (
+              _base_offset.size() == 0
+              || offset_seg_it->first() <= *_base_offset.at_index(0)) {
+                // replacements either start before or exactly at 0
+                return size_t{0};
+            }
             auto candidate = _base_offset.find(offset_seg_it->first());
             if (candidate.is_end()) {
-                return std::nullopt;
+                // replacements are append only
+                return _base_offset.size();
             }
+            // replacements are in the middle of current store
             return candidate.index();
         }();
         // tuple of [begin, end] iterators to std::list<frame_t>
@@ -344,21 +351,16 @@ public:
           [&](auto&... col) {
               return std::tuple{std::tuple{
                 col._frames.begin(),
-                first_replacement_index.has_value()
-                  ? col.get_frame_iterator_by_element_index(
-                    first_replacement_index.value())
-                  : col._frames.end()}...};
+                col.get_frame_iterator_by_element_index(
+                  first_replacement_index)}...};
           },
           columns());
 
         // extract the end iterator for hints, to cover only the frames that
         // will be cloned
         auto end_hints = [&] {
-            auto frame_it
-              = first_replacement_index.has_value()
-                  ? _base_offset.get_frame_iterator_by_element_index(
-                    first_replacement_index.value())
-                  : _base_offset._frames.end();
+            auto frame_it = _base_offset.get_frame_iterator_by_element_index(
+              first_replacement_index);
             if (frame_it == _base_offset._frames.begin()) {
                 // no hint will be saved
                 return _hints.begin();
@@ -377,16 +379,11 @@ public:
         auto unchanged_committed_offset
           = replacement_store.last_committed_offset().value_or(
             model::offset::min());
-        vassert(
-          unchanged_committed_offset < offset_seg_it->first(),
-          "committed_offset of unchanged elements must be strictly less than "
-          "replacements base_offset, by design");
 
         // iterator pointing to first segment not cloned into replacement_store
         auto old_segments_it = upper_bound(unchanged_committed_offset());
         auto old_segments_end = end();
 
-        auto replaced_segments = fragmented_vector<segment_meta>{};
         // merge replacements and old segments into new store
         while (old_segments_it != old_segments_end
                && offset_seg_it != offset_seg_end) {
@@ -411,14 +408,13 @@ public:
 
             // skip over segments superseded by replacement_meta
             while (old_segments_it != old_segments_end) {
-                auto to_replace = dereference(
-                  old_segments_it); // this could potentially be cached for the
-                                    // next iteration of the outer loop
+                // this could potentially be cached for the
+                // next iteration of the outer loop
+                auto to_replace = dereference(old_segments_it);
                 if (
                   to_replace.base_offset > replacement_meta.committed_offset) {
                     break;
                 }
-                replaced_segments.push_back(to_replace);
                 details::increment_all(old_segments_it);
             }
         }
@@ -440,7 +436,6 @@ public:
         auto current_data = member_fields();
         auto replacement_data = replacement_store.member_fields();
         std::swap(current_data, replacement_data);
-        return replaced_segments;
     }
 
     static segment_meta dereference(const iterators_t& it) {
