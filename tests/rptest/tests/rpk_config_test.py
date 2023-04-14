@@ -153,7 +153,6 @@ schema_registry: {}
         rpk.config_set(key, value, format='json')
 
         expected_config = yaml.full_load('''
-coredump_dir: /var/lib/redpanda/coredump
 tune_aio_events: true
 tune_cpu: true
 tune_disk_irq: true
