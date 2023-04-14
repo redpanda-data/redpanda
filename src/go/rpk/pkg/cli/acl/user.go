@@ -34,6 +34,7 @@ redpanda section of your redpanda.yaml.
 `,
 	}
 	p.InstallAdminFlags(cmd)
+	p.InstallKafkaFlags(cmd) // old ACL user commands have this, and Kafka SASL creds are used for admin API basic auth
 	cmd.AddCommand(
 		newCreateUserCommand(fs, p),
 		newDeleteUserCommand(fs, p),
@@ -109,8 +110,7 @@ acl help text for more info.
 			//
 			// See #6360.
 			//
-			// Better long term is to switch all configuration
-			// setting flags to -X.
+			// Better long term is for people to use -X.
 			userFlag := cmd.Flag(config.FlagSASLUser).Value.String()
 			if userFlag != "" && newPass == "" {
 				out.Die("unable to create user with when using basic auth, use --new-password to specify the new user's password")
