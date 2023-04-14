@@ -892,7 +892,7 @@ ss::future<std::error_code> members_backend::reconcile() {
     // execute reallocations
     co_await ss::parallel_for_each(
       meta.partition_reallocations, [this](auto& pair) {
-          return reallocate_replica_set(pair.first, pair.second);
+          return reconcile_reallocation_state(pair.first, pair.second);
       });
 
     // remove those decommissioned nodes which doesn't have any pending
@@ -1029,7 +1029,7 @@ members_backend::try_to_finish_update(members_backend::update_meta& meta) {
     }
 }
 
-ss::future<> members_backend::reallocate_replica_set(
+ss::future<> members_backend::reconcile_reallocation_state(
   const model::ntp& ntp, members_backend::partition_reallocation& meta) {
     auto current_assignment = _topics.local().get_partition_assignment(ntp);
     // topic was deleted, we are done with reallocation
