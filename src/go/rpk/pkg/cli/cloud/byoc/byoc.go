@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/cloudcfg"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	"github.com/spf13/afero"
@@ -119,6 +120,12 @@ and then come back to this command to complete the process.
 			err := parseExecFlags(args, &params.ClientID, &params.ClientSecret, &redpandaID, false)
 			out.MaybeDieErr(err)
 
+			// Now that we have parsed our required flags, we
+			// strip every rpk specific flag from this command.
+			// Every remaining flag is passed through to the
+			// plugin.
+			args = cobraext.StripFlagset(args, cmd.Flags())
+
 			cfg, err := params.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 
@@ -131,11 +138,11 @@ and then come back to this command to complete the process.
 			//
 			// This has edge cases that we are not handling, such
 			// as a person using short flags, bool flags, etc.
-			//
-			// Better would be if we could skip unknown flags,
-			// similar to redpanda start.
-			//
-			// TODO: remove DisableUknownFlags in rpk, #7100.
+			// We cannot handle these edge cases because at this
+			// point, we do now know if the subcommand has default
+			// values for flags or if it has bool flags, etc. So,
+			// this is mostly best effort, but we do not expect
+			// the plugin to be complicated.
 			var isKnown bool
 			for i := 0; i < len(args); i++ {
 				arg := args[i]

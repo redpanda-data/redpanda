@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/plugin"
 	"github.com/spf13/afero"
@@ -85,7 +86,8 @@ func addPluginWithExec(
 			Use:                p0,
 			Short:              p0 + pluginShortSuffix,
 			DisableFlagParsing: true,
-			Run: func(_ *cobra.Command, args []string) {
+			Run: func(cmd *cobra.Command, args []string) {
+				args = cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
 				err := osExec(execPath, args)
 				out.MaybeDie(err, "unable to execute plugin: %v", err)
 			},
@@ -258,6 +260,7 @@ func addPluginSubcommands(
 			Short:              fmt.Sprintf("%s external plugin", childUse),
 			DisableFlagParsing: true,
 			Run: func(cmd *cobra.Command, args []string) {
+				args = cobraext.StripFlagset(args, cmd.InheritedFlags()) // strip all rpk specific flags before execing the plugin
 				osExec(execPath, append(append(leadingPieces, cmd.Use), args...))
 			},
 		}
