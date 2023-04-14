@@ -1696,6 +1696,27 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
         co_return updated;
     }
 
+    // If we are about to delete segments, we must ensure that the remote
+    // manifest is fully up to date, so that it is definitely not referring
+    // to any of the segments we will delete in its list of active segments.
+    //
+    // This is so that read replicas can be sure that if they get a 404
+    // on a segment and go re-read the manifest, the latest manifest will
+    // not refer to the non-existent segment (apart from in its 'replaced'
+    // list)
+    if (
+      _parent.archival_meta_stm()->get_dirty(_projected_manifest_clean_at)
+      != cluster::archival_metadata_stm::state_dirty::clean) {
+        // Intentionally not using maybe_upload_manifest, because  that would
+        // skip the upload if manifest_upload_interval was not satisfied.
+        auto result = co_await upload_manifest("pre-garbage-collect");
+        if (result != cloud_storage::upload_result::success) {
+            // If we could not write the  manifest, it is not safe to remove
+            // segments.
+            co_return updated;
+        }
+    }
+
     size_t successful_deletes{0};
     co_await ss::max_concurrent_for_each(
       to_remove,
