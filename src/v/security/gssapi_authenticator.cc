@@ -10,7 +10,6 @@
 #include "security/gssapi_authenticator.h"
 
 #include "bytes/bytes.h"
-#include "config/configuration.h"
 #include "kafka/protocol/wire.h"
 #include "security/acl.h"
 #include "security/errc.h"
@@ -170,12 +169,13 @@ private:
 };
 
 gssapi_authenticator::gssapi_authenticator(
-  ssx::thread_worker& thread_worker, std::vector<gssapi_rule> rules)
+  ssx::thread_worker& thread_worker,
+  std::vector<gssapi_rule> rules,
+  ss::sstring principal,
+  ss::sstring keytab)
   : _worker{thread_worker}
   , _impl{std::make_unique<impl>(
-      config::shard_local_cfg().sasl_kerberos_principal(),
-      config::shard_local_cfg().sasl_kerberos_keytab(),
-      std::move(rules))} {}
+      std::move(principal), std::move(keytab), std::move(rules))} {}
 
 gssapi_authenticator::~gssapi_authenticator() = default;
 
