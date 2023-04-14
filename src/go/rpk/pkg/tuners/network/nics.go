@@ -13,7 +13,7 @@ import (
 	"fmt"
 
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
-	log "github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 func getDefaultMode(
@@ -24,7 +24,7 @@ func getDefaultMode(
 		if err != nil {
 			return "", err
 		}
-		log.Debugf("Calculating default mode for '%s'", nic.Name())
+		zap.L().Sugar().Debugf("Calculating default mode for '%s'", nic.Name())
 		numOfCores, err := cpuMasks.GetNumberOfCores(cpuMask)
 		if err != nil {
 			return "", err
@@ -33,7 +33,7 @@ func getDefaultMode(
 		if err != nil {
 			return "", err
 		}
-		log.Debugf("Considering '%d' cores and '%d' PUs", numOfCores, numOfPUs)
+		zap.L().Sugar().Debugf("Considering '%d' cores and '%d' PUs", numOfCores, numOfPUs)
 
 		if numOfPUs <= 4 || rxQueuesCount == int(numOfPUs) {
 			return irq.Mq, nil
@@ -118,7 +118,7 @@ func GetHwInterfaceIRQsDistribution(
 	}
 
 	if maxRxQueues >= len(allIRQs) {
-		log.Debugf("Calculating distribution '%s' IRQs", nic.Name())
+		zap.L().Sugar().Debugf("Calculating distribution '%s' IRQs", nic.Name())
 		IRQsDistribution, err := cpuMasks.GetIRQsDistributionMasks(
 			allIRQs, irqCPUMask)
 		if err != nil {
@@ -131,14 +131,14 @@ func GetHwInterfaceIRQsDistribution(
 	if err != nil {
 		return nil, err
 	}
-	log.Debugf("Number of Rx queues for '%s' = '%d'", nic.Name(), rxQueues)
-	log.Infof("Distributing '%s' IRQs handling Rx queues", nic.Name())
+	zap.L().Sugar().Debugf("Number of Rx queues for '%s' = '%d'", nic.Name(), rxQueues)
+	fmt.Printf("Distributing '%s' IRQs handling Rx queues\n", nic.Name())
 	IRQsDistribution, err := cpuMasks.GetIRQsDistributionMasks(
 		allIRQs[0:rxQueues], irqCPUMask)
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Distributing rest of '%s' IRQs", nic.Name())
+	fmt.Printf("Distributing rest of '%s' IRQs\n", nic.Name())
 	restIRQsDistribution, err := cpuMasks.GetIRQsDistributionMasks(
 		allIRQs[rxQueues:], irqCPUMask)
 	if err != nil {

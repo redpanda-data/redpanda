@@ -24,23 +24,25 @@ func getValidConfig() *Config {
 		{Host: SocketAddress{"127.0.0.1", 33146}},
 	}
 	conf.Redpanda.DeveloperMode = false
-	conf.Rpk = RpkConfig{
-		TuneNetwork:              true,
-		TuneDiskScheduler:        true,
-		TuneDiskWriteCache:       true,
-		TuneNomerges:             true,
-		TuneDiskIrq:              true,
-		TuneFstrim:               true,
-		TuneCPU:                  true,
-		TuneAioEvents:            true,
-		TuneClocksource:          true,
-		TuneSwappiness:           true,
-		TuneTransparentHugePages: true,
-		EnableMemoryLocking:      true,
-		TuneCoredump:             true,
-		TuneBallastFile:          true,
-		CoredumpDir:              "/var/lib/redpanda/coredumps",
-		WellKnownIo:              "vendor:vm:storage",
+	conf.Rpk = RpkNodeConfig{
+		Tuners: RpkNodeTuners{
+			TuneNetwork:              true,
+			TuneDiskScheduler:        true,
+			TuneDiskWriteCache:       true,
+			TuneNomerges:             true,
+			TuneDiskIrq:              true,
+			TuneFstrim:               true,
+			TuneCPU:                  true,
+			TuneAioEvents:            true,
+			TuneClocksource:          true,
+			TuneSwappiness:           true,
+			TuneTransparentHugePages: true,
+			EnableMemoryLocking:      true,
+			TuneCoredump:             true,
+			TuneBallastFile:          true,
+			CoredumpDir:              "/var/lib/redpanda/coredumps",
+			WellKnownIo:              "vendor:vm:storage",
+		},
 	}
 	conf.fileLocation = DefaultPath
 	return conf
@@ -117,7 +119,7 @@ func TestSet(t *testing.T) {
 			key:   "rpk.tune_network",
 			value: "true",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, true, c.Rpk.TuneNetwork)
+				require.Exactly(st, true, c.Rpk.Tuners.TuneNetwork)
 			},
 		},
 		{
@@ -135,9 +137,7 @@ func TestSet(t *testing.T) {
 			value:  "123991",
 			format: "json",
 			check: func(st *testing.T, c *Config) {
-				// json.unmarshal stores numbers as float 64.
-				// see https://pkg.go.dev/encoding/json#Unmarshal
-				require.Exactly(st, float64(123991), c.Redpanda.Other["timeout_test"])
+				require.Exactly(st, 123991, c.Redpanda.Other["timeout_test"])
 			},
 		},
 		{
@@ -166,7 +166,7 @@ func TestSet(t *testing.T) {
 			key:   "rpk.tune_cpu",
 			value: "true",
 			check: func(st *testing.T, c *Config) {
-				require.Exactly(st, true, c.Rpk.TuneCPU)
+				require.Exactly(st, true, c.Rpk.Tuners.TuneCPU)
 			},
 		},
 		{
@@ -176,21 +176,23 @@ func TestSet(t *testing.T) {
 tune_cpu: true`,
 			format: "yaml",
 			check: func(st *testing.T, c *Config) {
-				expected := RpkConfig{
-					Overprovisioned:          false,
-					TuneNetwork:              false,
-					TuneDiskScheduler:        false,
-					TuneNomerges:             false,
-					TuneDiskIrq:              true,
-					TuneCPU:                  true,
-					TuneAioEvents:            false,
-					TuneClocksource:          false,
-					TuneSwappiness:           false,
-					TuneTransparentHugePages: false,
-					EnableMemoryLocking:      false,
-					TuneFstrim:               false,
-					TuneCoredump:             false,
-					TuneDiskWriteCache:       false,
+				expected := RpkNodeConfig{
+					Tuners: RpkNodeTuners{
+						Overprovisioned:          false,
+						TuneNetwork:              false,
+						TuneDiskScheduler:        false,
+						TuneNomerges:             false,
+						TuneDiskIrq:              true,
+						TuneCPU:                  true,
+						TuneAioEvents:            false,
+						TuneClocksource:          false,
+						TuneSwappiness:           false,
+						TuneTransparentHugePages: false,
+						EnableMemoryLocking:      false,
+						TuneFstrim:               false,
+						TuneCoredump:             false,
+						TuneDiskWriteCache:       false,
+					},
 				}
 				require.Exactly(st, expected, c.Rpk)
 			},
@@ -460,9 +462,11 @@ func TestDevDefault(t *testing.T) {
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
-		Rpk: RpkConfig{
-			CoredumpDir:     "/var/lib/redpanda/coredump",
-			Overprovisioned: true,
+		Rpk: RpkNodeConfig{
+			Tuners: RpkNodeTuners{
+				CoredumpDir:     "/var/lib/redpanda/coredump",
+				Overprovisioned: true,
+			},
 		},
 	}
 	require.Exactly(t, expected, defaultConfig)
@@ -489,20 +493,22 @@ func TestProdDefault(t *testing.T) {
 			SeedServers:   []SeedServer{},
 			DeveloperMode: false,
 		},
-		Rpk: RpkConfig{
-			CoredumpDir:        "/var/lib/redpanda/coredump",
-			Overprovisioned:    false,
-			TuneAioEvents:      true,
-			TuneBallastFile:    true,
-			TuneCPU:            true,
-			TuneClocksource:    true,
-			TuneDiskIrq:        true,
-			TuneDiskScheduler:  true,
-			TuneDiskWriteCache: true,
-			TuneFstrim:         false,
-			TuneNetwork:        true,
-			TuneNomerges:       true,
-			TuneSwappiness:     true,
+		Rpk: RpkNodeConfig{
+			Tuners: RpkNodeTuners{
+				CoredumpDir:        "/var/lib/redpanda/coredump",
+				Overprovisioned:    false,
+				TuneAioEvents:      true,
+				TuneBallastFile:    true,
+				TuneCPU:            true,
+				TuneClocksource:    true,
+				TuneDiskIrq:        true,
+				TuneDiskScheduler:  true,
+				TuneDiskWriteCache: true,
+				TuneFstrim:         false,
+				TuneNetwork:        true,
+				TuneNomerges:       true,
+				TuneSwappiness:     true,
+			},
 		},
 	}
 	require.Exactly(t, expected, defaultConfig)
@@ -614,7 +620,7 @@ schema_registry: {}
 			name: "write if empty struct is passed",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk = RpkConfig{}
+				c.Rpk = RpkNodeConfig{}
 				return c
 			},
 			wantErr: false,
@@ -718,25 +724,27 @@ schema_registry: {}
 }
 
 func TestSetMode(t *testing.T) {
-	fillRpkConfig := func(mode string) func() *Config {
+	fillRpkNodeConfig := func(mode string) func() *Config {
 		return func() *Config {
 			conf := DevDefault()
 			val := mode == ModeProd
 			conf.Redpanda.DeveloperMode = !val
-			conf.Rpk = RpkConfig{
-				TuneNetwork:        val,
-				TuneDiskScheduler:  val,
-				TuneNomerges:       val,
-				TuneDiskWriteCache: val,
-				TuneDiskIrq:        val,
-				TuneFstrim:         false,
-				TuneCPU:            val,
-				TuneAioEvents:      val,
-				TuneClocksource:    val,
-				TuneSwappiness:     val,
-				CoredumpDir:        conf.Rpk.CoredumpDir,
-				Overprovisioned:    !val,
-				TuneBallastFile:    val,
+			conf.Rpk = RpkNodeConfig{
+				Tuners: RpkNodeTuners{
+					TuneNetwork:        val,
+					TuneDiskScheduler:  val,
+					TuneNomerges:       val,
+					TuneDiskWriteCache: val,
+					TuneDiskIrq:        val,
+					TuneFstrim:         false,
+					TuneCPU:            val,
+					TuneAioEvents:      val,
+					TuneClocksource:    val,
+					TuneSwappiness:     val,
+					CoredumpDir:        conf.Rpk.Tuners.CoredumpDir,
+					Overprovisioned:    !val,
+					TuneBallastFile:    val,
+				},
 			}
 			return conf
 		}
@@ -752,27 +760,27 @@ func TestSetMode(t *testing.T) {
 		{
 			name:           "it should disable all tuners for dev mode",
 			mode:           ModeDev,
-			expectedConfig: fillRpkConfig(ModeDev),
+			expectedConfig: fillRpkNodeConfig(ModeDev),
 		},
 		{
 			name:           "it should disable all tuners for dev mode ('development')",
 			mode:           "development",
-			expectedConfig: fillRpkConfig(ModeDev),
+			expectedConfig: fillRpkNodeConfig(ModeDev),
 		},
 		{
 			name:           "it should disable all tuners for dev mode ('')",
 			mode:           "",
-			expectedConfig: fillRpkConfig(ModeDev),
+			expectedConfig: fillRpkNodeConfig(ModeDev),
 		},
 		{
 			name:           "it should enable all the default tuners for prod mode",
 			mode:           ModeProd,
-			expectedConfig: fillRpkConfig(ModeProd),
+			expectedConfig: fillRpkNodeConfig(ModeProd),
 		},
 		{
 			name:           "it should enable all the default tuners for prod mode ('production')",
 			mode:           ModeProd,
-			expectedConfig: fillRpkConfig(ModeProd),
+			expectedConfig: fillRpkNodeConfig(ModeProd),
 		},
 		{
 			name:           "it should return an error for invalid modes",
@@ -798,7 +806,7 @@ func TestSetMode(t *testing.T) {
 			},
 			mode: ModeProd,
 			expectedConfig: func() *Config {
-				conf := fillRpkConfig(ModeProd)()
+				conf := fillRpkNodeConfig(ModeProd)()
 				conf.Rpk.AdminAPI = RpkAdminAPI{
 					Addresses: []string{"some.addr.com:33145"},
 				}
@@ -921,8 +929,8 @@ func TestCheckConfig(t *testing.T) {
 				"regardless of coredump_dir's value",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk.TuneCoredump = false
-				c.Rpk.CoredumpDir = ""
+				c.Rpk.Tuners.TuneCoredump = false
+				c.Rpk.Tuners.CoredumpDir = ""
 				return c
 			},
 			expected: []string{},
@@ -932,7 +940,7 @@ func TestCheckConfig(t *testing.T) {
 				"but coredump_dir is empty",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk.CoredumpDir = ""
+				c.Rpk.Tuners.CoredumpDir = ""
 				return c
 			},
 			expected: []string{"if rpk.tune_coredump is set to true, rpk.coredump_dir can't be empty"},
@@ -942,7 +950,7 @@ func TestCheckConfig(t *testing.T) {
 				"but coredump_dir is empty",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk.WellKnownIo = ""
+				c.Rpk.Tuners.WellKnownIo = ""
 				return c
 			},
 			expected: []string{},

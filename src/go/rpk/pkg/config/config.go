@@ -49,9 +49,11 @@ func DevDefault() *Config {
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
-		Rpk: RpkConfig{
-			CoredumpDir:     "/var/lib/redpanda/coredump",
-			Overprovisioned: true,
+		Rpk: RpkNodeConfig{
+			Tuners: RpkNodeTuners{
+				CoredumpDir:     "/var/lib/redpanda/coredump",
+				Overprovisioned: true,
+			},
 		},
 		// enable pandaproxy and schema_registry by default
 		Pandaproxy:     &Pandaproxy{},
@@ -64,8 +66,36 @@ func ProdDefault() *Config {
 	return setProduction(cfg)
 }
 
+// FileOrDefaults return the configuration as read from the file or
+// the default configuration if there is no file loaded.
+func (c *Config) FileOrDefaults() *Config {
+	if c.File() != nil {
+		return c.File()
+	} else {
+		cfg := DevDefault()
+		// --config set but the file doesn't exist yet:
+		if c.fileLocation != "" {
+			cfg.fileLocation = c.fileLocation
+		}
+		return cfg // no file, write the defaults
+	}
+}
+
+///////////
+// MODES //
+///////////
+
+func AvailableModes() []string {
+	return []string{
+		ModeDev,
+		"development",
+		ModeProd,
+		"production",
+	}
+}
+
 func SetMode(mode string, conf *Config) (*Config, error) {
-	m, err := NormalizeMode(mode)
+	m, err := normalizeMode(mode)
 	if err != nil {
 		return nil, err
 	}
@@ -89,39 +119,41 @@ func SetMode(mode string, conf *Config) (*Config, error) {
 func setDevelopment(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = true
 	// Defaults to setting all tuners to false
-	conf.Rpk = RpkConfig{
+	conf.Rpk = RpkNodeConfig{
 		TLS:                  conf.Rpk.TLS,
 		SASL:                 conf.Rpk.SASL,
 		KafkaAPI:             conf.Rpk.KafkaAPI,
 		AdminAPI:             conf.Rpk.AdminAPI,
 		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
-		CoredumpDir:          conf.Rpk.CoredumpDir,
-		SMP:                  DevDefault().Rpk.SMP,
-		BallastFilePath:      conf.Rpk.BallastFilePath,
-		BallastFileSize:      conf.Rpk.BallastFileSize,
-		Overprovisioned:      true,
+		Tuners: RpkNodeTuners{
+			CoredumpDir:     conf.Rpk.Tuners.CoredumpDir,
+			SMP:             DevDefault().Rpk.Tuners.SMP,
+			BallastFilePath: conf.Rpk.Tuners.BallastFilePath,
+			BallastFileSize: conf.Rpk.Tuners.BallastFileSize,
+			Overprovisioned: true,
+		},
 	}
 	return conf
 }
 
 func setProduction(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = false
-	conf.Rpk.TuneNetwork = true
-	conf.Rpk.TuneDiskScheduler = true
-	conf.Rpk.TuneNomerges = true
-	conf.Rpk.TuneDiskIrq = true
-	conf.Rpk.TuneFstrim = false
-	conf.Rpk.TuneCPU = true
-	conf.Rpk.TuneAioEvents = true
-	conf.Rpk.TuneClocksource = true
-	conf.Rpk.TuneSwappiness = true
-	conf.Rpk.Overprovisioned = false
-	conf.Rpk.TuneDiskWriteCache = true
-	conf.Rpk.TuneBallastFile = true
+	conf.Rpk.Tuners.TuneNetwork = true
+	conf.Rpk.Tuners.TuneDiskScheduler = true
+	conf.Rpk.Tuners.TuneNomerges = true
+	conf.Rpk.Tuners.TuneDiskIrq = true
+	conf.Rpk.Tuners.TuneFstrim = false
+	conf.Rpk.Tuners.TuneCPU = true
+	conf.Rpk.Tuners.TuneAioEvents = true
+	conf.Rpk.Tuners.TuneClocksource = true
+	conf.Rpk.Tuners.TuneSwappiness = true
+	conf.Rpk.Tuners.Overprovisioned = false
+	conf.Rpk.Tuners.TuneDiskWriteCache = true
+	conf.Rpk.Tuners.TuneBallastFile = true
 	return conf
 }
 
-func NormalizeMode(mode string) (string, error) {
+func normalizeMode(mode string) (string, error) {
 	switch mode {
 	case "":
 		fallthrough
@@ -141,29 +173,9 @@ func NormalizeMode(mode string) (string, error) {
 	}
 }
 
-func AvailableModes() []string {
-	return []string{
-		ModeDev,
-		"development",
-		ModeProd,
-		"production",
-	}
-}
-
-// FileOrDefaults return the configuration as read from the file or
-// the default configuration if there is no file loaded.
-func (c *Config) FileOrDefaults() *Config {
-	if c.File() != nil {
-		return c.File()
-	} else {
-		cfg := DevDefault()
-		// --config set but the file doesn't exist yet:
-		if c.fileLocation != "" {
-			cfg.fileLocation = c.fileLocation
-		}
-		return cfg // no file, write the defaults
-	}
-}
+////////////////
+// VALIDATION // -- this is only used in redpanda_checkers, and could be stronger -- this is essentially just a config validation
+////////////////
 
 // Check checks if the redpanda and rpk configuration is valid before running
 // the tuners. See: redpanda_checkers.
@@ -171,7 +183,7 @@ func (c *Config) Check() (bool, []error) {
 	errs := checkRedpandaConfig(c)
 	errs = append(
 		errs,
-		checkRpkConfig(c)...,
+		checkRpkNodeConfig(c)...,
 	)
 	ok := len(errs) == 0
 	return ok, errs
@@ -224,9 +236,9 @@ func checkRedpandaConfig(cfg *Config) []error {
 	return errs
 }
 
-func checkRpkConfig(cfg *Config) []error {
+func checkRpkNodeConfig(cfg *Config) []error {
 	var errs []error
-	if cfg.Rpk.TuneCoredump && cfg.Rpk.CoredumpDir == "" {
+	if cfg.Rpk.Tuners.TuneCoredump && cfg.Rpk.Tuners.CoredumpDir == "" {
 		errs = append(errs, fmt.Errorf("if rpk.tune_coredump is set to true, rpk.coredump_dir can't be empty"))
 	}
 	return errs

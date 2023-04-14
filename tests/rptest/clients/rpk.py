@@ -271,7 +271,7 @@ class RpkTool:
     def sasl_create_user(self, new_username, new_password, mechanism):
         cmd = ["acl", "user", "create", new_username, "-p", new_password]
         cmd += ["--api-urls", self._redpanda.admin_endpoints()]
-        cmd += ["--sasl-mechanism", mechanism]
+        cmd += ["--mechanism", mechanism]
         return self._run(cmd)
 
     def delete_topic(self, topic):

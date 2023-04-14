@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/pkg/browser"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/cloudcfg"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/oauth"
 )
@@ -52,6 +52,8 @@ func NewClient(cfg *cloudcfg.Config) *Client {
 	}
 	if auth0Endpoint.URL == "" && auth0Endpoint.Audience == "" {
 		auth0Endpoint = prodAuth0Endpoint
+		cfg.AuthURL = prodAuth0Endpoint.URL
+		cfg.AuthAudience = prodAuth0Endpoint.Audience
 	}
 
 	if cfg.AuthClientID == "" {

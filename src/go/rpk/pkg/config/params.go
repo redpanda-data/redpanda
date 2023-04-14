@@ -10,7 +10,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -20,112 +19,67 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	rpkos "github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"golang.org/x/term"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
 )
 
-// This file contains the Params type, which will eventually be created in
-// rpk's root command and passed to every command. This new params type is what
-// will be used to load and parse configuration.
-//
-// The goal of the proposed refactoring is so that commands only have to take a
-// Params variable, which will load a finalized configuration that needs no
-// further setting. This will replace the current usages of deducing sections
-// when some fields are missing, defaulting in separate areas, passing closures
-// through many commands so that we have partial evaluation in one area, full
-// evaluation in another, etc.
-//
-// The following are the steps to refactoring:
-//
-//  1) For every command, convert the command to using ParamsFromCommand.
-//
-// Once this step is complete, we can remove individual levels of flags and
-// instead use flags from root itself.
-//
-//  2) In the rpk section of our config,
-//      * drop _api from kafka_api and admin_api
-//      * rename key_file to client_key_path
-//      * rename cert_file to client_cert_path
-//      * rename truststore_file to ca_cert_path
-//      * rename password to pass
-//      * rename admin's addresses to hosts
-//
-// We can do these renames in a backwards compatible way: rather than simple
-// renames, we will add new fields and, when we load the config, if the new
-// fields are empty, use the old. The purpose of these renames is to make the
-// config map directly to our new configuration keys, to make the tls fields
-// more explicit as to that they are, and to simplify some terminology.
-//
-//  3) Introduce `func (p *Params) InstallDeprecatedFlags(cmd *cobra.Command)`.
-//     As well, introduce a global -X configuration flag.
-//
-// This function will entirely replace ParamsFromCommand, and will instead run
-// on the root command only. This function will install all old flags, hide
-// them, and mark them deprecated.
-//
-// The new -X flag will simply add to Params.FlagOverrides.
-//
-// Once step (3) is complete, we will officially deprecate anything old and
-// remove the old at minimum 6 months later.
-
 const (
-	// FlagConfig is rpk config flag.
-	FlagConfig = "config"
+	// The following flags exist for backcompat purposes and should not be
+	// used elsewhere within rpk.
+	flagBrokers        = "brokers"
+	flagSASLMechanism  = "sasl-mechanism"
+	flagSASLPass       = "password"
+	flagAdminHosts1    = "hosts"
+	flagAdminHosts2    = "api-urls"
+	flagEnableAdminTLS = "admin-api-tls-enabled"
+	flagAdminTLSCA     = "admin-api-tls-truststore"
+	flagAdminTLSCert   = "admin-api-tls-cert"
+	flagAdminTLSKey    = "admin-api-tls-key"
 
-	// FlagVerbose opts in to verbose logging. This is to be replaced with
-	// a log-level flag later, with `-v` meaning DEBUG for backcompat.
-	FlagVerbose = "verbose"
+	// The following flags are currently used in some areas of rpk
+	// (and ideally will be deprecated / removed in the future).
+	FlagEnableTLS = "tls-enabled"
+	FlagTLSCA     = "tls-truststore"
+	FlagTLSCert   = "tls-cert"
+	FlagTLSKey    = "tls-key"
+	FlagSASLUser  = "user"
 
-	// This entire block is filled with our current flags and environment
-	// variables. These will all eventually be hidden.
-
-	FlagBrokers        = "brokers"
-	FlagEnableTLS      = "tls-enabled"
-	FlagTLSCA          = "tls-truststore"
-	FlagTLSCert        = "tls-cert"
-	FlagTLSKey         = "tls-key"
-	FlagSASLMechanism  = "sasl-mechanism"
-	FlagSASLUser       = "user"
-	FlagSASLPass       = "password"
-	FlagAdminHosts1    = "hosts"
-	FlagAdminHosts2    = "api-urls"
-	FlagEnableAdminTLS = "admin-api-tls-enabled"
-	FlagAdminTLSCA     = "admin-api-tls-truststore"
-	FlagAdminTLSCert   = "admin-api-tls-cert"
-	FlagAdminTLSKey    = "admin-api-tls-key"
-
-	EnvBrokers       = "REDPANDA_BROKERS"
-	EnvTLSCA         = "REDPANDA_TLS_TRUSTSTORE"
-	EnvTLSCert       = "REDPANDA_TLS_CERT"
-	EnvTLSKey        = "REDPANDA_TLS_KEY"
-	EnvSASLMechanism = "REDPANDA_SASL_MECHANISM"
-	EnvSASLUser      = "REDPANDA_SASL_USERNAME"
-	EnvSASLPass      = "REDPANDA_SASL_PASSWORD"
-	EnvAdminHosts    = "REDPANDA_API_ADMIN_ADDRS"
-	EnvAdminTLSCA    = "REDPANDA_ADMIN_TLS_TRUSTSTORE"
-	EnvAdminTLSCert  = "REDPANDA_ADMIN_TLS_CERT"
-	EnvAdminTLSKey   = "REDPANDA_ADMIN_TLS_KEY"
+	envBrokers       = "REDPANDA_BROKERS"
+	envTLSCA         = "REDPANDA_TLS_TRUSTSTORE"
+	envTLSCert       = "REDPANDA_TLS_CERT"
+	envTLSKey        = "REDPANDA_TLS_KEY"
+	envSASLMechanism = "REDPANDA_SASL_MECHANISM"
+	envSASLUser      = "REDPANDA_SASL_USERNAME"
+	envSASLPass      = "REDPANDA_SASL_PASSWORD"
+	envAdminHosts    = "REDPANDA_API_ADMIN_ADDRS"
+	envAdminTLSCA    = "REDPANDA_ADMIN_TLS_TRUSTSTORE"
+	envAdminTLSCert  = "REDPANDA_ADMIN_TLS_CERT"
+	envAdminTLSKey   = "REDPANDA_ADMIN_TLS_KEY"
 )
 
 // This block contains what will eventually be used as keys in the global
 // config-setting -X flag, as well as upper-cased, dot-to-underscore replaced
 // env variables.
 const (
-	xKafkaBrokers = "kafka.brokers"
+	xKafkaBrokers = "brokers"
 
-	xKafkaTLSEnabled = "kafka.tls.enabled"
-	xKafkaCACert     = "kafka.tls.ca_cert_path"
-	xKafkaClientCert = "kafka.tls.client_cert_path"
-	xKafkaClientKey  = "kafka.tls.client_key_path"
+	xKafkaTLSEnabled = "brokers.tls.enabled"
+	xKafkaCACert     = "brokers.tls.ca_cert_path"
+	xKafkaClientCert = "brokers.tls.client_cert_path"
+	xKafkaClientKey  = "brokers.tls.client_key_path"
 
-	xKafkaSASLMechanism = "kafka.sasl.mechanism"
-	xKafkaSASLUser      = "kafka.sasl.user"
-	xKafkaSASLPass      = "kafka.sasl.pass"
+	xKafkaSASLMechanism = "brokers.sasl.mechanism"
+	xKafkaSASLUser      = "brokers.sasl.user"
+	xKafkaSASLPass      = "brokers.sasl.pass"
 
 	xAdminHosts      = "admin.hosts"
 	xAdminTLSEnabled = "admin.tls.enabled"
@@ -144,92 +98,221 @@ type Params struct {
 	// This is unused until step (2) in the refactoring process.
 	ConfigPath string
 
-	// Verbose tracks the -v flag. This will be swapped with --log-level in
-	// the future.
-	Verbose bool
+	// LogLevel can be either none (default), error, warn, info, or debug,
+	// or any prefix of those strings, upper or lower case.
+	//
+	// This field is meant to be set, to actually get a logger after the
+	// field is set, use Logger().
+	LogLevel string
 
 	// FlagOverrides are any flag-specified config overrides.
 	//
 	// This is unused until step (2) in the refactoring process.
 	FlagOverrides []string
+
+	loggerOnce sync.Once
+	logger     *zap.Logger
+
+	// BACKCOMPAT FLAGS
+	//
+	// Note that some of these will move to standard persistent flags,
+	// but are backcompat flags for the -X transition.
+
+	brokers       []string
+	user          string
+	password      string
+	saslMechanism string
+
+	enableKafkaTLS bool
+	kafkaCAFile    string
+	kafkaCertFile  string
+	kafkaKeyFile   string
+
+	adminURLs      []string
+	enableAdminTLS bool
+	adminCAFile    string
+	adminCertFile  string
+	adminKeyFile   string
 }
 
-// ParamsFromCommand is an intermediate function to be used while refactoring
-// rpk to have a top-down passed Params function. See the docs at the top of
-// this file for the refactoring process.
-func ParamsFromCommand(cmd *cobra.Command) *Params {
-	var p Params
+// ParamsHelp returns the long help text for -X help.
+func ParamsHelp() string {
+	return `The -X flag can be used to override any rpk specific configuration option.
+As an example, -X brokers.tls.enabled=true enables TLS for the Kafka API.
 
-	for _, set := range []*pflag.FlagSet{
-		cmd.PersistentFlags(),
-		cmd.Flags(),
-	} {
-		set.Visit(func(f *pflag.Flag) {
-			var key string
-			var stripBrackets bool
+The following options are available, with an example value for each option:
 
-			switch f.Name {
-			default:
-				return
+brokers=127.0.0.1:9092,localhost:9094
+  A comma separated list of host:ports that rpk talks to for the Kafka API.
+  By default, this is 127.0.0.1:9092.
 
-			case FlagConfig:
-				p.ConfigPath = f.Value.String()
-				return
+brokers.tls.enabled=true
+  A boolean that enableenables rpk to speak TLS to your broker's Kafka API listeners.
+  You can use this if you have well known certificates setup on your Kafka API.
+  If you use mTLS, specifying mTLS certificate filepaths automatically opts
+  into TLS enabled.
 
-			case FlagVerbose:
-				if b, err := strconv.ParseBool(f.Value.String()); err == nil {
-					p.Verbose = b
-				}
-				return
+brokers.tls.ca_cert_path=/path/to/ca.pem
+  A filepath to a PEM encoded CA certificate file to talk to your broker's
+  Kafka API listeners with mTLS. You may also need this if your listeners are
+  using a certificate by a well known authority that is not yet bundled on your
+  operating system.
 
-			case FlagBrokers:
-				key = xKafkaBrokers
-				stripBrackets = true
+brokers.tls.client_cert_path=/path/to/cert.pem
+  A filepath to a PEM encoded client certificate file to talk to your broker's
+  Kafka API listeners with mTLS.
 
-			case FlagEnableTLS:
-				key = xKafkaTLSEnabled
-			case FlagTLSCA:
-				key = xKafkaCACert
-			case FlagTLSCert:
-				key = xKafkaClientCert
-			case FlagTLSKey:
-				key = xKafkaClientKey
+brokers.tls.client_key_path=/path/to/key.pem
+  A filepath to a PEM encoded client key file to talk to your broker's Kafka
+  API listeners with mTLS.
 
-			case FlagSASLMechanism:
-				key = xKafkaSASLMechanism
-			case FlagSASLUser:
-				key = xKafkaSASLUser
-			case FlagSASLPass:
-				key = xKafkaSASLPass
+brokers.sasl.mechanism=SCRAM-SHA-256
+  The SASL mechanism to use for authentication. This can be either SCRAM-SHA-256
+  or SCRAM-SHA-512. Note that with Redpanda, the Admin API can be configured to
+  require basic authentication with your Kafka API SASL credentials.
 
-			case FlagAdminHosts1, FlagAdminHosts2:
-				key = xAdminHosts
-				stripBrackets = true
-			case FlagEnableAdminTLS:
-				key = xAdminTLSEnabled
-			case FlagAdminTLSCA:
-				key = xAdminCACert
-			case FlagAdminTLSCert:
-				key = xAdminClientCert
-			case FlagAdminTLSKey:
-				key = xAdminClientKey
-			}
+brokers.sasl.user=username
+  The SASL username to use for authentication.
 
-			val := f.Value.String()
-			// Value.String() adds brackets to slice types, and we
-			// need to strip that here.
-			if stripBrackets {
-				if len(val) > 0 && val[0] == '[' && val[len(val)-1] == ']' {
-					val = val[1 : len(val)-1]
-				}
-			}
+brokers.sasl.pass=password
+  The SASL password to use for authentication.
 
-			p.FlagOverrides = append(p.FlagOverrides, key+"="+val)
-		})
+admin.hosts=localhost:9644,rp.example.com:9644
+  A comma separated list of host:ports that rpk talks to for the Admin API.
+  By default, this is 127.0.0.1:9644.
+
+admin.tls.enabled=false
+  A boolean that enables rpk to speak TLS to your broker's Admin API listeners.
+  You can use this if you have well known certificates setup on your admin API.
+  If you use mTLS, specifying mTLS certificate filepaths automatically opts
+  into TLS enabled.
+
+admin.tls.ca_cert_path=/path/to/ca.pem
+  A filepath to a PEM encoded CA certificate file to talk to your broker's
+  Admin API listeners with mTLS. You may also need this if your listeners are
+  using a certificate by a well known authority that is not yet bundled on your
+  operating system.
+
+admin.tls.client_cert_path=/path/to/cert.pem
+  A filepath to a PEM encoded client certificate file to talk to your broker's
+  Admin API listeners with mTLS.
+
+admin.tls.client_key_path=/path/to/key.pem
+  A filepath to a PEM encoded client key file to talk to your broker's Admin
+  API listeners with mTLS.
+`
+}
+
+// ParamsList returns the short help text for -X list.
+func ParamsList() string {
+	return `brokers=comma,delimited,host:ports
+brokers.tls.enabled=boolean
+brokers.tls.ca_cert_path=/path/to/ca.pem
+brokers.tls.client_cert_path=/path/to/cert.pem
+brokers.tls.client_key_path=/path/to/key.pem
+brokers.sasl.mechanism=SCRAM-SHA-256 or SCRAM-SHA-512
+brokers.sasl.user=username
+brokers.sasl.pass=password
+admin.hosts=comma,delimited,host:ports
+admin.tls.enabled=boolean
+admin.tls.ca_cert_path=/path/to/ca.pem
+admin.tls.client_cert_path=/path/to/cert.pem
+admin.tls.client_key_path=/path/to/key.pem
+`
+}
+
+//////////////////////
+// BACKCOMPAT FLAGS //
+//////////////////////
+
+// InstallKafkaFlags adds the original rpk Kafka API set of flags to this
+// command and all subcommands.
+func (p *Params) InstallKafkaFlags(cmd *cobra.Command) {
+	pf := cmd.PersistentFlags()
+
+	pf.StringSliceVar(&p.brokers, flagBrokers, nil, "Comma separated list of broker host:ports")
+	pf.StringVar(&p.user, FlagSASLUser, "", "SASL user to be used for authentication")
+	pf.StringVar(&p.password, flagSASLPass, "", "SASL password to be used for authentication")
+	pf.StringVar(&p.saslMechanism, flagSASLMechanism, "", "The authentication mechanism to use (SCRAM-SHA-256, SCRAM-SHA-512)")
+
+	p.InstallTLSFlags(cmd)
+}
+
+// InstallTLSFlags adds the original rpk Kafka API TLS set of flags to this
+// command and all subcommands. This is only used by the prometheus dashboard
+// generation; all other Kafka API flag backcompat commands use
+// InstallKafkaFlags. This command does not mark the added flags as deprecated.
+func (p *Params) InstallTLSFlags(cmd *cobra.Command) {
+	pf := cmd.PersistentFlags()
+
+	pf.BoolVar(&p.enableKafkaTLS, FlagEnableTLS, false, "Enable TLS for the Kafka API (not necessary if specifying custom certs)")
+	pf.StringVar(&p.kafkaCAFile, FlagTLSCA, "", "The CA certificate to be used for TLS communication with the broker")
+	pf.StringVar(&p.kafkaCertFile, FlagTLSCert, "", "The certificate to be used for TLS authentication with the broker")
+	pf.StringVar(&p.kafkaKeyFile, FlagTLSKey, "", "The certificate key to be used for TLS authentication with the broker")
+}
+
+// InstallAdminFlags adds the original rpk Admin API set of flags to this
+// command and all subcommands.
+func (p *Params) InstallAdminFlags(cmd *cobra.Command) {
+	pf := cmd.PersistentFlags()
+
+	pf.StringSliceVar(&p.adminURLs, flagAdminHosts2, nil, "Comma separated list of admin API host:ports")
+	pf.StringSliceVar(&p.adminURLs, flagAdminHosts1, nil, "")
+	pf.StringSliceVar(&p.adminURLs, "admin-url", nil, "")
+
+	pf.BoolVar(&p.enableAdminTLS, flagEnableAdminTLS, false, "Enable TLS for the Admin API (not necessary if specifying custom certs)")
+	pf.StringVar(&p.adminCAFile, flagAdminTLSCA, "", "The CA certificate  to be used for TLS communication with the admin API")
+	pf.StringVar(&p.adminCertFile, flagAdminTLSCert, "", "The certificate to be used for TLS authentication with the admin API")
+	pf.StringVar(&p.adminKeyFile, flagAdminTLSKey, "", "The certificate key to be used for TLS authentication with the admin API")
+}
+
+func (p *Params) backcompatFlagsToOverrides() {
+	if len(p.brokers) > 0 {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaBrokers, strings.Join(p.brokers, ",")))
+	}
+	if p.user != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLUser, p.user))
+	}
+	if p.password != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLPass, p.password))
+	}
+	if p.saslMechanism != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaSASLMechanism, p.saslMechanism))
 	}
 
-	return &p
+	if p.enableKafkaTLS {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%t", xKafkaTLSEnabled, p.enableKafkaTLS))
+	}
+	if p.kafkaCAFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaCACert, p.kafkaCAFile))
+	}
+	if p.kafkaCertFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaClientCert, p.kafkaCertFile))
+	}
+	if p.kafkaKeyFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xKafkaClientKey, p.kafkaKeyFile))
+	}
+
+	if len(p.adminURLs) > 0 {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminHosts, strings.Join(p.adminURLs, ",")))
+	}
+	if p.enableAdminTLS {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%t", xAdminTLSEnabled, p.enableAdminTLS))
+	}
+	if p.adminCAFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminCACert, p.adminCAFile))
+	}
+	if p.adminCertFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientCert, p.adminCertFile))
+	}
+	if p.adminKeyFile != "" {
+		p.FlagOverrides = append(p.FlagOverrides, fmt.Sprintf("%s=%s", xAdminClientKey, p.adminKeyFile))
+	}
 }
+
+///////////////////////
+// LOADING & WRITING //
+///////////////////////
 
 // Load returns the param's config file. In order, this
 //
@@ -239,6 +322,8 @@ func ParamsFromCommand(cmd *cobra.Command) *Params {
 //   - Processes env and flag overrides.
 //   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
+	p.backcompatFlagsToOverrides()
+
 	// If we have a config path loaded (through --config flag) the user
 	// expect to load or create the file from this directory.
 	if p.ConfigPath != "" {
@@ -270,7 +355,106 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		return nil, err
 	}
 	c.addUnsetDefaults()
+
 	return c, nil
+}
+
+// SugarLogger returns Logger().Sugar().
+func (p *Params) SugarLogger() *zap.SugaredLogger {
+	return p.Logger().Sugar()
+}
+
+// Logger parses p.LogLevel and returns the corresponding zap logger or
+// a NopLogger if the log level is invalid.
+func (p *Params) Logger() *zap.Logger {
+	p.loggerOnce.Do(func() {
+		// First we normalize the level. We support prefixes such
+		// that "w" means warn.
+		p.LogLevel = strings.TrimSpace(strings.ToLower(p.LogLevel))
+		if p.LogLevel == "" {
+			p.LogLevel = "none"
+		}
+		var ok bool
+		for _, level := range []string{"none", "error", "warn", "info", "debug"} {
+			if strings.HasPrefix(level, p.LogLevel) {
+				p.LogLevel, ok = level, true
+				break
+			}
+		}
+		if !ok {
+			p.logger = zap.NewNop()
+			return
+		}
+		var level zapcore.Level
+		switch p.LogLevel {
+		case "none":
+			p.logger = zap.NewNop()
+			return
+		case "error":
+			level = zap.ErrorLevel
+		case "warn":
+			level = zap.WarnLevel
+		case "info":
+			level = zap.InfoLevel
+		case "debug":
+			level = zap.DebugLevel
+		}
+
+		// Now the zap config. We want to to the console and make the logs
+		// somewhat nice. The log time is effectively time.TimeMillisOnly.
+		// We disable logging the callsite and sampling, we shorten the log
+		// level to three letters, and we only add color if this is a
+		// terminal.
+		zcfg := zap.NewProductionConfig()
+		zcfg.Level = zap.NewAtomicLevelAt(level)
+		zcfg.DisableCaller = true
+		zcfg.DisableStacktrace = true
+		zcfg.Sampling = nil
+		zcfg.Encoding = "console"
+		zcfg.EncoderConfig.EncodeTime = zapcore.TimeEncoder(func(t time.Time, pae zapcore.PrimitiveArrayEncoder) {
+			pae.AppendString(t.Format("15:04:05.000"))
+		})
+		zcfg.EncoderConfig.EncodeDuration = zapcore.StringDurationEncoder
+		zcfg.EncoderConfig.ConsoleSeparator = "  "
+
+		// https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
+		const (
+			red     = 31
+			yellow  = 33
+			blue    = 34
+			magenta = 35
+		)
+
+		// Zap's OutputPaths bydefault is []string{"stderr"}, so we
+		// only need to check os.Stderr.
+		tty := term.IsTerminal(int(os.Stderr.Fd()))
+		color := func(n int, s string) string {
+			if !tty {
+				return s
+			}
+			return fmt.Sprintf("\x1b[%dm%s\x1b[0m", n, s)
+		}
+		colors := map[zapcore.Level]string{
+			zapcore.ErrorLevel: color(red, "ERR"),
+			zapcore.WarnLevel:  color(yellow, "WRN"),
+			zapcore.InfoLevel:  color(blue, "INF"),
+			zapcore.DebugLevel: color(magenta, "DBG"),
+		}
+		zcfg.EncoderConfig.EncodeLevel = func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
+			switch l {
+			case zapcore.ErrorLevel,
+				zapcore.WarnLevel,
+				zapcore.InfoLevel,
+				zapcore.DebugLevel:
+			default:
+				l = zapcore.ErrorLevel
+			}
+			enc.AppendString(colors[l])
+		}
+
+		p.logger, _ = zcfg.Build() // this configuration does not error
+	})
+	return p.logger
 }
 
 // isSameLoaded checks if the config object content is the same as the one
@@ -438,9 +622,9 @@ func (p *Params) processOverrides(c *Config) error {
 		}
 	)
 
-	// To override, we lookup any override key (e.g., kafka.tls.enabled or
-	// admin.hosts) into this map. If the key exists, we processes the
-	// value as appropriate (per the value function in the map).
+	// To override, we lookup any override key (e.g., brokers.tls.enabled
+	// or admin_api.hosts) into this map. If the key exists, we processes
+	// the value as appropriate (per the value function in the map).
 	fns := map[string]func(string) error{
 		xKafkaBrokers: func(v string) error { return splitCommaIntoStrings(v, &k.Brokers) },
 
@@ -494,17 +678,17 @@ func (p *Params) processOverrides(c *Config) error {
 		old       string
 		targetKey string
 	}{
-		{EnvBrokers, xKafkaBrokers},
-		{EnvTLSCA, xKafkaCACert},
-		{EnvTLSCert, xKafkaClientCert},
-		{EnvTLSKey, xKafkaClientKey},
-		{EnvSASLMechanism, xKafkaSASLMechanism},
-		{EnvSASLUser, xKafkaSASLUser},
-		{EnvSASLPass, xKafkaSASLPass},
-		{EnvAdminHosts, xAdminHosts},
-		{EnvAdminTLSCA, xAdminCACert},
-		{EnvAdminTLSCert, xAdminClientCert},
-		{EnvAdminTLSKey, xAdminClientKey},
+		{envBrokers, xKafkaBrokers},
+		{envTLSCA, xKafkaCACert},
+		{envTLSCert, xKafkaClientCert},
+		{envTLSKey, xKafkaClientKey},
+		{envSASLMechanism, xKafkaSASLMechanism},
+		{envSASLUser, xKafkaSASLUser},
+		{envSASLPass, xKafkaSASLPass},
+		{envAdminHosts, xAdminHosts},
+		{envAdminTLSCA, xAdminCACert},
+		{envAdminTLSCert, xAdminClientCert},
+		{envAdminTLSKey, xAdminClientKey},
 	} {
 		if v, exists := os.LookupEnv(envMapping.old); exists {
 			envOverrides = append(envOverrides, envMapping.targetKey+"="+v)
@@ -540,14 +724,38 @@ func (c *Config) addUnsetDefaults() {
 		namedAuthnToNamed(c.Redpanda.KafkaAPI),
 		c.Redpanda.KafkaAPITLS,
 		&c.Rpk.KafkaAPI.Brokers,
-		"127.0.0.1:9092",
 	)
 	defaultFromRedpanda(
 		c.Redpanda.AdminAPI,
 		c.Redpanda.AdminAPITLS,
 		&c.Rpk.AdminAPI.Addresses,
-		"127.0.0.1:9644",
 	)
+
+	if len(c.Rpk.KafkaAPI.Brokers) == 0 && len(c.Rpk.AdminAPI.Addresses) > 0 {
+		host, _, err := net.SplitHostPort(c.Rpk.AdminAPI.Addresses[0])
+		if err == nil {
+			host = net.JoinHostPort(host, strconv.Itoa(DefaultKafkaPort))
+			c.Rpk.KafkaAPI.Brokers = []string{host}
+			c.Rpk.KafkaAPI.TLS = c.Rpk.AdminAPI.TLS
+		}
+	}
+
+	if len(c.Rpk.AdminAPI.Addresses) == 0 && len(c.Rpk.KafkaAPI.Brokers) > 0 {
+		host, _, err := net.SplitHostPort(c.Rpk.KafkaAPI.Brokers[0])
+		if err == nil {
+			host = net.JoinHostPort(host, strconv.Itoa(DefaultAdminPort))
+			c.Rpk.AdminAPI.Addresses = []string{host}
+			c.Rpk.AdminAPI.TLS = c.Rpk.KafkaAPI.TLS
+		}
+	}
+
+	if len(c.Rpk.KafkaAPI.Brokers) == 0 {
+		c.Rpk.KafkaAPI.Brokers = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultKafkaPort))}
+	}
+
+	if len(c.Rpk.AdminAPI.Addresses) == 0 {
+		c.Rpk.AdminAPI.Addresses = []string{net.JoinHostPort("127.0.0.1", strconv.Itoa(DefaultAdminPort))}
+	}
 }
 
 // defaultFromRedpanda sets fields in our `rpk` config section if those fields
@@ -560,15 +768,10 @@ func (c *Config) addUnsetDefaults() {
 // We favor no TLS. The broker likely does not have client certs, so we cannot
 // set client TLS settings. If we have any non-TLS host, we do not use TLS
 // hosts.
-func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]string, fallback string) {
+func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]string) {
 	if len(*dst) != 0 {
 		return
 	}
-	defer func() {
-		if len(*dst) == 0 {
-			*dst = append(*dst, fallback)
-		}
-	}()
 
 	tlsNames := make(map[string]bool)
 	mtlsNames := make(map[string]bool)
@@ -649,6 +852,10 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 	*dst = append(*dst, mtlsPublic...)
 }
 
+///////////////////
+// FIELD SETTING //
+///////////////////
+
 // Set allow to set a single configuration field by passing a key value pair
 //
 //	Key:    string containing the yaml field tags, e.g: 'rpk.admin_api'.
@@ -689,16 +896,11 @@ func (c *Config) Set(key, value, format string) error {
 
 	var unmarshal func([]byte, interface{}) error
 	switch strings.ToLower(format) {
-	case "yaml", "single", "": // single is deprecated; it is kept for backcompat
+	case "yaml", "single", "", "json": // single is deprecated and kept for backcompat; json is a subset of yaml
 		if isOther {
 			value = fmt.Sprintf("%s: %s", finalTag, value)
 		}
 		unmarshal = yaml.Unmarshal
-	case "json":
-		if isOther {
-			value = fmt.Sprintf("{%q: %s}", finalTag, value)
-		}
-		unmarshal = json.Unmarshal
 	default:
 		return fmt.Errorf("unsupported format %s", format)
 	}
@@ -788,14 +990,19 @@ func getField(tags []string, parentRawTag string, v reflect.Value) (reflect.Valu
 //  2. if tag is not found _but_ the struct has "Other" field, return Other.
 //  3. Error if it can't find the given tag and "Other" field is unavailable.
 func getFieldByTag(tag string, v reflect.Value) (reflect.Value, reflect.Value, error) {
-	t := v.Type()
-	var other bool
+	var (
+		t       = v.Type()
+		other   bool
+		inlines []int
+	)
+
 	// Loop struct to get the field that match tag.
 	for i := 0; i < v.NumField(); i++ {
 		// rpk allows blindly setting unknown configuration parameters in
 		// Other map[string]interface{} fields
 		if t.Field(i).Name == "Other" {
 			other = true
+			continue
 		}
 		yt := t.Field(i).Tag.Get("yaml")
 
@@ -803,10 +1010,23 @@ func getFieldByTag(tag string, v reflect.Value) (reflect.Value, reflect.Value, e
 		// when tag.Get("yaml") is called it will return
 		//   "my_tag,omitempty"
 		// so we only need first parameter of the string slice.
-		ft := strings.Split(yt, ",")[0]
+		pieces := strings.Split(yt, ",")
+		ft := pieces[0]
 
 		if ft == tag {
 			return v.Field(i), reflect.Value{}, nil
+		}
+		for _, p := range pieces {
+			if p == "inline" {
+				inlines = append(inlines, i)
+				break
+			}
+		}
+	}
+
+	for _, i := range inlines {
+		if v, _, err := getFieldByTag(tag, v.Field(i)); err == nil {
+			return v, reflect.Value{}, nil
 		}
 	}
 
@@ -862,11 +1082,7 @@ func tryValueAsSlice0(v reflect.Value, format string, err error) (reflect.Value,
 	}
 
 	switch format {
-	case "json":
-		if te := (*json.UnmarshalTypeError)(nil); !errors.As(err, &te) || te.Type.Kind() != reflect.Slice {
-			return v, false
-		}
-	case "yaml":
+	case "json", "yaml":
 		if !strings.Contains(err.Error(), "cannot unmarshal !!") {
 			return v, false
 		}

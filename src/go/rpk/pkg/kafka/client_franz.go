@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -25,12 +24,11 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
+	"github.com/twmb/franz-go/plugin/kzap"
 )
 
 // NewFranzClient returns a franz-go based kafka client.
-func NewFranzClient(
-	fs afero.Fs, p *config.Params, cfg *config.Config, extraOpts ...kgo.Opt,
-) (*kgo.Client, error) {
+func NewFranzClient(fs afero.Fs, p *config.Params, cfg *config.Config, extraOpts ...kgo.Opt) (*kgo.Client, error) {
 	k := &cfg.Rpk.KafkaAPI
 
 	opts := []kgo.Opt{
@@ -92,13 +90,7 @@ func NewFranzClient(
 	if tc != nil {
 		opts = append(opts, kgo.DialTLSConfig(tc))
 	}
-
-	if p.Verbose {
-		opts = append(opts, kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, func() string {
-			return time.Now().Format("15:04:05.000 ")
-		})))
-	}
-
+	opts = append(opts, kgo.WithLogger(kzap.New(p.Logger())))
 	opts = append(opts, extraOpts...)
 
 	return kgo.NewClient(opts...)

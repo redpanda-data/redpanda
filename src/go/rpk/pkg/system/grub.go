@@ -19,8 +19,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 const grubCfg = "/etc/default/grub"
@@ -58,7 +58,7 @@ type grub struct {
 }
 
 func (g *grub) CheckVersion() error {
-	log.Debug("Checking if GRUB is present")
+	zap.L().Sugar().Debug("Checking if GRUB is present")
 	_, err := g.commands.Which("grub2-mkconfig", g.timeout)
 	if err != nil {
 		return fmt.Errorf("Only GRUB 2 is currently supported")
@@ -67,13 +67,13 @@ func (g *grub) CheckVersion() error {
 }
 
 func (g *grub) AddCommandLineOptions(opt []string) error {
-	log.Debugf("Adding '%s' to GRUB command line config", opt)
+	zap.L().Sugar().Debugf("Adding '%s' to GRUB command line config", opt)
 	needChg, err := g.cmdLineCfgNeedChange(opt)
 	if err != nil {
 		return err
 	}
 	if !needChg {
-		log.Infof("GRUB options are up to date, doing nothing")
+		fmt.Println("GRUB options are up to date, doing nothing")
 		return nil
 	}
 	lines, err := utils.ReadFileLines(g.fs, grubCfg)
@@ -84,14 +84,14 @@ func (g *grub) AddCommandLineOptions(opt []string) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("Backup of GRUB config created '%s'", backupFile)
+	fmt.Printf("Backup of GRUB config created '%s'\n", backupFile)
 
 	optionsToSet := optionsToMap(opt)
 	var linesToWrite []string
 	for _, line := range lines {
 		if currentOpts := matchAndSplitCmdOptions(line); currentOpts != nil {
 			resultOptsMap := optionsToMap(currentOpts)
-			log.Debugf("Current GRUB command line config '%s'",
+			zap.L().Sugar().Debugf("Current GRUB command line config '%s'",
 				currentOpts)
 			for keyToSet, valToSet := range optionsToSet {
 				resultOptsMap[keyToSet] = valToSet
@@ -123,10 +123,10 @@ func (g *grub) cmdLineCfgNeedChange(requestedOpts []string) (bool, error) {
 }
 
 func (g *grub) MakeConfig() error {
-	log.Info("Updating GRUB configuration")
+	fmt.Println("Updating GRUB configuration")
 	updateCmd, err := g.commands.Which("update-grub", g.timeout)
 	if err == nil {
-		log.Debugf("Running on Ubuntu based system with '%s' available",
+		zap.L().Sugar().Debugf("Running on Ubuntu based system with '%s' available",
 			updateCmd)
 		err := g.executor.Execute(commands.NewLaunchCmd(g.proc, g.timeout, updateCmd))
 		return err
@@ -136,7 +136,7 @@ func (g *grub) MakeConfig() error {
 		"/boot/efi/EFI/fedora/grub.cfg",
 	} {
 		if exists, _ := afero.Exists(g.fs, file); exists {
-			log.Debugf("Found 'grub.cfg' in %s", file)
+			zap.L().Sugar().Debugf("Found 'grub.cfg' in %s", file)
 			err := g.executor.Execute(
 				commands.NewLaunchCmd(g.proc, g.timeout, "grub2-mkconfig", "-o", file))
 			return err

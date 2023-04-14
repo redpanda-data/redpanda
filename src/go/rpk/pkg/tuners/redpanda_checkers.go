@@ -171,8 +171,8 @@ func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 
 func NewBallastFileChecker(fs afero.Fs, conf *config.Config) Checker {
 	path := config.DefaultBallastFilePath
-	if conf.Rpk.BallastFilePath != "" {
-		path = conf.Rpk.BallastFilePath
+	if conf.Rpk.Tuners.BallastFilePath != "" {
+		path = conf.Rpk.Tuners.BallastFilePath
 	}
 	return NewFileExistanceChecker(
 		fs,

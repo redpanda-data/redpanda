@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/lestrrat-go/jwx/jwt"
-	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cmd/cloud/cloudcfg"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/cloud/cloudcfg"
 )
 
 type (
@@ -60,7 +60,7 @@ func ClientCredentialFlow(ctx context.Context, cl Client, cfg *cloudcfg.Config) 
 	// We only validate the token if we have the client ID, if one of them is
 	// not present we just start the login flow again.
 	if cfg.AuthToken != "" && cfg.ClientID != "" {
-		expired, err := validateToken(cfg.AuthToken, cl.Audience(), cfg.ClientID) //nolint:contextcheck // jwx/jwt package uses ctx.Background in a function down the stream
+		expired, err := validateToken(cfg.AuthToken, cl.Audience(), cfg.ClientID)
 		if err != nil {
 			return Token{}, err
 		}
@@ -77,7 +77,7 @@ func DeviceFlow(ctx context.Context, cl Client, cfg *cloudcfg.Config) (Token, er
 	// We only validate the token if we have the client ID, if one of them is
 	// not present we just start the login flow again.
 	if cfg.AuthToken != "" && cfg.ClientID != "" {
-		expired, err := validateToken(cfg.AuthToken, cl.Audience(), cfg.ClientID) //nolint:contextcheck // jwx/jwt package uses ctx.Background in a function down the stream
+		expired, err := validateToken(cfg.AuthToken, cl.Audience(), cfg.ClientID)
 		if err != nil {
 			return Token{}, err
 		}

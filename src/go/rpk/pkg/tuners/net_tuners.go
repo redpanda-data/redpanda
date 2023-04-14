@@ -19,8 +19,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/network"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 func NewNetTuner(
@@ -109,7 +109,7 @@ func (f *netTunersFactory) NewNICsBalanceServiceTuner(
 				if err != nil {
 					return NewTuneError(err)
 				}
-				log.Debugf("%s interface IRQs: %v", nic.Name(), nicIRQs)
+				zap.L().Sugar().Debugf("%s interface IRQs: %v", nic.Name(), nicIRQs)
 				IRQs = append(IRQs, nicIRQs...)
 			}
 			err := f.balanceService.BanIRQsAndRestart(IRQs)
@@ -134,7 +134,7 @@ func (f *netTunersFactory) NewNICsIRQsAffinityTuner(
 			return f.checkersFactory.NewNicIRQAffinityChecker(nic, mode, cpuMask)
 		},
 		func(nic network.Nic) TuneResult {
-			log.Debugf("Tuning '%s' IRQs affinity", nic.Name())
+			zap.L().Sugar().Debugf("Tuning '%s' IRQs affinity", nic.Name())
 			dist, err := network.GetHwInterfaceIRQsDistribution(nic, mode, cpuMask, f.cpuMasks)
 			if err != nil {
 				return NewTuneError(err)
@@ -160,7 +160,7 @@ func (f *netTunersFactory) NewNICsRpsTuner(
 			return f.checkersFactory.NewNicRpsSetChecker(nic, mode, cpuMask)
 		},
 		func(nic network.Nic) TuneResult {
-			log.Debugf("Tuning '%s' RPS", nic.Name())
+			zap.L().Sugar().Debugf("Tuning '%s' RPS", nic.Name())
 			rpsCPUs, err := nic.GetRpsCPUFiles()
 			if err != nil {
 				return NewTuneError(err)
@@ -193,7 +193,7 @@ func (f *netTunersFactory) NewNICsRfsTuner(interfaces []string) Tunable {
 			return f.checkersFactory.NewNicRfsChecker(nic)
 		},
 		func(nic network.Nic) TuneResult {
-			log.Debugf("Tuning '%s' RFS", nic.Name())
+			zap.L().Sugar().Debugf("Tuning '%s' RFS", nic.Name())
 			limits, err := nic.GetRpsLimitFiles()
 			if err != nil {
 				return NewTuneError(err)
@@ -220,7 +220,7 @@ func (f *netTunersFactory) NewNICsNTupleTuner(interfaces []string) Tunable {
 			return f.checkersFactory.NewNicNTupleChecker(nic)
 		},
 		func(nic network.Nic) TuneResult {
-			log.Debugf("Tuning '%s' NTuple", nic.Name())
+			zap.L().Sugar().Debugf("Tuning '%s' NTuple", nic.Name())
 			ntupleFeature := map[string]bool{"ntuple": true}
 			err := f.executor.Execute(
 				commands.NewEthtoolChangeCmd(f.ethtool, nic.Name(), ntupleFeature))
@@ -242,7 +242,7 @@ func (f *netTunersFactory) NewNICsXpsTuner(interfaces []string) Tunable {
 			return f.checkersFactory.NewNicXpsChecker(nic)
 		},
 		func(nic network.Nic) TuneResult {
-			log.Debugf("Tuning '%s' XPS", nic.Name())
+			zap.L().Sugar().Debugf("Tuning '%s' XPS", nic.Name())
 			xpsCPUFiles, err := nic.GetXpsCPUFiles()
 			if err != nil {
 				return NewTuneError(err)
@@ -269,7 +269,7 @@ func (f *netTunersFactory) NewRfsTableSizeTuner() Tunable {
 	return NewCheckedTunable(
 		f.checkersFactory.NewRfsTableSizeChecker(),
 		func() TuneResult {
-			log.Debug("Tuning RFS table size")
+			zap.L().Sugar().Debug("Tuning RFS table size")
 			err := f.executor.Execute(
 				commands.NewSysctlSetCmd(
 					network.RfsTableSizeProperty, fmt.Sprint(network.RfsTableSize)))
@@ -289,7 +289,7 @@ func (f *netTunersFactory) NewListenBacklogTuner() Tunable {
 	return NewCheckedTunable(
 		f.checkersFactory.NewListenBacklogChecker(),
 		func() TuneResult {
-			log.Debug("Tuning connections listen backlog size")
+			zap.L().Sugar().Debug("Tuning connections listen backlog size")
 			err := f.writeIntToFile(network.ListenBacklogFile, network.ListenBacklogSize)
 			if err != nil {
 				return NewTuneError(err)
@@ -307,7 +307,7 @@ func (f *netTunersFactory) NewSynBacklogTuner() Tunable {
 	return NewCheckedTunable(
 		f.checkersFactory.NewSynBacklogChecker(),
 		func() TuneResult {
-			log.Debug("Tuning SYN backlog size")
+			zap.L().Sugar().Debug("Tuning SYN backlog size")
 			err := f.writeIntToFile(network.SynBacklogFile, network.SynBacklogSize)
 			if err != nil {
 				return NewTuneError(err)
@@ -336,7 +336,7 @@ func (f *netTunersFactory) tuneNonVirtualInterfaces(
 	for _, iface := range interfaces {
 		nic := network.NewNic(f.fs, f.irqProcFile, f.irqDeviceInfo, f.ethtool, iface)
 		if !nic.IsHwInterface() && !nic.IsBondIface() {
-			log.Debugf("Skipping tuning of '%s' virtual interface", nic.Name())
+			zap.L().Sugar().Debugf("Skipping tuning of '%s' virtual interface", nic.Name())
 			continue
 		}
 		tunables = append(tunables, NewCheckedTunable(

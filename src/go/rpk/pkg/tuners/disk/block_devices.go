@@ -22,8 +22,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/os"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type DiskType string
@@ -87,7 +87,7 @@ func (b *blockDevices) GetDirectoriesDevices(
 }
 
 func (b *blockDevices) GetDirectoryDevices(path string) ([]string, error) {
-	log.Debugf("Collecting info about directory '%s'", path)
+	zap.L().Sugar().Debugf("Collecting info about directory '%s'", path)
 	if exists, _ := afero.Exists(b.fs, path); !exists {
 		// path/to/whatever does not exist
 		return []string{}, nil
@@ -114,18 +114,18 @@ func (b *blockDevices) GetDirectoryDevices(path string) ([]string, error) {
 			}
 			devices = append(devices, directoryDevices...)
 		} else {
-			log.Errorf("Failed to create device while 'df -P %s' returns a '%s'", path, devicePath)
+			zap.L().Sugar().Errorf("Failed to create device while 'df -P %s' returns a '%s'", path, devicePath)
 		}
 	}
 	if len(devices) == 0 {
-		log.Errorf("Can't get a block device for '%s' - skipping", path)
+		zap.L().Sugar().Errorf("Can't get a block device for '%s' - skipping", path)
 	}
 
 	return []string{}, nil
 }
 
 func (b *blockDevices) getPhysDevices(device BlockDevice) ([]string, error) {
-	log.Debugf("Getting physical device from '%s'", device.Syspath())
+	zap.L().Sugar().Debugf("Getting physical device from '%s'", device.Syspath())
 	if strings.Contains(device.Syspath(), "virtual") {
 		joinedPath := path.Join(device.Syspath(), "slaves")
 		files, err := afero.ReadDir(b.fs, joinedPath)
@@ -135,7 +135,7 @@ func (b *blockDevices) getPhysDevices(device BlockDevice) ([]string, error) {
 		var physDevices []string
 		for _, deviceDirectory := range files {
 			slavePath := "/dev/" + deviceDirectory.Name()
-			log.Debugf("Dealing with virtual device, checking slave %s", slavePath)
+			zap.L().Sugar().Debugf("Dealing with virtual device, checking slave %s", slavePath)
 			deviceFromPath, err := b.GetDeviceFromPath(slavePath)
 			if err != nil {
 				return nil, err
@@ -170,7 +170,7 @@ func (b *blockDevices) getBlockDeviceFromPath(
 	path string, devNumExtractor func(syscall.Stat_t) uint64,
 ) (BlockDevice, error) {
 	var stat syscall.Stat_t
-	log.Debugf("Getting block device from path '%s'", path)
+	zap.L().Sugar().Debugf("Getting block device from path '%s'", path)
 	err := syscall.Stat(path, &stat)
 	if err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func (b *blockDevices) getDevicesIRQs(
 		if _, exists := diskIRQs[device]; exists {
 			continue
 		}
-		log.Debugf("Getting '%s' IRQs", device)
+		zap.L().Sugar().Debugf("Getting '%s' IRQs", device)
 		devicePath := path.Join("/dev", device)
 		devSystemPath, err := b.GetDeviceSystemPath(devicePath)
 		if err != nil {
@@ -210,7 +210,7 @@ func (b *blockDevices) getDevicesIRQs(
 func (*blockDevices) getDeviceControllerPath(
 	devSystemPath string,
 ) (string, error) {
-	log.Debugf("Getting controller path for '%s'", devSystemPath)
+	zap.L().Sugar().Debugf("Getting controller path for '%s'", devSystemPath)
 	splitSystemPath := strings.Split(devSystemPath, "/")
 	controllerPathParts := append([]string{"/"}, splitSystemPath[0:4]...)
 	pattern, _ := regexp.Compile(

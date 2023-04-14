@@ -255,8 +255,10 @@ func TestRedpandaSampleFile(t *testing.T) {
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
-		Rpk: RpkConfig{
-			CoredumpDir: "/var/lib/redpanda/coredump",
+		Rpk: RpkNodeConfig{
+			Tuners: RpkNodeTuners{
+				CoredumpDir: "/var/lib/redpanda/coredump",
+			},
 		},
 		Pandaproxy:     &Pandaproxy{},
 		SchemaRegistry: &SchemaRegistry{},
@@ -312,7 +314,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 			name:  "default kafka broker and default admin api",
 			inCfg: &Config{},
 			expCfg: &Config{
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{"127.0.0.1:9092"},
 					},
@@ -334,7 +336,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 						{Address: "0.0.2.3", Port: 4444},
 					},
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{"foo:9092"},
 					},
@@ -352,7 +354,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 						{Address: "0.0.2.3", Port: 4444},
 					},
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{"foo:9092"},
 					},
@@ -384,7 +386,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 						{Address: "0.0.2.3", Port: 4444},
 					},
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{"250.12.12.12:9095"},
 					},
@@ -450,7 +452,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 					},
 					AdminAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{
 							"localhost:9999",
@@ -537,7 +539,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 						{Name: "tls", Enabled: true},
 					},
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{
 							"localhost:5555",
@@ -595,7 +597,7 @@ func TestAddUnsetDefaults(t *testing.T) {
 					},
 					AdminAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
 				},
-				Rpk: RpkConfig{
+				Rpk: RpkNodeConfig{
 					KafkaAPI: RpkKafkaAPI{
 						Brokers: []string{
 							"localhost:5555",
@@ -611,6 +613,62 @@ func TestAddUnsetDefaults(t *testing.T) {
 							"10.0.0.1:4444",
 							"122.65.33.12:4444",
 						},
+					},
+				},
+			},
+		},
+
+		{
+			name: "assume the admin API when only Kafka API is available",
+			inCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+				},
+			},
+			expCfg: &Config{
+				Redpanda: RedpandaNodeConfig{
+					KafkaAPI: []NamedAuthNSocketAddress{
+						{Address: "127.1.0.1", Port: 5555, Name: "tls"},
+					},
+					KafkaAPITLS: []ServerTLS{{Name: "tls", Enabled: true}},
+				},
+				Rpk: RpkNodeConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{
+							"127.1.0.1:5555",
+						},
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{
+							"127.1.0.1:9644",
+						},
+					},
+				},
+			},
+		},
+
+		{
+			name: "assume the Kafka API API when only admin API is available from rpk with TLS",
+			inCfg: &Config{
+				Rpk: RpkNodeConfig{
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"127.1.0.1:5555"},
+						TLS:       new(TLS),
+					},
+				},
+			},
+			expCfg: &Config{
+				Rpk: RpkNodeConfig{
+					KafkaAPI: RpkKafkaAPI{
+						Brokers: []string{"127.1.0.1:9092"},
+						TLS:     new(TLS),
+					},
+					AdminAPI: RpkAdminAPI{
+						Addresses: []string{"127.1.0.1:5555"},
+						TLS:       new(TLS),
 					},
 				},
 			},

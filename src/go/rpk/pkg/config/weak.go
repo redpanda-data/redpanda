@@ -10,7 +10,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -299,7 +298,7 @@ func (ss *seedServers) UnmarshalYAML(n *yaml.Node) error {
 func (c *Config) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		Redpanda             RedpandaNodeConfig `yaml:"redpanda"`
-		Rpk                  RpkConfig          `yaml:"rpk"`
+		Rpk                  RpkNodeConfig      `yaml:"rpk"`
 		Pandaproxy           *Pandaproxy        `yaml:"pandaproxy"`
 		PandaproxyClient     *KafkaClient       `yaml:"pandaproxy_client"`
 		SchemaRegistry       *SchemaRegistry    `yaml:"schema_registry"`
@@ -361,10 +360,10 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 			// we parse the value and check if it's a valid TLS config and print
 			// a warning otherwise.
 			rpcTLS := v.Index(0).Interface()
-			b, _ := json.Marshal(rpcTLS)
+			b, _ := yaml.Marshal(rpcTLS)
 
 			t := ServerTLS{}
-			if err := json.Unmarshal(b, &t); err == nil {
+			if err := yaml.Unmarshal(b, &t); err == nil {
 				_, err := tlscfg.New(
 					tlscfg.MaybeWithDiskCA(
 						t.TruststoreFile,
@@ -403,7 +402,7 @@ func (rpc *RedpandaNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	return nil
 }
 
-func (rpkc *RpkConfig) UnmarshalYAML(n *yaml.Node) error {
+func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	var internal struct {
 		// Deprecated 2021-07-1
 		TLS *TLS `yaml:"tls"`
@@ -443,26 +442,26 @@ func (rpkc *RpkConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpkc.KafkaAPI = internal.KafkaAPI
 	rpkc.AdminAPI = internal.AdminAPI
 	rpkc.AdditionalStartFlags = internal.AdditionalStartFlags
-	rpkc.TuneNetwork = bool(internal.TuneNetwork)
-	rpkc.TuneDiskScheduler = bool(internal.TuneDiskScheduler)
-	rpkc.TuneNomerges = bool(internal.TuneNomerges)
-	rpkc.TuneDiskWriteCache = bool(internal.TuneDiskWriteCache)
-	rpkc.TuneDiskIrq = bool(internal.TuneDiskIrq)
-	rpkc.TuneFstrim = bool(internal.TuneFstrim)
-	rpkc.TuneCPU = bool(internal.TuneCPU)
-	rpkc.TuneAioEvents = bool(internal.TuneAioEvents)
-	rpkc.TuneClocksource = bool(internal.TuneClocksource)
-	rpkc.TuneSwappiness = bool(internal.TuneSwappiness)
-	rpkc.TuneTransparentHugePages = bool(internal.TuneTransparentHugePages)
-	rpkc.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
-	rpkc.TuneCoredump = bool(internal.TuneCoredump)
-	rpkc.CoredumpDir = string(internal.CoredumpDir)
-	rpkc.TuneBallastFile = bool(internal.TuneBallastFile)
-	rpkc.BallastFilePath = string(internal.BallastFilePath)
-	rpkc.BallastFileSize = string(internal.BallastFileSize)
-	rpkc.WellKnownIo = string(internal.WellKnownIo)
-	rpkc.Overprovisioned = bool(internal.Overprovisioned)
-	rpkc.SMP = (*int)(internal.SMP)
+	rpkc.Tuners.TuneNetwork = bool(internal.TuneNetwork)
+	rpkc.Tuners.TuneDiskScheduler = bool(internal.TuneDiskScheduler)
+	rpkc.Tuners.TuneNomerges = bool(internal.TuneNomerges)
+	rpkc.Tuners.TuneDiskWriteCache = bool(internal.TuneDiskWriteCache)
+	rpkc.Tuners.TuneDiskIrq = bool(internal.TuneDiskIrq)
+	rpkc.Tuners.TuneFstrim = bool(internal.TuneFstrim)
+	rpkc.Tuners.TuneCPU = bool(internal.TuneCPU)
+	rpkc.Tuners.TuneAioEvents = bool(internal.TuneAioEvents)
+	rpkc.Tuners.TuneClocksource = bool(internal.TuneClocksource)
+	rpkc.Tuners.TuneSwappiness = bool(internal.TuneSwappiness)
+	rpkc.Tuners.TuneTransparentHugePages = bool(internal.TuneTransparentHugePages)
+	rpkc.Tuners.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
+	rpkc.Tuners.TuneCoredump = bool(internal.TuneCoredump)
+	rpkc.Tuners.CoredumpDir = string(internal.CoredumpDir)
+	rpkc.Tuners.TuneBallastFile = bool(internal.TuneBallastFile)
+	rpkc.Tuners.BallastFilePath = string(internal.BallastFilePath)
+	rpkc.Tuners.BallastFileSize = string(internal.BallastFileSize)
+	rpkc.Tuners.WellKnownIo = string(internal.WellKnownIo)
+	rpkc.Tuners.Overprovisioned = bool(internal.Overprovisioned)
+	rpkc.Tuners.SMP = (*int)(internal.SMP)
 	return nil
 }
 

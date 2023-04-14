@@ -21,8 +21,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/utils"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 type balanceServiceInfo struct {
@@ -58,14 +58,14 @@ type balanceService struct {
 func (balanceService *balanceService) BanIRQsAndRestart(
 	bannedIRQs []int,
 ) error {
-	log.Infof("Restarting & Configuring 'irqbalance' with banned IRQs '%v'", bannedIRQs)
+	fmt.Printf("Restarting & Configuring 'irqbalance' with banned IRQs '%v'\n", bannedIRQs)
 	if len(bannedIRQs) == 0 {
 		return nil
 	}
 	running := balanceService.IsRunning()
 	balanceService.GetBannedIRQs()
 	if !running {
-		log.Info("'irqbalance' process is not running")
+		fmt.Println("'irqbalance' process is not running")
 		return nil
 	}
 	serviceInfo, err := balanceService.getBalanceServiceInfo()
@@ -125,12 +125,12 @@ func (balanceService *balanceService) BanIRQsAndRestart(
 		return err
 	}
 	if serviceInfo.systemd {
-		log.Debug("Restarting 'irqbalance' via systemctl...")
+		zap.L().Sugar().Debug("Restarting 'irqbalance' via systemctl...")
 		err = balanceService.executor.Execute(
 			commands.NewLaunchCmd(
 				balanceService.proc, balanceService.timeout, "systemctl", "try-restart", "irqbalance"))
 	} else {
-		log.Debug("Restarting 'irqbalance' directly (init.d)...")
+		zap.L().Sugar().Debug("Restarting 'irqbalance' directly (init.d)...")
 		err = balanceService.executor.Execute(
 			commands.NewLaunchCmd(
 				balanceService.proc, balanceService.timeout, "/etc/init.d/irqbalance", "restart"))
@@ -146,7 +146,7 @@ func (balanceService *balanceService) IsRunning() bool {
 }
 
 func (balanceService *balanceService) GetBannedIRQs() ([]int, error) {
-	log.Debugf("Getting banned IRQs")
+	zap.L().Sugar().Debugf("Getting banned IRQs")
 	serviceInfo, err := balanceService.getBalanceServiceInfo()
 	if err != nil {
 		return nil, err
@@ -201,13 +201,13 @@ func (balanceService *balanceService) getBalanceServiceInfo() (
 	configFile := "/etc/default/irqbalance"
 	systemd := false
 	if exists, _ := afero.Exists(fs, configFile); !exists {
-		log.Debugf("File '%s' does not exist", configFile)
+		zap.L().Sugar().Debugf("File '%s' does not exist", configFile)
 		if exists, _ := afero.Exists(fs, "/etc/sysconfig/irqbalance"); exists {
 			configFile = "/etc/sysconfig/irqbalance"
 			optionsKey = "IRQBALANCE_ARGS"
 			systemd = true
 		} else if exists, _ := afero.Exists(fs, "/etc/conf.d/irqbalance"); !exists {
-			log.Error("Unknown system configuration - not restarting irqbalance!")
+			zap.L().Sugar().Error("Unknown system configuration - not restarting irqbalance!")
 			return nil, errors.New("Unsupported irqbalance service configuration")
 		} else {
 			configFile = "/etc/conf.d/irqbalance"

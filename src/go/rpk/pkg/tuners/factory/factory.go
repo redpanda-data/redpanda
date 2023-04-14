@@ -30,8 +30,8 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/executors"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/hwloc"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/tuners/irq"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"go.uber.org/zap"
 )
 
 var allTuners = map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
@@ -65,7 +65,7 @@ type TunersFactory interface {
 
 type tunersFactory struct {
 	fs                afero.Fs
-	conf              config.Config
+	conf              config.RpkNodeTuners
 	irqDeviceInfo     irq.DeviceInfo
 	cpuMasks          irq.CPUMasks
 	irqBalanceService irq.BalanceService
@@ -76,9 +76,7 @@ type tunersFactory struct {
 	executor          executors.Executor
 }
 
-func NewDirectExecutorTunersFactory(
-	fs afero.Fs, conf config.Config, timeout time.Duration,
-) TunersFactory {
+func NewDirectExecutorTunersFactory(fs afero.Fs, conf config.RpkNodeTuners, timeout time.Duration) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
@@ -86,9 +84,7 @@ func NewDirectExecutorTunersFactory(
 	return newTunersFactory(fs, conf, irqProcFile, proc, irqDeviceInfo, executor, timeout)
 }
 
-func NewScriptRenderingTunersFactory(
-	fs afero.Fs, conf config.Config, out string, timeout time.Duration,
-) TunersFactory {
+func NewScriptRenderingTunersFactory(fs afero.Fs, conf config.RpkNodeTuners, out string, timeout time.Duration) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
@@ -98,7 +94,7 @@ func NewScriptRenderingTunersFactory(
 
 func newTunersFactory(
 	fs afero.Fs,
-	conf config.Config,
+	conf config.RpkNodeTuners,
 	irqProcFile irq.ProcFile,
 	proc os.Proc,
 	irqDeviceInfo irq.DeviceInfo,
@@ -131,34 +127,34 @@ func IsTunerAvailable(tuner string) bool {
 	return allTuners[tuner] != nil
 }
 
-func IsTunerEnabled(tuner string, rpkConfig config.RpkConfig) bool {
+func IsTunerEnabled(tuner string, tuneCfg config.RpkNodeTuners) bool {
 	switch tuner {
 	case "disk_irq":
-		return rpkConfig.TuneDiskIrq
+		return tuneCfg.TuneDiskIrq
 	case "disk_scheduler":
-		return rpkConfig.TuneDiskScheduler
+		return tuneCfg.TuneDiskScheduler
 	case "disk_nomerges":
-		return rpkConfig.TuneNomerges
+		return tuneCfg.TuneNomerges
 	case "disk_write_cache":
-		return rpkConfig.TuneDiskWriteCache
+		return tuneCfg.TuneDiskWriteCache
 	case "fstrim":
-		return rpkConfig.TuneFstrim
+		return tuneCfg.TuneFstrim
 	case "net":
-		return rpkConfig.TuneNetwork
+		return tuneCfg.TuneNetwork
 	case "cpu":
-		return rpkConfig.TuneCPU
+		return tuneCfg.TuneCPU
 	case "aio_events":
-		return rpkConfig.TuneAioEvents
+		return tuneCfg.TuneAioEvents
 	case "clocksource":
-		return rpkConfig.TuneClocksource
+		return tuneCfg.TuneClocksource
 	case "swappiness":
-		return rpkConfig.TuneSwappiness
+		return tuneCfg.TuneSwappiness
 	case "transparent_hugepages":
-		return rpkConfig.TuneTransparentHugePages
+		return tuneCfg.TuneTransparentHugePages
 	case "coredump":
-		return rpkConfig.TuneCoredump
+		return tuneCfg.TuneCoredump
 	case "ballast_file":
-		return rpkConfig.TuneBallastFile
+		return tuneCfg.TuneBallastFile
 	}
 	return false
 }
@@ -283,18 +279,16 @@ func (factory *tunersFactory) newTHPTuner(_ *TunerParams) tuners.Tunable {
 }
 
 func (factory *tunersFactory) newCoredumpTuner(_ *TunerParams) tuners.Tunable {
-	return coredump.NewCoredumpTuner(factory.fs, factory.conf, factory.executor)
+	return coredump.NewCoredumpTuner(factory.fs, factory.conf.CoredumpDir, factory.executor)
 }
 
 func (factory *tunersFactory) newBallastFileTuner(
 	_ *TunerParams,
 ) tuners.Tunable {
-	return ballast.NewBallastFileTuner(factory.conf, factory.executor)
+	return ballast.NewBallastFileTuner(factory.conf.BallastFilePath, factory.conf.BallastFileSize, factory.executor)
 }
 
-func MergeTunerParamsConfig(
-	params *TunerParams, conf *config.Config,
-) (*TunerParams, error) {
+func MergeTunerParamsConfig(params *TunerParams, conf *config.Config) (*TunerParams, error) {
 	if len(params.Nics) == 0 {
 		addrs := []string{conf.Redpanda.RPCServer.Address}
 		if len(conf.Redpanda.KafkaAPI) > 0 {
@@ -314,9 +308,7 @@ func MergeTunerParamsConfig(
 	return params, nil
 }
 
-func FillTunerParamsWithValuesFromConfig(
-	params *TunerParams, conf *config.Config,
-) error {
+func FillTunerParamsWithValuesFromConfig(params *TunerParams, conf *config.Config) error {
 	addrs := []string{conf.Redpanda.RPCServer.Address}
 	if len(conf.Redpanda.KafkaAPI) > 0 {
 		addrs = append(addrs, conf.Redpanda.KafkaAPI[0].Address)
@@ -328,8 +320,8 @@ func FillTunerParamsWithValuesFromConfig(
 		return err
 	}
 	params.Nics = nics
-	log.Infof("Redpanda uses '%v' NICs", params.Nics)
-	log.Infof("Redpanda data directory '%s'", conf.Redpanda.Directory)
+	zap.L().Sugar().Debugf("Redpanda uses '%v' NICs", params.Nics)
+	zap.L().Sugar().Debugf("Redpanda data directory '%s'", conf.Redpanda.Directory)
 	params.Directories = []string{conf.Redpanda.Directory}
 	return nil
 }

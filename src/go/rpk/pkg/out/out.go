@@ -161,7 +161,13 @@ func NewTabWriterTo(w io.Writer) *TabWriter {
 // Print stringifies the arguments and prints them tab-delimited and
 // newline-suffixed to the tab writer.
 func (t *TabWriter) Print(args ...interface{}) {
-	fmt.Fprint(t.Writer, strings.Join(args2strings(args), "\t")+"\n")
+	t.PrintStrings(args2strings(args)...)
+}
+
+// PrintStrings prints args tab-delimited and newline-suffixed to the tab
+// writer.
+func (t *TabWriter) PrintStrings(args ...string) {
+	fmt.Fprint(t.Writer, strings.Join(args, "\t")+"\n")
 }
 
 // PrintStructFields prints the values stored in fields in a struct.
