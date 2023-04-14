@@ -455,7 +455,9 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
             ctx.sasl()->set_mechanism(
               std::make_unique<security::gssapi_authenticator>(
                 ctx.connection()->server().thread_worker(),
-                ctx.connection()->server().gssapi_principal_mapper().rules()));
+                ctx.connection()->server().gssapi_principal_mapper().rules(),
+                config::shard_local_cfg().sasl_kerberos_principal(),
+                config::shard_local_cfg().sasl_kerberos_keytab()));
         }
     }
 
