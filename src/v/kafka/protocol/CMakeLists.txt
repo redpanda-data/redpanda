@@ -36,6 +36,8 @@ v_cc_library(
     ${message_hdrs}
     ${msg_src}
     types.cc
+    batch_reader.cc
+    kafka_batch_adapter.cc
   DEPS
     Seastar::seastar
     v::bytes
