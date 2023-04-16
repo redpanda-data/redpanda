@@ -12,7 +12,6 @@ v_cc_library(
     offset_translation_layer.cc
     probe.cc
     partition_probe.cc
-    partition_recovery_manager.cc
     types.cc
     remote_segment.cc
     remote_partition.cc
@@ -22,7 +21,6 @@ v_cc_library(
     segment_state.cc
     recovery_errors.cc
     recovery_request.cc
-    topic_recovery_service.cc
     recovery_utils.cc
     segment_meta_cstore.cc
   DEPS

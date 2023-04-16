@@ -9,7 +9,7 @@
  */
 
 #include "cloud_storage/tests/s3_imposter.h"
-#include "cloud_storage/topic_recovery_service.h"
+#include "cluster/topic_recovery_service.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 

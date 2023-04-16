@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_storage/topic_recovery_service.h"
+#include "cluster/topic_recovery_service.h"
 
 #include "cloud_storage/logger.h"
 #include "cloud_storage/recovery_utils.h"
