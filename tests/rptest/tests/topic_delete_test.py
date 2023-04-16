@@ -369,6 +369,11 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # Use all nodes as brokers: enables each test to set num_nodes
             # and get a cluster of that size
             num_brokers=test_context.cluster.available().size(),
+
+            # We rely on the scrubber to delete topic manifests, and to eventually
+            # delete data if cloud storage was unavailable during initial delete.  To
+            # control test runtimes, set a short interval.
+            rp_extra_conf={'cloud_storage_housekeeping_interval_ms': 5000},
             si_settings=self.si_settings)
 
         self._s3_port = self.si_settings.cloud_storage_api_endpoint_port
@@ -507,6 +512,10 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
                    backoff_sec=1)
 
         wait_until(lambda: self._topic_remote_deleted(next_topic),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        wait_until(lambda: self._topic_remote_deleted(self.topic),
                    timeout_sec=30,
                    backoff_sec=1)
 
