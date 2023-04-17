@@ -64,7 +64,7 @@ jobs:
       run: pip install yapf==0.32.0
 
     - name: Run yapf
-      run: find . -type f -name '*.py' | xargs -n1 yapf -d
+      run: find . -type f -name '*.py' | xargs -n8 yapf -d
 
   cpp:
     name: Lint files with clang-format
