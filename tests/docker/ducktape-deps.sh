@@ -41,7 +41,9 @@ function install_system_deps() {
     netcat-openbsd \
     sudo \
     llvm \
-    python3-pip
+    python3-pip \
+    libzstd-dev \
+    pkg-config
 }
 
 function install_omb() {
@@ -109,7 +111,7 @@ function install_rust_tools() {
 
   git clone https://github.com/redpanda-data/client-swarm.git
   pushd client-swarm
-  git reset --hard 9ef8e93
+  git reset --hard 63b4cd558203cdd79a69a0893c7435104c10f428
   cargo build --release
   cp target/release/client-swarm /usr/local/bin
   popd
@@ -117,7 +119,7 @@ function install_rust_tools() {
 
   git clone https://github.com/jcsp/segment_toy.git
   pushd segment_toy
-  git reset --hard 899c1310b0a55e1ade66237054faba81bb4223a4
+  git reset --hard 3a4b8b37bf1fddd5ff767a13c13e3947476485a8
   cargo build --release
   cp target/release/segments /usr/local/bin
   popd
