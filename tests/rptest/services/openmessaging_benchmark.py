@@ -7,8 +7,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-import re
-import threading
 import os
 import json
 import collections
@@ -18,6 +16,10 @@ from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
 from rptest.services.utils import BadLogLines, NodeCrash
 from rptest.services.openmessaging_benchmark_configs import OMBSampleConfigurations
+
+LOG_ALLOW_LIST = [
+    "No such file or directory", "cannot be started once stopped"
+]
 
 
 # Benchmark worker that is used by benchmark process to run consumers and producers
@@ -92,7 +94,13 @@ class OpenMessagingBenchmarkWorkers(Service):
         for line in node.account.ssh_capture(
                 f"grep -e TimeoutException {OpenMessagingBenchmarkWorkers.STDOUT_STDERR_CAPTURE} || true"
         ):
-            if "No such file or directory" not in line:
+            allowed = False
+            for a in LOG_ALLOW_LIST:
+                if a in line:
+                    allowed = True
+                    break
+
+            if not allowed:
                 bad_lines[node].append(line)
 
         if bad_lines:
@@ -266,7 +274,13 @@ class OpenMessagingBenchmark(Service):
         for line in node.account.ssh_capture(
                 f"grep -e Exception {OpenMessagingBenchmark.STDOUT_STDERR_CAPTURE} || true"
         ):
-            if "No such file or directory" not in line:
+            allowed = False
+            for a in LOG_ALLOW_LIST:
+                if a in line:
+                    allowed = True
+                    break
+
+            if not allowed:
                 bad_lines[node].append(line)
 
         if bad_lines:
