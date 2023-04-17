@@ -348,16 +348,11 @@ static json::Document parse_json_body(ss::http::request const& req) {
  */
 static void
 apply_validator(json::validator& validator, json::Document const& doc) {
-    validator.schema_validator.Reset();
-    validator.schema_validator.ResetError();
-
-    if (!doc.Accept(validator.schema_validator)) {
-        json::StringBuffer val_buf;
-        json::Writer<json::StringBuffer> w{val_buf};
-        validator.schema_validator.GetError().Accept(w);
-        auto s = ss::sstring{val_buf.GetString(), val_buf.GetSize()};
-        throw ss::httpd::bad_request_exception(
-          fmt::format("JSON request body does not conform to schema: {}", s));
+    try {
+        json::validate(validator, doc);
+    } catch (json::json_validation_error& err) {
+        throw ss::httpd::bad_request_exception(fmt::format(
+          "JSON request body does not conform to schema: {}", err.what()));
     }
 }
 
