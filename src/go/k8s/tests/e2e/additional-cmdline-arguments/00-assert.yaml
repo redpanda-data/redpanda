@@ -5,6 +5,19 @@ metadata:
   name: cluster
 status:
   readyReplicas: 1
+
+---
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster
+status:
+  replicas: 1
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
