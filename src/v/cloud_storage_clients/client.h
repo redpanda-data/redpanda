@@ -58,6 +58,8 @@ private:
     ss::sstring _tags;
 };
 
+using http_byte_range = std::pair<uint64_t, uint64_t>;
+
 class client {
 public:
     struct no_response {};
@@ -82,7 +84,8 @@ public:
       bucket_name const& name,
       object_key const& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false)
+      bool expect_no_such_key = false,
+      std::optional<http_byte_range> byte_range = std::nullopt)
       = 0;
 
     struct head_object_result {

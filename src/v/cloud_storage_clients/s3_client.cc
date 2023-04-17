@@ -71,7 +71,9 @@ request_creator::request_creator(
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> request_creator::make_get_object_request(
-  bucket_name const& name, object_key const& key) {
+  bucket_name const& name,
+  object_key const& key,
+  std::optional<http_byte_range> byte_range) {
     http::client::request_header header{};
     // GET /{object-id} HTTP/1.1
     // Host: {bucket-name}.s3.amazonaws.com
@@ -86,6 +88,14 @@ result<http::client::request_header> request_creator::make_get_object_request(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
     header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_length, "0");
+    if (byte_range.has_value()) {
+        header.insert(
+          boost::beast::http::field::range,
+          fmt::format(
+            "bytes={}-{}",
+            byte_range.value().first,
+            byte_range.value().second));
+    }
     auto ec = _apply_credentials->add_auth(header);
     if (ec) {
         return ec;
@@ -476,32 +486,47 @@ s3_client::get_object(
   bucket_name const& name,
   object_key const& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key) {
+  bool expect_no_such_key,
+  std::optional<http_byte_range> byte_range) {
     return send_request(
-      do_get_object(name, key, timeout, expect_no_such_key), name, key);
+      do_get_object(
+        name, key, timeout, expect_no_such_key, std::move(byte_range)),
+      name,
+      key);
 }
 
 ss::future<http::client::response_stream_ref> s3_client::do_get_object(
   bucket_name const& name,
   object_key const& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key) {
-    auto header = _requestor.make_get_object_request(name, key);
+  bool expect_no_such_key,
+  std::optional<http_byte_range> byte_range) {
+    bool is_byte_range_requested = byte_range.has_value();
+    auto header = _requestor.make_get_object_request(
+      name, key, std::move(byte_range));
     if (!header) {
         return ss::make_exception_future<http::client::response_stream_ref>(
           std::system_error(header.error()));
     }
     vlog(s3_log.trace, "send https request:\n{}", header.value());
     return _client.request(std::move(header.value()), timeout)
-      .then([expect_no_such_key](http::client::response_stream_ref&& ref) {
+      .then([expect_no_such_key,
+             is_byte_range_requested](http::client::response_stream_ref&& ref) {
           // here we didn't receive any bytes from the socket and
           // ref->is_header_done() is 'false', we need to prefetch
           // the header first
           return ref->prefetch_headers().then(
-            [ref = std::move(ref), expect_no_such_key]() mutable {
+            [ref = std::move(ref),
+             expect_no_such_key,
+             is_byte_range_requested]() mutable {
                 vassert(ref->is_header_done(), "Header is not received");
                 const auto result = ref->get_headers().result();
-                if (result != boost::beast::http::status::ok) {
+                bool request_failed = result != boost::beast::http::status::ok;
+                if (is_byte_range_requested) {
+                    request_failed
+                      &= result != boost::beast::http::status::partial_content;
+                }
+                if (request_failed) {
                     // Got error response, consume the response body and produce
                     // rest api error
                     if (

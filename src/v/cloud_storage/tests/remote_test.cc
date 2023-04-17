@@ -350,6 +350,72 @@ FIXTURE_TEST(test_download_segment_timeout, remote_fixture) { // NOLINT
       subscription.get() == api_activity_notification::segment_download);
 }
 
+FIXTURE_TEST(test_download_segment_range, remote_fixture) {
+    auto bucket = cloud_storage_clients::bucket_name("bucket");
+    auto subscription = remote.local().subscribe(allow_all);
+
+    auto path = generate_remote_segment_path(
+      manifest_ntp,
+      manifest_revision,
+      segment_name("1-2-v1.log"),
+      model::term_id{123});
+
+    retry_chain_node fib(never_abort, 100ms, 20ms);
+
+    set_expectations_and_listen({}, {{"Range"}});
+
+    auto upl_res
+      = remote.local()
+          .upload_segment(
+            bucket,
+            path,
+            manifest_payload.size(),
+            []() -> ss::future<std::unique_ptr<storage::stream_provider>> {
+                iobuf out;
+                out.append(manifest_payload.data(), manifest_payload.size());
+                co_return std::make_unique<storage::segment_reader_handle>(
+                  make_iobuf_input_stream(std::move(out)));
+            },
+            fib,
+            always_continue)
+          .get();
+    BOOST_REQUIRE_EQUAL(upl_res, upload_result::success);
+
+    iobuf downloaded;
+    auto dnl_res = remote.local()
+                     .download_segment(
+                       bucket,
+                       path,
+                       [&downloaded](uint64_t len, ss::input_stream<char> is) {
+                           downloaded.clear();
+                           auto rds = make_iobuf_ref_output_stream(downloaded);
+                           return ss::do_with(
+                             std::move(rds),
+                             std::move(is),
+                             [&downloaded](auto& rds, auto& is) {
+                                 return ss::copy(is, rds).then([&downloaded] {
+                                     return downloaded.size_bytes();
+                                 });
+                             });
+                       },
+                       fib,
+                       {{0, 1}})
+                     .get();
+    BOOST_REQUIRE_EQUAL(dnl_res, download_result::success);
+
+    iobuf_parser p(std::move(downloaded));
+    auto actual = p.read_string(p.bytes_left());
+
+    BOOST_REQUIRE_EQUAL(actual, manifest_payload);
+    BOOST_REQUIRE(subscription.available());
+    BOOST_REQUIRE(
+      subscription.get() == api_activity_notification::segment_upload);
+
+    const auto& req = get_requests()[1];
+    BOOST_REQUIRE_EQUAL(req.method, "GET");
+    BOOST_REQUIRE_EQUAL(req.header("Range"), "bytes=0-1");
+}
+
 FIXTURE_TEST(test_segment_exists, remote_fixture) { // NOLINT
     set_expectations_and_listen({});
     auto bucket = cloud_storage_clients::bucket_name("bucket");

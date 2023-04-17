@@ -97,7 +97,9 @@ abs_request_creator::abs_request_creator(
   , _apply_credentials{std::move(apply_credentials)} {}
 
 result<http::client::request_header> abs_request_creator::make_get_blob_request(
-  bucket_name const& name, object_key const& key) {
+  bucket_name const& name,
+  object_key const& key,
+  std::optional<http_byte_range> byte_range) {
     // GET /{container-id}/{blob-id} HTTP/1.1
     // Host: {storage-account-id}.blob.core.windows.net
     // x-ms-date:{req-datetime in RFC9110} # added by 'add_auth'
@@ -110,6 +112,14 @@ result<http::client::request_header> abs_request_creator::make_get_blob_request(
     header.method(boost::beast::http::verb::get);
     header.target(target);
     header.insert(boost::beast::http::field::host, host);
+    if (byte_range.has_value()) {
+        header.insert(
+          boost::beast::http::field::range,
+          fmt::format(
+            "bytes={}-{}",
+            byte_range.value().first,
+            byte_range.value().second));
+    }
     auto error_code = _apply_credentials->add_auth(header);
     if (error_code) {
         return error_code;
@@ -353,9 +363,11 @@ abs_client::get_object(
   bucket_name const& name,
   object_key const& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key) {
+  bool expect_no_such_key,
+  std::optional<http_byte_range> byte_range) {
     return send_request(
-      do_get_object(name, key, timeout, expect_no_such_key),
+      do_get_object(
+        name, key, timeout, expect_no_such_key, std::move(byte_range)),
       name,
       key,
       op_type_tag::download);
@@ -365,8 +377,11 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
   bucket_name const& name,
   object_key const& key,
   ss::lowres_clock::duration timeout,
-  bool expect_no_such_key) {
-    auto header = _requestor.make_get_blob_request(name, key);
+  bool expect_no_such_key,
+  std::optional<http_byte_range> byte_range) {
+    bool is_byte_range_requested = byte_range.has_value();
+    auto header = _requestor.make_get_blob_request(
+      name, key, std::move(byte_range));
     if (!header) {
         vlog(
           abs_log.warn, "Failed to create request header: {}", header.error());
@@ -382,7 +397,11 @@ ss::future<http::client::response_stream_ref> abs_client::do_get_object(
     vassert(response_stream->is_header_done(), "Header is not received");
 
     const auto status = response_stream->get_headers().result();
-    if (status != boost::beast::http::status::ok) {
+    bool request_failed = status != boost::beast::http::status::ok;
+    if (is_byte_range_requested) {
+        request_failed &= status != boost::beast::http::status::partial_content;
+    }
+    if (request_failed) {
         if (
           expect_no_such_key
           && status == boost::beast::http::status::not_found) {

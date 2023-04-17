@@ -253,7 +253,9 @@ public:
       const cloud_storage_clients::bucket_name& bucket,
       const remote_segment_path& path,
       const try_consume_stream& cons_str,
-      retry_chain_node& parent);
+      retry_chain_node& parent,
+      std::optional<cloud_storage_clients::http_byte_range> byte_range
+      = std::nullopt);
 
     /// \brief Download segment index from S3
     /// \param ix is the index which will be populated from data from the object

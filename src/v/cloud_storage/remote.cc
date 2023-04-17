@@ -506,7 +506,8 @@ ss::future<download_result> remote::download_segment(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
   const try_consume_stream& cons_str,
-  retry_chain_node& parent) {
+  retry_chain_node& parent,
+  std::optional<cloud_storage_clients::http_byte_range> byte_range) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
@@ -520,7 +521,7 @@ ss::future<download_result> remote::download_segment(
         notify_external_subscribers(
           api_activity_notification::segment_download, parent);
         auto resp = co_await lease.client->get_object(
-          bucket, path, fib.get_timeout());
+          bucket, path, fib.get_timeout(), false, byte_range);
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
