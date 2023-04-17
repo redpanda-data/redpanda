@@ -49,6 +49,11 @@
 
 #include <exception>
 
+namespace {
+auto constexpr min_chunks_in_segment_threshold = 5;
+auto constexpr default_hydrated_chunks_ratio = 0.5;
+} // namespace
+
 namespace cloud_storage {
 
 std::filesystem::path
@@ -132,6 +137,7 @@ remote_segment::remote_segment(
 
     _path = m.generate_segment_path(*meta);
     _index_path = generate_index_path(_path);
+    _chunk_root = fmt::format("{}_chunks", _path().native());
 
     _term = meta->segment_term;
 
@@ -149,6 +155,27 @@ remote_segment::remote_segment(
         // The tx-manifest is empty, no need to download it.
         _tx_range.emplace();
     }
+
+    _chunk_size = config::shard_local_cfg().cloud_storage_cache_chunk_size();
+    vassert(_chunk_size != 0, "cloud_storage_cache_chunk_size set to 0");
+
+    // The max hydrated chunks per segment are either 0.5 of total number of
+    // chunks possible, or in case of small segments the total number of chunks
+    // possible. In the second case we should be able to hydrate the entire
+    // segment in chunks at the same time. In the first case roughly half the
+    // segment may be hydrated at a time.
+    uint64_t chunks_in_segment = ceil(_size / _chunk_size);
+    if (chunks_in_segment <= min_chunks_in_segment_threshold) {
+        _max_hydrated_chunks = chunks_in_segment;
+    } else {
+        _max_hydrated_chunks = chunks_in_segment
+                               * default_hydrated_chunks_ratio;
+    }
+
+    vassert(
+      _max_hydrated_chunks > 0 && _max_hydrated_chunks <= chunks_in_segment,
+      "invalid max hydrated chunks: {}",
+      _max_hydrated_chunks);
 
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
@@ -344,6 +371,24 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache(
     }
 
     co_return size_bytes;
+}
+
+ss::future<uint64_t> remote_segment::put_chunk_in_cache(
+  uint64_t size, ss::input_stream<char> stream, segment_chunk_id_t chunk_id) {
+    try {
+        co_await _cache.put(get_path_to_chunk_id(chunk_id), stream)
+          .finally([&stream] { return stream.close(); });
+    } catch (...) {
+        auto put_exception = std::current_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to write segment chunk {} to cache, error: {}",
+          chunk_id,
+          put_exception);
+        std::rethrow_exception(put_exception);
+    }
+
+    co_return size;
 }
 
 ss::future<> remote_segment::do_hydrate_segment() {
@@ -780,6 +825,36 @@ ss::future<> remote_segment::hydrate() {
       .discard_result();
 }
 
+ss::future<>
+remote_segment::hydrate_segment_chunk(segment_chunk_id_t chunk_id) {
+    auto start = chunk_id * _chunk_size;
+    // The end byte position may exceed the file size. HTTP byte range downloads
+    // clamp to the file size in this case.
+    auto end = start + _chunk_size - 1;
+    retry_chain_node rtc{
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc};
+    auto res = co_await _api.download_segment(
+      _bucket,
+      _path,
+      [this, chunk_id](auto size, auto stream) {
+          return put_chunk_in_cache(size, std::move(stream), chunk_id);
+      },
+      rtc,
+      std::make_pair(start, end));
+    if (res != download_result::success) {
+        throw download_exception{res, _path};
+    }
+}
+
+ss::future<ss::file>
+remote_segment::materialize_segment_chunk(segment_chunk_id_t chunk_id) {
+    auto res = co_await _cache.get(get_path_to_chunk_id(chunk_id));
+    if (!res.has_value()) {
+        co_return ss::file{};
+    }
+    co_return res.value().body;
+}
+
 ss::future<std::vector<model::tx_range>>
 remote_segment::aborted_transactions(model::offset from, model::offset to) {
     co_await hydrate();
@@ -807,6 +882,27 @@ remote_segment::aborted_transactions(model::offset from, model::offset to) {
       from,
       to);
     co_return result;
+}
+
+uint64_t remote_segment::max_hydrated_chunks() const {
+    return _max_hydrated_chunks;
+}
+
+segment_chunk_id_t
+remote_segment::chunk_id_for_kafka_offset(kafka::offset koff) {
+    vassert(
+      _index.has_value(),
+      "chunk_id_for_kafka_offset called without materialized index for segment "
+      "{}",
+      _path);
+    auto res = maybe_get_offsets(koff);
+    vassert(
+      res.has_value(),
+      "chunk_id_for_kafka_offset: index lookup returned no result for kafka "
+      "offset {} in segment {}",
+      koff,
+      _path);
+    return res.value().file_pos / _chunk_size;
 }
 
 /// Batch consumer that connects to remote_segment_batch_reader.

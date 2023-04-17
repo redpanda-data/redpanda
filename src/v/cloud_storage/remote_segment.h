@@ -16,6 +16,7 @@
 #include "cloud_storage/partition_probe.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
+#include "cloud_storage/segment_chunk.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/types.h"
 #include "model/fundamental.h"
@@ -115,6 +116,13 @@ public:
     /// implementation, but the index is still required to be present first.
     ss::future<> hydrate();
 
+    /// Hydrate a part of a segment, identified by the given segment chunk id.
+    ss::future<> hydrate_segment_chunk(segment_chunk_id_t);
+
+    /// Loads the segment chunk file from cache into an open file handle. If the
+    /// file is not present in cache, the returned file handle is unopened.
+    ss::future<ss::file> materialize_segment_chunk(segment_chunk_id_t);
+
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
     bool download_in_progress() const noexcept { return !_wait_list.empty(); }
@@ -131,6 +139,14 @@ public:
     }
 
     bool is_stopped() const { return _stopped; }
+
+    uint64_t max_hydrated_chunks() const;
+
+    /// Calculates the chunk id (section of segment file in cloud storage) where
+    /// the given kafka offset will lie. Chunk ids start at 0.
+    /// The precondition is that the index should have been hydrated.
+    /// This method is non-const because index lookup is non-const.
+    segment_chunk_id_t chunk_id_for_kafka_offset(kafka::offset koff);
 
 private:
     /// get a file offset for the corresponding kafka offset
@@ -158,6 +174,11 @@ private:
 
     ss::future<uint64_t> put_segment_in_cache(uint64_t, ss::input_stream<char>);
 
+    /// Stores a segment chunk in cache, opens the file and returns handle to
+    /// it.
+    ss::future<uint64_t> put_chunk_in_cache(
+      uint64_t, ss::input_stream<char>, segment_chunk_id_t chunk_id);
+
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.
     ss::future<> do_hydrate_txrange();
@@ -173,6 +194,11 @@ private:
     /// Load segment index from file (if available)
     ss::future<bool> maybe_materialize_index();
 
+    std::filesystem::path
+    get_path_to_chunk_id(segment_chunk_id_t chunk_id) const {
+        return _chunk_root / fmt::format("{}", chunk_id);
+    }
+
     ss::gate _gate;
     remote& _api;
     cache& _cache;
@@ -180,6 +206,7 @@ private:
     const model::ntp& _ntp;
     remote_segment_path _path;
     std::filesystem::path _index_path;
+    std::filesystem::path _chunk_root;
 
     model::term_id _term;
     model::offset _base_rp_offset;
@@ -215,6 +242,9 @@ private:
 
     using fallback_mode = ss::bool_class<struct fallback_mode_tag>;
     fallback_mode _fallback_mode{fallback_mode::no};
+
+    uint64_t _max_hydrated_chunks{0};
+    uint64_t _chunk_size{0};
 };
 
 class remote_segment_batch_consumer;
