@@ -22,6 +22,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
 #include "storage/fwd.h"
 #include "storage/index_state.h"
@@ -33,7 +34,6 @@
 #include "storage/segment.h"
 #include "storage/types.h"
 #include "units.h"
-#include "utils/file_sanitizer.h"
 #include "vassert.h"
 #include "vlog.h"
 

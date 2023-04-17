@@ -14,10 +14,10 @@
 #include "storage/api.h"
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
+#include "storage/file_sanitizer.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
-#include "utils/file_sanitizer.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>

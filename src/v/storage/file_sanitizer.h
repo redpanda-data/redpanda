@@ -29,6 +29,8 @@ namespace bi = boost::intrusive;
 
 #include "seastarx.h"
 
+namespace storage {
+
 struct sanitizer_op
   : public bi::list_base_hook<bi::link_mode<bi::auto_unlink>> {
     ss::sstring name_op;
@@ -239,3 +241,5 @@ private:
     ss::file _file;
     std::optional<ss::saved_backtrace> _closed;
 };
+
+} // namespace storage

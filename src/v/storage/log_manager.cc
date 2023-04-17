@@ -21,6 +21,7 @@
 #include "ssx/future-util.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/file_sanitizer.h"
 #include "storage/fs_utils.h"
 #include "storage/kvstore.h"
 #include "storage/log.h"
@@ -33,7 +34,6 @@
 #include "storage/segment_utils.h"
 #include "storage/storage_resources.h"
 #include "utils/directory_walker.h"
-#include "utils/file_sanitizer.h"
 #include "utils/gate_guard.h"
 #include "vlog.h"
 
