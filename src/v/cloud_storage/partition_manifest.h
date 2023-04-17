@@ -373,14 +373,12 @@ private:
     /// from manifest.json file
     void update(partition_manifest_handler&& handler);
 
-    /// Move segments from _segments to _replaced
+    /// Copy segments from _segments to _replaced
     /// Returns the total size in bytes of the replaced segments, or nullopt if
     /// the manifest contains already a segment that has the same remote path as
     /// replacing segment.
-    std::optional<size_t> move_aligned_offset_range(
-      model::offset begin_inclusive,
-      model::offset end_inclusive,
-      const segment_meta& replacing_segment);
+    std::optional<size_t>
+    move_aligned_offset_range(const segment_meta& replacing_segment);
 
     friend class serialization_cursor_data_source;
 

@@ -707,18 +707,16 @@ size_t partition_manifest::replaced_segments_count() const {
 }
 
 std::optional<size_t> partition_manifest::move_aligned_offset_range(
-  model::offset begin_inclusive,
-  model::offset end_inclusive,
   const segment_meta& replacing_segment) {
     size_t total_replaced_size = 0;
     auto replacing_path = generate_remote_segment_name(replacing_segment);
-    for (auto it = _segments.lower_bound(begin_inclusive),
+    for (auto it = _segments.lower_bound(replacing_segment.base_offset),
               end_it = _segments.end();
          it != end_it
          // The segment is considered replaced only if all its
          // offsets are covered by new segment's offset range
-         && it->base_offset >= begin_inclusive
-         && it->committed_offset <= end_inclusive;
+         && it->base_offset >= replacing_segment.base_offset
+         && it->committed_offset <= replacing_segment.committed_offset;
          ++it) {
         if (generate_remote_segment_name(*it) == replacing_path) {
             // The replacing segment shouldn't be exactly the same as the
@@ -744,8 +742,7 @@ bool partition_manifest::add(segment_meta meta) {
         // to the manifest or if all data was removed previously.
         _start_offset = meta.base_offset;
     }
-    const auto total_replaced_size = move_aligned_offset_range(
-      meta.base_offset, meta.committed_offset, meta);
+    const auto total_replaced_size = move_aligned_offset_range(meta);
 
     if (!total_replaced_size) {
         return false;
