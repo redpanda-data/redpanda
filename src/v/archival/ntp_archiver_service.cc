@@ -1805,12 +1805,8 @@ ss::future<> ntp_archiver::housekeeping() {
             // external housekeeping jobs from upload_housekeeping_service
             // and retention/GC
             auto units = co_await ss::get_units(_mutex, 1, _as);
-            const auto retention_updated_manifest = co_await apply_retention();
-            const auto gc_updated_manifest = co_await garbage_collect();
-            if (retention_updated_manifest || gc_updated_manifest) {
-                co_await upload_manifest(housekeeping_ctx_label);
-                co_await flush_manifest_clean_offset();
-            }
+            co_await apply_retention();
+            co_await garbage_collect();
         }
     } catch (std::exception& e) {
         vlog(_rtclog.warn, "Error occured during housekeeping", e.what());
