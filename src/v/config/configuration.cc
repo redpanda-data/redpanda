@@ -1379,6 +1379,15 @@ configuration::configuration()
        model::cloud_storage_backend::azure,
        model::cloud_storage_backend::minio,
        model::cloud_storage_backend::unknown})
+  , cloud_storage_credentials_host(
+      *this,
+      "cloud_storage_credentials_host",
+      "The hostname to connect to for retrieving role based credentials. "
+      "Derived from cloud_storage_credentials_source if not set. Only required "
+      "when using IAM role based access.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      std::nullopt,
+      &validate_non_empty_string_opt)
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
