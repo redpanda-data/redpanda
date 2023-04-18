@@ -148,6 +148,14 @@ inline model::producer_identity random_producer_identity() {
       random_generators::get_int<int16_t>()};
 }
 
+inline model::offset random_offset() {
+    return tests::random_named_int<model::offset>();
+}
+
+inline model::tx_range random_tx_range() {
+    return {random_producer_identity(), random_offset(), random_offset()};
+}
+
 inline model::broker_shard random_broker_shard() {
     return {
       tests::random_named_int<model::node_id>(),

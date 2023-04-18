@@ -75,6 +75,25 @@ inline auto random_vector(Fn&& gen, size_t size = 20) -> std::vector<T> {
     return v;
 }
 
+template<typename Fn, typename T = std::invoke_result_t<Fn>>
+inline auto random_frag_vector(Fn&& gen, size_t size = 20)
+  -> fragmented_vector<T> {
+    fragmented_vector<T> v;
+    while (size-- > 0) {
+        v.push_back(gen());
+    }
+    return v;
+}
+
+template<typename Fn, typename T = std::invoke_result_t<Fn>>
+inline auto random_circular_buffer(Fn&& gen, size_t size = 5)
+  -> ss::circular_buffer<T> {
+    ss::circular_buffer<T> v;
+    v.reserve(size);
+    std::generate_n(v.begin(), size, gen);
+    return v;
+}
+
 inline std::vector<std::string> random_strings(size_t size = 20) {
     return random_vector(
       [] { return random_named_string<std::string>(); }, size);
