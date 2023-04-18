@@ -27,7 +27,7 @@ namespace kafka {
  * \brief Mapping from kafka coordinator key to ntp.
  *
  * A kafka coordinator key is an identifier for a coordinator resource, such as
- * a consumer group or transaction coordinator. Every coordinator is associated
+ * a consumer group. Every coordinator is associated
  * with a single partition that it uses to persist its state. All coordinator
  * operations are handled by the active coordinator which is the the leader for
  * the partition that the coordinator key is associated with.
