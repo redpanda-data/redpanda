@@ -181,7 +181,12 @@ refresh_credentials make_refresh_credentials(
   aws_region_name region,
   std::optional<net::unresolved_address> endpoint = std::nullopt,
   retry_params retry_params = default_retry_params) {
-    auto host = endpoint ? endpoint->host() : CredentialsProvider::default_host;
+    ss::sstring host = {
+      CredentialsProvider::default_host.data(),
+      CredentialsProvider::default_host.size()};
+    if (endpoint) {
+        host = endpoint->host();
+    }
     if (auto cfg_host
         = config::shard_local_cfg().cloud_storage_credentials_host();
         cfg_host.has_value()) {
@@ -200,8 +205,8 @@ refresh_credentials make_refresh_credentials(
       std::move(impl), gate, as, std::move(creds_update_cb), std::move(region)};
 }
 
-/// Builds a refresh_credentials object based on the credentials source set in
-/// configuration.
+/// Builds a refresh_credentials object based on the credentials source set
+/// in configuration.
 refresh_credentials make_refresh_credentials(
   model::cloud_credentials_source cloud_credentials_source,
   ss::gate& gate,
