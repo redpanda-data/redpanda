@@ -16,13 +16,6 @@ from rptest.services.rpk_consumer import RpkConsumer
 from rptest.services.producer_swarm import ProducerSwarm
 from ducktape.mark import matrix
 
-resource_settings = ResourceSettings(
-    num_cpus=2,
-
-    # Set a low memory size, such that there is only ~100k of memory available
-    # for dealing with each client.
-    memory_mb=768)
-
 
 class ManyClientsTest(RedpandaTest):
     PRODUCER_COUNT = 4000
@@ -31,7 +24,7 @@ class ManyClientsTest(RedpandaTest):
         # We will send huge numbers of messages, so tune down the log verbosity
         # as this is just a "did we stay up?" test
         kwargs['log_level'] = "info"
-        kwargs['resource_settings'] = resource_settings
+
         kwargs['extra_rp_conf'] = {
             # Enable segment size jitter as this is a stress test and does not
             # rely on exact segment counts.
@@ -55,6 +48,10 @@ class ManyClientsTest(RedpandaTest):
         }
         super().__init__(*args, **kwargs)
 
+    def setUp(self):
+        # Delay starting Redpanda, we will customize ResourceSettings inside the test case
+        pass
+
     @cluster(num_nodes=7)
     @matrix(compacted=[True, False])
     def test_many_clients(self, compacted):
@@ -63,8 +60,27 @@ class ManyClientsTest(RedpandaTest):
         than usual.
         """
 
-        # Scale tests are not run on debug builds
+        # This test won't work on a debug build, even if you're just testing on
+        # a workstation.
         assert not self.debug_mode
+
+        # Compacted topics using compression have a higher
+        # memory footprint: they may decompress/compress up to two batches
+        # per shard concurrently (one for index updates on the produce path,
+        # one for housekeeping)
+        compacted_record_size_max_mb = 32
+        num_cpus = 2
+        memory_mb = 768 if not compacted else 768 + compacted_record_size_max_mb * 2 * num_cpus
+
+        resource_settings = ResourceSettings(
+            num_cpus=num_cpus,
+            # Set a low memory size, such that the amount of available memory per client
+            # is small (~100k)
+            memory_mb=memory_mb)
+
+        # Load the resource settings and start Redpanda
+        self.redpanda.set_resource_settings(resource_settings)
+        super().setUp()
 
         partition_count = 100
         producer_count = self.PRODUCER_COUNT
@@ -126,7 +142,8 @@ class ManyClientsTest(RedpandaTest):
             # compressed batch will be accepted by the Kafka API, but
             producer_kwargs['compressible_payload'] = True,
             producer_kwargs['min_record_size'] = 16 * 1024 * 1024
-            producer_kwargs['max_record_size'] = 32 * 1024 * 1024
+            producer_kwargs[
+                'max_record_size'] = compacted_record_size_max_mb * 1024 * 1024
             producer_kwargs['keys'] = key_space
 
             # Clients have to do the compression work on these larger messages,
