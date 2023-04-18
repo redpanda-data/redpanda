@@ -62,7 +62,8 @@ public:
     ss::future<end_tx_reply>
       end_txn(end_tx_request, model::timeout_clock::duration);
 
-    using return_all_txs_res = result<std::vector<tm_transaction>, tx_errc>;
+    using return_all_txs_res
+      = result<fragmented_vector<tm_transaction>, tx_errc>;
     ss::future<return_all_txs_res> get_all_transactions();
 
     ss::future<tx_errc> delete_partition_from_tx(
