@@ -1112,6 +1112,7 @@ struct consume_to_store {
 
     ss::future<ss::stop_iteration> operator()(model::record_batch b) {
         if (!b.header().attrs.is_control()) {
+            b = co_await storage::internal::decompress_batch(std::move(b));
             auto base_offset = b.base_offset();
             co_await model::for_each_record(
               b, [this, base_offset](model::record& rec) {
