@@ -575,7 +575,7 @@ func setConfig(cfg *config.Config, configKvs []string) error {
 				rawKv,
 			)
 		}
-		err := cfg.Set(parts[0], parts[1])
+		err := config.Set(cfg, parts[0], parts[1])
 		if err != nil {
 			return err
 		}

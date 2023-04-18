@@ -407,7 +407,7 @@ tune_cpu: true`,
 			fs := afero.NewMemMapFs()
 			cfg, err := new(Params).Load(fs)
 			require.NoError(t, err)
-			err = cfg.Set(tt.key, tt.value)
+			err = Set(cfg, tt.key, tt.value)
 			if tt.expectErr {
 				require.Error(t, err)
 				return

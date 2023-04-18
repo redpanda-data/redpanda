@@ -845,12 +845,11 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 // FIELD SETTING //
 ///////////////////
 
-// Set allow to set a single configuration field by passing a key value pair
+// Set sets a field in pointer-to-struct p to a value, following yaml tags.
 //
 //	Key:    string containing the yaml field tags, e.g: 'rpk.admin_api'.
-//	Value:  string representation of the value, either single value or partial
-//	        representation.
-func (c *Config) Set(key, value string) error {
+//	Value:  string representation of the value
+func Set[T any](p *T, key, value string) error {
 	if key == "" {
 		return fmt.Errorf("key field must not be empty")
 	}
@@ -861,7 +860,7 @@ func (c *Config) Set(key, value string) error {
 		}
 	}
 
-	field, other, err := getField(tags, "", reflect.ValueOf(c).Elem())
+	field, other, err := getField(tags, "", reflect.ValueOf(p).Elem())
 	if err != nil {
 		return err
 	}

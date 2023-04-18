@@ -73,7 +73,7 @@ the end of an array to extend it:
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			cfg = cfg.FileOrDefaults() // we set fields in the raw file without writing env / flag overrides
-			err = cfg.Set(args[0], args[1])
+			err = config.Set(cfg, args[0], args[1])
 			out.MaybeDie(err, "unable to set %q:%v", args[0], err)
 			err = cfg.Write(fs)
 			out.MaybeDieErr(err)
