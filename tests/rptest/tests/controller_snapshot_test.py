@@ -59,6 +59,56 @@ class ControllerSnapshotPolicyTest(RedpandaTest):
                 n, prev_mtime=mtime, prev_start_offset=start_offset)
 
 
+class ControllerState:
+    def __init__(self, redpanda, node):
+        admin = Admin(redpanda, default_node=node)
+        rpk = RpkTool(redpanda)
+
+        self.features_response = admin.get_features(node=node)
+        self.features_map = dict(
+            (f['name'], f) for f in self.features_response['features'])
+        self.config_response = admin.get_cluster_config(node=node)
+        self.topics = set(rpk.list_topics())
+        self.users = set(admin.list_users(node=node))
+        self.acls = rpk.acl_list().strip().split('\n')
+
+    def _check_features(self, other):
+        for k, v in self.features_response.items():
+            if k == 'features':
+                continue
+            new_v = other.features_response.get(k)
+            assert new_v == v, \
+                f"features response mismatch (key: {k}): got {new_v}, expected {v}"
+
+        for f, v in self.features_map.items():
+            new_v = other.features_map.get(f)
+            assert new_v == v, \
+                f"features map mismatch (feature: {f}): got {new_v}, expected {v}"
+
+    def _check_config(self, other):
+        def to_set(resp):
+            return set((k, (v if not isinstance(v, list) else tuple(v)))
+                       for k, v in resp.items())
+
+        symdiff = to_set(self.config_response) ^ to_set(other.config_response)
+        assert len(
+            symdiff) == 0, f"config responses differ, symdiff: {symdiff}"
+
+    def _check_topics(self, other):
+        symdiff = self.topics ^ other.topics
+        assert len(symdiff) == 0, f"topics differ, symdiff: {symdiff}"
+
+    def _check_security(self, other):
+        assert self.users == other.users
+        assert self.acls == other.acls
+
+    def check(self, other):
+        self._check_features(other)
+        self._check_config(other)
+        self._check_topics(other)
+        self._check_security(other)
+
+
 class ControllerSnapshotTest(RedpandaTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args,
@@ -181,54 +231,15 @@ class ControllerSnapshotTest(RedpandaTest):
 
         # record expected values
 
-        def get_features_map(features_response):
-            return dict((f['name'], f) for f in features_response['features'])
+        initial_state = ControllerState(self.redpanda, seed_nodes[0])
 
-        initial_features = admin.get_features()
-        initial_features_map = get_features_map(initial_features)
-        assert initial_features_map['controller_snapshots'][
+        assert initial_state.features_map['controller_snapshots'][
             'state'] == 'active'
-
-        def check_features_response(features):
-            for k, v in initial_features.items():
-                if k == 'features':
-                    continue
-                new_v = features.get(k)
-                assert new_v == v, \
-                    f"features response mismatch (key: {k}): got {new_v}, expected {v}"
-
-            features_map = get_features_map(features)
-            for f, v in initial_features_map.items():
-                new_v = features_map.get(f)
-                assert new_v == v, \
-                    f"features map mismatch (feature: {f}): got {new_v}, expected {v}"
-
-        initial_config_resp = admin.get_cluster_config()
-        assert initial_config_resp['controller_snapshot_max_age_sec'] == 10
-
-        def check_config_response(config_resp):
-            def to_set(resp):
-                return set((k, (v if not isinstance(v, list) else tuple(v)))
-                           for k, v in resp.items())
-
-            symdiff = to_set(initial_config_resp) ^ to_set(config_resp)
-            assert len(
-                symdiff) == 0, f"config responses differ, symdiff: {symdiff}"
-
-        initial_topics = set(rpk.list_topics())
-        assert initial_topics == set(['test_topic'])
-
-        initial_users = set(admin.list_users())
-        assert initial_users == set(['admin', 'test'])
-        initial_acls = rpk.acl_list()
-        assert len(initial_acls.strip().split('\n')) == 2
-
-        def check_security(node):
-            users = set(admin.list_users(node=node))
-            assert users == initial_users
-
-            acls = rpk.acl_list()
-            assert acls == initial_acls
+        assert initial_state.config_response[
+            'controller_snapshot_max_age_sec'] == 10
+        assert initial_state.topics == set(['test_topic'])
+        assert initial_state.users == set(['admin', 'test'])
+        assert len(initial_state.acls) == 2
 
         def check(node):
             node_id = self.redpanda.node_id(node)
@@ -240,10 +251,8 @@ class ControllerSnapshotTest(RedpandaTest):
                                       topic='controller',
                                       check=lambda id: id == node_id)
 
-            check_features_response(admin.get_features(node=node))
-            check_config_response(admin.get_cluster_config(node=node))
-            assert set(rpk.list_topics()) == set(['test_topic'])
-            check_security(node)
+            state = ControllerState(self.redpanda, node)
+            initial_state.check(state)
 
         # make a node join and check it
 
