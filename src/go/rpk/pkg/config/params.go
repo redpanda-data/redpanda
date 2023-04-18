@@ -850,8 +850,7 @@ func defaultFromRedpanda(src []NamedSocketAddress, srcTLS []ServerTLS, dst *[]st
 //	Key:    string containing the yaml field tags, e.g: 'rpk.admin_api'.
 //	Value:  string representation of the value, either single value or partial
 //	        representation.
-//	Format: either json or yaml (default: yaml).
-func (c *Config) Set(key, value, format string) error {
+func (c *Config) Set(key, value string) error {
 	if key == "" {
 		return fmt.Errorf("key field must not be empty")
 	}
@@ -884,21 +883,16 @@ func (c *Config) Set(key, value, format string) error {
 	}
 
 	var unmarshal func([]byte, interface{}) error
-	switch strings.ToLower(format) {
-	case "yaml", "single", "", "json": // single is deprecated and kept for backcompat; json is a subset of yaml
-		if isOther {
-			value = fmt.Sprintf("%s: %s", finalTag, value)
-		}
-		unmarshal = yaml.Unmarshal
-	default:
-		return fmt.Errorf("unsupported format %s", format)
+	if isOther {
+		value = fmt.Sprintf("%s: %s", finalTag, value)
 	}
+	unmarshal = yaml.Unmarshal
 
 	// If we cannot unmarshal, but our error looks like we are trying to
 	// unmarshal a single element into a slice, we index[0] into the slice
 	// and try unmarshaling again.
 	if err := unmarshal([]byte(value), field.Addr().Interface()); err != nil {
-		if elem0, ok := tryValueAsSlice0(field, format, err); ok {
+		if elem0, ok := tryValueAsSlice0(field, err); ok {
 			return unmarshal([]byte(value), elem0.Addr().Interface())
 		}
 		return err
@@ -1065,16 +1059,9 @@ func splitTagIndex(tag string) (string, int, error) {
 //
 // For json this is nice, the error is explicit. For yaml, we have to string
 // match and it is a bit rough.
-func tryValueAsSlice0(v reflect.Value, format string, err error) (reflect.Value, bool) {
-	if v.Kind() != reflect.Slice {
+func tryValueAsSlice0(v reflect.Value, err error) (reflect.Value, bool) {
+	if v.Kind() != reflect.Slice || !strings.Contains(err.Error(), "cannot unmarshal !!") {
 		return v, false
-	}
-
-	switch format {
-	case "json", "yaml":
-		if !strings.Contains(err.Error(), "cannot unmarshal !!") {
-			return v, false
-		}
 	}
 	if v.Len() == 0 {
 		v.Set(reflect.Append(v, reflect.Indirect(reflect.New(v.Type().Elem()))))

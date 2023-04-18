@@ -54,7 +54,6 @@ func TestSet(t *testing.T) {
 		name      string
 		key       string
 		value     string
-		format    string
 		check     func(st *testing.T, c *Config)
 		expectErr bool
 	}{
@@ -123,37 +122,33 @@ func TestSet(t *testing.T) {
 			},
 		},
 		{
-			name:   "set single bool fields in Other fields (json)",
-			key:    "redpanda.enable_metrics_test",
-			value:  "true",
-			format: "json",
+			name:  "set single bool fields in Other fields (json)",
+			key:   "redpanda.enable_metrics_test",
+			value: "true",
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, true, c.Redpanda.Other["enable_metrics_test"])
 			},
 		},
 		{
-			name:   "set single number in Other fields (json)",
-			key:    "redpanda.timeout_test",
-			value:  "123991",
-			format: "json",
+			name:  "set single number in Other fields (json)",
+			key:   "redpanda.timeout_test",
+			value: "123991",
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, 123991, c.Redpanda.Other["timeout_test"])
 			},
 		},
 		{
-			name:   "set single strings in Other fields (json)",
-			key:    "redpanda.test_name",
-			value:  `"my_name"`,
-			format: "json",
+			name:  "set single strings in Other fields (json)",
+			key:   "redpanda.test_name",
+			value: `"my_name"`,
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, "my_name", c.Redpanda.Other["test_name"])
 			},
 		},
 		{
-			name:   "set objects in Other fields (json)",
-			key:    "redpanda.my_object",
-			value:  `{"name":"test","enabled":true}`,
-			format: "json",
+			name:  "set objects in Other fields (json)",
+			key:   "redpanda.my_object",
+			value: `{"name":"test","enabled":true}`,
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, map[string]interface{}{
 					"name":    "test",
@@ -174,7 +169,6 @@ func TestSet(t *testing.T) {
 			key:  "rpk",
 			value: `tune_disk_irq: true
 tune_cpu: true`,
-			format: "yaml",
 			check: func(st *testing.T, c *Config) {
 				expected := RpkNodeConfig{
 					Overprovisioned:     false,
@@ -260,7 +254,6 @@ tune_cpu: true`,
 		  "address": "192.168.54.2",
 		  "port": 9092
 		}]`,
-			format: "json",
 			check: func(st *testing.T, c *Config) {
 				expected := []NamedAuthNSocketAddress{{
 					Port:    9092,
@@ -312,20 +305,18 @@ tune_cpu: true`,
 		},
 
 		{
-			name:   "set slice single values",
-			key:    "redpanda.seed_servers.host.address",
-			value:  "foo",
-			format: "yaml",
+			name:  "set slice single values",
+			key:   "redpanda.seed_servers.host.address",
+			value: "foo",
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, "foo", c.Redpanda.SeedServers[0].Host.Address)
 			},
 		},
 
 		{
-			name:   "set slice object",
-			key:    "redpanda.seed_servers.host",
-			value:  `{address: 0.0.0.0, port: 80}`,
-			format: "yaml",
+			name:  "set slice object",
+			key:   "redpanda.seed_servers.host",
+			value: `{address: 0.0.0.0, port: 80}`,
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, "0.0.0.0", c.Redpanda.SeedServers[0].Host.Address)
 				require.Exactly(st, 80, c.Redpanda.SeedServers[0].Host.Port)
@@ -333,10 +324,9 @@ tune_cpu: true`,
 		},
 
 		{
-			name:   "set slice with object defaults to index 0",
-			key:    "redpanda.advertised_kafka_api",
-			value:  `{address: 3.250.158.1, port: 9092}`,
-			format: "yaml",
+			name:  "set slice with object defaults to index 0",
+			key:   "redpanda.advertised_kafka_api",
+			value: `{address: 3.250.158.1, port: 9092}`,
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, "3.250.158.1", c.Redpanda.AdvertisedKafkaAPI[0].Address)
 				require.Exactly(st, 9092, c.Redpanda.AdvertisedKafkaAPI[0].Port)
@@ -344,19 +334,17 @@ tune_cpu: true`,
 		},
 
 		{
-			name:   "slices with one element works",
-			key:    "rpk.kafka_api.brokers",
-			value:  `127.0.0.0:9092`,
-			format: "yaml",
+			name:  "slices with one element works",
+			key:   "rpk.kafka_api.brokers",
+			value: `127.0.0.0:9092`,
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, "127.0.0.0:9092", c.Rpk.KafkaAPI.Brokers[0])
 			},
 		},
 		{
-			name:   "slices with one element works with indexing",
-			key:    "rpk.kafka_api.brokers[0]",
-			value:  `127.0.0.0:9092`,
-			format: "yaml",
+			name:  "slices with one element works with indexing",
+			key:   "rpk.kafka_api.brokers[0]",
+			value: `127.0.0.0:9092`,
 			check: func(st *testing.T, c *Config) {
 				require.Exactly(st, "127.0.0.0:9092", c.Rpk.KafkaAPI.Brokers[0])
 			},
@@ -366,7 +354,6 @@ tune_cpu: true`,
 			name:      "fail if the value isn't well formatted (json)",
 			key:       "redpanda",
 			value:     `{"seed_servers": []`,
-			format:    "json",
 			expectErr: true,
 		},
 		{
@@ -375,14 +362,6 @@ tune_cpu: true`,
 			value: `seed_servers:
 		- host:
 		  address: "123.`,
-			format:    "yaml",
-			expectErr: true,
-		},
-		{
-			name:      "fail if the format isn't supported",
-			key:       "redpanda",
-			value:     "node_id=1",
-			format:    "toml",
 			expectErr: true,
 		},
 		{
@@ -428,7 +407,7 @@ tune_cpu: true`,
 			fs := afero.NewMemMapFs()
 			cfg, err := new(Params).Load(fs)
 			require.NoError(t, err)
-			err = cfg.Set(tt.key, tt.value, tt.format)
+			err = cfg.Set(tt.key, tt.value)
 			if tt.expectErr {
 				require.Error(t, err)
 				return

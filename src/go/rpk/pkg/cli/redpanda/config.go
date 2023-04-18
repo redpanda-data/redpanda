@@ -39,7 +39,6 @@ func NewConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 }
 
 func set(fs afero.Fs, p *config.Params) *cobra.Command {
-	var format string
 	c := &cobra.Command{
 		Use:   "set [KEY] [VALUE]",
 		Short: "Set configuration values, such as the redpanda node ID or the list of seed servers",
@@ -51,8 +50,9 @@ would like to set. Nested fields can be accessed through a dot:
 
   rpk redpanda config set redpanda.developer_mode true
 
-The default format is to parse the value as yaml. Individual specific fields
-can be set, or full structs:
+All values are parsed as yaml and, since yaml is a superset of json, you can
+also format your input as json. Individual specific fields or full structs can
+be set:
 
   rpk redpanda config set rpk.tune_disk_irq true
   rpk redpanda config set redpanda.rpc_server '{address: 3.250.158.1, port: 9092}'
@@ -67,29 +67,20 @@ Indexing can be used to set specific items in an array. You can index one past
 the end of an array to extend it:
 
   rpk redpanda config set redpanda.advertised_kafka_api[1] '{address: 0.0.0.0, port: 9092}'
-
-The json format can be used to set values as json:
-
-  rpk redpanda config set redpanda.rpc_server '{"address":"0.0.0.0","port":33145}' --format json
-
 `,
 		Args: cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg, err := p.Load(fs)
 			out.MaybeDie(err, "unable to load config: %v", err)
 			cfg = cfg.FileOrDefaults() // we set fields in the raw file without writing env / flag overrides
-
-			if format == "single" {
-				fmt.Println("'--format single' is deprecated, either remove it or use yaml/json")
-			}
-			err = cfg.Set(args[0], args[1], format)
+			err = cfg.Set(args[0], args[1])
 			out.MaybeDie(err, "unable to set %q:%v", args[0], err)
-
 			err = cfg.Write(fs)
 			out.MaybeDieErr(err)
 		},
 	}
-	c.Flags().StringVar(&format, "format", "yaml", "Format of the value (yaml/json)")
+	c.Flags().StringVar(new(string), "format", "yaml", "")
+	c.Flags().MarkHidden("format")
 	return c
 }
 
