@@ -28,6 +28,7 @@ func fillRpkNodeConfig(path, mode string) *config.Config {
 	val := mode == config.ModeProd
 	conf.Redpanda.DeveloperMode = !val
 	conf.Rpk = config.RpkNodeConfig{
+		Overprovisioned: !val,
 		Tuners: config.RpkNodeTuners{
 			TuneNetwork:        val,
 			TuneDiskScheduler:  val,
@@ -40,7 +41,6 @@ func fillRpkNodeConfig(path, mode string) *config.Config {
 			TuneClocksource:    val,
 			TuneSwappiness:     val,
 			CoredumpDir:        path,
-			Overprovisioned:    !val,
 			TuneBallastFile:    val,
 		},
 	}

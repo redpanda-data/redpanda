@@ -50,9 +50,9 @@ func DevDefault() *Config {
 			DeveloperMode: true,
 		},
 		Rpk: RpkNodeConfig{
+			Overprovisioned: true,
 			Tuners: RpkNodeTuners{
-				CoredumpDir:     "/var/lib/redpanda/coredump",
-				Overprovisioned: true,
+				CoredumpDir: "/var/lib/redpanda/coredump",
 			},
 		},
 		// enable pandaproxy and schema_registry by default
@@ -125,12 +125,12 @@ func setDevelopment(conf *Config) *Config {
 		KafkaAPI:             conf.Rpk.KafkaAPI,
 		AdminAPI:             conf.Rpk.AdminAPI,
 		AdditionalStartFlags: conf.Rpk.AdditionalStartFlags,
+		SMP:                  DevDefault().Rpk.SMP,
+		Overprovisioned:      true,
 		Tuners: RpkNodeTuners{
 			CoredumpDir:     conf.Rpk.Tuners.CoredumpDir,
-			SMP:             DevDefault().Rpk.Tuners.SMP,
 			BallastFilePath: conf.Rpk.Tuners.BallastFilePath,
 			BallastFileSize: conf.Rpk.Tuners.BallastFileSize,
-			Overprovisioned: true,
 		},
 	}
 	return conf
@@ -138,6 +138,7 @@ func setDevelopment(conf *Config) *Config {
 
 func setProduction(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = false
+	conf.Rpk.Overprovisioned = false
 	conf.Rpk.Tuners.TuneNetwork = true
 	conf.Rpk.Tuners.TuneDiskScheduler = true
 	conf.Rpk.Tuners.TuneNomerges = true
@@ -147,7 +148,6 @@ func setProduction(conf *Config) *Config {
 	conf.Rpk.Tuners.TuneAioEvents = true
 	conf.Rpk.Tuners.TuneClocksource = true
 	conf.Rpk.Tuners.TuneSwappiness = true
-	conf.Rpk.Tuners.Overprovisioned = false
 	conf.Rpk.Tuners.TuneDiskWriteCache = true
 	conf.Rpk.Tuners.TuneBallastFile = true
 	return conf

@@ -25,6 +25,7 @@ func getValidConfig() *Config {
 	}
 	conf.Redpanda.DeveloperMode = false
 	conf.Rpk = RpkNodeConfig{
+		EnableMemoryLocking: true,
 		Tuners: RpkNodeTuners{
 			TuneNetwork:              true,
 			TuneDiskScheduler:        true,
@@ -37,7 +38,6 @@ func getValidConfig() *Config {
 			TuneClocksource:          true,
 			TuneSwappiness:           true,
 			TuneTransparentHugePages: true,
-			EnableMemoryLocking:      true,
 			TuneCoredump:             true,
 			TuneBallastFile:          true,
 			CoredumpDir:              "/var/lib/redpanda/coredumps",
@@ -177,8 +177,9 @@ tune_cpu: true`,
 			format: "yaml",
 			check: func(st *testing.T, c *Config) {
 				expected := RpkNodeConfig{
+					Overprovisioned:     false,
+					EnableMemoryLocking: false,
 					Tuners: RpkNodeTuners{
-						Overprovisioned:          false,
 						TuneNetwork:              false,
 						TuneDiskScheduler:        false,
 						TuneNomerges:             false,
@@ -188,7 +189,6 @@ tune_cpu: true`,
 						TuneClocksource:          false,
 						TuneSwappiness:           false,
 						TuneTransparentHugePages: false,
-						EnableMemoryLocking:      false,
 						TuneFstrim:               false,
 						TuneCoredump:             false,
 						TuneDiskWriteCache:       false,
@@ -463,9 +463,9 @@ func TestDevDefault(t *testing.T) {
 			DeveloperMode: true,
 		},
 		Rpk: RpkNodeConfig{
+			Overprovisioned: true,
 			Tuners: RpkNodeTuners{
-				CoredumpDir:     "/var/lib/redpanda/coredump",
-				Overprovisioned: true,
+				CoredumpDir: "/var/lib/redpanda/coredump",
 			},
 		},
 	}
@@ -494,9 +494,9 @@ func TestProdDefault(t *testing.T) {
 			DeveloperMode: false,
 		},
 		Rpk: RpkNodeConfig{
+			Overprovisioned: false,
 			Tuners: RpkNodeTuners{
 				CoredumpDir:        "/var/lib/redpanda/coredump",
-				Overprovisioned:    false,
 				TuneAioEvents:      true,
 				TuneBallastFile:    true,
 				TuneCPU:            true,
@@ -544,6 +544,7 @@ func TestWrite(t *testing.T) {
         - address: 0.0.0.0
           port: 9644
 rpk:
+    enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true
@@ -555,7 +556,6 @@ rpk:
     tune_clocksource: true
     tune_swappiness: true
     tune_transparent_hugepages: true
-    enable_memory_locking: true
     tune_coredump: true
     coredump_dir: /var/lib/redpanda/coredumps
     tune_ballast_file: true
@@ -596,6 +596,7 @@ schema_registry: {}
         address: 174.32.64.2
         port: 33145
 rpk:
+    enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true
@@ -607,7 +608,6 @@ rpk:
     tune_clocksource: true
     tune_swappiness: true
     tune_transparent_hugepages: true
-    enable_memory_locking: true
     tune_coredump: true
     coredump_dir: /var/lib/redpanda/coredumps
     tune_ballast_file: true
@@ -678,6 +678,7 @@ schema_registry: {}
           port: 9644
     log_segment_size: 536870912
 rpk:
+    enable_memory_locking: true
     tune_network: true
     tune_disk_scheduler: true
     tune_disk_nomerges: true
@@ -689,7 +690,6 @@ rpk:
     tune_clocksource: true
     tune_swappiness: true
     tune_transparent_hugepages: true
-    enable_memory_locking: true
     tune_coredump: true
     coredump_dir: /var/lib/redpanda/coredumps
     tune_ballast_file: true
@@ -730,6 +730,7 @@ func TestSetMode(t *testing.T) {
 			val := mode == ModeProd
 			conf.Redpanda.DeveloperMode = !val
 			conf.Rpk = RpkNodeConfig{
+				Overprovisioned: !val,
 				Tuners: RpkNodeTuners{
 					TuneNetwork:        val,
 					TuneDiskScheduler:  val,
@@ -742,7 +743,6 @@ func TestSetMode(t *testing.T) {
 					TuneClocksource:    val,
 					TuneSwappiness:     val,
 					CoredumpDir:        conf.Rpk.Tuners.CoredumpDir,
-					Overprovisioned:    !val,
 					TuneBallastFile:    val,
 				},
 			}

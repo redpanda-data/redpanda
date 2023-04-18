@@ -629,7 +629,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, false, conf.Rpk.Tuners.Overprovisioned)
+			require.Exactly(st, false, conf.Rpk.Overprovisioned)
 		},
 	}, {
 		name: "it should leave rpk.overprovisioned untouched if --overprovisioned wasn't passed",
@@ -646,8 +646,8 @@ func TestStartCommand(t *testing.T) {
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
-				config.DevDefault().Rpk.Tuners.Overprovisioned,
-				conf.Rpk.Tuners.Overprovisioned,
+				config.DevDefault().Rpk.Overprovisioned,
+				conf.Rpk.Overprovisioned,
 			)
 		},
 	}, {
@@ -661,7 +661,7 @@ func TestStartCommand(t *testing.T) {
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, true, conf.Rpk.Tuners.EnableMemoryLocking)
+			require.Exactly(st, true, conf.Rpk.EnableMemoryLocking)
 		},
 	}, {
 		name: "it should leave rpk.enable_memory_locking untouched if" +
@@ -671,7 +671,7 @@ func TestStartCommand(t *testing.T) {
 		},
 		before: func(fs afero.Fs) error {
 			conf, _ := new(config.Params).Load(fs)
-			conf.Rpk.Tuners.EnableMemoryLocking = true
+			conf.Rpk.EnableMemoryLocking = true
 			return conf.Write(fs)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
@@ -681,7 +681,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(
 				st,
 				true,
-				conf.Rpk.Tuners.EnableMemoryLocking,
+				conf.Rpk.EnableMemoryLocking,
 			)
 		},
 	}, {
@@ -1760,11 +1760,9 @@ func Test_buildRedpandaFlags(t *testing.T) {
 			args: args{
 				conf: &config.Config{Rpk: config.RpkNodeConfig{
 					AdditionalStartFlags: []string{"--abort-on-seastar-bad-alloc=true"},
-					Tuners: config.RpkNodeTuners{
-						Overprovisioned:     true,
-						EnableMemoryLocking: false,
-						SMP:                 intPtr(2),
-					},
+					Overprovisioned:      true,
+					EnableMemoryLocking:  false,
+					SMP:                  intPtr(2),
 				}},
 			},
 			exp: map[string]string{

@@ -82,13 +82,13 @@ const (
 
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
 	if flags.Changed(lockMemoryFlag) {
-		conf.Rpk.Tuners.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
+		conf.Rpk.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
 	}
 	if flags.Changed(wellKnownIOFlag) {
 		conf.Rpk.Tuners.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
 	}
 	if flags.Changed(overprovisionedFlag) {
-		conf.Rpk.Tuners.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
+		conf.Rpk.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
 	}
 	if flags.Changed(nodeIDFlag) {
 		conf.Redpanda.ID = new(int)
@@ -537,11 +537,11 @@ func buildRedpandaFlags(
 func flagsFromConf(
 	conf *config.Config, flagsMap map[string]interface{}, flags *pflag.FlagSet,
 ) map[string]interface{} {
-	flagsMap[overprovisionedFlag] = conf.Rpk.Tuners.Overprovisioned
-	flagsMap[lockMemoryFlag] = conf.Rpk.Tuners.EnableMemoryLocking
+	flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
+	flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
 	// Setting SMP to 0 doesn't make sense.
-	if !flags.Changed(smpFlag) && conf.Rpk.Tuners.SMP != nil && *conf.Rpk.Tuners.SMP != 0 {
-		flagsMap[smpFlag] = *conf.Rpk.Tuners.SMP
+	if !flags.Changed(smpFlag) && conf.Rpk.SMP != nil && *conf.Rpk.SMP != 0 {
+		flagsMap[smpFlag] = *conf.Rpk.SMP
 	}
 	return flagsMap
 }

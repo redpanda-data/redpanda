@@ -134,9 +134,16 @@ type (
 		// Deprecated 2021-07-1
 		SASL *SASL `yaml:"sasl,omitempty" json:"sasl,omitempty"`
 
-		KafkaAPI             RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
-		AdminAPI             RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
-		AdditionalStartFlags []string    `yaml:"additional_start_flags,omitempty"  json:"additional_start_flags"`
+		KafkaAPI RpkKafkaAPI `yaml:"kafka_api,omitempty" json:"kafka_api"`
+		AdminAPI RpkAdminAPI `yaml:"admin_api,omitempty" json:"admin_api"`
+
+		// The following four configs are passed to redpanda on `rpk
+		// redpanda start`. They are not tuner configs. They live here
+		// for backcompat while rpk execs redpanda through systemd.
+		AdditionalStartFlags []string `yaml:"additional_start_flags,omitempty"  json:"additional_start_flags"`
+		EnableMemoryLocking  bool     `yaml:"enable_memory_locking,omitempty" json:"enable_memory_locking"`
+		Overprovisioned      bool     `yaml:"overprovisioned,omitempty" json:"overprovisioned"`
+		SMP                  *int     `yaml:"smp,omitempty" json:"smp,omitempty"`
 
 		Tuners RpkNodeTuners `yaml:",inline"`
 	}
@@ -153,15 +160,12 @@ type (
 		TuneClocksource          bool   `yaml:"tune_clocksource,omitempty" json:"tune_clocksource"`
 		TuneSwappiness           bool   `yaml:"tune_swappiness,omitempty" json:"tune_swappiness"`
 		TuneTransparentHugePages bool   `yaml:"tune_transparent_hugepages,omitempty" json:"tune_transparent_hugepages"`
-		EnableMemoryLocking      bool   `yaml:"enable_memory_locking,omitempty" json:"enable_memory_locking"`
 		TuneCoredump             bool   `yaml:"tune_coredump,omitempty" json:"tune_coredump"`
 		CoredumpDir              string `yaml:"coredump_dir,omitempty" json:"coredump_dir"`
 		TuneBallastFile          bool   `yaml:"tune_ballast_file,omitempty" json:"tune_ballast_file"`
 		BallastFilePath          string `yaml:"ballast_file_path,omitempty" json:"ballast_file_path"`
 		BallastFileSize          string `yaml:"ballast_file_size,omitempty" json:"ballast_file_size"`
 		WellKnownIo              string `yaml:"well_known_io,omitempty" json:"well_known_io"`
-		Overprovisioned          bool   `yaml:"overprovisioned,omitempty" json:"overprovisioned"`
-		SMP                      *int   `yaml:"smp,omitempty" json:"smp,omitempty"`
 	}
 
 	RpkKafkaAPI struct {

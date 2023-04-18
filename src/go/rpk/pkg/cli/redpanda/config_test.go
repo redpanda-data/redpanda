@@ -53,8 +53,8 @@ func TestBootstrap(t *testing.T) {
           port: 9644
     developer_mode: true
 rpk:
-    coredump_dir: /var/lib/redpanda/coredump
     overprovisioned: true
+    coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -96,8 +96,8 @@ schema_registry: {}
           port: 9644
     developer_mode: true
 rpk:
-    coredump_dir: /var/lib/redpanda/coredump
     overprovisioned: true
+    coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,
@@ -280,8 +280,8 @@ func TestSetCommand(t *testing.T) {
           port: 9644
     developer_mode: true
 rpk:
-    coredump_dir: /var/lib/redpanda/coredump
     overprovisioned: true
+    coredump_dir: /var/lib/redpanda/coredump
 pandaproxy: {}
 schema_registry: {}
 `,

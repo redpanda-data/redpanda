@@ -442,6 +442,9 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpkc.KafkaAPI = internal.KafkaAPI
 	rpkc.AdminAPI = internal.AdminAPI
 	rpkc.AdditionalStartFlags = internal.AdditionalStartFlags
+	rpkc.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
+	rpkc.Overprovisioned = bool(internal.Overprovisioned)
+	rpkc.SMP = (*int)(internal.SMP)
 	rpkc.Tuners.TuneNetwork = bool(internal.TuneNetwork)
 	rpkc.Tuners.TuneDiskScheduler = bool(internal.TuneDiskScheduler)
 	rpkc.Tuners.TuneNomerges = bool(internal.TuneNomerges)
@@ -453,15 +456,12 @@ func (rpkc *RpkNodeConfig) UnmarshalYAML(n *yaml.Node) error {
 	rpkc.Tuners.TuneClocksource = bool(internal.TuneClocksource)
 	rpkc.Tuners.TuneSwappiness = bool(internal.TuneSwappiness)
 	rpkc.Tuners.TuneTransparentHugePages = bool(internal.TuneTransparentHugePages)
-	rpkc.Tuners.EnableMemoryLocking = bool(internal.EnableMemoryLocking)
 	rpkc.Tuners.TuneCoredump = bool(internal.TuneCoredump)
 	rpkc.Tuners.CoredumpDir = string(internal.CoredumpDir)
 	rpkc.Tuners.TuneBallastFile = bool(internal.TuneBallastFile)
 	rpkc.Tuners.BallastFilePath = string(internal.BallastFilePath)
 	rpkc.Tuners.BallastFileSize = string(internal.BallastFileSize)
 	rpkc.Tuners.WellKnownIo = string(internal.WellKnownIo)
-	rpkc.Tuners.Overprovisioned = bool(internal.Overprovisioned)
-	rpkc.Tuners.SMP = (*int)(internal.SMP)
 	return nil
 }
 
