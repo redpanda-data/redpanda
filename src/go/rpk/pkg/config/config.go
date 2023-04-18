@@ -66,11 +66,11 @@ func ProdDefault() *Config {
 	return setProduction(cfg)
 }
 
-// FileOrDefaults return the configuration as read from the file or
-// the default configuration if there is no file loaded.
+// FileOrDefaults return the configuration as read from the file or the default
+// configuration if there is no file loaded.
 func (c *Config) FileOrDefaults() *Config {
-	if c.File() != nil {
-		return c.File()
+	if c.file != nil {
+		return c.file
 	} else {
 		cfg := DevDefault()
 		// --config set but the file doesn't exist yet:

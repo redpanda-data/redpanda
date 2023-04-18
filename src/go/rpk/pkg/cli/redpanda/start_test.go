@@ -257,10 +257,8 @@ func TestStartCommand(t *testing.T) {
 
 			conf, err := new(config.Params).Load(fs)
 			require.NoError(st, err)
-			gotYAML, err := yaml.Marshal(conf.File())
-			require.NoError(st, err)
 
-			require.YAMLEq(st, string(expYAML), string(gotYAML))
+			require.YAMLEq(st, string(expYAML), string(conf.RawFile()))
 		},
 	}, {
 		name: "it should write the given config file path",

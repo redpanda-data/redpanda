@@ -186,13 +186,6 @@ type (
 	}
 )
 
-// File returns the configuration as read from a file, with no defaults
-// pre-deserializing and no overrides applied after. If the return is nil,
-// no file was read.
-func (c *Config) File() *Config {
-	return c.file
-}
-
 // RawFile returns the bytes of the actual file on disk, if there was one.
 // The raw bytes must be valid yaml.
 func (c *Config) RawFile() []byte {
