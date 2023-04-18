@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-schema-client-without-cert
+spec:
+  template:
+    spec:
+      containers:
+      - name: rpk
+        image: localhost/redpanda:dev
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - >
+          curl -vv -k
+          -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
+          --data '{"schema": "{\"type\": \"string\"}" }'
+          https://schema-registry-client-external-ca-mtls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
+      restartPolicy: Never
+  backoffLimit: 2
+  parallelism: 1
+  completions: 1

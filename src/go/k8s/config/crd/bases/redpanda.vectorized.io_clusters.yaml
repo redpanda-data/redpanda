@@ -496,6 +496,32 @@ spec:
                         tls:
                           description: Configuration of TLS for Pandaproxy API
                           properties:
+                            clientCACertRef:
+                              description: 'If ClientCACertRef points to a secret
+                                containing the trusted CA certificates. If provided
+                                and RequireClientAuth is true, the operator uses the
+                                certificate in this secret instead of issuing client
+                                certificates. The secret is expected to provide the
+                                following keys: ''ca.crt''.'
+                              properties:
+                                apiGroup:
+                                  description: APIGroup is the group for the resource
+                                    being referenced. If APIGroup is not specified,
+                                    the specified Kind must be in the core API group.
+                                    For any other third-party types, APIGroup is required.
+                                  type: string
+                                kind:
+                                  description: Kind is the type of resource being
+                                    referenced
+                                  type: string
+                                name:
+                                  description: Name is the name of resource being
+                                    referenced
+                                  type: string
+                              required:
+                              - kind
+                              - name
+                              type: object
                             enabled:
                               type: boolean
                             issuerRef:
@@ -665,6 +691,29 @@ spec:
                       tls:
                         description: TLS is the configuration for schema registry
                         properties:
+                          clientCACertRef:
+                            description: 'If ClientCACertRef points to a secret containing
+                              the trusted CA certificates. If provided and RequireClientAuth
+                              is true, the operator uses the certificate in this secret
+                              instead of issuing client certificates. The secret is
+                              expected to provide the following keys: ''ca.crt''.'
+                            properties:
+                              apiGroup:
+                                description: APIGroup is the group for the resource
+                                  being referenced. If APIGroup is not specified,
+                                  the specified Kind must be in the core API group.
+                                  For any other third-party types, APIGroup is required.
+                                type: string
+                              kind:
+                                description: Kind is the type of resource being referenced
+                                type: string
+                              name:
+                                description: Name is the name of resource being referenced
+                                type: string
+                            required:
+                            - kind
+                            - name
+                            type: object
                           enabled:
                             type: boolean
                           issuerRef:
@@ -831,6 +880,26 @@ spec:
                   amount of resources assigned to these containers will be required
                   on the cluster on top of the resources defined here
                 properties:
+                  claims:
+                    description: "Claims lists the names of resources, defined in
+                      spec.resourceClaims, that are used by this container. \n This
+                      is an alpha field and requires enabling the DynamicResourceAllocation
+                      feature gate. \n This field is immutable."
+                    items:
+                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                      properties:
+                        name:
+                          description: Name must match the name of one entry in pod.spec.resourceClaims
+                            of the Pod where this field is used. It makes that resource
+                            available inside a container.
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   limits:
                     additionalProperties:
                       anyOf:
@@ -910,6 +979,28 @@ spec:
                           for the container running this sidecar. For the default
                           sidecars this is defaulted
                         properties:
+                          claims:
+                            description: "Claims lists the names of resources, defined
+                              in spec.resourceClaims, that are used by this container.
+                              \n This is an alpha field and requires enabling the
+                              DynamicResourceAllocation feature gate. \n This field
+                              is immutable."
+                            items:
+                              description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                              properties:
+                                name:
+                                  description: Name must match the name of one entry
+                                    in pod.spec.resourceClaims of the Pod where this
+                                    field is used. It makes that resource available
+                                    inside a container.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
                           limits:
                             additionalProperties:
                               anyOf:

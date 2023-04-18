@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: consume-message-fail
+spec:
+  template:
+    spec:
+      containers:
+        - name: rpk
+          image: localhost/redpanda:dev
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/bash
+            - -c
+            - -ex
+          # Providing no cert + key should fail, because the client should authenticate every request's cert.
+          args:
+            - >
+              curl -skv https://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics/my_topic/partitions/0/records?offset=0\&timeout=1000\&max_bytes=100000
+              -H "Accept: application/vnd.kafka.json.v2+json"
+      restartPolicy: Never
+  backoffLimit: 2
+  parallelism: 1
+  completions: 1

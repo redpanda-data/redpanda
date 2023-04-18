@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-schema-client-external-ca-mtls
+spec:
+  template:
+    spec:
+      volumes:
+      - name: tlscertkey
+        secret:
+          defaultMode: 420
+          secretName: client-cert-key
+      - name: tlscacert
+        secret:
+          defaultMode: 420
+          secretName: schema-registry-client-external-ca-mtls-schema-registry-node
+      containers:
+      - name: rpk
+        image: localhost/redpanda:dev
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - >
+          curl -vv
+          --cacert /etc/tls/certs/schema-registry/ca/ca.crt
+          --cert /etc/tls/certs/schema-registry/tls.crt
+          --key /etc/tls/certs/schema-registry/tls.key
+          -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
+          --data '{"schema": "{\"type\": \"string\"}" }'
+          https://schema-registry-client-external-ca-mtls-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
+        volumeMounts:
+        - mountPath: /etc/tls/certs/schema-registry
+          name: tlscertkey
+        - mountPath: /etc/tls/certs/schema-registry/ca
+          name: tlscacert
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

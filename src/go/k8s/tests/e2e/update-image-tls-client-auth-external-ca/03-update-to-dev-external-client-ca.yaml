@@ -1,0 +1,37 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+- command: ./create-cert-secrets.sh update-img-external-client-ca
+  namespaced: true
+
+---
+
+# Set external client CA with clientCACertRef
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-img-external-client-ca
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  configuration:
+    pandaproxyApi:
+    - port: 8082
+      external: {}
+      tls:
+        enabled: true
+        requireClientAuth: true
+        clientCACertRef:
+          kind: Secret
+          name: ca-cert
+          apiGroup: ""
+    schemaRegistry:
+      port: 8081
+      external: {}
+      tls:
+        enabled: true
+        requireClientAuth: true
+        clientCACertRef:
+          kind: Secret
+          name: ca-cert
+          apiGroup: ""

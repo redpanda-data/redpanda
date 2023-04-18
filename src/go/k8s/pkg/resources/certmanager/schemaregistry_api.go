@@ -14,4 +14,6 @@ const (
 	schemaRegistryAPI           = "schema-registry"
 	schemaRegistryAPIClientCert = "schema-registry-client"
 	schemaRegistryAPINodeCert   = "schema-registry-node"
+
+	schemaRegistryAPITrustedClientCAs = "schema-registry-trusted-client-ca"
 )

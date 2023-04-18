@@ -1,0 +1,35 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-img-external-client-ca
+spec:
+  image: "vectorized/redpanda"
+  version: "v23.1.1"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1
+      memory: 500Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+    - port: 9092
+    adminApi:
+    - port: 9644
+    pandaproxyApi:
+    - port: 8082
+      external: {}
+      tls:
+        enabled: true
+        requireClientAuth: true
+    schemaRegistry:
+      port: 8081
+      external: {}
+      tls:
+        enabled: true
+        requireClientAuth: true
+    developerMode: true
