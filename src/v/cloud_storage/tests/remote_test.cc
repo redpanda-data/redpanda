@@ -96,6 +96,14 @@ static partition_manifest load_manifest_from_str(std::string_view v) {
 
 static remote::event_filter allow_all;
 
+static iobuf make_iobuf_from_string(std::string_view s) {
+    iobuf b;
+    b.append(s.data(), s.size());
+    return b;
+}
+
+static const cloud_storage_clients::object_tag_formatter upload_tags{{}};
+
 struct noop_mixin_t {};
 
 template<model::cloud_storage_backend backend>
@@ -548,7 +556,11 @@ FIXTURE_TEST(test_put_string, remote_fixture) {
     retry_chain_node fib(never_abort, 100ms, 20ms);
 
     cloud_storage_clients::object_key path{"p"};
-    auto result = remote.local().upload_object(bucket, path, "p", fib).get();
+    auto result
+      = remote.local()
+          .upload_object(
+            bucket, path, make_iobuf_from_string("p"), fib, upload_tags)
+          .get();
     BOOST_REQUIRE_EQUAL(cloud_storage::upload_result::success, result);
 
     auto request = get_requests()[0];
@@ -582,12 +594,22 @@ FIXTURE_TEST(test_delete_objects_on_unknown_backend, gcs_remote_fixture) {
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
       remote.local()
-        .upload_object(bucket, cloud_storage_clients::object_key{"p"}, "p", fib)
+        .upload_object(
+          bucket,
+          cloud_storage_clients::object_key{"p"},
+          make_iobuf_from_string("p"),
+          fib,
+          upload_tags)
         .get());
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
       remote.local()
-        .upload_object(bucket, cloud_storage_clients::object_key{"q"}, "q", fib)
+        .upload_object(
+          bucket,
+          cloud_storage_clients::object_key{"q"},
+          make_iobuf_from_string("q"),
+          fib,
+          upload_tags)
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{
@@ -619,7 +641,12 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(
       cloud_storage::upload_result::success,
       remote.local()
-        .upload_object(bucket, cloud_storage_clients::object_key{"p"}, "p", fib)
+        .upload_object(
+          bucket,
+          cloud_storage_clients::object_key{"p"},
+          make_iobuf_from_string("p"),
+          fib,
+          upload_tags)
         .get());
 
     std::vector<cloud_storage_clients::object_key> to_delete{

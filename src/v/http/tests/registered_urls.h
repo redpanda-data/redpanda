@@ -21,8 +21,9 @@
 
 namespace http_test_utils {
 struct response {
+    using status_type = ss::http::reply::status_type;
     ss::sstring body;
-    ss::http::reply::status_type status;
+    status_type status;
 };
 
 struct request_info {

@@ -14,6 +14,7 @@
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/fwd.h"
 #include "cloud_storage/probe.h"
+#include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client.h"
 #include "cloud_storage_clients/client_pool.h"
@@ -122,6 +123,7 @@ public:
       default_partition_manifest_tags;
     static const cloud_storage_clients::object_tag_formatter
       default_topic_manifest_tags;
+    static const cloud_storage_clients::object_tag_formatter default_index_tags;
 
     /// Functor that returns fresh input_stream object that can be used
     /// to re-upload and will return all data that needs to be uploaded
@@ -253,6 +255,15 @@ public:
       const try_consume_stream& cons_str,
       retry_chain_node& parent);
 
+    /// \brief Download segment index from S3
+    /// \param ix is the index which will be populated from data from the object
+    /// store
+    ss::future<download_result> download_index(
+      const cloud_storage_clients::bucket_name& bucket,
+      const remote_segment_path& index_path,
+      offset_index& ix,
+      retry_chain_node& parent);
+
     /// Checks if the segment exists in the bucket
     ss::future<download_result> segment_exists(
       const cloud_storage_clients::bucket_name& bucket,
@@ -318,8 +329,10 @@ public:
     ss::future<upload_result> upload_object(
       const cloud_storage_clients::bucket_name& bucket,
       const cloud_storage_clients::object_key& object_path,
-      ss::sstring payload,
-      retry_chain_node& parent);
+      iobuf payload,
+      retry_chain_node& parent,
+      const cloud_storage_clients::object_tag_formatter& tags,
+      const char* log_object_type = "object");
 
     ss::future<download_result> do_download_manifest(
       const cloud_storage_clients::bucket_name& bucket,
@@ -402,6 +415,9 @@ public:
     make_segment_tags(const model::ntp& ntp, model::initial_revision_id rev);
     /// Add tags for tx-manifest
     static cloud_storage_clients::object_tag_formatter make_tx_manifest_tags(
+      const model::ntp& ntp, model::initial_revision_id rev);
+
+    static cloud_storage_clients::object_tag_formatter make_segment_index_tags(
       const model::ntp& ntp, model::initial_revision_id rev);
 
 private:

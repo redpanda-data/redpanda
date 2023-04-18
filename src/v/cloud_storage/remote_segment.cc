@@ -51,6 +51,11 @@
 
 namespace cloud_storage {
 
+std::filesystem::path
+generate_remote_index_path(const cloud_storage::remote_segment_path& p) {
+    return fmt::format("{}.index", p().native());
+}
+
 using namespace std::chrono_literals;
 
 static constexpr size_t max_consume_size = 128_KiB;
@@ -129,6 +134,7 @@ remote_segment::remote_segment(
       meta->delta_offset, model::offset_delta(0), model::offset_delta::max());
     _compacted = meta->is_compacted;
     _size = meta->size_bytes;
+    _sname_format = meta->sname_format;
 
     if (
       meta->sname_format == segment_name_format::v3
@@ -272,7 +278,7 @@ remote_segment::maybe_get_offsets(kafka::offset kafka_offset) {
  * Called by do_hydrate_segment on the stream the S3 remote creates for
  * a GET response: pass the dat through into the cache.
  */
-ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
+ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
   uint64_t size_bytes, ss::input_stream<char> s) {
     offset_index tmpidx(
       get_base_rp_offset(),
@@ -311,9 +317,25 @@ ss::future<uint64_t> remote_segment::do_hydrate_segment_inner(
     }
     if (index_prepared) {
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
-        co_await _cache.put(_path().native() + ".index", index_stream);
+        co_await _cache.put(generate_remote_index_path(_path), index_stream);
         _index = std::move(tmpidx);
     }
+    co_return size_bytes;
+}
+
+ss::future<uint64_t> remote_segment::put_segment_in_cache(
+  uint64_t size_bytes, ss::input_stream<char> s) {
+    try {
+        co_await _cache.put(_path, s).finally([&s] { return s.close(); });
+    } catch (...) {
+        auto put_exception = std::current_exception();
+        vlog(
+          _ctxlog.warn,
+          "Failed to write a segment file to cache, error: {}",
+          put_exception);
+        std::rethrow_exception(put_exception);
+    }
+
     co_return size_bytes;
 }
 
@@ -329,7 +351,16 @@ ss::future<> remote_segment::do_hydrate_segment() {
       _bucket,
       _path,
       [this](uint64_t size_bytes, ss::input_stream<char> s) {
-          return do_hydrate_segment_inner(size_bytes, std::move(s));
+          auto index_not_in_object_store = _sname_format
+                                             == segment_name_format::v1
+                                           || _sname_format
+                                                == segment_name_format::v2;
+          if (unlikely(index_not_in_object_store)) {
+              return put_segment_in_cache_and_create_index(
+                size_bytes, std::move(s));
+          } else {
+              return put_segment_in_cache(size_bytes, std::move(s));
+          }
       },
       local_rtc);
 
@@ -342,6 +373,33 @@ ss::future<> remote_segment::do_hydrate_segment() {
           _wait_list.size());
         throw download_exception(res, _path);
     }
+}
+
+ss::future<> remote_segment::do_hydrate_index() {
+    retry_chain_node local_rtc(
+      cache_hydration_timeout, cache_hydration_backoff, &_rtc);
+
+    offset_index ix(
+      _base_rp_offset,
+      _base_rp_offset - _base_offset_delta,
+      0,
+      remote_segment_sampling_step_bytes);
+
+    auto index_path = generate_remote_index_path(_path);
+    auto result = co_await _api.download_index(
+      _bucket, remote_segment_path{index_path}, ix, local_rtc);
+
+    if (result != download_result::success) {
+        throw download_exception(result, index_path);
+    }
+
+    _index = std::move(ix);
+    auto buf = _index->to_iobuf();
+
+    auto str = make_iobuf_input_stream(std::move(buf));
+    co_await _cache.put(index_path, str).finally([&str] {
+        return str.close();
+    });
 }
 
 ss::future<> remote_segment::do_hydrate_txrange() {
@@ -476,9 +534,14 @@ ss::future<bool> remote_segment::do_materialize_txrange() {
     co_return true;
 }
 
-ss::future<> remote_segment::maybe_materialize_index() {
+ss::future<bool> remote_segment::maybe_materialize_index() {
+    if (_index) {
+        vlog(_ctxlog.debug, "index already materialized");
+        co_return true;
+    }
+
     ss::gate::holder guard(_gate);
-    auto path = _path().native() + ".index";
+    auto path = generate_remote_index_path(_path);
     offset_index ix(
       _base_rp_offset,
       _base_rp_offset - _base_offset_delta,
@@ -520,6 +583,10 @@ ss::future<> remote_segment::maybe_materialize_index() {
     } else {
         vlog(_ctxlog.info, "Index '{}' is not available", path);
     }
+
+    // TODO (abhijat) start returning false here when the index is required to
+    // be materialized.
+    co_return true;
 }
 
 // NOTE: Aborted transactions handled using tx_range manifests.
@@ -549,32 +616,6 @@ enum class segment_txrange_status {
     not_available_available,
 };
 
-static segment_txrange_status
-combine_statuses(cache_element_status segment, cache_element_status tx_range) {
-    switch (segment) {
-    case cache_element_status::in_progress:
-        return segment_txrange_status::in_progress;
-    case cache_element_status::available:
-        switch (tx_range) {
-        case cache_element_status::available:
-            return segment_txrange_status::available;
-        case cache_element_status::in_progress:
-            return segment_txrange_status::in_progress;
-        case cache_element_status::not_available:
-            return segment_txrange_status::available_not_available;
-        }
-    case cache_element_status::not_available:
-        switch (tx_range) {
-        case cache_element_status::available:
-            return segment_txrange_status::not_available_available;
-        case cache_element_status::in_progress:
-            return segment_txrange_status::in_progress;
-        case cache_element_status::not_available:
-            return segment_txrange_status::not_available;
-        }
-    }
-}
-
 void remote_segment::set_waiter_errors(const std::exception_ptr& err) {
     while (!_wait_list.empty()) {
         auto& p = _wait_list.front();
@@ -589,8 +630,31 @@ ss::future<> remote_segment::run_hydrate_bg() {
     // Track whether we have seen our objects in the cache during the loop
     // below, so that we can detect regression: one object falling out the
     // cache while the other is read.  We will back off on regression.
-    bool segment_was_cached = false;
-    bool txrange_was_cached = false;
+
+    hydration_loop_state hydration{_cache, _path, _ctxlog};
+    auto tx_path = generate_remote_tx_path(_path)();
+
+    hydration.add_request(
+      _path,
+      [this] { return do_hydrate_segment(); },
+      [this] { return do_materialize_segment(); },
+      hydration_request::kind::segment);
+
+    hydration.add_request(
+      tx_path,
+      [this] { return do_hydrate_txrange(); },
+      [this] { return do_materialize_txrange(); },
+      hydration_request::kind::tx);
+
+    if (
+      _sname_format != segment_name_format::v1
+      && _sname_format != segment_name_format::v2) {
+        hydration.add_request(
+          generate_remote_index_path(_path),
+          [this] { return do_hydrate_index(); },
+          [this] { return maybe_materialize_index(); },
+          hydration_request::kind::index);
+    }
 
     try {
         while (!_gate.is_closed()) {
@@ -609,80 +673,16 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 // and retrieve the file out of it or hydrate.
                 // If _data_file is initialized we can use it safely since the
                 // cache can't delete it until we close it.
-                auto tx_path = generate_remote_tx_path(_path);
-                auto segment_status = co_await _cache.is_cached(_path);
-                segment_was_cached |= segment_status
-                                      != cache_element_status::not_available;
-                auto txrange_status = co_await _cache.is_cached(tx_path);
-                txrange_was_cached |= txrange_status
-                                      != cache_element_status::not_available;
 
-                if (
-                  (txrange_status == cache_element_status::not_available
-                   && txrange_was_cached)
-                  || (segment_status == cache_element_status::not_available && segment_was_cached)) {
-                    vlog(
-                      _ctxlog.warn,
-                      "Cache thrashing detected while downloading segment {}, "
-                      "backing off",
-                      _path);
+                co_await hydration.update_current_path_states();
+                if (co_await hydration.is_cache_thrashing()) {
                     co_await ss::sleep(_cache_backoff_jitter.next_duration());
                 }
 
-                auto status = combine_statuses(segment_status, txrange_status);
-                switch (status) {
-                case segment_txrange_status::in_progress:
-                    vassert(
-                      false,
-                      "Hydration of segment or tx-manifest {} is already in "
-                      "progress, {} waiters",
-                      _path,
-                      _wait_list.size());
-                case segment_txrange_status::available:
-                    vlog(
-                      _ctxlog.debug,
-                      "Hydrated segment {} is already available, {} waiters "
-                      "will be invoked",
-                      _path,
-                      _wait_list.size());
-                    break;
-                case segment_txrange_status::not_available:
-                    vlog(
-                      _ctxlog.info,
-                      "Hydrating segment and tx-manifest {}",
-                      _path);
-                    try {
-                        co_await ss::coroutine::all(
-                          [this] { return do_hydrate_segment(); },
-                          [this] { return do_hydrate_txrange(); });
-                    } catch (const download_exception&) {
-                        err = std::current_exception();
-                    }
-                    break;
-                case segment_txrange_status::not_available_available:
-                    vlog(_ctxlog.info, "Hydrating only segment {}", _path);
-                    try {
-                        co_await do_hydrate_segment();
-                    } catch (const download_exception&) {
-                        err = std::current_exception();
-                    }
-                    break;
-                case segment_txrange_status::available_not_available:
-                    vlog(_ctxlog.info, "Hydrating only tx-manifest {}", _path);
-                    try {
-                        co_await do_hydrate_txrange();
-                    } catch (const download_exception&) {
-                        err = std::current_exception();
-                    }
-                    break;
-                }
+                co_await hydration.hydrate(_wait_list.size());
+                err = hydration.current_error();
                 if (!err) {
-                    if (co_await do_materialize_segment() == false) {
-                        continue;
-                    }
-                    if (co_await do_materialize_txrange() == false) {
-                        continue;
-                    }
+                    co_await hydration.materialize();
                 }
             }
             // Invariant: here we should have a data file or error to be set.
@@ -1097,6 +1097,132 @@ ss::future<> remote_segment_batch_reader::stop() {
 remote_segment_batch_reader::~remote_segment_batch_reader() noexcept {
     vassert(_stopped, "Destroyed without stopping");
     _probe.segment_reader_destroyed();
+}
+
+std::ostream& operator<<(std::ostream& os, hydration_request::kind kind) {
+    switch (kind) {
+    case hydration_request::kind::segment:
+        return os << "segment";
+    case hydration_request::kind::tx:
+        return os << "tx-range";
+    case hydration_request::kind::index:
+        return os << "index";
+    }
+}
+
+hydration_loop_state::hydration_loop_state(
+  cache& c, remote_segment_path root, retry_chain_logger& ctxlog)
+  : _cache{c}
+  , _root{std::move(root)}
+  , _ctxlog{ctxlog} {}
+
+void hydration_loop_state::add_request(
+  const std::filesystem::path& p,
+  hydrate_action_t h,
+  materialize_action_t m,
+  hydration_request::kind path_kind) {
+    _states.push_back(
+      {.path = p,
+       .was_cached = false,
+       .hydrate_action = std::move(h),
+       .materialize_action = std::move(m),
+       .path_kind = path_kind});
+}
+
+ss::future<> hydration_loop_state::update_current_path_states() {
+    for (auto& path_state : _states) {
+        path_state.current_status = co_await _cache.is_cached(path_state.path);
+    }
+}
+
+ss::future<bool> hydration_loop_state::is_cache_thrashing() {
+    for (auto& path_state : _states) {
+        bool available = path_state.current_status
+                         != cache_element_status::not_available;
+        path_state.was_cached |= available;
+        if (!available && path_state.was_cached) {
+            vlog(
+              _ctxlog.debug,
+              "Cache thrashing detected while downloading {} {}, path "
+              "{}, backing off",
+              path_state.path_kind,
+              _root,
+              path_state.path);
+            co_return true;
+        }
+    }
+    co_return false;
+}
+
+ss::future<> hydration_loop_state::hydrate(size_t wait_list_size) {
+    _current_error = std::exception_ptr{};
+    std::vector<ss::future<>> fs;
+    fs.reserve(_states.size());
+
+    for (const auto& state : _states) {
+        switch (state.current_status) {
+        case cache_element_status::available:
+            break;
+        case cache_element_status::not_available:
+            vlog(
+              _ctxlog.info,
+              "Hydrating {} {}, {} waiters",
+              state.path_kind,
+              state.path,
+              wait_list_size);
+            fs.push_back(state.hydrate_action());
+            break;
+        case cache_element_status::in_progress:
+            vassert(false, "{} is already in progress", state.path);
+        }
+    }
+
+    try {
+        auto rs = co_await ss::when_all(fs.begin(), fs.end());
+        for (size_t i = 0; i < rs.size(); ++i) {
+            auto& r = rs[i];
+            if (r.failed()) {
+                _current_error = r.get_exception();
+                vlog(
+                  _ctxlog.warn,
+                  "Failed to hydrate {} {}: {}",
+                  _states[i].path_kind,
+                  _states[i].path.native(),
+                  _current_error);
+            }
+        }
+    } catch (...) {
+        _current_error = std::current_exception();
+    }
+}
+
+ss::future<> hydration_loop_state::materialize() {
+    if (_current_error) {
+        co_return;
+    }
+
+    std::vector<ss::future<bool>> fs;
+    fs.reserve(_states.size());
+    for (const auto& state : _states) {
+        fs.push_back(state.materialize_action());
+    }
+
+    auto rs = co_await ss::when_all(fs.begin(), fs.end());
+    for (size_t i = 0; i < rs.size(); ++i) {
+        auto& r = rs[i];
+        if (r.failed()) {
+            vlog(
+              _ctxlog.warn,
+              "Failed to materialize {} {}: {}",
+              _states[i].path_kind,
+              _states[i].path,
+              r.get_exception());
+        }
+    }
+}
+
+std::exception_ptr hydration_loop_state::current_error() {
+    return _current_error;
 }
 
 } // namespace cloud_storage

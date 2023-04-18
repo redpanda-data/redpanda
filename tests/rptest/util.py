@@ -99,11 +99,7 @@ def segments_count(redpanda, topic, partition_idx):
     )
 
 
-def produce_total_bytes(redpanda,
-                        topic,
-                        partition_index,
-                        bytes_to_produce,
-                        acks=-1):
+def produce_total_bytes(redpanda, topic, bytes_to_produce, acks=-1):
     kafka_tools = KafkaCliTools(redpanda)
 
     def done():
@@ -341,23 +337,20 @@ class firewall_blocked:
 
     def __enter__(self):
         """Isolate certain ips from the nodes using firewall rules"""
-        cmd = []
-        mode_for_inut = "sport"
-        cmd.append(
-            f"iptables -A INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP"
-        )
-        cmd.append(f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP")
+        cmd = [
+            f"iptables -A INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP",
+            f"iptables -A OUTPUT -p tcp --dport {self._port} -j DROP"
+        ]
         cmd = " && ".join(cmd)
         for node in self._nodes:
             node.account.ssh_output(cmd, allow_fail=False)
 
     def __exit__(self, type, value, traceback):
         """Remove firewall rules that isolate ips from the nodes"""
-        cmd = []
-        cmd.append(
-            f"iptables -D INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP"
-        )
-        cmd.append(f"iptables -D OUTPUT -p tcp --dport {self._port} -j DROP")
+        cmd = [
+            f"iptables -D INPUT -p tcp --{self.mode_for_input} {self._port} -j DROP",
+            f"iptables -D OUTPUT -p tcp --dport {self._port} -j DROP"
+        ]
         cmd = " && ".join(cmd)
         for node in self._nodes:
             node.account.ssh_output(cmd, allow_fail=False)

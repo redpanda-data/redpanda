@@ -199,7 +199,6 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
 
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
-                            partition_index=0,
                             bytes_to_produce=self.total_segments *
                             self.segment_size)
 
@@ -241,7 +240,6 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
 
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
-                            partition_index=0,
                             bytes_to_produce=self.total_segments *
                             self.segment_size)
 
@@ -280,7 +278,6 @@ class ShadowIndexingLocalRetentionTest(RedpandaTest):
 
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
-                            partition_index=0,
                             bytes_to_produce=self.total_segments *
                             self.segment_size)
 
@@ -336,7 +333,6 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
-                            partition_index=0,
                             bytes_to_produce=20 * self.segment_size)
 
         def deleted_segments_count() -> int:
@@ -389,7 +385,6 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
-                            partition_index=0,
                             bytes_to_produce=total_bytes)
 
         def cloud_log_size() -> int:
@@ -451,7 +446,6 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
 
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
-                            partition_index=0,
                             bytes_to_produce=total_bytes)
 
         def cloud_log_segment_count() -> int:
@@ -529,7 +523,6 @@ class ShadowIndexingCloudRetentionTest(RedpandaTest):
         # written out to S3
         produce_total_bytes(self.redpanda,
                             topic=self.topic_name,
-                            partition_index=0,
                             bytes_to_produce=total_bytes)
 
         def ntp_in_manifest() -> int:

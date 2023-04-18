@@ -15,6 +15,7 @@
 #include "cloud_storage/materialized_segments.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "cloud_storage_clients/util.h"
 #include "model/metadata.h"
 #include "utils/retry_chain_node.h"
 
@@ -581,6 +582,87 @@ ss::future<download_result> remote::download_segment(
     }
     co_return *result;
 }
+
+ss::future<download_result> remote::download_index(
+  const cloud_storage_clients::bucket_name& bucket,
+  const remote_segment_path& index_path,
+  offset_index& ix,
+  retry_chain_node& parent) {
+    gate_guard guard{_gate};
+    retry_chain_node fib(&parent);
+    retry_chain_logger ctxlog(cst_log, fib);
+    auto path = cloud_storage_clients::object_key(index_path());
+    auto lease = co_await _pool.local().acquire(fib.root_abort_source());
+
+    auto permit = fib.retry();
+    vlog(ctxlog.debug, "Download index {}", path);
+
+    std::optional<download_result> result;
+    while (!_gate.is_closed() && permit.is_allowed && !result) {
+        notify_external_subscribers(
+          api_activity_notification::segment_download, parent);
+        auto resp = co_await lease.client->get_object(
+          bucket, path, fib.get_timeout());
+
+        if (resp) {
+            vlog(ctxlog.debug, "Receive OK response from {}", path);
+            auto index_buffer
+              = co_await cloud_storage_clients::util::drain_response_stream(
+                resp.value());
+            ix.from_iobuf(std::move(index_buffer));
+            _probe.index_download();
+            co_return download_result::success;
+        }
+
+        lease.client->shutdown();
+
+        switch (resp.error()) {
+        case cloud_storage_clients::error_outcome::none:
+            vassert(
+              false, "s3:error_outcome::none not expected on failure path");
+        case cloud_storage_clients::error_outcome::retry_slowdown:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::retry:
+            vlog(
+              ctxlog.debug,
+              "Downloading index from {}, {} backoff required",
+              bucket,
+              std::chrono::duration_cast<std::chrono::milliseconds>(
+                permit.delay));
+            _probe.download_backoff();
+            co_await ss::sleep_abortable(permit.delay, fib.root_abort_source());
+            permit = fib.retry();
+            break;
+        case cloud_storage_clients::error_outcome::bucket_not_found:
+            [[fallthrough]];
+        case cloud_storage_clients::error_outcome::fail:
+            result = download_result::failed;
+            break;
+        case cloud_storage_clients::error_outcome::key_not_found:
+            result = download_result::notfound;
+            break;
+        }
+    }
+    _probe.failed_index_download();
+    if (!result) {
+        vlog(
+          ctxlog.warn,
+          "Downloading index from {}, backoff quota exceded, index at {} "
+          "not available",
+          bucket,
+          path);
+        result = download_result::timedout;
+    } else {
+        vlog(
+          ctxlog.warn,
+          "Downloading index from {}, {}, index at {} not available",
+          bucket,
+          *result,
+          path);
+    }
+    co_return *result;
+}
+
 ss::future<download_result> remote::segment_exists(
   const cloud_storage_clients::bucket_name& bucket,
   const remote_segment_path& segment_path,
@@ -994,36 +1076,40 @@ ss::future<remote::list_result> remote::list_objects(
 ss::future<upload_result> remote::upload_object(
   const cloud_storage_clients::bucket_name& bucket,
   const cloud_storage_clients::object_key& object_path,
-  ss::sstring payload,
-  retry_chain_node& parent) {
+  iobuf payload,
+  retry_chain_node& parent,
+  const cloud_storage_clients::object_tag_formatter& tags,
+  const char* log_object_type) {
     gate_guard guard{_gate};
     retry_chain_node fib(&parent);
     retry_chain_logger ctxlog(cst_log, fib);
     auto permit = fib.retry();
-    auto content_length = payload.size();
-    vlog(
-      ctxlog.debug,
-      "Uploading object to path {}, length {}",
-      object_path,
-      content_length);
+    auto content_length = payload.size_bytes();
     std::optional<upload_result> result;
     while (!_gate.is_closed() && permit.is_allowed && !result) {
         auto lease = co_await _pool.local().acquire(fib.root_abort_source());
 
         auto path = cloud_storage_clients::object_key(object_path());
-        vlog(ctxlog.debug, "Uploading object to path {}", object_path);
+        vlog(
+          ctxlog.debug,
+          "Uploading {} to path {}, length {}",
+          log_object_type,
+          object_path,
+          content_length);
 
-        iobuf buffer;
-        buffer.append(payload.data(), payload.size());
+        auto to_upload = payload.copy();
         auto res = co_await lease.client->put_object(
           bucket,
           path,
           content_length,
-          make_iobuf_input_stream(std::move(buffer)),
-          {{"rp-type", "recovery-lock"}},
+          make_iobuf_input_stream(std::move(to_upload)),
+          tags,
           fib.get_timeout());
 
         if (res) {
+            if (log_object_type == std::string_view{"segment-index"}) {
+                _probe.index_upload();
+            }
             co_return upload_result::success;
         }
 
@@ -1037,7 +1123,8 @@ ss::future<upload_result> remote::upload_object(
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
-              "Uploading object {} to {}, {} backoff required",
+              "Uploading {} {} to {}, {} backoff required",
+              log_object_type,
               path,
               bucket,
               std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -1055,20 +1142,27 @@ ss::future<upload_result> remote::upload_object(
         }
     }
 
+    if (log_object_type == std::string_view{"segment-index"}) {
+        _probe.failed_index_upload();
+    }
     if (!result) {
         vlog(
           ctxlog.warn,
-          "Uploading object {} to {}, backoff quota exceded, object not "
+          "Uploading {} {} to {}, backoff quota exceded, {} not "
           "uploaded",
+          log_object_type,
           object_path,
-          bucket);
+          bucket,
+          log_object_type);
     } else {
         vlog(
           ctxlog.warn,
-          "Uploading object {} to {}, {}, object not uploaded",
+          "Uploading {} {} to {}, {}, {} not uploaded",
+          log_object_type,
           object_path,
           bucket,
-          *result);
+          *result,
+          log_object_type);
     }
     co_return upload_result::timedout;
 }
@@ -1252,6 +1346,16 @@ cloud_storage_clients::object_tag_formatter remote::make_segment_tags(
     return tags;
 }
 
+cloud_storage_clients::object_tag_formatter remote::make_segment_index_tags(
+  const model::ntp& ntp, model::initial_revision_id rev) {
+    auto tags = default_index_tags;
+    tags.add("rp-ns", ntp.ns());
+    tags.add("rp-topic", ntp.tp.topic());
+    tags.add("rp-part", ntp.tp.partition());
+    tags.add("rp-rev", rev());
+    return tags;
+}
+
 cloud_storage_clients::object_tag_formatter remote::make_tx_manifest_tags(
   const model::ntp& ntp, model::initial_revision_id rev) {
     // Note: tx-manifest is related to segment (contains data which are used
@@ -1268,6 +1372,8 @@ const cloud_storage_clients::object_tag_formatter
 const cloud_storage_clients::object_tag_formatter
   remote::default_partition_manifest_tags
   = {{"rp-type", "partition-manifest"}};
+const cloud_storage_clients::object_tag_formatter remote::default_index_tags = {
+  {"rp-type", "segment-index"}};
 
 ss::future<api_activity_notification>
 remote::subscribe(remote::event_filter& filter) {

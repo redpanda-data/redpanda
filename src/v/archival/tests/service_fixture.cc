@@ -13,6 +13,7 @@
 #include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
+#include "cloud_storage/remote_segment.h"
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/members_table.h"
@@ -383,6 +384,44 @@ void segment_matcher<Fixture>::verify_segment(
 }
 
 template<class Fixture>
+void segment_matcher<Fixture>::verify_index(
+  const model::ntp& ntp,
+  const archival::segment_name& name,
+  const cloud_storage::partition_manifest& pm,
+  const ss::sstring& expected) {
+    auto segment = get_segment(ntp, name);
+    auto meta = pm.get(name);
+    auto pos = segment->offsets().base_offset;
+    auto reader_handle
+      = segment->offset_data_stream(pos, ss::default_priority_class()).get();
+    cloud_storage::offset_index ix{
+      meta->base_offset,
+      meta->base_kafka_offset(),
+      0,
+      cloud_storage::remote_segment_sampling_step_bytes};
+
+    auto builder = cloud_storage::make_remote_segment_index_builder(
+      reader_handle.take_stream(),
+      ix,
+      meta->delta_offset,
+      cloud_storage::remote_segment_sampling_step_bytes);
+
+    builder->consume().finally([&builder] { return builder->close(); }).get();
+    reader_handle.close().get();
+
+    auto actual = iobuf_to_bytes(ix.to_iobuf());
+
+    vlog(
+      fixt_log.info,
+      "expected {} bytes, got {}",
+      expected.size(),
+      actual.size());
+
+    auto a = ss::sstring{actual.begin(), actual.end()};
+    BOOST_REQUIRE(a == expected); // NOLINT
+}
+
+template<class Fixture>
 void segment_matcher<Fixture>::verify_segments(
   const model::ntp& ntp,
   const std::vector<archival::segment_name>& names,
@@ -468,6 +507,13 @@ archival::remote_segment_path get_segment_path(
     auto key = cloud_storage::parse_segment_name(name);
     BOOST_REQUIRE(key);
     return manifest.generate_segment_path(*meta);
+}
+
+archival::remote_segment_path get_segment_index_path(
+  const cloud_storage::partition_manifest& manifest,
+  const archival::segment_name& name) {
+    return archival::remote_segment_path{
+      fmt::format("{}.index", get_segment_path(manifest, name)().native())};
 }
 
 void populate_log(storage::disk_log_builder& b, const log_spec& spec) {

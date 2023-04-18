@@ -6,33 +6,41 @@
 #
 # https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
 
-from rptest.clients.kafka_cat import KafkaCat
-from rptest.services.cluster import cluster
-from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.redpanda import CloudStorageType, RedpandaService, SISettings, get_cloud_storage_type
+import json
+import os
+import re
+import sys
+import time
+import traceback
+from collections import namedtuple, defaultdict
+from typing import DefaultDict
 
-from rptest.clients.types import TopicSpec
-from rptest.clients.rpk import RpkTool
+from ducktape.mark import matrix
+
+from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
-from rptest.utils.si_utils import BucketView
+from rptest.clients.rpk import RpkTool
+from rptest.clients.types import TopicSpec
+from rptest.services.cluster import cluster
+from rptest.services.redpanda import RedpandaService, SISettings, get_cloud_storage_type
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.util import (
     segments_count,
     produce_until_segments,
     wait_for_local_storage_truncate,
     firewall_blocked,
 )
-
-from ducktape.mark import matrix, parametrize
-
-from collections import namedtuple, defaultdict
-import time
-import os
-import json
-import traceback
-import sys
-import re
-
+from rptest.utils.si_utils import BucketView
 from rptest.utils.si_utils import gen_segment_name_from_meta, gen_local_path_from_remote
+
+# First capture group is the log name. The last (optional) group is the archiver term to be removed.
+LOG_EXPRESSION = re.compile(r'(.*\.log)(\.\d+)?$')
+
+MANIFEST_EXTENSION = ".json"
+
+LOG_EXTENSION = ".log"
+
+CONTROLLER_LOG_PREFIX = os.path.join(RedpandaService.DATA_DIR, "redpanda")
 
 NTP = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
 
@@ -177,6 +185,10 @@ def _parse_manifest_segment(manifest, sname, meta, remote_set, logger):
                           size=size_bytes)
 
 
+def make_index_path(path: str) -> str:
+    return f'{path}.index'
+
+
 class ArchivalTest(RedpandaTest):
     log_segment_size = 1048576  # 1MB
     log_compaction_interval_ms = 10000
@@ -201,9 +213,9 @@ class ArchivalTest(RedpandaTest):
             extra_rp_conf.update(
                 cloud_storage_segment_max_upload_interval_sec=1)
 
-        super(ArchivalTest, self).__init__(test_context=test_context,
-                                           extra_rp_conf=extra_rp_conf,
-                                           si_settings=self.si_settings)
+        super().__init__(test_context=test_context,
+                         extra_rp_conf=extra_rp_conf,
+                         si_settings=self.si_settings)
 
         self._s3_port = self.si_settings.cloud_storage_api_endpoint_port
 
@@ -225,7 +237,7 @@ class ArchivalTest(RedpandaTest):
     @cluster(num_nodes=3)
     @matrix(cloud_storage_type=get_cloud_storage_type())
     def test_write(self, cloud_storage_type):
-        """Simpe smoke test, write data to redpanda and check if the
+        """Simple smoke test, write data to redpanda and check if the
         data hit the S3 storage bucket"""
         self.kafka_tools.produce(self.topic, 10000, 1024)
         validate(self._quick_verify, self.logger, 90)
@@ -407,14 +419,7 @@ class ArchivalTest(RedpandaTest):
             sizes = {}
 
             for node in self.redpanda.nodes:
-                checksums = self._get_redpanda_log_segment_checksums(node)
-                self.logger.info(
-                    f"Node: {node.account.hostname} checksums: {checksums}")
-                lst = [
-                    _parse_normalized_segment_path(path, md5, size)
-                    for path, (md5, size) in checksums.items()
-                ]
-                lst = sorted(lst, key=lambda x: x.base_offset)
+                lst = self.segment_paths_from_checksums(node)
                 segments = defaultdict(int)
                 sz = defaultdict(int)
                 for it in lst:
@@ -444,8 +449,10 @@ class ArchivalTest(RedpandaTest):
                     self.logger.info(
                         f"checking {segment} prev: {prev_committed_offset}")
                     base_offset = segment['base_offset']
-                    assert prev_committed_offset + 1 == base_offset, "inconsistent segments, " +\
-                        f"expected base_offset: {prev_committed_offset + 1}, actual: {base_offset}"
+                    assert prev_committed_offset + 1 == base_offset, "inconsistent segments, " \
+                                                                     f"expected base_offset: " \
+                                                                     f"{prev_committed_offset + 1}, " \
+                                                                     f"actual: {base_offset}"
                     prev_committed_offset = segment['committed_offset']
                     size += segment['size_bytes']
                 assert sizes[ntp] >= size
@@ -592,14 +599,7 @@ class ArchivalTest(RedpandaTest):
         ntps = set()
 
         for node in self.redpanda.nodes:
-            checksums = self._get_redpanda_log_segment_checksums(node)
-            self.logger.info(
-                f"Node: {node.account.hostname} checksums: {checksums}")
-            lst = [
-                _parse_normalized_segment_path(path, md5, size)
-                for path, (md5, size) in checksums.items()
-            ]
-            lst = sorted(lst, key=lambda x: x.base_offset)
+            lst = self.segment_paths_from_checksums(node)
             nodes[node.account.hostname] = lst
             for it in lst:
                 ntps.add(it.ntp)
@@ -713,6 +713,17 @@ class ArchivalTest(RedpandaTest):
                 f"last offset: {last_offset}, ntp offsets: {ntp_offsets}")
             assert (last_offset + 1) in ntp_offsets
 
+    def segment_paths_from_checksums(self, node):
+        checksums = self._get_redpanda_log_segment_checksums(node)
+        self.logger.info(
+            f"Node: {node.account.hostname} checksums: {checksums}")
+        lst = [
+            _parse_normalized_segment_path(path, md5, size)
+            for path, (md5, size) in checksums.items()
+        ]
+        lst = sorted(lst, key=lambda x: x.base_offset)
+        return lst
+
     def _list_objects(self):
         """Emulate ListObjects call by fetching the topic manifests and
         iterating through its content"""
@@ -735,17 +746,17 @@ class ArchivalTest(RedpandaTest):
 
     def _quick_verify(self):
         """Verification algorithm that works only if no leadership
-        transfer happend during the run. It works by looking up all
+        transfer happened during the run. It works by looking up all
         segments from the remote storage in local redpanda storages.
         It's done by using md5 hashes of the nodes.
         """
-        local = {}
+        local = defaultdict(set)
         for node in self.redpanda.nodes:
             checksums = self._get_redpanda_log_segment_checksums(node)
             self.logger.info(
                 f"Node: {node.account.hostname} checksums: {checksums}")
             for k, v in checksums.items():
-                local.setdefault(k, set()).add(v)
+                local[k].add(v)
         remote = self._get_redpanda_s3_checksums()
         self.logger.info(f"S3 checksums: {remote}")
         self.logger.info(f"Local checksums: {local}")
@@ -754,6 +765,11 @@ class ArchivalTest(RedpandaTest):
         md5fails = 0
         lookup_fails = 0
         for path, csum in remote.items():
+
+            # Skip index files, these are only present on cloud storage
+            if path.endswith('.index'):
+                continue
+
             adjusted = gen_local_path_from_remote(path)
             self.logger.info(
                 f"checking remote path: {path} csum: {csum} adjusted: {adjusted}"
@@ -768,11 +784,16 @@ class ArchivalTest(RedpandaTest):
                     self.logger.info(
                         f"remote segment {path} have more than one variant {local[adjusted]}"
                     )
-                if not csum in local[adjusted]:
+                if csum not in local[adjusted]:
                     self.logger.debug(
                         f"remote md5 {csum} doesn't match any local {local[adjusted]}"
                     )
                     md5fails += 1
+
+            index_expr = fr'{path}\.\d+\.index'
+            assert any(re.match(index_expr, entry) for entry in remote), f'expected {index_expr} to be present ' \
+                                                                         f'for log segment {path} but missing'
+
         if md5fails != 0:
             self.logger.debug(
                 f"Validation failed, {md5fails} remote segments doesn't match")
@@ -783,16 +804,16 @@ class ArchivalTest(RedpandaTest):
         assert md5fails == 0 and lookup_fails == 0
 
         # Validate partitions
-        # for every partition the segment with largest base offset shouldn't be
+        # for every partition the segment with the largest base offset shouldn't be
         # available in remote storage
-        local_partitions = {}
-        remote_partitions = {}
+        local_partitions: DefaultDict[NTP, list] = defaultdict(list)
+        remote_partitions: DefaultDict[NTP, list] = defaultdict(list)
         for path, items in local.items():
             meta = _parse_normalized_segment_path(path, '', 0)
-            local_partitions.setdefault(meta.ntp, []).append((meta, items))
+            local_partitions[meta.ntp].append((meta, items))
         for path, items in remote.items():
             meta = _parse_normalized_segment_path(path, '', 0)
-            remote_partitions.setdefault(meta.ntp, []).append((meta, items))
+            remote_partitions[meta.ntp].append((meta, items))
         self.logger.info(
             f"generated local partitions {local_partitions.keys()}")
         self.logger.info(
@@ -822,11 +843,8 @@ class ArchivalTest(RedpandaTest):
 
         # Filter out all unwanted paths
         def included(path):
-            controller_log_prefix = os.path.join(RedpandaService.DATA_DIR,
-                                                 "redpanda")
-            log_segment_extension = ".log"
             return not path.startswith(
-                controller_log_prefix) and path.endswith(log_segment_extension)
+                CONTROLLER_LOG_PREFIX) and path.endswith(LOG_EXTENSION)
 
         # Remove data dir from path
         def normalize_path(path):
@@ -842,26 +860,25 @@ class ArchivalTest(RedpandaTest):
         normalized (<namespace>/<topic>/<partition>_<rev>/...)."""
         def normalize(path):
             # strip archiver term id from the segment path
-            match = re.search(r'.log(\.\d+)$', path)
+            path = path[9:]
+            match = LOG_EXPRESSION.match(path)
             if match:
-                path = path[:-len(match[1])]
-            return path[9:]  # 8-character hash + /
+                return match[1]
+            return path
 
         def included(path):
-            manifest_extension = ".json"
-            return not path.endswith(manifest_extension)
+            return not path.endswith(MANIFEST_EXTENSION)
 
-        objects = self.cloud_storage_client.list_objects(self.s3_bucket_name)
+        objects = list(
+            self.cloud_storage_client.list_objects(self.s3_bucket_name))
         self.logger.info(
-            f"got {len(list(objects))} objects from bucket {self.s3_bucket_name}"
-        )
+            f"got {len(objects)} objects from bucket {self.s3_bucket_name}")
         for o in objects:
             self.logger.info(f"object: {o}")
 
         return {
             normalize(it.key): (it.etag, it.content_length)
-            for it in self.cloud_storage_client.list_objects(
-                self.s3_bucket_name) if included(it.key)
+            for it in objects if included(it.key)
         }
 
     def _get_partial_checksum(self, hostname, normalized_path, tail_bytes):
@@ -876,38 +893,3 @@ class ArchivalTest(RedpandaTest):
         line = node.account.ssh_output(cmd)
         tokens = line.split()
         return tokens[0].decode()
-
-    def _isolate(self, nodes, ips):
-        """Isolate certain ips from the nodes using firewall rules"""
-        cmd = []
-        for ip in ips:
-            cmd.append(f"iptables -A INPUT -s {ip} -j DROP")
-            cmd.append(f"iptables -A OUTPUT -d {ip} -j DROP")
-        cmd = " && ".join(cmd)
-        for node in nodes:
-            node.account.ssh_output(cmd, allow_fail=False)
-
-    def _rejoin(self, nodes, ips):
-        """Remove firewall rules that isolate ips from the nodes"""
-        cmd = []
-        for ip in ips:
-            cmd.append(f"iptables -D INPUT -s {ip} -j DROP")
-            cmd.append(f"iptables -D OUTPUT -d {ip} -j DROP")
-        cmd = " && ".join(cmd)
-        for node in nodes:
-            node.account.ssh_output(cmd, allow_fail=False)
-
-    def _host_name_to_ip_address(self, hostname):
-        ip_host = self.redpanda.nodes[0].account.ssh_output(
-            f'getent hosts {hostname}')
-        return ip_host.split()[0].decode()
-
-    def _get_s3_endpoint_ip(self):
-        return self._host_name_to_ip_address(ArchivalTest.s3_host_name)
-
-    def _get_rp_cluster_ips(self, nhosts=4):
-        lst = []
-        for ix in range(1, nhosts + 1):
-            h = f"rp_n{ix}_1"
-            lst.append(self._host_name_to_ip_address(h))
-        return lst

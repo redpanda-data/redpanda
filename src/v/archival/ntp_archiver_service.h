@@ -14,6 +14,7 @@
 #include "archival/types.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
+#include "cloud_storage/remote_segment_index.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client.h"
 #include "cluster/fwd.h"
@@ -363,12 +364,38 @@ private:
     /// \param candidate is an upload candidate
     /// \param segment_read_locks protects the underlying segment(s) from being
     ///        deleted while the upload is in flight.
-    /// \param source_rtc is a retry_chain_node of the caller, if it's set
+    /// \param stream is a stream to the segment used for the initial upload. If
+    /// the upload is retried, the segment will be read again.
+    /// \param source_rtc
+    /// is a retry_chain_node of the caller, if it's set
     ///        to nullopt own retry chain of the ntp_archiver is used
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_segment(
       upload_candidate candidate,
       std::vector<ss::rwlock::holder> segment_read_locks,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
+      = std::nullopt);
+
+    /// Holds a stream reference, and conditionally closes the stream if
+    /// possible. This structure is useful where a stream is passed to another
+    /// function by reference, which may or may not close the stream at the end.
+    /// This wrapper has a close method which tracks whether the wrapped stream
+    /// has been moved out, and if the stream is still held it can be closed.
+    struct stream_reference {
+        using stream_ref_t
+          = std::optional<std::reference_wrapper<ss::input_stream<char>>>;
+        stream_ref_t stream_ref;
+
+        /// Closes the wrapped stream if it has not been moved out
+        ss::future<> maybe_close_ref();
+    };
+
+    /// Isolates segment upload and accepts a stream reference, so that if the
+    /// upload fails the exception can be handled in the caller and the stream
+    /// can be closed.
+    ss::future<cloud_storage::upload_result> do_upload_segment(
+      upload_candidate candidate,
+      stream_reference& stream_state,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
@@ -386,6 +413,20 @@ private:
       fragmented_vector<model::tx_range> tx,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
+
+    /// Builds a segment index from the supplied input stream.
+    ///
+    /// \param base_rp_offset The starting offset for the index to be created
+    /// \param ctxlog For logging
+    /// \param index_path The path to which the index will be uploaded, used
+    /// only for logging
+    /// \param stream The data stream from which the index is created
+    /// \return An index on success, nullopt on failure
+    ss::future<std::optional<cloud_storage::offset_index>> make_segment_index(
+      model::offset base_rp_offset,
+      retry_chain_logger& ctxlog,
+      std::string_view index_path,
+      ss::input_stream<char> stream);
 
     /// Upload manifest if it is dirty.  Proceed without raising on issues,
     /// in the expectation that we will be called again in the main upload loop.
@@ -527,6 +568,7 @@ private:
     const cloud_storage_clients::object_tag_formatter _segment_tags;
     const cloud_storage_clients::object_tag_formatter _manifest_tags;
     const cloud_storage_clients::object_tag_formatter _tx_tags;
+    const cloud_storage_clients::object_tag_formatter _segment_index_tags;
 
     // NTP level adjacent segment merging job
     std::unique_ptr<housekeeping_job> _local_segment_merger;

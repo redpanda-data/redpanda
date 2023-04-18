@@ -133,7 +133,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
                 files = self.redpanda.lsof_node(node)
                 cache_files = [f for f in files if is_cache_file(f)]
                 for f in cache_files:
-                    self.logger.debug("Open file: {f}")
+                    self.logger.debug(f"Open file: {f}")
 
                 files_count += len(cache_files)
             return files_count == 0
@@ -149,7 +149,7 @@ class ShadowIndexingCacheSpaceLeakTest(RedpandaTest):
         assert self._producer.produce_status.acked >= num_messages
         assert self._consumer.consumer_status.validator.total_reads >= self.rand_consumer_msgs_per_pass * concurrency
 
-        assert cache_files_closed() == False
+        assert not cache_files_closed()
         # Wait until all files are closed. The SI evicts all unused segments
         # after one minute of inactivity.
         wait_until(cache_files_closed, timeout_sec=120, backoff_sec=10)
