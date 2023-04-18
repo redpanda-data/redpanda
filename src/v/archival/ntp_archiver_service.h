@@ -313,8 +313,8 @@ private:
         segment_upload_kind upload_kind;
         /// The next scheduled upload will start from this offset
         model::offset start_offset;
-        /// Uploads will stop at this offset
-        model::offset last_offset;
+        /// Uploads will stop at this offset inclusive
+        model::offset last_offset_inclusive;
         /// Controls checks for reuploads, compacted segments have this
         /// check disabled
         allow_reuploads_t allow_reuploads;
@@ -339,7 +339,7 @@ private:
 
     /// Start all uploads
     ss::future<std::vector<scheduled_upload>>
-    schedule_uploads(model::offset last_stable_offset);
+    schedule_uploads(model::offset last_offset_inclusive);
 
     ss::future<std::vector<scheduled_upload>>
     schedule_uploads(std::vector<upload_context> loop_contexts);

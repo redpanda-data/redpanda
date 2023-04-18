@@ -60,12 +60,12 @@ public:
     /// \brief regurn next upload candidate
     ///
     /// \param begin_inclusive is an inclusive begining of the range
-    /// \param end_exclusive is an exclusive end of the range
+    /// \param end_inclusive is an inclusive end of the range
     /// \param lm is a log manager
     /// \return initializd struct on success, empty struct on failure
     ss::future<upload_candidate_with_locks> get_next_candidate(
       model::offset begin_inclusive,
-      model::offset end_exclusive,
+      model::offset end_inclusive,
       storage::log,
       const storage::offset_translator_state&,
       ss::lowres_clock::duration segment_lock_duration);
@@ -91,8 +91,8 @@ private:
     };
 
     lookup_result find_segment(
-      model::offset last_offset,
-      model::offset adjusted_lso,
+      model::offset start_offset,
+      model::offset last_offset_inclusive,
       storage::log,
       const storage::offset_translator_state&);
 

@@ -115,8 +115,7 @@ ss::future<consensus_ptr> partition_manager::manage(
   raft::keep_snapshotted_log keep_snapshotted_log) {
     gate_guard guard(_gate);
     auto dl_result = co_await maybe_download_log(ntp_cfg, rtp);
-    auto [logs_recovered, min_kafka_offset, max_kafka_offset, manifest]
-      = dl_result;
+    auto [logs_recovered, min_rp_offset, max_rp_offset, manifest] = dl_result;
     if (logs_recovered) {
         vlog(
           clusterlog.info,
@@ -124,12 +123,11 @@ ss::future<consensus_ptr> partition_manager::manage(
           "min_kafka_offset: {}, max_kafka_offset: {}",
           ntp_cfg.ntp(),
           ntp_cfg.get_revision(),
-          min_kafka_offset,
-          max_kafka_offset);
+          min_rp_offset,
+          max_rp_offset);
 
         if (
-          min_kafka_offset == max_kafka_offset
-          && min_kafka_offset == model::offset{0}) {
+          min_rp_offset == max_rp_offset && min_rp_offset == model::offset{0}) {
             vlog(
               clusterlog.info,
               "{} no data in the downloaded segments, empty partition will be "
@@ -151,22 +149,22 @@ ss::future<consensus_ptr> partition_manager::manage(
               "Last included term: {}, ",
               ntp_cfg.ntp(),
               group,
-              min_kafka_offset,
-              max_kafka_offset,
+              min_rp_offset,
+              max_rp_offset,
               last_included_term);
 
             co_await raft::details::bootstrap_pre_existing_partition(
               _storage,
               ntp_cfg,
               group,
-              min_kafka_offset,
-              max_kafka_offset,
+              min_rp_offset,
+              max_rp_offset,
               last_included_term,
               initial_nodes);
 
             // Initialize archival snapshot
             co_await archival_metadata_stm::make_snapshot(
-              ntp_cfg, manifest, max_kafka_offset);
+              ntp_cfg, manifest, max_rp_offset);
         }
     }
     storage::log log = co_await _storage.log_mgr().manage(std::move(ntp_cfg));
