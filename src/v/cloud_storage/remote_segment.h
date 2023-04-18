@@ -36,7 +36,7 @@
 namespace cloud_storage {
 
 std::filesystem::path
-generate_remote_index_path(const cloud_storage::remote_segment_path& p);
+generate_index_path(const cloud_storage::remote_segment_path& p);
 
 static constexpr size_t remote_segment_sampling_step_bytes = 64_KiB;
 
@@ -108,7 +108,11 @@ public:
       std::optional<model::timestamp>,
       ss::io_priority_class);
 
-    /// Hydrate the segment
+    /// Hydrate the segment for segment meta version v2 or lower. For v3 or
+    /// higher, only hydrate the index. If the index hydration fails, fall back
+    /// to old mode where the full segment is hydrated. For v3 or higher
+    /// versions, the actual segment data is hydrated by the data source
+    /// implementation, but the index is still required to be present first.
     ss::future<> hydrate();
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
@@ -175,6 +179,7 @@ private:
     cloud_storage_clients::bucket_name _bucket;
     const model::ntp& _ntp;
     remote_segment_path _path;
+    std::filesystem::path _index_path;
 
     model::term_id _term;
     model::offset _base_rp_offset;
@@ -207,6 +212,9 @@ private:
     bool _stopped{false};
 
     segment_name_format _sname_format;
+
+    using fallback_mode = ss::bool_class<struct fallback_mode_tag>;
+    fallback_mode _fallback_mode{fallback_mode::no};
 };
 
 class remote_segment_batch_consumer;

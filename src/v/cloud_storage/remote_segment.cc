@@ -52,7 +52,7 @@
 namespace cloud_storage {
 
 std::filesystem::path
-generate_remote_index_path(const cloud_storage::remote_segment_path& p) {
+generate_index_path(const cloud_storage::remote_segment_path& p) {
     return fmt::format("{}.index", p().native());
 }
 
@@ -131,6 +131,7 @@ remote_segment::remote_segment(
       key);
 
     _path = m.generate_segment_path(*meta);
+    _index_path = generate_index_path(_path);
 
     _term = meta->segment_term;
 
@@ -323,7 +324,7 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
     }
     if (index_prepared) {
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
-        co_await _cache.put(generate_remote_index_path(_path), index_stream);
+        co_await _cache.put(generate_index_path(_path), index_stream);
         _index = std::move(tmpidx);
     }
     co_return size_bytes;
@@ -391,19 +392,18 @@ ss::future<> remote_segment::do_hydrate_index() {
       0,
       remote_segment_sampling_step_bytes);
 
-    auto index_path = generate_remote_index_path(_path);
     auto result = co_await _api.download_index(
-      _bucket, remote_segment_path{index_path}, ix, local_rtc);
+      _bucket, remote_segment_path{_index_path}, ix, local_rtc);
 
     if (result != download_result::success) {
-        throw download_exception(result, index_path);
+        throw download_exception(result, _index_path);
     }
 
     _index = std::move(ix);
     auto buf = _index->to_iobuf();
 
     auto str = make_iobuf_input_stream(std::move(buf));
-    co_await _cache.put(index_path, str).finally([&str] {
+    co_await _cache.put(_index_path, str).finally([&str] {
         return str.close();
     });
 }
@@ -547,7 +547,7 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
     }
 
     ss::gate::holder guard(_gate);
-    auto path = generate_remote_index_path(_path);
+    auto path = generate_index_path(_path);
     offset_index ix(
       _base_rp_offset,
       _base_rp_offset - _base_offset_delta,
@@ -641,22 +641,14 @@ ss::future<> remote_segment::run_hydrate_bg() {
     auto tx_path = generate_remote_tx_path(_path)();
 
     hydration.add_request(
-      _path,
-      [this] { return do_hydrate_segment(); },
-      [this] { return do_materialize_segment(); },
-      hydration_request::kind::segment);
-
-    hydration.add_request(
       tx_path,
       [this] { return do_hydrate_txrange(); },
       [this] { return do_materialize_txrange(); },
       hydration_request::kind::tx);
 
-    if (
-      _sname_format != segment_name_format::v1
-      && _sname_format != segment_name_format::v2) {
+    if (_sname_format >= segment_name_format::v3) {
         hydration.add_request(
-          generate_remote_index_path(_path),
+          generate_index_path(_path),
           [this] { return do_hydrate_index(); },
           [this] { return maybe_materialize_index(); },
           hydration_request::kind::index);
@@ -666,6 +658,18 @@ ss::future<> remote_segment::run_hydrate_bg() {
         while (!_gate.is_closed()) {
             co_await _bg_cvar.wait(
               [this] { return !_wait_list.empty() || _gate.is_closed(); });
+
+            bool should_download_segment = _fallback_mode
+                                           || _sname_format
+                                                <= segment_name_format::v2;
+            if (should_download_segment) {
+                hydration.add_request(
+                  _path,
+                  [this] { return do_hydrate_segment(); },
+                  [this] { return do_materialize_segment(); },
+                  hydration_request::kind::segment);
+            }
+
             vlog(
               _ctxlog.debug,
               "Segment {} requested, {} consumers are awaiting, data file is "
@@ -674,7 +678,19 @@ ss::future<> remote_segment::run_hydrate_bg() {
               _wait_list.size(),
               _data_file ? "available" : "not available");
             std::exception_ptr err;
-            if (!_data_file || !_tx_range) {
+            // Check if the core segment data is hydrated. This could be the
+            // file handle
+            // to segment being open (for meta version v2 or lower) or the index
+            // being populated (for meta version v3 or newer)
+            auto segment_data_hydrated = [this,
+                                          should_download_segment]() -> bool {
+                if (should_download_segment) {
+                    return bool(_data_file);
+                } else {
+                    return _index.has_value();
+                }
+            };
+            if (!segment_data_hydrated() || !_tx_range) {
                 // We don't have a _data_file set so we have to check cache
                 // and retrieve the file out of it or hydrate.
                 // If _data_file is initialized we can use it safely since the
@@ -700,8 +716,13 @@ ss::future<> remote_segment::run_hydrate_bg() {
             // have _data_file set because if we don't we will retry the
             // hydration earlier.
             vassert(
-              _data_file || err,
+              segment_data_hydrated() || err,
               "Segment hydration succeded but file isn't available");
+
+            // When operating in index-only (v3 or above version of segment
+            // meta), the waiter does not need the data file to be present, only
+            // the index is required. This promise is still set to the data file
+            // but it will be absent and unused.
             while (!_wait_list.empty()) {
                 auto& p = _wait_list.front();
                 if (err) {
@@ -729,14 +750,34 @@ ss::future<> remote_segment::run_hydrate_bg() {
 }
 
 ss::future<> remote_segment::hydrate() {
-    return ss::with_gate(_gate, [this] {
-        vlog(_ctxlog.debug, "segment {} hydration requested", _path);
-        ss::promise<ss::file> p;
-        auto fut = p.get_future();
-        _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
-        _bg_cvar.signal();
-        return fut.discard_result();
-    });
+    gate_guard g{_gate};
+    vlog(_ctxlog.debug, "segment {} hydration requested", _path);
+    ss::promise<ss::file> p;
+    auto fut = p.get_future();
+    _wait_list.push_back(std::move(p), ss::lowres_clock::time_point::max());
+    _bg_cvar.signal();
+    return fut
+      .handle_exception_type([this](const download_exception& ex) {
+          // If we are working with an index-only format, and index download
+          // failed, we may not be able to progress. So we fallback to old
+          // format where the full segment was downloaded, and try to hydrate
+          // again.
+          if (ex.path == _index_path && !_fallback_mode) {
+              _fallback_mode = fallback_mode::yes;
+              return hydrate().then([] {
+                  // This is an empty file to match the type returned by `fut`.
+                  // The result is discarded immediately so it is unused.
+                  return ss::file{};
+              });
+          }
+
+          // If the download failure was something other than the index, OR
+          // if we are in the fallback mode already or if we are working
+          // with old format, rethrow the exception and let the upper layer
+          // handle it.
+          throw;
+      })
+      .discard_result();
 }
 
 ss::future<std::vector<model::tx_range>>
@@ -1130,6 +1171,16 @@ void hydration_loop_state::add_request(
   hydrate_action_t h,
   materialize_action_t m,
   hydration_request::kind path_kind) {
+    // Do not re-add the path. A path may be added conditionally in a
+    // loop, we should only add it the first time it is requested.
+    if (auto it = std::find_if(
+          _states.cbegin(),
+          _states.cend(),
+          [&p](const auto& st) { return st.path == p; });
+        it != _states.end()) {
+        return;
+    }
+
     _states.push_back(
       {.path = p,
        .was_cached = false,

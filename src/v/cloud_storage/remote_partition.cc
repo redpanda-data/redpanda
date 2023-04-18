@@ -1052,7 +1052,7 @@ ss::future<> remote_partition::erase(ss::abort_source& as, bool do_finalize) {
             batch_keys.emplace_back(segment_path);
             tx_batch_keys.emplace_back(
               tx_range_manifest(segment_path).get_manifest_path());
-            index_keys.emplace_back(generate_remote_index_path(segment_path));
+            index_keys.emplace_back(generate_index_path(segment_path));
         }
 
         vlog(
