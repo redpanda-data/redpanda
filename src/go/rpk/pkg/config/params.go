@@ -502,20 +502,24 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 	return rpkos.ReplaceFile(fs, location, b, 0o644)
 }
 
-func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
+// LocateRedpandaConfig returns the filepath location of redpanda.yaml.
+func (p *Params) LocateRedpandaConfig(fs afero.Fs) (string, error) {
+	return p.locateConfig(fs, false)
+}
+
+func (p *Params) locateConfig(fs afero.Fs, includeRpk bool) (string, error) {
 	paths := []string{p.ConfigFlag}
 	if p.ConfigFlag == "" {
 		paths = nil
-		if configDir, _ := os.UserConfigDir(); configDir != "" {
-			paths = append(paths, filepath.Join(configDir, "rpk", "rpk.yaml"))
+		if includeRpk {
+			if configDir, _ := os.UserConfigDir(); configDir != "" {
+				paths = append(paths, filepath.Join(configDir, "rpk", "rpk.yaml"))
+			}
 		}
-		paths = append(paths, filepath.FromSlash(DefaultPath))
 		if cd, _ := os.Getwd(); cd != "" {
 			paths = append(paths, filepath.Join(cd, "redpanda.yaml"))
 		}
-		if home, _ := os.UserHomeDir(); home != "" {
-			paths = append(paths, filepath.Join(home, "redpanda.yaml"))
-		}
+		paths = append(paths, filepath.FromSlash(DefaultPath))
 	}
 
 	for _, path := range paths {
@@ -531,7 +535,7 @@ func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
 }
 
 func (p *Params) readConfig(fs afero.Fs, c *Config) error {
-	path, err := p.LocateConfig(fs)
+	path, err := p.locateConfig(fs, true)
 	if err != nil {
 		return err
 	}
