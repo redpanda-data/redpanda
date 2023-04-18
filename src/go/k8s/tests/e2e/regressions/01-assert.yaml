@@ -13,7 +13,4 @@ status:
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - command: /bin/bash -c "mkdir -p ../../_e2e_artifacts/regressions/step-1"
-  - command: /bin/bash -c "kubectl -n $NAMESPACE get pods -o yaml > ../../_e2e_artifacts/regressions/step-1/pods.yaml"
-  - command: /bin/bash -c "kubectl -n $NAMESPACE logs $(kubectl get pods --selector=job-name=call-controller-status --output=jsonpath='{.items[*].metadata.name}') > ../../_e2e_artifacts/resource-redpanda-crud/step-1/logs-from-job.txt"
-
+  - command: ../../../hack/get-redpanda-info.sh
