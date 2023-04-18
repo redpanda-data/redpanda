@@ -105,4 +105,9 @@ void rjson_serialize(
     w.EndObject();
 }
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const std::filesystem::path& path) {
+    rjson_serialize(w, std::string_view{path.native()});
+}
+
 } // namespace json

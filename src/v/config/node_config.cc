@@ -155,6 +155,20 @@ node_config::node_config() noexcept
       "Enables log messages for allocations greater than the given size.",
       {.visibility = visibility::tunable},
       std::nullopt)
+  , storage_failure_injection_enabled(
+      *this,
+      "storage_failure_injection_enabled",
+      "If true, inject low level storage failures on the write path. **Not** "
+      "for production usage.",
+      {.visibility = visibility::tunable},
+      false)
+  , storage_failure_injection_config_path(
+      *this,
+      "storage_failure_injection_config_path",
+      "Path to the configuration file used for low level storage failure "
+      "injection",
+      {.visibility = visibility::tunable},
+      std::nullopt)
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",

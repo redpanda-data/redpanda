@@ -61,6 +61,9 @@ void rjson_serialize(
 void rjson_serialize(
   json::Writer<json::StringBuffer>&, const model::broker_endpoint&);
 
+void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const std::filesystem::path& path);
+
 template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
 void rjson_serialize(json::Writer<json::StringBuffer>& w, T v) {
     rjson_serialize(w, static_cast<std::underlying_type_t<T>>(v));

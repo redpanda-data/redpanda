@@ -61,7 +61,7 @@ void rjson_serialize(json::Writer<json::StringBuffer>& w, const personne_t& p) {
     w.StartObject();
 
     w.Key("full_name");
-    json::rjson_serialize(w, p.full_name);
+    json::rjson_serialize<std::string_view>(w, p.full_name);
 
     w.Key("nic");
     json::rjson_serialize(w, p.nic);
