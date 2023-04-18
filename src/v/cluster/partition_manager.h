@@ -43,7 +43,7 @@ public:
       ss::sharded<cloud_storage::cache>&,
       ss::lw_shared_ptr<const archival::configuration>,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache>&,
+      ss::sharded<cluster::tm_stm_cache_manager>&,
       ss::sharded<archival::upload_housekeeping_service>&,
       config::binding<uint64_t>);
 
@@ -210,7 +210,7 @@ private:
     ss::sharded<cloud_storage::cache>& _cloud_storage_cache;
     ss::lw_shared_ptr<const archival::configuration> _archival_conf;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
+    ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
     ss::sharded<archival::upload_housekeeping_service>& _upload_hks;
     ss::gate _gate;
 

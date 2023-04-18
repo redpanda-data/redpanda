@@ -13,6 +13,7 @@
 #include "archival/upload_housekeeping_service.h"
 #include "cloud_storage/remote_partition.h"
 #include "cluster/logger.h"
+#include "cluster/tm_stm_cache_manager.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -30,7 +31,8 @@ static bool is_id_allocator_topic(model::ntp ntp) {
 }
 
 static bool is_tx_manager_topic(const model::ntp& ntp) {
-    return ntp == model::tx_manager_ntp;
+    return ntp.ns == model::kafka_internal_namespace
+           && ntp.tp.topic == model::tx_manager_topic;
 }
 
 partition::partition(
@@ -40,7 +42,7 @@ partition::partition(
   ss::sharded<cloud_storage::cache>& cloud_storage_cache,
   ss::lw_shared_ptr<const archival::configuration> archival_conf,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache>& tm_stm_cache,
+  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
   ss::sharded<archival::upload_housekeeping_service>& upload_hks,
   config::binding<uint64_t> max_concurrent_producer_ids,
   std::optional<cloud_storage_clients::bucket_name> read_replica_bucket)
@@ -50,7 +52,7 @@ partition::partition(
   , _probe(std::make_unique<replicated_partition_probe>(*this))
   , _tx_gateway_frontend(tx_gateway_frontend)
   , _feature_table(feature_table)
-  , _tm_stm_cache(tm_stm_cache)
+  , _tm_stm_cache_manager(tm_stm_cache_manager)
   , _is_tx_enabled(config::shard_local_cfg().enable_transactions.value())
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
@@ -69,8 +71,10 @@ partition::partition(
         }
 
         if (_is_tx_enabled) {
+            auto tm_stm_cache = _tm_stm_cache_manager.local().get(
+              _raft->ntp().tp.partition);
             _tm_stm = ss::make_shared<cluster::tm_stm>(
-              clusterlog, _raft.get(), feature_table, _tm_stm_cache);
+              clusterlog, _raft.get(), feature_table, tm_stm_cache);
             stm_manager->add_stm(_tm_stm);
         }
     } else {

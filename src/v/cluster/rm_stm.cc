@@ -44,7 +44,7 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
-static model::record_batch make_fence_batch(model::producer_identity pid) {
+model::record_batch make_fence_batch_v0(model::producer_identity pid) {
     iobuf key;
     auto pid_id = pid.id;
     reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
@@ -61,7 +61,7 @@ static model::record_batch make_fence_batch(model::producer_identity pid) {
     return std::move(builder).build();
 }
 
-static model::record_batch make_fence_batch(
+model::record_batch make_fence_batch_v1(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   std::chrono::milliseconds transaction_timeout_ms) {
@@ -72,7 +72,7 @@ static model::record_batch make_fence_batch(
     iobuf value;
     reflection::serialize(
       value,
-      rm_stm::fence_control_record_version,
+      rm_stm::fence_control_record_v1_version,
       tx_seq,
       transaction_timeout_ms);
 
@@ -83,6 +83,92 @@ static model::record_batch make_fence_batch(
     builder.add_raw_kv(std::move(key), std::move(value));
 
     return std::move(builder).build();
+}
+
+model::record_batch make_fence_batch_v2(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm) {
+    iobuf key;
+    auto pid_id = pid.id;
+    reflection::serialize(key, model::record_batch_type::tx_fence, pid_id);
+
+    iobuf value;
+    // the key byte representation must not change because it's used in
+    // compaction
+    reflection::serialize(
+      value,
+      rm_stm::fence_control_record_version,
+      tx_seq,
+      transaction_timeout_ms,
+      tm);
+
+    storage::record_batch_builder builder(
+      model::record_batch_type::tx_fence, model::offset(0));
+    builder.set_producer_identity(pid.id, pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kv(std::move(key), std::move(value));
+
+    return std::move(builder).build();
+}
+
+struct fence_batch_data {
+    model::batch_identity bid;
+    std::optional<model::tx_seq> tx_seq;
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
+    model::partition_id tm;
+};
+
+fence_batch_data read_fence_batch(model::record_batch&& b) {
+    const auto& hdr = b.header();
+    auto bid = model::batch_identity::from(hdr);
+
+    vassert(
+      b.record_count() == 1,
+      "model::record_batch_type::tx_fence batch must contain a single record");
+    auto r = b.copy_records();
+    auto& record = *r.begin();
+    auto val_buf = record.release_value();
+
+    iobuf_parser val_reader(std::move(val_buf));
+    auto version = reflection::adl<int8_t>{}.from(val_reader);
+    vassert(
+      version <= rm_stm::fence_control_record_version,
+      "unknown fence record version: {} expected: {}",
+      version,
+      rm_stm::fence_control_record_version);
+
+    std::optional<model::tx_seq> tx_seq{};
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
+    if (version >= rm_stm::fence_control_record_v1_version) {
+        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
+        transaction_timeout_ms
+          = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
+    }
+    model::partition_id tm{model::legacy_tm_ntp.tp.partition};
+    if (version >= rm_stm::fence_control_record_version) {
+        tm = reflection::adl<model::partition_id>{}.from(val_reader);
+    }
+
+    auto key_buf = record.release_key();
+    iobuf_parser key_reader(std::move(key_buf));
+    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
+      key_reader);
+    vassert(
+      hdr.type == batch_type,
+      "broken model::record_batch_type::tx_fence batch. expected batch type {} "
+      "got: {}",
+      hdr.type,
+      batch_type);
+    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
+    vassert(
+      p_id == bid.pid.id,
+      "broken model::record_batch_type::tx_fence batch. expected pid {} got: "
+      "{}",
+      bid.pid.id,
+      p_id);
+    return fence_batch_data{bid, tx_seq, transaction_timeout_ms, tm};
 }
 
 static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
@@ -258,6 +344,26 @@ struct tx_snapshot_v2 {
     fragmented_vector<rm_stm::seq_entry> seqs;
 };
 
+struct tx_snapshot_v3 {
+    static constexpr uint8_t version = 3;
+
+    fragmented_vector<model::producer_identity> fenced;
+    fragmented_vector<rm_stm::tx_range> ongoing;
+    fragmented_vector<rm_stm::prepare_marker> prepared;
+    fragmented_vector<rm_stm::tx_range> aborted;
+    fragmented_vector<rm_stm::abort_index> abort_indexes;
+    model::offset offset;
+    fragmented_vector<rm_stm::seq_entry> seqs;
+
+    struct tx_seqs_snapshot {
+        model::producer_identity pid;
+        model::tx_seq tx_seq;
+    };
+
+    fragmented_vector<tx_seqs_snapshot> tx_seqs;
+    fragmented_vector<rm_stm::tx_snapshot::expiration_snapshot> expiration;
+};
+
 rm_stm::rm_stm(
   ss::logger& logger,
   raft::consensus* c,
@@ -314,22 +420,38 @@ rm_stm::rm_stm(
 ss::future<checked<model::term_id, tx_errc>> rm_stm::begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms) {
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm) {
     return _state_lock.hold_read_lock().then(
-      [this, pid, tx_seq, transaction_timeout_ms](
+      [this, pid, tx_seq, transaction_timeout_ms, tm](
         ss::basic_rwlock<>::holder unit) mutable {
           return get_tx_lock(pid.get_id())
-            ->with([this, pid, tx_seq, transaction_timeout_ms]() {
-                return do_begin_tx(pid, tx_seq, transaction_timeout_ms);
+            ->with([this, pid, tx_seq, transaction_timeout_ms, tm]() {
+                return do_begin_tx(pid, tx_seq, transaction_timeout_ms, tm);
             })
             .finally([u = std::move(unit)] {});
       });
 }
 
+model::record_batch rm_stm::make_fence_batch(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm) {
+    if (is_transaction_partitioning()) {
+        return make_fence_batch_v2(pid, tx_seq, transaction_timeout_ms, tm);
+    } else if (is_transaction_ga()) {
+        return make_fence_batch_v1(pid, tx_seq, transaction_timeout_ms);
+    } else {
+        return make_fence_batch_v0(pid);
+    }
+}
+
 ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
   model::producer_identity pid,
   model::tx_seq tx_seq,
-  std::chrono::milliseconds transaction_timeout_ms) {
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm) {
     if (!check_tx_permitted()) {
         co_return tx_errc::request_rejected;
     }
@@ -337,32 +459,38 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
     if (!_c->is_leader()) {
         vlog(
           _ctx_log.trace,
-          "processing name:begin_tx pid:{} tx_seq:{} timeout:{} => not a "
-          "leader",
+          "processing name:begin_tx pid:{}, tx_seq:{}, "
+          "timeout:{}, coordinator:{} => not "
+          "a leader",
           pid,
           tx_seq,
-          transaction_timeout_ms);
+          transaction_timeout_ms,
+          tm);
         co_return tx_errc::leader_not_found;
     }
 
     if (!co_await sync(_sync_timeout)) {
         vlog(
           _ctx_log.trace,
-          "processing name:begin_tx pid:{} tx_seq:{} timeout:{} => stale "
-          "leader",
+          "processing name:begin_tx pid:{}, tx_seq:{}, "
+          "timeout:{}, coordinator:{} => "
+          "stale leader",
           pid,
           tx_seq,
-          transaction_timeout_ms);
+          transaction_timeout_ms,
+          tm);
         co_return tx_errc::stale;
     }
     auto synced_term = _insync_term;
 
     vlog(
       _ctx_log.trace,
-      "processing name:begin_tx pid:{} tx_seq:{} timeout:{} in term:{}",
+      "processing name:begin_tx pid:{}, tx_seq:{}, timeout:{}, coordinator:{}  "
+      "in term:{}",
       pid,
       tx_seq,
       transaction_timeout_ms,
+      tm,
       synced_term);
     // checking / setting pid fencing
     auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
@@ -412,16 +540,16 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::fenced;
     }
 
-    auto txseq_it = _log_state.tx_seqs.find(pid);
-    if (txseq_it != _log_state.tx_seqs.end()) {
-        if (txseq_it->second != tx_seq) {
+    auto txseq_it = _log_state.current_txes.find(pid);
+    if (txseq_it != _log_state.current_txes.end()) {
+        if (txseq_it->second.tx_seq != tx_seq) {
             vlog(
               _ctx_log.warn,
               "can't begin a tx {} with tx_seq {}: a producer id is already "
               "involved in a tx with tx_seq {}",
               pid,
               tx_seq,
-              txseq_it->second);
+              txseq_it->second.tx_seq);
             co_return tx_errc::unknown_server_error;
         }
         if (_log_state.ongoing_map.contains(pid)) {
@@ -436,11 +564,8 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return synced_term;
     }
 
-    auto is_txn_ga = is_transaction_ga();
-
-    auto batch = is_txn_ga
-                   ? make_fence_batch(pid, tx_seq, transaction_timeout_ms)
-                   : make_fence_batch(pid);
+    model::record_batch batch = make_fence_batch(
+      pid, tx_seq, transaction_timeout_ms, tm);
 
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(
@@ -488,9 +613,9 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
         co_return tx_errc::leader_not_found;
     }
 
-    if (is_txn_ga) {
-        auto tx_seq_it = _log_state.tx_seqs.find(pid);
-        if (tx_seq_it == _log_state.tx_seqs.end()) {
+    if (is_transaction_ga()) {
+        auto tx_seq_it = _log_state.current_txes.find(pid);
+        if (tx_seq_it == _log_state.current_txes.end()) {
             vlog(
               _ctx_log.error,
               "tx_seqs should be updated after fencing pid:{} tx_seq:{}",
@@ -498,13 +623,13 @@ ss::future<checked<model::term_id, tx_errc>> rm_stm::do_begin_tx(
               tx_seq);
             co_return tx_errc::unknown_server_error;
         }
-        if (tx_seq_it->second != tx_seq) {
+        if (tx_seq_it->second.tx_seq != tx_seq) {
             vlog(
               _ctx_log.error,
               "expected tx_seq:{} for pid:{} got {}",
               tx_seq,
               pid,
-              tx_seq_it->second);
+              tx_seq_it->second.tx_seq);
             co_return tx_errc::unknown_server_error;
         }
     } else {
@@ -588,12 +713,12 @@ ss::future<tx_errc> rm_stm::do_prepare_tx(
         co_return tx_errc::fenced;
     }
 
-    if (_log_state.tx_seqs.contains(pid)) {
-        if (_log_state.tx_seqs[pid] != tx_seq) {
+    if (_log_state.current_txes.contains(pid)) {
+        if (_log_state.current_txes[pid].tx_seq != tx_seq) {
             vlog(
               _ctx_log.warn,
               "expectd tx_seq {} doesn't match gived {} for pid {}",
-              _log_state.tx_seqs[pid],
+              _log_state.current_txes[pid].tx_seq,
               tx_seq,
               pid);
         }
@@ -717,9 +842,9 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
         co_return tx_errc::fenced;
     }
 
-    auto tx_seqs_it = _log_state.tx_seqs.find(pid);
-    if (tx_seqs_it != _log_state.tx_seqs.end()) {
-        if (tx_seqs_it->second > tx_seq) {
+    auto tx_seqs_it = _log_state.current_txes.find(pid);
+    if (tx_seqs_it != _log_state.current_txes.end()) {
+        if (tx_seqs_it->second.tx_seq > tx_seq) {
             // rare situation:
             //   * tm_stm begins (tx_seq+1)
             //   * request on this rm passes but then tm_stm fails and forgets
@@ -732,15 +857,15 @@ ss::future<tx_errc> rm_stm::do_commit_tx(
               "observed",
               pid,
               tx_seq,
-              tx_seqs_it->second);
+              tx_seqs_it->second.tx_seq);
             co_return tx_errc::none;
-        } else if (tx_seq != tx_seqs_it->second) {
+        } else if (tx_seq != tx_seqs_it->second.tx_seq) {
             vlog(
               _ctx_log.trace,
               "can't commit pid:{} tx: passed txseq {} doesn't match local {}",
               pid,
               tx_seq,
-              tx_seqs_it->second);
+              tx_seqs_it->second.tx_seq);
             co_return tx_errc::request_rejected;
         }
     } else {
@@ -1350,11 +1475,11 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     auto is_txn_ga = is_transaction_ga();
 
     if (is_txn_ga) {
-        if (!_log_state.tx_seqs.contains(bid.pid)) {
+        if (!_log_state.current_txes.contains(bid.pid)) {
             vlog(_ctx_log.warn, "can't find ongoing tx for pid:{}", bid.pid);
             co_return errc::invalid_producer_epoch;
         }
-        auto tx_seq = _log_state.tx_seqs[bid.pid];
+        auto tx_seq = _log_state.current_txes[bid.pid].tx_seq;
         vlog(_ctx_log.trace, "found tx_seq:{} for pid:{}", tx_seq, bid.pid);
     } else {
         if (!_mem_state.expected.contains(bid.pid)) {
@@ -2156,8 +2281,14 @@ ss::future<tx_errc> rm_stm::do_try_abort_old_tx(model::producer_identity pid) {
         // https://github.com/redpanda-data/redpanda/issues/6137
         // In order to support it we ned to update begin_tx to accept the id
         // and use the true partition_id here
+        auto tx_data = _log_state.current_txes.find(pid);
+        model::partition_id tm_partition{
+          model::partition_id(model::legacy_tm_ntp.tp.partition)};
+        if (tx_data != _log_state.current_txes.end()) {
+            tm_partition = tx_data->second.tm_partition;
+        }
         auto r = co_await _tx_gateway_frontend.local().try_abort(
-          model::partition_id(0), pid, *tx_seq, _sync_timeout);
+          tm_partition, pid, *tx_seq, _sync_timeout);
         if (r.ec == tx_errc::none) {
             if (r.commited) {
                 vlog(
@@ -2278,64 +2409,24 @@ void rm_stm::try_arm(time_point_type deadline) {
 }
 
 void rm_stm::apply_fence(model::record_batch&& b) {
-    const auto& hdr = b.header();
-    auto bid = model::batch_identity::from(hdr);
-
-    vassert(
-      b.record_count() == 1,
-      "model::record_batch_type::tx_fence batch must contain a single record");
-    auto r = b.copy_records();
-    auto& record = *r.begin();
-    auto val_buf = record.release_value();
-
-    iobuf_parser val_reader(std::move(val_buf));
-    auto version = reflection::adl<int8_t>{}.from(val_reader);
-    vassert(
-      version <= rm_stm::fence_control_record_version,
-      "unknown fence record version: {} expected: {}",
-      version,
-      rm_stm::fence_control_record_version);
-
-    std::optional<model::tx_seq> tx_seq{};
-    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
-    if (version == rm_stm::fence_control_record_version) {
-        tx_seq = reflection::adl<model::tx_seq>{}.from(val_reader);
-        transaction_timeout_ms
-          = reflection::adl<std::chrono::milliseconds>{}.from(val_reader);
-    }
-
-    auto key_buf = record.release_key();
-    iobuf_parser key_reader(std::move(key_buf));
-    auto batch_type = reflection::adl<model::record_batch_type>{}.from(
-      key_reader);
-    vassert(
-      hdr.type == batch_type,
-      "broken model::record_batch_type::tx_fence batch. expected batch type {} "
-      "got: {}",
-      hdr.type,
-      batch_type);
-    auto p_id = model::producer_id(reflection::adl<int64_t>{}.from(key_reader));
-    vassert(
-      p_id == bid.pid.id,
-      "broken model::record_batch_type::tx_fence batch. expected pid {} got: "
-      "{}",
-      bid.pid.id,
-      p_id);
+    auto batch_data = read_fence_batch(std::move(b));
 
     auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
-      bid.pid.get_id(), bid.pid.get_epoch());
+      batch_data.bid.pid.get_id(), batch_data.bid.pid.get_epoch());
     // using less-or-equal to update tx_seqs on every transaction
-    if (fence_it->second <= bid.pid.get_epoch()) {
-        fence_it->second = bid.pid.get_epoch();
-        if (tx_seq.has_value()) {
-            _log_state.tx_seqs[bid.pid] = tx_seq.value();
+    if (fence_it->second <= batch_data.bid.pid.get_epoch()) {
+        fence_it->second = batch_data.bid.pid.get_epoch();
+        if (batch_data.tx_seq.has_value()) {
+            _log_state.current_txes[batch_data.bid.pid] = tx_data{
+              batch_data.tx_seq.value(), batch_data.tm};
         }
-        if (transaction_timeout_ms.has_value()) {
+        if (batch_data.transaction_timeout_ms.has_value()) {
             // with switching to log_state an active transaction may
             // survive leadership and we need to start tracking it on
             // the new leader so we can't rely on the begin_tx initi-
             // -ated tracking and need to do it from apply
-            track_tx(bid.pid, transaction_timeout_ms.value());
+            track_tx(
+              batch_data.bid.pid, batch_data.transaction_timeout_ms.value());
         }
     }
 }
@@ -2384,7 +2475,7 @@ ss::future<> rm_stm::apply_control(
 
     if (crt == model::control_record_type::tx_abort) {
         _log_state.prepared.erase(pid);
-        _log_state.tx_seqs.erase(pid);
+        _log_state.current_txes.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             // make a list
@@ -2404,7 +2495,7 @@ ss::future<> rm_stm::apply_control(
         }
     } else if (crt == model::control_record_type::tx_commit) {
         _log_state.prepared.erase(pid);
-        _log_state.tx_seqs.erase(pid);
+        _log_state.current_txes.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
             _log_state.ongoing_set.erase(offset_it->second.first);
@@ -2499,14 +2590,28 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     iobuf_parser data_parser(std::move(tx_ss_buf));
     if (hdr.version == tx_snapshot::version) {
         data = reflection::adl<tx_snapshot>{}.from(data_parser);
+    } else if (hdr.version == tx_snapshot_v3::version) {
+        auto data_v3 = reflection::adl<tx_snapshot_v3>{}.from(data_parser);
+        move_snapshot_wo_seqs(data, data_v3);
+        data.seqs = std::move(data_v3.seqs);
+        data.expiration = std::move(data_v3.expiration);
+        for (auto& entry : data_v3.tx_seqs) {
+            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
+              .pid = entry.pid,
+              .tx_seq = entry.tx_seq,
+              .tm = model::legacy_tm_ntp.tp.partition});
+        }
+
     } else if (hdr.version == tx_snapshot_v2::version) {
         auto data_v2 = reflection::adl<tx_snapshot_v2>{}.from(data_parser);
         move_snapshot_wo_seqs(data, data_v2);
         data.seqs = std::move(data_v2.seqs);
 
         for (auto& entry : data_v2.prepared) {
-            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-              .pid = entry.pid, .tx_seq = entry.tx_seq});
+            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
+              .pid = entry.pid,
+              .tx_seq = entry.tx_seq,
+              .tm = model::legacy_tm_ntp.tp.partition});
         }
     } else if (hdr.version == tx_snapshot_v1::version) {
         auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
@@ -2536,8 +2641,10 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
 
         for (auto& entry : data_v1.prepared) {
-            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-              .pid = entry.pid, .tx_seq = entry.tx_seq});
+            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
+              .pid = entry.pid,
+              .tx_seq = entry.tx_seq,
+              .tm = model::legacy_tm_ntp.tp.partition});
         }
     } else if (hdr.version == tx_snapshot_v0::version) {
         auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
@@ -2551,8 +2658,10 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
             data.seqs.push_back(std::move(seq));
         }
         for (auto& entry : data_v0.prepared) {
-            data.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-              .pid = entry.pid, .tx_seq = entry.tx_seq});
+            data.tx_data.push_back(tx_snapshot::tx_data_snapshot{
+              .pid = entry.pid,
+              .tx_seq = entry.tx_seq,
+              .tm = model::legacy_tm_ntp.tp.partition});
         }
     } else {
         vassert(
@@ -2614,8 +2723,9 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
         }
     }
 
-    for (auto& entry : data.tx_seqs) {
-        _log_state.tx_seqs.emplace(entry.pid, entry.tx_seq);
+    for (auto& entry : data.tx_data) {
+        _log_state.current_txes.emplace(
+          entry.pid, tx_data{entry.tx_seq, entry.tm});
     }
 
     for (auto& entry : data.expiration) {
@@ -2654,8 +2764,12 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
 }
 
 uint8_t rm_stm::active_snapshot_version() {
-    if (is_transaction_ga()) {
+    if (is_transaction_partitioning()) {
         return tx_snapshot::version;
+    }
+
+    if (is_transaction_ga()) {
+        return tx_snapshot_v3::version;
     }
 
     if (_feature_table.local().is_active(
@@ -2794,9 +2908,11 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
             }
             tx_ss.offset = _insync_offset;
 
-            for (const auto& entry : _log_state.tx_seqs) {
-                tx_ss.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-                  .pid = entry.first, .tx_seq = entry.second});
+            for (const auto& entry : _log_state.current_txes) {
+                tx_ss.tx_data.push_back(tx_snapshot::tx_data_snapshot{
+                  .pid = entry.first,
+                  .tx_seq = entry.second.tx_seq,
+                  .tm = entry.second.tm_partition});
             }
 
             for (const auto& entry : _log_state.expiration) {
@@ -2805,6 +2921,25 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
             }
 
             reflection::adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
+        } else if (version == tx_snapshot_v3::version) {
+            tx_snapshot_v3 tx_ss;
+            fill_snapshot_wo_seqs(tx_ss);
+            for (const auto& entry : _log_state.seq_table) {
+                tx_ss.seqs.push_back(entry.second.entry.copy());
+            }
+            tx_ss.offset = _insync_offset;
+
+            for (const auto& entry : _log_state.current_txes) {
+                tx_ss.tx_seqs.push_back(tx_snapshot_v3::tx_seqs_snapshot{
+                  .pid = entry.first, .tx_seq = entry.second.tx_seq});
+            }
+
+            for (const auto& entry : _log_state.expiration) {
+                tx_ss.expiration.push_back(tx_snapshot::expiration_snapshot{
+                  .pid = entry.first, .timeout = entry.second.timeout});
+            }
+
+            reflection::adl<tx_snapshot_v3>{}.to(tx_ss_buf, std::move(tx_ss));
         } else if (version == tx_snapshot_v2::version) {
             tx_snapshot_v2 tx_ss;
             fill_snapshot_wo_seqs(tx_ss);
@@ -3010,7 +3145,7 @@ ss::future<> rm_stm::clear_old_tx_pids() {
         auto pid = model::producer_identity(id, epoch);
         // If pid is not inside tx_seqs it means we do not have transaction for
         // it right now
-        if (!_log_state.tx_seqs.contains(pid)) {
+        if (!_log_state.current_txes.contains(pid)) {
             pids_for_delete.push_back(pid);
         }
     }
@@ -3023,7 +3158,7 @@ ss::future<> rm_stm::clear_old_tx_pids() {
     co_await ss::max_concurrent_for_each(
       pids_for_delete, 32, [this](auto pid) -> ss::future<> {
           // We have transaction for this pid
-          if (_log_state.tx_seqs.contains(pid)) {
+          if (_log_state.current_txes.contains(pid)) {
               return ss::now();
           }
           _mem_state.forget(pid);
@@ -3097,7 +3232,7 @@ std::ostream& operator<<(std::ostream& o, const rm_stm::log_state& state) {
       state.aborted.size(),
       state.abort_indexes.size(),
       state.seq_table.size(),
-      state.tx_seqs.size(),
+      state.current_txes.size(),
       state.expiration.size());
     return o;
 }

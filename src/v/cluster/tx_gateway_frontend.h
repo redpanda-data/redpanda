@@ -15,6 +15,7 @@
 #include "cluster/tm_stm.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
+#include "kafka/server/coordinator_ntp_mapper.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -37,12 +38,14 @@ public:
       rm_group_proxy*,
       ss::sharded<cluster::rm_partition_frontend>&,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache>&);
+      ss::sharded<cluster::tm_stm_cache_manager>&,
+      ss::sharded<kafka::coordinator_ntp_mapper>& tx_coordinator_ntp_mapper);
 
     ss::future<std::optional<model::node_id>>
       find_coordinator(kafka::transactional_id);
-    ss::future<fetch_tx_reply>
-      fetch_tx_locally(kafka::transactional_id, model::term_id);
+    std::optional<model::ntp> get_ntp(kafka::transactional_id);
+    ss::future<fetch_tx_reply> fetch_tx_locally(
+      kafka::transactional_id, model::term_id, model::partition_id);
     ss::future<try_abort_reply> try_abort(
       model::partition_id,
       model::producer_identity,
@@ -58,11 +61,6 @@ public:
       std::chrono::milliseconds transaction_timeout_ms,
       model::timeout_clock::duration,
       model::producer_identity);
-    ss::future<cluster::init_tm_tx_reply> init_tm_tx_locally(
-      kafka::transactional_id,
-      std::chrono::milliseconds,
-      model::timeout_clock::duration,
-      model::producer_identity);
     ss::future<add_paritions_tx_reply> add_partition_to_tx(
       add_paritions_tx_request, model::timeout_clock::duration);
     ss::future<add_offsets_tx_reply>
@@ -72,6 +70,8 @@ public:
 
     using return_all_txs_res
       = result<fragmented_vector<tm_transaction>, tx_errc>;
+    ss::future<return_all_txs_res>
+    get_all_transactions_for_one_tx_partition(model::ntp tx_manager_ntp);
     ss::future<return_all_txs_res> get_all_transactions();
     ss::future<result<tm_transaction, tx_errc>>
       describe_tx(kafka::transactional_id);
@@ -95,12 +95,20 @@ private:
     rm_group_proxy* _rm_group_proxy;
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<cluster::tm_stm_cache>& _tm_stm_cache;
+    ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
+    ss::sharded<kafka::coordinator_ntp_mapper>& _tx_coordinator_ntp_mapper;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;
     std::chrono::milliseconds _transactional_id_expiration;
     bool _transactions_enabled;
+
+    // Transaction Partitioning is partitioning of
+    // transactional manager topic
+    bool is_transaction_partitioning() {
+        return _feature_table.local().is_active(
+          features::feature::transaction_partitioning);
+    }
 
     // Transaction GA includes: KIP_447, KIP-360, fix for compaction tx_group*
     // records, perf fix#1(Do not writing preparing state on disk in tm_stn),
@@ -159,16 +167,18 @@ private:
       model::timeout_clock::duration);
 
     ss::future<checked<tm_transaction, tx_errc>>
-      fetch_tx(kafka::transactional_id, model::term_id);
+      fetch_tx(kafka::transactional_id, model::term_id, model::partition_id);
     ss::future<> dispatch_fetch_tx(
       kafka::transactional_id,
       model::term_id,
+      model::partition_id,
       model::timeout_clock::duration,
       ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>);
     ss::future<fetch_tx_reply> dispatch_fetch_tx(
       model::node_id,
       kafka::transactional_id,
       model::term_id,
+      model::partition_id,
       model::timeout_clock::duration,
       ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>);
     ss::future<try_abort_reply> dispatch_try_abort(
@@ -195,6 +205,12 @@ private:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::timeout_clock::duration);
+    ss::future<cluster::init_tm_tx_reply> init_tm_tx_locally(
+      kafka::transactional_id,
+      std::chrono::milliseconds,
+      model::timeout_clock::duration,
+      model::producer_identity,
+      model::partition_id);
     ss::future<cluster::init_tm_tx_reply> do_init_tm_tx(
       ss::shared_ptr<tm_stm>,
       kafka::transactional_id,
@@ -234,7 +250,7 @@ private:
       model::timeout_clock::duration);
 
     template<typename Func>
-    auto with_stm(Func&& func);
+    auto with_stm(model::partition_id tm, Func&& func);
 
     ss::future<add_paritions_tx_reply> do_add_partition_to_tx(
       ss::shared_ptr<tm_stm>,

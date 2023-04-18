@@ -751,8 +751,8 @@ ss::future<> group_manager::do_recover_group(
         for (auto& [id, epoch] : group_stm.fences()) {
             group->try_set_fence(id, epoch);
         }
-        for (auto& [id, txseq] : group_stm.tx_seqs()) {
-            group->try_set_tx_seq(id, txseq);
+        for (auto& [id, tx_data] : group_stm.tx_data()) {
+            group->try_set_tx_data(id, tx_data.tx_seq, tx_data.tm_partition);
         }
         for (auto& [id, timeout] : group_stm.timeouts()) {
             group->try_set_timeout(id, timeout);

@@ -21,11 +21,14 @@
 #include "cluster/shard_table.h"
 #include "cluster/tm_stm.h"
 #include "cluster/tm_stm_cache.h"
+#include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/tx_gateway.h"
 #include "cluster/tx_helpers.h"
 #include "config/configuration.h"
 #include "errc.h"
+#include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "rpc/connection_cache.h"
 #include "types.h"
@@ -136,21 +139,18 @@ static tm_transaction as_tx(
 }
 
 template<typename Func>
-auto tx_gateway_frontend::with_stm(Func&& func) {
-    auto partition = _partition_manager.local().get(model::tx_manager_ntp);
+auto tx_gateway_frontend::with_stm(model::partition_id tm, Func&& func) {
+    model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
+    auto partition = _partition_manager.local().get(tx_ntp);
     if (!partition) {
-        vlog(
-          txlog.warn, "can't get partition by {} ntp", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't get partition by {} ntp", tx_ntp);
         return func(tx_errc::partition_not_found);
     }
 
     auto stm = partition->tm_stm();
 
     if (!stm) {
-        vlog(
-          txlog.warn,
-          "can't get tm stm of the {}' partition",
-          model::tx_manager_ntp);
+        vlog(txlog.warn, "can't get tm stm of the {}' partition", tx_ntp);
         return func(tx_errc::stm_not_found);
     }
 
@@ -196,7 +196,8 @@ tx_gateway_frontend::tx_gateway_frontend(
   rm_group_proxy* group_proxy,
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
   ss::sharded<features::feature_table>& feature_table,
-  ss::sharded<cluster::tm_stm_cache>& tm_stm_cache)
+  ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
+  ss::sharded<kafka::coordinator_ntp_mapper>& tx_coordinator_ntp_mapper)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -208,7 +209,8 @@ tx_gateway_frontend::tx_gateway_frontend(
   , _rm_group_proxy(group_proxy)
   , _rm_partition_frontend(rm_partition_frontend)
   , _feature_table(feature_table)
-  , _tm_stm_cache(tm_stm_cache)
+  , _tm_stm_cache_manager(tm_stm_cache_manager)
+  , _tx_coordinator_ntp_mapper(tx_coordinator_ntp_mapper)
   , _metadata_dissemination_retries(
       config::shard_local_cfg().metadata_dissemination_retries.value())
   , _metadata_dissemination_retry_delay_ms(
@@ -249,25 +251,46 @@ ss::future<> tx_gateway_frontend::stop() {
 }
 
 ss::future<std::optional<model::node_id>>
-tx_gateway_frontend::find_coordinator(kafka::transactional_id) {
+tx_gateway_frontend::find_coordinator(kafka::transactional_id id) {
     if (!_metadata_cache.local().contains(model::tx_manager_nt)) {
         if (!co_await try_create_tx_topic()) {
             co_return std::nullopt;
         }
     }
+    auto tx_ntp_opt = get_ntp(id);
+    if (!tx_ntp_opt) {
+        co_return std::nullopt;
+    }
+    auto tx_ntp = tx_ntp_opt.value();
+    auto x = _metadata_cache.local().get_leader_id(tx_ntp);
+    co_return x;
+}
 
-    co_return _metadata_cache.local().get_leader_id(model::tx_manager_ntp);
+std::optional<model::ntp>
+tx_gateway_frontend::get_ntp(kafka::transactional_id id) {
+    auto tx_ntp_opt = _tx_coordinator_ntp_mapper.local().ntp_for(
+      kafka::group_id(id));
+    if (!tx_ntp_opt) {
+        vlog(
+          txlog.debug,
+          "Topic {} doesn't exist in metadata cache",
+          model::tx_manager_nt);
+    }
+    return tx_ntp_opt;
 }
 
 ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
-  kafka::transactional_id tx_id, model::term_id term) {
-    auto map = [tx_id, term](tm_stm_cache& cache) {
-        return cache.find(term, tx_id);
+  kafka::transactional_id tx_id, model::term_id term, model::partition_id tm) {
+    auto map =
+      [tx_id, term, tm](
+        tm_stm_cache_manager& cache_manager) -> std::optional<tm_transaction> {
+        auto cache = cache_manager.get(tm);
+        return cache->find(term, tx_id);
     };
     auto reduce = [](
                     std::optional<tm_transaction> a,
                     std::optional<tm_transaction> b) { return a ? a : b; };
-    auto tx_opt = co_await _tm_stm_cache.map_reduce0(
+    auto tx_opt = co_await _tm_stm_cache_manager.map_reduce0(
       map, std::optional<tm_transaction>{}, reduce);
 
     if (!tx_opt) {
@@ -319,12 +342,16 @@ ss::future<fetch_tx_reply> tx_gateway_frontend::fetch_tx_locally(
 }
 
 ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::fetch_tx(
-  kafka::transactional_id tx_id, model::term_id term) {
+  kafka::transactional_id tx_id, model::term_id term, model::partition_id tm) {
     auto outcome = ss::make_lw_shared<
       available_promise<checked<tm_transaction, tx_errc>>>();
-    ssx::spawn_with_gate(_gate, [this, tx_id, term, outcome] {
+    ssx::spawn_with_gate(_gate, [this, tx_id, term, outcome, tm] {
         return dispatch_fetch_tx(
-                 tx_id, term, _metadata_dissemination_retry_delay_ms, outcome)
+                 tx_id,
+                 term,
+                 tm,
+                 _metadata_dissemination_retry_delay_ms,
+                 outcome)
           .finally([outcome]() {
               if (!outcome->available()) {
                   outcome->set_value(tx_errc::tx_not_found);
@@ -337,6 +364,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::fetch_tx(
 ss::future<> tx_gateway_frontend::dispatch_fetch_tx(
   kafka::transactional_id tx_id,
   model::term_id term,
+  model::partition_id tm,
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>
     outcome) {
@@ -350,31 +378,34 @@ ss::future<> tx_gateway_frontend::dispatch_fetch_tx(
         if (node_id == self) {
             vlog(
               txlog.trace,
-              "fetching tx:{} in term:{} from {}",
+              "fetching tx:{} in term:{} tm:{} from {}",
               tx_id,
               term,
+              tm,
               node_id);
             inflight.push_back(
-              fetch_tx_locally(tx_id, term)
-                .then([tx_id, term, outcome, node_id](fetch_tx_reply reply) {
-                    vlog(
-                      txlog.trace,
-                      "got {} on fetching tx:{} in term:{} from {}",
-                      reply.ec,
-                      tx_id,
-                      term,
-                      node_id);
-                    if (reply.ec == tx_errc::none) {
-                        if (!outcome->available()) {
-                            auto tx = as_tx(tx_id, term, reply);
-                            outcome->set_value(tx);
-                        }
-                    }
-                    return reply;
-                }));
+              fetch_tx_locally(tx_id, term, tm)
+                .then(
+                  [tx_id, term, outcome, node_id, tm](fetch_tx_reply reply) {
+                      vlog(
+                        txlog.trace,
+                        "got {} on fetching tx:{} in term:{} tm:{} from {}",
+                        reply.ec,
+                        tx_id,
+                        term,
+                        tm,
+                        node_id);
+                      if (reply.ec == tx_errc::none) {
+                          if (!outcome->available()) {
+                              auto tx = as_tx(tx_id, term, reply);
+                              outcome->set_value(tx);
+                          }
+                      }
+                      return reply;
+                  }));
         } else {
             inflight.push_back(
-              dispatch_fetch_tx(node_id, tx_id, term, timeout, outcome));
+              dispatch_fetch_tx(node_id, tx_id, term, tm, timeout, outcome));
         }
     }
     co_await when_all_succeed(inflight.begin(), inflight.end());
@@ -384,19 +415,26 @@ ss::future<fetch_tx_reply> tx_gateway_frontend::dispatch_fetch_tx(
   model::node_id target,
   kafka::transactional_id tx_id,
   model::term_id term,
+  model::partition_id tm,
   model::timeout_clock::duration timeout,
   ss::lw_shared_ptr<available_promise<checked<tm_transaction, tx_errc>>>
     outcome) {
-    vlog(txlog.trace, "fetching tx:{} in term:{} from {}", tx_id, term, target);
+    vlog(
+      txlog.trace,
+      "fetching tx:{} in term:{} tm: {} from {}",
+      tx_id,
+      term,
+      tm,
+      target);
     return _connection_cache.local()
       .with_node_client<tx_gateway_client_protocol>(
         _controller->self(),
         ss::this_shard_id(),
         target,
         timeout,
-        [tx_id, term, timeout](tx_gateway_client_protocol cp) {
+        [tx_id, term, tm, timeout](tx_gateway_client_protocol cp) {
             return cp.fetch_tx(
-              fetch_tx_request(tx_id, term),
+              fetch_tx_request(tx_id, term, tm),
               rpc::client_opts(model::timeout_clock::now() + timeout));
         })
       .then(&rpc::get_ctx_data<fetch_tx_reply>)
@@ -434,24 +472,25 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort(
   model::producer_identity pid,
   model::tx_seq tx_seq,
   model::timeout_clock::duration timeout) {
-    if (!_metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition)) {
-        vlog(txlog.warn, "can't find {}/0 partition", model::tx_manager_nt);
+    if (!_metadata_cache.local().contains(model::tx_manager_nt, tm)) {
+        vlog(
+          txlog.warn, "can't find {}/{} partition", model::tx_manager_nt, tm);
         co_return try_abort_reply{tx_errc::partition_not_exists};
     }
+    model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
 
-    auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+    auto leader_opt = _leaders.local().get_leader(tx_ntp);
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
     while (!aborted && !leader_opt && 0 < retries--) {
         aborted = !co_await sleep_abortable(delay_ms, _as);
-        leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+        leader_opt = _leaders.local().get_leader(tx_ntp);
     }
 
     if (!leader_opt) {
-        vlog(txlog.warn, "can't find a leader for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a leader for {}", tx_ntp);
         co_return try_abort_reply{tx_errc::leader_not_found};
     }
 
@@ -493,7 +532,8 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
     vlog(
       txlog.trace, "processing name:try_abort, pid:{}, tx_seq:{}", pid, tx_seq);
 
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
+    auto shard = _shard_table.local().shard_for(tx_ntp);
 
     if (!shard) {
         vlog(
@@ -506,19 +546,25 @@ ss::future<try_abort_reply> tx_gateway_frontend::try_abort_locally(
     }
 
     auto reply = co_await container().invoke_on(
-      shard.value(), _ssg, [pid, tx_seq, timeout](tx_gateway_frontend& self) {
-          return ss::with_gate(self._gate, [pid, tx_seq, timeout, &self] {
-              return self.with_stm(
-                [pid, tx_seq, timeout, &self](
-                  checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
-                    if (r) {
-                        return self.do_try_abort(
-                          r.value(), pid, tx_seq, timeout);
-                    }
-                    return ss::make_ready_future<try_abort_reply>(
-                      try_abort_reply{r.error()});
-                });
-          });
+      shard.value(),
+      _ssg,
+      [pid, tx_seq, timeout, tm](
+        tx_gateway_frontend& self) -> ss::future<try_abort_reply> {
+          return ss::with_gate(
+            self._gate,
+            [pid, tx_seq, timeout, tm, &self]() -> ss::future<try_abort_reply> {
+                return self.with_stm(
+                  tm,
+                  [pid, tx_seq, timeout, &self](
+                    checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                      if (r) {
+                          return self.do_try_abort(
+                            r.value(), pid, tx_seq, timeout);
+                      }
+                      return ss::make_ready_future<try_abort_reply>(
+                        try_abort_reply{r.error()});
+                  });
+            });
       });
 
     vlog(
@@ -798,43 +844,52 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
 
-    auto has_metadata = _metadata_cache.local().contains(
-      model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
-    while (!aborted && !has_metadata && 0 < retries--) {
+    auto tx_ntp_opt = _tx_coordinator_ntp_mapper.local().ntp_for(
+      kafka::group_id(tx_id));
+    bool has_metadata = false;
+    if (tx_ntp_opt) {
+        has_metadata = _metadata_cache.local().contains(
+          model::tx_manager_nt, tx_ntp_opt->tp.partition);
+    }
+    while (!aborted && (!tx_ntp_opt || !has_metadata) && 0 < retries--) {
         vlog(
           txlog.trace,
-          "waiting for {}/0 to fill metadata cache, retries left: {}",
+          "waiting for {} to fill metadata cache, retries left: {}",
           model::tx_manager_nt,
           retries);
         aborted = !co_await sleep_abortable(delay_ms, _as);
-        has_metadata = _metadata_cache.local().contains(
-          model::tx_manager_nt, model::tx_manager_ntp.tp.partition);
+        tx_ntp_opt = get_ntp(tx_id);
+        if (tx_ntp_opt) {
+            has_metadata = _metadata_cache.local().contains(
+              model::tx_manager_nt, tx_ntp_opt->tp.partition);
+        }
+    }
+    if (!tx_ntp_opt) {
+        co_return cluster::init_tm_tx_reply{tx_errc::coordinator_not_available};
     }
     if (!has_metadata) {
         vlog(
           txlog.warn,
-          "can't find {}/0 in the metadata cache",
-          model::tx_manager_nt);
+          "can't find {}/{} in the metadata cache",
+          model::tx_manager_nt,
+          tx_ntp_opt->tp.partition);
         co_return cluster::init_tm_tx_reply{tx_errc::partition_not_exists};
     }
-
+    auto tx_ntp = tx_ntp_opt.value();
     retries = _metadata_dissemination_retries;
     aborted = false;
-    auto leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+    auto leader_opt = _leaders.local().get_leader(tx_ntp);
     while (!aborted && !leader_opt && 0 < retries--) {
         vlog(
           txlog.trace,
           "waiting for {} to fill leaders cache, retries left: {}",
-          model::tx_manager_ntp,
+          tx_ntp,
           retries);
         aborted = !co_await sleep_abortable(delay_ms, _as);
-        leader_opt = _leaders.local().get_leader(model::tx_manager_ntp);
+        leader_opt = _leaders.local().get_leader(tx_ntp);
     }
     if (!leader_opt) {
-        vlog(
-          txlog.warn,
-          "can't find {} in the leaders cache",
-          model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find {} in the leaders cache", tx_ntp);
         co_return cluster::init_tm_tx_reply{tx_errc::leader_not_found};
     }
 
@@ -843,7 +898,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
 
     if (leader == _self) {
         co_return co_await init_tm_tx_locally(
-          tx_id, transaction_timeout_ms, timeout, expected_pid);
+          tx_id,
+          transaction_timeout_ms,
+          timeout,
+          expected_pid,
+          tx_ntp.tp.partition);
     }
 
     // Kafka does not dispatch this request. So we should delete this logic in
@@ -874,21 +933,23 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
   kafka::transactional_id tx_id,
   std::chrono::milliseconds transaction_timeout_ms,
   model::timeout_clock::duration timeout,
-  model::producer_identity expected_pid) {
+  model::producer_identity expected_pid,
+  model::partition_id tm) {
     vlog(
       txlog.trace,
       "processing name:init_tm_tx, tx_id:{}, timeout:{}",
       tx_id,
       transaction_timeout_ms);
 
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    model::ntp tx_ntp(model::tx_manager_nt.ns, model::tx_manager_nt.tp, tm);
+    auto shard = _shard_table.local().shard_for(tx_ntp);
 
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
     while (!aborted && !shard && 0 < retries--) {
         aborted = !co_await sleep_abortable(delay_ms, _as);
-        shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+        shard = _shard_table.local().shard_for(tx_ntp);
     }
 
     if (!shard) {
@@ -903,12 +964,14 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx_locally(
     auto reply = co_await container().invoke_on(
       shard.value(),
       _ssg,
-      [tx_id, transaction_timeout_ms, timeout, expected_pid](
-        tx_gateway_frontend& self) {
+      [tx_id, transaction_timeout_ms, timeout, expected_pid, tm](
+        tx_gateway_frontend& self) -> ss::future<cluster::init_tm_tx_reply> {
           return ss::with_gate(
             self._gate,
-            [tx_id, transaction_timeout_ms, timeout, expected_pid, &self] {
+            [tx_id, transaction_timeout_ms, timeout, expected_pid, tm, &self]()
+              -> ss::future<cluster::init_tm_tx_reply> {
                 return self.with_stm(
+                  tm,
                   [tx_id, transaction_timeout_ms, timeout, expected_pid, &self](
                     checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
                       if (!r) {
@@ -1198,10 +1261,17 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
 
 ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
   add_paritions_tx_request request, model::timeout_clock::duration timeout) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto tx_ntp_opt = get_ntp(request.transactional_id);
+    if (!tx_ntp_opt) {
+        return ss::make_ready_future<add_paritions_tx_reply>(
+          make_add_partitions_error_response(
+            request, tx_errc::coordinator_not_available));
+    }
+    auto tx_ntp = tx_ntp_opt.value();
+    auto shard = _shard_table.local().shard_for(tx_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.trace, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.trace, "can't find a shard for {}", tx_ntp);
         return ss::make_ready_future<add_paritions_tx_reply>(
           make_add_partitions_error_response(
             request, tx_errc::coordinator_not_available));
@@ -1210,11 +1280,15 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::add_partition_to_tx(
     return container().invoke_on(
       *shard,
       _ssg,
-      [request = std::move(request),
-       timeout](tx_gateway_frontend& self) mutable {
+      [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
+        tx_gateway_frontend& self) mutable
+      -> ss::future<add_paritions_tx_reply> {
           return ss::with_gate(
-            self._gate, [request = std::move(request), timeout, &self] {
+            self._gate,
+            [request = std::move(request), timeout, tm, &self]()
+              -> ss::future<add_paritions_tx_reply> {
                 return self.with_stm(
+                  tm,
                   [request = std::move(request), timeout, &self](
                     checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
                       if (!r) {
@@ -1309,6 +1383,7 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
     std::vector<begin_tx_reply> brs;
     auto retries = _metadata_dissemination_retries;
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
+
     while (0 < retries--) {
         partitions.clear();
         brs.clear();
@@ -1318,7 +1393,12 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
         bfs.reserve(new_partitions.size());
         for (auto& ntp : new_partitions) {
             bfs.push_back(_rm_partition_frontend.local().begin_tx(
-              ntp, tx.pid, tx.tx_seq, tx.timeout_ms, timeout));
+              ntp,
+              tx.pid,
+              tx.tx_seq,
+              tx.timeout_ms,
+              timeout,
+              stm->get_partition()));
         }
         brs = co_await when_all_succeed(bfs.begin(), bfs.end());
         for (auto& br : brs) {
@@ -1400,10 +1480,16 @@ ss::future<add_paritions_tx_reply> tx_gateway_frontend::do_add_partition_to_tx(
 
 ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
   add_offsets_tx_request request, model::timeout_clock::duration timeout) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto tx_ntp_opt = get_ntp(request.transactional_id);
+    if (!tx_ntp_opt) {
+        return ss::make_ready_future<add_offsets_tx_reply>(add_offsets_tx_reply{
+          .error_code = tx_errc::coordinator_not_available});
+    }
+    auto tx_ntp = tx_ntp_opt.value();
+    auto shard = _shard_table.local().shard_for(tx_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", tx_ntp);
         return ss::make_ready_future<add_offsets_tx_reply>(add_offsets_tx_reply{
           .error_code = tx_errc::coordinator_not_available});
     }
@@ -1411,11 +1497,14 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::add_offsets_to_tx(
     return container().invoke_on(
       *shard,
       _ssg,
-      [request = std::move(request),
-       timeout](tx_gateway_frontend& self) mutable {
+      [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
+        tx_gateway_frontend& self) mutable -> ss::future<add_offsets_tx_reply> {
           return ss::with_gate(
-            self._gate, [request = std::move(request), timeout, &self] {
+            self._gate,
+            [request = std::move(request), timeout, tm, &self]()
+              -> ss::future<add_offsets_tx_reply> {
                 return self.with_stm(
+                  tm,
                   [request = std::move(request), timeout, &self](
                     checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
                       if (!r) {
@@ -1476,7 +1565,7 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
     auto tx = r.value();
 
     auto group_info = co_await _rm_group_proxy->begin_group_tx(
-      request.group_id, pid, tx.tx_seq, tx.timeout_ms);
+      request.group_id, pid, tx.tx_seq, tx.timeout_ms, stm->get_partition());
     if (group_info.ec != tx_errc::none) {
         vlog(txlog.warn, "error on begining group tx: {}", group_info.ec);
         co_return add_offsets_tx_reply{.error_code = group_info.ec};
@@ -1495,10 +1584,16 @@ ss::future<add_offsets_tx_reply> tx_gateway_frontend::do_add_offsets_to_tx(
 
 ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
   end_tx_request request, model::timeout_clock::duration timeout) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto tx_ntp_opt = get_ntp(request.transactional_id);
+    if (!tx_ntp_opt) {
+        return ss::make_ready_future<end_tx_reply>(
+          end_tx_reply{.error_code = tx_errc::coordinator_not_available});
+    }
+    auto tx_ntp = tx_ntp_opt.value();
+    auto shard = _shard_table.local().shard_for(tx_ntp);
 
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", tx_ntp);
         return ss::make_ready_future<end_tx_reply>(
           end_tx_reply{.error_code = tx_errc::coordinator_not_available});
     }
@@ -1506,11 +1601,14 @@ ss::future<end_tx_reply> tx_gateway_frontend::end_txn(
     return container().invoke_on(
       *shard,
       _ssg,
-      [request = std::move(request),
-       timeout](tx_gateway_frontend& self) mutable {
+      [request = std::move(request), timeout, tm = tx_ntp.tp.partition](
+        tx_gateway_frontend& self) mutable -> ss::future<end_tx_reply> {
           return ss::with_gate(
-            self._gate, [request = std::move(request), timeout, &self] {
+            self._gate,
+            [request = std::move(request), timeout, tm, &self]()
+              -> ss::future<end_tx_reply> {
                 return self.with_stm(
+                  tm,
                   [request = std::move(request), timeout, &self](
                     checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
                       return self.do_end_txn(r, std::move(request), timeout);
@@ -1917,7 +2015,7 @@ tx_gateway_frontend::do_commit_tm_tx(
                 pfs.push_back(_rm_partition_frontend.local().prepare_tx(
                   rm.ntp,
                   rm.etag,
-                  model::tx_manager_ntp.tp.partition,
+                  model::legacy_tm_ntp.tp.partition,
                   tx.pid,
                   tx.tx_seq,
                   timeout));
@@ -2453,7 +2551,7 @@ ss::future<checked<tm_transaction, tx_errc>> tx_gateway_frontend::get_tx(
         co_return r1.value();
     }
 
-    auto r1 = co_await fetch_tx(tx.id, tx.etag);
+    auto r1 = co_await fetch_tx(tx.id, tx.etag, stm->get_partition());
     if (!r1) {
         vlog(
           txlog.warn,
@@ -2816,10 +2914,15 @@ tx_gateway_frontend::get_ongoing_tx(
 }
 
 ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
+    int32_t partitions_amount = 1;
+    if (is_transaction_partitioning()) {
+        partitions_amount
+          = config::shard_local_cfg().transaction_coordinator_partitions();
+    }
     cluster::topic_configuration topic{
       model::kafka_internal_namespace,
       model::tx_manager_topic,
-      1,
+      partitions_amount,
       _controller->internal_topic_replication()};
 
     topic.properties.segment_size
@@ -2862,34 +2965,55 @@ ss::future<bool> tx_gateway_frontend::try_create_tx_topic() {
 
 void tx_gateway_frontend::expire_old_txs() {
     ssx::spawn_with_gate(_gate, [this] {
-        auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
-
-        if (shard == std::nullopt) {
-            rearm_expire_timer();
+        auto ntp_meta = _metadata_cache.local().get_topic_metadata(
+          model::tx_manager_nt);
+        if (!ntp_meta) {
+            vlog(
+              txlog.error,
+              "Topic {} doesn't exist in metadata cache,",
+              model::tx_manager_nt);
             return ss::now();
         }
+        return ss::do_for_each(
+          ntp_meta->get_assignments(), [this](partition_assignment pa) {
+              auto tx_ntp = model::ntp(
+                model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
 
-        return container()
-          .invoke_on(
-            *shard,
-            _ssg,
-            [](tx_gateway_frontend& self) {
-                return ss::with_gate(self._gate, [&self] {
-                    return self.with_stm(
-                      [&self](checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
-                          if (!r) {
-                              return ss::now();
-                          }
-                          auto stm = r.value();
-                          return stm->read_lock().then(
-                            [&self, stm](ss::basic_rwlock<>::holder unit) {
-                                return self.expire_old_txs(stm).finally(
-                                  [u = std::move(unit)] {});
-                            });
-                      });
-                });
-            })
-          .finally([this] { rearm_expire_timer(); });
+              auto shard = _shard_table.local().shard_for(tx_ntp);
+
+              if (shard == std::nullopt) {
+                  // TODO: Create per shard timer
+                  // https://github.com/redpanda-data/redpanda/issues/9606
+                  rearm_expire_timer();
+                  return ss::now();
+              }
+
+              return container()
+                .invoke_on(
+                  *shard,
+                  _ssg,
+                  [tm = pa.id](tx_gateway_frontend& self) -> ss::future<void> {
+                      return ss::with_gate(
+                        self._gate, [tm, &self]() -> ss::future<void> {
+                            return self.with_stm(
+                              tm,
+                              [&self](
+                                checked<ss::shared_ptr<tm_stm>, tx_errc> r) {
+                                  if (!r) {
+                                      return ss::now();
+                                  }
+                                  auto stm = r.value();
+                                  return stm->read_lock().then(
+                                    [&self,
+                                     stm](ss::basic_rwlock<>::holder unit) {
+                                        return self.expire_old_txs(stm).finally(
+                                          [u = std::move(unit)] {});
+                                    });
+                              });
+                        });
+                  })
+                .finally([this] { rearm_expire_timer(); });
+          });
     });
 }
 
@@ -2952,27 +3076,27 @@ ss::future<> tx_gateway_frontend::do_expire_old_tx(
 }
 
 ss::future<tx_gateway_frontend::return_all_txs_res>
-tx_gateway_frontend::get_all_transactions() {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+tx_gateway_frontend::get_all_transactions_for_one_tx_partition(
+  model::ntp tx_manager_ntp) {
+    auto shard = _shard_table.local().shard_for(tx_manager_ntp);
 
     if (!shard.has_value()) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", tx_manager_ntp);
         co_return tx_errc::shard_not_found;
     }
 
     co_return co_await container().invoke_on(
       *shard,
       _ssg,
-      [](tx_gateway_frontend& self)
+      [tx_partition = tx_manager_ntp.tp.partition](tx_gateway_frontend& self)
         -> ss::future<tx_gateway_frontend::return_all_txs_res> {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
+          model::ntp tx_manager_ntp{
+            model::tx_manager_nt.ns, model::tx_manager_nt.tp, tx_partition};
+          auto partition = self._partition_manager.local().get(tx_manager_ntp);
           if (!partition) {
-              vlog(
-                txlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_manager_ntp);
-              co_return tx_errc::partition_not_found;
+              vlog(txlog.warn, "can't get partition by {} ntp", tx_manager_ntp);
+              return ss::make_ready_future<return_all_txs_res>(
+                return_all_txs_res{tx_errc::partition_not_found});
           }
 
           auto stm = partition->tm_stm();
@@ -2981,31 +3105,72 @@ tx_gateway_frontend::get_all_transactions() {
               vlog(
                 txlog.error,
                 "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
-              co_return tx_errc::unknown_server_error;
+                tx_manager_ntp);
+              return ss::make_ready_future<return_all_txs_res>(
+                return_all_txs_res{tx_errc::unknown_server_error});
           }
 
           auto gate_lock = gate_guard(self._gate);
-          auto read_lock = co_await stm->read_lock();
-
-          auto res = co_await stm->get_all_transactions();
-          if (!res.has_value()) {
-              if (res.error() == tm_stm::op_status::not_leader) {
-                  co_return tx_errc::not_coordinator;
-              }
-              co_return tx_errc::unknown_server_error;
-          }
-
-          co_return std::move(res).value();
+          return stm->read_lock().then([stm](ss::basic_rwlock<>::holder unit) {
+              return stm->get_all_transactions()
+                .then(
+                  [](tm_stm::get_txs_result res)
+                    -> ss::future<return_all_txs_res> {
+                      if (!res.has_value()) {
+                          if (res.error() == tm_stm::op_status::not_leader) {
+                              return ss::make_ready_future<return_all_txs_res>(
+                                return_all_txs_res{tx_errc::not_coordinator});
+                          }
+                          return ss::make_ready_future<return_all_txs_res>(
+                            return_all_txs_res{tx_errc::unknown_server_error});
+                      }
+                      return ss::make_ready_future<return_all_txs_res>(
+                        std::move(res).value());
+                  })
+                .finally([u = std::move(unit)] {});
+          });
       });
+}
+
+ss::future<tx_gateway_frontend::return_all_txs_res>
+tx_gateway_frontend::get_all_transactions() {
+    auto ntp_meta = _metadata_cache.local().get_topic_metadata(
+      model::tx_manager_nt);
+    if (!ntp_meta) {
+        vlog(
+          txlog.error,
+          "Topic {} doesn't exist in metadata cache",
+          model::tx_manager_nt);
+        co_return tx_errc::partition_not_exists;
+    }
+    tx_gateway_frontend::return_all_txs_res res{{}};
+    for (const auto& pa : ntp_meta->get_assignments()) {
+        auto tx_manager_ntp = model::ntp(
+          model::tx_manager_nt.ns, model::tx_manager_nt.tp, pa.id);
+        auto ntp_res = co_await get_all_transactions_for_one_tx_partition(
+          tx_manager_ntp);
+        if (ntp_res.has_error()) {
+            co_return std::move(ntp_res);
+        }
+        for (const auto& v : ntp_res.value()) {
+            res.value().push_back(v);
+        }
+    }
+    co_return std::move(res);
 }
 
 ss::future<result<tm_transaction, tx_errc>>
 tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
+    auto tm_ntp_opt = get_ntp(tid);
+    if (!tm_ntp_opt) {
+        return ss::make_ready_future<result<tm_transaction, tx_errc>>(
+          tx_errc::coordinator_not_available);
+    }
+    auto tm_ntp = tm_ntp_opt.value();
+    auto shard = _shard_table.local().shard_for(tm_ntp);
 
     if (!shard.has_value()) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", tm_ntp);
         return ss::make_ready_future<result<tm_transaction, tx_errc>>(
           tx_errc::shard_not_found);
     }
@@ -3013,15 +3178,14 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
     return container().invoke_on(
       *shard,
       _ssg,
-      [tid](tx_gateway_frontend& self)
+      [tid, tm_ntp = std::move(tm_ntp)](tx_gateway_frontend& self)
         -> ss::future<result<tm_transaction, tx_errc>> {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
+          auto partition = self._partition_manager.local().get(tm_ntp);
           if (!partition) {
               vlog(
                 txlog.warn,
                 "transaction manager partition: {} not found",
-                model::tx_manager_ntp);
+                tm_ntp);
               return ss::make_ready_future<result<tm_transaction, tx_errc>>(
                 tx_errc::partition_not_found);
           }
@@ -3030,9 +3194,7 @@ tx_gateway_frontend::describe_tx(kafka::transactional_id tid) {
 
           if (!stm) {
               vlog(
-                txlog.error,
-                "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
+                txlog.error, "can't get tm stm of the {}' partition", tm_ntp);
               return ss::make_ready_future<result<tm_transaction, tx_errc>>(
                 tx_errc::stm_not_found);
           }
@@ -3075,22 +3237,21 @@ ss::future<result<tm_transaction, tx_errc>> tx_gateway_frontend::describe_tx(
 
 ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
   kafka::transactional_id tid, tm_transaction::tx_partition ntp) {
-    auto shard = _shard_table.local().shard_for(model::tx_manager_ntp);
-
+    auto tm_ntp = get_ntp(tid);
+    if (!tm_ntp) {
+        co_return tx_errc::coordinator_not_available;
+    }
+    auto shard = _shard_table.local().shard_for(tm_ntp.value());
     if (shard == std::nullopt) {
-        vlog(txlog.warn, "can't find a shard for {}", model::tx_manager_ntp);
+        vlog(txlog.warn, "can't find a shard for {}", tm_ntp.value());
         co_return tx_errc::shard_not_found;
     }
 
     co_return co_await container().invoke_on(
-      *shard, _ssg, [tid, ntp](tx_gateway_frontend& self) {
-          auto partition = self._partition_manager.local().get(
-            model::tx_manager_ntp);
+      *shard, _ssg, [tid, ntp, tm_ntp](tx_gateway_frontend& self) {
+          auto partition = self._partition_manager.local().get(tm_ntp.value());
           if (!partition) {
-              vlog(
-                txlog.warn,
-                "can't get partition by {} ntp",
-                model::tx_manager_ntp);
+              vlog(txlog.warn, "can't get partition by {} ntp", tm_ntp.value());
               return ss::make_ready_future<tx_errc>(tx_errc::invalid_txn_state);
           }
 
@@ -3100,7 +3261,7 @@ ss::future<tx_errc> tx_gateway_frontend::delete_partition_from_tx(
               vlog(
                 txlog.warn,
                 "can't get tm stm of the {}' partition",
-                model::tx_manager_ntp);
+                tm_ntp.value());
               return ss::make_ready_future<tx_errc>(tx_errc::invalid_txn_state);
           }
 

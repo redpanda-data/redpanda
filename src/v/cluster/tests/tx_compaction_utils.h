@@ -207,9 +207,13 @@ private:
           : tx_op(std::move(ctx), weight) {}
 
         void execute() override {
-            BOOST_REQUIRE(
-              _ctx._stm->begin_tx(_ctx._pid, model::tx_seq{0}, tx_timeout)
-                .get0());
+            BOOST_REQUIRE(_ctx._stm
+                            ->begin_tx(
+                              _ctx._pid,
+                              model::tx_seq{0},
+                              tx_timeout,
+                              model::partition_id(0))
+                            .get0());
         }
 
         tx_op_type type() override { return tx_op_type::begin; }
@@ -228,7 +232,7 @@ private:
               _ctx._stm
                 ->prepare_tx(
                   _ctx._term,
-                  model::partition_id{0},
+                  model::partition_id(0),
                   _ctx._pid,
                   model::tx_seq{0},
                   tx_timeout)

@@ -122,7 +122,8 @@ public:
     using time_point_type = clock_type::time_point;
 
     static constexpr int8_t fence_control_record_v0_version{0};
-    static constexpr int8_t fence_control_record_version{1};
+    static constexpr int8_t fence_control_record_v1_version{1};
+    static constexpr int8_t fence_control_record_version{2};
     static constexpr int8_t prepared_tx_record_version{0};
     static constexpr int8_t commit_tx_record_version{0};
     static constexpr int8_t aborted_tx_record_version{0};
@@ -149,6 +150,11 @@ public:
     using offset_commit_stages = stages<offset_commit_response>;
     using join_group_stages = stages<join_group_response>;
     using sync_group_stages = stages<sync_group_response>;
+
+    struct tx_data {
+        model::tx_seq tx_seq;
+        model::partition_id tm_partition;
+    };
 
     struct offset_metadata {
         model::offset log_offset;
@@ -593,7 +599,10 @@ public:
         }
     }
 
-    void try_set_tx_seq(model::producer_identity id, model::tx_seq txseq) {
+    void try_set_tx_data(
+      model::producer_identity id,
+      model::tx_seq txseq,
+      model::partition_id tm_partition) {
         auto fence_it = _fence_pid_epoch.find(id.get_id());
         if (fence_it == _fence_pid_epoch.end()) {
             return;
@@ -601,9 +610,11 @@ public:
         if (fence_it->second != id.get_epoch()) {
             return;
         }
-        auto [ongoing_it, _] = _tx_seqs.try_emplace(id.get_id(), txseq);
-        if (ongoing_it->second < txseq) {
-            ongoing_it->second = txseq;
+        auto [ongoing_it, _] = _tx_data.try_emplace(
+          id.get_id(), tx_data{txseq, tm_partition});
+        if (ongoing_it->second.tx_seq < txseq) {
+            ongoing_it->second.tx_seq = txseq;
+            ongoing_it->second.tm_partition = tm_partition;
         }
     }
 
@@ -866,6 +877,11 @@ private:
     void try_arm(time_point_type);
     void maybe_rearm_timer();
 
+    bool is_transaction_partitioning() const {
+        return _feature_table.local().is_active(
+          features::feature::transaction_partitioning);
+    }
+
     bool is_transaction_ga() const {
         return _feature_table.local().is_active(
           features::feature::transaction_ga);
@@ -922,7 +938,7 @@ private:
     model::term_id _term;
     absl::node_hash_map<model::producer_id, model::producer_epoch>
       _fence_pid_epoch;
-    absl::node_hash_map<model::producer_id, model::tx_seq> _tx_seqs;
+    absl::node_hash_map<model::producer_id, tx_data> _tx_data;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
     enable_group_metrics _enable_group_metrics;

@@ -421,7 +421,13 @@ std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
 }
 
 std::ostream& operator<<(std::ostream& o, const begin_tx_request& r) {
-    fmt::print(o, "{{ ntp: {}, pid: {}, tx_seq: {} }}", r.ntp, r.pid, r.tx_seq);
+    fmt::print(
+      o,
+      "{{ ntp: {}, pid: {}, tx_seq: {}, tm_partition: {}}}",
+      r.ntp,
+      r.pid,
+      r.tx_seq,
+      r.tm_partition);
     return o;
 }
 
@@ -901,12 +907,13 @@ std::ostream& operator<<(std::ostream& o, const abort_tx_reply& r) {
 std::ostream& operator<<(std::ostream& o, const begin_group_tx_request& r) {
     fmt::print(
       o,
-      "{{ntp {} group_id {} pid {} tx_seq {} timeout {}}}",
+      "{{ntp {} group_id {} pid {} tx_seq {} timeout {} tm_partition: {}}}",
       r.ntp,
       r.group_id,
       r.pid,
       r.tx_seq,
-      r.timeout);
+      r.timeout,
+      r.tm_partition);
     return o;
 }
 

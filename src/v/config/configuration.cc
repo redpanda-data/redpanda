@@ -609,6 +609,12 @@ configuration::configuration()
   , transaction_coordinator_replication(
       *this, "transaction_coordinator_replication")
   , id_allocator_replication(*this, "id_allocator_replication")
+  , transaction_coordinator_partitions(
+      *this,
+      "transaction_coordinator_partitions",
+      "Amount of partitions for transactions coordinator",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      16)
   , transaction_coordinator_cleanup_policy(
       *this,
       "transaction_coordinator_cleanup_policy",

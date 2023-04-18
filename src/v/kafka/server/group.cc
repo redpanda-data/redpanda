@@ -25,6 +25,7 @@
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "raft/errc.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
@@ -178,6 +179,15 @@ static model::record_batch make_tx_fence_batch(
     return make_tx_batch(
       model::record_batch_type::tx_fence,
       group::fence_control_record_v0_version,
+      pid,
+      cmd);
+}
+
+static model::record_batch make_tx_fence_batch(
+  const model::producer_identity& pid, group_log_fencing_v1 cmd) {
+    return make_tx_batch(
+      model::record_batch_type::tx_fence,
+      group::fence_control_record_v1_version,
       pid,
       cmd);
 }
@@ -1658,15 +1668,18 @@ void group::reset_tx_state(model::term_id term) {
 void group::insert_prepared(prepared_tx tx) {
     auto pid = tx.pid;
 
-    auto [txseq_it, inserted] = _tx_seqs.try_emplace(pid.get_id(), tx.tx_seq);
+    // TODO: warn when legacy support is removed and _tx_data doesn't contain
+    // pid
+    auto [txseq_it, inserted] = _tx_data.try_emplace(
+      pid.get_id(), tx_data{tx.tx_seq, model::legacy_tm_ntp.tp.partition});
     if (!inserted) {
-        if (txseq_it->second != tx.tx_seq) {
+        if (txseq_it->second.tx_seq != tx.tx_seq) {
             vlog(
               _ctx_txlog.warn,
               "prepared_tx of pid {} has tx_seq {} while {} expected",
               tx.pid,
               tx.tx_seq,
-              txseq_it->second);
+              txseq_it->second.tx_seq);
         }
     }
 
@@ -1696,8 +1709,8 @@ group::commit_tx(cluster::commit_group_tx_request r) {
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto txseq_it = _tx_seqs.find(r.pid.get_id());
-    if (txseq_it == _tx_seqs.end()) {
+    auto txseq_it = _tx_data.find(r.pid.get_id());
+    if (txseq_it == _tx_data.end()) {
         if (is_transaction_ga()) {
             vlog(
               _ctx_txlog.trace,
@@ -1705,7 +1718,7 @@ group::commit_tx(cluster::commit_group_tx_request r) {
               r.pid);
             co_return make_commit_tx_reply(cluster::tx_errc::none);
         }
-    } else if (txseq_it->second > r.tx_seq) {
+    } else if (txseq_it->second.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm begins (tx_seq+1)
         //   * request on this group passes but then tm_stm fails and forgets
@@ -1717,15 +1730,15 @@ group::commit_tx(cluster::commit_group_tx_request r) {
           "Already commited pid:{} tx_seq:{} - a higher tx_seq:{} was observed",
           r.pid,
           r.tx_seq,
-          txseq_it->second);
+          txseq_it->second.tx_seq);
         co_return make_commit_tx_reply(cluster::tx_errc::none);
-    } else if (txseq_it->second != r.tx_seq) {
+    } else if (txseq_it->second.tx_seq != r.tx_seq) {
         vlog(
           _ctx_txlog.warn,
           "Can't commit pid {}: passed txseq {} doesn't match ongoing {}",
           r.pid,
           r.tx_seq,
-          txseq_it->second);
+          txseq_it->second.tx_seq);
         co_return make_commit_tx_reply(cluster::tx_errc::request_rejected);
     }
 
@@ -1838,16 +1851,16 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         }
     }
 
-    auto txseq_it = _tx_seqs.find(r.pid.get_id());
-    if (txseq_it != _tx_seqs.end()) {
-        if (r.tx_seq != txseq_it->second) {
+    auto txseq_it = _tx_data.find(r.pid.get_id());
+    if (txseq_it != _tx_data.end()) {
+        if (r.tx_seq != txseq_it->second.tx_seq) {
             vlog(
               _ctx_txlog.warn,
               "can't begin a tx {} with tx_seq {}: a producer id is already "
               "involved in a tx with tx_seq {}",
               r.pid,
               r.tx_seq,
-              txseq_it->second);
+              txseq_it->second.tx_seq);
             co_return make_begin_tx_reply(
               cluster::tx_errc::unknown_server_error);
         }
@@ -1864,10 +1877,17 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         co_return cluster::begin_group_tx_reply(_term, cluster::tx_errc::none);
     }
 
-    auto is_txn_ga = is_transaction_ga();
     std::optional<model::record_batch> batch{};
-    if (is_txn_ga) {
+
+    if (is_transaction_partitioning()) {
         group_log_fencing fence{
+          .group_id = id(),
+          .tx_seq = r.tx_seq,
+          .transaction_timeout_ms = r.timeout,
+          .tm_partition = r.tm_partition};
+        batch = make_tx_fence_batch(r.pid, std::move(fence));
+    } else if (is_transaction_ga()) {
+        group_log_fencing_v1 fence{
           .group_id = id(),
           .tx_seq = r.tx_seq,
           .transaction_timeout_ms = r.timeout};
@@ -1894,9 +1914,9 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     }
 
     _fence_pid_epoch[r.pid.get_id()] = r.pid.get_epoch();
-    _tx_seqs[r.pid.get_id()] = r.tx_seq;
+    _tx_data[r.pid.get_id()] = tx_data{r.tx_seq, r.tm_partition};
 
-    if (!is_txn_ga) {
+    if (!is_transaction_ga()) {
         _volatile_txs[r.pid] = volatile_tx{.tx_seq = r.tx_seq};
     }
 
@@ -1955,14 +1975,14 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto txseq_it = _tx_seqs.find(r.pid.get_id());
-    if (txseq_it != _tx_seqs.end() && txseq_it->second != r.tx_seq) {
+    auto txseq_it = _tx_data.find(r.pid.get_id());
+    if (txseq_it != _tx_data.end() && txseq_it->second.tx_seq != r.tx_seq) {
         vlog(
           _ctx_txlog.warn,
           "Can't prepare pid {}: passed txseq {} doesn't match ongoing {}",
           r.pid,
           r.tx_seq,
-          txseq_it->second);
+          txseq_it->second.tx_seq);
         co_return make_prepare_tx_reply(cluster::tx_errc::request_rejected);
     }
 
@@ -1997,12 +2017,12 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
 cluster::abort_origin group::get_abort_origin(
   const model::producer_identity& pid, model::tx_seq tx_seq) const {
     if (is_transaction_ga()) {
-        auto it = _tx_seqs.find(pid.get_id());
-        if (it != _tx_seqs.end()) {
-            if (tx_seq < it->second) {
+        auto it = _tx_data.find(pid.get_id());
+        if (it != _tx_data.end()) {
+            if (tx_seq < it->second.tx_seq) {
                 return cluster::abort_origin::past;
             }
-            if (it->second < tx_seq) {
+            if (it->second.tx_seq < tx_seq) {
                 return cluster::abort_origin::future;
             }
         }
@@ -2010,12 +2030,12 @@ cluster::abort_origin group::get_abort_origin(
         return cluster::abort_origin::present;
     }
 
-    auto txseq_it = _tx_seqs.find(pid.get_id());
-    if (txseq_it != _tx_seqs.end()) {
-        if (tx_seq < txseq_it->second) {
+    auto txseq_it = _tx_data.find(pid.get_id());
+    if (txseq_it != _tx_data.end()) {
+        if (tx_seq < txseq_it->second.tx_seq) {
             return cluster::abort_origin::past;
         }
-        if (txseq_it->second < tx_seq) {
+        if (txseq_it->second.tx_seq < tx_seq) {
             return cluster::abort_origin::future;
         }
     }
@@ -2069,8 +2089,8 @@ group::abort_tx(cluster::abort_group_tx_request r) {
         co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
     }
 
-    auto txseq_it = _tx_seqs.find(r.pid.get_id());
-    if (txseq_it == _tx_seqs.end()) {
+    auto txseq_it = _tx_data.find(r.pid.get_id());
+    if (txseq_it == _tx_data.end()) {
         if (is_transaction_ga()) {
             vlog(
               _ctx_txlog.trace,
@@ -2078,7 +2098,7 @@ group::abort_tx(cluster::abort_group_tx_request r) {
               r.pid);
             co_return make_abort_tx_reply(cluster::tx_errc::none);
         }
-    } else if (txseq_it->second > r.tx_seq) {
+    } else if (txseq_it->second.tx_seq > r.tx_seq) {
         // rare situation:
         //   * tm_stm begins (tx_seq+1)
         //   * request on this group passes but then tm_stm fails and forgets
@@ -2090,15 +2110,15 @@ group::abort_tx(cluster::abort_group_tx_request r) {
           "Already aborted pid:{} tx_seq:{} - a higher tx_seq:{} was observed",
           r.pid,
           r.tx_seq,
-          txseq_it->second);
+          txseq_it->second.tx_seq);
         co_return make_abort_tx_reply(cluster::tx_errc::none);
-    } else if (txseq_it->second != r.tx_seq) {
+    } else if (txseq_it->second.tx_seq != r.tx_seq) {
         vlog(
           _ctx_txlog.warn,
           "Can't abort pid {}: passed txseq {} doesn't match ongoing {}",
           r.pid,
           r.tx_seq,
-          txseq_it->second);
+          txseq_it->second.tx_seq);
         co_return make_abort_tx_reply(cluster::tx_errc::request_rejected);
     }
 
@@ -2169,8 +2189,8 @@ group::store_txn_offsets(txn_offset_commit_request r) {
           r, error_code::invalid_producer_epoch);
     }
 
-    auto txseq_it = _tx_seqs.find(pid.get_id());
-    if (txseq_it == _tx_seqs.end()) {
+    auto txseq_it = _tx_data.find(pid.get_id());
+    if (txseq_it == _tx_data.end()) {
         vlog(
           _ctx_txlog.warn,
           "Can't store txn offsets: current tx with pid {} isn't ongoing",
@@ -2178,7 +2198,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
         co_return txn_offset_commit_response(
           r, error_code::invalid_producer_epoch);
     }
-    auto tx_seq = txseq_it->second;
+    auto tx_seq = txseq_it->second.tx_seq;
 
     if (!is_transaction_ga()) {
         auto tx_it = _volatile_txs.find(pid);
@@ -3064,7 +3084,7 @@ ss::future<cluster::abort_group_tx_reply> group::do_abort(
     }
 
     _prepared_txs.erase(pid);
-    _tx_seqs.erase(pid.get_id());
+    _tx_data.erase(pid.get_id());
     _expiration_info.erase(pid);
 
     co_return make_abort_tx_reply(cluster::tx_errc::none);
@@ -3154,7 +3174,7 @@ group::do_commit(kafka::group_id group_id, model::producer_identity pid) {
     }
 
     _prepared_txs.erase(prepare_it);
-    _tx_seqs.erase(pid.get_id());
+    _tx_data.erase(pid.get_id());
     _expiration_info.erase(pid);
 
     co_return make_commit_tx_reply(cluster::tx_errc::none);
@@ -3193,7 +3213,7 @@ ss::future<> group::do_abort_old_txes() {
     for (auto& [id, _] : _volatile_txs) {
         pids.push_back(id);
     }
-    for (auto& [id, _] : _tx_seqs) {
+    for (auto& [id, _] : _tx_data) {
         auto it = _fence_pid_epoch.find(id);
         if (it != _fence_pid_epoch.end()) {
             pids.push_back(model::producer_identity(id(), it->second));
@@ -3241,11 +3261,19 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
     auto p_it = _prepared_txs.find(pid);
     if (p_it != _prepared_txs.end()) {
         auto tx_seq = p_it->second.tx_seq;
+        auto tx_data = _tx_data.find(pid.get_id());
+        model::partition_id tm = model::legacy_tm_ntp.tp.partition;
+        if (tx_data != _tx_data.end()) {
+            tm = tx_data->second.tm_partition;
+        } else {
+            vlog(
+              _ctxlog.error,
+              "pid {} doesn't exist in current transactions data",
+              pid);
+        }
         auto r = co_await _tx_frontend.local().try_abort(
-          model::partition_id(
-            0), // TODO: Pass partition_id to prepare request and use it here.
-                // https://github.com/redpanda-data/redpanda/issues/6137
-          pid,
+          tm,
+          p_it->second.pid,
           tx_seq,
           config::shard_local_cfg().rm_sync_timeout_ms.value());
         if (r.ec != cluster::tx_errc::none) {
@@ -3277,13 +3305,13 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
     } else {
         model::tx_seq tx_seq;
         if (is_transaction_ga()) {
-            auto txseq_it = _tx_seqs.find(pid.get_id());
-            if (txseq_it == _tx_seqs.end()) {
+            auto txseq_it = _tx_data.find(pid.get_id());
+            if (txseq_it == _tx_data.end()) {
                 vlog(
                   _ctx_txlog.trace, "skipping pid:{} (can't find tx_seq)", pid);
                 co_return cluster::tx_errc::none;
             }
-            tx_seq = txseq_it->second;
+            tx_seq = txseq_it->second.tx_seq;
         } else {
             auto v_it = _volatile_txs.find(pid);
             if (v_it == _volatile_txs.end()) {
@@ -3558,7 +3586,7 @@ group::get_expired_offsets(std::chrono::seconds retention_period) {
 
 bool group::has_offsets() const {
     return !_offsets.empty() || !_pending_offset_commits.empty()
-           || !_volatile_txs.empty() || !_tx_seqs.empty();
+           || !_volatile_txs.empty() || !_tx_data.empty();
 }
 
 std::vector<model::topic_partition>

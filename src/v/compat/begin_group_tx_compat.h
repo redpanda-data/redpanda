@@ -28,6 +28,7 @@ GEN_COMPAT_CHECK(
       json_write(pid);
       json_write(tx_seq);
       json_write(timeout);
+      json_write(tm_partition);
   },
   {
       json_read(ntp);
@@ -35,6 +36,7 @@ GEN_COMPAT_CHECK(
       json_read(pid);
       json_read(tx_seq);
       json_read(timeout);
+      json_read(tm_partition);
   });
 
 /*

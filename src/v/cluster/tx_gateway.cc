@@ -36,7 +36,7 @@ tx_gateway::tx_gateway(
 ss::future<fetch_tx_reply>
 tx_gateway::fetch_tx(fetch_tx_request&& request, rpc::streaming_context&) {
     return _tx_gateway_frontend.local().fetch_tx_locally(
-      request.tx_id, request.term);
+      request.tx_id, request.term, request.tm);
 }
 
 ss::future<try_abort_reply>
@@ -47,7 +47,7 @@ tx_gateway::try_abort(try_abort_request&& request, rpc::streaming_context&) {
 
 ss::future<init_tm_tx_reply>
 tx_gateway::init_tm_tx(init_tm_tx_request&& request, rpc::streaming_context&) {
-    return _tx_gateway_frontend.local().init_tm_tx_locally(
+    return _tx_gateway_frontend.local().init_tm_tx(
       request.tx_id,
       request.transaction_timeout_ms,
       request.timeout,
@@ -57,7 +57,11 @@ tx_gateway::init_tm_tx(init_tm_tx_request&& request, rpc::streaming_context&) {
 ss::future<begin_tx_reply>
 tx_gateway::begin_tx(begin_tx_request&& request, rpc::streaming_context&) {
     return _rm_partition_frontend.local().begin_tx_locally(
-      request.ntp, request.pid, request.tx_seq, request.transaction_timeout_ms);
+      request.ntp,
+      request.pid,
+      request.tx_seq,
+      request.transaction_timeout_ms,
+      request.tm_partition);
 }
 
 ss::future<prepare_tx_reply>

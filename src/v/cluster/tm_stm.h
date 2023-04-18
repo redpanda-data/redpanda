@@ -70,14 +70,14 @@ public:
       ss::logger&,
       raft::consensus*,
       ss::sharded<features::feature_table>&,
-      ss::sharded<cluster::tm_stm_cache>&);
+      ss::lw_shared_ptr<cluster::tm_stm_cache>);
 
     void try_rm_lock(kafka::transactional_id tid) {
-        auto tx_opt = _cache.local().find_mem(tid);
+        auto tx_opt = _cache->find_mem(tid);
         if (tx_opt) {
             return;
         }
-        tx_opt = _cache.local().find_log(tid);
+        tx_opt = _cache->find_log(tid);
         if (tx_opt) {
             return;
         }
@@ -122,7 +122,7 @@ public:
     }
 
     ss::future<ss::basic_rwlock<>::holder> read_lock() {
-        return _cache.local().read_lock();
+        return _cache->read_lock();
     }
 
     ss::future<> checkpoint_ongoing_txs();
@@ -180,6 +180,10 @@ public:
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       update_tx(tm_transaction, model::term_id);
 
+    model::partition_id get_partition() const {
+        return _raft->ntp().tp.partition;
+    }
+
 protected:
     ss::future<> handle_eviction() override;
 
@@ -195,7 +199,7 @@ private:
     absl::flat_hash_map<kafka::transactional_id, ss::lw_shared_ptr<mutex>>
       _tx_locks;
     ss::sharded<features::feature_table>& _feature_table;
-    ss::sharded<cluster::tm_stm_cache>& _cache;
+    ss::lw_shared_ptr<cluster::tm_stm_cache> _cache;
 
     ss::future<> apply(model::record_batch b) override;
 

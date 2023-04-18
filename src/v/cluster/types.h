@@ -338,24 +338,29 @@ struct end_tx_reply {
 };
 struct fetch_tx_request
   : serde::
-      envelope<fetch_tx_request, serde::version<0>, serde::compat_version<0>> {
+      envelope<fetch_tx_request, serde::version<1>, serde::compat_version<0>> {
     using rpc_adl_exempt = std::true_type;
 
     kafka::transactional_id tx_id{};
     model::term_id term{};
+    model::partition_id tm{0};
 
     fetch_tx_request() noexcept = default;
 
-    fetch_tx_request(kafka::transactional_id tx_id, model::term_id term)
+    fetch_tx_request(
+      kafka::transactional_id tx_id,
+      model::term_id term,
+      model::partition_id tm)
       : tx_id(tx_id)
-      , term(term) {}
+      , term(term)
+      , tm(tm) {}
 
     friend bool operator==(const fetch_tx_request&, const fetch_tx_request&)
       = default;
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_tx_request& r);
 
-    auto serde_fields() { return std::tie(tx_id, term); }
+    auto serde_fields() { return std::tie(tx_id, term, tm); }
 };
 
 struct fetch_tx_reply
@@ -465,11 +470,12 @@ struct fetch_tx_reply
 
 struct begin_tx_request
   : serde::
-      envelope<begin_tx_request, serde::version<0>, serde::compat_version<0>> {
+      envelope<begin_tx_request, serde::version<1>, serde::compat_version<0>> {
     model::ntp ntp;
     model::producer_identity pid;
     model::tx_seq tx_seq;
     std::chrono::milliseconds transaction_timeout_ms{};
+    model::partition_id tm_partition{0};
 
     begin_tx_request() noexcept = default;
 
@@ -477,11 +483,13 @@ struct begin_tx_request
       model::ntp ntp,
       model::producer_identity pid,
       model::tx_seq tx_seq,
-      std::chrono::milliseconds transaction_timeout_ms)
+      std::chrono::milliseconds transaction_timeout_ms,
+      model::partition_id tm_partition)
       : ntp(std::move(ntp))
       , pid(pid)
       , tx_seq(tx_seq)
-      , transaction_timeout_ms(transaction_timeout_ms) {}
+      , transaction_timeout_ms(transaction_timeout_ms)
+      , tm_partition(tm_partition) {}
 
     friend bool operator==(const begin_tx_request&, const begin_tx_request&)
       = default;
@@ -489,7 +497,7 @@ struct begin_tx_request
     friend std::ostream& operator<<(std::ostream& o, const begin_tx_request& r);
 
     auto serde_fields() {
-        return std::tie(ntp, pid, tx_seq, transaction_timeout_ms);
+        return std::tie(ntp, pid, tx_seq, transaction_timeout_ms, tm_partition);
     }
 };
 
@@ -683,13 +691,14 @@ struct abort_tx_reply
 struct begin_group_tx_request
   : serde::envelope<
       begin_group_tx_request,
-      serde::version<0>,
+      serde::version<1>,
       serde::compat_version<0>> {
     model::ntp ntp;
     kafka::group_id group_id;
     model::producer_identity pid;
     model::tx_seq tx_seq;
     model::timeout_clock::duration timeout{};
+    model::partition_id tm_partition{0};
 
     begin_group_tx_request() noexcept = default;
 
@@ -698,12 +707,14 @@ struct begin_group_tx_request
       kafka::group_id group_id,
       model::producer_identity pid,
       model::tx_seq tx_seq,
-      model::timeout_clock::duration timeout)
+      model::timeout_clock::duration timeout,
+      model::partition_id tm)
       : ntp(std::move(ntp))
       , group_id(std::move(group_id))
       , pid(pid)
       , tx_seq(tx_seq)
-      , timeout(timeout) {}
+      , timeout(timeout)
+      , tm_partition(tm) {}
 
     /*
      * construct with default value model::ntp
@@ -713,16 +724,17 @@ struct begin_group_tx_request
       kafka::group_id group_id,
       model::producer_identity pid,
       model::tx_seq tx_seq,
-      model::timeout_clock::duration timeout)
+      model::timeout_clock::duration timeout,
+      model::partition_id tm)
       : begin_group_tx_request(
-        model::ntp(), std::move(group_id), pid, tx_seq, timeout) {}
+        model::ntp(), std::move(group_id), pid, tx_seq, timeout, tm) {}
 
     friend bool
     operator==(const begin_group_tx_request&, const begin_group_tx_request&)
       = default;
 
     auto serde_fields() {
-        return std::tie(ntp, group_id, pid, tx_seq, timeout);
+        return std::tie(ntp, group_id, pid, tx_seq, timeout, tm_partition);
     }
 
     friend std::ostream&
@@ -3662,7 +3674,8 @@ struct adl<cluster::begin_group_tx_request> {
           std::move(r.group_id),
           r.pid,
           r.tx_seq,
-          r.timeout);
+          r.timeout,
+          r.tm_partition);
     }
     cluster::begin_group_tx_request from(iobuf_parser& in) {
         auto ntp = adl<model::ntp>{}.from(in);
@@ -3670,7 +3683,14 @@ struct adl<cluster::begin_group_tx_request> {
         auto pid = adl<model::producer_identity>{}.from(in);
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<model::timeout_clock::duration>{}.from(in);
-        return {std::move(ntp), std::move(group_id), pid, tx_seq, timeout};
+        auto tm_partition = adl<model::partition_id>{}.from(in);
+        return {
+          std::move(ntp),
+          std::move(group_id),
+          pid,
+          tx_seq,
+          timeout,
+          tm_partition};
     }
 };
 
@@ -3762,14 +3782,20 @@ template<>
 struct adl<cluster::begin_tx_request> {
     void to(iobuf& out, cluster::begin_tx_request&& r) {
         serialize(
-          out, std::move(r.ntp), r.pid, r.tx_seq, r.transaction_timeout_ms);
+          out,
+          std::move(r.ntp),
+          r.pid,
+          r.tx_seq,
+          r.transaction_timeout_ms,
+          r.tm_partition);
     }
     cluster::begin_tx_request from(iobuf_parser& in) {
         auto ntp = adl<model::ntp>{}.from(in);
         auto pid = adl<model::producer_identity>{}.from(in);
         auto tx_seq = adl<model::tx_seq>{}.from(in);
         auto timeout = adl<std::chrono::milliseconds>{}.from(in);
-        return {std::move(ntp), pid, tx_seq, timeout};
+        auto tm_partition = adl<model::partition_id>{}.from(in);
+        return {std::move(ntp), pid, tx_seq, timeout, tm_partition};
     }
 };
 

@@ -42,6 +42,7 @@
 #include "cluster/security_frontend.h"
 #include "cluster/self_test_rpc_handler.h"
 #include "cluster/service.h"
+#include "cluster/tm_stm_cache_manager.h"
 #include "cluster/topic_recovery_status_frontend.h"
 #include "cluster/topic_recovery_status_rpc_handler.h"
 #include "cluster/topics_frontend.h"
@@ -1094,8 +1095,12 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
           .get();
     }
 
-    syschecks::systemd_message("Creating tm_stm_cache").get();
-    construct_service(tm_stm_cache).get();
+    syschecks::systemd_message("Creating tm_stm_cache_manager").get();
+
+    construct_service(
+      tm_stm_cache_manager,
+      config::shard_local_cfg().transaction_coordinator_partitions())
+      .get();
 
     syschecks::systemd_message("Adding partition manager").get();
     construct_service(
@@ -1119,7 +1124,7 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
             }
         }),
       std::ref(feature_table),
-      std::ref(tm_stm_cache),
+      std::ref(tm_stm_cache_manager),
       std::ref(_archival_upload_housekeeping),
       ss::sharded_parameter([] {
           return config::shard_local_cfg().max_concurrent_producer_ids.bind();
@@ -1360,6 +1365,11 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       std::ref(storage))
       .get();
 
+    syschecks::systemd_message("Creating tx coordinator mapper").get();
+    construct_service(
+      tx_coordinator_ntp_mapper, std::ref(metadata_cache), model::tx_manager_nt)
+      .get();
+
     syschecks::systemd_message("Creating tx coordinator frontend").get();
     // usually it'a an anti-pattern to let the same object be accessed
     // from different cores without precautionary measures like foreign
@@ -1380,7 +1390,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
       _rm_group_proxy.get(),
       std::ref(rm_partition_frontend),
       std::ref(feature_table),
-      std::ref(tm_stm_cache))
+      std::ref(tm_stm_cache_manager),
+      std::ref(tx_coordinator_ntp_mapper))
       .get();
     _kafka_conn_quotas
       .start([]() {

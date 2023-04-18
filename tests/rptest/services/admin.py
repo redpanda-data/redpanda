@@ -586,8 +586,18 @@ class Admin:
         """
         Get all transactions
         """
-        path = f"transactions"
-        return self._request('get', path, node=node).json()
+        cluster_config = self.get_cluster_config(include_defaults=True)
+        tm_partition_amount = cluster_config[
+            "transaction_coordinator_partitions"]
+        result = []
+        for partition in range(tm_partition_amount):
+            self.await_stable_leader(topic="tx",
+                                     namespace="kafka_internal",
+                                     partition=partition)
+            path = f"transactions?coordinator_partition_id={partition}"
+            partition_res = self._request('get', path, node=node).json()
+            result.extend(partition_res)
+        return result
 
     def mark_transaction_expired(self,
                                  topic,
