@@ -914,3 +914,7 @@ class Admin:
         """
         return self._request(
             "GET", f"cloud_storage/manifest/{topic}/{partition}").json()
+
+    def get_partition_state(self, namespace, topic, partition, node=None):
+        path = f"debug/partition/{namespace}/{topic}/{partition}"
+        return self._request("GET", path, node=node).json()

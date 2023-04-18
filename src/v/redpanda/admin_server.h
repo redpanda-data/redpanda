@@ -431,6 +431,9 @@ private:
     ss::future<ss::json::json_return_type>
       self_test_get_results_handler(std::unique_ptr<ss::http::request>);
 
+    ss::future<ss::json::json_return_type>
+      get_partition_state_handler(std::unique_ptr<ss::http::request>);
+
     // Debug routes
     ss::future<ss::json::json_return_type>
       cloud_storage_usage_handler(std::unique_ptr<ss::http::request>);

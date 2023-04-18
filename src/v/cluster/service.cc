@@ -745,4 +745,36 @@ service::do_cloud_storage_usage(cloud_storage_usage_request req) {
       .missing_partitions = std::move(result.missing_partitions)};
 }
 
+ss::future<partition_state_reply> service::get_partition_state(
+  partition_state_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(get_scheduling_group(), [this, req]() {
+        return do_get_partition_state(req);
+    });
+}
+
+ss::future<partition_state_reply>
+service::do_get_partition_state(partition_state_request req) {
+    const auto ntp = req.ntp;
+    const auto shard = _api.local().shard_for(ntp);
+    partition_state_reply reply{};
+    if (!shard) {
+        reply.error_code = errc::partition_not_exists;
+        co_return reply;
+    }
+
+    co_return co_await _partition_manager.invoke_on(
+      *shard,
+      [req = std::move(req),
+       reply = std::move(reply)](cluster::partition_manager& pm) mutable {
+          auto partition = pm.get(req.ntp);
+          if (!partition) {
+              reply.error_code = errc::partition_not_exists;
+              return ss::make_ready_future<partition_state_reply>(reply);
+          }
+          reply.state = ::cluster::get_partition_state(partition);
+          reply.error_code = errc::success;
+          return ss::make_ready_future<partition_state_reply>(reply);
+      });
+}
+
 } // namespace cluster

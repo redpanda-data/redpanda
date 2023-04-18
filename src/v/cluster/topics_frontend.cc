@@ -21,8 +21,10 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/partition_manager.h"
 #include "cluster/scheduling/constraints.h"
 #include "cluster/scheduling/partition_allocator.h"
+#include "cluster/shard_table.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/errc.h"
@@ -64,6 +66,8 @@ topics_frontend::topics_frontend(
   ss::sharded<cloud_storage::remote>& cloud_storage_api,
   ss::sharded<features::feature_table>& features,
   ss::sharded<cluster::members_table>& members_table,
+  ss::sharded<partition_manager>& pm,
+  ss::sharded<shard_table>& shard_table,
   config::binding<unsigned> hard_max_disk_usage_ratio)
   : _self(self)
   , _stm(s)
@@ -76,6 +80,8 @@ topics_frontend::topics_frontend(
   , _cloud_storage_api(cloud_storage_api)
   , _features(features)
   , _members_table(members_table)
+  , _pm(pm)
+  , _shard_table(shard_table)
   , _hard_max_disk_usage_ratio(hard_max_disk_usage_ratio) {}
 
 static bool
@@ -1389,6 +1395,121 @@ ss::future<std::error_code> topics_frontend::move_partition_replicas(
 
     co_return co_await move_partition_replicas(
       ntp, std::move(assignments.value().front().replicas), tout, term);
+}
+
+ss::future<result<partition_state_reply>>
+topics_frontend::do_get_partition_state(model::node_id node, model::ntp ntp) {
+    if (node == _self) {
+        partition_state_reply reply{};
+        auto shard = _shard_table.local().shard_for(ntp);
+        if (!shard) {
+            reply.error_code = errc::partition_not_exists;
+            return ss::make_ready_future<result<partition_state_reply>>(reply);
+        }
+        return _pm.invoke_on(
+          *shard,
+          [ntp = std::move(ntp),
+           reply = std::move(reply)](partition_manager& pm) mutable {
+              auto partition = pm.get(ntp);
+              if (!partition) {
+                  reply.error_code = errc::partition_not_exists;
+                  return ss::make_ready_future<result<partition_state_reply>>(
+                    reply);
+              }
+              reply.state = ::cluster::get_partition_state(partition);
+              reply.error_code = errc::success;
+              return ss::make_ready_future<result<partition_state_reply>>(
+                reply);
+          });
+    }
+    auto timeout = model::timeout_clock::now() + 5s;
+    return _connections.local().with_node_client<controller_client_protocol>(
+      _self,
+      ss::this_shard_id(),
+      node,
+      timeout,
+      [ntp = std::move(ntp),
+       timeout](controller_client_protocol client) mutable {
+          return client
+            .get_partition_state(
+              partition_state_request{.ntp = ntp}, rpc::client_opts(timeout))
+            .then(&rpc::get_ctx_data<partition_state_reply>);
+      });
+}
+
+ss::future<result<std::vector<partition_state>>>
+topics_frontend::get_partition_state(model::ntp ntp) {
+    const auto& topics = _topics.local();
+    if (!topics.contains(model::topic_namespace_view(ntp))) {
+        co_return errc::partition_not_exists;
+    }
+    std::set<model::node_id> nodes_to_query;
+    const auto& current = topics.get_partition_assignment(ntp);
+    if (current) {
+        const auto& bss = current->replicas;
+        std::for_each(
+          bss.begin(),
+          bss.end(),
+          [&nodes_to_query](const model::broker_shard& bs) {
+              nodes_to_query.insert(bs.node_id);
+          });
+    }
+    const auto& prev = topics.get_previous_replica_set(ntp);
+    if (prev) {
+        std::for_each(
+          prev.value().begin(),
+          prev.value().end(),
+          [&nodes_to_query](const model::broker_shard& bs) {
+              nodes_to_query.insert(bs.node_id);
+          });
+    }
+
+    if (nodes_to_query.empty()) {
+        co_return errc::no_partition_assignments;
+    }
+
+    std::vector<ss::future<result<partition_state_reply>>> futures;
+    futures.reserve(nodes_to_query.size());
+    for (const auto& node : nodes_to_query) {
+        futures.push_back(do_get_partition_state(node, ntp));
+    }
+
+    auto finished_futures = co_await ss::when_all(
+      futures.begin(), futures.end());
+    std::vector<partition_state> results;
+    results.reserve(finished_futures.size());
+    for (auto& fut : finished_futures) {
+        if (fut.failed()) {
+            auto ex = fut.get_exception();
+            vlog(
+              clusterlog.debug,
+              "Failed to get partition state for ntp: {}, failure: {}",
+              ntp,
+              ex);
+            continue;
+        }
+        auto result = fut.get();
+        if (result.has_error()) {
+            vlog(
+              clusterlog.debug,
+              "Failed to get partition state for ntp: {}, result: {}",
+              ntp,
+              result.error());
+            continue;
+        }
+        auto res = std::move(result.value());
+        if (res.error_code != errc::success || !res.state) {
+            vlog(
+              clusterlog.debug,
+              "Error during partition state fetch for ntp: {}, error: "
+              "{}",
+              ntp,
+              res.error_code);
+            continue;
+        }
+        results.push_back(std::move(*res.state));
+    }
+    co_return results;
 }
 
 } // namespace cluster
