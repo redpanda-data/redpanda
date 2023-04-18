@@ -71,9 +71,29 @@ class ControllerState:
         self.features_map = dict(
             (f['name'], f) for f in self.features_response['features'])
         self.config_response = admin.get_cluster_config(node=node)
-        self.topics = set(rpk.list_topics())
         self.users = set(admin.list_users(node=node))
         self.acls = rpk.acl_list().strip().split('\n')
+
+        self.topics = set(rpk.list_topics())
+        self.topic_configs = dict()
+        self.topic_partitions = dict()
+        for t in self.topics:
+            self.topic_configs[t] = rpk.describe_topic_configs(topic=t)
+
+            partition_fields = ['id', 'replicas']
+            partitions = list(
+                dict((k, getattr(part, k)) for k in partition_fields)
+                for part in rpk.describe_topic(topic=t, tolerant=True))
+            self.topic_partitions[t] = partitions
+
+        broker_fields = [
+            'node_id', 'num_cores', 'rack', 'membership_status',
+            'internal_rpc_status', 'internal_rpc_port'
+        ]
+        self.brokers = dict()
+        for broker in admin.get_brokers(node=node):
+            self.brokers[broker['node_id']] = dict(
+                (k, broker.get(k)) for k in broker_fields)
 
     def _check_features(self, other):
         for k, v in self.features_response.items():
@@ -101,6 +121,23 @@ class ControllerState:
         symdiff = self.topics ^ other.topics
         assert len(symdiff) == 0, f"topics differ, symdiff: {symdiff}"
 
+        for t in self.topics:
+            configs = self.topic_configs[t]
+            other_configs = other.topic_configs[t]
+            assert configs == other_configs, \
+                f"topic configs differ for topic {t}: {configs} vs {other_configs}"
+            partitions = self.topic_partitions[t]
+            other_partitions = other.topic_partitions[t]
+            assert partitions == other_partitions, \
+                f"topic partitions differ for topic {t}: {partitions} vs {other_partitions}"
+
+    def _check_brokers(self, other):
+        symdiff = set(self.brokers.keys()) ^ set(other.brokers.keys())
+        assert len(symdiff) == 0, f"brokers differ, symdiff: {symdiff}"
+        for id, broker in self.brokers.items():
+            assert broker == other.brokers[id], \
+                f"brokers differ for node id {id}: {broker} vs {other.brokers[id]}"
+
     def _check_security(self, other):
         assert self.users == other.users
         assert self.acls == other.acls
@@ -109,6 +146,7 @@ class ControllerState:
         self._check_features(other)
         self._check_config(other)
         self._check_topics(other)
+        self._check_brokers(other)
         self._check_security(other)
 
 
@@ -225,6 +263,10 @@ class ControllerSnapshotTest(RedpandaTest):
         # could be any non-default value for any property
         self.redpanda.set_cluster_config(
             {'controller_snapshot_max_age_sec': 10})
+        # turn off partition balancing to minimize the number of internally-generated
+        # controller commands
+        self.redpanda.set_cluster_config(
+            {'partition_autobalancing_mode': 'off'})
 
         rpk.create_topic('test_topic')
 
