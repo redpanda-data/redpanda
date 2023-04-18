@@ -10,6 +10,7 @@
 package cobraext
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -22,6 +23,33 @@ func Walk(c *cobra.Command, f func(*cobra.Command)) {
 	for _, c := range c.Commands() {
 		Walk(c, f)
 	}
+}
+
+// DeprecatedCmd returns a new no-op command with the given name.
+func DeprecatedCmd(name string, args int) *cobra.Command {
+	return &cobra.Command{
+		Use:   name,
+		Short: "This command has been deprecated.",
+		Args:  cobra.ExactArgs(args),
+		Run:   func(cmd *cobra.Command, args []string) {},
+	}
+}
+
+// DeprecateCmd marks a command as deprecated and, when a person uses the
+// command, writes the new command a user should use. If newUse is empty, the
+// output is that this command does nothing and is a no-op.
+func DeprecateCmd(newCmd *cobra.Command, newUse string) *cobra.Command {
+	newCmd.Deprecated = fmt.Sprintf("use %q instead", newUse)
+	if newUse == "" {
+		newCmd.Deprecated = "this command is now a no-op"
+	}
+	newCmd.Hidden = true
+	if children := newCmd.Commands(); len(children) > 0 {
+		for _, child := range children {
+			DeprecateCmd(child, newUse+" "+child.Name())
+		}
+	}
+	return newCmd
 }
 
 // StripFlagset removes all flags and potential values from args that are in

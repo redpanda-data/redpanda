@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	vnet "github.com/redpanda-data/redpanda/src/go/rpk/pkg/net"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
@@ -32,7 +33,7 @@ func NewConfigCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 	cmd.AddCommand(
 		set(fs, p),
 		bootstrap(fs, p),
-		initNode(fs, p),
+		cobraext.DeprecatedCmd("init", 0),
 	)
 	return cmd
 }
@@ -186,23 +187,6 @@ you must use the --self flag to specify which ip redpanda should listen on.
 	c.Flags().StringVar(&self, "self", "", "Optional IP address for redpanda to listen on; if empty, defaults to a private address")
 	c.Flags().IntVar(&id, "id", -1, "This node's ID. If unset, redpanda will assign one automatically")
 	c.Flags().MarkHidden("id")
-	return c
-}
-
-func initNode(fs afero.Fs, p *config.Params) *cobra.Command {
-	c := &cobra.Command{
-		Use:   "init",
-		Short: "Init the node after install, by setting the node's UUID",
-		Args:  cobra.ExactArgs(0),
-		Run: func(cmd *cobra.Command, args []string) {
-			cfg, err := p.Load(fs)
-			out.MaybeDie(err, "unable to load config: %v", err)
-			cfg = cfg.FileOrDefaults() // we modify fields in the raw file without writing env / flag overrides
-
-			err = cfg.Write(fs)
-			out.MaybeDie(err, "error writing config file: %v", err)
-		},
-	}
 	return c
 }
 

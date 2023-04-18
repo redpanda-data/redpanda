@@ -19,7 +19,6 @@ import (
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 func TestBootstrap(t *testing.T) {
@@ -236,22 +235,6 @@ schema_registry: {}
 			}
 		})
 	}
-}
-
-func TestInitNode(t *testing.T) {
-	fs := afero.NewMemMapFs()
-	c := config.DevDefault()
-	bs, err := yaml.Marshal(c)
-	require.NoError(t, err)
-	err = afero.WriteFile(fs, config.DefaultPath, bs, 0o644)
-	require.NoError(t, err)
-
-	cmd := initNode(fs, new(config.Params))
-	err = cmd.Execute()
-	require.NoError(t, err)
-
-	_, err = new(config.Params).Load(fs)
-	require.NoError(t, err)
 }
 
 // This is a top level command test, individual cases for set are

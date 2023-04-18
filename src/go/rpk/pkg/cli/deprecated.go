@@ -10,25 +10,13 @@
 package cli
 
 import (
-	"fmt"
-
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/debug"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cobraext"
 	"github.com/spf13/cobra"
 )
-
-func deprecateCmd(newCmd *cobra.Command, newUse string) *cobra.Command {
-	newCmd.Deprecated = fmt.Sprintf("use %q instead", newUse)
-	newCmd.Hidden = true
-	if children := newCmd.Commands(); len(children) > 0 {
-		for _, child := range children {
-			deprecateCmd(child, newUse+" "+child.Name())
-		}
-	}
-	return newCmd
-}
 
 // All architectures had `rpk status`
 
 func newStatusCommand() *cobra.Command {
-	return deprecateCmd(debug.NewInfoCommand(), "rpk debug info")
+	return cobraext.DeprecateCmd(debug.NewInfoCommand(), "rpk debug info")
 }
