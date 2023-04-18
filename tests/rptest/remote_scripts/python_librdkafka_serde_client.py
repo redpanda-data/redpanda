@@ -13,7 +13,9 @@ import argparse
 import json
 import logging
 from collections import OrderedDict
+from datetime import datetime
 from enum import IntEnum
+from typing import Optional
 from uuid import uuid4
 
 from confluent_kafka import DeserializingConsumer, SerializingProducer
@@ -22,8 +24,7 @@ from confluent_kafka.schema_registry import SchemaRegistryClient
 from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
 from confluent_kafka.schema_registry.protobuf import ProtobufDeserializer, ProtobufSerializer
 
-from google.protobuf.descriptor_pb2 import FieldDescriptorProto
-from google.protobuf import proto_builder
+from payload_pb2 import Payload as ProtobufPayloadClass
 
 
 class SchemaType(IntEnum):
@@ -50,14 +51,11 @@ AVRO_SCHEMA = '''{
 }
 '''
 
-ProtobufPayloadClass = proto_builder.MakeSimpleProtoClass(
-    OrderedDict([('val', FieldDescriptorProto.TYPE_INT64)]),
-    full_name="example.Payload")
-
 
 def make_protobuf_payload(val: int):
     p = ProtobufPayloadClass()
     p.val = val
+    p.timestamp.FromDatetime(datetime.now())
     return p
 
 
@@ -75,7 +73,8 @@ class SerdeClient:
                  topic=str(uuid4()),
                  group=str(uuid4()),
                  logger=logging.getLogger("SerdeClient"),
-                 security_config: dict = None):
+                 security_config: dict = None,
+                 skip_known_types: Optional[bool] = None):
         self.logger = logger
         self.brokers = brokers
         self.sr_client = SchemaRegistryClient({'url': schema_registry_url})
@@ -87,6 +86,10 @@ class SerdeClient:
         self.acked = 0
         self.consumed = 0
 
+        self.serde_config = {'use.deprecated.format': False}
+        if skip_known_types is not None:
+            self.serde_config.update({'skip.known.types': skip_known_types})
+
         self.security_config = security_config
 
     def _make_serializer(self):
@@ -95,7 +98,7 @@ class SerdeClient:
             AvroSerializer(self.sr_client, AVRO_SCHEMA),
             SchemaType.PROTOBUF:
             ProtobufSerializer(ProtobufPayloadClass, self.sr_client,
-                               {'use.deprecated.format': False})
+                               self.serde_config)
         }[self.schema_type]
 
     def _make_deserializer(self):
@@ -254,5 +257,10 @@ if __name__ == '__main__':
     parser.add_argument('--security',
                         dest="security",
                         help="JSON formatted security string")
+
+    parser.add_argument('--skip-known-types',
+                        dest="skip_known_types",
+                        action='store_true',
+                        help="Optional bool")
 
     main(parser.parse_args())

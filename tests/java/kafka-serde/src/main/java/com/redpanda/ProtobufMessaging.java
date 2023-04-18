@@ -11,13 +11,14 @@
 
 package com.redpanda;
 
-import com.google.protobuf.Descriptors;
+import static com.google.protobuf.util.Timestamps.fromMillis;
+import static java.lang.System.currentTimeMillis;
+
 import com.google.protobuf.DynamicMessage;
-import io.confluent.kafka.schemaregistry.protobuf.dynamic.DynamicSchema;
-import io.confluent.kafka.schemaregistry.protobuf.dynamic.MessageDefinition;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufDeserializer;
 import io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializer;
+import io.confluent.kafka.serializers.protobuf.KafkaProtobufSerializerConfig;
 import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
@@ -47,7 +48,7 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
   @Override
   public Properties getProducerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
-      boolean autoRegisterSchema) {
+      boolean autoRegisterSchema, boolean skipKnownTypes) {
     Properties prop = new Properties();
 
     prop.put("bootstrap.servers", brokers);
@@ -56,6 +57,8 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
     prop.put(
         AbstractKafkaSchemaSerDeConfig.AUTO_REGISTER_SCHEMAS,
         autoRegisterSchema);
+    prop.put(
+        KafkaProtobufSerializerConfig.SKIP_KNOWN_TYPES_CONFIG, skipKnownTypes);
     prop.put(AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG, srAddr);
     if (securitySettings != null) {
       prop.putAll(securitySettings.toProperties());
@@ -95,26 +98,6 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
    */
   @Override
   public void produce(Logger log, Properties props, String topic, int count) {
-    DynamicSchema.Builder builder
-        = DynamicSchema.newBuilder().setSyntax("proto3").setPackage(
-            "com.redpanda");
-
-    MessageDefinition md
-        = MessageDefinition.newBuilder("payload")
-              .addField("", "int32", "val", 1, null, null, null)
-              .build();
-
-    builder.addMessageDefinition(md);
-
-    DynamicSchema mySchema = null;
-
-    try {
-      mySchema = builder.build();
-    } catch (Descriptors.DescriptorValidationException e) {
-      throw new RuntimeException(e);
-    }
-
-    log.debug("Protobuf schema: " + mySchema);
 
     log.debug("Setting up producer properties: " + props);
 
@@ -124,14 +107,15 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
     AtomicInteger produced = new AtomicInteger();
     AtomicInteger acked = new AtomicInteger();
     try (
-        final Producer<String, DynamicMessage> producer
-        = new KafkaProducer<>(props)) {
-      DynamicSchema finalMySchema = mySchema;
+        final Producer<String, Payload> producer = new KafkaProducer<>(props)) {
       IntStream.range(0, count).forEachOrdered(i -> {
         producer.send(
             new ProducerRecord<>(
                 topic, UUID.randomUUID().toString(),
-                generateDynamicMessage(finalMySchema, "payload", "val", i)),
+                Payload.newBuilder()
+                    .setVal(i)
+                    .setTimestamp(fromMillis(currentTimeMillis()))
+                    .build()),
             (event, ex) -> {
               if (ex != null) {
                 try {
@@ -197,24 +181,5 @@ public class ProtobufMessaging implements KafkaMessagingInterface {
         }
       }
     }
-  }
-
-  /**
-   * Generates a serialized Protobuf message
-   *
-   * @param schema The schema to use
-   * @param msgTypeName The name of the message type to create
-   * @param field The name of the field to modify
-   * @param val The value to set
-   * @return The dynamic message
-   *
-   * @see io.confluent.kafka.schemaregistry.protobuf.dynamic.DynamicSchema
-   * @see com.google.protobuf.DynamicMessage
-   */
-  private static DynamicMessage generateDynamicMessage(
-      DynamicSchema schema, String msgTypeName, String field, int val) {
-    DynamicMessage.Builder builder = schema.newMessageBuilder(msgTypeName);
-    Descriptors.Descriptor desc = builder.getDescriptorForType();
-    return builder.setField(desc.findFieldByName(field), val).build();
   }
 }

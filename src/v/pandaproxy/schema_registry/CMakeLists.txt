@@ -28,6 +28,7 @@ v_cc_library(
     v::kafka
     v::ssx
     v::utils
+    v::pandaproxy_schema_registry_protobuf
     avrocpp_s
     Boost::iostreams
     protobuf::libprotobuf
@@ -38,3 +39,4 @@ add_dependencies(v_pandaproxy_schema_registry schema_registry_swagger)
 
 add_subdirectory(test)
 add_subdirectory(requests)
+add_subdirectory(protobuf)

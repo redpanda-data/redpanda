@@ -46,7 +46,7 @@ public class AvroMessaging implements KafkaMessagingInterface {
   @Override
   public Properties getProducerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
-      boolean autoRegisterSchema) {
+      boolean autoRegisterSchema, boolean skipKnownTypes) {
     Properties prop = new Properties();
     prop.put("bootstrap.servers", brokers);
     prop.put("key.serializer", StringSerializer.class);
