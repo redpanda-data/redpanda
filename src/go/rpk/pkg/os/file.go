@@ -32,6 +32,12 @@ func ReplaceFile(fs afero.Fs, filename string, contents []byte, newPerms os.File
 	bFilename := fmt.Sprintf("redpanda-%v", r.Int())
 	temp := filepath.Join(filepath.Dir(filename), bFilename)
 
+	// If the directory does not exist, create it. We do not preserve perms
+	// if not-exist because there are no perms to preserve.
+	if err := fs.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
+		return err
+	}
+
 	err = afero.WriteFile(fs, temp, contents, newPerms)
 	if err != nil {
 		return fmt.Errorf("error writing to temporary file: %v", err)

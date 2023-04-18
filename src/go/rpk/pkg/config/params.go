@@ -322,18 +322,6 @@ func (p *Params) backcompatFlagsToOverrides() {
 //   - Processes env and flag overrides.
 //   - Sets unset default values.
 func (p *Params) Load(fs afero.Fs) (*Config, error) {
-	p.backcompatFlagsToOverrides()
-
-	// If we have a config path loaded (through --config flag) the user
-	// expect to load or create the file from this directory.
-	if p.ConfigPath != "" {
-		if exist, _ := afero.Exists(fs, p.ConfigPath); !exist {
-			err := fs.MkdirAll(filepath.Dir(p.ConfigPath), 0o755)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
 	c := DevDefault()
 
 	if err := p.readConfig(fs, c); err != nil {
@@ -351,6 +339,7 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		}
 	}
 	c.backcompat()
+	p.backcompatFlagsToOverrides()
 	if err := p.processOverrides(c); err != nil {
 		return nil, err
 	}
