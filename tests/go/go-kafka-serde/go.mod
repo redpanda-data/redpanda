@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/redpanda-data/kgo-verifier v0.0.0-20230314144634-a2b6c6ddb0aa
 	github.com/sirupsen/logrus v1.9.0
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	google.golang.org/protobuf v1.30.0
 )
 
