@@ -66,6 +66,8 @@ public:
     struct abort_index {
         model::offset first;
         model::offset last;
+
+        bool operator==(const abort_index&) const = default;
     };
 
     struct prepare_marker {
@@ -75,11 +77,15 @@ public:
         // tx_seq identifies a transaction within a session
         model::tx_seq tx_seq;
         model::producer_identity pid;
+
+        bool operator==(const prepare_marker&) const = default;
     };
 
     struct seq_cache_entry {
         int32_t seq{-1};
         kafka::offset offset;
+
+        bool operator==(const seq_cache_entry&) const = default;
     };
 
     struct seq_entry {
@@ -125,6 +131,20 @@ public:
             seq = new_seq;
             last_offset = new_offset;
         }
+
+        bool operator==(const seq_entry& other) const {
+            if (this == &other) {
+                return true;
+            }
+            return pid == other.pid && seq == other.seq
+                   && last_offset == other.last_offset
+                   && last_write_timestamp == other.last_write_timestamp
+                   && std::equal(
+                     seq_cache.begin(),
+                     seq_cache.end(),
+                     other.seq_cache.begin(),
+                     other.seq_cache.end());
+        }
     };
 
     struct tx_snapshot {
@@ -141,15 +161,21 @@ public:
         struct tx_seqs_snapshot {
             model::producer_identity pid;
             model::tx_seq tx_seq;
+
+            bool operator==(const tx_seqs_snapshot&) const = default;
         };
 
         struct expiration_snapshot {
             model::producer_identity pid;
             duration_type timeout;
+
+            bool operator==(const expiration_snapshot&) const = default;
         };
 
         fragmented_vector<tx_seqs_snapshot> tx_seqs;
         fragmented_vector<expiration_snapshot> expiration;
+
+        bool operator==(const tx_snapshot&) const = default;
     };
 
     struct abort_snapshot {
@@ -161,6 +187,8 @@ public:
             return idx.first == first && idx.last == last;
         }
         friend std::ostream& operator<<(std::ostream&, const abort_snapshot&);
+
+        bool operator==(const abort_snapshot&) const = default;
     };
 
     static constexpr int8_t prepare_control_record_version{0};
@@ -286,6 +314,8 @@ public:
         model::producer_identity pid;
         int32_t seq;
         model::timestamp::type last_write_timestamp;
+
+        bool operator==(const seq_entry_v0&) const = default;
     };
 
     struct tx_snapshot_v0 {
@@ -298,11 +328,15 @@ public:
         fragmented_vector<rm_stm::abort_index> abort_indexes;
         model::offset offset;
         fragmented_vector<seq_entry_v0> seqs;
+
+        bool operator==(const tx_snapshot_v0&) const = default;
     };
 
     struct seq_cache_entry_v1 {
         int32_t seq{-1};
         model::offset offset;
+
+        bool operator==(const seq_cache_entry_v1&) const = default;
     };
 
     struct seq_entry_v1 {
@@ -311,6 +345,21 @@ public:
         model::offset last_offset{-1};
         ss::circular_buffer<seq_cache_entry_v1> seq_cache;
         model::timestamp::type last_write_timestamp;
+
+        bool operator==(const seq_entry_v1& other) const {
+            if (this == &other) {
+                return true;
+            }
+
+            return pid == other.pid && seq == other.seq
+                   && last_offset == other.last_offset
+                   && last_write_timestamp == other.last_write_timestamp
+                   && std::equal(
+                     seq_cache.begin(),
+                     seq_cache.end(),
+                     other.seq_cache.begin(),
+                     other.seq_cache.end());
+        };
     };
 
     struct tx_snapshot_v1 {
@@ -323,6 +372,8 @@ public:
         fragmented_vector<rm_stm::abort_index> abort_indexes;
         model::offset offset;
         fragmented_vector<seq_entry_v1> seqs;
+
+        bool operator==(const tx_snapshot_v1&) const = default;
     };
 
     struct tx_snapshot_v2 {
@@ -335,6 +386,8 @@ public:
         fragmented_vector<rm_stm::abort_index> abort_indexes;
         model::offset offset;
         fragmented_vector<rm_stm::seq_entry> seqs;
+
+        bool operator==(const tx_snapshot_v2&) const = default;
     };
 
     using transaction_set
