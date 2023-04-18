@@ -138,4 +138,6 @@ std::optional<handler> handler_for_key(kafka::api_key key) noexcept {
     return std::nullopt;
 }
 
+const api_key max_handler_api_key = api_key{max_api_key(request_types{})};
+
 } // namespace kafka

@@ -16,8 +16,10 @@
 #include "coproc/fwd.h"
 #include "features/feature_table.h"
 #include "kafka/latency_probe.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fwd.h"
+#include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "net/server.h"
 #include "security/fwd.h"
@@ -146,6 +148,10 @@ public:
 
     ssx::thread_worker& thread_worker() { return _thread_worker; }
 
+    handler_probe& handler_probe(api_key key) {
+        return _handler_probes.get_probe(key);
+    }
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -173,6 +179,8 @@ private:
     security::tls::principal_mapper _mtls_principal_mapper;
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;
+
+    handler_probe_manager _handler_probes;
 
     class latency_probe _probe;
     ssx::thread_worker& _thread_worker;

@@ -256,7 +256,8 @@ ss::future<session_resources> connection_context::throttle_request(
     request_data r_data = request_data{
       .request_key = hdr.key,
       .client_id = ss::sstring{hdr.client_id.value_or("")}};
-    auto tracker = std::make_unique<request_tracker>(_server.probe());
+    auto& h_probe = _server.handler_probe(r_data.request_key);
+    auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
     auto fut = ss::now();
     if (delay.enforce > delay_t::clock::duration::zero()) {
         fut = ss::sleep_abortable(delay.enforce, _server.abort_source());
@@ -339,6 +340,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     // _server._cntrl etc might not be alive
                     return ss::now();
                 }
+                auto& h_probe = this->server().handler_probe(hdr.key);
                 auto self = shared_from_this();
                 auto rctx = request_context(
                   self,
@@ -368,6 +370,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                 const auto correlation = rctx.header().correlation;
                 const sequence_id seq = _seq_idx;
                 _seq_idx = _seq_idx + sequence_id(1);
+
                 auto res = kafka::process_request(
                   std::move(rctx), _server.smp_group(), *sres);
                 /**
@@ -379,6 +382,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                  seq,
                                  correlation,
                                  self,
+                                 &h_probe,
                                  sres = std::move(sres)](
                                   ss::future<> d) mutable {
                       /*
@@ -391,11 +395,12 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                        */
                       if (d.failed()) {
                           return f.discard_result()
-                            .handle_exception([](std::exception_ptr e) {
+                            .handle_exception([&h_probe](std::exception_ptr e) {
                                 vlog(
                                   klog.info,
                                   "Discarding second stage failure {}",
                                   e);
+                                h_probe.request_errored();
                             })
                             .finally([self, d = std::move(d)]() mutable {
                                 self->_server.probe().service_error();
@@ -426,40 +431,43 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                     return maybe_process_responses();
                                 });
                             })
-                            .handle_exception([self](std::exception_ptr e) {
-                                // ssx::spawn_with_gate already caught
-                                // shutdown-like exceptions, so we should only
-                                // be taking this path for real errors.  That
-                                // also means that on shutdown we don't bother
-                                // to call shutdown_input on the connection, so
-                                // rely on any future reader to check the abort
-                                // source before considering reading the
-                                // connection.
+                            .handle_exception(
+                              [self, &h_probe](std::exception_ptr e) {
+                                  // ssx::spawn_with_gate already caught
+                                  // shutdown-like exceptions, so we should only
+                                  // be taking this path for real errors.  That
+                                  // also means that on shutdown we don't bother
+                                  // to call shutdown_input on the connection,
+                                  // so rely on any future reader to check the
+                                  // abort source before considering reading the
+                                  // connection.
 
-                                auto disconnected
-                                  = net::is_disconnect_exception(e);
-                                if (disconnected) {
-                                    vlog(
-                                      klog.info,
-                                      "Disconnected {} ({})",
-                                      self->conn->addr,
-                                      disconnected.value());
-                                } else {
-                                    vlog(
-                                      klog.warn,
-                                      "Error processing request: {}",
-                                      e);
-                                }
+                                  auto disconnected
+                                    = net::is_disconnect_exception(e);
+                                  if (disconnected) {
+                                      vlog(
+                                        klog.info,
+                                        "Disconnected {} ({})",
+                                        self->conn->addr,
+                                        disconnected.value());
+                                  } else {
+                                      vlog(
+                                        klog.warn,
+                                        "Error processing request: {}",
+                                        e);
+                                  }
 
-                                self->_server.probe().service_error();
-                                self->conn->shutdown_input();
-                            });
+                                  h_probe.request_errored();
+                                  self->_server.probe().service_error();
+                                  self->conn->shutdown_input();
+                              });
                       return d;
                   })
-                  .handle_exception([self](std::exception_ptr e) {
+                  .handle_exception([self, &h_probe](std::exception_ptr e) {
                       vlog(
                         klog.info, "Detected error dispatching request: {}", e);
                       self->conn->shutdown_input();
+                      h_probe.request_errored();
                   });
             });
       })
@@ -501,6 +509,8 @@ ss::future<> connection_context::maybe_process_responses() {
               ss::stop_iteration::no);
         }
 
+        auto& h_probe = server().handler_probe(
+          resp_and_res.resources->request_data.request_key);
         auto msg = response_as_scattered(std::move(resp_and_res.response));
         if (
           resp_and_res.resources->request_data.request_key == fetch_api::key) {
@@ -525,6 +535,7 @@ ss::future<> connection_context::maybe_process_responses() {
               // connection.
               .finally([resources = std::move(resp_and_res.resources)] {});
         } catch (...) {
+            h_probe.request_errored();
             vlog(
               klog.debug,
               "Failed to process request: {}",

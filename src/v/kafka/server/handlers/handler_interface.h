@@ -107,5 +107,6 @@ using handler = const handler_interface*;
  * @return std::optional<handler> the handler, if any
  */
 std::optional<handler> handler_for_key(api_key key) noexcept;
+extern const api_key max_handler_api_key;
 
 } // namespace kafka
