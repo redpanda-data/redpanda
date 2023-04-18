@@ -38,10 +38,4 @@ status:
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - type: pod
-    selector: app.kubernetes.io/name=redpanda
-    tail: -1
-  - type: command
-    command: kubectl get clusters -o jsonpath={@} -n $NAMESPACE
-  - type: command
-    command: kubectl get pods -o jsonpath={@} -n $NAMESPACE
+  - command: ../../../hack/get-redpanda-info.sh
