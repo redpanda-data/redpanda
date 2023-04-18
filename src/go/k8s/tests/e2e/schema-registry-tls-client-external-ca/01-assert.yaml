@@ -1,0 +1,77 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: schema-registry-client-external-ca-mtls
+status:
+  readyReplicas: 1
+  replicas: 1
+  upgrading: false
+  restarting: false
+  conditions:
+  - type: ClusterConfigured
+    status: "True"
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: schema-registry-client-external-ca-mtls-schema-registry-trusted-client-ca
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: schema-registry-client-external-ca-mtls-schema-registry-selfsigned-issuer
+status:
+  conditions:
+    - reason: IsReady
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: schema-registry-client-external-ca-mtls-schema-registry-root-issuer
+status:
+  conditions:
+    - reason: KeyPairVerified
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  #name: schema-registry-client-external-ca-mtls-schema-registry-root-certificate
+  name: schema-registry-client-external-schema-registry-root-certificate
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: schema-registry-client-external-ca-mtls-schema-registry-node
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1

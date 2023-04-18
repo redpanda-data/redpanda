@@ -732,7 +732,9 @@ type AdminAPITLS struct {
 // truststore when communicating with Redpanda.
 //
 // If RequireClientAuth is set to true, two-way TLS verification is enabled.
-// In that case, a client certificate is generated, which can be retrieved from
+// If ClientCACertRef is provided, the operator will configure the Pandaproxy to
+// use the CA cert it contains.
+// Otherwise, a client certificate is generated, which can be retrieved from
 // the Secret named '<redpanda-cluster-name>-proxy-api-client'.
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
@@ -755,6 +757,11 @@ type PandaproxyAPITLS struct {
 	// duplicate the secret to the same namespace as redpanda CRD to be able to
 	// mount it to the nodes
 	NodeSecretRef *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
+	// If ClientCACertRef points to a secret containing the trusted CA certificates.
+	// If provided and RequireClientAuth is true, the operator uses the certificate
+	// in this secret instead of issuing client certificates. The secret is expected to provide
+	// the following keys: 'ca.crt'.
+	ClientCACertRef *corev1.TypedLocalObjectReference `json:"clientCACertRef,omitempty"`
 	// Enables two-way verification on the server side. If enabled, all
 	// Pandaproxy API clients are required to have a valid client certificate.
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
@@ -769,7 +776,9 @@ type PandaproxyAPITLS struct {
 // truststore when communicating with Schema registry.
 //
 // If RequireClientAuth is set to true, two-way TLS verification is enabled.
-// In that case, a client certificate is generated, which can be retrieved from
+// If ClientCACertRef is provided, the operator will configure the Schema Registry to
+// use the CA cert it contains.
+// Otherwise a client certificate is generated, which can be retrieved from
 // the Secret named '<redpanda-cluster-name>-schema-registry-client'.
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
@@ -792,6 +801,11 @@ type SchemaRegistryAPITLS struct {
 	// duplicate the secret to the same namespace as redpanda CRD to be able to
 	// mount it to the nodes
 	NodeSecretRef *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
+	// If ClientCACertRef points to a secret containing the trusted CA certificates.
+	// If provided and RequireClientAuth is true, the operator uses the certificate
+	// in this secret instead of issuing client certificates. The secret is expected to provide
+	// the following keys: 'ca.crt'.
+	ClientCACertRef *corev1.TypedLocalObjectReference `json:"clientCACertRef,omitempty"`
 	// Enables two-way verification on the server side. If enabled, all SchemaRegistry
 	// clients are required to have a valid client certificate.
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
@@ -1088,6 +1102,8 @@ type TLSConfig struct {
 	RequireClientAuth bool                    `json:"requireClientAuth,omitempty"`
 	IssuerRef         *cmmeta.ObjectReference `json:"issuerRef,omitempty"`
 	NodeSecretRef     *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
+
+	ClientCACertRef *corev1.TypedLocalObjectReference `json:"clientCACertRef,omitempty"`
 }
 
 // Kafka API
@@ -1187,6 +1203,7 @@ func (s SchemaRegistryAPI) GetTLS() *TLSConfig {
 		RequireClientAuth: s.TLS.RequireClientAuth,
 		IssuerRef:         s.TLS.IssuerRef,
 		NodeSecretRef:     s.TLS.NodeSecretRef,
+		ClientCACertRef:   s.TLS.ClientCACertRef,
 	}
 }
 
@@ -1216,6 +1233,7 @@ func (p PandaproxyAPI) GetTLS() *TLSConfig {
 		RequireClientAuth: p.TLS.RequireClientAuth,
 		IssuerRef:         p.TLS.IssuerRef,
 		NodeSecretRef:     p.TLS.NodeSecretRef,
+		ClientCACertRef:   p.TLS.ClientCACertRef,
 	}
 }
 
@@ -1232,6 +1250,7 @@ func defaultTLSConfig() *TLSConfig {
 		RequireClientAuth: false,
 		IssuerRef:         nil,
 		NodeSecretRef:     nil,
+		ClientCACertRef:   nil,
 	}
 }
 

@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-schema-update-img-external-client-ca
+spec:
+  template:
+    spec:
+      volumes:
+      - name: tlscertkey
+        secret:
+          defaultMode: 420
+          secretName: update-img-external-client-ca-schema-registry-client
+      containers:
+      - name: rpk
+        image: localhost/redpanda:dev
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        command:
+        - /bin/bash
+        - -c
+        args:
+        - >
+          curl -vv -k
+          --cert /etc/tls/certs/schema-registry/tls.crt
+          --key /etc/tls/certs/schema-registry/tls.key
+          -X POST -H "Content-Type: application/vnd.schemaregistry.v1+json"
+          --data '{"schema": "{\"type\": \"string\"}" }'
+          https://update-img-external-client-ca-cluster.$POD_NAMESPACE.svc.cluster.local.:8081/subjects/Kafka-value/versions
+        volumeMounts:
+        - mountPath: /etc/tls/certs/schema-registry
+          name: tlscertkey
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

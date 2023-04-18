@@ -14,4 +14,6 @@ const (
 	pandaproxyAPI           = "proxy"
 	pandaproxyAPIClientCert = "proxy-api-client"
 	pandaproxyAPINodeCert   = "proxy-api-node"
+
+	pandaproxyAPITrustedClientCAs = "proxy-api-trusted-client-ca"
 )

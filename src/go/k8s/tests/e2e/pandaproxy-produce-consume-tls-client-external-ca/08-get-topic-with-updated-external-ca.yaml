@@ -1,0 +1,34 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: get-topic-test-updated-ca
+spec:
+  template:
+    spec:
+      volumes:
+      - name: client-cert1
+        secret:
+          # The new self signed cert uses the same CA at Step 07.
+          secretName: client-cert1
+      containers:
+      - name: rpk
+        image: localhost/redpanda:dev
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - mountPath: "/tmp/client"
+          name: client-cert1
+          readOnly: true
+        command:
+        - /bin/bash
+        - -c
+        - -ex
+        args:
+        - 'curl -vvv -k --cert /tmp/client/client.crt --key /tmp/client/client.key --sslv2 --http2 -H "Content-Type: application/vnd.kafka.v2+json" https://cluster-proxy-0.cluster-proxy.$POD_NAMESPACE.svc.cluster.local:8082/topics'
+      restartPolicy: Never
+  backoffLimit: 8
+  parallelism: 1
+  completions: 1
