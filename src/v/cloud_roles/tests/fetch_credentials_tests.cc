@@ -232,6 +232,9 @@ FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
     setenv("AWS_ROLE_ARN", cloud_role_tests::aws_role, 1);
     setenv("AWS_WEB_IDENTITY_TOKEN_FILE", "test_sts_creds_f", 1);
 
+    config::shard_local_cfg().cloud_storage_credentials_host.set_value(
+      std::optional<ss::sstring>{"localhost"});
+
     when()
       .request("/")
       .with_method(ss::httpd::POST)
