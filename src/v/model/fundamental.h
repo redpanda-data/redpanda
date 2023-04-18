@@ -415,6 +415,10 @@ static_assert(
 
 std::ostream& operator<<(std::ostream&, const shadow_indexing_mode&);
 
+/// Expresses throughput in bytes/s. Used as the undelying type for
+/// thoughput quotas, can also be used wherever throughput value is applicable.
+using thoughput_bps = named_type<int64_t, struct thoughput_bps_tag>;
+
 } // namespace model
 
 namespace kafka {
