@@ -258,6 +258,7 @@ class BaseCase:
                 conf[cname] = val
         conf['redpanda.remote.recovery'] = 'true'
         conf['redpanda.remote.write'] = 'true'
+        conf['redpanda.remote.read'] = 'false'
         conf.update(overrides)
         self.logger.info(f"Confg: {conf}")
         self._rpk.create_topic(topic, npart, nrepl, conf)
@@ -340,17 +341,6 @@ class EmptySegmentsCase(BaseCase):
         for node in self._redpanda.nodes:
             self._redpanda.start_node(node)
         time.sleep(1)
-
-    def validate_node(self, host, baseline, restored):
-        """Validate restored node data using two sets of checksums.
-        The checksums are sampled from data directory before and after recovery."""
-        self.logger.info(f"Node: {baseline} checksums: {restored}")
-        # get rid of ntp part of the path
-        self.logger.info(
-            f"validate node host: {host}, baseline: {baseline}, restored: {restored}"
-        )
-        it = [os.path.basename(key) for key, _ in restored.items()]
-        assert len(it) == 1
 
     def validate_cluster(self, baseline, restored):
         """This method is invoked after the recovery and partition validation are
@@ -588,7 +578,6 @@ class MissingSegment(BaseCase):
             f"MissingSegment.validate_cluster - baseline - {baseline}")
         self.logger.info(
             f"MissingSegment.validate_cluster - restored - {restored}")
-        self._validate_partition_last_offset()
         expected_topics = [
             topic.name for topic in self.expected_recovered_topics
         ]
@@ -987,6 +976,14 @@ class AdminApiBasedRestore(FastCheck):
             'accepted'], f'request status code: {response.status_code}'
         self._assert_duplicate_request_is_rejected()
         self._assert_status()
+
+    def validate_cluster(self, baseline, restored):
+        """Check that the topic is writeable"""
+        self.logger.info(
+            f"AdminApiBasedRestore.validate_cluster - baseline - {baseline}")
+        self.logger.info(
+            f"AdminApiBasedRestore.validate_cluster - restored - {restored}")
+        self._validate_partition_last_offset()
 
     def after_restart_validation(self):
         super().after_restart_validation()

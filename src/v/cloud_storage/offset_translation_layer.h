@@ -12,10 +12,13 @@
 
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/types.h"
+#include "model/record_batch_types.h"
+#include "storage/offset_translator_state.h"
 #include "storage/types.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/iostream.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <absl/container/btree_map.h>
 
@@ -35,8 +38,10 @@ class offset_translator final {
 public:
     offset_translator(
       model::offset_delta initial_delta,
+      ss::lw_shared_ptr<storage::offset_translator_state> ot_state,
       storage::opt_abort_source_t as = std::nullopt)
       : _initial_delta(initial_delta)
+      , _ot_state(ot_state)
       , _as(as) {}
 
     /// Copy source stream into the destination stream
@@ -50,12 +55,9 @@ public:
       ss::output_stream<char> dst,
       retry_chain_node& fib) const;
 
-    /// Get segment name adjusted for all removed offsets
-    segment_name get_adjusted_segment_name(
-      const segment_meta& s, retry_chain_node& fib) const;
-
 private:
     model::offset_delta _initial_delta;
+    ss::lw_shared_ptr<storage::offset_translator_state> _ot_state;
     storage::opt_abort_source_t _as;
 };
 

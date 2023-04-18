@@ -475,6 +475,11 @@ uint64_t partition_manifest::cloud_log_size() const {
     return _cloud_log_size_bytes;
 }
 
+void partition_manifest::disable_permanently() {
+    _last_offset = model::offset::max();
+    _last_uploaded_compacted_offset = model::offset::max();
+}
+
 void partition_manifest::subtract_from_cloud_log_size(size_t to_subtract) {
     if (to_subtract > _cloud_log_size_bytes) {
         vlog(

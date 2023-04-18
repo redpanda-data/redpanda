@@ -211,8 +211,10 @@ def verify_file_layout(baseline_per_host,
             orig_ntp_size -= size_overrides[ntp]
         assert ntp in restored_ntps, f"NTP {ntp} is missing in the restored data"
         rest_ntp_size = restored_ntps[ntp]
-        assert rest_ntp_size <= orig_ntp_size, \
-            f"NTP {ntp} the restored partition is larger {rest_ntp_size} than the original one {orig_ntp_size}."
+        fraction = float(max(rest_ntp_size, orig_ntp_size)) / float(
+            min(rest_ntp_size, orig_ntp_size))
+        assert fraction < 1.1, \
+            f"NTP {ntp} the size of the restored partition is too different {rest_ntp_size} compared to the original one {orig_ntp_size}."
 
         delta = orig_ntp_size - rest_ntp_size
         assert delta <= BLOCK_SIZE, \

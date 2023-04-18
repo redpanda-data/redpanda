@@ -331,6 +331,10 @@ public:
 
     ss::shared_ptr<util::mem_tracker> mem_tracker() { return _mem_tracker; }
 
+    /// Transition manifest into such state which makes any uploads or reuploads
+    /// impossible.
+    void disable_permanently();
+
 private:
     void subtract_from_cloud_log_size(size_t to_subtract);
 

@@ -22,6 +22,7 @@
 #include "utils/mutex.h"
 #include "utils/prefix_logger.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/util/log.hh>
 
 #include <functional>
@@ -129,6 +130,22 @@ public:
       const storage::ntp_config& ntp_cfg,
       const cloud_storage::partition_manifest& m,
       model::offset insync_offset);
+
+    static ss::circular_buffer<model::record_batch>
+    serialize_manifest_as_batches(
+      model::offset base_offset, const cloud_storage::partition_manifest& m);
+
+    /// Create log segment with manifest data on disk
+    ///
+    /// \param ntp_cfg is an ntp config of the partition
+    /// \param base_offset is a base offset of the new segment
+    /// \param term is a term of the new segment
+    /// \param manifest is a manifest which is used as a source
+    static ss::future<> create_log_segment_with_config_batches(
+      const storage::ntp_config& ntp_cfg,
+      model::offset base_offset,
+      model::term_id term,
+      const cloud_storage::partition_manifest& manifest);
 
     using persisted_stm::sync;
 

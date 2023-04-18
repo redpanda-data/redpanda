@@ -9,10 +9,12 @@
 
 #include "cluster/archival_metadata_stm.h"
 
+#include "bytes/iostream.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cluster/errc.h"
+#include "cluster/logger.h"
 #include "cluster/persisted_stm.h"
 #include "config/configuration.h"
 #include "features/feature_table.h"
@@ -27,12 +29,14 @@
 #include "serde/serde.h"
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
+#include "storage/segment_appender_utils.h"
 #include "utils/fragmented_vector.h"
 #include "utils/named_type.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/util/defer.hh>
 
 #include <algorithm>
 
@@ -243,6 +247,79 @@ archival_metadata_stm::replaced_segments_from_manifest(
     return segments;
 }
 
+ss::circular_buffer<model::record_batch>
+archival_metadata_stm::serialize_manifest_as_batches(
+  model::offset base_offset, const cloud_storage::partition_manifest& m) {
+    static constexpr int records_per_batch
+      = 100; // this will give us around 10K per batch
+    std::optional<storage::record_batch_builder> bb;
+    bb.emplace(model::record_batch_type::archival_metadata, base_offset);
+    ss::circular_buffer<model::record_batch> result;
+    int batch_size = 0;
+    for (auto kv : m) {
+        auto meta = kv.second;
+        iobuf key_buf = serde::to_iobuf(add_segment_cmd::key);
+        if (meta.ntp_revision == model::initial_revision_id{}) {
+            meta.ntp_revision = m.get_revision_id();
+        }
+        auto record_val = add_segment_cmd::value{segment_from_meta(meta)};
+        iobuf val_buf = serde::to_iobuf(std::move(record_val));
+        bb->add_raw_kv(std::move(key_buf), std::move(val_buf));
+        if (++batch_size >= records_per_batch) {
+            result.push_back(std::move(bb.value()).build());
+            base_offset = base_offset + model::offset(batch_size);
+            bb.emplace(
+              model::record_batch_type::archival_metadata, base_offset);
+            batch_size = 0;
+        }
+    }
+    if (!bb->empty()) {
+        result.push_back(std::move(bb.value()).build());
+    }
+    return result;
+}
+
+ss::future<> archival_metadata_stm::create_log_segment_with_config_batches(
+  const storage::ntp_config& ntp_cfg,
+  model::offset base_offset,
+  model::term_id term,
+  const cloud_storage::partition_manifest& manifest) {
+    auto path = storage::segment_full_path(
+      ntp_cfg, base_offset, term, storage::record_version_type::v1);
+
+    auto archival_batches
+      = cluster::archival_metadata_stm::serialize_manifest_as_batches(
+        base_offset, manifest);
+    try {
+        auto parent
+          = std::filesystem::path(path.string()).parent_path().native();
+        vlog(
+          clusterlog.debug,
+          "Creating the segment file with the path {}",
+          path.string());
+        auto handle = co_await ss::open_file_dma(
+          path.string(), ss::open_flags::rw | ss::open_flags::create);
+        auto h = ss::defer(
+          [handle]() mutable { ssx::background = handle.close(); });
+        auto stream = co_await ss::make_file_output_stream(handle);
+        for (auto& b : archival_batches) {
+            b.header().header_crc = model::internal_header_only_crc(b.header());
+            vlog(clusterlog.debug, "Writing archival batch {}", b.header());
+            auto buffer = std::make_unique<iobuf>(
+              storage::disk_header_to_iobuf(b.header()));
+            buffer->append(std::move(b).release_data());
+            auto batch_stream = make_iobuf_input_stream(std::move(*buffer));
+            co_await ss::copy(batch_stream, stream);
+        }
+        co_await stream.flush();
+    } catch (...) {
+        vlog(
+          clusterlog.error,
+          "Failed to create a log segment, {}",
+          std::current_exception());
+        throw;
+    }
+}
 /**
  * Create a snapshot based off some clean state we obtained out of band, for
  * example during topic recovery.
