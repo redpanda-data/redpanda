@@ -111,7 +111,11 @@ struct archival_metadata_stm::truncate_archive_init_cmd {
 struct archival_metadata_stm::truncate_archive_commit_cmd {
     static constexpr cmd_key key{6};
 
-    using value = start_offset;
+    struct value
+      : serde::envelope<value, serde::version<0>, serde::compat_version<0>> {
+        model::offset start_offset;
+        uint64_t bytes_removed;
+    };
 };
 
 struct archival_metadata_stm::update_start_kafka_offset_cmd {
@@ -157,6 +161,8 @@ struct archival_metadata_stm::snapshot
     // First offset of the 'archive'. Segments below 'archive_start_offset' are
     // collectible by the archive housekeeping.
     model::offset archive_clean_offset;
+    // Size of the archive section of the partition
+    uint64_t archive_size_bytes;
     // Start kafka offset override (set to min() by default and to some value
     // when DeleteRecords was used to override)
     kafka::offset start_kafka_offset;
@@ -269,12 +275,12 @@ command_batch_builder& command_batch_builder::truncate_archive_init(
     return *this;
 }
 
-command_batch_builder&
-command_batch_builder::cleanup_archive(model::offset start_rp_offset) {
+command_batch_builder& command_batch_builder::cleanup_archive(
+  model::offset start_rp_offset, uint64_t bytes_removed) {
     iobuf key_buf = serde::to_iobuf(
       archival_metadata_stm::truncate_archive_commit_cmd::key);
     auto record_val = archival_metadata_stm::truncate_archive_commit_cmd::value{
-      .start_offset = start_rp_offset};
+      .start_offset = start_rp_offset, .bytes_removed = bytes_removed};
     iobuf val_buf = serde::to_iobuf(record_val);
     _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
     return *this;
@@ -434,7 +440,9 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .archive_start_offset = m.get_archive_start_offset(),
       .archive_start_offset_delta = m.get_archive_start_offset_delta(),
       .archive_clean_offset = m.get_archive_clean_offset(),
-      .start_kafka_offset = m.get_start_kafka_offset_override()});
+      .archive_size_bytes = m.archive_size_bytes(),
+      .start_kafka_offset = m.get_start_kafka_offset_override(),
+    });
 
     auto snapshot = stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
@@ -511,13 +519,14 @@ ss::future<std::error_code> archival_metadata_stm::truncate_archive_init(
 
 ss::future<std::error_code> archival_metadata_stm::cleanup_archive(
   model::offset start_rp_offset,
+  uint64_t removed_size_bytes,
   ss::lowres_clock::time_point deadline,
   ss::abort_source& as) {
     if (start_rp_offset < get_archive_clean_offset()) {
         co_return errc::success;
     }
     auto builder = batch_start(deadline, as);
-    builder.cleanup_archive(start_rp_offset);
+    builder.cleanup_archive(start_rp_offset, removed_size_bytes);
     co_return co_await builder.replicate();
 }
 
@@ -702,11 +711,11 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
               serde::from_iobuf<truncate_archive_init_cmd::value>(
                 r.release_value()));
             break;
-        case truncate_archive_commit_cmd::key:
-            apply_truncate_archive_commit(
-              serde::from_iobuf<truncate_archive_commit_cmd::value>(
-                r.release_value()));
-            break;
+        case truncate_archive_commit_cmd::key: {
+            auto cmd = serde::from_iobuf<truncate_archive_commit_cmd::value>(
+              r.release_value());
+            apply_truncate_archive_commit(cmd.start_offset, cmd.bytes_removed);
+        } break;
         case update_start_kafka_offset_cmd::key:
             apply_update_start_kafka_offset(
               serde::from_iobuf<update_start_kafka_offset_cmd::value>(
@@ -821,7 +830,8 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       snap.start_kafka_offset,
       snap.archive_start_offset,
       snap.archive_start_offset_delta,
-      snap.archive_clean_offset);
+      snap.archive_clean_offset,
+      snap.archive_size_bytes);
 
     vlog(
       _logger.info,
@@ -1025,13 +1035,13 @@ void archival_metadata_stm::apply_truncate_archive_init(
 }
 
 void archival_metadata_stm::apply_truncate_archive_commit(
-  const start_offset& so) {
+  model::offset co, uint64_t bytes_removed) {
     vlog(
       _logger.debug,
       "Updating archive clean offset, current value {}, update {}",
       get_archive_clean_offset(),
-      so.start_offset);
-    _manifest->set_archive_clean_offset(so.start_offset);
+      co);
+    _manifest->set_archive_clean_offset(co, bytes_removed);
 }
 
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>

@@ -69,7 +69,8 @@ public:
     command_batch_builder& truncate_archive_init(
       model::offset start_rp_offset, model::offset_delta delta);
     /// Add truncate-archive-commit command to the batch
-    command_batch_builder& cleanup_archive(model::offset start_rp_offset);
+    command_batch_builder&
+    cleanup_archive(model::offset start_rp_offset, uint64_t removed_size_bytes);
     /// Replicate the configuration batch
     ss::future<std::error_code> replicate();
 
@@ -148,6 +149,7 @@ public:
     /// Propagates archive_clean_offset forward
     ss::future<std::error_code> cleanup_archive(
       model::offset start_rp_offset,
+      uint64_t removed_size_bytes,
       ss::lowres_clock::time_point deadline,
       ss::abort_source&);
 
@@ -265,7 +267,8 @@ private:
     void apply_mark_clean(model::offset);
     void apply_update_start_offset(const start_offset& so);
     void apply_truncate_archive_init(const start_offset_with_delta& so);
-    void apply_truncate_archive_commit(const start_offset& so);
+    void
+    apply_truncate_archive_commit(model::offset co, uint64_t bytes_removed);
     void apply_update_start_kafka_offset(kafka::offset so);
     void apply_reset_metadata();
 

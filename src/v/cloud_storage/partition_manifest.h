@@ -148,7 +148,8 @@ public:
       kafka::offset start_kafka_offset,
       model::offset archive_start_offset,
       model::offset_delta archive_start_offset_delta,
-      model::offset archive_clean_offset)
+      model::offset archive_clean_offset,
+      uint64_t archive_size_bytes)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -160,7 +161,8 @@ public:
       , _archive_start_offset(archive_start_offset)
       , _archive_start_offset_delta(archive_start_offset_delta)
       , _archive_clean_offset(archive_clean_offset)
-      , _start_kafka_offset(start_kafka_offset) {
+      , _start_kafka_offset(start_kafka_offset)
+      , _archive_size_bytes(archive_size_bytes) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -268,6 +270,12 @@ public:
     // the current _start_offset).
     uint64_t cloud_log_size() const;
 
+    /// Returns cached size of the archive in bytes.
+    ///
+    /// The segments which contributed to this value are not stored in the
+    /// manifest.
+    uint64_t archive_size_bytes() const;
+
     /// Check if the manifest contains particular segment
     bool contains(const key& key) const;
     bool contains(const segment_name& name) const;
@@ -279,6 +287,8 @@ public:
     /// \brief Truncate the manifest (remove entries from the manifest)
     ///
     /// \note version with parameter advances start offset before truncating
+    /// The method is used by spillover mechanism to remove segments from
+    /// the manifest. Because of that it updates archive_start_offset.
     /// \param starting_rp_offset is a new starting offset of the manifest
     /// \return manifest that contains only removed segments
     partition_manifest truncate(model::offset starting_rp_offset);
@@ -383,9 +393,23 @@ public:
     model::offset_delta get_archive_start_offset_delta() const;
     kafka::offset get_archive_start_kafka_offset() const;
     model::offset get_archive_clean_offset() const;
+
+    /// Advance archive_start_offset
+    ///
+    /// \param start_rp_offset is a new start offset in the archive
+    /// \param start_delta number of configuration batches prior to
+    ///                    start_rp_offset
     void set_archive_start_offset(
       model::offset start_rp_offset, model::offset_delta start_delta);
-    void set_archive_clean_offset(model::offset start_rp_offset);
+
+    /// Advance start_archive_clean_offset and adjuct the
+    /// archive_size_bytes accordingly
+    ///
+    /// \param start_rp_offset is a new clean offset in the archive
+    /// \param size_bytes number of bytes removed from the archive
+    void set_archive_clean_offset(
+      model::offset start_rp_offset, uint64_t size_bytes);
+
     kafka::offset get_start_kafka_offset_override() const;
 
     auto serde_fields() {
@@ -497,6 +521,8 @@ private:
     model::offset _archive_clean_offset;
     // Start kafka offset set by the DeleteRecords request
     kafka::offset _start_kafka_offset;
+    // Total size of the archive (excluding this manifest)
+    uint64_t _archive_size_bytes{0};
 };
 
 } // namespace cloud_storage

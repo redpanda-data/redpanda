@@ -508,7 +508,11 @@ uint64_t partition_manifest::compute_cloud_log_size() const {
 }
 
 uint64_t partition_manifest::cloud_log_size() const {
-    return _cloud_log_size_bytes;
+    return _cloud_log_size_bytes + _archive_size_bytes;
+}
+
+uint64_t partition_manifest::archive_size_bytes() const {
+    return _archive_size_bytes;
 }
 
 void partition_manifest::disable_permanently() {
@@ -578,23 +582,44 @@ void partition_manifest::set_archive_start_offset(
           start_rp_offset,
           _archive_start_offset);
     }
+    vlog(
+      cst_log.info,
+      "{} archive start offset moved to {} archive start delta set to {}",
+      _ntp,
+      _archive_start_offset,
+      _archive_start_offset_delta);
 }
 
 void partition_manifest::set_archive_clean_offset(
-  model::offset start_rp_offset) {
+  model::offset start_rp_offset, uint64_t size_bytes) {
     if (_archive_start_offset < start_rp_offset) {
         vlog(
           cst_log.error,
           "{} Requested to advance archive_clean_offset to {} which is greater "
           "than the current archive_start_offset {}. The offset won't be "
-          "changed.",
+          "changed. Archive size won't be changed by {} bytes.",
           _ntp,
           start_rp_offset,
-          _archive_start_offset);
+          _archive_start_offset,
+          size_bytes);
         return;
     }
     if (_archive_clean_offset < start_rp_offset) {
         _archive_clean_offset = start_rp_offset;
+        if (_archive_size_bytes >= size_bytes) {
+            _archive_size_bytes -= size_bytes;
+        } else {
+            vlog(
+              cst_log.error,
+              "{} archive clean offset moved to {} but the archive size can't "
+              "be updated because current size {} is smaller than the update "
+              "{}. This needs to be reported and investigated.",
+              _ntp,
+              _archive_clean_offset,
+              _archive_size_bytes,
+              size_bytes);
+            _archive_size_bytes = 0;
+        }
     } else {
         vlog(
           cst_log.warn,
@@ -605,6 +630,12 @@ void partition_manifest::set_archive_clean_offset(
           start_rp_offset,
           _archive_clean_offset);
     }
+    vlog(
+      cst_log.info,
+      "{} archive clean offset moved to {} archive size set to {}",
+      _ntp,
+      _archive_clean_offset,
+      _archive_size_bytes);
 }
 
 bool partition_manifest::advance_start_kafka_offset(
@@ -844,6 +875,10 @@ partition_manifest partition_manifest::truncate() {
         _start_offset = model::offset{};
         // NOTE: _last_offset should not be reset
     }
+    // Update size of the archived part of the log.
+    // It doesn't include segments which are remaining in the
+    // manifest.
+    _archive_size_bytes += removed.cloud_log_size();
     return removed;
 }
 
@@ -1074,6 +1109,8 @@ struct partition_manifest_handler
                 _archive_clean_offset = model::offset(u);
             } else if (_manifest_key == "start_kafka_offset") {
                 _start_kafka_offset = kafka::offset(u);
+            } else if (_manifest_key == "archive_size_bytes") {
+                _archive_size_bytes = u;
             } else {
                 return false;
             }
@@ -1304,6 +1341,7 @@ struct partition_manifest_handler
     std::optional<model::offset_delta> _archive_start_offset_delta;
     std::optional<model::offset> _archive_clean_offset;
     std::optional<kafka::offset> _start_kafka_offset;
+    std::optional<size_t> _archive_size_bytes;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -1618,10 +1656,13 @@ void partition_manifest::serialize_begin(
         w.Key("archive_clean_offset");
         w.Int64(_archive_clean_offset());
     }
-
     if (_start_kafka_offset != kafka::offset{}) {
         w.Key("start_kafka_offset");
         w.Int64(_start_kafka_offset());
+    }
+    if (_archive_size_bytes != 0) {
+        w.Key("archive_size_bytes");
+        w.Int64(static_cast<int64_t>(_archive_size_bytes));
     }
     cursor->prologue_done = true;
 }
