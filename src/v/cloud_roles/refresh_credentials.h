@@ -10,10 +10,11 @@
 
 #pragma once
 
+#include "cloud_roles/logger.h"
 #include "cloud_roles/probe.h"
 #include "cloud_roles/signature.h"
+#include "config/configuration.h"
 #include "model/metadata.h"
-#include "seastarx.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/util/noncopyable_function.hh>
@@ -181,6 +182,17 @@ refresh_credentials make_refresh_credentials(
   std::optional<net::unresolved_address> endpoint = std::nullopt,
   retry_params retry_params = default_retry_params) {
     auto host = endpoint ? endpoint->host() : CredentialsProvider::default_host;
+    if (auto cfg_host
+        = config::shard_local_cfg().cloud_storage_credentials_host();
+        cfg_host.has_value()) {
+        vlog(
+          clrl_log.info,
+          "overriding default cloud roles credentials host {} with {} set "
+          "in configuration.",
+          host,
+          cfg_host.value());
+        host = cfg_host.value();
+    }
     auto port = endpoint ? endpoint->port() : CredentialsProvider::default_port;
     auto impl = std::make_unique<CredentialsProvider>(
       host.data(), port, region, as, retry_params);
