@@ -26,6 +26,7 @@
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
 #include "seastarx.h"
+#include "storage/parser_utils.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -121,20 +122,26 @@ public:
                 auto rjs = rjson_serialize_impl<model::record>(
                   _fmt, tpv, adapter.batch->base_offset());
 
-                adapter.batch->for_each_record(
-                  [&rjs, &w](model::record record) {
-                      auto offset = record.offset_delta() + rjs.base_offset()();
-                      if (!rjs(w, std::move(record))) {
-                          throw serialize_error(
-                            make_error_code(error_code::unable_to_serialize),
-                            fmt::format(
-                              "Unable to serialize record at offset {} in "
-                              "topic:partition {}:{}",
-                              offset,
-                              rjs.tpv().topic(),
-                              rjs.tpv().partition()));
-                      }
-                  });
+                auto batch = std::move(*adapter.batch);
+
+                if (batch.compressed()) {
+                    batch = storage::internal::maybe_decompress_batch_sync(
+                      batch);
+                }
+
+                batch.for_each_record([&rjs, &w](model::record record) {
+                    auto offset = record.offset_delta() + rjs.base_offset()();
+                    if (!rjs(w, std::move(record))) {
+                        throw serialize_error(
+                          make_error_code(error_code::unable_to_serialize),
+                          fmt::format(
+                            "Unable to serialize record at offset {} in "
+                            "topic:partition {}:{}",
+                            offset,
+                            rjs.tpv().topic(),
+                            rjs.tpv().partition()));
+                    }
+                });
             }
         }
         w.EndArray();
