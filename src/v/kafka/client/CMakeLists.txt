@@ -15,8 +15,10 @@ v_cc_library(
     topic_cache.cc
     sasl_client.cc
   DEPS
-    v::kafka
+    v::kafka_protocol
     v::ssx
+    v::storage # batch builder
+    v::cluster # log cert reload helper
   )
 
 add_subdirectory(test)
