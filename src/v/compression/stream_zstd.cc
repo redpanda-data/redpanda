@@ -91,21 +91,62 @@ iobuf stream_zstd::do_compress(const iobuf& x) {
     ZSTD_CCtx* ctx = compressor().get();
     // NOTE: always enable content size. **decompression** depends on this
     throw_if_error(ZSTD_CCtx_setPledgedSrcSize(ctx, x.size_bytes()));
-    // zstd requires linearized memory
-    ss::temporary_buffer<char> obuf(ZSTD_compressBound(x.size_bytes()));
+
+    const size_t max_chunk_size = details::io_allocation_size::max_chunk_size;
+    auto output_chunk_size = std::min(
+      max_chunk_size, ZSTD_compressBound(x.size_bytes()));
+    ss::temporary_buffer<char> obuf(output_chunk_size);
     ZSTD_outBuffer out = {
       .dst = obuf.get_write(), .size = obuf.size(), .pos = 0};
 
-    for (auto& frag : x) {
-        ZSTD_inBuffer in = {.src = frag.get(), .size = frag.size(), .pos = 0};
-        auto mode = ZSTD_e_flush;
-        throw_if_error(ZSTD_compressStream2(ctx, &out, &in, mode));
-    }
-    // Must happen outside of loop to encode empty-buffer sizes
-    ZSTD_endStream(ctx, &out);
+    auto frag = x.begin();
+    size_t in_pos = 0;
+    size_t r = 0;
+
     iobuf ret;
-    obuf.trim(out.pos);
-    ret.append(std::move(obuf));
+
+    while (frag != x.end() || r > 0) {
+        if (in_pos == frag->size()) {
+            frag++;
+            in_pos = 0;
+            if (frag == x.end()) {
+                break;
+            }
+        }
+
+        if (out.pos == out.size) {
+            ret.append(std::move(obuf));
+            obuf = ss::temporary_buffer<char>(output_chunk_size);
+            out = {.dst = obuf.get_write(), .size = obuf.size(), .pos = 0};
+        }
+
+        ZSTD_inBuffer in;
+        if (frag != x.end()) {
+            in = {.src = frag->get(), .size = frag->size(), .pos = in_pos};
+        } else {
+            in = {.src = nullptr, .size = 0, .pos = 0};
+        }
+        auto mode = ZSTD_e_flush;
+        r = ZSTD_compressStream2(ctx, &out, &in, mode);
+        throw_if_error(r);
+        in_pos = in.pos;
+    }
+
+    // Must happen outside of loop to encode empty-buffer sizes
+    do {
+        if (out.pos == out.size) {
+            ret.append(std::move(obuf));
+            obuf = ss::temporary_buffer<char>(output_chunk_size);
+            out = {.dst = obuf.get_write(), .size = obuf.size(), .pos = 0};
+        }
+        r = ZSTD_endStream(ctx, &out);
+        throw_if_error(r);
+    } while (r > 0);
+
+    if (out.pos) {
+        obuf.trim(out.pos);
+        ret.append(std::move(obuf));
+    }
     return ret;
 }
 
