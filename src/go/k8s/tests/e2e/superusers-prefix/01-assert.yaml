@@ -32,9 +32,7 @@ data:
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - type: pod
-    selector: app.kubernetes.io/name=redpanda
-    tail: -1
+  - command: ../../../hack/get-redpanda-info.sh superusers-prefix
   - type: command
     command: kubectl get secret -n superusers-prefix -o jsonpath='{.data.username}' cluster-schema-registry-sasl
   - type: command
