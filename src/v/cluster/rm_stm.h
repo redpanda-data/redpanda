@@ -282,6 +282,61 @@ public:
         }
     };
 
+    struct seq_entry_v0 {
+        model::producer_identity pid;
+        int32_t seq;
+        model::timestamp::type last_write_timestamp;
+    };
+
+    struct tx_snapshot_v0 {
+        static constexpr uint8_t version = 0;
+
+        fragmented_vector<model::producer_identity> fenced;
+        fragmented_vector<rm_stm::tx_range> ongoing;
+        fragmented_vector<rm_stm::prepare_marker> prepared;
+        fragmented_vector<rm_stm::tx_range> aborted;
+        fragmented_vector<rm_stm::abort_index> abort_indexes;
+        model::offset offset;
+        fragmented_vector<seq_entry_v0> seqs;
+    };
+
+    struct seq_cache_entry_v1 {
+        int32_t seq{-1};
+        model::offset offset;
+    };
+
+    struct seq_entry_v1 {
+        model::producer_identity pid;
+        int32_t seq{-1};
+        model::offset last_offset{-1};
+        ss::circular_buffer<seq_cache_entry_v1> seq_cache;
+        model::timestamp::type last_write_timestamp;
+    };
+
+    struct tx_snapshot_v1 {
+        static constexpr uint8_t version = 1;
+
+        fragmented_vector<model::producer_identity> fenced;
+        fragmented_vector<rm_stm::tx_range> ongoing;
+        fragmented_vector<rm_stm::prepare_marker> prepared;
+        fragmented_vector<rm_stm::tx_range> aborted;
+        fragmented_vector<rm_stm::abort_index> abort_indexes;
+        model::offset offset;
+        fragmented_vector<seq_entry_v1> seqs;
+    };
+
+    struct tx_snapshot_v2 {
+        static constexpr uint8_t version = 2;
+
+        fragmented_vector<model::producer_identity> fenced;
+        fragmented_vector<rm_stm::tx_range> ongoing;
+        fragmented_vector<rm_stm::prepare_marker> prepared;
+        fragmented_vector<rm_stm::tx_range> aborted;
+        fragmented_vector<rm_stm::abort_index> abort_indexes;
+        model::offset offset;
+        fragmented_vector<rm_stm::seq_entry> seqs;
+    };
+
     using transaction_set
       = absl::btree_map<model::producer_identity, rm_stm::transaction_info>;
     ss::future<result<transaction_set>> get_transactions();
