@@ -4,7 +4,9 @@ metadata:
   name: cluster
   namespace: superusers-prefix
 status:
-  replicas: 2
+  readyReplicas: 1
+  replicas: 1
+  upgrading: false
   restarting: false
   conditions:
     - type: ClusterConfigured

@@ -6,7 +6,7 @@ metadata:
 spec:
   image: "localhost/redpanda"
   version: "dev"
-  replicas: 2
+  replicas: 1
   resources:
     requests:
       cpu: 100m
@@ -27,6 +27,3 @@ spec:
     pandaproxyApi:
      - port: 8082
     developerMode: true
-  additionalConfiguration:
-    redpanda.append_chunk_size: "40960"
-    redpanda.segment_appender_flush_timeout_ms: "1003"
