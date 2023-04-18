@@ -15,10 +15,12 @@
 #include "config/configuration.h"
 #include "features/feature_table.h"
 #include "kafka/latency_probe.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/fetch_metadata_cache.hh"
 #include "kafka/server/fetch_session_cache.h"
 #include "kafka/server/fwd.h"
 #include "kafka/server/handlers/fetch/replica_selector.h"
+#include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "net/server.h"
 #include "security/fwd.h"
@@ -169,6 +171,10 @@ public:
         return *_replica_selector;
     }
 
+    handler_probe& handler_probe(api_key key) {
+        return _handler_probes.get_probe(key);
+    }
+
 private:
     ss::smp_service_group _smp_group;
     ss::scheduling_group _fetch_scheduling_group;
@@ -197,6 +203,9 @@ private:
     security::tls::principal_mapper _mtls_principal_mapper;
     security::gssapi_principal_mapper _gssapi_principal_mapper;
     security::krb5::configurator _krb_configurator;
+
+    handler_probe_manager _handler_probes;
+
     class latency_probe _probe;
     ssx::thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
