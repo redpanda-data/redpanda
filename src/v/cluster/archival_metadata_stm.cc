@@ -144,9 +144,15 @@ struct archival_metadata_stm::snapshot
     state_dirty dirty{state_dirty::clean};
     /// First accessible offset of the 'archve' (default if there is no archive)
     model::offset archive_start_offset;
+    /// Delta value of the first accessible offset in the archive. We need this
+    /// value to be able to provide correct start kafka offset.
+    model::offset_delta archive_start_offset_delta;
     // First offset of the 'archive'. Segments below 'archive_start_offset' are
     // collectible by the archive housekeeping.
     model::offset archive_clean_offset;
+    // Start kafka offset override (set to min() by default and to some value
+    // when DeleteRecords was used to override)
+    kafka::offset start_kafka_offset;
 };
 
 inline archival_metadata_stm::segment
@@ -415,7 +421,9 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .last_uploaded_compacted_offset = m.get_last_uploaded_compacted_offset(),
       .dirty = state_dirty::clean,
       .archive_start_offset = m.get_archive_start_offset(),
-      .archive_clean_offset = m.get_archive_clean_offset()});
+      .archive_start_offset_delta = m.get_archive_start_offset_delta(),
+      .archive_clean_offset = m.get_archive_clean_offset(),
+      .start_kafka_offset = m.get_start_kafka_offset_override()});
 
     auto snapshot = stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
@@ -800,7 +808,11 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       snap.last_uploaded_compacted_offset,
       header.offset,
       snap.segments,
-      snap.replaced);
+      snap.replaced,
+      snap.start_kafka_offset,
+      snap.archive_start_offset,
+      snap.archive_start_offset_delta,
+      snap.archive_clean_offset);
 
     vlog(
       _logger.info,
@@ -831,7 +843,11 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       .last_offset = _manifest->get_last_offset(),
       .last_uploaded_compacted_offset
       = _manifest->get_last_uploaded_compacted_offset(),
-      .dirty = get_dirty()});
+      .dirty = get_dirty(),
+      .archive_start_offset = _manifest->get_archive_start_offset(),
+      .archive_start_offset_delta = _manifest->get_archive_start_offset_delta(),
+      .archive_clean_offset = _manifest->get_archive_clean_offset(),
+      .start_kafka_offset = _manifest->get_start_kafka_offset_override()});
 
     vlog(
       _logger.debug,

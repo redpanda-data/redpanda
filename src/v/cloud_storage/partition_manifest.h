@@ -139,7 +139,11 @@ public:
       model::offset lco,
       model::offset insync,
       const fragmented_vector<segment_t>& segments,
-      const fragmented_vector<segment_t>& replaced)
+      const fragmented_vector<segment_t>& replaced,
+      kafka::offset start_kafka_offset,
+      model::offset archive_start_offset,
+      model::offset_delta archive_start_offset_delta,
+      model::offset archive_clean_offset)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -148,7 +152,11 @@ public:
       , _last_offset(lo)
       , _start_offset(so)
       , _last_uploaded_compacted_offset(lco)
-      , _insync_offset(insync) {
+      , _insync_offset(insync)
+      , _archive_start_offset(archive_start_offset)
+      , _archive_start_offset_delta(archive_start_offset_delta)
+      , _archive_clean_offset(archive_clean_offset)
+      , _start_kafka_offset(start_kafka_offset) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -350,11 +358,13 @@ public:
     void disable_permanently();
 
     model::offset get_archive_start_offset() const;
+    model::offset_delta get_archive_start_offset_delta() const;
     kafka::offset get_archive_start_kafka_offset() const;
     model::offset get_archive_clean_offset() const;
     void set_archive_start_offset(
       model::offset start_rp_offset, model::offset_delta start_delta);
     void set_archive_clean_offset(model::offset start_rp_offset);
+    kafka::offset get_start_kafka_offset_override() const;
 
 private:
     void subtract_from_cloud_log_size(size_t to_subtract);

@@ -304,6 +304,10 @@ std::optional<model::offset> partition_manifest::get_start_offset() const {
     return _start_offset;
 }
 
+kafka::offset partition_manifest::get_start_kafka_offset_override() const {
+    return _start_kafka_offset;
+}
+
 std::optional<kafka::offset>
 partition_manifest::get_start_kafka_offset() const {
     if (_start_kafka_offset != kafka::offset{}) {
@@ -513,6 +517,10 @@ void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
 model::offset partition_manifest::get_archive_start_offset() const {
     return _archive_start_offset;
+}
+
+model::offset_delta partition_manifest::get_archive_start_offset_delta() const {
+    return _archive_start_offset_delta;
 }
 
 kafka::offset partition_manifest::get_archive_start_kafka_offset() const {
