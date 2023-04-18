@@ -15,10 +15,4 @@ status:
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-  - type: pod
-    selector: app.kubernetes.io/name=redpanda
-    tail: -1
-  - type: command
-    command: kubectl get clusters -o jsonpath={@} -n console-kafka-mtls
-  - type: command
-    command: kubectl get pods -o jsonpath={@} -n console-kafka-mtls
+  - command: ../../../hack/get-redpanda-info.sh console-kafka-mtls
