@@ -12,8 +12,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/confluentinc/confluent-kafka-go/v2/schemaregistry"
@@ -23,6 +25,7 @@ import (
 
 	"github.com/redpanda-data/kgo-verifier/pkg/util"
 	"golang.org/x/exp/maps"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -34,6 +37,7 @@ var (
 	protocol       = flag.String("protocol", "AVRO", "Protocol to use.  Must be AVRO or PROTOBUF")
 	count          = flag.Int("count", 1, "Number of messages to produce and consume")
 	security       = flag.String("security", "", "Security settings")
+	timeout        = flag.Int("timeout", 30, "Timeout (in seconds) to wait for messages")
 
 	protocolMap = map[string]Protocol{
 		"AVRO":     AVRO,
@@ -52,6 +56,7 @@ type TestClient struct {
 	producer   *kafka.Producer
 	consumer   *kafka.Consumer
 	count      int
+	timeout    time.Duration
 	topic      string
 }
 
@@ -87,6 +92,7 @@ func main() {
 	log.Debugf("Protocol: %v", *protocol)
 	log.Debugf("Count: %v", *count)
 	log.Debugf("Security Settings: %v", securitySettings)
+	log.Debugf("Timeout: %v", *timeout)
 
 	prot, ok := ParseProtocol(*protocol)
 
@@ -94,7 +100,7 @@ func main() {
 		util.Die("Failed to parse protocol %v", *protocol)
 	}
 
-	tc, err := CreateTestClient(brokers, topic, sr_addr, consumer_group, prot, *count, securitySettings)
+	tc, err := CreateTestClient(brokers, topic, sr_addr, consumer_group, prot, *count, time.Duration(*timeout)*time.Second, securitySettings)
 
 	util.Chk(err, "Failed to create test client: %v", err)
 
@@ -113,6 +119,7 @@ func CreateTestClient(brokers *string,
 	consumerGroup *string,
 	protocol Protocol,
 	count int,
+	timeout time.Duration,
 	securitySettings *SecuritySettings,
 ) (tc *TestClient, err error) {
 
@@ -158,6 +165,7 @@ func CreateTestClient(brokers *string,
 	tc.producer = p
 	tc.consumer = c
 	tc.count = count
+	tc.timeout = timeout
 	tc.topic = *topic
 
 	switch protocol {
@@ -193,61 +201,39 @@ func ParseProtocol(s string) (c Protocol, ok bool) {
 
 func (tc *TestClient) RunTest() error {
 
-	numDelivered := 0
+	err := tc.produceMessages()
 
-	go func() {
-		for e := range tc.producer.Events() {
-			switch ev := e.(type) {
-			case *kafka.Message:
-				m := ev
+	log.Debug("Produce done")
 
-				if m.TopicPartition.Error != nil {
-					log.Errorf("Failed to produce to topic %v: %v", tc.topic, m.TopicPartition.Error)
-				} else {
-					numDelivered++
-				}
-			case kafka.Error:
-				log.Errorf("Failed to produce to topic %v: %v", tc.topic, ev)
-			default:
-				log.Debugf("Ignoring event %v", ev)
-			}
-
-		}
-	}()
-
-	for i := 0; i < tc.count; i++ {
-		payload_value, err := tc.serializer.CreateSerializedData(i, &tc.topic)
-		if err != nil {
-			return err
-		}
-		log.Debugf("payload: %v", payload_value)
-		err = tc.producer.Produce(&kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &tc.topic, Partition: kafka.PartitionAny},
-			Value:          payload_value,
-		}, nil)
-
-		if err != nil {
-			return err
-		}
+	if err != nil {
+		return err
 	}
 
-	for tc.producer.Flush(10000) > 0 {
-		log.Debug("Flushing producer")
+	err = tc.consumeMessages()
+
+	log.Debug("Consumption done")
+
+	if err != nil {
+		return err
 	}
 
-	if numDelivered != tc.count {
-		util.Die("Did not deliver enough messages: %v != %v", numDelivered, tc.count)
-	}
+	return nil
+}
 
+func (tc *TestClient) consumeMessages() error {
 	numConsumed := 0
 
+	log.Debugf("Subscribing to topic %v", tc.topic)
 	err := tc.consumer.Subscribe(tc.topic, nil)
 
 	if err != nil {
 		return err
 	}
 
-	for numConsumed < tc.count {
+	end := time.Now().Add(tc.timeout)
+
+	log.Debugf("Starting consumption of %v messages", tc.count)
+	for numConsumed < tc.count && time.Now().Before(end) {
 		ev := tc.consumer.Poll(100)
 
 		if ev == nil {
@@ -267,11 +253,109 @@ func (tc *TestClient) RunTest() error {
 			}
 
 			numConsumed++
-		case kafka.Error:
-			util.Die("Failure during consumption: %v", e)
+		case *kafka.Error:
+			return e
 		default:
 			log.Debugf("Ignoring unknown message: %v", e)
 		}
+	}
+
+	log.Debugf("Consumed %v messages", numConsumed)
+
+	if numConsumed != tc.count {
+		util.Die("Did not consume expected number of messages: %v != %v", numConsumed, tc.count)
+	}
+
+	return nil
+}
+
+func (tc *TestClient) produceMessages() error {
+	numDelivered := 0
+
+	// Create a cancellable context that will monitor for producer events and track
+	// the number of ack'ed produced messages.  Create a second context that will start
+	// after all the messages are sent that will time out after a certain period of time
+	// or will be cancelled once all produced messages are ack'ed.
+
+	produceCheckContext, cancelProduceCheck := context.WithCancel(context.Background())
+	produceCheckGroup, produceCheckContext := errgroup.WithContext(produceCheckContext)
+	timeoutContext, timeoutCancel := context.WithCancel(produceCheckContext)
+
+	monitorProduceFn := func(ctx context.Context) func() error {
+		return func() error {
+			defer timeoutCancel()
+			for {
+				select {
+				case <-ctx.Done():
+					log.Debugf("Monitor Produce received done signal: %v", ctx.Err())
+					return nil
+				case e := <-tc.producer.Events():
+					switch ev := e.(type) {
+					case *kafka.Message:
+						m := ev
+
+						if m.TopicPartition.Error != nil {
+							log.Errorf("Failed to produce to topic %v: %v", tc.topic, m.TopicPartition.Error)
+						} else {
+							numDelivered++
+
+							if numDelivered == tc.count {
+								log.Infof("Produced expected number of messages")
+								return nil
+							}
+						}
+					case kafka.Error:
+						log.Errorf("Failed to produce to topic %v: %v", tc.topic, ev)
+						return ev
+					default:
+						log.Debugf("Ignoring event %v", ev)
+					}
+				}
+			}
+		}
+	}
+
+	produceCheckGroup.Go(monitorProduceFn(produceCheckContext))
+
+	defer cancelProduceCheck()
+
+	for i := 0; i < tc.count; i++ {
+		payload_value, err := tc.serializer.CreateSerializedData(i, &tc.topic)
+		if err != nil {
+			return err
+		}
+		log.Debugf("payload: %v", payload_value)
+		err = tc.producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &tc.topic, Partition: kafka.PartitionAny},
+			Value:          payload_value,
+		}, nil)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	produceCheckGroup.Go(func() error {
+		select {
+		case <-timeoutContext.Done():
+			log.Debugf("Timeout context finished")
+		case <-time.After(tc.timeout):
+			log.Infof("Timeout expired!")
+			cancelProduceCheck()
+
+		}
+		return nil
+	})
+
+	log.Debug("Waiting on producer check")
+	err := produceCheckGroup.Wait()
+
+	if err != nil {
+		util.Die("Error during message production tracking: %v", err)
+	}
+
+	if numDelivered != tc.count {
+		util.Die("Did not deliver enough messages: %v != %v", numDelivered, tc.count)
 	}
 
 	return nil
