@@ -69,7 +69,7 @@ allocation_constraints partition_allocator::default_constraints(
         req.add(least_allocated_in_domain(domain));
     }
     if (_enable_rack_awareness()) {
-        req.add(distinct_rack_preferred(*_state));
+        req.add(distinct_rack_preferred(_members.local()));
     }
     return req;
 }

@@ -398,7 +398,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
     absl::flat_hash_set<model::rack_id> available_racks;
     for (auto node_id : rrs.all_nodes) {
         if (!rrs.timed_out_unavailable_nodes.contains(node_id)) {
-            auto rack = _partition_allocator.state().get_rack_id(node_id);
+            auto rack = _state.members().get_node_rack_id(node_id);
             if (rack) {
                 available_racks.insert(*rack);
             }
@@ -425,7 +425,7 @@ void partition_balancer_planner::get_rack_constraint_repair_reassignments(
         std::vector<model::broker_shard> stable_replicas;
         absl::flat_hash_set<model::rack_id> cur_racks;
         for (const auto& bs : orig_replicas) {
-            auto rack = _partition_allocator.state().get_rack_id(bs.node_id);
+            auto rack = _state.members().get_node_rack_id(bs.node_id);
             if (rack) {
                 auto [it, inserted] = cur_racks.insert(*rack);
                 if (inserted) {

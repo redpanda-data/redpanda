@@ -39,6 +39,8 @@ public:
 
     std::optional<node_metadata> get_node_metadata(model::node_id) const;
 
+    std::optional<model::rack_id> get_node_rack_id(model::node_id) const;
+
     /// Returns reference to removed node metadata
     ///  TODO: remove after we stop keeping track of configuration in raft
     std::optional<std::reference_wrapper<const node_metadata>>

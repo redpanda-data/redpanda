@@ -77,7 +77,6 @@ struct topic_table_fixture {
         return std::make_unique<cluster::allocation_node>(
           nid,
           cores,
-          std::nullopt,
           config::mock_binding<uint32_t>(uint32_t{partitions_per_shard}),
           config::mock_binding<uint32_t>(uint32_t{partitions_reserve_shard0}));
     }

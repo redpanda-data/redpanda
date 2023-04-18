@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/members_table.h"
 #include "cluster/partition_balancer_types.h"
 #include "cluster/scheduling/allocation_node.h"
 #include "cluster/scheduling/types.h"
@@ -137,6 +138,6 @@ distinct_labels_preferred(const char* label_name, Mapper&& mapper) {
       std::make_unique<impl>(label_name, std::forward<Mapper>(mapper)));
 }
 
-soft_constraint distinct_rack_preferred(const allocation_state& state);
+soft_constraint distinct_rack_preferred(const members_table&);
 
 } // namespace cluster

@@ -78,8 +78,8 @@ FIXTURE_TEST(unregister_node, partition_allocator_fixture) {
 }
 
 FIXTURE_TEST(invalid_allocation_over_capacity, partition_allocator_fixture) {
-    register_node(0, 8);
-    register_node(1, 4);
+    register_node(0, 6);
+    register_node(1, 6);
     register_node(2, 6);
 
     saturate_all_machines();
@@ -401,7 +401,6 @@ FIXTURE_TEST(updating_nodes_properties, partition_allocator_fixture) {
       it->second->max_capacity(),
       10 * partition_allocator_fixture::partitions_per_shard
         - partition_allocator_fixture::partitions_reserve_shard0);
-    BOOST_REQUIRE_EQUAL(it->second->rack(), new_rack);
 }
 
 FIXTURE_TEST(change_replication_factor, partition_allocator_fixture) {

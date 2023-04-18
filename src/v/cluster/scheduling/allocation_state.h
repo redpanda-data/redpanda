@@ -68,12 +68,6 @@ public:
     raft::group_id last_group_id() const { return _highest_group; }
     void set_last_group_id(raft::group_id id) { _highest_group = id; }
 
-    // Get rack information
-    //
-    // Return rack id or nullopt if rack id is not configured
-    // for the broker.
-    std::optional<model::rack_id> get_rack_id(model::node_id) const;
-
 private:
     /**
      * This function verifies that the current shard matches the shard the

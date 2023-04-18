@@ -34,7 +34,6 @@ public:
     allocation_node(
       model::node_id,
       uint32_t,
-      std::optional<model::rack_id>,
       config::binding<uint32_t>,
       config::binding<uint32_t>);
 
@@ -46,7 +45,6 @@ public:
 
     uint32_t cpus() const { return _weights.size(); }
     model::node_id id() const { return _id; }
-    const std::optional<model::rack_id>& rack() const noexcept { return _rack; }
 
     // Free partition space left for allocation in the node.
     // Reserved partitions are considered allocated
@@ -96,9 +94,6 @@ public:
     bool is_removed() const { return _state == state::deleted; }
 
     void update_core_count(uint32_t);
-    void update_rack(std::optional<model::rack_id> rack) {
-        _rack = std::move(rack);
-    }
 
     allocation_capacity allocated_partitions() const {
         return _allocated_partitions;
@@ -135,7 +130,6 @@ private:
     absl::flat_hash_map<partition_allocation_domain, allocation_capacity>
       _allocated_domain_partitions;
     state _state = state::active;
-    std::optional<model::rack_id> _rack;
 
     config::binding<uint32_t> _partitions_per_shard;
     config::binding<uint32_t> _partitions_reserve_shard0;

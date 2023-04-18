@@ -100,7 +100,6 @@ void allocation_state::register_node(
     auto node = std::make_unique<allocation_node>(
       broker.id(),
       broker.properties().cores,
-      broker.rack(),
       _partitions_per_shard,
       _partitions_reserve_shard0);
 
@@ -135,12 +134,10 @@ void allocation_state::update_allocation_nodes(
               std::make_unique<allocation_node>(
                 b.id(),
                 b.properties().cores,
-                b.rack(),
                 _partitions_per_shard,
                 _partitions_reserve_shard0));
         } else {
             it->second->update_core_count(b.properties().cores);
-            it->second->update_rack(b.rack());
             // node was added back to the cluster
             if (it->second->is_removed()) {
                 it->second->mark_as_active();
@@ -158,12 +155,10 @@ void allocation_state::upsert_allocation_node(const model::broker& broker) {
           std::make_unique<allocation_node>(
             broker.id(),
             broker.properties().cores,
-            broker.rack(),
             _partitions_per_shard,
             _partitions_reserve_shard0));
     } else {
         it->second->update_core_count(broker.properties().cores);
-        it->second->update_rack(broker.rack());
         // node was added back to the cluster
         if (it->second->is_removed()) {
             it->second->mark_as_active();
@@ -231,14 +226,6 @@ result<uint32_t> allocation_state::allocate(
     }
 
     return errc::node_does_not_exists;
-}
-
-std::optional<model::rack_id>
-allocation_state::get_rack_id(model::node_id id) const {
-    if (auto it = _nodes.find(id); it != _nodes.end()) {
-        return it->second->rack();
-    }
-    vassert(false, "unexpected node id {}", id);
 }
 
 void allocation_state::verify_shard() const {
