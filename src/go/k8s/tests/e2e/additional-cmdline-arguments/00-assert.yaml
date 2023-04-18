@@ -1,14 +1,20 @@
 ---
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
 metadata:
   name: cluster
 status:
+  version: "dev"
   readyReplicas: 1
+  replicas: 1
+  upgrading: false
+  restarting: false
+  conditions:
+    - type: ClusterConfigured
+      status: "True"
+
 ---
 apiVersion: kuttl.dev/v1beta1
 kind: TestAssert
 collectors:
-- type: pod
-  selector: app.kubernetes.io/name=redpanda
-  tail: -1
+- command: ../../../hack/get-redpanda-info.sh
