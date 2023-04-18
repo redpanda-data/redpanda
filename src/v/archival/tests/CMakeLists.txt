@@ -18,7 +18,7 @@ else()
         v::seastar_testing_main 
         v::application 
         Boost::unit_test_framework 
-        v::archival 
+        v::cluster
         v::storage_test_utils 
         v::cloud_roles
         v::http_test_utils
@@ -35,7 +35,7 @@ else()
       LIBRARIES 
         v::seastar_testing_main 
         Boost::unit_test_framework 
-        v::archival 
+        v::cluster
       ARGS "-- -c 1"
       LABELS archival
     )

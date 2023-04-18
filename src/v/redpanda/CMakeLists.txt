@@ -52,7 +52,6 @@ v_cc_library(
     v::coproc
     v::pandaproxy_rest
     v::pandaproxy_schema_registry
-    v::archival
     v::migrations
   )
 
