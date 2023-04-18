@@ -108,11 +108,20 @@ private:
         using response_t = typename api_t::response_type;
         return ss::try_with_gate(_gate, [this, req{std::move(req)}]() {
             auto r = req();
-            kclog.debug("Consumer: {}: {} req: {}", *this, api_t::name, r);
+            kclog.debug(
+              "Consumer: {}: {} req: {}, coordinator {}",
+              *this,
+              api_t::name,
+              r,
+              _coordinator->id());
             return _coordinator->dispatch(std::move(r))
               .then([this](response_t res) {
                   kclog.debug(
-                    "Consumer: {}: {} res: {}", *this, api_t::name, res);
+                    "Consumer: {}: {} res: {}, coordinator {}",
+                    *this,
+                    api_t::name,
+                    res,
+                    _coordinator->id());
                   return res;
               });
         });
