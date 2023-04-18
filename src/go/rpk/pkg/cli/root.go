@@ -73,7 +73,7 @@ func Execute() {
 		CompletionOptions: cobra.CompletionOptions{DisableDefaultCmd: true},
 	}
 	pf := root.PersistentFlags()
-	pf.StringVar(&p.ConfigPath, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
+	pf.StringVar(&p.ConfigFlag, "config", "", "Redpanda or rpk config file; default search paths are ~/.config/rpk/rpk.yaml, $PWD, and /etc/redpanda/redpanda.yaml")
 	pf.StringArrayVarP(&p.FlagOverrides, "config-opt", "X", nil, "Override rpk configuration settings; '-X help' for detail or '-X list' for terser detail")
 	pf.StringVarP(&p.LogLevel, "verbose", "v", "none", "Log level (none, error, warn, info, debug)")
 	pf.Lookup("verbose").NoOptDefVal = "info"

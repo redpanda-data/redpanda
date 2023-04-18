@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	testConfigPath string = "/arbitrary/path/redpanda.yaml"
+	testConfigFlag string = "/arbitrary/path/redpanda.yaml"
 	setFlag        string = "--set"
 )
 
@@ -270,12 +270,12 @@ func TestStartCommand(t *testing.T) {
 			return fs.MkdirAll("/arbitrary/path", 0o755)
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			path := testConfigPath
-			p := &config.Params{ConfigPath: "/arbitrary/path/redpanda.yaml"} // In command execution this will be done by with ParamsFromCommand
+			path := testConfigFlag
+			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"} // In command execution this will be done by with ParamsFromCommand
 			conf, err := p.Load(fs)
 			require.NoError(st, err)
 			require.Exactly(st, path, conf.FileLocation())
-			exists, err := afero.Exists(fs, testConfigPath)
+			exists, err := afero.Exists(fs, testConfigFlag)
 			require.NoError(st, err)
 			require.True(st, exists)
 		},
@@ -360,7 +360,7 @@ func TestStartCommand(t *testing.T) {
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			p := &config.Params{ConfigPath: "/arbitrary/path/redpanda.yaml"}
+			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"}
 			conf, err := p.Load(fs)
 			require.NoError(st, err)
 			expectedAdmin := []config.NamedSocketAddress{{
@@ -426,7 +426,7 @@ func TestStartCommand(t *testing.T) {
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			p := &config.Params{ConfigPath: "/arbitrary/path/redpanda.yaml"}
+			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"}
 			conf, err := p.Load(fs)
 			require.NoError(st, err)
 			expectedAdmin := []config.NamedSocketAddress{{
@@ -479,7 +479,7 @@ func TestStartCommand(t *testing.T) {
 			}
 		},
 		postCheck: func(fs afero.Fs, _ *redpanda.RedpandaArgs, st *testing.T) {
-			p := &config.Params{ConfigPath: "/arbitrary/path/redpanda.yaml"}
+			p := &config.Params{ConfigFlag: "/arbitrary/path/redpanda.yaml"}
 			conf, err := p.Load(fs)
 			require.NoError(st, err)
 			// The value set through the --kafka-addr flag should
@@ -1655,7 +1655,7 @@ func TestStartCommand(t *testing.T) {
 			}
 			p := new(config.Params)
 			c := NewStartCommand(fs, p, launcher)
-			c.Flags().StringVar(&p.ConfigPath, "config", "", "this is done in root.go, but we need it here for the tests setting args")
+			c.Flags().StringVar(&p.ConfigFlag, "config", "", "this is done in root.go, but we need it here for the tests setting args")
 			// We disable --check flag to avoid running tuner checks in Afero's
 			// memory backed file system.
 			args := append([]string{"--check=false"}, tt.args...)

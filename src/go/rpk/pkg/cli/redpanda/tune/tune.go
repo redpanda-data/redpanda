@@ -75,7 +75,7 @@ To learn more about a tuner, run 'rpk redpanda tune help <tuner name>'.
 			return nil
 		},
 		Run: func(cmd *cobra.Command, args []string) {
-			if !tunerParamsEmpty(&tunerParams) && p.ConfigPath != "" {
+			if !tunerParamsEmpty(&tunerParams) && p.ConfigFlag != "" {
 				out.Die("use either tuner params or redpanda config file")
 			}
 			var tuners []string

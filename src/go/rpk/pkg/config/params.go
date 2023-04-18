@@ -93,10 +93,10 @@ const DefaultPath = "/etc/redpanda/redpanda.yaml"
 
 // Params contains rpk-wide configuration parameters.
 type Params struct {
-	// ConfigPath is any flag-specified config path.
+	// ConfigFlag is any flag-specified config path.
 	//
 	// This is unused until step (2) in the refactoring process.
-	ConfigPath string
+	ConfigFlag string
 
 	// LogLevel can be either none (default), error, warn, info, or debug,
 	// or any prefix of those strings, upper or lower case.
@@ -332,8 +332,8 @@ func (p *Params) Load(fs afero.Fs) (*Config, error) {
 		}
 		// If there is no file, we set the file location to the passed
 		// --config value, otherwise we use the default.
-		if p.ConfigPath != "" {
-			c.fileLocation = p.ConfigPath
+		if p.ConfigFlag != "" {
+			c.fileLocation = p.ConfigFlag
 		} else {
 			c.fileLocation = DefaultPath
 		}
@@ -503,8 +503,8 @@ func (c *Config) Write(fs afero.Fs) (rerr error) {
 }
 
 func (p *Params) LocateConfig(fs afero.Fs) (string, error) {
-	paths := []string{p.ConfigPath}
-	if p.ConfigPath == "" {
+	paths := []string{p.ConfigFlag}
+	if p.ConfigFlag == "" {
 		paths = nil
 		if configDir, _ := os.UserConfigDir(); configDir != "" {
 			paths = append(paths, filepath.Join(configDir, "rpk", "rpk.yaml"))
