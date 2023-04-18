@@ -286,7 +286,8 @@ ss::future<session_resources> connection_context::throttle_request(
     request_data r_data = request_data{
       .request_key = hdr.key,
       .client_id = ss::sstring{hdr.client_id.value_or("")}};
-    auto tracker = std::make_unique<request_tracker>(_server.probe());
+    auto& h_probe = _server.handler_probe(r_data.request_key);
+    auto tracker = std::make_unique<request_tracker>(_server.probe(), h_probe);
     auto fut = ss::now();
     if (delay.enforce > delay_t::clock::duration::zero()) {
         fut = ss::sleep_abortable(delay.enforce, _server.abort_source());
@@ -422,8 +423,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                  seq,
                                  correlation,
                                  self,
-                                 sres = std::move(sres)](
-                                  ss::future<> d) mutable {
+                                 sres](ss::future<> d) mutable {
                       /*
                        * if the dispatch/first stage failed, then we need to
                        * need to consume the second stage since it might be
@@ -440,7 +440,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                   "Discarding second stage failure {}",
                                   e);
                             })
-                            .finally([self, d = std::move(d)]() mutable {
+                            .finally([self, d = std::move(d), sres]() mutable {
+                                sres->tracker->mark_errored();
                                 self->_server.probe().service_error();
                                 self->_server.probe().request_completed();
                                 return std::move(d);
@@ -454,7 +455,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                             _server.conn_gate(),
                             [this,
                              f = std::move(f),
-                             sres = std::move(sres),
+                             sres,
                              seq,
                              correlation]() mutable {
                                 return f.then([this,
@@ -469,7 +470,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                     return maybe_process_responses();
                                 });
                             })
-                            .handle_exception([self](std::exception_ptr e) {
+                            .handle_exception([self, sres](std::exception_ptr e) {
                                 // ssx::spawn_with_gate already caught
                                 // shutdown-like exceptions, so we should only
                                 // be taking this path for real errors.  That
@@ -494,15 +495,17 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                                       e);
                                 }
 
+                                sres->tracker->mark_errored();
                                 self->_server.probe().service_error();
                                 self->conn->shutdown_input();
                             });
                       return d;
                   })
-                  .handle_exception([self](std::exception_ptr e) {
+                  .handle_exception([self, sres](std::exception_ptr e) {
                       vlog(
                         klog.info, "Detected error dispatching request: {}", e);
                       self->conn->shutdown_input();
+                      sres->tracker->mark_errored();
                   });
             });
       })
@@ -574,8 +577,9 @@ ss::future<> connection_context::maybe_process_responses() {
               })
               // release the resources only once it has been written to the
               // connection.
-              .finally([resources = std::move(resp_and_res.resources)] {});
+              .finally([resources = resp_and_res.resources] {});
         } catch (...) {
+            resp_and_res.resources->tracker->mark_errored();
             vlog(
               klog.debug,
               "Failed to process request: {}",
