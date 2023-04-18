@@ -26,6 +26,8 @@ public interface KafkaMessagingInterface {
    * @param srAddr The URL of the schema registry
    * @param securitySettings The security settings (may be null)
    * @param autoRegisterSchema True to automatically register schemas
+   * @param skipKnownTypes Whether to skip known types when resolving schema
+   *     dependencies
    * @return Instance of Properties
    *
    * @see java.util.Properties
@@ -33,7 +35,7 @@ public interface KafkaMessagingInterface {
    */
   Properties getProducerProperties(
       String brokers, String srAddr, SecuritySettings securitySettings,
-      boolean autoRegisterSchema);
+      boolean autoRegisterSchema, boolean skipKnownTypes);
 
   /**
    * Generates properties for a Kafka consumer

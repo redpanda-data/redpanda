@@ -10,13 +10,14 @@
 from enum import IntEnum
 import http.client
 import json
+from typing import Optional
 import uuid
 import requests
 import time
 import random
 import socket
 
-from ducktape.mark import matrix
+from ducktape.mark import parametrize
 from ducktape.services.background_thread import BackgroundThreadService
 from ducktape.utils.util import wait_until
 
@@ -165,9 +166,12 @@ class SchemaRegistryEndpoints(RedpandaTest):
                              user=cfg.get('sasl_plain_username'),
                              passwd=cfg.get('sasl_plain_password'))
 
-    def _get_serde_client(self, schema_type: SchemaType,
-                          client_type: SerdeClientType, topic: str,
-                          count: int):
+    def _get_serde_client(self,
+                          schema_type: SchemaType,
+                          client_type: SerdeClientType,
+                          topic: str,
+                          count: int,
+                          skip_known_types: Optional[bool] = None):
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         sasl_enabled = self.redpanda.sasl_enabled()
         sec_cfg = self.redpanda.security_config() if sasl_enabled else None
@@ -179,7 +183,8 @@ class SchemaRegistryEndpoints(RedpandaTest):
                            client_type,
                            count,
                            topic=topic,
-                           security_config=sec_cfg)
+                           security_config=sec_cfg,
+                           skip_known_types=skip_known_types)
 
     def _get_topics(self):
         return requests.get(
@@ -1154,13 +1159,27 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         assert result_raw.json() == [2]
 
     @cluster(num_nodes=4)
-    @matrix(protocol=[SchemaType.AVRO, SchemaType.PROTOBUF],
-            client_type=[
-                SerdeClientType.Python, SerdeClientType.Java,
-                SerdeClientType.Golang
-            ])
-    def test_serde_client(self, protocol: SchemaType,
-                          client_type: SerdeClientType):
+    @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Python)
+    @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Java)
+    @parametrize(protocol=SchemaType.AVRO, client_type=SerdeClientType.Golang)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Python,
+                 skip_known_types=False)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Python,
+                 skip_known_types=True)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Java,
+                 skip_known_types=False)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Java,
+                 skip_known_types=True)
+    @parametrize(protocol=SchemaType.PROTOBUF,
+                 client_type=SerdeClientType.Golang)
+    def test_serde_client(self,
+                          protocol: SchemaType,
+                          client_type: SerdeClientType,
+                          skip_known_types: Optional[bool] = None):
         """
         Verify basic operation of Schema registry across a range of schema types and serde
         client types
@@ -1172,7 +1191,8 @@ class SchemaRegistryTestMethods(SchemaRegistryEndpoints):
         self.logger.info(
             f"Connecting to redpanda: {self.redpanda.brokers()} schema_Reg: {schema_reg}"
         )
-        client = self._get_serde_client(protocol, client_type, topic, 2)
+        client = self._get_serde_client(protocol, client_type, topic, 2,
+                                        skip_known_types)
         self.logger.debug("Starting client")
         client.start()
         self.logger.debug("Waiting on client")

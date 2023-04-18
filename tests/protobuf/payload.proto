@@ -14,7 +14,11 @@ syntax = "proto3";
 package com.redpanda;
 
 option go_package = "./;main";
+option java_multiple_files = true;
 
-message payload {
+import "google/protobuf/timestamp.proto";
+
+message Payload {
     int32 val = 1;
+    google.protobuf.Timestamp timestamp = 2;
 }

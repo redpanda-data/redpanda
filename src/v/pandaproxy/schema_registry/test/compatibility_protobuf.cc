@@ -171,22 +171,96 @@ SEASTAR_THREAD_TEST_CASE(test_protobuf_recursive_reference) {
 SEASTAR_THREAD_TEST_CASE(test_protobuf_well_known) {
     simple_sharded_store store;
 
-    auto schema1 = pps::canonical_schema{
-      pps::subject{"empty.proto"},
+    auto schema = pps::canonical_schema{
+      pps::subject{"test_auto_well_known"},
       pps::canonical_schema_definition{
-        R"(syntax =  "proto3";)", pps::schema_type::protobuf}};
-    auto schema2 = pps::canonical_schema{
-      pps::subject{"google/protobuf/timestamp.proto"},
-      pps::canonical_schema_definition{
-        R"(syntax =  "proto3"; package google.protobuf; message Timestamp { int64 seconds = 1;  int32 nanos = 2; })",
+        R"(
+syntax =  "proto3";
+package test;
+import "google/protobuf/any.proto";
+import "google/protobuf/api.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/source_context.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/type.proto";
+import "google/protobuf/wrappers.proto";
+import "google/type/calendar_period.proto";
+import "google/type/color.proto";
+import "google/type/date.proto";
+import "google/type/datetime.proto";
+import "google/type/dayofweek.proto";
+import "google/type/decimal.proto";
+import "google/type/expr.proto";
+import "google/type/fraction.proto";
+import "google/type/interval.proto";
+import "google/type/latlng.proto";
+import "google/type/localized_text.proto";
+import "google/type/money.proto";
+import "google/type/month.proto";
+import "google/type/phone_number.proto";
+import "google/type/postal_address.proto";
+import "google/type/quaternion.proto";
+import "google/type/timeofday.proto";
+import "confluent/meta.proto";
+import "confluent/types/decimal.proto";
+
+message well_known_types {
+  google.protobuf.Any any = 1;
+  google.protobuf.Api api = 2;
+  google.protobuf.BoolValue bool_value = 3;
+  google.protobuf.BytesValue bytes_value = 4;
+  google.protobuf.DoubleValue double_value = 5;
+  google.protobuf.Duration duration = 6;
+  google.protobuf.Empty empty = 7;
+  google.protobuf.Enum enum = 8;
+  google.protobuf.EnumValue enum_value = 9;
+  google.protobuf.Field field = 10;
+  google.protobuf.FieldMask field_mask = 11;
+  google.protobuf.FloatValue float_value = 12;
+  google.protobuf.Int32Value int32_value = 13;
+  google.protobuf.Int64Value int64_value = 14;
+  google.protobuf.ListValue list_value = 15;
+  google.protobuf.Method method = 16;
+  google.protobuf.Mixin mixin = 17;
+  google.protobuf.NullValue null_value = 18;
+  google.protobuf.Option option = 19;
+  google.protobuf.SourceContext source_context = 20;
+  google.protobuf.StringValue string_value = 21;
+  google.protobuf.Struct struct = 22;
+  google.protobuf.Syntax syntax = 23;
+  google.protobuf.Timestamp timestamp = 24;
+  google.protobuf.Type type = 25;
+  google.protobuf.UInt32Value uint32_value = 26;
+  google.protobuf.UInt64Value uint64_value = 27;
+  google.protobuf.Value value = 28;
+  google.type.CalendarPeriod calendar_period = 29;
+  google.type.Color color = 30;
+  google.type.Date date = 31;
+  google.type.DateTime date_time = 32;
+  google.type.DayOfWeek day_of_wekk = 33;
+  google.type.Decimal decimal = 34;
+  google.type.Expr expr = 35;
+  google.type.Fraction fraction = 36;
+  google.type.Interval interval = 37;
+  google.type.LatLng lat_lng = 39;
+  google.type.LocalizedText localized_text = 40;
+  google.type.Money money = 41;
+  google.type.Month month = 42;
+  google.type.PhoneNumber phone_number = 43;
+  google.type.PostalAddress postal_address = 44;
+  google.type.Quaternion quaternion = 45;
+  google.type.TimeOfDay time_of_day = 46;
+  confluent.Meta c_meta = 47;
+  confluent.type.Decimal c_decimal = 48;
+})",
         pps::schema_type::protobuf}};
-    store.insert(schema1, pps::schema_version{1});
-    store.insert(schema2, pps::schema_version{1});
+    store.insert(schema, pps::schema_version{1});
 
     auto valid_empty
-      = pps::make_protobuf_schema_definition(store.store, schema1).get();
-    auto valid_timestamp
-      = pps::make_protobuf_schema_definition(store.store, schema2).get();
+      = pps::make_protobuf_schema_definition(store.store, schema).get();
 }
 
 SEASTAR_THREAD_TEST_CASE(test_protobuf_compatibility_empty) {
