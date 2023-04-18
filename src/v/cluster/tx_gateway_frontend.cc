@@ -1131,6 +1131,11 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::do_init_tm_tx(
     }
     auto term = term_opt.value();
 
+    auto cfg = _metadata_cache.local().get_topic_cfg(model::tx_manager_nt);
+    if (!cfg) {
+        co_return init_tm_tx_reply{tx_errc::partition_not_exists};
+    }
+
     auto r0 = co_await get_tx(term, stm, tx_id, timeout);
     if (!r0.has_value()) {
         if (r0.error() != tx_errc::tx_not_found) {

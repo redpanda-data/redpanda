@@ -41,7 +41,8 @@ enum class record_batch_type : int8_t {
     feature_update = 21,             // Node logical versions updates
     cluster_bootstrap_cmd = 22,      // cluster bootsrap command
     version_fence = 23,              // version fence/epoch
-    MAX = version_fence
+    tx_tm_hosted_trasactions = 24,   // tx_tm_hosted_trasactions_batch_type
+    MAX = tx_tm_hosted_trasactions
 };
 
 std::ostream& operator<<(std::ostream& o, record_batch_type bt);

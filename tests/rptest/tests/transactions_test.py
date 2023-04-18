@@ -1010,6 +1010,7 @@ class UpgradeTransactionManagerMultiPartition(RedpandaTest):
         log_allow_list=RESTART_LOG_ALLOW_LIST + [
             "Incompatible downgrade detected", "unknown fence record version",
             "unsupported tx_snapshot_header version",
+            "unsupported seq_snapshot_header version",
             "assert - Backtrace below:"
         ])
     def fail_to_downgrade_full_cluster_test(self):

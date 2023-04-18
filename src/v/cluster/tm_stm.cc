@@ -10,6 +10,7 @@
 #include "cluster/tm_stm.h"
 
 #include "cluster/logger.h"
+#include "cluster/tm_tx_hash_ranges.h"
 #include "cluster/types.h"
 #include "model/record.h"
 #include "raft/errc.h"
@@ -21,6 +22,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 
@@ -97,6 +99,16 @@ model::record_batch tm_stm::serialize_tx(tm_transaction tx) {
     return do_serialize_tx(old_tx);
 }
 
+model::record_batch
+tm_stm::serialize_hosted_transactions(tm_tx_hosted_transactions hr) {
+    storage::record_batch_builder b(
+      model::record_batch_type::tx_tm_hosted_trasactions, model::offset(0));
+    b.add_raw_kv(
+      serde::to_iobuf(model::record_batch_type::tx_tm_hosted_trasactions),
+      serde::to_iobuf(hr));
+    return std::move(b).build();
+}
+
 tm_stm::tm_stm(
   ss::logger& logger,
   raft::consensus* c,
@@ -110,6 +122,66 @@ tm_stm::tm_stm(
   , _cache(tm_stm_cache) {}
 
 ss::future<> tm_stm::start() { co_await persisted_stm::start(); }
+
+bool tm_stm::hosted_transactions_inited() const { return _hosted_txes.inited; }
+
+ss::future<tm_stm::op_status> tm_stm::try_init_hosted_transactions(
+  model::term_id term, int32_t tx_coordinator_partition_amount) {
+    if (_hosted_txes.inited) {
+        co_return op_status::success;
+    }
+    model::partition_id partition = get_partition();
+    auto initial_hash_range = default_tm_hash_range(
+      partition, tx_coordinator_partition_amount);
+    tm_tx_hosted_transactions initial_hosted_transactions{};
+    auto res = initial_hosted_transactions.add_range(initial_hash_range);
+    if (res == tm_tx_hash_ranges_errc::success) {
+        initial_hosted_transactions.inited = true;
+        co_return co_await update_hosted_transactions(
+          term, std::move(initial_hosted_transactions));
+    } else {
+        co_return op_status::conflict;
+    }
+}
+
+ss::future<tm_stm::op_status> tm_stm::include_hosted_transaction(
+  model::term_id term, kafka::transactional_id tx_id) {
+    if (!_hosted_txes.inited) {
+        co_return op_status::unknown;
+    }
+    auto new_hosted_tx = _hosted_txes;
+    auto res = new_hosted_tx.include_transaction(tx_id);
+    if (res == tm_tx_hash_ranges_errc::success) {
+        co_return co_await update_hosted_transactions(
+          term, std::move(new_hosted_tx));
+    } else {
+        co_return op_status::conflict;
+    }
+}
+
+ss::future<tm_stm::op_status> tm_stm::exclude_hosted_transaction(
+  model::term_id term, kafka::transactional_id tx_id) {
+    if (!_hosted_txes.inited) {
+        co_return op_status::unknown;
+    }
+    auto new_hosted_tx = _hosted_txes;
+    auto res = new_hosted_tx.exclude_transaction(tx_id);
+    if (res == tm_tx_hash_ranges_errc::success) {
+        co_return co_await update_hosted_transactions(
+          term, std::move(new_hosted_tx));
+    } else {
+        co_return op_status::conflict;
+    }
+}
+
+uint8_t tm_stm::active_snapshot_version() {
+    if (_feature_table.local().is_active(
+          features::feature::transaction_partitioning)) {
+        return tm_snapshot::version;
+    }
+
+    return tm_snapshot_v0::version;
+}
 
 std::optional<tm_transaction> tm_stm::find_tx(kafka::transactional_id tx_id) {
     auto tx_opt = _cache->find_mem(tx_id);
@@ -243,6 +315,56 @@ tm_stm::do_sync(model::timeout_clock::duration timeout) {
         _cache->clear_mem();
     }
     co_return _insync_term;
+}
+
+ss::future<tm_stm::op_status> tm_stm::update_hosted_transactions(
+  model::term_id term, tm_tx_hosted_transactions hr) {
+    if (!_feature_table.local().is_active(
+          features::feature::transaction_partitioning)) {
+            co_return tm_stm::op_status::success;
+    }
+    auto gh = _gate.hold();
+    co_return co_await do_update_hosted_transactions(term, std::move(hr));
+}
+
+ss::future<tm_stm::op_status> tm_stm::do_update_hosted_transactions(
+  model::term_id term, tm_tx_hosted_transactions hr) {
+    auto batch = serialize_hosted_transactions(std::move(hr));
+
+    auto r = co_await replicate_quorum_ack(term, std::move(batch));
+    if (!r) {
+        vlog(txlog.info, "got error {} on updating hash_ranges", r.error());
+        if (_c->is_leader() && _c->term() == term) {
+            co_await _c->step_down(
+              "txn coordinator update_hash_ranges replication error");
+        }
+        if (r.error() == raft::errc::shutting_down) {
+            co_return op_status::timeout;
+        }
+        co_return op_status::unknown;
+    }
+
+    auto offset = model::offset(r.value().last_offset());
+    if (!co_await wait_no_throw(
+          offset, model::timeout_clock::now() + _sync_timeout)) {
+        vlog(
+          txlog.info,
+          "timeout on waiting until {} is applied on updating hash_ranges",
+          offset);
+        if (_c->is_leader() && _c->term() == term) {
+            co_await _c->step_down("txn coordinator apply timeout");
+        }
+        co_return op_status::unknown;
+    }
+    if (_c->term() != term) {
+        vlog(
+          txlog.info,
+          "lost leadership while waiting until {} is applied on updating hash "
+          "ranges",
+          offset);
+        co_return op_status::unknown;
+    }
+    co_return op_status::success;
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>>
@@ -680,51 +802,99 @@ ss::future<tm_stm::op_status> tm_stm::add_group(
     co_return tm_stm::op_status::success;
 }
 
+bool tm_stm::hosts(const kafka::transactional_id& tx_id) {
+    return _hosted_txes.contains(tx_id);
+}
+
 ss::future<>
 tm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tm_ss_buf) {
     vassert(
-      hdr.version == supported_version,
+      hdr.version >= tm_snapshot_v0::version
+        && hdr.version <= tm_snapshot::version,
       "unsupported seq_snapshot_header version {}",
       hdr.version);
     iobuf_parser data_parser(std::move(tm_ss_buf));
-    auto data = reflection::adl<tm_snapshot>{}.from(data_parser);
+    if (hdr.version == tm_snapshot_v0::version) {
+        auto data = reflection::adl<tm_snapshot_v0>{}.from(data_parser);
 
-    _cache->clear_mem();
-    _cache->clear_log();
-    for (auto& entry : data.transactions) {
-        _cache->set_log(entry);
-        _pid_tx_id[entry.pid] = entry.id;
+        _cache->clear_mem();
+        _cache->clear_log();
+        for (auto& entry : data.transactions) {
+            _cache->set_log(entry);
+            _pid_tx_id[entry.pid] = entry.id;
+        }
+        _last_snapshot_offset = data.offset;
+        _insync_offset = data.offset;
+    } else if (hdr.version == tm_snapshot::version) {
+        auto data = reflection::adl<tm_snapshot>{}.from(data_parser);
+
+        _cache->clear_mem();
+        _cache->clear_log();
+        for (auto& entry : data.transactions) {
+            _cache->set_log(entry);
+            _pid_tx_id[entry.pid] = entry.id;
+        }
+        _last_snapshot_offset = data.offset;
+        _insync_offset = data.offset;
+        _hosted_txes = std::move(data.hash_ranges);
+        _hosted_txes.inited = true;
     }
-    _last_snapshot_offset = data.offset;
-    _insync_offset = data.offset;
 
     return ss::now();
 }
 
 ss::future<stm_snapshot> tm_stm::take_snapshot() {
-    return ss::with_gate(_gate, [this] { return do_take_snapshot(); });
+    // Update hash ranges to always have batch in log
+    // So it cannot be deleted with cleanup policy
+    if (_c->is_leader()) {
+        auto sync_res = co_await sync();
+        if (sync_res.has_error()) {
+            throw std::runtime_error(fmt::format(
+              "Cannot sync before taking snapshot, err: {}",
+              sync_res.error()));
+        }
+        auto term = sync_res.value();
+        auto update_hash_ranges_res = co_await update_hosted_transactions(
+          term, _hosted_txes);
+        if (update_hash_ranges_res != op_status::success) {
+            throw std::runtime_error(fmt::format(
+              "Cannot update hash ranges on term {}. Got {} err",
+              _insync_term,
+              update_hash_ranges_res));
+        }
+    }
+    co_return co_await ss::with_gate(
+      _gate, [this] { return do_take_snapshot(); });
 }
 
 ss::future<stm_snapshot> tm_stm::do_take_snapshot() {
-    tm_snapshot tm_ss;
-    tm_ss.offset = _insync_offset;
-    tm_ss.transactions = _cache->get_log_transactions();
+    auto snapshot_version = active_snapshot_version();
+    if (snapshot_version == tm_snapshot_v0::version) {
+        tm_snapshot_v0 tm_ss;
+        tm_ss.offset = _insync_offset;
+        tm_ss.transactions = _cache->get_log_transactions();
 
-    iobuf tm_ss_buf;
-    reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
+        iobuf tm_ss_buf;
+        reflection::adl<tm_snapshot_v0>{}.to(tm_ss_buf, std::move(tm_ss));
 
-    co_return stm_snapshot::create(
-      supported_version, _insync_offset, std::move(tm_ss_buf));
+        co_return stm_snapshot::create(
+          tm_snapshot_v0::version, _insync_offset, std::move(tm_ss_buf));
+    } else {
+        tm_snapshot tm_ss;
+        tm_ss.offset = _insync_offset;
+        tm_ss.transactions = _cache->get_log_transactions();
+        tm_ss.hash_ranges = _hosted_txes;
+
+        iobuf tm_ss_buf;
+        reflection::adl<tm_snapshot>{}.to(tm_ss_buf, std::move(tm_ss));
+
+        co_return stm_snapshot::create(
+          tm_snapshot::version, _insync_offset, std::move(tm_ss_buf));
+    }
 }
 
-ss::future<> tm_stm::apply(model::record_batch b) {
-    const auto& hdr = b.header();
-    _insync_offset = b.last_offset();
-
-    if (hdr.type != model::record_batch_type::tm_update) {
-        return ss::now();
-    }
-
+ss::future<>
+tm_stm::apply_tm_update(model::record_batch_header hdr, model::record_batch b) {
     vassert(
       b.record_count() == 1,
       "model::record_batch_type::tm_update batch must contain a single record");
@@ -821,6 +991,39 @@ ss::future<> tm_stm::apply(model::record_batch b) {
 
     _cache->set_log(tx);
     _pid_tx_id[tx.pid] = tx.id;
+
+    return ss::now();
+}
+
+ss::future<> tm_stm::apply_hosted_transactions(model::record_batch b) {
+    auto records = b.copy_records();
+    vassert(
+      !records.empty(), "Cannot decode empty tx_tm_hosted_trasactions batch");
+    auto& rec = records.front();
+    auto key = serde::from_iobuf<model::record_batch_type>(rec.release_key());
+    vassert(
+      key == model::record_batch_type::tx_tm_hosted_trasactions,
+      "tx_tm_hosted_trasactions batch does not contain expected key {}: found "
+      "{}",
+      model::record_batch_type::tx_tm_hosted_trasactions,
+      key);
+    auto hash_ranges = serde::from_iobuf<tm_tx_hosted_transactions>(
+      rec.release_value());
+    _hosted_txes = hash_ranges;
+    return ss::now();
+}
+
+ss::future<> tm_stm::apply(model::record_batch b) {
+    const auto& hdr = b.header();
+    _insync_offset = b.last_offset();
+
+    if (hdr.type == model::record_batch_type::tm_update) {
+        return apply_tm_update(std::move(hdr), std::move(b));
+    }
+
+    if (hdr.type == model::record_batch_type::tx_tm_hosted_trasactions) {
+        return apply_hosted_transactions(std::move(b));
+    }
 
     return ss::now();
 }
