@@ -12,6 +12,7 @@
 #include "storage_resources.h"
 
 #include "config/configuration.h"
+#include "storage/chunk_cache.h"
 #include "storage/logger.h"
 #include "vlog.h"
 
@@ -32,7 +33,7 @@ storage_resources::storage_resources(
   , _global_target_replay_bytes(target_replay_bytes)
   , _max_concurrent_replay(max_concurrent_replay)
   , _compaction_index_mem_limit(compaction_index_memory)
-  , _append_chunk_size(config::shard_local_cfg().append_chunk_size())
+  , _append_chunk_size(internal::chunks().chunk_size())
   , _offset_translator_dirty_bytes(
       _global_target_replay_bytes() / ss::smp::count)
   , _configuration_manager_dirty_bytes(
