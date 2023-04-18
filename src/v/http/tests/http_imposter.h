@@ -30,8 +30,14 @@ public:
 
     using predicates = std::vector<request_predicate>;
 
-    http_imposter_fixture();
-    http_imposter_fixture(net::unresolved_address address);
+    /**
+     * Listening on TCP ports from a unit test is not a great practice, but we
+     * do it in some places. To enable these unit tests to run in parallel,
+     * each unit test binary must declare its own function to pick a port that
+     * no other unit test uses.
+     */
+    explicit http_imposter_fixture(uint16_t port);
+
     virtual ~http_imposter_fixture();
 
     http_imposter_fixture(const http_imposter_fixture&) = delete;
@@ -133,6 +139,7 @@ private:
 
     void set_routes(ss::httpd::routes& r);
 
+    uint16_t _port;
     ss::socket_address _server_addr;
     ss::httpd::http_server_control _server;
 

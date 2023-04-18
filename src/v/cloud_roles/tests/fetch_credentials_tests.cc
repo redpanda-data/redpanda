@@ -24,8 +24,11 @@
 
 inline ss::logger test_log("test"); // NOLINT
 
-/// For http_imposter to run this binary with a unique port
-uint16_t unit_test_httpd_port_number() { return 4444; }
+class fixture : public http_imposter_fixture {
+public:
+    fixture()
+      : http_imposter_fixture(4444) {}
+};
 
 /// Helps test the credential fetch operation by triggering abort after a single
 /// credential is fetched.
@@ -63,7 +66,7 @@ struct two_fetches {
 
 using namespace std::chrono_literals;
 
-FIXTURE_TEST(test_get_oauth_token, http_imposter_fixture) {
+FIXTURE_TEST(test_get_oauth_token, fixture) {
     when()
       .request(cloud_role_tests::gcp_url)
       .then_reply_with(cloud_role_tests::gcp_oauth_token);
@@ -93,7 +96,7 @@ FIXTURE_TEST(test_get_oauth_token, http_imposter_fixture) {
       std::get<cloud_roles::gcp_credentials>(c.value()).oauth_token());
 }
 
-FIXTURE_TEST(test_token_refresh_on_expiry, http_imposter_fixture) {
+FIXTURE_TEST(test_token_refresh_on_expiry, fixture) {
     // Token expires in 5 seconds
     auto short_token = R"json(
 {"access_token":"a-token","expires_in":5,"token_type":"Bearer"}
@@ -129,7 +132,7 @@ FIXTURE_TEST(test_token_refresh_on_expiry, http_imposter_fixture) {
       has_calls_in_order(cloud_role_tests::gcp_url, cloud_role_tests::gcp_url));
 }
 
-FIXTURE_TEST(test_aws_credentials, http_imposter_fixture) {
+FIXTURE_TEST(test_aws_credentials, fixture) {
     when()
       .request(cloud_role_tests::aws_role_query_url)
       .then_reply_with(cloud_role_tests::aws_role);
@@ -168,7 +171,7 @@ FIXTURE_TEST(test_aws_credentials, http_imposter_fixture) {
       cloud_role_tests::aws_role_query_url, cloud_role_tests::aws_creds_url));
 }
 
-FIXTURE_TEST(test_short_lived_aws_credentials, http_imposter_fixture) {
+FIXTURE_TEST(test_short_lived_aws_credentials, fixture) {
     when()
       .request(cloud_role_tests::aws_role_query_url)
       .then_reply_with(cloud_role_tests::aws_role);
@@ -228,7 +231,7 @@ FIXTURE_TEST(test_short_lived_aws_credentials, http_imposter_fixture) {
       cloud_role_tests::aws_creds_url));
 }
 
-FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
+FIXTURE_TEST(test_sts_credentials, fixture) {
     setenv("AWS_ROLE_ARN", cloud_role_tests::aws_role, 1);
     setenv("AWS_WEB_IDENTITY_TOKEN_FILE", "test_sts_creds_f", 1);
 
@@ -277,7 +280,7 @@ FIXTURE_TEST(test_sts_credentials, http_imposter_fixture) {
     BOOST_REQUIRE(has_call("/"));
 }
 
-FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
+FIXTURE_TEST(test_short_lived_sts_credentials, fixture) {
     setenv("AWS_ROLE_ARN", cloud_role_tests::aws_role, 1);
     setenv("AWS_WEB_IDENTITY_TOKEN_FILE", "test_short_sts_f", 1);
 
@@ -343,7 +346,7 @@ FIXTURE_TEST(test_short_lived_sts_credentials, http_imposter_fixture) {
     BOOST_REQUIRE(has_calls_in_order("/", "/"));
 }
 
-FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
+FIXTURE_TEST(test_client_closed_on_error, fixture) {
     tee_wrapper wrapper(cloud_roles::clrl_log);
 
     fail_request_if(
@@ -376,7 +379,7 @@ FIXTURE_TEST(test_client_closed_on_error, http_imposter_fixture) {
     BOOST_REQUIRE(wrapper.string().find("not found") != std::string::npos);
 }
 
-FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
+FIXTURE_TEST(test_handle_temporary_timeout, fixture) {
     // This test asserts that if the remote endpoint is not reachable, the
     // refresh operation will attempt to retry. In order not to expose the retry
     // counter or make similar changes to the class just for testing, this test
@@ -408,7 +411,7 @@ FIXTURE_TEST(test_handle_temporary_timeout, http_imposter_fixture) {
     }).get();
 }
 
-FIXTURE_TEST(test_handle_bad_response, http_imposter_fixture) {
+FIXTURE_TEST(test_handle_bad_response, fixture) {
     tee_wrapper wrapper(cloud_roles::clrl_log);
 
     fail_request_if(
@@ -444,7 +447,7 @@ FIXTURE_TEST(test_handle_bad_response, http_imposter_fixture) {
       != wrapper.string().npos);
 }
 
-FIXTURE_TEST(test_intermittent_error, http_imposter_fixture) {
+FIXTURE_TEST(test_intermittent_error, fixture) {
     // This test makes one failing request to API endpoint followed by one
     // successful request. The refresh credentials object should retry after the
     // first failure.

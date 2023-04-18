@@ -43,9 +43,6 @@
 
 #include <optional>
 
-/// For http_imposter to run this binary with a unique port
-uint16_t unit_test_httpd_port_number() { return 4441; }
-
 namespace archival {
 
 using namespace std::chrono_literals;
@@ -53,7 +50,7 @@ using namespace std::chrono_literals;
 inline ss::logger fixt_log("fixture"); // NOLINT
 
 archiver_fixture::archiver_fixture()
-  : http_imposter_fixture()
+  : http_imposter_fixture(4441)
   , redpanda_thread_fixture(
       redpanda_thread_fixture::init_cloud_storage_no_archiver_tag{}) {
     ss::smp::invoke_on_all([port = httpd_port_number()]() {

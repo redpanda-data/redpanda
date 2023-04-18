@@ -17,10 +17,13 @@
 
 namespace bh = boost::beast::http;
 
-/// For http_imposter to run this binary with a unique port
-uint16_t unit_test_httpd_port_number() { return 4443; }
+class fixture : public http_imposter_fixture {
+public:
+    fixture()
+      : http_imposter_fixture(4443) {}
+};
 
-FIXTURE_TEST(test_get, http_imposter_fixture) {
+FIXTURE_TEST(test_get, fixture) {
     when()
       .request("/foo")
       .with_method(ss::httpd::GET)
@@ -52,7 +55,7 @@ FIXTURE_TEST(test_get, http_imposter_fixture) {
     BOOST_REQUIRE(has_call("/foo"));
 }
 
-FIXTURE_TEST(test_post, http_imposter_fixture) {
+FIXTURE_TEST(test_post, fixture) {
     when()
       .request("/foo")
       .with_method(ss::httpd::POST)
@@ -85,7 +88,7 @@ FIXTURE_TEST(test_post, http_imposter_fixture) {
     BOOST_REQUIRE(has_call("/foo"));
 }
 
-FIXTURE_TEST(test_forbidden, http_imposter_fixture) {
+FIXTURE_TEST(test_forbidden, fixture) {
     when()
       .request("/super-secret-area")
       .with_method(ss::httpd::GET)
