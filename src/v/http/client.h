@@ -81,6 +81,7 @@ public:
 
     ss::future<> stop();
     using net::base_transport::shutdown;
+    using net::base_transport::wait_input_shutdown;
 
     /// Return immediately if connected or make connection attempts
     /// until success, timeout or error

@@ -63,12 +63,18 @@ public:
 
     // override this method to reset internal state when connection attempt is
     // being made
-    virtual void reset_state() {}
+    virtual void reset_state() {
+        _fd.reset();
+        _shutdown = false;
+    }
 
     ss::future<> stop();
     void shutdown() noexcept;
+    ss::future<> wait_input_shutdown();
 
-    [[gnu::always_inline]] bool is_valid() const { return _fd && !_in.eof(); }
+    [[gnu::always_inline]] bool is_valid() const {
+        return _fd && !_shutdown && !_in.eof();
+    }
 
     const unresolved_address& server_address() const { return _server_addr; }
 
@@ -87,6 +93,9 @@ private:
     unresolved_address _server_addr;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
     std::optional<ss::sstring> _tls_sni_hostname;
+
+    // Track if shutdown was called on the current `_fd`
+    bool _shutdown{false};
 };
 
 } // namespace net
