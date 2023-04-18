@@ -2086,7 +2086,7 @@ class RedpandaService(Service):
 
     def redpanda_pid(self, node):
         try:
-            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version' | awk '{print $1}'"
+            cmd = "ps ax | grep -i 'redpanda' | grep -v grep | grep -v 'version'| grep -v \"]\" | awk '{print $1}'"
             for p in node.account.ssh_capture(cmd,
                                               allow_fail=True,
                                               callback=int):
