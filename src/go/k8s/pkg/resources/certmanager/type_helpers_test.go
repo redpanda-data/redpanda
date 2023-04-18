@@ -332,6 +332,56 @@ func TestClusterCertificates(t *testing.T) {
 				},
 			},
 		}, []string{"test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"}, 2, nil, nil},
+		{
+			"pandaproxy api mutual tls with external ca provided by customer",
+			&v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
+							{
+								TLS: v1alpha1.PandaproxyAPITLS{
+									Enabled:           true,
+									RequireClientAuth: true,
+									ClientCACertRef: &corev1.TypedLocalObjectReference{
+										Name: "client-ca-secret",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			[]string{"test-proxy-api-trusted-client-ca", "test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"},
+			2, nil, nil,
+		},
+		{
+			"pandaproxy api mutual tls with external ca provided by customer and external node issuer",
+			&v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						PandaproxyAPI: []v1alpha1.PandaproxyAPI{
+							{
+								TLS: v1alpha1.PandaproxyAPITLS{
+									Enabled:           true,
+									RequireClientAuth: true,
+									ClientCACertRef: &corev1.TypedLocalObjectReference{
+										Name: "client-ca-secret",
+									},
+									IssuerRef: &cmmetav1.ObjectReference{
+										Name: "issuer",
+										Kind: "Issuer",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			[]string{"test-proxy-api-trusted-client-ca", "test-proxy-selfsigned-issuer", "test-proxy-root-certificate", "test-proxy-root-issuer", "test-proxy-api-node", "test-proxy-api-client"},
+			2, nil, nil,
+		},
 		{"schematregistry api tls disabled", &v1alpha1.Cluster{
 			ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
 			Spec: v1alpha1.ClusterSpec{
@@ -414,6 +464,50 @@ func TestClusterCertificates(t *testing.T) {
 				CertFile:       "/etc/tls/certs/ca/tls.crt",
 				TruststoreFile: "/etc/tls/certs/ca.crt",
 			},
+		},
+		{
+			"schematregistry api mutual tls with external ca provided by customer", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							TLS: &v1alpha1.SchemaRegistryAPITLS{
+								Enabled:           true,
+								RequireClientAuth: true,
+								ClientCACertRef: &corev1.TypedLocalObjectReference{
+									Name: "client-ca-secret",
+								},
+							},
+						},
+					},
+				},
+			},
+			[]string{"test-schema-registry-trusted-client-ca", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"},
+			2, nil, nil,
+		},
+		{
+			"schematregistry api mutual tls with external ca provided by customer and external node issuer", &v1alpha1.Cluster{
+				ObjectMeta: v1.ObjectMeta{Name: "test", Namespace: "test"},
+				Spec: v1alpha1.ClusterSpec{
+					Configuration: v1alpha1.RedpandaConfig{
+						SchemaRegistry: &v1alpha1.SchemaRegistryAPI{
+							TLS: &v1alpha1.SchemaRegistryAPITLS{
+								Enabled:           true,
+								RequireClientAuth: true,
+								ClientCACertRef: &corev1.TypedLocalObjectReference{
+									Name: "client-ca-secret",
+								},
+								IssuerRef: &cmmetav1.ObjectReference{
+									Name: "issuer",
+									Kind: "Issuer",
+								},
+							},
+						},
+					},
+				},
+			},
+			[]string{"test-schema-registry-trusted-client-ca", "test-schema-registry-selfsigned-issuer", "test-schema-registry-root-certificate", "test-schema-registry-root-issuer", "test-schema-registry-node", "test-schema-registry-client"},
+			2, nil, nil,
 		},
 	}
 	for _, tt := range tests {

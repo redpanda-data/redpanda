@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-img-external-client-ca
+status:
+  readyReplicas: 1
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-proxy-selfsigned-issuer
+status:
+  conditions:
+    - reason: IsReady
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-proxy-root-issuer
+status:
+  conditions:
+    - reason: KeyPairVerified
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: update-img-external-client-ca-proxy-root-certificate
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: update-img-external-client-ca-proxy-api-node
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-schema-registry-selfsigned-issuer
+status:
+  conditions:
+    - reason: IsReady
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: update-img-external-client-ca-schema-registry-root-issuer
+status:
+  conditions:
+    - reason: KeyPairVerified
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: update-img-external-client-ca-schema-registry-root-certificate
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: update-img-external-client-ca-schema-registry-node
+status:
+  conditions:
+    - reason: Ready
+      status: "True"
+      type: Ready
+
+---
+
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: update-img-external-client-ca
+status:
+  version: "v23.1.1"
+  readyReplicas: 1
+  replicas: 1
+  upgrading: false
+  restarting: false
+  conditions:
+  - type: ClusterConfigured
+    status: "True"
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+- type: pod
+  selector: app.kubernetes.io/name=redpanda
+  tail: -1

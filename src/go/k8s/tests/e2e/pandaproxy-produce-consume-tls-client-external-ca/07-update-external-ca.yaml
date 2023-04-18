@@ -1,0 +1,5 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestStep
+commands:
+- command: ./update-ca-create-new-client-cert.sh
+  namespaced: true

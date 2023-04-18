@@ -51,6 +51,8 @@ import (
 const (
 	PodAnnotationNodeIDKey = "operator.redpanda.com/node-id"
 	FinalizerKey           = "operator.redpanda.com/finalizer"
+
+	SecretAnnotationExternalCAKey = "operator.redpanda.com/external-ca"
 )
 
 var (
@@ -143,6 +145,7 @@ func (r *ClusterReconciler) Reconcile(
 	if !isRedpandaClusterManaged(log, &redpandaCluster) {
 		return ctrl.Result{}, nil
 	}
+
 	if !isRedpandaClusterVersionManaged(log, &redpandaCluster, r.RestrictToRedpandaVersion) {
 		return ctrl.Result{}, nil
 	}
@@ -260,7 +263,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	if errSetInit := r.setInitialSuperUserPassword(ctx, adminAPI, secrets); errSetInit != nil {
 		// we capture all errors here, do not return the error, just requeue
-		log.Info(errSetInit.Error())
+		log.Error(errSetInit, "failed to set initial super user password")
 		return ctrl.Result{RequeueAfter: resources.RequeueDuration}, nil
 	}
 
@@ -338,6 +341,11 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(
 			&source.Kind{Type: &corev1.Pod{}},
 			handler.EnqueueRequestsFromMapFunc(r.reconcileClusterForPods),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Watches(
+			&source.Kind{Type: &corev1.Secret{}},
+			handler.EnqueueRequestsFromMapFunc(r.reconcileClusterForExternalCASecret),
 			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		Complete(r)
@@ -718,6 +726,25 @@ func (r *ClusterReconciler) reconcileClusterForPods(pod client.Object) []reconci
 			},
 		},
 	}
+}
+
+func (r *ClusterReconciler) reconcileClusterForExternalCASecret(s client.Object) []reconcile.Request {
+	hasExternalCA, found := s.GetAnnotations()[SecretAnnotationExternalCAKey]
+	if !found || hasExternalCA != "true" {
+		return nil
+	}
+
+	clusterName, found := s.GetLabels()[labels.InstanceKey]
+	if !found {
+		return nil
+	}
+
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{
+			Namespace: s.GetNamespace(),
+			Name:      clusterName,
+		},
+	}}
 }
 
 // WithConfiguratorSettings set the configurator image settings

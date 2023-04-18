@@ -1,0 +1,33 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: schema-registry-client-external-ca-mtls
+spec:
+  image: "localhost/redpanda"
+  version: "dev"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1
+      memory: 500Mi
+    limits:
+      cpu: 1
+      memory: 500Mi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+    - port: 9092
+    adminApi:
+    - port: 9644
+    schemaRegistry:
+      port: 8081
+      external: {}
+      tls:
+        enabled: true
+        requireClientAuth: true
+        clientCACertRef:
+          kind: Secret
+          name: ca-cert
+          apiGroup: ""
+    developerMode: true
