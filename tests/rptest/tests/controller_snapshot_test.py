@@ -11,11 +11,14 @@ from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.redpanda import RESTART_LOG_ALLOW_LIST
 from rptest.services.cluster import cluster
 from rptest.services.admin import Admin
+from rptest.services.admin_ops_fuzzer import AdminOperationsFuzzer
 from rptest.clients.rpk import RpkTool
 from rptest.util import wait_until_result
 
 from ducktape.mark import matrix
 from ducktape.utils.util import wait_until
+
+import random
 
 
 class ControllerSnapshotPolicyTest(RedpandaTest):
@@ -199,7 +202,14 @@ class ControllerSnapshotTest(RedpandaTest):
         self.logger.info("cluster restarted successfully")
 
     @cluster(num_nodes=4, log_allow_list=RESTART_LOG_ALLOW_LIST)
-    def test_join_restart(self):
+    def test_join_restart_catch_up(self):
+        """
+        Test that a node correctly restores the controller state after it joins, restarts
+        or has to catch up by installing a new controller snapshot after being offline for
+        a bit. Make the test interesting by executing a few admin operations between
+        restarts.
+        """
+
         seed_nodes = self.redpanda.nodes[0:3]
         joiner = self.redpanda.nodes[3]
         self.redpanda.set_seed_servers(seed_nodes)
@@ -212,8 +222,6 @@ class ControllerSnapshotTest(RedpandaTest):
 
         # change controller state
 
-        admin.put_feature("controller_snapshots", {"state": "active"})
-
         # could be any non-default value for any property
         self.redpanda.set_cluster_config(
             {'controller_snapshot_max_age_sec': 10})
@@ -225,24 +233,45 @@ class ControllerSnapshotTest(RedpandaTest):
                           algorithm='SCRAM-SHA-256')
         rpk.acl_create_allow_cluster(username='test', op='describe')
 
-        # wait for controller snapshots
-        for n in seed_nodes:
-            self.redpanda.wait_for_controller_snapshot(n)
+        ops_fuzzer = AdminOperationsFuzzer(self.redpanda, min_replication=3)
+        ops_fuzzer.create_initial_entities()
 
-        # record expected values
+        def wait_for_everything_snapshotted(nodes):
+            controller_max_offset = max(
+                admin.get_controller_status(n)['commited_index']
+                for n in nodes)
+            self.logger.info(
+                f"controller max offset is {controller_max_offset}")
 
+            for n in nodes:
+                self.redpanda.wait_for_controller_snapshot(
+                    node=n, prev_start_offset=(controller_max_offset - 1))
+
+            return controller_max_offset
+
+        admin.put_feature("controller_snapshots", {"state": "active"})
+        wait_for_everything_snapshotted(seed_nodes)
+
+        # check initial state
         initial_state = ControllerState(self.redpanda, seed_nodes[0])
-
         assert initial_state.features_map['controller_snapshots'][
             'state'] == 'active'
         assert initial_state.config_response[
             'controller_snapshot_max_age_sec'] == 10
-        assert initial_state.topics == set(['test_topic'])
-        assert initial_state.users == set(['admin', 'test'])
-        assert len(initial_state.acls) == 2
+        assert 'test_topic' in initial_state.topics
+        assert set(['admin', 'test']).issubset(initial_state.users)
+        assert len(initial_state.acls) >= 2
 
-        def check(node):
+        # make a node join and check its state
+
+        self.redpanda.start_node(joiner)
+        wait_until(lambda: self.redpanda.registered(joiner),
+                   timeout_sec=30,
+                   backoff_sec=1)
+
+        def check(node, expected):
             node_id = self.redpanda.node_id(node)
+            self.logger.info(f"checking node {node.name} (id: {node_id})...")
             admin.transfer_leadership_to(namespace='redpanda',
                                          topic='controller',
                                          partition=0,
@@ -252,16 +281,10 @@ class ControllerSnapshotTest(RedpandaTest):
                                       check=lambda id: id == node_id)
 
             state = ControllerState(self.redpanda, node)
-            initial_state.check(state)
+            expected.check(state)
 
-        # make a node join and check it
-
-        self.redpanda.start_node(joiner)
-        wait_until(lambda: self.redpanda.registered(joiner),
-                   timeout_sec=30,
-                   backoff_sec=1)
-
-        check(joiner)
+        expected_state = ControllerState(self.redpanda, seed_nodes[0])
+        check(joiner, expected_state)
 
         # restart and check
 
@@ -269,4 +292,34 @@ class ControllerSnapshotTest(RedpandaTest):
         self.redpanda.wait_for_membership(first_start=False)
 
         for n in self.redpanda.nodes:
-            check(n)
+            check(n, expected_state)
+
+        # do a few batches of admin operations, forcing the joiner node to catch up to the
+        # recent controller state each time.
+
+        for iter in range(5):
+            self.redpanda.stop_node(joiner)
+
+            executed = 0
+            to_execute = random.randint(1, 5)
+            while executed < to_execute:
+                if ops_fuzzer.execute_one():
+                    executed += 1
+
+            controller_max_offset = wait_for_everything_snapshotted(seed_nodes)
+
+            # start joiner and wait until it catches up
+            self.redpanda.start_node(joiner)
+            wait_until(lambda: self.redpanda.registered(joiner),
+                       timeout_sec=30,
+                       backoff_sec=1)
+            wait_until(lambda: admin.get_controller_status(joiner)[
+                'last_applied_offset'] >= controller_max_offset,
+                       timeout_sec=30,
+                       backoff_sec=1)
+
+            expected_state = ControllerState(self.redpanda, seed_nodes[0])
+            check(joiner, expected_state)
+
+            self.logger.info(
+                f"iteration {iter} done (executed {to_execute} ops).")
