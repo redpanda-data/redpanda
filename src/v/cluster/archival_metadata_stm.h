@@ -126,9 +126,7 @@ public:
 
     /// Truncate archive area
     ///
-    /// This method moves archive_start_offset forward. If start_rp_offset is
-    /// above the start_offset of the local snapshot the command is converted
-    /// to 'update_start_offset_cmd'.
+    /// This method moves archive_start_offset forward.
     ss::future<std::error_code> truncate_archive_init(
       model::offset start_rp_offset,
       ss::lowres_clock::time_point deadline,
@@ -215,8 +213,6 @@ public:
     model::offset get_last_clean_at() const { return _last_clean_at; };
 
 private:
-    bool cleanup_needed() const;
-
     ss::future<std::error_code> do_add_segments(
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
