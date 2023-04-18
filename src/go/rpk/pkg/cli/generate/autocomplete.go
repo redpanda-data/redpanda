@@ -10,6 +10,7 @@
 package generate
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -23,7 +24,7 @@ func newShellCompletionCommand() *cobra.Command {
 		Long: `
 Shell completion can help autocomplete rpk commands when you press tab.
 
-# Bash
+BASH
 
 Bash autocompletion relies on the bash-completion package. You can test if you
 have this by running "type _init_completion", if you do not, you can install
@@ -43,23 +44,29 @@ Alternatively, to globally enable rpk completion, you can run the following:
 
     rpk generate shell-completion bash > /etc/bash_completion.d/rpk
 
-# Zsh
+ZSH
+
+If shell completion is not already enabled in your environment, you will need to
+enable it. You can execute the following once:
+
+  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
 
 To enable autocompletion in any zsh session for any user, run this once:
 
+# Linux:
+
     rpk generate shell-completion zsh > "${fpath[1]}/_rpk"
+
+# macOS:
+
+     rpk generate shell-completion zsh > "$(brew --prefix)/share/zsh/site-functions/_rpk"
 
 You can also place that command in your ~/.zshrc to ensure that when you update
 rpk, you update autocompletion. If you initially require sudo to edit that
 file, you can chmod it to be world writeable, after which you will always be
 able to update it from ~/.zshrc.
 
-If shell completion is not already enabled in your zsh environment, also
-add the following to your ~/.zshrc:
-
-    autoload -U compinit; compinit
-
-# Fish
+FISH
 
 To enable autocompletion in any fish session, run:
 
@@ -75,6 +82,8 @@ To enable autocompletion in any fish session, run:
 				cmd.Root().GenBashCompletion(os.Stdout)
 			case "zsh":
 				cmd.Root().GenZshCompletion(os.Stdout)
+				// https://github.com/spf13/cobra/issues/1529
+				fmt.Fprint(os.Stdout, "\ncompdef _rpk rpk\n")
 			case "fish":
 				cmd.Root().GenFishCompletion(os.Stdout, true)
 			default:
