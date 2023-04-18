@@ -13,9 +13,9 @@
 
 #include "cluster/fwd.h"
 #include "cluster/tm_stm.h"
+#include "cluster/tx_coordinator_mapper.h"
 #include "cluster/types.h"
 #include "features/feature_table.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
 #include "model/metadata.h"
 #include "rpc/fwd.h"
 #include "seastarx.h"
@@ -39,7 +39,7 @@ public:
       ss::sharded<cluster::rm_partition_frontend>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache_manager>&,
-      ss::sharded<kafka::coordinator_ntp_mapper>& tx_coordinator_ntp_mapper);
+      ss::sharded<cluster::tx_coordinator_mapper>& tx_coordinator_ntp_mapper);
 
     ss::future<std::optional<model::node_id>>
       find_coordinator(kafka::transactional_id);
@@ -96,7 +96,7 @@ private:
     ss::sharded<cluster::rm_partition_frontend>& _rm_partition_frontend;
     ss::sharded<features::feature_table>& _feature_table;
     ss::sharded<cluster::tm_stm_cache_manager>& _tm_stm_cache_manager;
-    ss::sharded<kafka::coordinator_ntp_mapper>& _tx_coordinator_ntp_mapper;
+    ss::sharded<cluster::tx_coordinator_mapper>& _tx_coordinator_ntp_mapper;
     int16_t _metadata_dissemination_retries;
     std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
     ss::timer<model::timeout_clock> _expire_timer;

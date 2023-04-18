@@ -197,7 +197,7 @@ tx_gateway_frontend::tx_gateway_frontend(
   ss::sharded<cluster::rm_partition_frontend>& rm_partition_frontend,
   ss::sharded<features::feature_table>& feature_table,
   ss::sharded<cluster::tm_stm_cache_manager>& tm_stm_cache_manager,
-  ss::sharded<kafka::coordinator_ntp_mapper>& tx_coordinator_ntp_mapper)
+  ss::sharded<cluster::tx_coordinator_mapper>& tx_coordinator_ntp_mapper)
   : _ssg(ssg)
   , _partition_manager(partition_manager)
   , _shard_table(shard_table)
@@ -268,8 +268,7 @@ tx_gateway_frontend::find_coordinator(kafka::transactional_id id) {
 
 std::optional<model::ntp>
 tx_gateway_frontend::get_ntp(kafka::transactional_id id) {
-    auto tx_ntp_opt = _tx_coordinator_ntp_mapper.local().ntp_for(
-      kafka::group_id(id));
+    auto tx_ntp_opt = _tx_coordinator_ntp_mapper.local().ntp_for(id);
     if (!tx_ntp_opt) {
         vlog(
           txlog.debug,
@@ -844,8 +843,7 @@ ss::future<cluster::init_tm_tx_reply> tx_gateway_frontend::init_tm_tx(
     auto delay_ms = _metadata_dissemination_retry_delay_ms;
     auto aborted = false;
 
-    auto tx_ntp_opt = _tx_coordinator_ntp_mapper.local().ntp_for(
-      kafka::group_id(tx_id));
+    auto tx_ntp_opt = _tx_coordinator_ntp_mapper.local().ntp_for(tx_id);
     bool has_metadata = false;
     if (tx_ntp_opt) {
         has_metadata = _metadata_cache.local().contains(
