@@ -21,7 +21,7 @@ func NewCommand(fs afero.Fs, p *config.Params) *cobra.Command {
 		Short: "Generate a configuration template for related services",
 	}
 	cmd.AddCommand(
-		newGrafanaDashboardCmd(),
+		newGrafanaDashboardCmd(p),
 		newPrometheusConfigCmd(fs, p),
 		newShellCompletionCommand(),
 	)

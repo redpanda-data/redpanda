@@ -19,11 +19,13 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/stretchr/testify/require"
 )
 
 func TestPrometheusURLFlagDeprecation(t *testing.T) {
-	cmd := newGrafanaDashboardCmd()
+	p := new(config.Params)
+	cmd := newGrafanaDashboardCmd(p)
 	cmd.SetArgs([]string{
 		"--prometheus-url", "localhost:8888/metrics",
 		"--datasource", "prometheus",

@@ -29,9 +29,11 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/cli/generate/graf"
+	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/config"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/httpapi"
 	"github.com/redpanda-data/redpanda/src/go/rpk/pkg/out"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -100,7 +102,7 @@ func newRowSet() *RowSet {
 	}
 }
 
-func newGrafanaDashboardCmd() *cobra.Command {
+func newGrafanaDashboardCmd(p *config.Params) *cobra.Command {
 	var (
 		dashboard       string
 		datasource      string
@@ -191,6 +193,15 @@ To see a list of all available dashboards, use the '--dashboard help' flag.
 			opts = append(opts, s)
 		}
 		return opts, cobra.ShellCompDirectiveDefault
+	})
+
+	// We install the Admin Flags in case TLS is enabled in the metric endpoint.
+	p.InstallAdminFlags(cmd)
+	// And the kafka flags in case basic authentication is used too.
+	p.InstallKafkaFlags(cmd)
+	// Then we hide all these flags, so it doesn't show in the help text.
+	cmd.PersistentFlags().VisitAll(func(flag *pflag.Flag) {
+		cmd.PersistentFlags().MarkHidden(flag.Name)
 	})
 
 	return cmd
