@@ -71,6 +71,8 @@ public:
 
     cloud_storage_clients::s3_configuration get_configuration();
 
+    void disable_search_on_get_list() { _search_on_get_list = false; }
+
 private:
     void set_routes(
       ss::httpd::routes& r, const std::vector<expectation>& expectations);
@@ -83,6 +85,10 @@ private:
     std::vector<ss::httpd::request> _requests;
     /// Contains all accessed target urls
     std::multimap<ss::sstring, ss::httpd::request> _targets;
+
+    /// Whether or not to search through expectations for content when handling
+    /// a list GET request.
+    bool _search_on_get_list{true};
 };
 
 class enable_cloud_storage_fixture {
