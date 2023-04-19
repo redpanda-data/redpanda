@@ -767,9 +767,8 @@ ss::future<bool> ntp_archiver::maybe_upload_manifest(const char* upload_ctx) {
 
 ss::future<> ntp_archiver::maybe_flush_manifest_clean_offset() {
     if (
-      _projected_manifest_clean_at.has_value()
-      && ss::lowres_clock::now() - _last_marked_clean_time
-           > _manifest_upload_interval()) {
+      local_storage_pressure()
+      || (_projected_manifest_clean_at.has_value() && ss::lowres_clock::now() - _last_marked_clean_time > _manifest_upload_interval())) {
         co_return co_await flush_manifest_clean_offset();
     }
 }
