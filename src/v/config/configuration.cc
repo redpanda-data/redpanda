@@ -1374,6 +1374,12 @@ configuration::configuration()
       "housekeeping jobs are started.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       10s)
+  , cloud_storage_cluster_metadata_upload_interval_ms(
+      *this,
+      "cloud_storage_cluster_metadata_upload_interval_ms",
+      "Time interval to wait between cluster metadata uploads.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      60s)
   , cloud_storage_idle_threshold_rps(
       *this,
       "cloud_storage_idle_threshold_rps",
