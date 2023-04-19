@@ -306,6 +306,7 @@ struct configuration final : public config_store {
     property<std::optional<uint32_t>> cloud_storage_max_readers_per_shard;
     property<std::optional<uint32_t>>
       cloud_storage_max_materialized_segments_per_shard;
+    property<uint64_t> cloud_storage_cache_chunk_size;
 
     one_or_many_property<ss::sstring> superusers;
 
