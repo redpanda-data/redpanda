@@ -682,7 +682,10 @@ ss::future<> remote_segment::run_hydrate_bg() {
                 co_await hydration.hydrate(_wait_list.size());
                 err = hydration.current_error();
                 if (!err) {
-                    co_await hydration.materialize();
+                    if (auto mat_res = co_await hydration.materialize();
+                        !mat_res) {
+                        continue;
+                    }
                 }
             }
             // Invariant: here we should have a data file or error to be set.
@@ -1196,9 +1199,9 @@ ss::future<> hydration_loop_state::hydrate(size_t wait_list_size) {
     }
 }
 
-ss::future<> hydration_loop_state::materialize() {
+ss::future<bool> hydration_loop_state::materialize() {
     if (_current_error) {
-        co_return;
+        co_return false;
     }
 
     std::vector<ss::future<bool>> fs;
@@ -1208,6 +1211,7 @@ ss::future<> hydration_loop_state::materialize() {
     }
 
     auto rs = co_await ss::when_all(fs.begin(), fs.end());
+    bool accum = true;
     for (size_t i = 0; i < rs.size(); ++i) {
         auto& r = rs[i];
         if (r.failed()) {
@@ -1217,8 +1221,13 @@ ss::future<> hydration_loop_state::materialize() {
               _states[i].path_kind,
               _states[i].path,
               r.get_exception());
+            accum &= false;
+        } else {
+            accum &= r.get();
         }
     }
+
+    co_return accum;
 }
 
 std::exception_ptr hydration_loop_state::current_error() {
