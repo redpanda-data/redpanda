@@ -366,7 +366,7 @@ struct hydration_loop_state {
     // Call materialize actions for all registered paths. Called after
     // hydration. If there was an exception thrown during hydration,
     // materialization is skipped.
-    ss::future<> materialize();
+    ss::future<bool> materialize();
 
     // Returns the last error seen during hydration. Reset during each hydration
     // request.
