@@ -74,7 +74,8 @@ struct archival_metadata_stm_base_fixture
         return conf;
     }
 
-    archival_metadata_stm_base_fixture() {
+    archival_metadata_stm_base_fixture()
+      : http_imposter_fixture(4446) {
         // Blank feature table to satisfy constructor interface
         feature_table.start().get();
         // Cloud storage config

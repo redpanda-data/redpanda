@@ -27,7 +27,13 @@ namespace ba = boost::algorithm;
 
 static const cloud_roles::aws_region_name region{""};
 
-FIXTURE_TEST(test_simple_token_request, http_imposter_fixture) {
+class fixture : public http_imposter_fixture {
+public:
+    fixture()
+      : http_imposter_fixture(4445) {}
+};
+
+FIXTURE_TEST(test_simple_token_request, fixture) {
     when()
       .request(cloud_role_tests::gcp_url)
       .then_reply_with(cloud_role_tests::gcp_oauth_token);
@@ -42,7 +48,7 @@ FIXTURE_TEST(test_simple_token_request, http_imposter_fixture) {
     BOOST_REQUIRE(has_call(cloud_role_tests::gcp_url));
 }
 
-FIXTURE_TEST(test_bad_response_handling, http_imposter_fixture) {
+FIXTURE_TEST(test_bad_response_handling, fixture) {
     listen();
     ss::abort_source as;
 
@@ -55,7 +61,7 @@ FIXTURE_TEST(test_bad_response_handling, http_imposter_fixture) {
     BOOST_REQUIRE_EQUAL(error.reason, "http request failed:Not Found");
 }
 
-FIXTURE_TEST(test_gateway_down, http_imposter_fixture) {
+FIXTURE_TEST(test_gateway_down, fixture) {
     when()
       .request(cloud_role_tests::gcp_url)
       .then_reply_with(ss::http::reply::status_type::gateway_timeout);
@@ -71,7 +77,7 @@ FIXTURE_TEST(test_gateway_down, http_imposter_fixture) {
     BOOST_REQUIRE_EQUAL(error.reason, "http request failed:Gateway Timeout");
 }
 
-FIXTURE_TEST(test_aws_role_fetch_on_startup, http_imposter_fixture) {
+FIXTURE_TEST(test_aws_role_fetch_on_startup, fixture) {
     when()
       .request(cloud_role_tests::aws_role_query_url)
       .then_reply_with(cloud_role_tests::aws_role);
@@ -94,7 +100,7 @@ FIXTURE_TEST(test_aws_role_fetch_on_startup, http_imposter_fixture) {
       iobuf_to_bytes(std::get<iobuf>(resp)), cloud_role_tests::aws_creds);
 }
 
-FIXTURE_TEST(test_sts_credentials_fetch, http_imposter_fixture) {
+FIXTURE_TEST(test_sts_credentials_fetch, fixture) {
     when()
       .request("/")
       .with_method(ss::httpd::POST)
