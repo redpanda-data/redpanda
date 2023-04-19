@@ -85,6 +85,7 @@
 #include "security/scram_credential.h"
 #include "ssx/future-util.h"
 #include "ssx/metrics.h"
+#include "utils/fragmented_vector.h"
 #include "utils/string_switch.h"
 #include "utils/utf8.h"
 #include "vlog.h"
@@ -103,6 +104,8 @@
 #include <seastar/http/reply.hh>
 #include <seastar/http/request.hh>
 #include <seastar/http/url.hh>
+#include <seastar/json/json_elements.hh>
+#include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -2608,27 +2611,103 @@ admin_server::mark_transaction_expired_handler(
 ss::future<ss::json::json_return_type>
 admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
     using reconfiguration = ss::httpd::partition_json::reconfiguration;
-    std::vector<reconfiguration> ret;
+
     auto& in_progress
       = _controller->get_topics_state().local().updates_in_progress();
 
-    ret.reserve(in_progress.size());
-    for (auto& [ntp, status] : in_progress) {
-        reconfiguration r;
-        r.ns = ntp.ns;
-        r.topic = ntp.tp.topic;
-        r.partition = ntp.tp.partition;
-        r.status = fmt::format("{}", status.get_state());
+    std::vector<model::ntp> ntps;
+    ntps.reserve(in_progress.size());
 
-        for (auto& bs : status.get_previous_replicas()) {
-            ss::httpd::partition_json::assignment replica;
-            replica.node_id = bs.node_id;
-            replica.core = bs.shard;
-            r.previous_replicas.push(replica);
-        }
-        ret.push_back(std::move(r));
+    for (auto& [ntp, status] : in_progress) {
+        ntps.push_back(ntp);
     }
-    co_return ss::json::json_return_type(ret);
+
+    auto const deadline = model::timeout_clock::now() + 5s;
+
+    auto [reconfiguration_states, reconciliations]
+      = co_await ss::when_all_succeed(
+        _controller->get_api().local().get_partitions_reconfiguration_state(
+          ntps, deadline),
+        _controller->get_api().local().get_global_reconciliation_state(
+          ntps, deadline));
+
+    if (reconfiguration_states.has_error()) {
+        vlog(
+          logger.info,
+          "unable to get reconfiguration status: {}({})",
+          reconfiguration_states.error().message(),
+          reconfiguration_states.error());
+        throw ss::httpd::base_exception(
+          fmt::format(
+            "unable to get reconfiguration status: {}({})",
+            reconfiguration_states.error().message(),
+            reconfiguration_states.error()),
+          ss::http::reply::status_type::service_unavailable);
+    }
+    co_return ss::json::json_return_type(ss::json::stream_range_as_array(
+      std::move(reconfiguration_states.value()),
+      [reconciliations = std::move(reconciliations)](auto& s) {
+          reconfiguration r;
+          r.ns = s.ntp.ns;
+          r.topic = s.ntp.tp.topic;
+          r.partition = s.ntp.tp.partition;
+
+          for (const model::broker_shard& bs : s.current_assignment) {
+              ss::httpd::partition_json::assignment assignment;
+              assignment.core = bs.shard;
+              assignment.node_id = bs.node_id;
+              r.current_replicas.push(assignment);
+          }
+
+          for (const model::broker_shard& bs : s.previous_assignment) {
+              ss::httpd::partition_json::assignment assignment;
+              assignment.core = bs.shard;
+              assignment.node_id = bs.node_id;
+              r.previous_replicas.push(assignment);
+          }
+
+          size_t left_to_move = 0;
+          size_t already_moved = 0;
+          for (auto replica_status : s.already_transferred_bytes) {
+              left_to_move += (s.current_partition_size - replica_status.bytes);
+              already_moved += replica_status.bytes;
+          }
+          r.bytes_left_to_move = left_to_move;
+          r.bytes_moved = already_moved;
+          r.partition_size = s.current_partition_size;
+          // if no information from partitions is present yet, we may indicate
+          // that everything have to be moved
+          if (already_moved == 0 && left_to_move == 0) {
+              r.bytes_left_to_move = s.current_partition_size;
+          }
+
+          auto it = reconciliations.ntp_backend_operations.find(s.ntp);
+          if (it != reconciliations.ntp_backend_operations.end()) {
+              for (auto& node_ops : it->second) {
+                  seastar::httpd::partition_json::
+                    partition_reconciliation_status per_node_status;
+                  per_node_status.node_id = node_ops.node_id;
+
+                  for (auto& op : node_ops.backend_operations) {
+                      auto& current_op = node_ops.backend_operations.front();
+                      seastar::httpd::partition_json::
+                        partition_reconciliation_operation r_op;
+                      r_op.core = op.source_shard;
+                      r_op.retry_number = current_op.current_retry;
+                      r_op.revision = current_op.revision_of_operation;
+                      r_op.status = fmt::format(
+                        "{} ({})",
+                        cluster::error_category().message(
+                          (int)current_op.last_operation_result),
+                        current_op.last_operation_result);
+                      r_op.type = fmt::format("{}", current_op.type);
+                      per_node_status.operations.push(r_op);
+                  }
+                  r.reconciliation_statuses.push(per_node_status);
+              }
+          }
+          return r;
+      }));
 }
 
 ss::future<ss::json::json_return_type>
