@@ -216,7 +216,8 @@ def main(args):
                     topic=args.topic,
                     group=args.group,
                     logger=logger,
-                    security_config=security_dict)
+                    security_config=security_dict,
+                    skip_known_types=args.skip_known_types)
     p.run(args.count)
 
 
