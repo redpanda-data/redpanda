@@ -352,6 +352,9 @@ private:
     ss::future<ss::json::json_return_type>
       trigger_on_demand_rebalance_handler(std::unique_ptr<ss::httpd::request>);
 
+    ss::future<ss::json::json_return_type>
+      get_reconfigurations_handler(std::unique_ptr<ss::httpd::request>);
+
     /// Transaction routes
     ss::future<ss::json::json_return_type>
       get_all_transactions_handler(std::unique_ptr<ss::httpd::request>);
