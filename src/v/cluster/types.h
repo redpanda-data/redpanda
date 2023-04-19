@@ -2405,6 +2405,11 @@ public:
     const std::vector<backend_operation>& pending_operations() const {
         return _backend_operations;
     }
+
+    std::vector<backend_operation>& pending_operations() {
+        return _backend_operations;
+    }
+
     reconciliation_status status() const { return _status; }
 
     std::error_code error() const { return make_error_code(_error); }
@@ -2426,6 +2431,31 @@ private:
     std::vector<backend_operation> _backend_operations;
     reconciliation_status _status;
     errc _error;
+};
+
+struct node_backend_operations {
+    node_backend_operations(
+      model::node_id id, std::vector<backend_operation> ops)
+      : node_id(id)
+      , backend_operations(std::move(ops)) {}
+
+    model::node_id node_id;
+    std::vector<backend_operation> backend_operations;
+};
+
+struct node_error {
+    node_error(model::node_id nid, std::error_code err_code)
+      : node_id(nid)
+      , ec(err_code) {}
+
+    model::node_id node_id;
+    std::error_code ec;
+};
+
+struct global_reconciliation_state {
+    absl::node_hash_map<model::ntp, std::vector<node_backend_operations>>
+      ntp_backend_operations;
+    std::vector<node_error> node_errors;
 };
 
 struct reconciliation_state_request
