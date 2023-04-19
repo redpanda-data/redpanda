@@ -834,4 +834,26 @@ private:
     ss::metrics::metric_groups _metrics;
 };
 
+struct fence_batch_data {
+    model::batch_identity bid;
+    std::optional<model::tx_seq> tx_seq;
+    std::optional<std::chrono::milliseconds> transaction_timeout_ms;
+    model::partition_id tm;
+};
+
+model::record_batch make_fence_batch_v0(model::producer_identity pid);
+
+model::record_batch make_fence_batch_v1(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms);
+
+model::record_batch make_fence_batch_v2(
+  model::producer_identity pid,
+  model::tx_seq tx_seq,
+  std::chrono::milliseconds transaction_timeout_ms,
+  model::partition_id tm);
+
+fence_batch_data read_fence_batch(model::record_batch&& b);
+
 } // namespace cluster
