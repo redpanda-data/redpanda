@@ -2606,6 +2606,32 @@ admin_server::mark_transaction_expired_handler(
 }
 
 ss::future<ss::json::json_return_type>
+admin_server::get_reconfigurations_handler(std::unique_ptr<ss::http::request>) {
+    using reconfiguration = ss::httpd::partition_json::reconfiguration;
+    std::vector<reconfiguration> ret;
+    auto& in_progress
+      = _controller->get_topics_state().local().updates_in_progress();
+
+    ret.reserve(in_progress.size());
+    for (auto& [ntp, status] : in_progress) {
+        reconfiguration r;
+        r.ns = ntp.ns;
+        r.topic = ntp.tp.topic;
+        r.partition = ntp.tp.partition;
+        r.status = fmt::format("{}", status.get_state());
+
+        for (auto& bs : status.get_previous_replicas()) {
+            ss::httpd::partition_json::assignment replica;
+            replica.node_id = bs.node_id;
+            replica.core = bs.shard;
+            r.previous_replicas.push(replica);
+        }
+        ret.push_back(std::move(r));
+    }
+    co_return ss::json::json_return_type(ret);
+}
+
+ss::future<ss::json::json_return_type>
 admin_server::cancel_partition_reconfig_handler(
   std::unique_ptr<ss::http::request> req) {
     const auto ntp = parse_ntp_from_request(req->param);
@@ -2900,29 +2926,8 @@ void admin_server::register_partition_routes() {
 
     register_route<user>(
       ss::httpd::partition_json::get_partition_reconfigurations,
-      [this](std::unique_ptr<ss::http::request>) {
-          using reconfiguration = ss::httpd::partition_json::reconfiguration;
-          std::vector<reconfiguration> ret;
-          auto& in_progress
-            = _controller->get_topics_state().local().updates_in_progress();
-
-          ret.reserve(in_progress.size());
-          for (auto& [ntp, status] : in_progress) {
-              reconfiguration r;
-              r.ns = ntp.ns;
-              r.topic = ntp.tp.topic;
-              r.partition = ntp.tp.partition;
-              r.status = fmt::format("{}", status.get_state());
-
-              for (auto& bs : status.get_previous_replicas()) {
-                  ss::httpd::partition_json::assignment replica;
-                  replica.node_id = bs.node_id;
-                  replica.core = bs.shard;
-                  r.previous_replicas.push(replica);
-              }
-              ret.push_back(std::move(r));
-          }
-          return ss::make_ready_future<ss::json::json_return_type>(ret);
+      [this](std::unique_ptr<ss::http::request> req) {
+          return get_reconfigurations_handler(std::move(req));
       });
 }
 namespace {
