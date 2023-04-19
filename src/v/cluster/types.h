@@ -2080,16 +2080,29 @@ struct delete_acls_reply
 
 struct backend_operation
   : serde::
-      envelope<backend_operation, serde::version<0>, serde::compat_version<0>> {
+      envelope<backend_operation, serde::version<1>, serde::compat_version<0>> {
     ss::shard_id source_shard;
     partition_assignment p_as;
     topic_table_delta::op_type type;
+
+    uint64_t current_retry;
+    cluster::errc last_operation_result;
+    model::revision_id revision_of_operation;
+
     friend std::ostream& operator<<(std::ostream&, const backend_operation&);
 
     friend bool operator==(const backend_operation&, const backend_operation&)
       = default;
 
-    auto serde_fields() { return std::tie(source_shard, p_as, type); }
+    auto serde_fields() {
+        return std::tie(
+          source_shard,
+          p_as,
+          type,
+          current_retry,
+          last_operation_result,
+          revision_of_operation);
+    }
 };
 
 struct create_data_policy_cmd_data
