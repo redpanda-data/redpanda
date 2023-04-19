@@ -107,6 +107,7 @@ func newGrafanaDashboardCmd(p *config.Params) *cobra.Command {
 		dashboard       string
 		datasource      string
 		metricsEndpoint string
+		interactive     bool
 	)
 	cmd := &cobra.Command{
 		Use:   "grafana-dashboard",
@@ -132,6 +133,18 @@ metrics endpoint used.
 To see a list of all available dashboards, use the '--dashboard help' flag.
 `,
 		Run: func(cmd *cobra.Command, args []string) {
+			if interactive {
+				opts := make([]string, 0, len(dashboardMap))
+				for k := range dashboardMap {
+					opts = append(opts, k)
+				}
+				descFun := func(v string, _ int) string {
+					return dashboardMap[v].Description
+				}
+				pick, err := out.Pick(opts, descFun, "Please select a dashboard:")
+				out.MaybeDie(err, "unable to confirm your selection: %v", err)
+				dashboard = pick
+			}
 			switch {
 			case dashboard == "legacy":
 				if datasource == "" {
@@ -181,6 +194,8 @@ To see a list of all available dashboards, use the '--dashboard help' flag.
 	// New Flag //
 	dashboardFlag := "dashboard"
 	cmd.Flags().StringVar(&dashboard, dashboardFlag, "operations", "The name of the dashboard you wish to download; use --dashboard help for more info")
+	cmd.Flags().BoolVar(&interactive, "interactive", false, "Manually select the dashboard you wish to download")
+	cmd.MarkFlagsMutuallyExclusive(dashboardFlag, "interactive")
 
 	// This portion of code is to register the flag autocompletion.
 	cmd.RegisterFlagCompletionFunc(dashboardFlag, func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {

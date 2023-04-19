@@ -36,12 +36,17 @@ func Confirm(msg string, args ...interface{}) (bool, error) {
 
 // Pick prompts the user to pick one of many options, returning the selected
 // option or an error.
-func Pick(options []string, msg string, args ...interface{}) (string, error) {
+func Pick(options []string, descFun func(string, int) string, msg string, args ...interface{}) (string, error) {
 	var selected int
-	err := survey.AskOne(&survey.Select{
-		Message: fmt.Sprintf(msg, args...),
-		Options: options,
-	}, &selected)
+	s := &survey.Select{
+		Message:     fmt.Sprintf(msg, args...),
+		Options:     options,
+		Description: descFun,
+	}
+	if descFun != nil {
+		s.Description = descFun
+	}
+	err := survey.AskOne(s, &selected)
 	if err != nil {
 		return "", err
 	}

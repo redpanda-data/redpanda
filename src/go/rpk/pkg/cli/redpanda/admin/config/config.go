@@ -111,7 +111,7 @@ failure of enabling each logger is individually printed.
 			switch len(loggers) {
 			case 0:
 				choices := append([]string{"all"}, possibleLoggers...)
-				pick, err := out.Pick(choices, "Which logger would you like to set (all selects everything)?")
+				pick, err := out.Pick(choices, nil, "Which logger would you like to set (all selects everything)?")
 				out.MaybeDie(err, "unable to pick logger: %v", err)
 				if pick == "all" {
 					loggers = possibleLoggers
