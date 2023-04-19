@@ -306,6 +306,9 @@ class ControllerSnapshotTest(RedpandaTest):
 
         # make a node join and check its state
 
+        # explicit clean step is needed because we are starting the node manually and not
+        # using redpanda.start()
+        self.redpanda.clean_node(joiner)
         self.redpanda.start_node(joiner)
         wait_until(lambda: self.redpanda.registered(joiner),
                    timeout_sec=30,
