@@ -278,7 +278,10 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
         super().__init__(
             test_context,
             si_settings=si_settings,
-            extra_rp_conf={'cloud_storage_housekeeping_interval_ms': 1000 * 2})
+            # Minimal interval: effect is to run housekeeping on every upload loop.
+            # This means that 2x the max segments per upload loop (4) is the most
+            # we may exceed the retention limit by.
+            extra_rp_conf={'cloud_storage_housekeeping_interval_ms': 1})
 
     @cluster(num_nodes=4, log_allow_list=CHAOS_LOG_ALLOW_LIST)
     @skip_debug_mode
@@ -289,11 +292,11 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
 
         # Write fast enough that in the test's runtime, we would certainly
         # overshoot the retention size substantially if retention wasn't working.
-        write_rate = (self.retention_bytes * 4.0) / runtime
+        write_rate = int(self.retention_bytes * 4.0) // runtime
 
         # Write enough data to last the runtime.
         msg_size = 128
-        msg_count = write_rate * runtime // msg_size
+        msg_count = int(write_rate * runtime // msg_size)
 
         producer = KgoVerifierProducer(self.test_context,
                                        self.redpanda,
@@ -303,10 +306,21 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
                                        rate_limit_bps=write_rate)
         producer.start()
 
+        # Wait for some substantial production to happen before we start
+        # inspecting cloud storage
+        producer.wait_for_acks(msg_count / 2,
+                               timeout_sec=runtime,
+                               backoff_sec=5)
+
         def cloud_log_size() -> int:
             s3_snapshot = BucketView(self.redpanda, topics=self.topics)
             if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
                 self.logger.debug(f"No manifest present yet")
+                return 0
+
+            if s3_snapshot.manifest_for_ntp(topic=self.topic, partition=0).get(
+                    'start_offset', 0) <= 0:
+                self.logger.debug(f"Manifest not prefix-truncated yet")
                 return 0
 
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
@@ -337,6 +351,7 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
                 # for the duration of the test.
                 pass
             finally:
+                producer.wait()
                 producer.stop()
 
         ctx.assert_actions_triggered()
