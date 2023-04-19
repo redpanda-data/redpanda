@@ -188,13 +188,11 @@ class ActionInjectorThread(Thread):
     def run(self):
         admin = Admin(self.redpanda)
 
-        def all_nodes_started():
-            statuses = [
-                admin.ready(node).get("status") for node in self.redpanda.nodes
-            ]
+        def all_nodes_started(nodes):
+            statuses = [admin.ready(node).get("status") for node in nodes]
             return all(status == 'ready' for status in statuses)
 
-        wait_until(all_nodes_started,
+        wait_until(lambda: all_nodes_started(self.redpanda.nodes),
                    timeout_sec=self.config.cluster_start_lead_time_sec,
                    backoff_sec=2,
                    err_msg='Cluster not ready to begin actions')
@@ -214,6 +212,18 @@ class ActionInjectorThread(Thread):
             time.sleep(sleep_interval)
             if self.disruptive_action.reverse():
                 self.reverse_action_triggered = True
+
+        # We reversed all actions, but reversing a node kill does not wait for
+        # the node to become available, it just starts the process.  In order
+        # for subsequent code to count on the cluster being able to respond
+        # to API requests, we must additionally wait for readiness.
+        self.redpanda.logger.info(
+            f"Stopping/pausing failure injector, waiting for nodes {[n.name for n in self.redpanda.started_nodes()]} to be ready"
+        )
+        wait_until(lambda: all_nodes_started(self.redpanda.started_nodes()),
+                   timeout_sec=self.config.cluster_start_lead_time_sec,
+                   backoff_sec=2,
+                   err_msg='Cluster did not recover after failures')
 
     def stop(self):
         self._stop_requested.set()
