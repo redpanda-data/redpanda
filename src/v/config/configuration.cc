@@ -1949,7 +1949,7 @@ configuration::configuration()
       "Max time that will pass before we make an attempt to create a "
       "controller snapshot, after a new controller command appears",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      60s)
+      3s)
   , legacy_permit_unsafe_log_operation(
       *this,
       "legacy_permit_unsafe_log_operation",
