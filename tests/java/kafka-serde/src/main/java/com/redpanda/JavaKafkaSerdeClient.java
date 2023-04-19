@@ -29,6 +29,7 @@ public class JavaKafkaSerdeClient {
   private final String srAddr;
   private final String consumerGroup;
   private final SecuritySettings securitySettings;
+  private final boolean skipKnownTypes;
 
   private final Logger log;
 
@@ -41,6 +42,8 @@ public class JavaKafkaSerdeClient {
    * @param consumerGroup The consumer group to use
    * @param protocol The protocol to use for serialization/deserialization
    * @param securitySettings The security settings
+   * @param skipKnownTypes Whether to skip known types when resolving schema
+   *     dependencies
    * @param log The logger to use
    *
    * @see SecuritySettings
@@ -48,13 +51,15 @@ public class JavaKafkaSerdeClient {
    */
   public JavaKafkaSerdeClient(
       String brokers, String topic, String srAddr, String consumerGroup,
-      Protocol protocol, SecuritySettings securitySettings, Logger log) {
+      Protocol protocol, SecuritySettings securitySettings,
+      boolean skipKnownTypes, Logger log) {
     this.brokers = brokers;
     this.topic = topic;
     this.srAddr = srAddr;
     this.consumerGroup = consumerGroup;
     this.protocol = protocol;
     this.securitySettings = securitySettings;
+    this.skipKnownTypes = skipKnownTypes;
     this.log = log;
   }
 
@@ -81,7 +86,8 @@ public class JavaKafkaSerdeClient {
     test_interface.produce(
         this.log,
         test_interface.getProducerProperties(
-            this.brokers, this.srAddr, this.securitySettings, true),
+            this.brokers, this.srAddr, this.securitySettings, true,
+            this.skipKnownTypes),
         this.topic, count);
 
     log.info("Starting consume");

@@ -29,6 +29,10 @@ RUN /opt/ducktape-deps.sh install_java_client_deps && \
 # on unrelated changes in other steps, this step is as early on the Dockerfile as possible.
 RUN /opt/ducktape-deps.sh install_kafka_streams_examples
 
+# Install Protobuf for test clients / workloads
+RUN mkdir -p /opt/redpanda-tests
+COPY --chown=0:0 tests/protobuf /opt/redpanda-tests/protobuf
+
 # Install our in-tree Java test clientst
 RUN mkdir -p /opt/redpanda-tests
 COPY --chown=0:0 tests/java /opt/redpanda-tests/java
@@ -112,5 +116,9 @@ COPY --chown=0:0 tools/offline_log_viewer /opt/scripts/offline_log_viewer
 RUN mkdir -p /opt/scripts/consumer_offsets_recovery
 COPY --chown=0:0 tools/consumer_offsets_recovery /opt/scripts/consumer_offsets_recovery
 RUN python3 -m pip install --force --no-cache-dir -r  /opt/scripts/consumer_offsets_recovery/requirements.txt
+
+# Install remote_scripts
+RUN mkdir -p /opt/remote
+COPY --chown=0:0 tests/rptest/remote_scripts /opt/remote
 
 CMD service ssh start && tail -f /dev/null

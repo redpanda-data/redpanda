@@ -46,7 +46,8 @@ class SerdeClient(BackgroundThreadService):
                  num_nodes: Optional[int] = None,
                  topic=str(uuid4()),
                  group=str(uuid4()),
-                 security_config: Optional[dict] = None):
+                 security_config: Optional[dict] = None,
+                 skip_known_types: Optional[bool] = None):
 
         if num_nodes is None and nodes is None:
             num_nodes = 1
@@ -66,6 +67,12 @@ class SerdeClient(BackgroundThreadService):
         self._cmd_args += f" --protocol {schema_type}"
         self._cmd_args += f" --count {count}"
 
+        if skip_known_types is not None:
+            if self._serde_client_type != SerdeClientType.Golang:
+                self._cmd_args += " --skip-known-types"
+            else:
+                assert False
+
         if self._serde_client_type == SerdeClientType.Golang:
             self._cmd_args += f" --debug"
 
@@ -78,6 +85,7 @@ class SerdeClient(BackgroundThreadService):
     def _worker(self, idx, node):
 
         if self._serde_client_type == SerdeClientType.Python:
+            inject_remote_script(node, "payload_pb2.py")
             script_path = inject_remote_script(
                 node, "python_librdkafka_serde_client.py")
             script_path = f"{PYTHON_EXEC} {script_path}"
