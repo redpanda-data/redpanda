@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/rm_stm.h"
 #include "model/record.h"
 
 #include <seastar/testing/thread_test_case.hh>
@@ -14,8 +15,6 @@
 #include <boost/test/unit_test.hpp>
 
 #include <optional>
-
-#include "cluster/rm_stm.cc"
 
 namespace cluster {
 
