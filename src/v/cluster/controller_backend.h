@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -226,6 +227,7 @@ public:
 
         topic_table::delta delta;
         uint64_t retries = 0;
+        cluster::errc last_error = errc::waiting_for_recovery;
         friend std::ostream& operator<<(std::ostream&, const delta_metadata&);
     };
 
