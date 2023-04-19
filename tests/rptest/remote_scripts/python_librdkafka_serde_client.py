@@ -86,19 +86,26 @@ class SerdeClient:
         self.acked = 0
         self.consumed = 0
 
-        self.serde_config = {'use.deprecated.format': False}
+        serde_config = {}
+
+        self.avro_serde_config = serde_config.copy()
+
+        self.proto_serde_config = serde_config.copy()
+        self.proto_serde_config['use.deprecated.format'] = False
         if skip_known_types is not None:
-            self.serde_config.update({'skip.known.types': skip_known_types})
+            self.proto_serde_config['skip.known.types'] = skip_known_types
 
         self.security_config = security_config
 
     def _make_serializer(self):
         return {
             SchemaType.AVRO:
-            AvroSerializer(self.sr_client, AVRO_SCHEMA),
+            AvroSerializer(self.sr_client,
+                           AVRO_SCHEMA,
+                           conf=self.avro_serde_config),
             SchemaType.PROTOBUF:
             ProtobufSerializer(ProtobufPayloadClass, self.sr_client,
-                               self.serde_config)
+                               self.proto_serde_config)
         }[self.schema_type]
 
     def _make_deserializer(self):
