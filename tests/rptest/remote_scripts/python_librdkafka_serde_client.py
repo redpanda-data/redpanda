@@ -20,7 +20,7 @@ from uuid import uuid4
 
 from confluent_kafka import DeserializingConsumer, SerializingProducer
 from confluent_kafka.serialization import StringDeserializer, StringSerializer
-from confluent_kafka.schema_registry import SchemaRegistryClient
+from confluent_kafka.schema_registry import SchemaRegistryClient, topic_subject_name_strategy, record_subject_name_strategy, topic_record_subject_name_strategy
 from confluent_kafka.schema_registry.avro import AvroDeserializer, AvroSerializer
 from confluent_kafka.schema_registry.protobuf import ProtobufDeserializer, ProtobufSerializer
 
@@ -59,6 +59,16 @@ def make_protobuf_payload(val: int):
     return p
 
 
+subject_name_strategies = {
+    "io.confluent.kafka.serializers.subject.TopicNameStrategy":
+    topic_subject_name_strategy,
+    "io.confluent.kafka.serializers.subject.RecordNameStrategy":
+    record_subject_name_strategy,
+    "io.confluent.kafka.serializers.subject.TopicRecordNameStrategy":
+    topic_record_subject_name_strategy
+}
+
+
 class SerdeClient:
     """
     SerdeClient produces and consumes payloads in avro or protobuf formats
@@ -74,7 +84,8 @@ class SerdeClient:
                  group=str(uuid4()),
                  logger=logging.getLogger("SerdeClient"),
                  security_config: dict = None,
-                 skip_known_types: Optional[bool] = None):
+                 skip_known_types: Optional[bool] = None,
+                 subject_name_strategy: Optional[str] = None):
         self.logger = logger
         self.brokers = brokers
         self.sr_client = SchemaRegistryClient({'url': schema_registry_url})
@@ -87,6 +98,9 @@ class SerdeClient:
         self.consumed = 0
 
         serde_config = {}
+        if subject_name_strategy is not None:
+            serde_config['subject.name.strategy'] = subject_name_strategies[
+                subject_name_strategy]
 
         self.avro_serde_config = serde_config.copy()
 
@@ -224,7 +238,8 @@ def main(args):
                     group=args.group,
                     logger=logger,
                     security_config=security_dict,
-                    skip_known_types=args.skip_known_types)
+                    skip_known_types=args.skip_known_types,
+                    subject_name_strategy=args.subject_name_strategy)
     p.run(args.count)
 
 
@@ -265,10 +280,15 @@ if __name__ == '__main__':
     parser.add_argument('--security',
                         dest="security",
                         help="JSON formatted security string")
-
     parser.add_argument('--skip-known-types',
                         dest="skip_known_types",
                         action='store_true',
                         help="Optional bool")
+    parser.add_argument(
+        '--subject-name-strategy',
+        default='io.confluent.kafka.serializers.subject.TopicNameStrategy',
+        choices=subject_name_strategies.keys(),
+        dest="subject_name_strategy",
+        help="Subject Name Strategy")
 
     main(parser.parse_args())

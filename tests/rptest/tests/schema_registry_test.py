@@ -171,7 +171,8 @@ class SchemaRegistryEndpoints(RedpandaTest):
                           client_type: SerdeClientType,
                           topic: str,
                           count: int,
-                          skip_known_types: Optional[bool] = None):
+                          skip_known_types: Optional[bool] = None,
+                          subject_name_strategy: Optional[str] = None):
         schema_reg = self.redpanda.schema_reg().split(',', 1)[0]
         sasl_enabled = self.redpanda.sasl_enabled()
         sec_cfg = self.redpanda.security_config() if sasl_enabled else None
@@ -184,7 +185,8 @@ class SchemaRegistryEndpoints(RedpandaTest):
                            count,
                            topic=topic,
                            security_config=sec_cfg,
-                           skip_known_types=skip_known_types)
+                           skip_known_types=skip_known_types,
+                           subject_name_strategy=subject_name_strategy)
 
     def _get_topics(self):
         return requests.get(
