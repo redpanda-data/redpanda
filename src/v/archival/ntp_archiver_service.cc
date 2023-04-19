@@ -2122,20 +2122,35 @@ ss::future<bool> ntp_archiver::do_upload_local(
     futures.emplace_back(upload_segment(upload, std::move(locks), source_rtc));
 
     size_t tx_size = 0;
-    auto tx_range = co_await get_aborted_transactions(upload);
-    if (!tx_range.empty()) {
-        tx_size = tx_range.size();
-        futures.emplace_back(
-          upload_tx(upload, std::move(tx_range), source_rtc));
+    std::exception_ptr tx_ep;
+    try {
+        auto tx_range = co_await get_aborted_transactions(upload);
+        if (!tx_range.empty()) {
+            tx_size = tx_range.size();
+            futures.emplace_back(
+              upload_tx(upload, std::move(tx_range), source_rtc));
+        }
+    } catch (...) {
+        tx_ep = std::current_exception();
     }
     auto upl_res = co_await aggregate_upload_results(std::move(futures));
 
-    if (upl_res != cloud_storage::upload_result::success) {
-        vlog(
-          _rtclog.warn,
-          "Failed to upload segment: {}, error: {}",
-          upload.exposed_name,
-          upl_res);
+    if (tx_ep || upl_res != cloud_storage::upload_result::success) {
+        if (upl_res != cloud_storage::upload_result::success) {
+            vlog(
+              _rtclog.warn,
+              "Failed to upload segment: {}, error: {}",
+              upload.exposed_name,
+              upl_res);
+        }
+        if (tx_ep) {
+            vlog(
+              _rtclog.warn,
+              "Failed to get aborted transactions segment: {}, error: {}",
+              upload.exposed_name,
+              tx_ep);
+            std::rethrow_exception(tx_ep);
+        }
         co_return false;
     }
 
