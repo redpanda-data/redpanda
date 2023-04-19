@@ -86,13 +86,14 @@ maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
 }
 
 static inline ss::file wrap_handle(
-  [[maybe_unused]] std::filesystem::path path,
+  std::filesystem::path path,
   ss::file f,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     if (ntp_sanitizer_config) {
-        return ss::file(ss::make_shared(file_io_sanitizer(std::move(f))));
-        // std::move(path),
-        // std::move(ntp_sanitizer_config.value()))));
+        return ss::file(ss::make_shared(file_io_sanitizer(
+          std::move(f),
+          std::move(path),
+          std::move(ntp_sanitizer_config.value()))));
     }
     return f;
 }

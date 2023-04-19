@@ -11,17 +11,22 @@
 
 #pragma once
 
+#include "config/node_config.h"
 #include "ssx/sformat.h"
+#include "storage/file_sanitizer_types.h"
+#include "storage/logger.h"
 #include "vassert.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/util/backtrace.hh>
+#include <seastar/util/exceptions.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/intrusive/list.hpp>
 
 #include <optional>
 #include <ostream>
+#include <random>
 #include <unordered_map>
 #include <utility>
 
@@ -50,8 +55,22 @@ struct sanitizer_op
 /// auto fd = file(make_shared(file_io_sanitizer(original_fd)));
 class file_io_sanitizer final : public ss::file_impl {
 public:
-    explicit file_io_sanitizer(ss::file f)
-      : _file(std::move(f)) {}
+    explicit file_io_sanitizer(
+      ss::file f,
+      std::filesystem::path path,
+      ntp_sanitizer_config sanitizer_config)
+      : _file(std::move(f))
+      , _path(std::move(path))
+      , _config(std::move(sanitizer_config)) {
+        if (!_config.sanitize_only && _config.finjection_cfg) {
+            // Combine the global failure injection seed with the file path
+            // hash to get a unique sequence of failures for every file handle.
+            auto file_seed = _config.finjection_cfg->seed;
+            boost::hash_combine(file_seed, std::hash<std::string>()(_path));
+
+            _random_gen = std::mt19937(file_seed);
+        }
+    }
     ~file_io_sanitizer() override {
         if (!_closed && _file) {
             std::cout << "File destroying without being closed!" << std::endl;
@@ -63,7 +82,10 @@ public:
     file_io_sanitizer(file_io_sanitizer&& o) noexcept
       : _pending_ops(std::move(o._pending_ops))
       , _file(std::move(o._file))
-      , _closed(std::move(o._closed)) {}
+      , _path(std::move(o._path))
+      , _config(std::move(o._config))
+      , _closed(std::move(o._closed))
+      , _random_gen(std::move(o._random_gen)) {}
     file_io_sanitizer& operator=(file_io_sanitizer&& o) noexcept {
         if (this != &o) {
             this->~file_io_sanitizer();
@@ -81,7 +103,11 @@ public:
         return with_op(
           ssx::sformat(
             "ss::future<size_t>::write_dma(pos:{}, *void, len:{})", pos, len),
-          get_file_impl(_file)->write_dma(pos, buffer, len, pc));
+          maybe_inject_failure(failable_op_type::write)
+            .then([this, pos, buffer, len, pc]() {
+                return get_file_impl(_file)->write_dma(pos, buffer, len, pc);
+            .then([this, pos, buffer, len, &pc]() {
+            }));
     }
 
     ss::future<size_t> write_dma(
@@ -94,7 +120,11 @@ public:
             "ss::future<size_t>::write_dma(pos:{}, vector<iovec>:{})",
             pos,
             iov.size()),
-          get_file_impl(_file)->write_dma(pos, iov, pc));
+          maybe_inject_failure(failable_op_type::write)
+            .then([this, pos, iov = std::move(iov), pc]() {
+                return get_file_impl(_file)->write_dma(pos, iov, pc);
+            .then([this, pos, iov = std::move(iov), &pc]() {
+            }));
     }
 
     ss::future<size_t> read_dma(
@@ -133,7 +163,9 @@ public:
         }
         return with_op(
           ssx::sformat("ss::future<> flush(void)"),
-          get_file_impl(_file)->flush());
+          maybe_inject_failure(failable_op_type::flush).then([this]() {
+              return get_file_impl(_file)->flush();
+          }));
     }
 
     ss::future<struct stat> stat() final {
@@ -147,7 +179,9 @@ public:
         assert_file_not_closed();
         return with_op(
           ssx::sformat("ss::future<> truncate({})", length),
-          get_file_impl(_file)->truncate(length));
+          maybe_inject_failure(failable_op_type::truncate).then([this, length] {
+              return get_file_impl(_file)->truncate(length);
+          }));
     }
 
     ss::future<> discard(uint64_t offset, uint64_t length) final {
@@ -163,7 +197,10 @@ public:
         return with_op(
           ssx::sformat(
             "ss::future<> allocate(position:{}, length:{})", position, length),
-          get_file_impl(_file)->allocate(position, length));
+          maybe_inject_failure(failable_op_type::falloc)
+            .then([this, position, length] {
+                return get_file_impl(_file)->allocate(position, length);
+            }));
     }
 
     ss::future<uint64_t> size() final {
@@ -183,7 +220,11 @@ public:
             output_pending_ops();
         }
         _closed = {ss::current_backtrace()};
-        return get_file_impl(_file)->close();
+        return with_op(
+          ssx::sformat("ss::future<> close()"),
+          maybe_inject_failure(failable_op_type::close).then([this]() {
+              return get_file_impl(_file)->close();
+          }));
     }
 
     std::unique_ptr<ss::file_handle_impl> dup() final {
@@ -220,6 +261,77 @@ private:
           [pending = std::move(pending)] {});
     }
 
+    // This function is not a coroutine in order to avoid introducing a
+    // scheduling point between the two places that generate random numbers
+    // within it. This keeps failure injection deterministic.
+    ss::future<> maybe_inject_failure(failable_op_type op_type) {
+        if (
+          !config::node().storage_failure_injection_enabled()
+          || _config.sanitize_only || !_config.finjection_cfg || !_random_gen) {
+            return ss::make_ready_future<>();
+        }
+
+        const auto& fail_cfgs = _config.finjection_cfg.value();
+
+        auto fail_cfg = std::find_if(
+          fail_cfgs.op_configs.begin(),
+          fail_cfgs.op_configs.end(),
+          [&op_type](auto& cfg) { return op_type == cfg.op_type; });
+
+        if (fail_cfg == fail_cfgs.op_configs.end()) {
+            return ss::make_ready_future<>();
+        }
+
+        std::uniform_real_distribution<double> distrib(0, 100);
+
+        auto f = ss::now();
+
+        if (
+          fail_cfg->delay_probability && fail_cfg->max_delay_ms
+          && fail_cfg->min_delay_ms) {
+            const auto roll = distrib(_random_gen.value());
+            if (roll <= fail_cfg->delay_probability) {
+                std::uniform_int_distribution<> delay_distrib(
+                  fail_cfg->min_delay_ms.value(),
+                  fail_cfg->max_delay_ms.value());
+                auto delay = delay_distrib(_random_gen.value());
+
+                vlog(
+                  finjectlog.trace,
+                  "Injecting delay of {}ms for {} operation on file {} of ntp "
+                  "{}",
+                  delay,
+                  op_type,
+                  _path,
+                  fail_cfgs.ntp);
+
+                f = ss::sleep(std::chrono::milliseconds{delay});
+            }
+        }
+
+        if (fail_cfg->failure_probability) {
+            const auto roll = distrib(_random_gen.value());
+            if (roll <= fail_cfg->failure_probability) {
+                vlog(
+                  finjectlog.trace,
+                  "Injecting EIO for {} operation on file {} of ntp {}",
+                  op_type,
+                  _path,
+                  fail_cfgs.ntp);
+
+                f = f.then([path = _path]() {
+                    return ss::make_exception_future<>(
+                      ss::make_filesystem_error(
+                        "Injected Failure",
+                        path,
+                        static_cast<int>(std::errc::io_error)));
+                });
+            }
+        }
+
+        return f;
+    }
+
     void output_pending_ops() {
         std::cout << "  called from " << ss::current_backtrace();
         for (sanitizer_op& op : _pending_ops) {
@@ -239,7 +351,10 @@ private:
     boost::intrusive::list<sanitizer_op, bi::constant_time_size<false>>
       _pending_ops;
     ss::file _file;
+    std::filesystem::path _path;
+    ntp_sanitizer_config _config;
     std::optional<ss::saved_backtrace> _closed;
+    std::optional<std::mt19937> _random_gen;
 };
 
 } // namespace storage
