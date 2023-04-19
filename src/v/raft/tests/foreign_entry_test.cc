@@ -52,11 +52,14 @@ struct foreign_entry_fixture {
               1_MiB,
               config::mock_binding(10ms),
               test_dir,
-              storage::debug_sanitize_files::yes);
+              storage::make_sanitized_file_config());
         },
         [this]() {
             return storage::log_config(
-              test_dir, 1_GiB, storage::debug_sanitize_files::yes);
+              test_dir,
+              1_GiB,
+              ss::default_priority_class(),
+              storage::make_sanitized_file_config());
         },
         _feature_table) {
         _feature_table.start().get();

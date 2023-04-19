@@ -42,11 +42,14 @@ struct config_manager_fixture {
               100_MiB,
               config::mock_binding(std::chrono::milliseconds(10)),
               base_dir,
-              storage::debug_sanitize_files::yes);
+              storage::make_sanitized_file_config());
         },
         [this]() {
             return storage::log_config(
-              base_dir, 100_MiB, storage::debug_sanitize_files::yes);
+              base_dir,
+              100_MiB,
+              ss::default_priority_class(),
+              storage::make_sanitized_file_config());
         },
         _feature_table))
       , _logger(

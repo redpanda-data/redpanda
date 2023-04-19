@@ -19,6 +19,7 @@
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
 #include "storage/batch_cache.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/log.h"
 #include "storage/log_housekeeping_meta.h"
 #include "storage/ntp_config.h"
@@ -52,22 +53,20 @@ struct log_config {
     log_config(
       ss::sstring directory,
       size_t segment_size,
-      debug_sanitize_files should,
-      ss::io_priority_class compaction_priority
-      = ss::default_priority_class()) noexcept;
+      ss::io_priority_class compaction_priority = ss::default_priority_class(),
+      std::optional<file_sanitize_config> file_cfg = std::nullopt) noexcept;
     log_config(
       ss::sstring directory,
       size_t segment_size,
-      debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
-      with_cache with) noexcept;
+      with_cache with,
+      std::optional<file_sanitize_config> file_cfg = std::nullopt) noexcept;
     log_config(
       ss::sstring directory,
       config::binding<size_t> segment_size,
       config::binding<size_t> compacted_segment_size,
       config::binding<size_t> max_compacted_segment_size,
       jitter_percents segment_size_jitter,
-      debug_sanitize_files should,
       ss::io_priority_class compaction_priority,
       config::binding<std::optional<size_t>> ret_bytes,
       config::binding<std::chrono::milliseconds> compaction_ival,
@@ -75,7 +74,8 @@ struct log_config {
       with_cache c,
       batch_cache::reclaim_options recopts,
       std::chrono::milliseconds rdrs_cache_eviction_timeout,
-      ss::scheduling_group compaction_sg) noexcept;
+      ss::scheduling_group compaction_sg,
+      std::optional<file_sanitize_config> file_cfg = std::nullopt) noexcept;
 
     ~log_config() noexcept = default;
     // must be enabled so that we can do ss::sharded<>.start(config);
@@ -94,8 +94,6 @@ struct log_config {
     // compacted segment size
     config::binding<size_t> compacted_segment_size;
     config::binding<size_t> max_compacted_segment_size;
-    // used for testing: keeps a backtrace of operations for debugging
-    debug_sanitize_files sanitize_fileops = debug_sanitize_files::no;
     ss::io_priority_class compaction_priority;
     // same as retention.bytes in kafka
     config::binding<std::optional<size_t>> retention_bytes;
@@ -112,6 +110,20 @@ struct log_config {
     std::chrono::milliseconds readers_cache_eviction_timeout
       = std::chrono::seconds(30);
     ss::scheduling_group compaction_sg;
+
+    // Used for testing. Configuration object for creating
+    // sanitizing or erroring file wrappers.
+    std::optional<file_sanitize_config> file_config;
+
+    std::optional<ntp_sanitizer_config>
+    maybe_get_ntp_sanitizer_config(const model::ntp& ntp) const {
+        if (file_config) {
+            return file_config->get_config_for_ntp(ntp);
+        }
+
+        return std::nullopt;
+    }
+
     friend std::ostream& operator<<(std::ostream& o, const log_config&);
 }; // namespace storage
 

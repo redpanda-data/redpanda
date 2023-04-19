@@ -119,13 +119,14 @@ struct raft_node {
                   1_MiB,
                   config::mock_binding(10ms),
                   storage_dir,
-                  storage::debug_sanitize_files::yes);
+                  storage::make_sanitized_file_config());
             },
             [storage_dir, segment_size]() {
                 return storage::log_config(
                   storage_dir,
                   segment_size,
-                  storage::debug_sanitize_files::yes);
+                  ss::default_priority_class(),
+                  storage::make_sanitized_file_config());
             },
             std::ref(feature_table))
           .get();

@@ -497,8 +497,8 @@ FIXTURE_TEST(test_concat_segment_upload, remote_fixture) {
     disk_log_builder b{log_config{
       data_path.string(),
       1024,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
     b | start(ntp_config{test_ntp, {data_path}});
 
     auto defer = ss::defer([&b]() { b.stop().get(); });

@@ -161,7 +161,7 @@ std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
       c.eviction_time,
       c.max_bytes.value_or(-1),
       c.max_collectible_offset,
-      c.sanitize);
+      c.sanitizer_config);
     return o;
 }
 

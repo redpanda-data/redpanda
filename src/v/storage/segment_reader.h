@@ -13,6 +13,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/types.h"
 #include "utils/intrusive_list_helpers.h"
@@ -111,7 +112,8 @@ public:
       segment_full_path filename,
       size_t buffer_size,
       unsigned read_ahead,
-      debug_sanitize_files) noexcept;
+      std::optional<ntp_sanitizer_config> ntp_sanitizer_config
+      = std::nullopt) noexcept;
     ~segment_reader() noexcept;
     segment_reader(segment_reader&&) noexcept;
     segment_reader& operator=(segment_reader&&) noexcept;
@@ -164,7 +166,7 @@ private:
     size_t _file_size{0};
     size_t _buffer_size{0};
     unsigned _read_ahead{0};
-    debug_sanitize_files _sanitize;
+    std::optional<ntp_sanitizer_config> _sanitizer_config;
 
     // Keeps track of operations that cannot be pre-empted by close()
     ss::gate _gate;

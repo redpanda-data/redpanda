@@ -94,30 +94,31 @@ ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
 /// make file handle with default opts
 ss::future<ss::file> make_writer_handle(
   const std::filesystem::path&,
-  storage::debug_sanitize_files,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
   bool truncate = false);
 /// make file handle with default opts
-ss::future<ss::file>
-make_reader_handle(const std::filesystem::path&, storage::debug_sanitize_files);
+ss::future<ss::file> make_reader_handle(
+  const std::filesystem::path&,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 ss::future<ss::file> make_handle(
-  const std::filesystem::path path,
+  std::filesystem::path path,
   ss::open_flags flags,
   ss::file_open_options opt,
-  debug_sanitize_files debug);
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
-  storage::debug_sanitize_files debug,
   ss::io_priority_class iopc,
-  storage_resources& resources);
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 ss::future<segment_appender_ptr> make_segment_appender(
   const segment_full_path& path,
-  storage::debug_sanitize_files debug,
   size_t number_of_chunks,
   std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
-  storage_resources& resources);
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config);
 
 size_t number_of_chunks_from_config(const storage::ntp_config&);
 uint64_t segment_size_from_config(const storage::ntp_config&);

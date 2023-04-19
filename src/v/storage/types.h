@@ -17,6 +17,7 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "resource_mgmt/storage.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/fwd.h"
 #include "tristate.h"
 
@@ -30,7 +31,6 @@
 
 namespace storage {
 using log_clock = ss::lowres_clock;
-using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 using jitter_percents = named_type<int, struct jitter_percents_tag>;
 
 struct disk
@@ -345,12 +345,12 @@ struct compaction_config {
       model::offset max_collect_offset,
       ss::io_priority_class p,
       ss::abort_source& as,
-      debug_sanitize_files should_sanitize = debug_sanitize_files::no)
+      std::optional<ntp_sanitizer_config> san_cfg = std::nullopt)
       : eviction_time(upper)
       , max_bytes(max_bytes_in_log)
       , max_collectible_offset(max_collect_offset)
       , iopc(p)
-      , sanitize(should_sanitize)
+      , sanitizer_config(std::move(san_cfg))
       , asrc(&as) {}
 
     // remove everything below eviction time
@@ -362,8 +362,8 @@ struct compaction_config {
     model::offset max_collectible_offset;
     // priority for all IO in compaction
     ss::io_priority_class iopc;
-    // use proxy fileops with assertions
-    debug_sanitize_files sanitize;
+    // use proxy fileops with assertions and/or failure injection
+    std::optional<ntp_sanitizer_config> sanitizer_config;
     // abort source for compaction task
     ss::abort_source* asrc;
 

@@ -49,8 +49,8 @@ SEASTAR_THREAD_TEST_CASE(
     disk_log_builder b{log_config{
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
     auto defer = ss::defer([&b] { b.stop().get(); });
@@ -142,8 +142,8 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_with_bounds) {
     disk_log_builder b{log_config{
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}})
       | add_segment(0) | add_random_batch(0, 10);
@@ -170,8 +170,8 @@ SEASTAR_THREAD_TEST_CASE(test_single_segment_read_full) {
     disk_log_builder b{log_config{
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}})
       | add_segment(0) | add_random_batch(0, 10);
@@ -196,8 +196,8 @@ SEASTAR_THREAD_TEST_CASE(test_multiple_segments_read_full) {
     disk_log_builder b{log_config{
       data_path.string(),
       segment_size,
-      debug_sanitize_files::yes,
-    }};
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()}};
 
     b | start(ntp_config{{"test_ns", "test_tpc", 0}, {data_path}});
     auto defer = ss::defer([&b] { b.stop().get(); });

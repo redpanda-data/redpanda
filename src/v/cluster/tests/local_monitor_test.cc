@@ -44,13 +44,16 @@ local_monitor_fixture::local_monitor_fixture()
     _storage_node_api.start_single().get0();
 
     auto log_conf = storage::log_config{
-      "test.dir", 1024, storage::debug_sanitize_files::yes};
+      "test.dir",
+      1024,
+      ss::default_priority_class(),
+      storage::make_sanitized_file_config()};
 
     auto kvstore_conf = storage::kvstore_config(
       1_MiB,
       config::mock_binding(10ms),
       log_conf.base_dir,
-      storage::debug_sanitize_files::yes);
+      storage::make_sanitized_file_config());
 
     _feature_table.start().get();
     _feature_table

@@ -45,13 +45,13 @@ segment_index::segment_index(
   model::offset base,
   size_t step,
   ss::sharded<features::feature_table>& feature_table,
-  debug_sanitize_files sanitize)
+  std::optional<ntp_sanitizer_config> sanitizer_config)
   : _path(std::move(path))
   , _step(step)
   , _feature_table(std::ref(feature_table))
   , _state(index_state::make_empty_index(
       storage::internal::should_apply_delta_time_offset(_feature_table)))
-  , _sanitize(sanitize) {
+  , _sanitizer_config(std::move(sanitizer_config)) {
     _state.base_offset = base;
 }
 
@@ -77,7 +77,10 @@ ss::future<ss::file> segment_index::open() {
     }
 
     return internal::make_handle(
-      _path, ss::open_flags::create | ss::open_flags::rw, {}, _sanitize);
+      _path,
+      ss::open_flags::create | ss::open_flags::rw,
+      {},
+      _sanitizer_config);
 }
 
 void segment_index::reset() {

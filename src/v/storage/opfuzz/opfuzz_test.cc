@@ -36,7 +36,6 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
     storage::log_manager mngr = make_log_manager(storage::log_config(
       std::move(test_dir),
       200_MiB,
-      storage::debug_sanitize_files::no,
       ss::default_priority_class(),
       storage::with_cache::yes));
     auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
@@ -84,7 +83,6 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
     storage::log_manager mngr = make_log_manager(storage::log_config(
       std::move(test_dir),
       200_MiB,
-      storage::debug_sanitize_files::no,
       ss::default_priority_class(),
       storage::with_cache::yes));
     auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });

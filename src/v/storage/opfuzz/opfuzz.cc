@@ -509,7 +509,7 @@ struct compact_op final : opfuzz::op {
           model::offset::max(),
           ss::default_priority_class(),
           *(ctx._as),
-          debug_sanitize_files::yes);
+          storage::ntp_sanitizer_config{.sanitize_only = true});
         if (random_generators::get_int(0, 100) > 70) {
             cfg.eviction_time = model::timestamp::now();
             cfg.max_bytes = 10_MiB;

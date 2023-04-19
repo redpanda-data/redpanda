@@ -65,30 +65,33 @@ using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 log_config::log_config(
   ss::sstring directory,
   size_t segment_size,
-  debug_sanitize_files should,
-  ss::io_priority_class compaction_priority) noexcept
+  ss::io_priority_class compaction_priority,
+  std::optional<file_sanitize_config> file_cfg) noexcept
   : base_dir(std::move(directory))
   , max_segment_size(config::mock_binding<size_t>(std::move(segment_size)))
   , segment_size_jitter(0) // For deterministic behavior in unit tests.
   , compacted_segment_size(config::mock_binding<size_t>(256_MiB))
   , max_compacted_segment_size(config::mock_binding<size_t>(5_GiB))
-  , sanitize_fileops(should)
   , compaction_priority(compaction_priority)
   , retention_bytes(config::mock_binding<std::optional<size_t>>(std::nullopt))
   , compaction_interval(
       config::mock_binding<std::chrono::milliseconds>(std::chrono::minutes(10)))
   , delete_retention(
       config::mock_binding<std::optional<std::chrono::milliseconds>>(
-        std::chrono::minutes(10080))) {}
+        std::chrono::minutes(10080)))
+  , file_config(std::move(file_cfg)) {}
 
 log_config::log_config(
   ss::sstring directory,
   size_t segment_size,
-  debug_sanitize_files should,
   ss::io_priority_class compaction_priority,
-  with_cache with) noexcept
+  with_cache with,
+  std::optional<file_sanitize_config> file_cfg) noexcept
   : log_config(
-    std::move(directory), segment_size, should, compaction_priority) {
+    std::move(directory),
+    segment_size,
+    compaction_priority,
+    std::move(file_cfg)) {
     cache = with;
 }
 
@@ -98,7 +101,6 @@ log_config::log_config(
   config::binding<size_t> compacted_segment_size,
   config::binding<size_t> max_compacted_segment_size,
   jitter_percents segment_size_jitter,
-  debug_sanitize_files should,
   ss::io_priority_class compaction_priority,
   config::binding<std::optional<size_t>> ret_bytes,
   config::binding<std::chrono::milliseconds> compaction_ival,
@@ -106,13 +108,13 @@ log_config::log_config(
   with_cache c,
   batch_cache::reclaim_options recopts,
   std::chrono::milliseconds rdrs_cache_eviction_timeout,
-  ss::scheduling_group compaction_sg) noexcept
+  ss::scheduling_group compaction_sg,
+  std::optional<file_sanitize_config> file_cfg) noexcept
   : base_dir(std::move(directory))
   , max_segment_size(std::move(segment_size))
   , segment_size_jitter(segment_size_jitter)
   , compacted_segment_size(std::move(compacted_segment_size))
   , max_compacted_segment_size(std::move(max_compacted_segment_size))
-  , sanitize_fileops(should)
   , compaction_priority(compaction_priority)
   , retention_bytes(std::move(ret_bytes))
   , compaction_interval(std::move(compaction_ival))
@@ -120,7 +122,8 @@ log_config::log_config(
   , cache(c)
   , reclaim_opts(recopts)
   , readers_cache_eviction_timeout(rdrs_cache_eviction_timeout)
-  , compaction_sg(compaction_sg) {}
+  , compaction_sg(compaction_sg)
+  , file_config(std::move(file_cfg)) {}
 
 log_manager::log_manager(
   log_config config,
@@ -229,12 +232,16 @@ log_manager::housekeeping_scan(model::timestamp collection_threshold) {
 
         current_log.flags |= bflags::compacted;
         current_log.last_compaction = ss::lowres_clock::now();
+
+        auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(
+          current_log.handle.config().ntp());
         co_await current_log.handle.compact(compaction_config(
           collection_threshold,
           _config.retention_bytes(),
           current_log.handle.stm_manager()->max_collectible_offset(),
           _config.compaction_priority,
-          _abort_source));
+          _abort_source,
+          std::move(ntp_sanitizer_cfg)));
 
         if (_logs_list.empty()) {
             co_return;
@@ -271,22 +278,22 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
   size_t read_buf_size,
   unsigned read_ahead,
   record_version_type version) {
-    return ss::with_gate(
-      _open_gate,
-      [this, &ntp, base_offset, term, pc, version, read_buf_size, read_ahead] {
-          return make_segment(
-            ntp,
-            base_offset,
-            term,
-            pc,
-            version,
-            read_buf_size,
-            read_ahead,
-            _config.sanitize_fileops,
-            create_cache(ntp.cache_enabled()),
-            _resources,
-            _feature_table);
-      });
+    auto gate_holder = _open_gate.hold();
+
+    auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(ntp.ntp());
+
+    co_return co_await make_segment(
+      ntp,
+      base_offset,
+      term,
+      pc,
+      version,
+      read_buf_size,
+      read_ahead,
+      create_cache(ntp.cache_enabled()),
+      _resources,
+      _feature_table,
+      std::move(ntp_sanitizer_cfg));
 }
 
 std::optional<batch_cache_index>
@@ -347,9 +354,10 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
     co_await recover_log_state(cfg);
 
     with_cache cache_enabled = cfg.cache_enabled();
+    auto ntp_sanitizer_cfg = _config.maybe_get_ntp_sanitizer_config(cfg.ntp());
+
     auto segments = co_await recover_segments(
       partition_path(cfg),
-      _config.sanitize_fileops,
       cfg.is_compacted(),
       [this, cache_enabled] { return create_cache(cache_enabled); },
       _abort_source,
@@ -357,7 +365,8 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
       config::shard_local_cfg().storage_read_readahead_count(),
       last_clean_segment,
       _resources,
-      _feature_table);
+      _feature_table,
+      std::move(ntp_sanitizer_cfg));
 
     auto l = storage::make_disk_backed_log(
       std::move(cfg), *this, std::move(segments), _kvstore, _feature_table);
@@ -571,8 +580,7 @@ int64_t log_manager::compaction_backlog() const {
 std::ostream& operator<<(std::ostream& o, const log_config& c) {
     o << "{base_dir:" << c.base_dir
       << ", max_segment.size:" << c.max_segment_size()
-      << ", debug_sanitize_fileops:" << c.sanitize_fileops
-      << ", retention_bytes:";
+      << ", file_sanitize_config:" << c.file_config << ", retention_bytes:";
     if (c.retention_bytes()) {
         o << *(c.retention_bytes());
     } else {

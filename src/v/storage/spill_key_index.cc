@@ -39,10 +39,10 @@ spill_key_index::spill_key_index(
   ss::sstring name,
   ss::io_priority_class p,
   bool truncate,
-  storage::debug_sanitize_files debug,
-  storage_resources& resources)
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> sanitizer_config)
   : compacted_index_writer::impl(std::move(name))
-  , _debug(debug)
+  , _sanitizer_config(std::move(sanitizer_config))
   , _resources(resources)
   , _pc(p)
   , _truncate(truncate) {}
@@ -161,8 +161,9 @@ ss::future<> spill_key_index::index(
           auto key = prefix_with_batch_type(batch_type, b);
           if (auto it = _midx.find(key); it != _midx.end()) {
               auto& pair = it->second;
-              // must use both base+delta, since we only want to keep the latest
-              // which might be inserted into the batch multiple times by client
+              // must use both base+delta, since we only want to keep the
+              // latest which might be inserted into the batch multiple times
+              // by client
               const auto record = base_offset + model::offset(delta);
               const auto current = pair.base_offset + model::offset(pair.delta);
               if (record > current) {
@@ -275,8 +276,8 @@ ss::future<> spill_key_index::truncate(model::offset o) {
                 // NOLINTNEXTLINE
                 reinterpret_cast<const uint8_t*>(compacted_key.data()),
                 compacted_key.size()),
-              // this is actually the base_offset + max_delta so everything upto
-              // and including this offset must be ignored during self
+              // this is actually the base_offset + max_delta so everything
+              // upto and including this offset must be ignored during self
               // compaction
               value_type{o, 0});
         });
@@ -294,7 +295,7 @@ ss::future<> spill_key_index::maybe_open() {
  */
 ss::future<> spill_key_index::open() {
     auto index_file = co_await make_writer_handle(
-      std::filesystem::path(filename()), _debug, _truncate);
+      std::filesystem::path(filename()), _sanitizer_config, _truncate);
 
     _appender.emplace(storage::segment_appender(
       std::move(index_file),
@@ -328,7 +329,8 @@ ss::future<> spill_key_index::close() {
         ex = std::current_exception();
     }
 
-    // Even if the flush failed, make sure we are closing any open file handle.
+    // Even if the flush failed, make sure we are closing any open file
+    // handle.
     if (_appender.has_value()) {
         co_await _appender->close();
     }
@@ -336,9 +338,9 @@ ss::future<> spill_key_index::close() {
     if (ex) {
         vlog(stlog.error, "error flushing index during close: {} ", ex);
 
-        // Drop any dirty state that we couldn't flush: otherwise our destructor
-        // will assert out.  This is valid because future reads of a compaction
-        // index can detect invalid content and regenerate.
+        // Drop any dirty state that we couldn't flush: otherwise our
+        // destructor will assert out.  This is valid because future reads of
+        // a compaction index can detect invalid content and regenerate.
         _midx.clear();
 
         std::rethrow_exception(ex);
@@ -366,10 +368,10 @@ namespace storage {
 compacted_index_writer make_file_backed_compacted_index(
   ss::sstring name,
   ss::io_priority_class p,
-  debug_sanitize_files debug,
   bool truncate,
-  storage_resources& resources) {
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> sanitizer_config) {
     return compacted_index_writer(std::make_unique<internal::spill_key_index>(
-      std::move(name), p, truncate, debug, resources));
+      std::move(name), p, truncate, resources, std::move(sanitizer_config)));
 }
 } // namespace storage

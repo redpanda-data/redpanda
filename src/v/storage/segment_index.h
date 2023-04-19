@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "storage/file_sanitizer_types.h"
 #include "storage/fs_utils.h"
 #include "storage/index_state.h"
 #include "storage/types.h"
@@ -57,7 +58,7 @@ public:
       model::offset base,
       size_t step,
       ss::sharded<features::feature_table>& feature_table,
-      debug_sanitize_files);
+      std::optional<ntp_sanitizer_config> sanitizer_config);
 
     ~segment_index() noexcept = default;
     segment_index(segment_index&&) noexcept = default;
@@ -146,7 +147,7 @@ private:
     size_t _acc{0};
     bool _needs_persistence{false};
     index_state _state;
-    debug_sanitize_files _sanitize;
+    std::optional<ntp_sanitizer_config> _sanitizer_config;
 
     // Override the timestamp used for retention, in case what's in
     // the index _state is no good.

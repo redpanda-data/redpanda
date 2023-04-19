@@ -29,7 +29,7 @@ disk_log_builder::disk_log_builder(storage::log_config config)
             1_MiB,
             config::mock_binding(10ms),
             _log_config.base_dir,
-            debug_sanitize_files::yes);
+            storage::make_sanitized_file_config());
       },
       [this]() { return _log_config; },
       _feature_table) {}

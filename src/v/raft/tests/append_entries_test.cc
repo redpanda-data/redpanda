@@ -543,7 +543,7 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
             model::offset::max(),
             ss::default_priority_class(),
             as,
-            storage::debug_sanitize_files::yes))
+            storage::ntp_sanitizer_config{.sanitize_only = true}))
           .then([] { return true; });
     }).get0();
 

@@ -49,8 +49,8 @@ public:
       ss::sstring filename,
       ss::io_priority_class,
       bool truncate,
-      storage::debug_sanitize_files debug,
-      storage_resources&);
+      storage_resources&,
+      std::optional<ntp_sanitizer_config> sanitizer_config);
 
     spill_key_index(
       ss::sstring name,
@@ -113,7 +113,7 @@ private:
     ss::future<> add_key(compaction_key, value_type);
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
 
-    storage::debug_sanitize_files _debug;
+    std::optional<ntp_sanitizer_config> _sanitizer_config;
     storage_resources& _resources;
     ss::io_priority_class _pc;
     bool _truncate;

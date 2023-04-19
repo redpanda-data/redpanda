@@ -85,25 +85,31 @@ maybe_disable_cow(const std::filesystem::path& path, ss::file& file) {
     }
 }
 
-static inline ss::file wrap_handle(ss::file f, debug_sanitize_files debug) {
-    if (debug) {
+static inline ss::file wrap_handle(
+  [[maybe_unused]] std::filesystem::path path,
+  ss::file f,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
+    if (ntp_sanitizer_config) {
         return ss::file(ss::make_shared(file_io_sanitizer(std::move(f))));
+        // std::move(path),
+        // std::move(ntp_sanitizer_config.value()))));
     }
     return f;
 }
 
 ss::future<ss::file> make_handle(
-  const std::filesystem::path path,
+  std::filesystem::path path,
   ss::open_flags flags,
   ss::file_open_options opt,
-  debug_sanitize_files debug) {
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     auto file = co_await ss::open_file_dma(path.string(), flags, opt);
 
     if ((flags & ss::open_flags::create) == ss::open_flags::create) {
         co_await maybe_disable_cow(path, file);
     }
 
-    co_return wrap_handle(std::move(file), debug);
+    co_return wrap_handle(
+      std::move(path), std::move(file), std::move(ntp_sanitizer_config));
 }
 
 static inline ss::file_open_options writer_opts() {
@@ -118,42 +124,48 @@ static inline ss::file_open_options writer_opts() {
 /// make file handle with default opts
 ss::future<ss::file> make_writer_handle(
   const std::filesystem::path& path,
-  storage::debug_sanitize_files debug,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config,
   bool truncate) {
     auto flags = ss::open_flags::rw | ss::open_flags::create;
     if (truncate) {
         flags |= ss::open_flags::truncate;
     }
-    return make_handle(path, flags, writer_opts(), debug);
+    return make_handle(
+      path, flags, writer_opts(), std::move(ntp_sanitizer_config));
 }
 /// make file handle with default opts
 ss::future<ss::file> make_reader_handle(
-  const std::filesystem::path& path, storage::debug_sanitize_files debug) {
+  const std::filesystem::path& path,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     return make_handle(
       path,
       ss::open_flags::ro | ss::open_flags::create,
       ss::file_open_options{},
-      debug);
+      std::move(ntp_sanitizer_config));
 }
 
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
-  debug_sanitize_files debug,
   ss::io_priority_class iopc,
-  storage_resources& resources) {
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     return ss::make_ready_future<compacted_index_writer>(
       make_file_backed_compacted_index(
-        path.string(), iopc, debug, false, resources));
+        path.string(),
+        iopc,
+        false,
+        resources,
+        std::move(ntp_sanitizer_config)));
 }
 
 ss::future<segment_appender_ptr> make_segment_appender(
   const segment_full_path& path,
-  debug_sanitize_files debug,
   size_t number_of_chunks,
   std::optional<uint64_t> segment_size,
   ss::io_priority_class iopc,
-  storage_resources& resources) {
-    return internal::make_writer_handle(path, debug)
+  storage_resources& resources,
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
+    return internal::make_writer_handle(path, std::move(ntp_sanitizer_config))
       .then([number_of_chunks, iopc, path, segment_size, &resources](
               ss::file writer) {
           try {
@@ -242,7 +254,11 @@ static ss::future<> do_write_clean_compacted_index(
         [reader, cfg, tmpname, &resources](
           roaring::Roaring bitmap) -> ss::future<> {
             auto truncating_writer = make_file_backed_compacted_index(
-              tmpname.string(), cfg.iopc, cfg.sanitize, true, resources);
+              tmpname.string(),
+              cfg.iopc,
+              true,
+              resources,
+              cfg.sanitizer_config);
 
             return copy_filtered_entries(
               reader, std::move(bitmap), std::move(truncating_writer));
@@ -271,7 +287,7 @@ ss::future<> write_clean_compacted_index(
 ss::future<compacted_index::recovery_state>
 do_detect_compaction_index_state(segment_full_path p, compaction_config cfg) {
     using flags = compacted_index::footer_flags;
-    return make_reader_handle(p, cfg.sanitize)
+    return make_reader_handle(p, cfg.sanitizer_config)
       .then([cfg, p](ss::file f) {
           return make_file_backed_compacted_reader(
             p, std::move(f), cfg.iopc, 64_KiB);
@@ -329,7 +345,7 @@ ss::future<> do_compact_segment_index(
   storage_resources& resources) {
     auto compacted_path = s->reader().path().to_compacted_index();
     vlog(gclog.trace, "compacting segment compaction index:{}", compacted_path);
-    return make_reader_handle(compacted_path, cfg.sanitize)
+    return make_reader_handle(compacted_path, cfg.sanitizer_config)
       .then([cfg, compacted_path, s, &resources](ss::file f) {
           auto reader = make_file_backed_compacted_reader(
             compacted_path, std::move(f), cfg.iopc, 64_KiB);
@@ -344,7 +360,7 @@ ss::future<storage::index_state> do_copy_segment_data(
   storage_resources& resources,
   offset_delta_time apply_offset) {
     auto idx_path = s->reader().path().to_compacted_index();
-    return make_reader_handle(idx_path, cfg.sanitize)
+    return make_reader_handle(idx_path, cfg.sanitizer_config)
       .then([s, cfg, idx_path](ss::file f) {
           auto reader = make_file_backed_compacted_reader(
             idx_path, std::move(f), cfg.iopc, 64_KiB);
@@ -358,12 +374,12 @@ ss::future<storage::index_state> do_copy_segment_data(
           const auto tmpname = s->reader().path().to_staging();
           return make_segment_appender(
                    tmpname,
-                   cfg.sanitize,
                    segment_appender::write_behind_memory
                      / internal::chunks().chunk_size(),
                    std::nullopt,
                    cfg.iopc,
-                   resources)
+                   resources,
+                   cfg.sanitizer_config)
             .then([l = std::move(list),
                    &pb,
                    h = std::move(h),
@@ -437,7 +453,7 @@ ss::future<> do_swap_data_file_handles(
       s->reader().path(),
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
-      cfg.sanitize);
+      cfg.sanitizer_config);
     co_await r.load_size();
 
     // update partition size probe
@@ -512,7 +528,8 @@ ss::future<> rebuild_compaction_index(
   segment_full_path p,
   compaction_config cfg,
   storage_resources& resources) {
-    return make_compacted_index_writer(p, cfg.sanitize, cfg.iopc, resources)
+    return make_compacted_index_writer(
+             p, cfg.iopc, resources, cfg.sanitizer_config)
       .then([r = std::move(rdr), stm_manager, txs = std::move(aborted_txs)](
               compacted_index_writer w) mutable {
           return ss::do_with(
@@ -660,7 +677,7 @@ make_concatenated_segment(
     if (co_await ss::file_exists(path.string())) {
         co_await ss::remove_file(path.string());
     }
-    auto writer = co_await make_writer_handle(path, cfg.sanitize);
+    auto writer = co_await make_writer_handle(path, cfg.sanitizer_config);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
     for (auto& segment : segments) {
         auto reader_handle = co_await segment->reader().data_stream(
@@ -685,7 +702,7 @@ make_concatenated_segment(
       path,
       config::shard_local_cfg().storage_read_buffer_size(),
       config::shard_local_cfg().storage_read_readahead_count(),
-      cfg.sanitize);
+      cfg.sanitizer_config);
     co_await reader.load_size();
 
     // build an empty index for the segment
@@ -698,7 +715,7 @@ make_concatenated_segment(
       offsets.base_offset,
       segment_index::default_data_buffer_step,
       feature_table,
-      cfg.sanitize);
+      cfg.sanitizer_config);
 
     co_return std::make_tuple(
       ss::make_lw_shared<segment>(
@@ -716,18 +733,18 @@ make_concatenated_segment(
 ss::future<std::vector<compacted_index_reader>> make_indices_readers(
   std::vector<ss::lw_shared_ptr<segment>>& segments,
   ss::io_priority_class io_pc,
-  storage::debug_sanitize_files sanitize) {
+  std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
     return ssx::async_transform(
       segments.begin(),
       segments.end(),
-      [io_pc, sanitize](ss::lw_shared_ptr<segment>& seg) {
+      [io_pc, san_cfg = ntp_sanitizer_config](ss::lw_shared_ptr<segment>& seg) {
           const auto path = seg->reader().path().to_compacted_index();
           auto f = ss::now();
           if (seg->has_compaction_index()) {
               f = seg->compaction_index().close();
           }
-          return f.then([io_pc, sanitize, path]() {
-              return make_reader_handle(path, sanitize)
+          return f.then([io_pc, san_cfg, path]() mutable {
+              return make_reader_handle(path, std::move(san_cfg))
                 .then([path, io_pc](auto reader_fd) {
                     return make_file_backed_compacted_reader(
                       path, reader_fd, io_pc, 64_KiB);
@@ -763,7 +780,7 @@ ss::future<> do_write_concatenated_compacted_index(
   std::vector<ss::lw_shared_ptr<segment>>& segments,
   compaction_config cfg,
   storage_resources& resources) {
-    return make_indices_readers(segments, cfg.iopc, cfg.sanitize)
+    return make_indices_readers(segments, cfg.iopc, cfg.sanitizer_config)
       .then([cfg, target_path = std::move(target_path), &resources](
               std::vector<compacted_index_reader> readers) mutable {
           vlog(gclog.debug, "concatenating {} indicies", readers.size());
@@ -796,7 +813,10 @@ ss::future<> do_write_concatenated_compacted_index(
                       }
 
                       return make_compacted_index_writer(
-                               target_path, cfg.sanitize, cfg.iopc, resources)
+                               target_path,
+                               cfg.iopc,
+                               resources,
+                               cfg.sanitizer_config)
                         .then([&readers](compacted_index_writer writer) {
                             return rewrite_concatenated_indicies(
                               std::move(writer), readers);

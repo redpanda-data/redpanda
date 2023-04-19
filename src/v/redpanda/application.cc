@@ -835,10 +835,25 @@ void application::configure_admin_server() {
       .get();
 }
 
-static storage::kvstore_config kvstore_config_from_global_config() {
+static std::optional<storage::file_sanitize_config>
+read_file_sanitizer_config() {
+    std::optional<storage::file_sanitize_config> file_config = std::nullopt;
+    if (config::node().storage_failure_injection_config_path()) {
+        file_config
+          = storage::make_finjector_file_config(
+              config::node().storage_failure_injection_config_path().value())
+              .get();
+    }
+
+    return file_config;
+}
+
+static storage::kvstore_config kvstore_config_from_global_config(
+  std::optional<storage::file_sanitize_config> sanitizer_config) {
     /*
-     * The key-value store is rooted at the configured data directory, and
-     * the internal kvstore topic-namespace results in a storage layout of:
+     * The key-value store is rooted at the configured data directory,
+     * and the internal kvstore topic-namespace results in a storage
+     * layout of:
      *
      *    /var/lib/redpanda/data/
      *       - redpanda/kvstore/
@@ -850,11 +865,12 @@ static storage::kvstore_config kvstore_config_from_global_config() {
       config::shard_local_cfg().kvstore_max_segment_size(),
       config::shard_local_cfg().kvstore_flush_interval.bind(),
       config::node().data_directory().as_sstring(),
-      storage::debug_sanitize_files::no);
+      sanitizer_config);
 }
 
-static storage::log_config
-manager_config_from_global_config(scheduling_groups& sgs) {
+static storage::log_config manager_config_from_global_config(
+  scheduling_groups& sgs,
+  std::optional<storage::file_sanitize_config> sanitizer_config) {
     return storage::log_config(
       config::node().data_directory().as_sstring(),
       config::shard_local_cfg().log_segment_size.bind(),
@@ -862,7 +878,6 @@ manager_config_from_global_config(scheduling_groups& sgs) {
       config::shard_local_cfg().max_compacted_log_segment_size.bind(),
       storage::jitter_percents(
         config::shard_local_cfg().log_segment_size_jitter_percent()),
-      storage::debug_sanitize_files::no,
       priority_manager::local().compaction_priority(),
       config::shard_local_cfg().retention_bytes.bind(),
       config::shard_local_cfg().log_compaction_interval_ms.bind(),
@@ -877,7 +892,8 @@ manager_config_from_global_config(scheduling_groups& sgs) {
         = config::shard_local_cfg().reclaim_batch_cache_min_free(),
       },
       config::shard_local_cfg().readers_cache_eviction_timeout_ms(),
-      sgs.compaction_sg());
+      sgs.compaction_sg(),
+      std::move(sanitizer_config));
 }
 
 static storage::backlog_controller_config compaction_controller_config(
@@ -1582,11 +1598,16 @@ void application::wire_up_bootstrap_services() {
       std::ref(storage))
       .get();
 
+    const auto sanitizer_config = read_file_sanitizer_config();
+
     construct_service(
       storage,
-      []() { return kvstore_config_from_global_config(); },
-      [this]() {
-          auto log_cfg = manager_config_from_global_config(sched_groups);
+      [c = sanitizer_config]() mutable {
+          return kvstore_config_from_global_config(std::move(c));
+      },
+      [this, c = sanitizer_config]() mutable {
+          auto log_cfg = manager_config_from_global_config(
+            sched_groups, std::move(c));
           log_cfg.reclaim_opts.background_reclaimer_sg
             = sched_groups.cache_background_reclaim_sg();
           return log_cfg;

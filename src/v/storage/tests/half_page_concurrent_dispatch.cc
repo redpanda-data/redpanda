@@ -19,9 +19,9 @@ struct fixture {
     storage::disk_log_builder b{storage::log_config(
       storage::random_dir(),
       1_GiB,
-      storage::debug_sanitize_files::yes,
       ss::default_priority_class(),
-      storage::with_cache::no)};
+      storage::with_cache::no,
+      storage::make_sanitized_file_config())};
     ~fixture() { b.stop().get(); }
 };
 
