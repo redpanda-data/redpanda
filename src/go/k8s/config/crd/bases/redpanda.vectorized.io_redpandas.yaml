@@ -69,10 +69,10 @@ spec:
                 description: ClusterSpec defines the values to use in the cluster
                 properties:
                   auth:
-                    description: Auth
+                    description: Auth is a top level field of the values file
                     properties:
                       sasl:
-                        description: Sasl
+                        description: SASL is a top level field of the values file
                         properties:
                           enabled:
                             type: boolean
@@ -82,7 +82,8 @@ spec:
                             type: string
                           users:
                             items:
-                              description: UsersItems
+                              description: UsersItems is a top level field of the
+                                values file
                               properties:
                                 mechanism:
                                   type: string
@@ -109,7 +110,7 @@ spec:
                       release
                     type: object
                   config:
-                    description: Config
+                    description: Config is a top level field of the values file
                     properties:
                       cluster:
                         description: RawMessage is a raw encoded JSON value. It implements
@@ -133,7 +134,7 @@ spec:
                   console:
                     type: object
                   external:
-                    description: External
+                    description: External is a top level field of the values file
                     properties:
                       addresses:
                         description: RawMessage is a raw encoded JSON value. It implements
@@ -168,7 +169,8 @@ spec:
                   license_key:
                     type: string
                   license_secret_ref:
-                    description: LicenseSecretRef
+                    description: LicenseSecretRef is a top level field of the values
+                      file
                     properties:
                       secret_key:
                         type: string
@@ -176,13 +178,14 @@ spec:
                         type: string
                     type: object
                   listeners:
-                    description: Listeners
+                    description: Listeners is a top level field of the values file
                     properties:
                       admin:
-                        description: Admin
+                        description: Admin is a top level field of the values file
                         properties:
                           external:
-                            description: External
+                            description: External is a top level field of the values
+                              file
                             properties:
                               addresses:
                                 description: RawMessage is a raw encoded JSON value.
@@ -203,10 +206,11 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: Tls
+                            description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs
+                                description: Certs is a top level field of the values
+                                  file
                                 type: object
                               enabled:
                                 type: boolean
@@ -219,12 +223,13 @@ spec:
                         - tls
                         type: object
                       http:
-                        description: Http
+                        description: HTTP is a top level field of the values file
                         properties:
                           enabled:
                             type: boolean
                           external:
-                            description: External
+                            description: External is a top level field of the values
+                              file
                             properties:
                               addresses:
                                 description: RawMessage is a raw encoded JSON value.
@@ -247,10 +252,11 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: Tls
+                            description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs
+                                description: Certs is a top level field of the values
+                                  file
                                 type: object
                               enabled:
                                 type: boolean
@@ -265,10 +271,11 @@ spec:
                         - tls
                         type: object
                       kafka:
-                        description: Kafka
+                        description: Kafka is a top level field of the values file
                         properties:
                           external:
-                            description: External
+                            description: External is a top level field of the values
+                              file
                             properties:
                               addresses:
                                 description: RawMessage is a raw encoded JSON value.
@@ -289,10 +296,11 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: Tls
+                            description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs
+                                description: Certs is a top level field of the values
+                                  file
                                 type: object
                               enabled:
                                 type: boolean
@@ -305,15 +313,16 @@ spec:
                         - tls
                         type: object
                       rpc:
-                        description: Rpc
+                        description: RPC is a top level field of the values file
                         properties:
                           port:
                             type: integer
                           tls:
-                            description: Tls
+                            description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs
+                                description: Certs is a top level field of the values
+                                  file
                                 type: object
                               enabled:
                                 type: boolean
@@ -325,12 +334,14 @@ spec:
                         - tls
                         type: object
                       schemaRegistry:
-                        description: SchemaRegistry
+                        description: SchemaRegistry is a top level field of the values
+                          file
                         properties:
                           enabled:
                             type: boolean
                           external:
-                            description: External
+                            description: External is a top level field of the values
+                              file
                             properties:
                               addresses:
                                 description: RawMessage is a raw encoded JSON value.
@@ -353,10 +364,11 @@ spec:
                           port:
                             type: integer
                           tls:
-                            description: Tls
+                            description: TLS is a top level field of the values file
                             properties:
                               certs:
-                                description: Certs
+                                description: Certs is a top level field of the values
+                                  file
                                 type: object
                               enabled:
                                 type: boolean
@@ -372,7 +384,7 @@ spec:
                         type: object
                     type: object
                   logging:
-                    description: Logging
+                    description: Logging is a top level field of the values file
                     type: object
                   nameOverride:
                     description: NameOverride is the override to give your redpanda
@@ -385,15 +397,18 @@ spec:
                       release
                     type: object
                   post_install_job:
-                    description: PostInstallJob
+                    description: PostInstallJob is a top level field of the values
+                      file
                     properties:
                       enabled:
                         type: boolean
                       resources:
-                        description: Resources
+                        description: Resources is a top level field of the values
+                          file
                         properties:
                           limits:
-                            description: Limits
+                            description: Limits is a top level field of the values
+                              file
                             properties:
                               cpu:
                                 type: integer
@@ -401,7 +416,8 @@ spec:
                                 type: string
                             type: object
                           requests:
-                            description: Requests
+                            description: Requests is a top level field of the values
+                              file
                             properties:
                               cpu:
                                 type: integer
@@ -413,7 +429,8 @@ spec:
                     - enabled
                     type: object
                   post_upgrade_job:
-                    description: PostUpgradeJob
+                    description: PostUpgradeJob is a top level field of the values
+                      file
                     properties:
                       enabled:
                         type: boolean
@@ -430,10 +447,12 @@ spec:
                         format: byte
                         type: string
                       resources:
-                        description: Resources
+                        description: Resources is a top level field of the values
+                          file
                         properties:
                           limits:
-                            description: Limits
+                            description: Limits is a top level field of the values
+                              file
                             properties:
                               cpu:
                                 type: integer
@@ -441,7 +460,8 @@ spec:
                                 type: string
                             type: object
                           requests:
-                            description: Requests
+                            description: Requests is a top level field of the values
+                              file
                             properties:
                               cpu:
                                 type: integer
@@ -453,7 +473,8 @@ spec:
                     - enabled
                     type: object
                   rackAwareness:
-                    description: RackAwareness
+                    description: RackAwareness is a top level field of the values
+                      file
                     properties:
                       enabled:
                         type: boolean
@@ -464,10 +485,10 @@ spec:
                     - nodeAnnotation
                     type: object
                   resources:
-                    description: Resources
+                    description: Resources is a top level field of the values file
                     properties:
                       limits:
-                        description: Limits
+                        description: Limits is a top level field of the values file
                         properties:
                           cpu:
                             type: integer
@@ -475,7 +496,7 @@ spec:
                             type: string
                         type: object
                       requests:
-                        description: Requests
+                        description: Requests is a top level field of the values file
                         properties:
                           cpu:
                             type: integer
@@ -484,14 +505,14 @@ spec:
                         type: object
                     type: object
                   statefulset:
-                    description: Statefulset
+                    description: Statefulset is a top level field of the values file
                     properties:
                       annotations:
                         additionalProperties:
                           type: string
                         type: object
                       budget:
-                        description: Budget
+                        description: Budget is a top level field of the values file
                         properties:
                           maxUnavailable:
                             type: integer
@@ -501,7 +522,8 @@ spec:
                       initContainer:
                         type: string
                       livenessProbe:
-                        description: LivenessProbe
+                        description: LivenessProbe is a top level field of the values
+                          file
                         properties:
                           failureThreshold:
                             type: integer
@@ -525,7 +547,8 @@ spec:
                         format: byte
                         type: string
                       podAntiAffinity:
-                        description: PodAntiAffinity
+                        description: PodAntiAffinity is a top level field of the values
+                          file
                         properties:
                           custom:
                             description: RawMessage is a raw encoded JSON value. It
@@ -547,7 +570,8 @@ spec:
                       priorityClassName:
                         type: string
                       readinessProbe:
-                        description: ReadinessProbe
+                        description: ReadinessProbe is a top level field of the values
+                          file
                         properties:
                           failureThreshold:
                             type: integer
@@ -563,7 +587,8 @@ spec:
                       replicas:
                         type: integer
                       securityContext:
-                        description: SecurityContext
+                        description: SecurityContext is a top level field of the values
+                          file
                         properties:
                           fsGroup:
                             type: integer
@@ -576,7 +601,8 @@ spec:
                       skipChown:
                         type: boolean
                       startupProbe:
-                        description: StartupProbe
+                        description: StartupProbe is a top level field of the values
+                          file
                         properties:
                           failureThreshold:
                             type: integer
@@ -594,7 +620,8 @@ spec:
                           type: string
                         type: array
                       topologySpreadConstraints:
-                        description: TopologySpreadConstraints
+                        description: TopologySpreadConstraints is a top level field
+                          of the values file
                         properties:
                           maxSkew:
                             type: integer
@@ -608,7 +635,8 @@ spec:
                         - whenUnsatisfiable
                         type: object
                       updateStrategy:
-                        description: UpdateStrategy
+                        description: UpdateStrategy is a top level field of the values
+                          file
                         properties:
                           type:
                             type: string
@@ -617,12 +645,13 @@ spec:
                         type: object
                     type: object
                   storage:
-                    description: Storage
+                    description: Storage is a top level field of the values file
                     properties:
                       hostPath:
                         type: string
                       persistentVolume:
-                        description: PersistentVolume
+                        description: PersistentVolume is a top level field of the
+                          values file
                         properties:
                           annotations:
                             additionalProperties:
@@ -642,7 +671,8 @@ spec:
                         - enabled
                         type: object
                       tieredConfig:
-                        description: TieredConfig
+                        description: TieredConfig is a top level field of the values
+                          file
                         properties:
                           cloud_storage_api_endpoint:
                             type: string
@@ -699,7 +729,8 @@ spec:
                       tieredStorageHostPath:
                         type: string
                       tieredStoragePersistentVolume:
-                        description: TieredStoragePersistentVolume
+                        description: TieredStoragePersistentVolume is a top level
+                          field of the values file
                         properties:
                           annotations:
                             additionalProperties:
@@ -724,10 +755,10 @@ spec:
                     - persistentVolume
                     type: object
                   tls:
-                    description: Tls
+                    description: TLS is a top level field of the values file
                     properties:
                       certs:
-                        description: Certs
+                        description: Certs is a top level field of the values file
                         type: object
                       enabled:
                         type: boolean
@@ -741,7 +772,7 @@ spec:
                       type: string
                     type: array
                   tuning:
-                    description: Tuning
+                    description: Tuning is a top level field of the values file
                     properties:
                       ballast_file_path:
                         type: string
