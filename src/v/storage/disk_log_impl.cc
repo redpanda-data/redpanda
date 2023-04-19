@@ -244,11 +244,12 @@ disk_log_impl::time_based_gc_max_offset(compaction_config cfg) {
     // will report the segment max timestamp as bogus timestamp
     vlog(
       gclog.debug,
-      "[{}] time retention timestamp: {}, first segment max timestamp: {}",
+      "[{}] time retention timestamp: {}, first segment retention timestamp: "
+      "{}",
       config().ntp(),
       cfg.eviction_time,
       _segs.empty() ? model::timestamp::min()
-                    : _segs.front()->index().max_timestamp());
+                    : _segs.front()->index().retention_timestamp());
 
     static constexpr auto const_threshold = 1min;
     auto bogus_threshold = model::timestamp(
@@ -259,18 +260,23 @@ disk_log_impl::time_based_gc_max_offset(compaction_config cfg) {
       std::cend(_segs),
       [this, time = cfg.eviction_time, bogus_threshold](
         const ss::lw_shared_ptr<segment>& s) {
-          auto max_ts = s->index().max_timestamp();
-          // first that is not going to be collected
-          if (max_ts > bogus_threshold) {
+          auto retention_ts = s->index().retention_timestamp();
+
+          if (retention_ts > bogus_threshold) {
+              // Warn on timestamps more than the "bogus" threshold in future
               vlog(
                 gclog.warn,
-                "[{}] found segment with bogus max timestamp: {} - {}",
+                "[{}] found segment with bogus retention timestamp: {} (base "
+                "{}, max {}) - {}",
                 config().ntp(),
-                max_ts,
+                retention_ts,
+                s->index().base_timestamp(),
+                s->index().max_timestamp(),
                 s);
           }
 
-          return max_ts > time;
+          // first that is not going to be collected
+          return retention_ts > time;
       });
 
     if (it == _segs.cbegin()) {
@@ -771,6 +777,15 @@ disk_log_impl::gc(compaction_config cfg) {
       config().ntp(),
       cfg);
 
+    auto ignore_timestamps_in_future
+      = config::shard_local_cfg().storage_ignore_timestamps_in_future_sec();
+    if (ignore_timestamps_in_future.has_value()) {
+        // Correct any timestamps too far in future, before calculating the
+        // retention offset.
+        co_await retention_adjust_timestamps(
+          ignore_timestamps_in_future.value());
+    }
+
     auto max_offset = retention_offset(cfg);
 
     if (max_offset) {
@@ -778,6 +793,62 @@ disk_log_impl::gc(compaction_config cfg) {
     }
 
     co_return std::nullopt;
+}
+
+ss::future<> disk_log_impl::retention_adjust_timestamps(
+  std::chrono::seconds ignore_in_future) {
+    auto ignore_threshold = model::timestamp(
+      model::timestamp::now().value() + ignore_in_future / 1ms);
+
+    for (const auto& s : _segs) {
+        auto max_ts = s->index().max_timestamp();
+
+        // If the actual max timestamp from user records is out of bounds, clamp
+        // it to something more plausible, either from other batches or from
+        // filesystem metadata if no batches with valid timestamps are
+        // available.
+        if (max_ts >= ignore_threshold) {
+            auto alternate_batch_ts = s->index().find_highest_timestamp_before(
+              ignore_threshold);
+            if (alternate_batch_ts.has_value()) {
+                // Some batch in the segment has a timestamp within threshold,
+                // use that instead of the official max ts.
+                vlog(
+                  gclog.warn,
+                  "[{}] Timestamp in future detected, check client clocks.  "
+                  "Adjusting retention timestamp from {} to max valid record "
+                  "timestamp {} on {}",
+                  config().ntp(),
+                  max_ts,
+                  alternate_batch_ts.value(),
+                  s->path().string());
+                s->index().set_retention_timestamp(alternate_batch_ts.value());
+            } else {
+                // No indexed batch in the segment has a usable timestamp: fall
+                // back to using the mtime of the file.  This is not accurate
+                // at all (the file might have been created long
+                // after the data was written) but is better than nothing.
+                auto file_timestamp = co_await s->get_file_timestamp();
+                vlog(
+                  gclog.warn,
+                  "[{}] Timestamp in future detected, check client clocks.  "
+                  "Adjusting retention timestamp from {} to file mtime {} on "
+                  "{}",
+                  config().ntp(),
+                  max_ts,
+                  file_timestamp,
+                  s->path().string());
+                s->index().set_retention_timestamp(file_timestamp);
+            }
+        } else {
+            // We may drop out as soon as we see a segment with a valid
+            // timestamp: this is collectible by time_based_gc_max_offset
+            // without us making an adjustment, and if there are any later
+            // segments that require correction we will hit them after
+            // this earlier segment has  been collected.
+            break;
+        }
+    }
 }
 
 std::optional<model::offset>

@@ -303,4 +303,23 @@ ss::future<size_t> segment_index::disk_usage() {
     co_return _disk_usage_size.value();
 }
 
+std::optional<model::timestamp>
+segment_index::find_highest_timestamp_before(model::timestamp t) const {
+    if (_state.base_timestamp > t || _state.empty()) {
+        return std::nullopt;
+    }
+
+    auto relative_t = (t - _state.base_timestamp).value();
+
+    for (int i = _state.size() - 1; i >= 0; --i) {
+        auto [relative_offset, offset_time, position] = _state.get_entry(i);
+        if (offset_time() < relative_t) {
+            return model::timestamp(
+              _state.base_timestamp.value() + offset_time());
+        }
+    }
+
+    return std::nullopt;
+}
+
 } // namespace storage

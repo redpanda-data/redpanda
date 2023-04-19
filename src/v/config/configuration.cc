@@ -901,6 +901,17 @@ configuration::configuration()
        .example = "10737418240",
        .visibility = visibility::tunable},
       5_GiB)
+  , storage_ignore_timestamps_in_future_sec(
+      *this,
+      "storage_ignore_timestamps_in_future_sec",
+      "If set, timestamps more than this many seconds in the future relative to"
+      "the server's clock will be ignored for data retention purposes, and "
+      "retention will act based on another timestamp in the same segment, or "
+      "the mtime of the segment file if no valid timestamp is available",
+      {.needs_restart = needs_restart::no,
+       .example = "3600",
+       .visibility = visibility::tunable},
+      std::nullopt)
   , id_allocator_log_capacity(
       *this,
       "id_allocator_log_capacity",

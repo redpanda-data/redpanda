@@ -79,6 +79,11 @@ public:
     std::optional<entry> find_nearest(model::offset);
     std::optional<entry> find_nearest(model::timestamp);
 
+    /// Fallback timestamp search for if the recorded max ts appears to be
+    /// invalid, e.g. too far in the future
+    std::optional<model::timestamp>
+      find_highest_timestamp_before(model::timestamp) const;
+
     model::offset base_offset() const { return _state.base_offset; }
     model::offset max_offset() const { return _state.max_offset; }
     model::timestamp max_timestamp() const { return _state.max_timestamp; }
@@ -87,6 +92,22 @@ public:
         return _state.batch_timestamps_are_monotonic;
     }
     bool non_data_timestamps() const { return _state.non_data_timestamps; }
+
+    void set_retention_timestamp(model::timestamp t) {
+        _retention_timestamp = t;
+    }
+    model::timestamp retention_timestamp() const {
+        if (unlikely(config::shard_local_cfg()
+                       .storage_ignore_timestamps_in_future_sec())) {
+            return _retention_timestamp.value_or(_state.max_timestamp);
+        } else {
+            // If storage_ignore_timestamps_in_future_sec is disabled, then
+            // we should not respect _retention_timestamp even if it has
+            // been set (this corresponds to the property being toggled on
+            // then off again at runtime).
+            return _state.max_timestamp;
+        }
+    }
 
     ss::future<bool> materialize_index();
     ss::future<> flush();
@@ -126,6 +147,10 @@ private:
     bool _needs_persistence{false};
     index_state _state;
     debug_sanitize_files _sanitize;
+
+    // Override the timestamp used for retention, in case what's in
+    // the index _state is no good.
+    std::optional<model::timestamp> _retention_timestamp;
 
     // invalidate size cache when on-disk size may change
     std::optional<size_t> _disk_usage_size;
