@@ -354,4 +354,7 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
                 producer.wait()
                 producer.stop()
 
+        # If this is nonzero, it indicates a possible idempotency issue
+        assert producer.produce_status.bad_offsets == 0
+
         ctx.assert_actions_triggered()
