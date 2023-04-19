@@ -67,6 +67,7 @@ enum class errc : int16_t {
     cluster_already_exists,
     no_partition_assignments,
     failed_to_create_partition,
+    partition_operation_failed,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -191,6 +192,9 @@ struct errc_category final : public std::error_category {
             return "No replica assignments for the requested partition";
         case errc::failed_to_create_partition:
             return "Failed to create partition replica instance";
+        case errc::partition_operation_failed:
+            return "Generic failure occurred during partition operation "
+                   "execution";
         }
         return "cluster::errc::unknown";
     }
