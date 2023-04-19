@@ -147,12 +147,10 @@ public:
 
     /// Flush metadata to object storage, prior to a topic deletion with
     /// remote deletion disabled.
-    ss::future<finalize_result>
-    finalize(ss::abort_source&, raft::vnode, raft::group_configuration);
+    ss::future<finalize_result> finalize(ss::abort_source&);
 
     /// Remove objects from S3
-    ss::future<>
-    erase(ss::abort_source&, raft::vnode, raft::group_configuration);
+    ss::future<> erase(ss::abort_source&, bool finalize);
 
     /// Hook for materialized_segment to notify us when a segment is evicted
     void offload_segment(model::offset);
