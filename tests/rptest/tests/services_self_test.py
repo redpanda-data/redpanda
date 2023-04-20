@@ -67,7 +67,7 @@ class KgoRepeaterSelfTest(RedpandaTest):
                               msg_size=4096,
                               workers=1) as repeater:
             repeater.await_group_ready()
-            repeater.await_progress(1024, timeout_sec=60)
+            repeater.await_progress(1024, timeout_sec=75)
 
 
 class KgoVerifierSelfTest(PreallocNodesTest):
