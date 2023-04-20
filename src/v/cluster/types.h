@@ -2364,7 +2364,11 @@ struct bootstrap_cluster_cmd_data
 
     auto serde_fields() {
         return std::tie(
-          uuid, bootstrap_user_cred, node_ids_by_uuid, founding_version);
+          uuid,
+          bootstrap_user_cred,
+          node_ids_by_uuid,
+          founding_version,
+          initial_nodes);
     }
 
     model::cluster_uuid uuid;
