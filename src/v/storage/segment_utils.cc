@@ -166,18 +166,42 @@ ss::future<segment_appender_ptr> make_segment_appender(
   ss::io_priority_class iopc,
   storage_resources& resources,
   std::optional<ntp_sanitizer_config> ntp_sanitizer_config) {
-    return internal::make_writer_handle(path, std::move(ntp_sanitizer_config))
-      .then([number_of_chunks, iopc, path, segment_size, &resources](
-              ss::file writer) {
+    return internal::make_writer_handle(path, std::nullopt)
+      .then([number_of_chunks,
+             iopc,
+             path,
+             segment_size,
+             &resources,
+             ntp_sanitizer_config = std::move(ntp_sanitizer_config)](
+              ss::file writer) mutable {
+          // file_io_sanitizer requires a pointer to the appender,
+          // so we create it inline and give it the pointer after
+          // the appender is created.
+          ss::shared_ptr<file_io_sanitizer> sanitized_writer{nullptr};
+          if (ntp_sanitizer_config) {
+              sanitized_writer = ss::make_shared<file_io_sanitizer>(
+                std::move(writer),
+                path,
+                std::move(ntp_sanitizer_config.value()));
+
+              writer = ss::file(sanitized_writer);
+          }
+
           try {
               // NOTE: This try-catch is needed to not uncover the real
               // exception during an OOM condition, since the appender allocates
               // 1MB of memory aligned buffers
+              auto appender_ptr = std::make_unique<segment_appender>(
+                writer,
+                segment_appender::options(
+                  iopc, number_of_chunks, segment_size, resources));
+
+              if (sanitized_writer) {
+                  sanitized_writer->set_pointer_to_appender(appender_ptr.get());
+              }
+
               return ss::make_ready_future<segment_appender_ptr>(
-                std::make_unique<segment_appender>(
-                  writer,
-                  segment_appender::options(
-                    iopc, number_of_chunks, segment_size, resources)));
+                std::move(appender_ptr));
           } catch (...) {
               auto e = std::current_exception();
               vlog(stlog.error, "could not allocate appender: {}", e);

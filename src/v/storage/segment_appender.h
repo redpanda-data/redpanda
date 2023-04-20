@@ -147,6 +147,11 @@ private:
           : offset(offset) {}
         size_t offset;
         ss::promise<> p;
+
+        friend std::ostream& operator<<(std::ostream& s, const flush_op& op) {
+            fmt::print(s, "{{offest: {}}}", op.offset);
+            return s;
+        }
     };
 
     std::vector<flush_op> _flush_ops;
@@ -164,6 +169,12 @@ private:
         explicit inflight_write(size_t offset)
           : done(false)
           , offset(offset) {}
+
+        friend std::ostream&
+        operator<<(std::ostream& s, const inflight_write& op) {
+            fmt::print(s, "{{done: {}, offest: {}}}", op.done, op.offset);
+            return s;
+        }
     };
 
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
@@ -183,6 +194,7 @@ private:
     uint32_t _batch_types_to_write{0};
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
+    friend class file_io_sanitizer;
 };
 
 using segment_appender_ptr = std::unique_ptr<segment_appender>;
