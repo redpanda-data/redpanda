@@ -321,8 +321,9 @@ ss::future<result<kafka_result>> partition::replicate(
     if (!res) {
         co_return ret_t(res.error());
     }
-    co_return ret_t(kafka_result{
-      kafka::offset(_translator->from_log_offset(res.value().last_offset)())});
+    co_return ret_t(
+      kafka_result{kafka::offset(get_offset_translator_state()->from_log_offset(
+        res.value().last_offset)())});
 }
 
 ss::shared_ptr<cluster::rm_stm> partition::rm_stm() {
@@ -399,7 +400,7 @@ kafka_stages partition::replicate_in_stages(
           }
           auto old_offset = r.value().last_offset;
           auto new_offset = kafka::offset(
-            _translator->from_log_offset(old_offset)());
+            get_offset_translator_state()->from_log_offset(old_offset)());
           return ret_t(kafka_result{new_offset});
       });
     return kafka_stages(
@@ -411,8 +412,7 @@ ss::future<> partition::start() {
 
     _probe.setup_metrics(ntp);
 
-    auto f = _raft->start().then(
-      [this] { _translator = _raft->get_offset_translator_state(); });
+    auto f = _raft->start();
 
     if (is_id_allocator_topic(ntp)) {
         return f.then([this] { return _id_allocator_stm->start(); });

@@ -1249,10 +1249,7 @@ ss::future<> rm_stm::stop() {
     return raft::state_machine::stop();
 }
 
-ss::future<> rm_stm::start() {
-    _translator = _c->get_offset_translator_state();
-    return persisted_stm::start();
-}
+ss::future<> rm_stm::start() { return persisted_stm::start(); }
 
 rm_stm::transaction_info::status_t
 rm_stm::get_tx_status(model::producer_identity pid) const {
@@ -1654,6 +1651,14 @@ ss::future<result<kafka_result>> rm_stm::replicate_seq(
           bid.last_seq);
         co_return errc::invalid_request;
     }
+    vlog(
+      _ctx_log.trace,
+      "[pid: {}] processing idempotent request [first_seq: {}, last_seq: {}, "
+      "cnt: {}]",
+      bid.pid,
+      bid.first_seq,
+      bid.last_seq,
+      bid.record_count);
 
     auto idempotent_lock = get_idempotent_producer_lock(bid.pid);
     auto units = co_await idempotent_lock->hold_read_lock();
@@ -2518,11 +2523,30 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     if (bid.has_idempotent()) {
         auto [seq_it, inserted] = _log_state.seq_table.try_emplace(bid.pid);
         auto translated = from_log_offset(last_offset);
+
         if (inserted) {
+            vlog(
+              _ctx_log.trace,
+              "Inserted [pid: {}, fs: {}, ls:{}] offset: {}, with "
+              "kafka_offset: {}",
+              bid.pid,
+              bid.first_seq,
+              bid.last_seq,
+              last_offset,
+              translated);
             seq_it->second.entry.pid = bid.pid;
             seq_it->second.entry.seq = bid.last_seq;
             seq_it->second.entry.last_offset = translated;
         } else {
+            vlog(
+              _ctx_log.trace,
+              "Updated [pid: {}, fs: {}, ls:{}] offset: {}, with kafka_offset: "
+              "{}",
+              bid.pid,
+              bid.first_seq,
+              bid.last_seq,
+              last_offset,
+              translated);
             seq_it->second.entry.update(bid.last_seq, translated);
         }
 
@@ -2567,6 +2591,22 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 }
 
+kafka::offset rm_stm::from_log_offset(model::offset log_offset) const {
+    if (log_offset > model::offset{-1}) {
+        return kafka::offset(
+          _raft->get_offset_translator_state()->from_log_offset(log_offset));
+    }
+    return kafka::offset(log_offset);
+}
+
+model::offset rm_stm::to_log_offset(kafka::offset k_offset) const {
+    if (k_offset > kafka::offset{-1}) {
+        return _raft->get_offset_translator_state()->to_log_offset(
+          model::offset(k_offset()));
+    }
+
+    return model::offset(k_offset);
+}
 template<class T>
 static void move_snapshot_wo_seqs(rm_stm::tx_snapshot& target, T& source) {
     target.fenced = std::move(source.fenced);
