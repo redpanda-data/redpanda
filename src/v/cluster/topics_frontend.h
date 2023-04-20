@@ -49,6 +49,8 @@ public:
       ss::sharded<cloud_storage::remote>&,
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::members_table>&,
+      ss::sharded<partition_manager>&,
+      ss::sharded<shard_table>&,
       config::binding<unsigned>);
 
     ss::future<std::vector<topic_result>> create_topics(
@@ -138,6 +140,9 @@ public:
     ss::future<topic_result> do_update_topic_properties(
       topic_properties_update, model::timeout_clock::time_point);
 
+    ss::future<result<std::vector<partition_state>>>
+      get_partition_state(model::ntp);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -219,6 +224,9 @@ private:
     generate_reassignments(
       model::ntp, std::vector<model::node_id> new_replicas);
 
+    ss::future<result<partition_state_reply>>
+      do_get_partition_state(model::node_id, model::ntp);
+
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<partition_allocator>& _allocator;
@@ -231,6 +239,8 @@ private:
     ss::sharded<features::feature_table>& _features;
 
     ss::sharded<cluster::members_table>& _members_table;
+    ss::sharded<partition_manager>& _pm;
+    ss::sharded<shard_table>& _shard_table;
 
     config::binding<unsigned> _hard_max_disk_usage_ratio;
 

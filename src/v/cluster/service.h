@@ -118,6 +118,9 @@ public:
     ss::future<cloud_storage_usage_reply> cloud_storage_usage(
       cloud_storage_usage_request&& r, rpc::streaming_context&) final;
 
+    ss::future<partition_state_reply> get_partition_state(
+      partition_state_request&&, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::
@@ -154,6 +157,9 @@ private:
 
     ss::future<cloud_storage_usage_reply>
       do_cloud_storage_usage(cloud_storage_usage_request);
+
+    ss::future<partition_state_reply>
+      do_get_partition_state(partition_state_request);
 
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
