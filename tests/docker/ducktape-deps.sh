@@ -111,7 +111,7 @@ function install_rust_tools() {
 
   git clone https://github.com/redpanda-data/client-swarm.git
   pushd client-swarm
-  git reset --hard 63b4cd558203cdd79a69a0893c7435104c10f428
+  git reset --hard 5610f614545ee34f593e1279b30ee9986959d9b0
   cargo build --release
   cp target/release/client-swarm /usr/local/bin
   popd
