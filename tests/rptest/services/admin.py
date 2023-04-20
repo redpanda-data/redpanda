@@ -938,6 +938,35 @@ class Admin:
     def is_node_isolated(self, node):
         return self._request("GET", "debug/is_node_isolated", node=node).json()
 
+    def stress_fiber_start(
+        self,
+        node,
+        num_fibers,
+        min_spins_per_scheduling_point=None,
+        max_spins_per_scheduling_point=None,
+        min_ms_per_scheduling_point=None,
+        max_ms_per_scheduling_point=None,
+    ):
+        p = {"num_fibers": str(num_fibers)}
+        if min_spins_per_scheduling_point is not None:
+            p["min_spins_per_scheduling_point"] = str(
+                min_spins_per_scheduling_point)
+        if max_spins_per_scheduling_point is not None:
+            p["max_spins_per_scheduling_point"] = str(
+                max_spins_per_scheduling_point)
+        if min_ms_per_scheduling_point is not None:
+            p["min_ms_per_scheduling_point"] = str(min_ms_per_scheduling_point)
+        if max_ms_per_scheduling_point is not None:
+            p["max_ms_per_scheduling_point"] = str(max_ms_per_scheduling_point)
+        kwargs = {"params": p}
+        return self._request("PUT",
+                             "debug/stress_fiber_start",
+                             node=node,
+                             **kwargs)
+
+    def stress_fiber_stop(self, node):
+        return self._request("PUT", "debug/stress_fiber_stop", node=node)
+
     def cloud_storage_usage(self) -> int:
         return int(
             self._request(
