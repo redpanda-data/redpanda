@@ -20,6 +20,8 @@ from ducktape.mark import matrix
 class ManyClientsTest(RedpandaTest):
     PRODUCER_COUNT = 4000
 
+    TARGET_THROUGHPUT_MB_S_PER_NODE = 104857600
+
     def __init__(self, *args, **kwargs):
         # We will send huge numbers of messages, so tune down the log verbosity
         # as this is just a "did we stay up?" test
@@ -37,7 +39,7 @@ class ManyClientsTest(RedpandaTest):
             31460000,  # 30MiB/s of throughput per shard
             # Same intention as above but utilizing node-wide throughput limit
             'kafka_throughput_limit_node_in_bps':
-            104857600,  # 100MiB/s per node
+            self.TARGET_THROUGHPUT_MB_S_PER_NODE,  # 100MiB/s per node
 
             # Set higher connection count limits than the redpanda default.
             # Factor of 4: allow each client 3 connections (producer,consumer,admin), plus
@@ -102,6 +104,9 @@ class ManyClientsTest(RedpandaTest):
 
         cleanup_policy = "compact" if compacted else "delete"
 
+        target_throughput_mb_s = self.TARGET_THROUGHPUT_MB_S_PER_NODE * len(
+            self.redpanda.nodes)
+
         self.client().create_topic(
             TopicSpec(name=TOPIC_NAME,
                       partition_count=partition_count,
@@ -149,6 +154,21 @@ class ManyClientsTest(RedpandaTest):
             # Clients have to do the compression work on these larger messages,
             # so curb our expectations about how many we may run concurrently.
             producer_count = producer_count // 10
+        else:
+            producer_kwargs['min_record_size'] = 0
+            producer_kwargs['max_record_size'] = 16384
+
+        mean_msg_size = producer_kwargs['min_record_size'] + (
+            producer_kwargs['max_record_size'] -
+            producer_kwargs['min_record_size']) // 2
+        msg_rate = (target_throughput_mb_s * 1024 * 1024) // mean_msg_size
+        messages_per_sec_per_producer = msg_rate // self.PRODUCER_COUNT
+        producer_kwargs[
+            'messages_per_second_per_producer'] = messages_per_sec_per_producer
+
+        # If this fails, the test was altered to have an impractical ratio of
+        # producers to traffic rate.
+        assert messages_per_sec_per_producer > 0, "Bad sizing params, need at least 1 MPS"
 
         producer = ProducerSwarm(self.test_context,
                                  self.redpanda,
