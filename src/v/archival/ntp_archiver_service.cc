@@ -1299,7 +1299,6 @@ ss::future<> ntp_archiver::housekeeping() {
             auto units = co_await ss::get_units(_mutex, 1, _as);
             co_await apply_retention();
             co_await garbage_collect();
-            co_await upload_manifest();
         }
     } catch (std::exception& e) {
         vlog(_rtclog.warn, "Error occured during housekeeping", e.what());
@@ -1358,6 +1357,21 @@ ss::future<> ntp_archiver::garbage_collect() {
 
     // Avoid replicating 'cleanup_metadata_cmd' if there's nothing to remove.
     if (to_remove.size() == 0) {
+        co_return;
+    }
+
+    // If we are about to delete segments, we must ensure that the remote
+    // manifest is fully up to date, so that it is definitely not referring
+    // to any of the segments we will delete in its list of active segments.
+    //
+    // This is so that read replicas can be sure that if they get a 404
+    // on a segment and go re-read the manifest, the latest manifest will
+    // not refer to the non-existent segment (apart from in its 'replaced'
+    // list)
+    auto result = co_await upload_manifest();
+    if (result != cloud_storage::upload_result::success) {
+        // If we could not write the  manifest, it is not safe to remove
+        // segments.
         co_return;
     }
 
