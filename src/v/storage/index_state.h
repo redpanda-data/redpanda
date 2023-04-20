@@ -149,7 +149,8 @@ struct index_state
             non_data_timestamps = false;
         }
     }
-    std::tuple<uint32_t, offset_time_index, uint64_t> get_entry(size_t i) {
+    std::tuple<uint32_t, offset_time_index, uint64_t>
+    get_entry(size_t i) const {
         return {
           relative_offset_index[i],
           offset_time_index{relative_time_index[i], with_offset},
