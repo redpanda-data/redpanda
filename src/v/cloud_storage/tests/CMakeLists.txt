@@ -27,6 +27,7 @@ rp_test(
     remote_segment_test.cc
     remote_partition_test.cc
     topic_recovery_service_test.cc
+    cloud_storage_e2e_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES
     Boost::unit_test_framework
@@ -35,6 +36,7 @@ rp_test(
     v::storage_test_utils
     v::cloud_roles
     v::application
+    v::kafka_test_utils
   ARGS "-- -c 1"
   LABELS cloud_storage
 )

@@ -257,6 +257,16 @@ public:
         return _parent.log().config();
     }
 
+    /// If we have a projected manifest clean offset, then flush it to
+    /// the persistent stm clean offset.
+    ss::future<> flush_manifest_clean_offset();
+
+    /// Upload manifest to the pre-defined S3 location
+    ss::future<cloud_storage::upload_result> upload_manifest(
+      const char* upload_ctx,
+      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
+      = std::nullopt);
+
 private:
     // Labels for contexts in which manifest uploads occur. Used for logging.
     static constexpr const char* housekeeping_ctx_label = "housekeeping";
@@ -434,21 +444,11 @@ private:
     /// will have been updated if so)
     ss::future<bool> maybe_upload_manifest(const char* upload_ctx);
 
-    /// If we have a projected manifest clean offset, then flush it to
-    /// the persistent stm clean offset.
-    ss::future<> flush_manifest_clean_offset();
-
     /// Lazy variant of flush_manifest_clean_offset, for use in situations
     /// where we didn't just upload the manifest, but want to make sure we
     /// will eventually flush projected_manifest_clean_at in case it was
     /// set by some background operation.
     ss::future<> maybe_flush_manifest_clean_offset();
-
-    /// Upload manifest to the pre-defined S3 location
-    ss::future<cloud_storage::upload_result> upload_manifest(
-      const char* upload_ctx,
-      std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
-      = std::nullopt);
 
     /// While leader, within a particular term, keep trying to upload data
     /// from local storage to remote storage until our term changes or
