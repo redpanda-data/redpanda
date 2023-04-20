@@ -424,8 +424,6 @@ github.com/prometheus/procfs v0.9.0 h1:wzCHvIvM5SxWqYvwgVL7yJY8Lz3PKn49KQtpgMYJf
 github.com/prometheus/procfs v0.9.0/go.mod h1:+pB4zwohETzFnmlpe6yd2lSc+0/46IYZRB/chUwxUZY=
 github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524 h1:luFDvYrRmfF5UoNcjBWNtTMQ8J9p27Hph4v57ULnzNk=
 github.com/redpanda-data/console/backend v0.0.0-20230222172326-354751cc7524/go.mod h1:eIkTpFJ4nRwkac3TNdJjTtZU0PsP2IRXkThfP8ALZ+E=
-github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230104182309-7698d02c437e h1:fHTmrBahDcGv2xD1Sl4uddvEo8guDzkexgz9HbB0Mvc=
-github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230104182309-7698d02c437e/go.mod h1:Z87WArT+Ds+3r5arB8FwlPBwa7MzvhE46pGYrJoeOpo=
 github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230404135914-a0df09112265 h1:AZrzMeTDChsaw4fNbZkcmm+p11ZnHFG6+UCiforC0yw=
 github.com/redpanda-data/redpanda/src/go/rpk v0.0.0-20230404135914-a0df09112265/go.mod h1:lS28/leL/Gd2GaeufIPi8t3sM1kd7LoD3VYMhTes2cY=
 github.com/rhnvrm/simples3 v0.6.1/go.mod h1:Y+3vYm2V7Y4VijFoJHHTrja6OgPrJ2cBti8dPGkC3sA=
