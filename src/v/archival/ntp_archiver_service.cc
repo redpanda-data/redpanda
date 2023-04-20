@@ -999,22 +999,18 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
 
     auto upload_fut
       = do_upload_segment(candidate, stream_state, source_rtc)
+          .handle_exception_type([](const ss::gate_closed_exception&) mutable {
+              return cloud_storage::upload_result::cancelled;
+          })
           .handle_exception_type(
-            [&stream_state](const ss::gate_closed_exception&) mutable {
-                return stream_state.maybe_close_ref().then(
-                  [] { return cloud_storage::upload_result::cancelled; });
+            [](const ss::abort_requested_exception&) mutable {
+                return cloud_storage::upload_result::cancelled;
             })
-          .handle_exception_type(
-            [&stream_state](const ss::abort_requested_exception&) mutable {
-                return stream_state.maybe_close_ref().then(
-                  [] { return cloud_storage::upload_result::cancelled; });
-            })
-          .handle_exception_type(
-            [this, path, &stream_state](const std::exception& e) mutable {
-                vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
-                return stream_state.maybe_close_ref().then(
-                  [] { return cloud_storage::upload_result::failed; });
-            });
+          .handle_exception_type([this, path](const std::exception& e) mutable {
+              vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
+              return cloud_storage::upload_result::failed;
+          })
+          .finally([&stream_state] { return stream_state.maybe_close_ref(); });
 
     auto index_path = make_index_path(path);
     auto make_idx_fut = make_segment_index(
