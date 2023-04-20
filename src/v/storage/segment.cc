@@ -31,11 +31,17 @@
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
+#include <seastar/core/sstring.hh>
 
+#include <boost/range/irange.hpp>
+
+#include <chrono>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -323,7 +329,20 @@ ss::future<> segment::do_truncate(
     }
 
     f = f.then([this, prev_last_offset, new_max_timestamp] {
-        return _idx.truncate(prev_last_offset, new_max_timestamp);
+        return _idx.truncate(prev_last_offset, new_max_timestamp).then([this] {
+            auto range = boost::irange(0, 60);
+            if (_reader.filename().find("kvstore") == ss::sstring::npos) {
+                return ss::do_for_each(
+                  range.begin(), range.end(), [this](int i) {
+                      fmt::print(
+                        "DBG: truncation sleep {} - {}\n",
+                        i,
+                        _reader.filename());
+                      return ss::sleep(std::chrono::seconds(1));
+                  });
+            }
+            return ss::now();
+        });
     });
 
     // physical file only needs *one* truncation call
