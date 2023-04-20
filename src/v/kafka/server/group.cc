@@ -179,7 +179,7 @@ static model::record_batch make_tx_fence_batch(
       model::record_batch_type::tx_fence,
       group::fence_control_record_v0_version,
       pid,
-      cmd);
+      std::move(cmd));
 }
 
 static model::record_batch make_tx_fence_batch(
@@ -188,7 +188,7 @@ static model::record_batch make_tx_fence_batch(
       model::record_batch_type::tx_fence,
       group::fence_control_record_version,
       pid,
-      cmd);
+      std::move(cmd));
 }
 
 group_state group::set_state(group_state s) {
@@ -2382,7 +2382,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
               .expiry_timestamp = expiry_timestamp,
             };
 
-            offset_commits.emplace_back(std::make_pair(tp, md));
+            offset_commits.emplace_back(tp, md);
 
             // record the offset commits as pending commits which will be
             // inspected after the append to catch concurrent updates.
@@ -2426,8 +2426,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
 
           return offset_commit_response(req, error);
       });
-    return offset_commit_stages(
-      std::move(replicate_stages.request_enqueued), std::move(f));
+    return {std::move(replicate_stages.request_enqueued), std::move(f)};
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -3197,7 +3196,7 @@ ss::future<> group::do_abort_old_txes() {
     for (auto& [id, _] : _tx_seqs) {
         auto it = _fence_pid_epoch.find(id);
         if (it != _fence_pid_epoch.end()) {
-            pids.push_back(model::producer_identity(id(), it->second));
+            pids.emplace_back(id(), it->second);
         }
     }
 
