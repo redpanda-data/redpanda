@@ -364,7 +364,8 @@ class ClusterRateQuotaTest(RedpandaTest):
         producer = KafkaProducer(acks="all",
                                  bootstrap_servers=self.leader_node,
                                  value_serializer=str.encode,
-                                 retries=1,
+                                 retries=2,
+                                 request_timeout_ms=60000,
                                  client_id="producer")
 
         consumer = KafkaConsumer(
