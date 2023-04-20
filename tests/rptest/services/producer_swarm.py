@@ -30,12 +30,14 @@ class ProducerSwarm(Service):
                  compressible_payload: Optional[bool] = None,
                  min_record_size: Optional[int] = None,
                  max_record_size: Optional[int] = None,
-                 keys: Optional[int] = None):
+                 keys: Optional[int] = None,
+                 messages_per_second_per_producer: Optional[int] = None):
         super(ProducerSwarm, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
         self._producers = producers
         self._records_per_producer = records_per_producer
+        self._messages_per_second_per_producer = messages_per_second_per_producer
         self._log_level = log_level
         self._properties = properties
         self._timeout_ms = timeout_ms
@@ -75,6 +77,9 @@ class ProducerSwarm(Service):
 
         if self._keys is not None:
             cmd += f" --keys={self._keys}"
+
+        if self._messages_per_second_per_producer is not None:
+            cmd += f" --messages-per-second {self._messages_per_second_per_producer}"
 
         cmd = f"RUST_LOG={self._log_level} bash /opt/remote/control/start.sh {self.EXE} \"{cmd}\""
         node.account.ssh(cmd)
