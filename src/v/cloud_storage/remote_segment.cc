@@ -248,13 +248,11 @@ remote_segment::data_stream(size_t pos, ss::io_priority_class io_priority) {
 
 ss::future<remote_segment::input_stream_with_offsets>
 remote_segment::offset_data_stream(
-  kafka::offset kafka_offset,
+  kafka::offset start,
+  kafka::offset end,
   std::optional<model::timestamp> first_timestamp,
   ss::io_priority_class io_priority) {
-    vlog(
-      _ctxlog.debug,
-      "remote segment file input stream at offset {}",
-      kafka_offset);
+    vlog(_ctxlog.debug, "remote segment file input stream at offset {}", start);
     ss::gate::holder g(_gate);
     co_await hydrate();
     offset_index::find_result pos;
@@ -271,12 +269,11 @@ remote_segment::offset_data_stream(
           .file_pos = 0,
         };
     } else {
-        pos = maybe_get_offsets(kafka_offset)
-                .value_or(offset_index::find_result{
-                  .rp_offset = _base_rp_offset,
-                  .kaf_offset = _base_rp_offset - _base_offset_delta,
-                  .file_pos = 0,
-                });
+        pos = maybe_get_offsets(start).value_or(offset_index::find_result{
+          .rp_offset = _base_rp_offset,
+          .kaf_offset = _base_rp_offset - _base_offset_delta,
+          .file_pos = 0,
+        });
     }
     vlog(
       _ctxlog.debug,
@@ -289,8 +286,20 @@ remote_segment::offset_data_stream(
     options.read_ahead
       = config::shard_local_cfg().storage_read_readahead_count();
     options.io_priority_class = io_priority;
-    auto data_stream = ss::make_file_input_stream(
-      _data_file, pos.file_pos, std::move(options));
+
+    ss::input_stream<char> data_stream;
+    if (_sname_format <= segment_name_format::v2 || _fallback_mode) {
+        data_stream = ss::make_file_input_stream(
+          _data_file, pos.file_pos, std::move(options));
+    } else {
+        // If the first_timestamp is supplied, this data source effectively ends
+        // up reading the entire segment in chunks.
+        auto chunk_ds = std::make_unique<chunk_data_source_impl>(
+          _chunks_api.value(), *this, pos.kaf_offset, end, std::move(options));
+        data_stream = ss::input_stream<char>{
+          ss::data_source{std::move(chunk_ds)}};
+    }
+
     co_return input_stream_with_offsets{
       .stream = std::move(data_stream),
       .rp_offset = pos.rp_offset,
@@ -1212,6 +1221,7 @@ remote_segment_batch_reader::init_parser() {
 
     auto stream_off = co_await _seg->offset_data_stream(
       model::offset_cast(_config.start_offset),
+      model::offset_cast(_config.max_offset),
       _config.first_timestamp,
       priority_manager::local().shadow_indexing_priority());
 

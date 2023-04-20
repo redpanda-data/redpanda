@@ -107,7 +107,8 @@ public:
     /// create an input stream _sharing_ the underlying file handle
     /// starting at position @pos
     ss::future<input_stream_with_offsets> offset_data_stream(
-      kafka::offset kafka_offset,
+      kafka::offset start,
+      kafka::offset end,
       std::optional<model::timestamp>,
       ss::io_priority_class);
 
