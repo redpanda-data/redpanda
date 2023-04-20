@@ -297,7 +297,6 @@ private:
     bool _is_tx_enabled{false};
     bool _is_idempotence_enabled{false};
     ss::shared_ptr<cloud_storage::remote_partition> _cloud_storage_partition;
-    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     std::optional<s3::bucket_name> _read_replica_bucket{std::nullopt};
     bool _remote_delete_enabled{storage::ntp_config::default_remote_delete};
 
