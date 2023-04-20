@@ -11,22 +11,30 @@
 
 #pragma once
 
+#include "model/fundamental.h"
 #include "random/simple_time_jitter.h"
-#include "seastarx.h"
 
 #include <seastar/core/expiring_fifo.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/fstream.hh>
 #include <seastar/core/iostream.hh>
 
 #include <absl/container/node_hash_map.h>
 
-#include <cstdint>
+namespace storage {
+struct log_reader_config;
+}
 
 namespace cloud_storage {
 
 class remote_segment;
 
 using segment_chunk_id_t = uint64_t;
+
+struct chunk_id_and_filepos {
+    segment_chunk_id_t chunk_id;
+    int64_t file_pos;
+};
 
 enum class chunk_state {
     not_available,
@@ -41,7 +49,7 @@ struct segment_chunk {
 
     // Handle to chunk data file. Shared among all readers. Put behind an
     // optional to preserve safety when evicting a chunk. When a chunk is no
-    // longer used by any reader and has a low enough score to evict, it's
+    // longer used by any reader and has a low enough score to evict, its
     // handle is first removed from the struct before closing, so that any new
     // readers asking to hydrate the chunk at the same time do not get a closed
     // file handle due to race.
@@ -68,8 +76,19 @@ struct segment_chunk {
     ss::expiring_fifo<ss::promise<>, expiry_handler> waiters;
 };
 
-struct segment_chunks {
+class segment_chunks {
     using chunk_map_t = absl::node_hash_map<segment_chunk_id_t, segment_chunk>;
+
+public:
+    explicit segment_chunks(remote_segment& segment);
+
+    segment_chunks(const segment_chunks&) = delete;
+    segment_chunks& operator=(const segment_chunks&) = delete;
+
+    ss::future<> start();
+    ss::future<> stop();
+
+    bool downloads_in_progress() const;
 
     // Hydrates the given chunk id. The remote segment object is used for
     // hydration. The waiters are managed per chunk in `segment_chunk::waiters`.
@@ -89,12 +108,74 @@ struct segment_chunks {
     // need a chunk soon when evicting, by sorting on
     // `segment_chunk::required_by_readers_in_future` and
     // `segment_chunk::required_after_n_chunks` values.
-    ss::future<> release_unused_chunks();
+    ss::future<> trim_chunk_files();
 
-    chunk_map_t chunks;
-    remote_segment& segment;
+    // For all chunks between first and last, increment the
+    // required_by_readers_in_future value by one, and increment the
+    // required_after_n_chunks values with progressively larger values to denote
+    // how far in future the chunk will be required.
+    void
+    register_future_readers(segment_chunk_id_t first, segment_chunk_id_t last);
+
+    // Mark the first chunk id as read by decrementing its
+    // required_by_readers_in_future count, and decrement the
+    // required_after_n_chunks counts for everything from (first, last] by one.
+    void mark_chunk_read(segment_chunk_id_t first, segment_chunk_id_t last);
+
+    // Returns reference to metadata for chunk for given chunk id
+    segment_chunk& get(segment_chunk_id_t);
+
+private:
+    chunk_map_t _chunks;
+    remote_segment& _segment;
+
     simple_time_jitter<ss::lowres_clock> _cache_backoff_jitter;
+
+    simple_time_jitter<ss::lowres_clock> _eviction_jitter;
+    ss::timer<ss::lowres_clock> _eviction_timer;
+
     ss::abort_source _as;
+    ss::gate _gate;
+};
+
+class chunk_data_source_impl final : public ss::data_source_impl {
+public:
+    chunk_data_source_impl(
+      segment_chunks& chunks,
+      remote_segment& segment,
+      kafka::offset start,
+      kafka::offset end,
+      ss::file_input_stream_options stream_options);
+
+    chunk_data_source_impl(const chunk_data_source_impl&) = delete;
+    chunk_data_source_impl& operator=(const chunk_data_source_impl&) = delete;
+
+    ~chunk_data_source_impl() override;
+
+    ss::future<ss::temporary_buffer<char>> get() override;
+
+    ss::future<> close() override;
+
+private:
+    // Acquires the file handle for the given chunk id, then opens a file stream
+    // into it. The stream for the first chunk starts at the reader config start
+    // offset, and the stream for the last chunk ends at the reader config last
+    // offset.
+    ss::future<> load_stream_for_chunk(segment_chunk_id_t chunk_id);
+
+    segment_chunks& _chunks;
+    remote_segment& _segment;
+
+    chunk_id_and_filepos _first;
+    chunk_id_and_filepos _last;
+
+    segment_chunk_id_t _current_chunk_id;
+    std::optional<ss::input_stream<char>> _current_stream{};
+
+    ss::lw_shared_ptr<ss::file> _current_data_file;
+    ss::file_input_stream_options _stream_options;
+
+    ss::gate _gate;
 };
 
 } // namespace cloud_storage

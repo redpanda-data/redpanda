@@ -90,6 +90,8 @@ public:
     /// Get base offset of the segment (kafka offset)
     const kafka::offset get_base_kafka_offset() const;
 
+    uint64_t get_chunks_in_segment() const;
+
     ss::future<> stop();
 
     /// create an input stream _sharing_ the underlying file handle
@@ -125,7 +127,13 @@ public:
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
-    bool download_in_progress() const noexcept { return !_wait_list.empty(); }
+    bool download_in_progress() const noexcept {
+        if (_sname_format <= segment_name_format::v2 || _fallback_mode) {
+            return !_wait_list.empty();
+        } else {
+            return _chunks_api->downloads_in_progress();
+        }
+    }
 
     /// Return aborted transactions metadata associated with the segment
     ///
@@ -146,7 +154,7 @@ public:
     /// the given kafka offset will lie. Chunk ids start at 0.
     /// The precondition is that the index should have been hydrated.
     /// This method is non-const because index lookup is non-const.
-    segment_chunk_id_t chunk_id_for_kafka_offset(kafka::offset koff);
+    chunk_id_and_filepos chunk_id_for_kafka_offset(kafka::offset koff);
 
 private:
     /// get a file offset for the corresponding kafka offset
@@ -245,6 +253,8 @@ private:
 
     uint64_t _max_hydrated_chunks{0};
     uint64_t _chunk_size{0};
+
+    std::optional<segment_chunks> _chunks_api;
 };
 
 class remote_segment_batch_consumer;

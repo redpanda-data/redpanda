@@ -177,8 +177,15 @@ remote_segment::remote_segment(
       "invalid max hydrated chunks: {}",
       _max_hydrated_chunks);
 
+    _chunks_api.emplace(*this);
+    ssx::background = _chunks_api->start();
+
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
+}
+
+uint64_t remote_segment::get_chunks_in_segment() const {
+    return ceil(_size / _chunk_size);
 }
 
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
@@ -218,6 +225,9 @@ ss::future<> remote_segment::stop() {
           });
     }
 
+    if (_chunks_api) {
+        co_await _chunks_api->stop();
+    }
     _stopped = true;
 }
 
@@ -888,7 +898,7 @@ uint64_t remote_segment::max_hydrated_chunks() const {
     return _max_hydrated_chunks;
 }
 
-segment_chunk_id_t
+chunk_id_and_filepos
 remote_segment::chunk_id_for_kafka_offset(kafka::offset koff) {
     vassert(
       _index.has_value(),
@@ -902,7 +912,8 @@ remote_segment::chunk_id_for_kafka_offset(kafka::offset koff) {
       "offset {} in segment {}",
       koff,
       _path);
-    return res.value().file_pos / _chunk_size;
+    auto chunk_id = res.value().file_pos / _chunk_size;
+    return {.chunk_id = chunk_id, .file_pos = res.value().file_pos};
 }
 
 /// Batch consumer that connects to remote_segment_batch_reader.
