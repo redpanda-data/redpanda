@@ -2006,6 +2006,7 @@ ntp_archiver::get_housekeeping_jobs() {
 
 ss::future<std::optional<upload_candidate_with_locks>>
 ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
+    ss::gate::holder holder(_gate);
     if (!may_begin_uploads()) {
         co_return std::nullopt;
     }
@@ -2066,15 +2067,16 @@ ntp_archiver::find_reupload_candidate(manifest_scanner_t scanner) {
 ss::future<bool> ntp_archiver::upload(
   upload_candidate_with_locks upload_locks,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
+    ss::gate::holder holder(_gate);
     if (upload_locks.candidate.sources.size() > 0) {
-        return do_upload_local(std::move(upload_locks), source_rtc);
+        co_return co_await do_upload_local(std::move(upload_locks), source_rtc);
     }
     // Currently, the uploading of remote segments is disabled and
     // the only reason why the list of locks is empty is truncation.
     // The log could be truncated right after we scanned the manifest to
     // find upload candidate. In this case we will get an empty candidate
     // which is not a failure so we shuld return 'true'.
-    return ss::make_ready_future<bool>(true);
+    co_return true;
 }
 
 ss::future<bool> ntp_archiver::do_upload_local(
@@ -2210,6 +2212,7 @@ ss::future<bool>
 ntp_archiver::prepare_transfer_leadership(ss::lowres_clock::duration timeout) {
     _paused = true;
 
+    ss::gate::holder holder(_gate);
     try {
         co_await ss::get_units(_uploads_active, 1, timeout);
         vlog(
