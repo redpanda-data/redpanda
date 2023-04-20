@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cloud_storage/topic_recovery_service.h"
+#include "cluster/topic_recovery_service.h"
 #include "serde/envelope.h"
 
 #include <compare>

@@ -73,6 +73,6 @@ rp_test(
   BENCHMARK_TEST
   BINARY_NAME cloud_storage
   SOURCES cache_bench.cc segment_meta_cstore_bench.cc
-  LIBRARIES Seastar::seastar_perf_testing v::cloud_storage
+  LIBRARIES Seastar::seastar_perf_testing v::cloud_storage v::storage
   LABELS cloud_storage
 )

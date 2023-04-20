@@ -14,6 +14,7 @@ v_cc_library(
   DEPS
     v::bytes
     v::utils
+    v::rprandom
     absl::flat_hash_map
     absl::flat_hash_set
     cryptopp

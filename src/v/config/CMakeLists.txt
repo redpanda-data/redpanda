@@ -15,5 +15,6 @@ v_cc_library(
     v::security
    boost_filesystem
    absl::node_hash_set
+   yaml-cpp
 )
 add_subdirectory(tests)

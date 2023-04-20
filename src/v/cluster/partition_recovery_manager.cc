@@ -8,7 +8,7 @@
  * https://github.com/redpanda-data/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "cloud_storage/partition_recovery_manager.h"
+#include "cluster/partition_recovery_manager.h"
 
 #include "bytes/iobuf_istreambuf.h"
 #include "cloud_storage/logger.h"
