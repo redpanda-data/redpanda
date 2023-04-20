@@ -2816,8 +2816,8 @@ ss::future<error_code> group::remove() {
               _id);
         } else {
             vlog(
-              klog.error,
-              "Error occured replicating group {} delete records {} ({})",
+              klog.warn,
+              "Error occurred replicating group {} delete records {} ({})",
               _id,
               result.error().message(),
               result.error());
@@ -2902,9 +2902,10 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
               "Cannot replicate group {} cleanup records due to shutdown",
               _id);
         } else {
+            // TODO: consider adding retries in this case
             vlog(
-              klog.error,
-              "Error occured replicating group {} cleanup records {} ({})",
+              klog.warn,
+              "Error occurred replicating group {} cleanup records {} ({})",
               _id,
               result.error().message(),
               result.error());
