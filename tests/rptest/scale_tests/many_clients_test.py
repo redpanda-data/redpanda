@@ -68,8 +68,10 @@ class ManyClientsTest(RedpandaTest):
         pass
 
     @cluster(num_nodes=7)
-    def test_many_clients_no_compaction(self):
-        self._test_many_clients(compaction_mode=CompactionMode.NONE)
+    @matrix(idempotent_producers=[True, False])
+    def test_many_clients_no_compaction(self, idempotent_producers):
+        self._test_many_clients(compaction_mode=CompactionMode.NONE,
+                                idempotent_producers=idempotent_producers)
 
     @cluster(num_nodes=7)
     def test_many_clients_realistic_compaction(self):
@@ -80,7 +82,7 @@ class ManyClientsTest(RedpandaTest):
     def test_many_clients_pathological_compaction(self):
         self._test_many_clients(compaction_mode=CompactionMode.PATHOLOGICAL)
 
-    def _test_many_clients(self, compaction_mode):
+    def _test_many_clients(self, compaction_mode, idempotent_producers=True):
         """
         Check that redpanda remains stable under higher numbers of clients
         than usual.
@@ -221,6 +223,10 @@ class ManyClientsTest(RedpandaTest):
         self.logger.info(
             f"compaction={compaction_mode} mode, {producer_count} producers writing {messages_per_sec_per_producer} msg/s each, {records_per_producer} records each"
         )
+
+        if idempotent_producers:
+            producer_kwargs['properties'] = {}
+            producer_kwargs['properties']["enable.idempotence"] = True
 
         producer = ProducerSwarm(self.test_context,
                                  self.redpanda,
