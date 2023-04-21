@@ -16,6 +16,7 @@
 #include "cloud_storage/remote.h"
 #include "cloud_storage/types.h"
 #include "cloud_storage_clients/client_pool.h"
+#include "config/property.h"
 #include "model/metadata.h"
 #include "net/types.h"
 #include "net/unresolved_address.h"
@@ -116,7 +117,11 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     listen();
     auto [arch_conf, remote_conf] = get_configurations();
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote.local(), *part);
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib(never_abort);
@@ -234,7 +239,11 @@ FIXTURE_TEST(test_upload_after_failure, archiver_fixture) {
 
     auto [arch_conf, remote_conf] = get_configurations();
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote.local(), *part);
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part);
 
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
@@ -315,7 +324,11 @@ FIXTURE_TEST(
 
     auto [arch_conf, remote_conf] = get_configurations();
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote.local(), *part);
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part);
 
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
@@ -378,7 +391,11 @@ FIXTURE_TEST(test_retention, archiver_fixture) {
 
     auto [arch_conf, remote_conf] = get_configurations();
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote.local(), *part);
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib(never_abort);
@@ -486,7 +503,11 @@ FIXTURE_TEST(test_segments_pending_deletion_limit, archiver_fixture) {
 
     auto [arch_conf, remote_conf] = get_configurations();
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote.local(), *part);
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     auto res = upload_next_with_retries(archiver).get0();
@@ -853,7 +874,11 @@ FIXTURE_TEST(test_upload_segments_leadership_transfer, archiver_fixture) {
     auto [arch_conf, remote_conf] = get_configurations();
 
     archival::ntp_archiver archiver(
-      get_ntp_conf(), arch_conf, remote.local(), *part);
+      get_ntp_conf(),
+      arch_conf,
+      remote.local(),
+      app.shadow_index_cache.local(),
+      *part);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     retry_chain_node fib(never_abort);
@@ -1061,7 +1086,11 @@ static void test_partial_upload_impl(
     aconf->time_limit = segment_time_limit(0s);
 
     archival::ntp_archiver archiver(
-      get_ntp_conf(), aconf, test.remote.local(), *part);
+      get_ntp_conf(),
+      aconf,
+      test.remote.local(),
+      test.app.shadow_index_cache.local(),
+      *part);
 
     retry_chain_node fib(never_abort);
     test.listen();

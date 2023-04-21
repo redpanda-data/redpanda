@@ -81,10 +81,12 @@ ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   ss::lw_shared_ptr<const configuration> conf,
   cloud_storage::remote& remote,
+  cloud_storage::cache& c,
   cluster::partition& parent)
   : _ntp(ntp.ntp())
   , _rev(ntp.get_initial_revision())
   , _remote(remote)
+  , _cache(c)
   , _parent(parent)
   , _policy(_ntp, conf->time_limit, conf->upload_io_priority)
   , _gate()
@@ -1864,6 +1866,11 @@ ss::future<> ntp_archiver::apply_spillover() {
             vlog(_rtclog.error, "Failed to upload spillover manifest {}", res);
             co_return;
         }
+        auto [str, len] = co_await tail.serialize();
+        // Put manifest into cache to avoid roundtrip to the cloud storage
+        co_await _cache.put(
+          tail.get_manifest_path()(), str, _conf->upload_io_priority);
+        // Replicate metadata
         auto error = co_await _parent.archival_meta_stm()->spillover(
           tail.get_last_offset(), model::no_timeout, _as);
         if (error != cluster::errc::success) {

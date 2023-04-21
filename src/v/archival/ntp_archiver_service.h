@@ -12,6 +12,7 @@
 #include "archival/archival_policy.h"
 #include "archival/probe.h"
 #include "archival/types.h"
+#include "cloud_storage/cache_service.h"
 #include "cloud_storage/partition_manifest.h"
 #include "cloud_storage/remote.h"
 #include "cloud_storage/remote_segment_index.h"
@@ -74,6 +75,7 @@ public:
       const storage::ntp_config& ntp,
       ss::lw_shared_ptr<const configuration> conf,
       cloud_storage::remote& remote,
+      cloud_storage::cache& c,
       cluster::partition& parent);
 
     /// Spawn background fibers, which depending on the mode (read replica or
@@ -492,6 +494,7 @@ private:
     model::ntp _ntp;
     model::initial_revision_id _rev;
     cloud_storage::remote& _remote;
+    cloud_storage::cache& _cache;
     cluster::partition& _parent;
     model::term_id _start_term;
     archival_policy _policy;

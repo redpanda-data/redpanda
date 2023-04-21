@@ -18,6 +18,7 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/archival_metadata_stm.h"
 #include "cluster/members_table.h"
+#include "config/configuration.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
 #include "seastarx.h"
