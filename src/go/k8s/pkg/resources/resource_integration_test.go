@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 	var err error
 
 	testEnv := &envtest.Environment{
-		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "resources")},
+		CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
 	}
 
 	cfg, err := testEnv.Start()

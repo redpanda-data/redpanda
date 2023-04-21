@@ -6,7 +6,7 @@ CONFIGURATOR_IMG_LATEST ?= "localhost/configurator:dev"
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
 # default redpanda image to load
-REDPANDA_IMG ?= "localhost/redpanda-operator:dev"
+REDPANDA_IMG ?= "localhost/redpanda:dev"
 
 ifeq (aarch64,$(uname -m))
 TARGETARCH = arm64
@@ -181,7 +181,7 @@ goimports-install:
 
 .PHONY: gofumpt-lint
 gofumpt-lint: gofumpt-install
-	find . -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.19
+	find . -type f -name '*.go' | xargs -n1 gofumpt -w -lang=1.20
 
 .PHONY: goimports
 goimports: goimports-install
@@ -195,7 +195,7 @@ golangci-lint-install:
 
 .PHONY: golangci-lint
 golangci-lint:
-	$(GOLANGCI_LINT)/golangci-lint run --go=1.19
+	$(GOLANGCI_LINT)/golangci-lint run --go=1.20
 
 .PHONY: lint
 lint: gofumpt-lint golangci-lint
