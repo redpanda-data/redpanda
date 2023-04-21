@@ -160,7 +160,12 @@ class HardRestartTest(PreallocNodesTest):
 
             # Restart the target node. It should attempt to truncate, but send
             # a SIGKILL to exercise crash consistency.
-            self.redpanda.start_node(target_node)
+            while True:
+                try:
+                    self.redpanda.start_node(target_node)
+                    break
+                except:
+                    pass
             self.redpanda._admin.busy_loop_start(
                 target_node,
                 min_spins_per_scheduling_point=100000,
@@ -174,10 +179,20 @@ class HardRestartTest(PreallocNodesTest):
             producer.clean()
 
         # Do another hard restart for good measure.
-        self.redpanda.start_node(target_node)
+        while True:
+            try:
+                self.redpanda.start_node(target_node)
+                break
+            except:
+                pass
         time.sleep(random.randint(0, 10 * 1000) / 1000)
         self.redpanda.stop_node(target_node, forced=True)
-        self.redpanda.start_node(target_node)
+        while True:
+            try:
+                self.redpanda.start_node(target_node)
+                break
+            except:
+                pass
 
         # Does the server get up without errors?
         wait_until(self.redpanda.healthy, timeout_sec=30, backoff_sec=1)
