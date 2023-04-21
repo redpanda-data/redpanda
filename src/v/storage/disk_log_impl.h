@@ -174,8 +174,6 @@ private:
     ss::future<>
     retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
 
-    bool is_front_segment(const segment_set::type&) const;
-
     compaction_config apply_overrides(compaction_config) const;
 
     storage_resources& resources();
