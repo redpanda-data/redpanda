@@ -187,9 +187,6 @@ private:
     /// Return reader back to segment_state
     void return_reader(std::unique_ptr<remote_segment_batch_reader>);
 
-    /// Iterators used by the partition_record_batch_reader_impl class
-    iterator seek_by_timestamp(model::timestamp);
-
     /// The result of the borrow_next_reader method
     ///
     struct borrow_result_t {

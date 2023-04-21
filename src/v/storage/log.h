@@ -83,7 +83,6 @@ public:
 
         virtual ss::future<model::offset>
         monitor_eviction(ss::abort_source&) = 0;
-        virtual void set_collectible_offset(model::offset) = 0;
         ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
             return _stm_manager;
         }
@@ -193,13 +192,6 @@ public:
     ss::lw_shared_ptr<storage::stm_manager> stm_manager() {
         return _impl->stm_manager();
     }
-    /**
-     * Controls the max offset that may be compacted or evicted by log
-     * retention policy. This offset is non-decreasing.
-     */
-    void set_collectible_offset(model::offset o) {
-        return _impl->set_collectible_offset(o);
-    };
 
     ss::future<> update_configuration(ntp_config::default_overrides o) {
         return _impl->update_configuration(o);

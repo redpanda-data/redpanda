@@ -75,7 +75,6 @@ public:
     ss::future<> do_housekeeping() final override;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
-    void set_collectible_offset(model::offset) final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
@@ -173,8 +172,6 @@ private:
     /// to have invalid timestamps, to ensure retention can proceed.
     ss::future<>
     retention_adjust_timestamps(std::chrono::seconds ignore_in_future);
-
-    bool is_front_segment(const segment_set::type&) const;
 
     compaction_config apply_overrides(compaction_config) const;
 

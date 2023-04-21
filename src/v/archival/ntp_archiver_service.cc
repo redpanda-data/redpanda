@@ -1821,17 +1821,15 @@ ss::future<> ntp_archiver::housekeeping() {
     }
 }
 
-ss::future<ntp_archiver::manifest_updated> ntp_archiver::apply_retention() {
-    manifest_updated updated = manifest_updated::no;
-
+ss::future<> ntp_archiver::apply_retention() {
     if (!may_begin_uploads()) {
-        co_return updated;
+        co_return;
     }
 
     auto retention_calculator = retention_calculator::factory(
       manifest(), _parent.get_ntp_config());
     if (!retention_calculator) {
-        co_return updated;
+        co_return;
     }
 
     auto next_start_offset = retention_calculator->next_start_offset();
@@ -1847,9 +1845,7 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::apply_retention() {
         auto deadline = ss::lowres_clock::now() + sync_timeout;
         auto error = co_await _parent.archival_meta_stm()->truncate(
           *next_start_offset, deadline, _as);
-        if (error == cluster::errc::success) {
-            updated = manifest_updated::yes;
-        } else {
+        if (error != cluster::errc::success) {
             vlog(
               _rtclog.warn,
               "Failed to update archival metadata STM start offest according "
@@ -1862,18 +1858,14 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::apply_retention() {
           "{} Retention policies are already met.",
           retention_calculator->strategy_name());
     }
-
-    co_return updated;
 }
 
 // Garbage collection can be improved as follows:
 // * issue #6843: delete via DeleteObjects S3 api instead of deleting individual
 // segments
-ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
-    manifest_updated updated = manifest_updated::no;
-
+ss::future<> ntp_archiver::garbage_collect() {
     if (!may_begin_uploads()) {
-        co_return updated;
+        co_return;
     }
 
     const auto to_remove
@@ -1881,7 +1873,7 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
 
     // Avoid replicating 'cleanup_metadata_cmd' if there's nothing to remove.
     if (to_remove.size() == 0) {
-        co_return updated;
+        co_return;
     }
 
     // If we are about to delete segments, we must ensure that the remote
@@ -1901,7 +1893,7 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
         if (result != cloud_storage::upload_result::success) {
             // If we could not write the  manifest, it is not safe to remove
             // segments.
-            co_return updated;
+            co_return;
         }
     }
 
@@ -1950,9 +1942,7 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
         auto error = co_await _parent.archival_meta_stm()->cleanup_metadata(
           deadline, _as);
 
-        if (error == cluster::errc::success) {
-            updated = manifest_updated::yes;
-        } else {
+        if (error != cluster::errc::success) {
             vlog(
               _rtclog.info,
               "Failed to clean up metadata after garbage collection: {}",
@@ -1968,8 +1958,6 @@ ss::future<ntp_archiver::manifest_updated> ntp_archiver::garbage_collect() {
     _probe->segments_deleted(static_cast<int64_t>(successful_deletes));
     vlog(
       _rtclog.debug, "Deleted {} segments from the cloud", successful_deletes);
-
-    co_return updated;
 }
 
 ss::future<cloud_storage::upload_result>

@@ -816,20 +816,6 @@ bool remote_partition::bounds_timestamp(model::timestamp t) const {
     }
 }
 
-remote_partition::iterator
-remote_partition::seek_by_timestamp(model::timestamp t) {
-    auto segment_meta = _manifest.timequery(t);
-
-    if (segment_meta) {
-        auto found = _segments.find(segment_meta->get().base_offset);
-        if (found == _segments.end()) {
-            found = materialize_segment(*segment_meta);
-        }
-        return found;
-    }
-    return _segments.end();
-}
-
 /**
  * This is an error-handling wrapper around remote::delete_object.
  *
