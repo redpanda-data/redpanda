@@ -374,7 +374,7 @@ rm_stm::rm_stm(
                        ss::lw_shared_ptr<inflight_requests>>(
       _tx_root_tracker.create_child("in-flight")))
   , _idempotent_producer_locks(mt::map<
-                               absl::flat_hash_map,
+                               absl::btree_map,
                                model::producer_identity,
                                ss::lw_shared_ptr<ss::basic_rwlock<>>>(
       _tx_root_tracker.create_child("idempotent-producer-locks")))

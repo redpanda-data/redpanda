@@ -791,8 +791,8 @@ private:
       model::producer_identity,
       ss::lw_shared_ptr<inflight_requests>>
       _inflight_requests;
-    mt::unordered_map_t<
-      absl::flat_hash_map,
+    mt::map_t<
+      absl::btree_map,
       model::producer_identity,
       ss::lw_shared_ptr<ss::basic_rwlock<>>>
       _idempotent_producer_locks;
