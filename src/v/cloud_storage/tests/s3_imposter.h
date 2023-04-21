@@ -61,8 +61,10 @@ public:
     /// The expectations are statefull. If the body of the expectation was set
     /// to null but there was PUT call that sent some data, subsequent GET call
     /// will retrieve this data.
-    void
-    set_expectations_and_listen(const std::vector<expectation>& expectations);
+    void set_expectations_and_listen(
+      const std::vector<expectation>& expectations,
+      std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
+      = std::nullopt);
 
     /// Access all http requests ordered by time
     const std::vector<http_test_utils::request_info>& get_requests() const;
@@ -75,7 +77,10 @@ public:
 
 private:
     void set_routes(
-      ss::httpd::routes& r, const std::vector<expectation>& expectations);
+      ss::httpd::routes& r,
+      const std::vector<expectation>& expectations,
+      std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
+      = std::nullopt);
 
     ss::socket_address _server_addr;
     ss::shared_ptr<ss::httpd::http_server_control> _server;
