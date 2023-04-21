@@ -20,6 +20,7 @@
 #include "raft/configuration_manager.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/consensus_utils.h"
+#include "raft/coordinated_recovery_throttle.h"
 #include "raft/event_manager.h"
 #include "raft/follower_stats.h"
 #include "raft/group_configuration.h"
@@ -96,7 +97,7 @@ public:
       consensus_client_protocol,
       leader_cb_t,
       storage::api&,
-      std::optional<std::reference_wrapper<recovery_throttle>>,
+      std::optional<std::reference_wrapper<coordinated_recovery_throttle>>,
       recovery_memory_quota&,
       features::feature_table&,
       std::optional<voter_priority> = std::nullopt);
@@ -696,7 +697,8 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
     storage::api& _storage;
-    std::optional<std::reference_wrapper<recovery_throttle>> _recovery_throttle;
+    std::optional<std::reference_wrapper<coordinated_recovery_throttle>>
+      _recovery_throttle;
     recovery_memory_quota& _recovery_mem_quota;
     features::feature_table& _features;
     storage::simple_snapshot_manager _snapshot_mgr;

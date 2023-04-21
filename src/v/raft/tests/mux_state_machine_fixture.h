@@ -63,7 +63,8 @@ struct mux_state_machine_fixture {
         _connections.start().get0();
         _recovery_throttle
           .start(
-            ss::sharded_parameter([] { return config::mock_binding(100_MiB); }))
+            ss::sharded_parameter([] { return config::mock_binding(100_MiB); }),
+            ss::sharded_parameter([] { return config::mock_binding(false); }))
           .get();
 
         _feature_table.start().get();
@@ -189,6 +190,6 @@ struct mux_state_machine_fixture {
     ss::sharded<storage::api> _storage;
     ss::sharded<features::feature_table> _feature_table;
     ss::sharded<raft::group_manager> _group_mgr;
-    ss::sharded<raft::recovery_throttle> _recovery_throttle;
+    ss::sharded<raft::coordinated_recovery_throttle> _recovery_throttle;
     bool _started = false;
 };
