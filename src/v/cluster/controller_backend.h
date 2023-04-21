@@ -25,6 +25,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/node_hash_map.h>
 
 #include <cstdint>
@@ -266,7 +267,7 @@ private:
         }
     };
 
-    using underlying_t = absl::flat_hash_map<model::ntp, deltas_t>;
+    using underlying_t = absl::btree_map<model::ntp, deltas_t>;
 
     // Topics
     ss::future<> bootstrap_controller_backend();
