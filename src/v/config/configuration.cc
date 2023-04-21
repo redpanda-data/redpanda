@@ -706,8 +706,14 @@ configuration::configuration()
       *this,
       "raft_learner_recovery_rate",
       "Raft learner recovery rate limit in bytes per sec",
-      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       100_MiB)
+  , raft_recovery_throttle_disable_dynamic_mode(
+      *this,
+      "raft_recovery_throttle_disable_dynamic_mode",
+      "Disables dynamic rate allocation in recovery throttle (advanced).",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      false)
   , raft_smp_max_non_local_requests(
       *this,
       "raft_smp_max_non_local_requests",
