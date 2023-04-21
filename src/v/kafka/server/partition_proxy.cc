@@ -17,11 +17,16 @@
 
 namespace kafka {
 
+template<typename Impl, typename... Args>
+partition_proxy make_with_impl(Args&&... args) {
+    return partition_proxy(std::make_unique<Impl>(std::forward<Args>(args)...));
+}
+
 std::optional<partition_proxy> make_partition_proxy(
   const model::ntp& ntp, cluster::partition_manager& cluster_pm) {
     auto partition = cluster_pm.get(ntp);
     if (partition) {
-        return make_partition_proxy<replicated_partition>(partition);
+        return make_with_impl<replicated_partition>(partition);
     }
     return std::nullopt;
 }

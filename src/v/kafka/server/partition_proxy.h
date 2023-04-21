@@ -126,11 +126,6 @@ private:
     std::unique_ptr<impl> _impl;
 };
 
-template<typename Impl, typename... Args>
-partition_proxy make_partition_proxy(Args&&... args) {
-    return partition_proxy(std::make_unique<Impl>(std::forward<Args>(args)...));
-}
-
 std::optional<partition_proxy>
 make_partition_proxy(const model::ntp&, cluster::partition_manager&);
 
