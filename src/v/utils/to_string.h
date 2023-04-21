@@ -47,4 +47,21 @@ operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
     return o;
 }
 
+template<typename T, typename Hash, typename KeyEqual, typename Allocator>
+std::ostream& operator<<(
+  std::ostream& os, const std::unordered_set<T, Hash, KeyEqual, Allocator>& v) {
+    bool first = true;
+    os << "{";
+    for (auto&& elem : v) {
+        if (!first) {
+            os << ", ";
+        } else {
+            first = false;
+        }
+        os << elem;
+    }
+    os << "}";
+    return os;
+}
+
 } // namespace std

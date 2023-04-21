@@ -94,6 +94,16 @@ void rjson_serialize(
 
 template<typename T>
 void rjson_serialize(
+  json::Writer<json::StringBuffer>& w, const std::unordered_set<T>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
+
+template<typename T>
+void rjson_serialize(
   json::Writer<json::StringBuffer>& w,
   const std::unordered_map<typename T::key_type, T>& v) {
     w.StartArray();

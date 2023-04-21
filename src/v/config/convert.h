@@ -329,6 +329,34 @@ struct convert<std::unordered_map<typename T::key_type, T>> {
     }
 };
 
+template<typename T>
+concept is_hashable = requires(T x) {
+    { std::hash<T>{}(x) } -> std::convertible_to<std::size_t>;
+};
+
+template<is_hashable T>
+struct convert<std::unordered_set<T>> {
+    using type = std::unordered_set<T>;
+    static Node encode(const type& rhs) {
+        Node node;
+        for (const auto& item : rhs) {
+            node.push_back(convert<T>::encode(item));
+        }
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        rhs = type{};
+        if (node.IsSequence()) {
+            for (auto elem : node) {
+                rhs.emplace(elem.as<T>());
+            }
+        } else {
+            rhs.emplace(node.as<T>());
+        }
+        return true;
+    }
+};
+
 template<>
 struct convert<model::cloud_storage_backend> {
     using type = model::cloud_storage_backend;

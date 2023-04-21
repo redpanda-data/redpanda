@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "config/config_store.h"
+#include "config/property.h"
 #include "json/document.h"
 #include "json/stringbuffer.h"
 #include "json/writer.h"
@@ -19,6 +20,7 @@
 #include <cstdint>
 #include <iostream>
 #include <random>
+#include <unordered_set>
 #include <utility>
 
 namespace {
@@ -40,6 +42,7 @@ struct test_config : public config::config_store {
     config::property<std::chrono::milliseconds> milliseconds;
     config::property<ss::sstring> default_secret_string;
     config::property<ss::sstring> secret_string;
+    config::property<std::unordered_set<int>> set_of_ints;
 
     test_config()
       : optional_int(
@@ -103,7 +106,8 @@ struct test_config : public config::config_store {
           *this,
           "secret_string",
           "Secret string value",
-          {.secret = config::is_secret::yes}) {}
+          {.secret = config::is_secret::yes})
+      , set_of_ints(*this, "set_of_ints", "Set of integers", {}, {}) {}
 };
 
 YAML::Node minimal_valid_configuration() {
@@ -126,7 +130,11 @@ YAML::Node valid_configuration() {
                       " - two\n"
                       " - three\n"
                       "nullable_int: 111\n"
-                      "secret_string: actual_secret\n");
+                      "secret_string: actual_secret\n"
+                      "set_of_ints:\n"
+                      " - 2\n"
+                      " - -5\n"
+                      " - 1610612728\n");
 }
 
 } // namespace
@@ -187,6 +195,7 @@ SEASTAR_THREAD_TEST_CASE(read_minimal_valid_configuration) {
     BOOST_TEST(cfg.strings().at(1) == "second");
     BOOST_TEST(cfg.strings().at(2) == "third");
     BOOST_TEST(cfg.nullable_int() == std::nullopt);
+    BOOST_TEST(cfg.set_of_ints().empty());
 };
 
 SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
@@ -204,6 +213,9 @@ SEASTAR_THREAD_TEST_CASE(read_valid_configuration) {
     BOOST_TEST(cfg.strings().at(2) == "three");
     BOOST_TEST(cfg.nullable_int() == std::make_optional(111));
     BOOST_TEST(cfg.secret_string() == "actual_secret");
+    BOOST_TEST(cfg.set_of_ints().contains(2));
+    BOOST_TEST(cfg.set_of_ints().contains(-5));
+    BOOST_TEST(cfg.set_of_ints().contains(1610612728));
 };
 
 SEASTAR_THREAD_TEST_CASE(update_property_value) {
@@ -248,7 +260,8 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
                                    "\"required_string\": \"test_value_2\","
                                    "\"nullable_int\": 111,"
                                    "\"default_secret_string\": \"\","
-                                   "\"secret_string\": \"[secret]\""
+                                   "\"secret_string\": \"[secret]\","
+                                   "\"set_of_ints\": [2, -5, 1610612728]"
                                    "}"
                                  : "{"
                                    "\"strings\": [\"one\", \"two\", \"three\"],"
@@ -261,7 +274,8 @@ SEASTAR_THREAD_TEST_CASE(config_json_serialization) {
                                    "\"required_string\": \"test_value_2\","
                                    "\"nullable_int\": 111,"
                                    "\"default_secret_string\": \"\","
-                                   "\"secret_string\": \"actual_secret\""
+                                   "\"secret_string\": \"actual_secret\","
+                                   "\"set_of_ints\": [2, -5, 1610612728]"
                                    "}";
 
         // cfg -> json string
@@ -391,6 +405,10 @@ SEASTAR_THREAD_TEST_CASE(property_metadata) {
     BOOST_TEST(cfg.milliseconds.units_name() == "ms");
     BOOST_TEST(cfg.milliseconds.is_nullable() == false);
     BOOST_TEST(cfg.milliseconds.is_array() == false);
+
+    BOOST_TEST(cfg.set_of_ints.type_name() == "integer");
+    BOOST_TEST(cfg.set_of_ints.is_array() == true);
+    BOOST_TEST(cfg.set_of_ints.is_nullable() == false);
 };
 
 SEASTAR_THREAD_TEST_CASE(property_bind) {
