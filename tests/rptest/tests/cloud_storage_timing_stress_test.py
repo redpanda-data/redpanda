@@ -17,7 +17,6 @@ from rptest.utils.si_utils import BucketView
 from rptest.clients.types import TopicSpec
 from rptest.tests.partition_movement import PartitionMovementMixin
 from ducktape.utils.util import wait_until
-from ducktape.mark import matrix, ok_to_fail
 from rptest.utils.mode_checks import skip_debug_mode
 
 import concurrent.futures
@@ -440,7 +439,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
             self.logger.info(f"All checks completed successfuly")
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/10241
     @cluster(num_nodes=5)
     def test_cloud_storage(self):
         """
@@ -455,7 +453,6 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
 
         self.epilogue()
 
-    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/10241
     @cluster(
         num_nodes=5,
         log_allow_list=[r"Error in hydraton loop: .*Connection reset by peer"])
