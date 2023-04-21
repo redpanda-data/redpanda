@@ -144,6 +144,10 @@ public:
 
     std::unique_ptr<ssx::thread_worker> thread_worker;
 
+    const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
+        return _schema_registry;
+    }
+
 private:
     using deferred_actions
       = std::deque<ss::deferred_action<std::function<void()>>>;

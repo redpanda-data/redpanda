@@ -147,7 +147,8 @@ public:
           app.tx_gateway_frontend,
           app.tx_registry_frontend,
           std::nullopt,
-          *app.thread_worker);
+          *app.thread_worker,
+          app.schema_registry());
 
         configs.stop().get();
     }

@@ -100,7 +100,8 @@ server::server(
   ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
   ss::sharded<cluster::tx_registry_frontend>& tx_registry_frontend,
   std::optional<qdc_monitor::config> qdc_config,
-  ssx::thread_worker& tw) noexcept
+  ssx::thread_worker& tw,
+  const std::unique_ptr<pandaproxy::schema_registry::api>& sr) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)
   , _fetch_scheduling_group(fetch_sg)
@@ -134,7 +135,8 @@ server::server(
   , _krb_configurator(config::shard_local_cfg().sasl_kerberos_config.bind())
   , _thread_worker(tw)
   , _replica_selector(
-      std::make_unique<rack_aware_replica_selector>(_metadata_cache.local())) {
+      std::make_unique<rack_aware_replica_selector>(_metadata_cache.local()))
+  , _schema_registry(sr) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }

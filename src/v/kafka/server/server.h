@@ -23,6 +23,7 @@
 #include "kafka/server/handlers/handler_probe.h"
 #include "kafka/server/queue_depth_monitor.h"
 #include "net/server.h"
+#include "pandaproxy/schema_registry/fwd.h"
 #include "security/fwd.h"
 #include "security/gssapi_principal_mapper.h"
 #include "security/krb5_configurator.h"
@@ -61,7 +62,8 @@ public:
       ss::sharded<cluster::tx_gateway_frontend>&,
       ss::sharded<cluster::tx_registry_frontend>&,
       std::optional<qdc_monitor::config>,
-      ssx::thread_worker&) noexcept;
+      ssx::thread_worker&,
+      const std::unique_ptr<pandaproxy::schema_registry::api>&) noexcept;
 
     ~server() noexcept override = default;
     server(const server&) = delete;
@@ -158,6 +160,10 @@ public:
 
     ssx::thread_worker& thread_worker() { return _thread_worker; }
 
+    const std::unique_ptr<pandaproxy::schema_registry::api>& schema_registry() {
+        return _schema_registry;
+    }
+
     /**
      * \param api_names list of Kafka API names
      * \return std::vector<bool> always sized to index the entire Kafka API key
@@ -209,6 +215,7 @@ private:
     class latency_probe _probe;
     ssx::thread_worker& _thread_worker;
     std::unique_ptr<replica_selector> _replica_selector;
+    const std::unique_ptr<pandaproxy::schema_registry::api>& _schema_registry;
 };
 
 } // namespace kafka
