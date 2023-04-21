@@ -225,7 +225,8 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
       std::move(sasl),
       authz_enabled,
       mtls_state,
-      config::shard_local_cfg().kafka_request_max_bytes.bind());
+      config::shard_local_cfg().kafka_request_max_bytes.bind(),
+      config::shard_local_cfg().kafka_throughput_controlled_api_keys.bind());
 
     try {
         co_await ctx->process();

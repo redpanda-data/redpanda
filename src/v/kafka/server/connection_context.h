@@ -30,6 +30,7 @@
 #include <absl/container/flat_hash_map.h>
 
 #include <memory>
+#include <unordered_set>
 
 namespace kafka {
 
@@ -97,7 +98,9 @@ public:
       std::optional<security::sasl_server> sasl,
       bool enable_authorizer,
       std::optional<security::tls::mtls_state> mtls_state,
-      config::binding<uint32_t> max_request_size) noexcept
+      config::binding<uint32_t> max_request_size,
+      config::binding<std::unordered_set<int16_t>>
+        kafka_throughput_controlled_api_keys) noexcept
       : _server(s)
       , conn(conn)
       , _sasl(std::move(sasl))
@@ -106,7 +109,9 @@ public:
       , _enable_authorizer(enable_authorizer)
       , _authlog(_client_addr, client_port())
       , _mtls_state(std::move(mtls_state))
-      , _max_request_size(std::move(max_request_size)) {}
+      , _max_request_size(std::move(max_request_size))
+      , _kafka_throughput_controlled_api_keys(
+          std::move(kafka_throughput_controlled_api_keys)) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -331,6 +336,8 @@ private:
     std::optional<security::tls::mtls_state> _mtls_state;
     config::binding<uint32_t> _max_request_size;
     ss::lowres_clock::time_point _throttled_until;
+    config::binding<std::unordered_set<int16_t>>
+      _kafka_throughput_controlled_api_keys;
 };
 
 } // namespace kafka

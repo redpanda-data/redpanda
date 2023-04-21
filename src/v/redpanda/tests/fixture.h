@@ -51,6 +51,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <unordered_set>
 
 // Whether or not the fixtures should be configured with a node ID.
 // NOTE: several fixtures may still require a node ID be supplied for the sake
@@ -596,7 +597,8 @@ public:
           std::move(sasl),
           false,
           std::nullopt,
-          config::mock_property<uint32_t>(100_MiB).bind());
+          config::mock_property<uint32_t>(100_MiB).bind(),
+          config::mock_property<std::unordered_set<int16_t>>({0, 1}).bind());
 
         kafka::request_header header;
         auto encoder_context = kafka::request_context(
