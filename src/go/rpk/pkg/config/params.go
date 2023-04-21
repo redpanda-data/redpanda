@@ -435,10 +435,10 @@ func (p *Params) Logger() *zap.Logger {
 			return fmt.Sprintf("\x1b[%dm%s\x1b[0m", n, s)
 		}
 		colors := map[zapcore.Level]string{
-			zapcore.ErrorLevel: color(red, "ERR"),
-			zapcore.WarnLevel:  color(yellow, "WRN"),
-			zapcore.InfoLevel:  color(blue, "INF"),
-			zapcore.DebugLevel: color(magenta, "DBG"),
+			zapcore.ErrorLevel: color(red, "ERROR"),
+			zapcore.WarnLevel:  color(yellow, "WARN"),
+			zapcore.InfoLevel:  color(blue, "INFO"),
+			zapcore.DebugLevel: color(magenta, "DEBUG"),
 		}
 		zcfg.EncoderConfig.EncodeLevel = func(l zapcore.Level, enc zapcore.PrimitiveArrayEncoder) {
 			switch l {
