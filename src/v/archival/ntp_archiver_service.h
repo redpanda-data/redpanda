@@ -376,26 +376,12 @@ private:
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 
-    /// Holds a stream reference, and conditionally closes the stream if
-    /// possible. This structure is useful where a stream is passed to another
-    /// function by reference, which may or may not close the stream at the end.
-    /// This wrapper has a close method which tracks whether the wrapped stream
-    /// has been moved out, and if the stream is still held it can be closed.
-    struct stream_reference {
-        using stream_ref_t
-          = std::optional<std::reference_wrapper<ss::input_stream<char>>>;
-        stream_ref_t stream_ref;
-
-        /// Closes the wrapped stream if it has not been moved out
-        ss::future<> maybe_close_ref();
-    };
-
     /// Isolates segment upload and accepts a stream reference, so that if the
     /// upload fails the exception can be handled in the caller and the stream
     /// can be closed.
     ss::future<cloud_storage::upload_result> do_upload_segment(
       upload_candidate candidate,
-      stream_reference& stream_state,
+      ss::input_stream<char> stream,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 

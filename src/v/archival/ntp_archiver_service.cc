@@ -892,13 +892,8 @@ split_segment_stream(
 
 ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
   upload_candidate candidate,
-  stream_reference& stream_state,
+  ss::input_stream<char> stream,
   std::optional<std::reference_wrapper<retry_chain_node>> source_rtc) {
-    vassert(
-      stream_state.stream_ref.has_value(),
-      "Stream passed to upload segment does not have a value");
-    gate_guard guard{_gate};
-
     auto rtc = source_rtc.value_or(std::ref(_rtcnode));
     retry_chain_node fib(
       _conf->segment_upload_timeout,
@@ -916,7 +911,7 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
     // This struct wraps a stream object and exposes the stream_provider
     // interface for compatibility with the remote object API.
     struct stream_wrapper final : public storage::stream_provider {
-        stream_reference::stream_ref_t stream;
+        std::optional<ss::input_stream<char>> stream;
 
         stream_wrapper(const stream_wrapper&) = delete;
         stream_wrapper(stream_wrapper&&) = default;
@@ -925,31 +920,33 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
 
         ~stream_wrapper() override = default;
 
-        explicit stream_wrapper(ss::input_stream<char>& s)
-          : stream(s) {}
+        explicit stream_wrapper(ss::input_stream<char> s)
+          : stream(std::move(s)) {}
 
         ss::input_stream<char> take_stream() override {
             vassert(stream.has_value(), "no stream to take");
-            ss::input_stream<char> s = std::move(stream.value().get());
+            ss::input_stream<char> s = std::move(stream.value());
             stream = std::nullopt;
             return s;
         }
 
         ss::future<> close() override {
             if (stream.has_value()) {
-                co_await stream.value().get().close();
+                co_await stream.value().close();
             }
             co_return;
         }
     };
 
+    std::optional<ss::input_stream<char>> stream_state = std::move(stream);
     auto reset_func = [this, candidate, &stream_state] {
         using provider_t = std::unique_ptr<storage::stream_provider>;
         // On first attempt to upload, the stream-ref passed in is used.
-        if (stream_state.stream_ref.has_value()) {
+        if (stream_state.has_value()) {
             auto f = ss::make_ready_future<provider_t>(
-              std::make_unique<stream_wrapper>(stream_state.stream_ref->get()));
-            stream_state.stream_ref = std::nullopt;
+              std::make_unique<stream_wrapper>(
+                std::move(stream_state.value())));
+            stream_state = std::nullopt;
             return f;
         } else {
             // On subsequent uploads, the segment is read again from disk
@@ -962,20 +959,29 @@ ss::future<cloud_storage::upload_result> ntp_archiver::do_upload_segment(
         }
     };
 
-    co_return co_await _remote.upload_segment(
-      get_bucket_name(),
-      path,
-      candidate.content_length,
-      std::move(reset_func),
-      fib,
-      lazy_abort_source,
-      _segment_tags);
-}
-
-ss::future<> ntp_archiver::stream_reference::maybe_close_ref() {
-    if (stream_ref.has_value()) {
-        co_await stream_ref->get().close();
+    auto response = cloud_storage::upload_result::success;
+    try {
+        response = co_await _remote.upload_segment(
+          get_bucket_name(),
+          path,
+          candidate.content_length,
+          std::move(reset_func),
+          fib,
+          lazy_abort_source,
+          _segment_tags);
+    } catch (const ss::gate_closed_exception&) {
+        response = cloud_storage::upload_result::cancelled;
+    } catch (const ss::abort_requested_exception&) {
+        response = cloud_storage::upload_result::cancelled;
+    } catch (const std::exception& e) {
+        vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
+        response = cloud_storage::upload_result::failed;
     }
+    // Cleanup the stream state if upload_segment didn't use it.
+    if (stream_state.has_value()) {
+        co_await stream_state->close();
+    }
+    co_return response;
 }
 
 static ss::sstring make_index_path(const remote_segment_path& segment_path) {
@@ -995,22 +1001,9 @@ ss::future<cloud_storage::upload_result> ntp_archiver::upload_segment(
       candidate, _conf->upload_io_priority);
 
     auto path = segment_path_for_candidate(candidate);
-    stream_reference stream_state{.stream_ref = stream_upload};
 
-    auto upload_fut
-      = do_upload_segment(candidate, stream_state, source_rtc)
-          .handle_exception_type([](const ss::gate_closed_exception&) mutable {
-              return cloud_storage::upload_result::cancelled;
-          })
-          .handle_exception_type(
-            [](const ss::abort_requested_exception&) mutable {
-                return cloud_storage::upload_result::cancelled;
-            })
-          .handle_exception_type([this, path](const std::exception& e) mutable {
-              vlog(_rtclog.error, "failed to upload segment {}: {}", path, e);
-              return cloud_storage::upload_result::failed;
-          })
-          .finally([&stream_state] { return stream_state.maybe_close_ref(); });
+    auto upload_fut = do_upload_segment(
+      candidate, std::move(stream_upload), source_rtc);
 
     auto index_path = make_index_path(path);
     auto make_idx_fut = make_segment_index(
