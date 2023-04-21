@@ -156,6 +156,13 @@ public:
     /// configuration. This function does *not* delete any data.
     ss::future<> apply_retention();
 
+    /// \brief If the size of the manifest exceeds the limit
+    /// move some segments into a separate immutable manifest and
+    /// upload it to the cloud. After that the archive_start_offset
+    /// has to be advanced and segments could be removed from the
+    /// STM manifest.
+    ss::future<> apply_spillover();
+
     /// \brief Remove segments that are no longer queriable by:
     /// segments that are below the current start offset and segments
     /// that have been replaced with their compacted equivalent.

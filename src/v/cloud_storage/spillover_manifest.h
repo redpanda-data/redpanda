@@ -17,14 +17,36 @@
 
 namespace cloud_storage {
 
-inline remote_manifest_path generate_spillover_manifest_path(
+struct spillover_manifest_path_components {
+    model::offset base;
+    model::offset last;
+    kafka::offset base_kafka;
+    kafka::offset next_kafka;
+    model::timestamp base_ts;
+    model::timestamp last_ts;
+    int32_t index{-1};
+};
+
+namespace {
+remote_manifest_path generate_spillover_manifest_path(
   const model::ntp& ntp,
   model::initial_revision_id rev,
-  model::offset base,
-  model::offset last) {
-    auto path = generate_partition_manifest_path(ntp, rev);
-    return remote_manifest_path(fmt::format("{}.{}.{}", path, base(), last()));
+  const spillover_manifest_path_components& c) {
+    auto path = generate_partition_manifest_path(
+      ntp, rev, manifest_format::serde);
+    // Given the topic name size limit the name should fit into
+    // the AWS S3 size limit.
+    return remote_manifest_path(fmt::format(
+      "{}.{}.{}.{}.{}.{}.{}",
+      path().string(),
+      c.base(),
+      c.last(),
+      c.base_kafka(),
+      c.next_kafka(),
+      c.base_ts.value(),
+      c.last_ts.value()));
 }
+} // namespace
 
 /// The section of the partition manifest
 ///
@@ -38,14 +60,19 @@ public:
       : partition_manifest(ntp, rev) {}
 
     remote_manifest_path get_manifest_path() const override {
-        auto so = get_start_offset();
-        if (!so.has_value()) {
-            throw std::runtime_error(fmt_with_ctx(
-              fmt::format,
-              "Can't generate path for the empty spillover manifest"));
-        }
+        const auto ls = last_segment();
+        vassert(ls.has_value(), "Spillover manifest can't be empty");
+        const auto fs = *begin();
+        spillover_manifest_path_components smc{
+          .base = fs.base_offset,
+          .last = ls->committed_offset,
+          .base_kafka = fs.base_kafka_offset(),
+          .next_kafka = ls->next_kafka_offset(),
+          .base_ts = fs.base_timestamp,
+          .last_ts = ls->max_timestamp,
+        };
         return generate_spillover_manifest_path(
-          get_ntp(), get_revision_id(), so.value(), get_last_offset());
+          get_ntp(), get_revision_id(), smc);
     }
 };
 
