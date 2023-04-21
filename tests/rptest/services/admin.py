@@ -664,7 +664,7 @@ class Admin:
         return self._request('post', path, node=node)
 
     def create_user(self, username, password, algorithm):
-        self.redpanda.logger.info(
+        self.redpanda.logger.debug(
             f"Creating user {username}:{password}:{algorithm}")
 
         path = f"security/users"

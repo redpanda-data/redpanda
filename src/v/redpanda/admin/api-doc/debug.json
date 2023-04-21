@@ -344,6 +344,10 @@
             "id": "controller_status",
             "description": "Controller status",
             "properties": {
+                "start_offset": {
+                    "type": "long",
+                    "description": "start offset for controller log"
+                },
                 "last_applied_offset": {
                     "type": "long",
                     "description": "Last applied offset for controller stm"
