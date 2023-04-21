@@ -387,6 +387,7 @@ struct configuration final : public config_store {
       kafka_quota_balancer_node_period;
     property<double> kafka_quota_balancer_min_shard_throughput_ratio;
     bounded_property<int64_t> kafka_quota_balancer_min_shard_throughput_bps;
+    property<std::unordered_set<int16_t>> kafka_throughput_controlled_api_keys;
 
     bounded_property<int64_t> node_isolation_heartbeat_timeout;
 
