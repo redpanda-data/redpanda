@@ -61,8 +61,17 @@ struct archival_metadata_stm::segment
 
 struct archival_metadata_stm::start_offset
   : public serde::
-      envelope<segment, serde::version<0>, serde::compat_version<0>> {
+      envelope<start_offset, serde::version<0>, serde::compat_version<0>> {
     model::offset start_offset;
+};
+
+struct archival_metadata_stm::start_offset_with_delta
+  : public serde::envelope<
+      start_offset_with_delta,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    model::offset start_offset;
+    model::offset_delta delta;
 };
 
 struct archival_metadata_stm::add_segment_cmd {
@@ -93,9 +102,27 @@ struct archival_metadata_stm::mark_clean_cmd {
     using value = model::offset;
 };
 
+struct archival_metadata_stm::truncate_archive_init_cmd {
+    static constexpr cmd_key key{5};
+
+    using value = start_offset_with_delta;
+};
+
+struct archival_metadata_stm::truncate_archive_commit_cmd {
+    static constexpr cmd_key key{6};
+
+    using value = start_offset;
+};
+
+struct archival_metadata_stm::update_start_kafka_offset_cmd {
+    static constexpr cmd_key key{7};
+
+    using value = kafka::offset;
+};
+
 struct archival_metadata_stm::snapshot
   : public serde::
-      envelope<snapshot, serde::version<2>, serde::compat_version<0>> {
+      envelope<snapshot, serde::version<3>, serde::compat_version<0>> {
     /// List of segments
     fragmented_vector<segment> segments;
     /// List of replaced segments
@@ -115,6 +142,17 @@ struct archival_metadata_stm::snapshot
     /// If dirty, then upload to the remote object store is necessary since the
     /// last changes to this local state machine.
     state_dirty dirty{state_dirty::clean};
+    /// First accessible offset of the 'archve' (default if there is no archive)
+    model::offset archive_start_offset;
+    /// Delta value of the first accessible offset in the archive. We need this
+    /// value to be able to provide correct start kafka offset.
+    model::offset_delta archive_start_offset_delta;
+    // First offset of the 'archive'. Segments below 'archive_start_offset' are
+    // collectible by the archive housekeeping.
+    model::offset archive_clean_offset;
+    // Start kafka offset override (set to min() by default and to some value
+    // when DeleteRecords was used to override)
+    kafka::offset start_kafka_offset;
 };
 
 inline archival_metadata_stm::segment
@@ -177,6 +215,50 @@ command_batch_builder::truncate(model::offset start_rp_offset) {
     iobuf key_buf = serde::to_iobuf(
       archival_metadata_stm::update_start_offset_cmd::key);
     auto record_val = archival_metadata_stm::update_start_offset_cmd::value{
+      .start_offset = start_rp_offset};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder&
+command_batch_builder::truncate(kafka::offset start_kafka_offset) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::update_start_kafka_offset_cmd::key);
+    auto record_val
+      = archival_metadata_stm::update_start_kafka_offset_cmd::value{
+        start_kafka_offset};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder&
+command_batch_builder::spillover(model::offset start_rp_offset) {
+    iobuf key_buf = serde::to_iobuf(archival_metadata_stm::truncate_cmd::key);
+    auto record_val = archival_metadata_stm::truncate_cmd::value{
+      .start_offset = start_rp_offset};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder& command_batch_builder::truncate_archive_init(
+  model::offset start_rp_offset, model::offset_delta delta) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::truncate_archive_init_cmd::key);
+    auto record_val = archival_metadata_stm::truncate_archive_init_cmd::value{
+      .start_offset = start_rp_offset, .delta = delta};
+    iobuf val_buf = serde::to_iobuf(record_val);
+    _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
+    return *this;
+}
+
+command_batch_builder&
+command_batch_builder::cleanup_archive(model::offset start_rp_offset) {
+    iobuf key_buf = serde::to_iobuf(
+      archival_metadata_stm::truncate_archive_commit_cmd::key);
+    auto record_val = archival_metadata_stm::truncate_archive_commit_cmd::value{
       .start_offset = start_rp_offset};
     iobuf val_buf = serde::to_iobuf(record_val);
     _builder.add_raw_kv(std::move(key_buf), std::move(val_buf));
@@ -337,7 +419,11 @@ ss::future<> archival_metadata_stm::make_snapshot(
       .start_offset = m.get_start_offset().value_or(model::offset{}),
       .last_offset = m.get_last_offset(),
       .last_uploaded_compacted_offset = m.get_last_uploaded_compacted_offset(),
-      .dirty = state_dirty::clean});
+      .dirty = state_dirty::clean,
+      .archive_start_offset = m.get_archive_start_offset(),
+      .archive_start_offset_delta = m.get_archive_start_offset_delta(),
+      .archive_clean_offset = m.get_archive_clean_offset(),
+      .start_kafka_offset = m.get_start_kafka_offset_override()});
 
     auto snapshot = stm_snapshot::create(
       0, insync_offset, std::move(snap_data));
@@ -369,21 +455,67 @@ ss::future<std::error_code> archival_metadata_stm::truncate(
   model::offset start_rp_offset,
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto now = ss::lowres_clock::now();
-    auto timeout = now < deadline ? deadline - now : 0ms;
-    return _lock.with(timeout, [this, start_rp_offset, deadline, as] {
-        return do_truncate(start_rp_offset, deadline, as);
-    });
+    if (start_rp_offset < get_start_offset()) {
+        co_return errc::success;
+    }
+    auto builder = batch_start(deadline, as);
+    // Replicates update_start_offset_cmd command.
+    builder.truncate(start_rp_offset);
+    co_return co_await builder.replicate();
+}
+
+ss::future<std::error_code> archival_metadata_stm::truncate(
+  kafka::offset start_kafka_offset,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    auto builder = batch_start(deadline, as);
+    builder.truncate(start_kafka_offset);
+    co_return co_await builder.replicate();
+}
+
+ss::future<std::error_code> archival_metadata_stm::spillover(
+  model::offset start_rp_offset,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    if (start_rp_offset < get_start_offset()) {
+        co_return errc::success;
+    }
+    auto builder = batch_start(deadline, as);
+    builder.spillover(start_rp_offset);
+    co_return co_await builder.replicate();
+}
+
+ss::future<std::error_code> archival_metadata_stm::truncate_archive_init(
+  model::offset start_rp_offset,
+  model::offset_delta delta,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    if (start_rp_offset < get_archive_start_offset()) {
+        co_return errc::success;
+    }
+    auto builder = batch_start(deadline, as);
+    builder.truncate_archive_init(start_rp_offset, delta);
+    co_return co_await builder.replicate();
+}
+
+ss::future<std::error_code> archival_metadata_stm::cleanup_archive(
+  model::offset start_rp_offset,
+  ss::lowres_clock::time_point deadline,
+  std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    if (start_rp_offset < get_archive_clean_offset()) {
+        co_return errc::success;
+    }
+    auto builder = batch_start(deadline, as);
+    builder.cleanup_archive(start_rp_offset);
+    co_return co_await builder.replicate();
 }
 
 ss::future<std::error_code> archival_metadata_stm::cleanup_metadata(
   ss::lowres_clock::time_point deadline,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    auto now = ss::lowres_clock::now();
-    auto timeout = now < deadline ? deadline - now : 0ms;
-    return _lock.with(timeout, [this, deadline, as] {
-        return do_cleanup_metadata(deadline, as);
-    });
+    auto builder = batch_start(deadline, as);
+    builder.cleanup_metadata();
+    co_return co_await builder.replicate();
 }
 
 ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
@@ -434,68 +566,6 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     co_return errc::success;
 }
 
-ss::future<std::error_code> archival_metadata_stm::do_truncate(
-  model::offset start_rp_offset,
-  ss::lowres_clock::time_point deadline,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    vlog(
-      _logger.trace,
-      "do_truncate called, old so {}, new so {}",
-      get_start_offset(),
-      start_rp_offset);
-    {
-        auto now = ss::lowres_clock::now();
-        auto timeout = now < deadline ? deadline - now : 0ms;
-        if (!co_await sync(timeout)) {
-            co_return errc::timeout;
-        }
-    }
-
-    if (as) {
-        as->get().check();
-    }
-
-    if (get_start_offset() > start_rp_offset) {
-        co_return errc::success;
-    }
-
-    storage::record_batch_builder b(
-      model::record_batch_type::archival_metadata, model::offset(0));
-    iobuf key_buf = serde::to_iobuf(update_start_offset_cmd::key);
-    auto record_val = update_start_offset_cmd::value{
-      .start_offset = start_rp_offset};
-    iobuf val_buf = serde::to_iobuf(record_val);
-    b.add_raw_kv(std::move(key_buf), std::move(val_buf));
-
-    auto batch = std::move(b).build();
-
-    auto ec = co_await do_replicate_commands(std::move(batch), as);
-    if (ec) {
-        co_return ec;
-    }
-
-    vlog(
-      _logger.info,
-      "truncate command replicated, truncated up to {}, remote start_offset: "
-      "{}, last_offset: {}",
-      start_rp_offset,
-      get_start_offset(),
-      get_last_offset());
-
-    co_return errc::success;
-}
-
-bool archival_metadata_stm::cleanup_needed() const {
-    auto has_replaced_segments = !_manifest->replaced_segments().empty();
-    auto has_trailing_segments = (_manifest->size() > 0
-                                  && _manifest->get_start_offset())
-                                   ? _manifest->begin()->first
-                                       < _manifest->get_start_offset()
-                                   : false;
-
-    return has_replaced_segments || has_trailing_segments;
-}
-
 ss::future<std::error_code> archival_metadata_stm::mark_clean(
   ss::lowres_clock::time_point deadline,
   model::offset clean_offset,
@@ -503,45 +573,6 @@ ss::future<std::error_code> archival_metadata_stm::mark_clean(
     auto builder = batch_start(deadline, as);
     builder.mark_clean(clean_offset);
     co_return co_await builder.replicate();
-}
-
-ss::future<std::error_code> archival_metadata_stm::do_cleanup_metadata(
-  ss::lowres_clock::time_point deadline,
-  std::optional<std::reference_wrapper<ss::abort_source>> as) {
-    vlog(_logger.debug, "do_cleanup_metadata called");
-    {
-        auto now = ss::lowres_clock::now();
-        auto timeout = now < deadline ? deadline - now : 0ms;
-        if (!co_await sync(timeout)) {
-            co_return errc::timeout;
-        }
-    }
-
-    if (as) {
-        as->get().check();
-    }
-
-    if (!cleanup_needed()) {
-        vlog(_logger.debug, "no metadata to clean up");
-        co_return errc::success;
-    }
-
-    storage::record_batch_builder b(
-      model::record_batch_type::archival_metadata, model::offset(0));
-    iobuf key_buf = serde::to_iobuf(cleanup_metadata_cmd::key);
-    iobuf empty_body;
-    b.add_raw_kv(std::move(key_buf), std::move(empty_body));
-
-    auto batch = std::move(b).build();
-
-    auto ec = co_await do_replicate_commands(std::move(batch), as);
-    if (ec) {
-        co_return ec;
-    }
-
-    vlog(_logger.debug, "cleanup_metadata command replicated");
-
-    co_return errc::success;
 }
 
 ss::future<std::error_code> archival_metadata_stm::add_segments(
@@ -644,9 +675,6 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
               serde::from_iobuf<add_segment_cmd::value>(r.release_value()));
             break;
         case truncate_cmd::key:
-            // This is never executed but we have to keep
-            // the handler since we might need to replay the log
-            // generated by previous version.
             apply_truncate(
               serde::from_iobuf<truncate_cmd::value>(r.release_value()));
             break;
@@ -661,6 +689,21 @@ ss::future<> archival_metadata_stm::apply(model::record_batch b) {
         case mark_clean_cmd::key:
             apply_mark_clean(
               serde::from_iobuf<mark_clean_cmd::value>(r.release_value()));
+            break;
+        case truncate_archive_init_cmd::key:
+            apply_truncate_archive_init(
+              serde::from_iobuf<truncate_archive_init_cmd::value>(
+                r.release_value()));
+            break;
+        case truncate_archive_commit_cmd::key:
+            apply_truncate_archive_commit(
+              serde::from_iobuf<truncate_archive_commit_cmd::value>(
+                r.release_value()));
+            break;
+        case update_start_kafka_offset_cmd::key:
+            apply_update_start_kafka_offset(
+              serde::from_iobuf<update_start_kafka_offset_cmd::value>(
+                r.release_value()));
             break;
         };
     });
@@ -765,7 +808,11 @@ ss::future<> archival_metadata_stm::apply_snapshot(
       snap.last_uploaded_compacted_offset,
       header.offset,
       snap.segments,
-      snap.replaced);
+      snap.replaced,
+      snap.start_kafka_offset,
+      snap.archive_start_offset,
+      snap.archive_start_offset_delta,
+      snap.archive_clean_offset);
 
     vlog(
       _logger.info,
@@ -796,7 +843,11 @@ ss::future<stm_snapshot> archival_metadata_stm::take_snapshot() {
       .last_offset = _manifest->get_last_offset(),
       .last_uploaded_compacted_offset
       = _manifest->get_last_uploaded_compacted_offset(),
-      .dirty = get_dirty()});
+      .dirty = get_dirty(),
+      .archive_start_offset = _manifest->get_archive_start_offset(),
+      .archive_start_offset_delta = _manifest->get_archive_start_offset_delta(),
+      .archive_clean_offset = _manifest->get_archive_clean_offset(),
+      .start_kafka_offset = _manifest->get_start_kafka_offset_override()});
 
     vlog(
       _logger.debug,
@@ -929,6 +980,46 @@ void archival_metadata_stm::apply_update_start_offset(const start_offset& so) {
     }
 }
 
+void archival_metadata_stm::apply_update_start_kafka_offset(kafka::offset so) {
+    if (!_manifest->advance_start_kafka_offset(so)) {
+        vlog(
+          _logger.error,
+          "Can't truncate manifest up to kafka offset {}, offset out of range, "
+          "current start kafka offset: {}, start offset: {}, archive start "
+          "offset: {}",
+          so,
+          get_start_kafka_offset(),
+          get_start_offset(),
+          get_archive_start_offset());
+    } else {
+        vlog(
+          _logger.debug,
+          "Start kafka offset updated to {}, start offset updated to {}",
+          get_start_kafka_offset(),
+          get_start_offset());
+    }
+}
+
+void archival_metadata_stm::apply_truncate_archive_init(
+  const start_offset_with_delta& so) {
+    vlog(
+      _logger.debug,
+      "Updating archive start offset, current value {}, update {}",
+      get_archive_start_offset(),
+      so.start_offset);
+    _manifest->set_archive_start_offset(so.start_offset, so.delta);
+}
+
+void archival_metadata_stm::apply_truncate_archive_commit(
+  const start_offset& so) {
+    vlog(
+      _logger.debug,
+      "Updating archive clean offset, current value {}, update {}",
+      get_archive_clean_offset(),
+      so.start_offset);
+    _manifest->set_archive_clean_offset(so.start_offset);
+}
+
 std::vector<cloud_storage::partition_manifest::lw_segment_meta>
 archival_metadata_stm::get_segments_to_cleanup() const {
     // Include replaced segments to the backlog
@@ -1007,6 +1098,18 @@ model::offset archival_metadata_stm::get_start_offset() const {
 
 model::offset archival_metadata_stm::get_last_offset() const {
     return _manifest->get_last_offset();
+}
+
+model::offset archival_metadata_stm::get_archive_start_offset() const {
+    return _manifest->get_archive_start_offset();
+}
+
+model::offset archival_metadata_stm::get_archive_clean_offset() const {
+    return _manifest->get_archive_clean_offset();
+}
+
+kafka::offset archival_metadata_stm::get_start_kafka_offset() const {
+    return _manifest->get_start_kafka_offset().value_or(kafka::offset{});
 }
 
 /**

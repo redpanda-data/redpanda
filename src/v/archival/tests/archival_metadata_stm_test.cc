@@ -647,3 +647,126 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
       archival_stm->manifest().begin()->second.archiver_term
       == model::term_id(2));
 }
+
+FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .size_bytes = 100,
+      .base_offset = model::offset(0),
+      .committed_offset = model::offset(999),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+    m.push_back(segment_meta{
+      .size_bytes = 200,
+      .base_offset = model::offset(1000),
+      .committed_offset = model::offset(1999),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+    m.push_back(segment_meta{
+      .size_bytes = 300,
+      .base_offset = model::offset(2000),
+      .committed_offset = model::offset(2999),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(2)});
+
+    // Replicate add_segment_cmd command that adds segment with offset 0
+    auto batcher = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    batcher.add_segments(m);
+    batcher.replicate().get();
+    BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 3);
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(0));
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_start_offset(), model::offset());
+
+    archival_stm
+      ->truncate_archive_init(
+        model::offset{0}, model::offset_delta(0), ss::lowres_clock::now() + 10s)
+      .get();
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_start_offset(), model::offset(0));
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_clean_offset(), model::offset());
+
+    archival_stm
+      ->cleanup_archive(model::offset{0}, ss::lowres_clock::now() + 10s)
+      .get();
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_start_offset(), model::offset(0));
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_clean_offset(), model::offset(0));
+
+    // unaligned spillover command shouldn't remove segment
+    archival_stm->spillover(model::offset{1}, ss::lowres_clock::now() + 10s)
+      .get();
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(0));
+
+    // aligned spillover command should remove segment
+    auto batcher2 = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    batcher2.spillover(model::offset(1000));
+    batcher2.truncate_archive_init(model::offset(200), model::offset_delta(0));
+    batcher2.cleanup_archive(model::offset(100));
+    batcher2.replicate().get();
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_start_offset(), model::offset(200));
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_clean_offset(), model::offset(100));
+
+    // try to move archive_clean_offset backward
+    archival_stm
+      ->cleanup_archive(model::offset{0}, ss::lowres_clock::now() + 10s)
+      .get();
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_clean_offset(), model::offset(100));
+}
+
+FIXTURE_TEST(
+  test_archival_stm_truncate_kafka_offset, archival_metadata_stm_fixture) {
+    wait_for_confirmed_leader();
+    std::vector<cloud_storage::segment_meta> m;
+    m.push_back(segment_meta{
+      .size_bytes = 1000,
+      .base_offset = model::offset(1000),
+      .committed_offset = model::offset(1999),
+      .delta_offset = model::offset_delta(0),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+    m.push_back(segment_meta{
+      .size_bytes = 2000,
+      .base_offset = model::offset(2000),
+      .committed_offset = model::offset(2999),
+      .delta_offset = model::offset_delta(0),
+      .archiver_term = model::term_id(1),
+      .segment_term = model::term_id(1)});
+    m.push_back(segment_meta{
+      .size_bytes = 3000,
+      .base_offset = model::offset(3000),
+      .committed_offset = model::offset(3999),
+      .delta_offset = model::offset_delta(0),
+      .archiver_term = model::term_id(2),
+      .segment_term = model::term_id(2)});
+
+    // Replicate add_segment_cmd command that adds segment with offset 0
+    auto batcher1 = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    batcher1.add_segments(m);
+    batcher1.replicate().get();
+    BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 3);
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_start_offset(), model::offset());
+
+    auto batcher2 = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    batcher2.truncate_archive_init(model::offset(0), model::offset_delta(0));
+    batcher2.cleanup_archive(model::offset(0));
+    batcher2.replicate().get();
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->manifest().get_archive_start_offset(), model::offset(0));
+
+    // Truncate by kafka offset inside the archive
+    archival_stm->truncate(kafka::offset(200), ss::lowres_clock::now() + 10s)
+      .get();
+    BOOST_REQUIRE_EQUAL(
+      archival_stm->get_start_kafka_offset(), kafka::offset(200));
+    BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(1000));
+}

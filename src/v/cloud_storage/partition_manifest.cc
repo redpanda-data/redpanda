@@ -304,8 +304,15 @@ std::optional<model::offset> partition_manifest::get_start_offset() const {
     return _start_offset;
 }
 
+kafka::offset partition_manifest::get_start_kafka_offset_override() const {
+    return _start_kafka_offset;
+}
+
 std::optional<kafka::offset>
 partition_manifest::get_start_kafka_offset() const {
+    if (_start_kafka_offset != kafka::offset{}) {
+        return _start_kafka_offset;
+    }
     if (_start_offset != model::offset{}) {
         auto iter = _segments.find(_start_offset);
         if (iter != _segments.end()) {
@@ -508,6 +515,115 @@ bool partition_manifest::contains(const segment_name& name) const {
 
 void partition_manifest::delete_replaced_segments() { _replaced.clear(); }
 
+model::offset partition_manifest::get_archive_start_offset() const {
+    return _archive_start_offset;
+}
+
+model::offset_delta partition_manifest::get_archive_start_offset_delta() const {
+    return _archive_start_offset_delta;
+}
+
+kafka::offset partition_manifest::get_archive_start_kafka_offset() const {
+    if (_archive_start_offset == model::offset{}) {
+        return kafka::offset{};
+    }
+    return _archive_start_offset - _archive_start_offset_delta;
+}
+
+model::offset partition_manifest::get_archive_clean_offset() const {
+    return _archive_clean_offset;
+}
+
+void partition_manifest::set_archive_start_offset(
+  model::offset start_rp_offset, model::offset_delta start_delta) {
+    if (_archive_start_offset < start_rp_offset) {
+        _archive_start_offset = start_rp_offset;
+        _archive_start_offset_delta = start_delta;
+    } else {
+        vlog(
+          cst_log.warn,
+          "{} Can't advance archive_start_offset to {} because it's smaller "
+          "than the "
+          "current value {}",
+          _ntp,
+          start_rp_offset,
+          _archive_start_offset);
+    }
+}
+
+void partition_manifest::set_archive_clean_offset(
+  model::offset start_rp_offset) {
+    if (_archive_start_offset < start_rp_offset) {
+        vlog(
+          cst_log.error,
+          "{} Requested to advance archive_clean_offset to {} which is greater "
+          "than the current archive_start_offset {}. The offset won't be "
+          "changed.",
+          _ntp,
+          start_rp_offset,
+          _archive_start_offset);
+        return;
+    }
+    if (_archive_clean_offset < start_rp_offset) {
+        _archive_clean_offset = start_rp_offset;
+    } else {
+        vlog(
+          cst_log.warn,
+          "{} Can't advance archive_clean_offset to {} because it's smaller "
+          "than the "
+          "current value {}",
+          _ntp,
+          start_rp_offset,
+          _archive_clean_offset);
+    }
+}
+
+bool partition_manifest::advance_start_kafka_offset(
+  kafka::offset new_start_offset) {
+    auto prev_kso = get_start_kafka_offset();
+    if (
+      _archive_start_offset != model::offset{} && new_start_offset < prev_kso) {
+        // Special case. If the archive is enabled and contains some data
+        // the offset could be placed anywhere in the archive. The archive
+        // housekeeping should take this into account.
+        if (new_start_offset < get_archive_start_kafka_offset()) {
+            return false;
+        }
+        _start_kafka_offset = std::max(new_start_offset, _start_kafka_offset);
+        return true;
+    }
+    auto it = segment_containing(new_start_offset);
+    if (it == end()) {
+        vlog(
+          cst_log.debug,
+          "{} start kafka offset not moved to {}, no such segment",
+          _ntp,
+          _start_kafka_offset);
+        return false;
+    } else if (it == begin()) {
+        _start_kafka_offset = std::max(new_start_offset, _start_kafka_offset);
+        vlog(
+          cst_log.debug,
+          "{} start kafka offset moved to {}, start offset stayed at {}",
+          _ntp,
+          _start_kafka_offset,
+          _start_offset);
+        return true;
+    }
+    auto moved = advance_start_offset(it->second.base_offset);
+    // 'advance_start_offset' resets _start_kafka_offset value
+    // so it's important to set it after this call.
+    _start_kafka_offset = std::max(new_start_offset, _start_kafka_offset);
+    vlog(
+      cst_log.info,
+      "{} start kafka offset moved to {}, start offset {} {}",
+      _ntp,
+      _start_kafka_offset,
+      moved ? "moved to" : "stayed at",
+      _start_offset);
+    return true;
+}
+
 bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
     const auto previous_start_offset = _start_offset;
 
@@ -561,6 +677,9 @@ bool partition_manifest::advance_start_offset(model::offset new_start_offset) {
         for (auto it = previous_head_segment; it != new_head_segment; ++it) {
             subtract_from_cloud_log_size(it->second.size_bytes);
         }
+
+        // Reset start kafka offset so it will be aligned by segment boundary
+        _start_kafka_offset = kafka::offset{};
 
         return true;
     }
@@ -914,6 +1033,12 @@ struct partition_manifest_handler
                 _insync_offset = model::offset(u);
             } else if ("cloud_log_size_bytes" == _manifest_key) {
                 _cloud_log_size_bytes = u;
+            } else if ("archive_start_offset" == _manifest_key) {
+                _archive_start_offset = model::offset(u);
+            } else if ("archive_start_offset_delta" == _manifest_key) {
+                _archive_start_offset_delta = model::offset_delta(u);
+            } else if ("archive_clean_offset" == _manifest_key) {
+                _archive_clean_offset = model::offset(u);
             } else {
                 return false;
             }
@@ -1145,6 +1270,9 @@ struct partition_manifest_handler
     std::optional<model::offset> _last_uploaded_compacted_offset;
     std::optional<model::offset> _insync_offset;
     std::optional<size_t> _cloud_log_size_bytes;
+    std::optional<model::offset> _archive_start_offset;
+    std::optional<model::offset_delta> _archive_start_offset_delta;
+    std::optional<model::offset> _archive_clean_offset;
 
     // required segment meta fields
     std::optional<bool> _is_compacted;
@@ -1285,6 +1413,19 @@ void partition_manifest::update(partition_manifest_handler&& handler) {
 
     if (handler._insync_offset) {
         _insync_offset = handler._insync_offset.value();
+    }
+
+    if (handler._archive_start_offset) {
+        _archive_start_offset = handler._archive_start_offset.value();
+    }
+
+    if (handler._archive_start_offset_delta) {
+        _archive_start_offset_delta
+          = handler._archive_start_offset_delta.value();
+    }
+
+    if (handler._archive_clean_offset) {
+        _archive_clean_offset = handler._archive_clean_offset.value();
     }
 
     if (handler._segments) {
@@ -1430,6 +1571,18 @@ void partition_manifest::serialize_begin(
     }
     w.Key("cloud_log_size_bytes");
     w.Uint64(_cloud_log_size_bytes);
+    if (_archive_start_offset != model::offset{}) {
+        w.Key("archive_start_offset");
+        w.Int64(_archive_start_offset());
+    }
+    if (_archive_start_offset_delta != model::offset_delta{}) {
+        w.Key("archive_start_offset_delta");
+        w.Int64(_archive_start_offset_delta());
+    }
+    if (_archive_clean_offset != model::offset{}) {
+        w.Key("archive_clean_offset");
+        w.Int64(_archive_clean_offset());
+    }
     cursor->prologue_done = true;
 }
 

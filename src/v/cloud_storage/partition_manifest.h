@@ -13,6 +13,7 @@
 #include "absl/container/btree_map.h"
 #include "cloud_storage/base_manifest.h"
 #include "cloud_storage/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
 #include "serde/serde.h"
@@ -138,7 +139,11 @@ public:
       model::offset lco,
       model::offset insync,
       const fragmented_vector<segment_t>& segments,
-      const fragmented_vector<segment_t>& replaced)
+      const fragmented_vector<segment_t>& replaced,
+      kafka::offset start_kafka_offset,
+      model::offset archive_start_offset,
+      model::offset_delta archive_start_offset_delta,
+      model::offset archive_clean_offset)
       : _ntp(std::move(ntp))
       , _rev(rev)
       , _mem_tracker(std::move(manifest_mem_tracker))
@@ -147,7 +152,11 @@ public:
       , _last_offset(lo)
       , _start_offset(so)
       , _last_uploaded_compacted_offset(lco)
-      , _insync_offset(insync) {
+      , _insync_offset(insync)
+      , _archive_start_offset(archive_start_offset)
+      , _archive_start_offset_delta(archive_start_offset_delta)
+      , _archive_clean_offset(archive_clean_offset)
+      , _start_kafka_offset(start_kafka_offset) {
         for (auto nm : replaced) {
             auto key = parse_segment_name(nm.name);
             vassert(
@@ -264,6 +273,15 @@ public:
     /// \returns true if start offset was moved
     bool advance_start_offset(model::offset start_offset);
 
+    /// \brief Set start kafka offset without removing any data from the
+    /// manifest.
+    ///
+    /// Allows to move start_kafka_offset forward
+    /// freely. The corresponding start_offset value is moved
+    /// to the closest aligned offset.
+    /// \returns true if start_offset was moved
+    bool advance_start_kafka_offset(kafka::offset start_offset);
+
     /// Get segment if available or nullopt
     const segment_meta* get(const key& key) const;
     const segment_meta* get(const segment_name& name) const;
@@ -302,7 +320,11 @@ public:
                && _last_uploaded_compacted_offset
                     == other._last_uploaded_compacted_offset
                && _insync_offset == other._insync_offset
-               && _replaced == other._replaced;
+               && _replaced == other._replaced
+               && _archive_clean_offset == other._archive_clean_offset
+               && _archive_start_offset == other._archive_start_offset
+               && _archive_start_offset_delta
+                    == other._archive_start_offset_delta;
     }
 
     manifest_type get_manifest_type() const override {
@@ -334,6 +356,15 @@ public:
     /// Transition manifest into such state which makes any uploads or reuploads
     /// impossible.
     void disable_permanently();
+
+    model::offset get_archive_start_offset() const;
+    model::offset_delta get_archive_start_offset_delta() const;
+    kafka::offset get_archive_start_kafka_offset() const;
+    model::offset get_archive_clean_offset() const;
+    void set_archive_start_offset(
+      model::offset start_rp_offset, model::offset_delta start_delta);
+    void set_archive_clean_offset(model::offset start_rp_offset);
+    kafka::offset get_start_kafka_offset_override() const;
 
 private:
     void subtract_from_cloud_log_size(size_t to_subtract);
@@ -390,6 +421,16 @@ private:
     model::offset _last_uploaded_compacted_offset;
     model::offset _insync_offset;
     size_t _cloud_log_size_bytes{0};
+    // First accessible offset of the 'archive' region. Default value means
+    // that there is no archive.
+    model::offset _archive_start_offset;
+    model::offset_delta _archive_start_offset_delta;
+    // First offset of the 'archive'. The data between 'clean' and 'archive'
+    // could be removed by the housekeeping. The invariant is that 'clean' is
+    // less or equal to 'start'.
+    model::offset _archive_clean_offset;
+    // Start kafka offset set by the DeleteRecords request
+    kafka::offset _start_kafka_offset;
 };
 
 } // namespace cloud_storage
