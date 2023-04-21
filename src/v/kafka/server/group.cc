@@ -2261,6 +2261,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
 
     prepared_tx ptx;
     ptx.tx_seq = tx_seq;
+    ptx.pid = pid;
     const auto now = model::timestamp::now();
     for (const auto& [tp, offset] : offsets) {
         offset_metadata md{
@@ -3273,7 +3274,7 @@ group::do_try_abort_old_tx(model::producer_identity pid) {
         }
         auto r = co_await _tx_frontend.local().try_abort(
           tm,
-          p_it->second.pid,
+          pid,
           tx_seq,
           config::shard_local_cfg().rm_sync_timeout_ms.value());
         if (r.ec != cluster::tx_errc::none) {
