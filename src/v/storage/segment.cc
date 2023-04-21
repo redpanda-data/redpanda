@@ -11,6 +11,7 @@
 
 #include "compression/compression.h"
 #include "config/configuration.h"
+#include "random/generators.h"
 #include "ssx/future-util.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
@@ -329,19 +330,14 @@ ss::future<> segment::do_truncate(
     }
 
     f = f.then([this, prev_last_offset, new_max_timestamp] {
-        return _idx.truncate(prev_last_offset, new_max_timestamp).then([this] {
-            auto range = boost::irange(0, 60);
-            if (_reader.filename().find("kvstore") == ss::sstring::npos) {
-                return ss::do_for_each(
-                  range.begin(), range.end(), [this](int i) {
-                      fmt::print(
-                        "DBG: truncation sleep {} - {}\n",
-                        i,
-                        _reader.filename());
-                      return ss::sleep(std::chrono::seconds(1));
-                  });
+        return _idx.truncate(prev_last_offset, new_max_timestamp).then([] {
+            if (random_generators::get_int<int>() % 5 == 0) {
+                vlog(
+                  stlog.info,
+                  "AWONG SIMULATING SIGKILL AFTER INDEX TRUNCATION");
+                exit(0);
             }
-            return ss::now();
+            return ss::make_ready_future<>();
         });
     });
 

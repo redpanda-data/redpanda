@@ -29,6 +29,7 @@
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "raft/vote_stm.h"
+#include "random/generators.h"
 #include "reflection/adl.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
@@ -1818,6 +1819,12 @@ consensus::do_append_entries(append_entries_request&& r) {
         // we wouldn't retry and log and offset translator could diverge.
         return _offset_translator.truncate(truncate_at)
           .then([this, truncate_at] {
+              if (random_generators::get_int<int>() % 5 == 0) {
+                  vlog(
+                    _ctxlog.info,
+                    "AWONG SIMULATING SIGKILL BEFORE LOG TRUNCATION");
+                  exit(0);
+              }
               return _log.truncate(storage::truncate_config(
                 truncate_at, _scheduling.default_iopc));
           })
