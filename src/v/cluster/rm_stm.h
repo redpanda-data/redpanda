@@ -745,19 +745,8 @@ private:
         return it->second;
     }
 
-    kafka::offset from_log_offset(model::offset old_offset) {
-        if (old_offset > model::offset{-1}) {
-            return kafka::offset(_translator->from_log_offset(old_offset)());
-        }
-        return kafka::offset(old_offset());
-    }
-
-    model::offset to_log_offset(kafka::offset new_offset) {
-        if (new_offset > model::offset{-1}) {
-            return _translator->to_log_offset(model::offset(new_offset()));
-        }
-        return model::offset(new_offset());
-    }
+    kafka::offset from_log_offset(model::offset old_offset) const;
+    model::offset to_log_offset(kafka::offset new_offset) const;
 
     transaction_info::status_t
     get_tx_status(model::producer_identity pid) const;
@@ -824,7 +813,6 @@ private:
     storage::snapshot_manager _abort_snapshot_mgr;
     absl::flat_hash_map<std::pair<model::offset, model::offset>, uint64_t>
       _abort_snapshot_sizes{};
-    ss::lw_shared_ptr<const storage::offset_translator_state> _translator;
     ss::sharded<features::feature_table>& _feature_table;
     config::binding<std::chrono::seconds> _log_stats_interval_s;
     ss::timer<clock_type> _log_stats_timer;
