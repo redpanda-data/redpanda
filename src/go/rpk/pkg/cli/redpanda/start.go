@@ -434,17 +434,19 @@ func prestart(
 	timeout time.Duration,
 ) error {
 	if prestartCfg.checkEnabled {
+		fmt.Println("System check - STARTED")
 		err := check(fs, conf, timeout, checkFailedActions(args))
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to check if system meets redpanda requirements: %v; to override this check you can use --check=false", err)
 		}
 		fmt.Println("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
+		fmt.Println("System tune - STARTED")
 		cpuset := fmt.Sprint(args.SeastarFlags[cpuSetFlag])
 		err := tuneAll(fs, cpuset, conf, timeout)
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to tune your system: %v; to avoid tuning your machine you can use --tune=false", err)
 		}
 		fmt.Println("System tune - PASSED")
 	}
@@ -658,13 +660,13 @@ func tuneAll(
 			continue
 		}
 		if !supported {
-			zap.L().Sugar().Debugf("Tuner '%s' is not supported - %s", tunerName, reason)
+			zap.L().Sugar().Debugf("Tuner %q is not supported - %s", tunerName, reason)
 			continue
 		}
 		zap.L().Sugar().Debugf("Tuner parameters %+v", params)
 		result := tuner.Tune()
 		if result.IsFailed() {
-			return result.Error()
+			return fmt.Errorf("failed to tune %q: %v", tunerName, result.Error())
 		}
 	}
 	return nil
@@ -698,10 +700,10 @@ func check(
 			if action, exists := checkFailedActions[result.CheckerID]; exists {
 				action(&result)
 			}
-			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
-				result.Desc, result.Required, result.Current)
+			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v, Error: %v",
+				result.Desc, result.Required, result.Current, result.Err)
 			if result.Severity == tuners.Fatal {
-				return fmt.Errorf(msg)
+				return errors.New(msg)
 			}
 			fmt.Println(msg)
 		}
