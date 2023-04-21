@@ -1,6 +1,6 @@
 /*
  * Copyright 2020 Redpanda Data, Inc.
-
+ *
  * Use of this software is governed by the Business Source License
  * included in the file licenses/BSL.md
  *
@@ -3987,6 +3987,24 @@ void admin_server::register_debug_routes() {
       [this](std::unique_ptr<ss::http::request> req)
         -> ss::future<ss::json::json_return_type> {
           return get_partition_state_handler(std::move(req));
+      });
+
+    register_route<superuser>(
+      ss::httpd::debug_json::set_storage_failure_injection_enabled,
+      [](std::unique_ptr<ss::http::request> req) {
+          auto value = req->get_query_param("value");
+          if (value != "true" && value != "false") {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Invalid parameter 'value' {{{}}}. Should be 'true' or "
+                "'false'",
+                value));
+          }
+
+          config::node().storage_failure_injection_enabled.set_value(
+            value == "true");
+
+          return ss::make_ready_future<ss::json::json_return_type>(
+            ss::json::json_void());
       });
 }
 
