@@ -116,4 +116,9 @@ std::optional<handler> handler_for_key(api_key key) noexcept;
  */
 std::optional<api_key> api_name_to_key(std::string_view name) noexcept;
 
+/**
+ * @return The highest value of Kafka API key
+ */
+size_t max_api_key() noexcept;
+
 } // namespace kafka

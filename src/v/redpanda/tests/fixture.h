@@ -45,12 +45,15 @@
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
 
 #include <chrono>
 #include <filesystem>
+#include <unordered_set>
+#include <vector>
 
 // Whether or not the fixtures should be configured with a node ID.
 // NOTE: several fixtures may still require a node ID be supplied for the sake
@@ -596,7 +599,10 @@ public:
           std::move(sasl),
           false,
           std::nullopt,
-          config::mock_property<uint32_t>(100_MiB).bind());
+          config::mock_property<uint32_t>(100_MiB).bind(),
+          config::mock_property<std::vector<ss::sstring>>({"produce", "fetch"})
+            .bind<std::vector<bool>>(
+              &kafka::server::convert_api_names_to_key_bitmap));
 
         kafka::request_header header;
         auto encoder_context = kafka::request_context(
