@@ -1432,6 +1432,17 @@ configuration::configuration()
       {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
       std::nullopt,
       &validate_non_empty_string_opt)
+  , cloud_storage_spillover_manifest_size(
+      *this,
+      "cloud_storage_spillover_manifest_size",
+      "The size of the manifest which can be offloaded to the cloud. If the "
+      "size of the local manifest stored in redpanda exceeds "
+      "cloud_storage_spillover_manifest_size x2 the spillover mechanism will "
+      "split the manifest into two parts and one of them will be uploaded to "
+      "S3.",
+      {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
+      std::nullopt,
+      {.min = 4_KiB, .max = 4_MiB})
   , cloud_storage_azure_storage_account(
       *this,
       "cloud_storage_azure_storage_account",
