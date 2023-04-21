@@ -297,6 +297,17 @@ public:
         return sub_it->second.versions;
     }
 
+    ///\brief Return whether this subject has a version that references the
+    /// schema_id.
+    result<bool> has_version(
+      const subject& sub, schema_id id, include_deleted inc_del) const {
+        auto sub_it = BOOST_OUTCOME_TRYX(get_subject_iter(sub, inc_del));
+        const auto& vs = sub_it->second.versions;
+        return std::any_of(vs.cbegin(), vs.cend(), [id](const auto& entry) {
+            return entry.id == id;
+        });
+    }
+
     bool is_referenced(const subject& sub, schema_version ver) {
         return std::any_of(
           _subjects.begin(), _subjects.end(), [&sub, ver](const auto& s) {
