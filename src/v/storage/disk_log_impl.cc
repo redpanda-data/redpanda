@@ -779,7 +779,7 @@ ss::future<> disk_log_impl::retention_adjust_timestamps(
       model::timestamp::now().value() + ignore_in_future / 1ms);
 
     for (const auto& s : _segs) {
-        auto max_ts = s->index().max_timestamp();
+        auto max_ts = s->index().retention_timestamp();
 
         // If the actual max timestamp from user records is out of bounds, clamp
         // it to something more plausible, either from other batches or from
