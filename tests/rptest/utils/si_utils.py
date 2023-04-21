@@ -489,11 +489,28 @@ class BucketView:
             return None
 
         start_model_offset = manifest['start_offset']
-        first_segment = min(manifest['segments'].values(),
-                            key=lambda seg: seg['base_offset'])
-        delta = first_segment['delta_offset']
+        for seg in manifest['segments'].values():
+            if seg['base_offset'] == start_model_offset:
+                # Usually, the manifest's 'start_offset' will match the 'base_offset'
+                # of a 'segment' as retention normally advances the start offset to
+                # another segment's base offset. This branch covers this case.
+                delta = seg['delta_offset']
+                return start_model_offset - delta
+            elif start_model_offset == seg['committed_offset'] + 1:
+                # When retention decides to remove all current segments from the cloud
+                # according to the retention policy, it advances the manifest's start
+                # offset to `committed_offset + 1` of the latest segment present at the time.
+                # Since, there's no guarantee that new segments haven't been added in the
+                # meantime, we look for a match in all segments.
+                delta = seg['delta_offset_end']
+                return start_model_offset - delta
 
-        return start_model_offset - delta
+        assert (
+            False,
+            "'start_offset' in manifest is inconsistent with contents of 'segments'."
+            "'start_offset' should match either the 'base_offset' or 'committed_offset + 1'"
+            f"of a segment in 'segments': start_offset={start_model_offset}, segments={manifest['segments']}"
+        )
 
     @staticmethod
     def kafka_last_offset(manifest) -> Optional[int]:
