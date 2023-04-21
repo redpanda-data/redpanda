@@ -131,7 +131,7 @@ public:
     ss::sharded<kafka::usage_manager> usage_manager;
 
     ss::sharded<raft::group_manager> raft_group_manager;
-    ss::sharded<raft::recovery_throttle> recovery_throttle;
+    ss::sharded<raft::coordinated_recovery_throttle> recovery_throttle;
 
     ss::sharded<storage::api> storage;
     ss::sharded<storage::node_api> storage_node;

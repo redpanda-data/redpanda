@@ -76,6 +76,7 @@
 #include "net/server.h"
 #include "pandaproxy/rest/api.h"
 #include "pandaproxy/schema_registry/api.h"
+#include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
 #include "raft/recovery_throttle.h"
 #include "raft/service.h"
@@ -1006,9 +1007,17 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
 
     syschecks::systemd_message("Intializing raft recovery throttle").get();
     recovery_throttle
-      .start(ss::sharded_parameter([] {
-          return config::shard_local_cfg().raft_learner_recovery_rate.bind();
-      }))
+      .start(
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg().raft_learner_recovery_rate.bind();
+        }),
+        ss::sharded_parameter([] {
+            return config::shard_local_cfg()
+              .raft_recovery_throttle_disable_dynamic_mode.bind();
+        }))
+      .get();
+
+    recovery_throttle.invoke_on_all(&raft::coordinated_recovery_throttle::start)
       .get();
 
     syschecks::systemd_message("Intializing raft group manager").get();
@@ -1045,7 +1054,8 @@ void application::wire_up_redpanda_services(model::node_id node_id) {
     // that are being throttled are released so that they can make be quickly
     // shutdown by the group manager.
     _deferred.emplace_back([this] {
-        recovery_throttle.invoke_on_all(&raft::recovery_throttle::shutdown)
+        recovery_throttle
+          .invoke_on_all(&raft::coordinated_recovery_throttle::shutdown)
           .get();
         raft_group_manager.stop().get();
         recovery_throttle.stop().get();

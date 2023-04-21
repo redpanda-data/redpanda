@@ -31,7 +31,7 @@ group_manager::group_manager(
   recovery_memory_quota::config_provider_fn recovery_mem_cfg,
   ss::sharded<rpc::connection_cache>& clients,
   ss::sharded<storage::api>& storage,
-  ss::sharded<recovery_throttle>& recovery_throttle,
+  ss::sharded<coordinated_recovery_throttle>& recovery_throttle,
   ss::sharded<features::feature_table>& feature_table)
   : _self(self)
   , _raft_sg(raft_sg)
@@ -100,10 +100,10 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
           trigger_leadership_notification(std::move(st));
       },
       _storage,
-      enable_learner_recovery_throttle
-        ? std::make_optional<std::reference_wrapper<recovery_throttle>>(
-          _recovery_throttle)
-        : std::nullopt,
+      enable_learner_recovery_throttle ? std::make_optional<
+        std::reference_wrapper<coordinated_recovery_throttle>>(
+        _recovery_throttle)
+                                       : std::nullopt,
       _recovery_mem_quota,
       _feature_table,
       _is_ready ? std::nullopt : std::make_optional(min_voter_priority),
