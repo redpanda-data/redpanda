@@ -57,7 +57,7 @@ public:
     ss::future<> apply_snapshot(model::offset, const controller_snapshot&);
 
 private:
-    ss::future<std::error_code> apply(bootstrap_cluster_cmd);
+    ss::future<std::error_code> apply(bootstrap_cluster_cmd, model::offset);
     ss::future<> apply_cluster_uuid(model::cluster_uuid);
 
     ss::sharded<security::credential_store>& _credentials;

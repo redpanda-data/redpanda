@@ -91,14 +91,17 @@ bootstrap_backend::apply_update(model::record_batch b) {
     // handle the bootstrap command
     static constexpr auto accepted_commands
       = make_commands_list<bootstrap_cluster_cmd>();
+    model::offset offset = b.base_offset();
     auto cmd = co_await cluster::deserialize(std::move(b), accepted_commands);
 
     co_return co_await ss::visit(
-      cmd, [this](bootstrap_cluster_cmd cmd) { return apply(std::move(cmd)); });
+      cmd, [this, offset](bootstrap_cluster_cmd cmd) {
+          return apply(std::move(cmd), offset);
+      });
 }
 
 ss::future<std::error_code>
-bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
+bootstrap_backend::apply(bootstrap_cluster_cmd cmd, model::offset offset) {
     // Provide bootstrap_cluster_cmd idempotency
     if (_cluster_uuid_applied) {
         vlog(
@@ -173,6 +176,13 @@ bootstrap_backend::apply(bootstrap_cluster_cmd cmd) {
             co_await _feature_table.invoke_on_all(
               [v = cmd.value.founding_version](features::feature_table& ft) {
                   ft.bootstrap_original_version(v);
+              });
+        }
+
+        if (_feature_table.local().get_applied_offset() < offset) {
+            co_await _feature_table.invoke_on_all(
+              [offset](features::feature_table& ft) {
+                  ft.set_applied_offset(offset);
               });
         }
 
