@@ -489,9 +489,20 @@ class BucketView:
             return None
 
         start_model_offset = manifest['start_offset']
-        first_segment = min(manifest['segments'].values(),
-                            key=lambda seg: seg['base_offset'])
-        delta = first_segment['delta_offset']
+        segments_at_offset = list(
+            filter(lambda seg: seg['base_offset'] == start_model_offset,
+                   manifest['segments'].values()))
+        delta = -1
+        if len(segments_at_offset) == 0:
+            # If there's no segment that matches exactly, just use the first
+            # segment's delta, provided it's ahead of the start.
+            first_segment = min(manifest['segments'].values(),
+                                key=lambda seg: seg['base_offset'])
+            if first_segment['base_offset'] < start_model_offset:
+                return None
+            delta = first_segment['delta_offset']
+        else:
+            delta = segments_at_offset[0]['delta_offset']
 
         return start_model_offset - delta
 
