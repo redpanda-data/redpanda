@@ -2261,6 +2261,7 @@ group::store_txn_offsets(txn_offset_commit_request r) {
 
     prepared_tx ptx;
     ptx.tx_seq = tx_seq;
+    ptx.pid = pid;
     const auto now = model::timestamp::now();
     for (const auto& [tp, offset] : offsets) {
         offset_metadata md{
