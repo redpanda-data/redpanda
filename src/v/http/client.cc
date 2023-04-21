@@ -392,7 +392,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
 
 client::request_stream::request_stream(client* client, request_header&& hdr)
   : _client(client)
-  , _ctxlog(http_log, ssx::sformat("{{}}", hdr.target()))
+  , _ctxlog(http_log, ssx::sformat("{}", hdr.target()))
   , _request(std::move(hdr))
   , _serializer{_request}
   , _chunk_encode(true, max_chunk_size) {
