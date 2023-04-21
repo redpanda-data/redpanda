@@ -148,20 +148,18 @@ public:
     ss::future<std::optional<cloud_storage::partition_manifest>>
     maybe_truncate_manifest();
 
-    using manifest_updated = ss::bool_class<struct manifest_updated_tag>;
-
     /// \brief Perform housekeeping operations.
     ss::future<> housekeeping();
 
     /// \brief Advance the start offest for the remote partition
     /// according to the retention policy specified by the partition
     /// configuration. This function does *not* delete any data.
-    ss::future<manifest_updated> apply_retention();
+    ss::future<> apply_retention();
 
     /// \brief Remove segments that are no longer queriable by:
     /// segments that are below the current start offset and segments
     /// that have been replaced with their compacted equivalent.
-    ss::future<manifest_updated> garbage_collect();
+    ss::future<> garbage_collect();
 
     virtual ~ntp_archiver() = default;
 
