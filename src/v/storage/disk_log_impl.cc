@@ -311,11 +311,6 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
       .promise.get_future();
 }
 
-// TODO: Remove this function once mem_log_impl is gone
-void disk_log_impl::set_collectible_offset(model::offset) {
-    vassert(false, "set_collectible_offset called on disk_log_impl");
-}
-
 ss::future<model::offset>
 disk_log_impl::request_eviction_until_offset(model::offset max_offset) {
     vlog(

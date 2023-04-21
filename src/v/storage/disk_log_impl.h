@@ -75,7 +75,6 @@ public:
     ss::future<> do_housekeeping() final override;
 
     ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
-    void set_collectible_offset(model::offset) final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
