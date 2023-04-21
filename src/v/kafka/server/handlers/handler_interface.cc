@@ -152,4 +152,6 @@ std::optional<api_key> api_name_to_key(std::string_view name) noexcept {
     return std::nullopt;
 }
 
+size_t max_api_key() noexcept { return max_api_key(request_types{}); }
+
 } // namespace kafka

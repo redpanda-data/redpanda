@@ -26,6 +26,7 @@
 #include "kafka/server/handlers/delete_topics.h"
 #include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/end_txn.h"
+#include "kafka/server/handlers/handler_interface.h"
 #include "kafka/server/handlers/heartbeat.h"
 #include "kafka/server/handlers/init_producer_id.h"
 #include "kafka/server/handlers/join_group.h"
@@ -57,6 +58,7 @@
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/metrics.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/log.hh>
@@ -69,6 +71,7 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <vector>
 
 namespace kafka {
 
@@ -198,6 +201,20 @@ ss::future<security::tls::mtls_state> get_mtls_principal_state(
       });
 }
 
+/*static*/ std::vector<bool> server::convert_api_names_to_key_bitmap(
+  const std::vector<ss::sstring>& api_names) {
+    std::vector<bool> res;
+    res.resize(max_api_key() + 1);
+    for (const ss::sstring& api_name : api_names) {
+        if (const auto api_key = api_name_to_key(api_name); api_key) {
+            res.at(*api_key) = true;
+            continue;
+        }
+        vlog(klog.warn, "Unrecognized Kafka API name: {}", api_name);
+    }
+    return res;
+}
+
 ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
     const bool authz_enabled
       = config::shard_local_cfg().kafka_enable_authorization().value_or(
@@ -223,7 +240,10 @@ ss::future<> server::apply(ss::lw_shared_ptr<net::connection> conn) {
       std::move(sasl),
       authz_enabled,
       mtls_state,
-      config::shard_local_cfg().kafka_request_max_bytes.bind());
+      config::shard_local_cfg().kafka_request_max_bytes.bind(),
+      config::shard_local_cfg()
+        .kafka_throughput_controlled_api_keys.bind<std::vector<bool>>(
+          &convert_api_names_to_key_bitmap));
 
     try {
         co_await ctx->process();

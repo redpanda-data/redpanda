@@ -146,6 +146,15 @@ public:
 
     ssx::thread_worker& thread_worker() { return _thread_worker; }
 
+    /**
+     * \param api_names list of Kafka API names
+     * \return std::vector<bool> always sized to index the entire Kafka API key
+     * space, with true values at indexes whose names have appeared in
+     * \p api_names
+     */
+    static std::vector<bool>
+    convert_api_names_to_key_bitmap(const std::vector<ss::sstring>& api_names);
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
