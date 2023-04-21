@@ -76,7 +76,7 @@ remote_manifest_path generate_partition_manifest_path(
 struct partition_manifest_accessor;
 
 /// Manifest file stored in S3
-class partition_manifest final : public base_manifest {
+class partition_manifest : public base_manifest {
     friend struct partition_manifest_accessor;
 
 public:
