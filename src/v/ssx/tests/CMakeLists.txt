@@ -5,6 +5,7 @@ rp_test(
     async_transforms.cc
     sformat.cc
     future_util.cc
+    rwlock_test.cc
     thread_worker.cc
     sleep_abortable_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
