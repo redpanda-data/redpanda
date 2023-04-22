@@ -36,6 +36,90 @@ inline ss::logger fixt_log("fixture"); // NOLINT
 /// For http_imposter to run this binary with a unique port
 uint16_t unit_test_httpd_port_number() { return 4442; }
 
+namespace {
+
+// Takes the input map of keys to expectations and returns a stringified XML
+// corresponding to the appropriate S3 response.
+ss::sstring list_objects_resp(
+  const std::map<ss::sstring, s3_imposter_fixture::expectation>& objects,
+  ss::sstring prefix,
+  ss::sstring delimiter) {
+    std::map<ss::sstring, size_t> content_key_to_size;
+    std::set<ss::sstring> common_prefixes;
+    // Filter by prefix and group by the substring between the prefix and first
+    // delimiter.
+    for (const auto& [_, expectation] : objects) {
+        auto& key = expectation.url;
+        vlog(fixt_log.trace, "Comparing {} to prefix {}", key, prefix);
+        if (key.size() < prefix.size()) {
+            continue;
+        }
+        if (key.compare(0, prefix.size(), prefix) != 0) {
+            continue;
+        }
+        vlog(fixt_log.trace, "{} matches prefix {}", key, prefix);
+        content_key_to_size.emplace(
+          key,
+          expectation.body.has_value() ? expectation.body.value().size() : 0);
+        if (delimiter.empty()) {
+            // No delimiter, no need to find prefixes.
+            continue;
+        }
+        auto delimiter_pos = key.find(delimiter, prefix.size());
+        if (delimiter_pos == std::string::npos) {
+            common_prefixes.emplace(key);
+            continue;
+        }
+        vlog(
+          fixt_log.trace,
+          "Delimiter pos {} prefix size {}",
+          delimiter_pos,
+          prefix.size());
+        common_prefixes.emplace(
+          prefix
+          + key.substr(prefix.size(), delimiter_pos - prefix.size() + 1));
+    }
+    // Populate the returned XML.
+    ss::sstring ret;
+    ret += fmt::format(
+      R"xml(
+<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Name>test-bucket</Name>
+  <Prefix>{}</Prefix>
+  <KeyCount>{}</KeyCount>
+  <MaxKeys>1000</MaxKeys>
+  <Delimiter>{}</Delimiter>
+  <IsTruncated>false</IsTruncated>
+  <NextContinuationToken>next</NextContinuationToken>
+)xml",
+      prefix,
+      content_key_to_size.size(),
+      delimiter);
+    for (const auto& [key, size] : content_key_to_size) {
+        ret += fmt::format(
+          R"xml(
+  <Contents>
+    <Key>{}</Key>
+    <LastModified>2021-01-10T01:00:00.000Z</LastModified>
+    <ETag>"test-etag-1"</ETag>
+    <Size>{}</Size>
+    <StorageClass>STANDARD</StorageClass>
+  </Contents>
+)xml",
+          key,
+          size);
+    }
+    ret += "<CommonPrefixes>\n";
+    for (const auto& prefix : common_prefixes) {
+        ret += fmt::format("<Prefix>{}</Prefix>\n", prefix);
+    }
+    ret += "</CommonPrefixes>\n";
+    ret += "</ListBucketResult>\n";
+    return ret;
+}
+
+} // anonymous namespace
+
 cloud_storage_clients::s3_configuration
 s3_imposter_fixture::get_configuration() {
     net::unresolved_address server_addr(httpd_host_name, httpd_port_number());
@@ -118,6 +202,19 @@ void s3_imposter_fixture::set_routes(
               request.content_length,
               request._method);
             if (request._method == "GET") {
+                if (
+                  fixture._search_on_get_list
+                  && request.get_query_param("list-type") == "2") {
+                    auto prefix = request.get_header("prefix");
+                    auto delimiter = request.get_header("delimiter");
+                    vlog(
+                      fixt_log.trace,
+                      "S3 imposter list request {} - {} - {}",
+                      prefix,
+                      delimiter,
+                      request._method);
+                    return list_objects_resp(expectations, prefix, delimiter);
+                }
                 auto it = expectations.find(request._url);
                 if (it == expectations.end() || !it->second.body.has_value()) {
                     vlog(fixt_log.trace, "Reply GET request with error");
@@ -126,6 +223,8 @@ void s3_imposter_fixture::set_routes(
                 }
                 return *it->second.body;
             } else if (request._method == "PUT") {
+                vlog(
+                  fixt_log.trace, "Received PUT request to {}", request._url);
                 expectations[request._url] = {
                   .url = request._url, .body = request.content};
                 return "";

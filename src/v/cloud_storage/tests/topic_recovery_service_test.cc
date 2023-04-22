@@ -108,7 +108,10 @@ public:
     fixture()
       : redpanda_thread_fixture(
         redpanda_thread_fixture::init_cloud_storage_tag{},
-        httpd_port_number()) {}
+        httpd_port_number()) {
+        // This test will manually set expectations for list requests.
+        disable_search_on_get_list();
+    }
 
     void wait_for_topic(model::topic_namespace tp_ns) {
         tests::cooperative_spin_wait_with_timeout(
