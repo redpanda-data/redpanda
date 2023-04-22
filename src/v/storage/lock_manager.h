@@ -14,6 +14,7 @@
 // important to keep dependencies small because this type is used
 // in the log readers and throughout the code where segment_set.h is used
 // if it becomes large, consider making it a pimpl class
+#include "ssx/rwlock.h"
 #include "storage/segment_set.h"
 
 #include <seastar/core/rwlock.hh>
@@ -33,7 +34,7 @@ public:
         lease& operator=(const lease&) = delete;
 
         segment_set range;
-        std::vector<ss::rwlock::holder> locks;
+        std::vector<ssx::logging_rwlock::holder> locks;
 
         friend std::ostream& operator<<(std::ostream&, const lease&);
     };

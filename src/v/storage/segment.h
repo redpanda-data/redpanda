@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "ssx/rwlock.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/file_sanitizer_types.h"
@@ -155,10 +156,10 @@ public:
       bool skip_lru_promote);
     void cache_put(const model::record_batch& batch);
 
-    ss::future<ss::rwlock::holder> read_lock(
+    ss::future<ssx::logging_rwlock::holder> read_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
-    ss::future<ss::rwlock::holder> write_lock(
+    ss::future<ssx::logging_rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
     /*
@@ -257,7 +258,7 @@ private:
     std::optional<compacted_index_writer> _compaction_index;
 
     std::optional<batch_cache_index> _cache;
-    ss::rwlock _destructive_ops;
+    ssx::logging_rwlock _destructive_ops;
     ss::gate _gate;
 
     absl::btree_map<size_t, model::offset> _inflight;
@@ -413,11 +414,11 @@ inline void segment::cache_put(const model::record_batch& batch) {
         _cache->put(batch);
     }
 }
-inline ss::future<ss::rwlock::holder>
+inline ss::future<ssx::logging_rwlock::holder>
 segment::read_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_read_lock(timeout);
 }
-inline ss::future<ss::rwlock::holder>
+inline ss::future<ssx::logging_rwlock::holder>
 segment::write_lock(ss::semaphore::time_point timeout) {
     return _destructive_ops.hold_write_lock(timeout);
 }

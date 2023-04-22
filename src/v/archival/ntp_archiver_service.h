@@ -24,6 +24,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
+#include "ssx/rwlock.h"
 #include "storage/fwd.h"
 #include "storage/segment.h"
 #include "utils/intrusive_list_helpers.h"
@@ -394,7 +395,7 @@ private:
     /// \return error code
     ss::future<cloud_storage::upload_result> upload_segment(
       upload_candidate candidate,
-      std::vector<ss::rwlock::holder> segment_read_locks,
+      std::vector<ssx::logging_rwlock::holder> segment_read_locks,
       std::optional<std::reference_wrapper<retry_chain_node>> source_rtc
       = std::nullopt);
 

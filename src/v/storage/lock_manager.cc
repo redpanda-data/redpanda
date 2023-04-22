@@ -9,8 +9,9 @@
 
 #include "storage/lock_manager.h"
 
+#include "ssx/rwlock.h"
+
 #include <seastar/core/future-util.hh>
-#include <seastar/core/rwlock.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <stdexcept>
@@ -21,17 +22,17 @@ static ss::future<std::unique_ptr<lock_manager::lease>>
 range(segment_set::underlying_t segs) {
     auto ctx = std::make_unique<lock_manager::lease>(
       segment_set(std::move(segs)));
-    std::vector<ss::future<ss::rwlock::holder>> dispatch;
+    std::vector<ss::future<ssx::logging_rwlock::holder>> dispatch;
     dispatch.reserve(ctx->range.size());
     for (auto& s : ctx->range) {
         dispatch.emplace_back(s->read_lock());
     }
     return ss::when_all_succeed(dispatch.begin(), dispatch.end())
-      .then(
-        [ctx = std::move(ctx)](std::vector<ss::rwlock::holder> lks) mutable {
-            ctx->locks = std::move(lks);
-            return std::move(ctx);
-        });
+      .then([ctx = std::move(ctx)](
+              std::vector<ssx::logging_rwlock::holder> lks) mutable {
+          ctx->locks = std::move(lks);
+          return std::move(ctx);
+      });
 }
 
 ss::future<std::unique_ptr<lock_manager::lease>>

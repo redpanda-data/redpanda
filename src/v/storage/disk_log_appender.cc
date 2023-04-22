@@ -11,6 +11,7 @@
 
 #include "likely.h"
 #include "model/record_utils.h"
+#include "ssx/rwlock.h"
 #include "storage/disk_log_impl.h"
 #include "storage/logger.h"
 #include "storage/segment.h"
@@ -39,7 +40,7 @@ ss::future<> disk_log_appender::initialize() {
     release_lock();
     auto ptr = _log._segs.back();
     // appending is a non-destructive op. so acquire read lock
-    return ptr->read_lock().then([this, ptr](ss::rwlock::holder h) {
+    return ptr->read_lock().then([this, ptr](ssx::logging_rwlock::holder h) {
         _seg = ptr;
         _seg_lock = std::move(h);
         _bytes_left_in_segment = _log.bytes_left_before_roll();

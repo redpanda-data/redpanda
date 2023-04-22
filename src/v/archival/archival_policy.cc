@@ -12,6 +12,7 @@
 
 #include "archival/logger.h"
 #include "archival/segment_reupload.h"
+#include "ssx/rwlock.h"
 #include "storage/disk_log_impl.h"
 #include "storage/fs_utils.h"
 #include "storage/offset_to_filepos.h"
@@ -343,7 +344,7 @@ static ss::future<upload_candidate_with_locks> create_upload_candidate(
     }
 
     auto deadline = std::chrono::steady_clock::now() + segment_lock_duration;
-    std::vector<ss::rwlock::holder> locks;
+    std::vector<ssx::logging_rwlock::holder> locks;
     vlog(
       archival_log.trace,
       "Acquiring read lock for segment {}",
