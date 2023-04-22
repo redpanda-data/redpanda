@@ -35,6 +35,7 @@ set(srcs
     manual_log_deletion_test.cc
     state_removal_test.cc
     configuration_manager_test.cc
+    coordinated_recovery_throttle_test.cc
 )
 
 rp_test(
