@@ -1079,7 +1079,7 @@ members_manager::dispatch_join_to_seed_server(
                   it->addr,
                   r.has_error() ? r.error().message() : "not allowed to join");
             } else {
-                return ss::make_ready_future<ret_t>(r);
+                return ss::make_ready_future<ret_t>(std::move(r));
             }
         } catch (...) {
             // just log an exception, we will retry joining cluster in next loop
@@ -1351,10 +1351,26 @@ members_manager::handle_join_request(join_node_request const req) {
     }
 
     co_return co_await add_node(req.node).then(
-      [node = req.node](std::error_code ec) {
+      [this, node = req.node](std::error_code ec) {
           if (!ec) {
-              vlog(clusterlog.info, "Added node {} to cluster", node.id());
-              return ret_t(join_node_reply{true, node.id()});
+              vlog(
+                clusterlog.info,
+                "Added node {} to cluster, preparing response",
+                node.id());
+
+              // Provide the joining node with a controller snapshot, so
+              // that it may load correct configuration + feature table
+              // before applying the controller log.
+              return _controller_stm.local().maybe_compose_snapshot().then(
+                [node_id = node.id()](std::optional<iobuf> snapshot) {
+                    vlog(
+                      clusterlog.debug,
+                      "Responding to node {} join with {} byte snapshot",
+                      node_id,
+                      snapshot.has_value() ? snapshot.value().size_bytes() : 0);
+                    return ret_t(
+                      join_node_reply(true, node_id, std::move(snapshot)));
+                });
           }
           vlog(
             clusterlog.warn,
@@ -1362,7 +1378,7 @@ members_manager::handle_join_request(join_node_request const req) {
             node,
             node.id(),
             ec.message());
-          return ret_t(ec);
+          return ss::make_ready_future<ret_t>(ret_t(ec));
       });
 }
 

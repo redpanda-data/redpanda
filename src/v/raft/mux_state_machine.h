@@ -152,6 +152,11 @@ public:
         return last_applied_offset();
     }
 
+    /// Compose a snapshot without persisting it: this is not for snapshotting
+    /// the raft log, but rather for snapshots we will send over the network,
+    /// for example to new joining nodes.
+    ss::future<std::optional<iobuf>> maybe_compose_snapshot();
+
 private:
     using promise_t = expiring_promise<std::error_code>;
 
@@ -487,6 +492,15 @@ requires(State<T>, ...)
     co_await _raft->write_snapshot(
       raft::write_snapshot_cfg(offset, std::move(snapshot_buf.value())));
     co_return true;
+}
+
+template<typename... T>
+requires(State<T>, ...) ss::future<std::optional<iobuf>> mux_state_machine<
+  T...>::maybe_compose_snapshot() {
+    auto gate_holder = _gate.hold();
+    auto apply_mtx_holder = co_await _apply_mtx.get_units();
+
+    co_return co_await maybe_make_snapshot(std::move(apply_mtx_holder));
 }
 
 } // namespace raft

@@ -1151,15 +1151,44 @@ struct join_node_request
 
 struct join_node_reply
   : serde::
-      envelope<join_node_reply, serde::version<0>, serde::compat_version<0>> {
+      envelope<join_node_reply, serde::version<1>, serde::compat_version<0>> {
     bool success{false};
     model::node_id id{model::unassigned_node_id};
+
+    std::optional<iobuf> controller_snapshot;
 
     join_node_reply() noexcept = default;
 
     join_node_reply(bool success, model::node_id id)
       : success(success)
       , id(id) {}
+
+    join_node_reply(join_node_reply&& rhs) noexcept = default;
+
+    join_node_reply(bool success, model::node_id id, std::optional<iobuf> snap)
+      : success(success)
+      , id(id)
+      , controller_snapshot(std::move(snap)) {}
+
+    /// Copy constructor for use in encoding unit tests: general use should
+    /// always move this object as the embedded controller offset may be large.
+    join_node_reply(const join_node_reply& rhs)
+      : success(rhs.success)
+      , id(rhs.id) {
+        if (rhs.controller_snapshot.has_value()) {
+            controller_snapshot = rhs.controller_snapshot.value().copy();
+        }
+    }
+
+    join_node_reply& operator=(const join_node_reply &rhs) {
+        success = rhs.success;
+        id = rhs.id;
+        if (rhs.controller_snapshot.has_value()) {
+            controller_snapshot = rhs.controller_snapshot.value().copy();
+        }
+
+        return *this;
+    }
 
     friend bool operator==(const join_node_reply&, const join_node_reply&)
       = default;
@@ -1169,7 +1198,7 @@ struct join_node_reply
         return o;
     }
 
-    auto serde_fields() { return std::tie(success, id); }
+    auto serde_fields() { return std::tie(success, id, controller_snapshot); }
 };
 
 struct configuration_update_request

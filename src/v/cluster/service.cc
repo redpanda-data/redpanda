@@ -122,7 +122,7 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
                 if (!r) {
                     return join_node_reply{false, model::node_id{-1}};
                 }
-                return r.value();
+                return std::move(r.value());
             });
       });
 }
