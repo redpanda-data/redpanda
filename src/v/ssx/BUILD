@@ -28,6 +28,19 @@ redpanda_cc_library(
 )
 
 redpanda_cc_library(
+    name = "rwlock",
+    hdrs = [
+        "rwlock.h",
+    ],
+    include_prefix = "ssx",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/v/base",
+        "@seastar",
+    ],
+)
+
+redpanda_cc_library(
     name = "future_util",
     hdrs = [
         "future-util.h",

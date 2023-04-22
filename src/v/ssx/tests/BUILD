@@ -32,6 +32,21 @@ redpanda_cc_btest(
     ],
 )
 
+redpanda_cc_gtest(
+    name = "rwlock_test",
+    timeout = "short",
+    srcs = [
+        "rwlock_test.cc",
+    ],
+    deps = [
+        "//src/v/base",
+        "//src/v/ssx:rwlock",
+        "//src/v/test_utils:gtest",
+        "@googletest//:gtest",
+        "@seastar",
+    ],
+)
+
 redpanda_cc_btest(
     name = "sformat_test",
     timeout = "short",
