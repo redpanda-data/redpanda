@@ -11,6 +11,7 @@
 
 #include "raft/coordinated_recovery_throttle.h"
 
+#include "prometheus/prometheus_sanitize.h"
 #include "raft/logger.h"
 
 #include <seastar/util/defer.hh>
@@ -21,7 +22,8 @@ namespace raft {
 
 coordinated_recovery_throttle::token_bucket::token_bucket(
   size_t initial_capacity)
-  : _sem(initial_capacity, "recovery_throttle") {}
+  : _sem(initial_capacity, "recovery_throttle")
+  , _last_reset_capacity(initial_capacity) {}
 
 ss::future<> coordinated_recovery_throttle::token_bucket::throttle(
   size_t size, ss::abort_source& as) {
@@ -42,6 +44,7 @@ void coordinated_recovery_throttle::token_bucket::reset_capacity(
         _sem.signal(new_capacity - current);
     }
     _admitted_bytes_since_last_reset = 0;
+    _last_reset_capacity = new_capacity;
     vlog(
       raftlog.debug,
       "Throttler bucket capacity reset to: {}, waiting bytes: {}",
@@ -61,6 +64,38 @@ coordinated_recovery_throttle::coordinated_recovery_throttle(
                   [this] { arm_coordinator_timer(); });
             });
         });
+    }
+    setup_metrics();
+}
+
+void coordinated_recovery_throttle::setup_metrics() {
+    if (!config::shard_local_cfg().disable_metrics()) {
+        namespace sm = ss::metrics;
+        _internal_metrics.add_group(
+          prometheus_sanitize::metrics_name("raft:recovery"),
+          {sm::make_gauge(
+             "partition_movement_available_bandwidth",
+             [this] { return _throttler.available(); },
+             sm::description(
+               "Bandwidth available for partition movement. bytes/sec")),
+
+           sm::make_gauge(
+             "partition_movement_assigned_bandwidth",
+             [this] { return _throttler.last_reset_capacity(); },
+             sm::description(
+               "Bandwidth assigned for partition movement in last "
+               "tick. bytes/sec"))});
+    }
+
+    if (!config::shard_local_cfg().disable_public_metrics()) {
+        namespace sm = ss::metrics;
+        _public_metrics.add_group(
+          prometheus_sanitize::metrics_name("raft:recovery"),
+          {sm::make_gauge(
+            "partition_movement_available_bandwidth",
+            [this] { return _throttler.available(); },
+            sm::description(
+              "Bandwidth available for partition movement. bytes/sec"))});
     }
 }
 
