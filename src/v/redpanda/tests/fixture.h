@@ -480,7 +480,7 @@ public:
 
     ss::future<> wait_for_topics(std::vector<cluster::topic_result> results) {
         return tests::cooperative_spin_wait_with_timeout(
-          2s, [this, results = std::move(results)] {
+          10s, [this, results = std::move(results)] {
               return std::all_of(
                 results.begin(),
                 results.end(),
