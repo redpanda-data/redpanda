@@ -29,6 +29,9 @@
 #include "coproc/api.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/schemata/fetch_request.h"
+#include "kafka/protocol/types.h"
+#include "kafka/server/connection_context.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/server.h"
 #include "model/fundamental.h"
@@ -47,13 +50,17 @@
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
 
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
+#include <stdexcept>
 #include <unordered_set>
 #include <vector>
 
@@ -631,9 +638,11 @@ public:
         return ntp;
     }
 
-    kafka::request_context make_request_context() {
+    using conn_ptr = ss::lw_shared_ptr<kafka::connection_context>;
+
+    conn_ptr make_connection_context() {
         security::sasl_server sasl(security::sasl_server::sasl_state::complete);
-        auto conn = ss::make_lw_shared<kafka::connection_context>(
+        return ss::make_lw_shared<kafka::connection_context>(
           *proto,
           nullptr,
           std::move(sasl),
@@ -643,23 +652,33 @@ public:
           config::mock_property<std::vector<ss::sstring>>({"produce", "fetch"})
             .bind<std::vector<bool>>(
               &kafka::server::convert_api_names_to_key_bitmap));
+    }
 
-        kafka::request_header header;
-        auto encoder_context = kafka::request_context(
-          conn, std::move(header), iobuf(), std::chrono::milliseconds(0));
+    kafka::request_context
+    make_request_context(kafka::fetch_request& request, conn_ptr conn = {}) {
+        if (!conn) {
+            conn = make_connection_context();
+        }
+
+        kafka::request_header header{.version = kafka::api_version(11)};
 
         iobuf buf;
-        kafka::fetch_request request;
-        // do not use incremental fetch requests
-        request.data.max_wait_ms = std::chrono::milliseconds::zero();
         kafka::protocol::encoder writer(buf);
-        request.encode(writer, encoder_context.header().version);
+        request.encode(writer, header.version);
 
         return kafka::request_context(
           conn,
           std::move(header),
           std::move(buf),
           std::chrono::milliseconds(0));
+    }
+
+    kafka::request_context make_request_context() {
+        kafka::fetch_request request;
+        // do not use incremental fetch requests
+        request.data.max_wait_ms = std::chrono::milliseconds::zero();
+
+        return make_request_context(request);
     }
 
     application app;
