@@ -15,6 +15,7 @@
 #include "cloud_storage_clients/configuration.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
+#include "cluster/errc.h"
 #include "cluster/members_table.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_leaders_table.h"
@@ -515,6 +516,17 @@ public:
             cluster::without_custom_assignments(std::move(cfgs)),
             model::no_timeout)
           .then([this](std::vector<cluster::topic_result> results) {
+              vassert(
+                results.size() == 1,
+                "expected exactly 1 result but got {}",
+                results.size());
+              const auto& result = results.at(0);
+              if (result.ec != cluster::errc::success) {
+                  throw std::runtime_error(fmt::format(
+                    "error creating topic {}: {}",
+                    result.tp_ns,
+                    cluster::make_error_code(result.ec).message()));
+              }
               return wait_for_topics(std::move(results));
           });
     }
