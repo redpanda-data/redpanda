@@ -69,6 +69,18 @@ public:
     using node_ids_by_uuid
       = absl::flat_hash_map<model::node_uuid, model::node_id>;
 
+    // After a successful join by a non-founder node to an existing cluster,
+    // this is what we know about the cluster
+    struct registration_result {
+        // True if this is the result of registering the node with the
+        // cluster, false if it is populated based on local state (i.e.
+        // we are a founder or an already-registered node).
+        bool newly_registered{false};
+
+        model::node_id assigned_node_id;
+        std::optional<iobuf> controller_snapshot;
+    };
+
     cluster_discovery(
       const model::node_uuid& node_uuid, storage::api&, ss::abort_source&);
 
@@ -83,7 +95,7 @@ public:
     // On a seed server with no data on it (i.e. a fresh node), this sends
     // requests to all other seed servers to determine if there is a valid
     // assignment of node IDs for the seeds.
-    ss::future<model::node_id> determine_node_id();
+    ss::future<registration_result> determine_node_id();
 
     // Returns brokers to be used to form a Raft group for a new cluster.
     //
@@ -115,9 +127,9 @@ public:
 
 private:
     // Sends requests to each seed server to register the local node UUID
-    // until one succeeds. Upon success, sets `node_id` to the assigned node
-    // ID and returns true.
-    ss::future<bool> dispatch_node_uuid_registration_to_seeds(model::node_id&);
+    // until one succeeds. Returns nullopt if registration did not succeed.
+    ss::future<std::optional<registration_result>>
+    dispatch_node_uuid_registration_to_seeds();
 
     // Requests `cluster_bootstrap_info` from the given address, returning
     // early with a bogus result if it's already been determined if this node
