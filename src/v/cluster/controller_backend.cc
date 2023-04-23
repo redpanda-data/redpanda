@@ -925,14 +925,8 @@ ss::future<> controller_backend::reconcile_topics() {
                  })
           .then([this] {
               // cleanup empty NTP keys
-              for (auto it = _topic_deltas.cbegin();
-                   it != _topic_deltas.cend();) {
-                  if (it->second.empty()) {
-                      _topic_deltas.erase(it++);
-                  } else {
-                      ++it;
-                  }
-              }
+              absl::erase_if(
+                _topic_deltas, [](const auto& p) { return p.second.empty(); });
           });
     });
 }
