@@ -1137,6 +1137,8 @@ ntp_archiver::make_segment_index(
   retry_chain_logger& ctxlog,
   std::string_view index_path,
   ss::input_stream<char> stream) {
+    auto g_holder = _gate.hold();
+
     auto base_kafka_offset = model::offset_cast(
       _parent.get_offset_translator_state()->from_log_offset(base_rp_offset));
 
