@@ -11,6 +11,9 @@ import random
 import string
 import subprocess
 from rptest.clients.kcl import RawKCL
+from rptest.utils.si_utils import BucketView, NT
+from ducktape.utils.util import wait_until
+from rptest.util import wait_until_result
 
 from rptest.services.cluster import cluster
 from ducktape.mark import parametrize
@@ -19,6 +22,7 @@ from rptest.clients.rpk import RpkTool
 
 from rptest.clients.types import TopicSpec
 from rptest.tests.redpanda_test import RedpandaTest
+from rptest.services.redpanda import SISettings
 
 
 class AlterTopicConfiguration(RedpandaTest):
@@ -243,10 +247,13 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
     def __init__(self, test_context):
         self._extra_rp_conf = dict(cloud_storage_enable_remote_read=True,
                                    cloud_storage_enable_remote_write=True)
+        si_settings = SISettings(test_context)
+
         super(ShadowIndexingGlobalConfig,
               self).__init__(test_context=test_context,
                              num_brokers=3,
-                             extra_rp_conf=self._extra_rp_conf)
+                             extra_rp_conf=self._extra_rp_conf,
+                             si_settings=si_settings)
 
     @cluster(num_nodes=3)
     def test_overrides_set(self):
@@ -290,3 +297,29 @@ class ShadowIndexingGlobalConfig(RedpandaTest):
         self.logger.info(f"altered_output={altered_output}")
         assert altered_output["redpanda.remote.read"] == "true"
         assert altered_output["redpanda.remote.write"] == "true"
+
+    @cluster(num_nodes=3)
+    def test_topic_manifest_reupload(self):
+        bucket_view = BucketView(self.redpanda)
+        initial = wait_until_result(
+            lambda: bucket_view.get_topic_manifest(
+                NT(ns="kafka", topic=self.topic)),
+            timeout_sec=10,
+            backoff_sec=1,
+            err_msg="Failed to fetch initial topic manifest",
+            retry_on_exc=True)
+
+        rpk = RpkTool(self.redpanda)
+        rpk.alter_topic_config(self.topic, "retention.bytes", "400")
+
+        def check():
+            bucket_view = BucketView(self.redpanda)
+            manifest = bucket_view.get_topic_manifest(
+                NT(ns="kafka", topic=self.topic))
+            return manifest["retention_bytes"] == 400
+
+        wait_until(check,
+                   timeout_sec=10,
+                   backoff_sec=1,
+                   err_msg="Topic manifest was not re-uploaded as expected",
+                   retry_on_exc=True)
