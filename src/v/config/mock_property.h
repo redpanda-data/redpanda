@@ -37,6 +37,11 @@ public:
 
     binding<T> bind() { return _property.bind(); }
 
+    template<typename U>
+    auto bind(std::function<U(const T&)> conv) -> conversion_binding<U, T> {
+        return _property.template bind<U>(std::move(conv));
+    }
+
 private:
     config_store _mock_store;
     property<T> _property;
