@@ -30,8 +30,6 @@ enum class error_outcome {
     none = 0,
     /// Error condition that could be retried
     retry,
-    /// The service asked us to retry (SlowDown response)
-    retry_slowdown,
     /// Error condition that couldn't be retried
     fail,
     /// Missing key API error (only suitable for downloads and deletions)
@@ -49,8 +47,6 @@ struct error_outcome_category final : public std::error_category {
             return "No error";
         case error_outcome::retry:
             return "Retryable error";
-        case error_outcome::retry_slowdown:
-            return "Cloud service asked us to slow down";
         case error_outcome::fail:
             return "Non retriable error";
         case error_outcome::key_not_found:

@@ -383,7 +383,7 @@ SEASTAR_TEST_CASE(test_put_object_failure) {
                               .get();
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
-          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
+          result.error(), cloud_storage_clients::error_outcome::retry);
         server->stop().get();
     });
 }
@@ -426,7 +426,7 @@ SEASTAR_TEST_CASE(test_get_object_failure) {
                               .get0();
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
-          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
+          result.error(), cloud_storage_clients::error_outcome::retry);
         server->stop().get();
     });
 }
@@ -463,7 +463,7 @@ SEASTAR_TEST_CASE(test_delete_object_failure) {
 
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
-          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
+          result.error(), cloud_storage_clients::error_outcome::retry);
         server->stop().get();
     });
 }
@@ -628,7 +628,7 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
 
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE_EQUAL(
-          result.error(), cloud_storage_clients::error_outcome::retry_slowdown);
+          result.error(), cloud_storage_clients::error_outcome::retry);
         server->stop().get();
     });
 }
@@ -711,8 +711,7 @@ SEASTAR_TEST_CASE(test_delete_object_retry) {
                         .get();
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE(
-          result.error()
-          == cloud_storage_clients::error_outcome::retry_slowdown);
+          result.error() == cloud_storage_clients::error_outcome::retry);
 
         server->stop().get();
     });

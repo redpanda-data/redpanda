@@ -230,8 +230,6 @@ ss::future<download_result> remote::do_download_manifest(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -321,8 +319,6 @@ ss::future<upload_result> remote::upload_manifest(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -450,8 +446,6 @@ ss::future<upload_result> remote::upload_segment(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -534,8 +528,6 @@ ss::future<download_result> remote::download_segment(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -612,8 +604,6 @@ ss::future<download_result> remote::download_index(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -685,8 +675,6 @@ ss::future<download_result> remote::segment_exists(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -756,8 +744,6 @@ ss::future<upload_result> remote::delete_object(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -837,8 +823,6 @@ ss::future<upload_result> remote::delete_objects(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -1018,8 +1002,6 @@ ss::future<remote::list_result> remote::list_objects(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -1100,8 +1082,6 @@ ss::future<upload_result> remote::upload_object(
         case cloud_storage_clients::error_outcome::none:
             vassert(
               false, "s3:error_outcome::none not expected on failure path");
-        case cloud_storage_clients::error_outcome::retry_slowdown:
-            [[fallthrough]];
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
