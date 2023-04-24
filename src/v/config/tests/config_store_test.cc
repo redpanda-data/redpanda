@@ -426,4 +426,14 @@ SEASTAR_THREAD_TEST_CASE(property_bind) {
     BOOST_TEST(bind2() == "newvalue3");
     BOOST_TEST(bind3() == "newvalue3");
     BOOST_TEST(watch_count == 4);
+
+    // Check the bindings are bound to the moved-to properties, not to the
+    // moved-from ones
+    auto cfg2 = std::move(cfg);
+    cfg2.required_string.set_value(ss::sstring("newvalue4"));
+    // NOLINTNEXTLINE
+    cfg.required_string.set_value(ss::sstring("badvalue"));
+    BOOST_TEST(bind2() == "newvalue4");
+    BOOST_TEST(bind3() == "newvalue4");
+    BOOST_TEST(watch_count == 6);
 }
