@@ -346,12 +346,17 @@ partition_manifest::segment_containing(kafka::offset o) const {
     // manifest by log offset and then traverse forward until we
     // find a matching segment.
     auto it = _segments.lower_bound(kafka::offset_cast(o));
-    if (it == _segments.begin() && it->base_kafka_offset() > o) {
-        // The beginning of the manifest already has a base offset that
-        // doesn't satisfy the query.
-        return end();
+    if (it == _segments.begin()) {
+        if (it->base_kafka_offset() > o) {
+            // The beginning of the manifest already has a base offset that
+            // doesn't satisfy the query.
+            return end();
+        } else {
+            // move it to the second element, so we can safely call
+            // _segments.prev(it)
+            ++it;
+        }
     }
-    // We can safely call _segments.prev(it) now
 
     // We need to find first element which has greater kafka offset than
     // the target and step back. It is possible to have a segment that
