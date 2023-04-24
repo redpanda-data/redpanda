@@ -93,14 +93,13 @@ FIXTURE_TEST(
       .max_timestamp = {},
       .delta_offset = model::offset_delta(0),
       .ntp_revision = segment_ntp_revision,
-      .sname_format = segment_name_format::v3};
+      .sname_format = segment_name_format::v2};
     auto path = m.generate_segment_path(meta);
     offset_index ix{model::offset{0}, kafka::offset{0}, 0, 120};
     iobuf_parser p{ix.to_iobuf()};
     auto body = p.read_bytes(p.bytes_left());
     ss::sstring s{body.begin(), body.end()};
-    auto index_path = "/" + path().native() + ".index";
-    set_expectations_and_listen({{.url = index_path, .body = std::move(s)}});
+    set_expectations_and_listen({});
     auto upl_res = api.local()
                      .upload_segment(
                        bucket, path, clen, reset_stream, fib, always_continue)
@@ -122,10 +121,6 @@ FIXTURE_TEST(
 
     BOOST_REQUIRE_EQUAL(downloaded.size_bytes(), segment_bytes.size_bytes());
     BOOST_REQUIRE(downloaded == segment_bytes);
-
-    BOOST_REQUIRE(get_targets().contains(index_path));
-    const auto& req = get_targets().find(index_path);
-    BOOST_REQUIRE_EQUAL(req->second.method, "GET");
 }
 
 FIXTURE_TEST(test_remote_segment_timeout, cloud_storage_fixture) { // NOLINT

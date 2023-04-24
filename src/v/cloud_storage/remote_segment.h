@@ -119,12 +119,15 @@ public:
     /// implementation, but the index is still required to be present first.
     ss::future<> hydrate();
 
-    /// Hydrate a part of a segment, identified by the given segment chunk id.
-    ss::future<> hydrate_segment_chunk(segment_chunk_id_t);
+    /// Hydrate a part of a segment, identified by the given start and end
+    /// offsets. If the end offset is std::nullopt, the last offset in the file
+    /// is used as the end offset.
+    ss::future<>
+    hydrate_chunk(file_offset_t start, std::optional<file_offset_t> end);
 
     /// Loads the segment chunk file from cache into an open file handle. If the
     /// file is not present in cache, the returned file handle is unopened.
-    ss::future<ss::file> materialize_segment_chunk(segment_chunk_id_t);
+    ss::future<ss::file> materialize_chunk(file_offset_t);
 
     retry_chain_node* get_retry_chain_node() { return &_rtc; }
 
@@ -151,11 +154,14 @@ public:
 
     uint64_t max_hydrated_chunks() const;
 
-    /// Calculates the chunk id (section of segment file in cloud storage) where
-    /// the given kafka offset will lie. Chunk ids start at 0.
-    /// The precondition is that the index should have been hydrated.
-    /// This method is non-const because index lookup is non-const.
-    chunk_id_and_filepos chunk_id_for_kafka_offset(kafka::offset koff);
+    /// Given a kafka offset, determines the starting offset of the chunk it
+    /// lies in. The precondition is that coarse index must have been hydrated.
+    /// The returned start offset is guaranteed to be the start of a batch. If
+    /// the coarse index is empty (which may happen when the remote segment is
+    /// smaller than chunk size), offset 0 is returned.
+    file_offset_t get_chunk_start_for_kafka_offset(kafka::offset koff) const;
+
+    const offset_index::coarse_index_t& get_coarse_index() const;
 
 private:
     /// get a file offset for the corresponding kafka offset
@@ -183,10 +189,10 @@ private:
 
     ss::future<uint64_t> put_segment_in_cache(uint64_t, ss::input_stream<char>);
 
-    /// Stores a segment chunk in cache, opens the file and returns handle to
-    /// it.
+    /// Stores a segment chunk in cache. The chunk is stored in a path derived
+    /// from the segment path: <segment_path>_chunks/chunk_start_file_offset.
     ss::future<uint64_t> put_chunk_in_cache(
-      uint64_t, ss::input_stream<char>, segment_chunk_id_t chunk_id);
+      uint64_t, ss::input_stream<char>, file_offset_t chunk_start);
 
     /// Hydrate tx manifest. Method downloads the manifest file to the cache
     /// dir.
@@ -203,9 +209,8 @@ private:
     /// Load segment index from file (if available)
     ss::future<bool> maybe_materialize_index();
 
-    std::filesystem::path
-    get_path_to_chunk_id(segment_chunk_id_t chunk_id) const {
-        return _chunk_root / fmt::format("{}", chunk_id);
+    std::filesystem::path get_path_to_chunk(file_offset_t chunk_start) const {
+        return _chunk_root / fmt::format("{}", chunk_start);
     }
 
     ss::gate _gate;
@@ -254,8 +259,10 @@ private:
 
     uint64_t _max_hydrated_chunks{0};
     uint64_t _chunk_size{0};
+    uint64_t _chunks_in_segment{1};
 
     std::optional<segment_chunks> _chunks_api;
+    std::optional<offset_index::coarse_index_t> _coarse_index;
 };
 
 class remote_segment_batch_consumer;

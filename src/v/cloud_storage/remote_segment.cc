@@ -157,35 +157,44 @@ remote_segment::remote_segment(
     }
 
     _chunk_size = config::shard_local_cfg().cloud_storage_cache_chunk_size();
-    vassert(_chunk_size != 0, "cloud_storage_cache_chunk_size set to 0");
+    vassert(_chunk_size != 0, "cloud_storage_cache_chunk_size should not be 0");
 
     // The max hydrated chunks per segment are either 0.5 of total number of
     // chunks possible, or in case of small segments the total number of chunks
     // possible. In the second case we should be able to hydrate the entire
     // segment in chunks at the same time. In the first case roughly half the
     // segment may be hydrated at a time.
-    uint64_t chunks_in_segment = ceil(_size / _chunk_size);
-    if (chunks_in_segment <= min_chunks_in_segment_threshold) {
-        _max_hydrated_chunks = chunks_in_segment;
+    _chunks_in_segment = std::max(
+      static_cast<uint64_t>(ceil(_size / _chunk_size)), _chunks_in_segment);
+
+    if (_chunks_in_segment <= min_chunks_in_segment_threshold) {
+        _max_hydrated_chunks = _chunks_in_segment;
     } else {
-        _max_hydrated_chunks = chunks_in_segment
+        _max_hydrated_chunks = _chunks_in_segment
                                * default_hydrated_chunks_ratio;
     }
 
     vassert(
-      _max_hydrated_chunks > 0 && _max_hydrated_chunks <= chunks_in_segment,
+      _max_hydrated_chunks > 0 && _max_hydrated_chunks <= _chunks_in_segment,
       "invalid max hydrated chunks: {}",
       _max_hydrated_chunks);
 
-    _chunks_api.emplace(*this);
-    ssx::background = _chunks_api->start();
+    vlog(
+      _ctxlog.trace,
+      "total {} chunks in segment of size {}, max hydrated chunks at a time: "
+      "{}, chunk size: {}",
+      _chunks_in_segment,
+      _size,
+      _max_hydrated_chunks,
+      _chunk_size);
 
+    _chunks_api.emplace(*this);
     // run hydration loop in the background
     ssx::background = run_hydrate_bg();
 }
 
 uint64_t remote_segment::get_chunks_in_segment() const {
-    return ceil(_size / _chunk_size);
+    return _chunks_in_segment;
 }
 
 const model::ntp& remote_segment::get_ntp() const { return _ntp; }
@@ -294,8 +303,11 @@ remote_segment::offset_data_stream(
     } else {
         // If the first_timestamp is supplied, this data source effectively ends
         // up reading the entire segment in chunks.
+        auto start_koff = first_timestamp.has_value()
+                            ? _base_rp_offset - _base_offset_delta
+                            : start;
         auto chunk_ds = std::make_unique<chunk_data_source_impl>(
-          _chunks_api.value(), *this, pos.kaf_offset, end, std::move(options));
+          _chunks_api.value(), *this, start_koff, end, std::move(options));
         data_stream = ss::input_stream<char>{
           ss::data_source{std::move(chunk_ds)}};
     }
@@ -372,6 +384,8 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache_and_create_index(
         auto index_stream = make_iobuf_input_stream(tmpidx.to_iobuf());
         co_await _cache.put(generate_index_path(_path), index_stream);
         _index = std::move(tmpidx);
+        _coarse_index.emplace(_index->build_coarse_index(_chunk_size));
+        co_await _chunks_api->start();
     }
     co_return size_bytes;
 }
@@ -393,16 +407,16 @@ ss::future<uint64_t> remote_segment::put_segment_in_cache(
 }
 
 ss::future<uint64_t> remote_segment::put_chunk_in_cache(
-  uint64_t size, ss::input_stream<char> stream, segment_chunk_id_t chunk_id) {
+  uint64_t size, ss::input_stream<char> stream, file_offset_t chunk_start) {
     try {
-        co_await _cache.put(get_path_to_chunk_id(chunk_id), stream)
+        co_await _cache.put(get_path_to_chunk(chunk_start), stream)
           .finally([&stream] { return stream.close(); });
     } catch (...) {
         auto put_exception = std::current_exception();
         vlog(
           _ctxlog.warn,
           "Failed to write segment chunk {} to cache, error: {}",
-          chunk_id,
+          chunk_start,
           put_exception);
         std::rethrow_exception(put_exception);
     }
@@ -464,6 +478,8 @@ ss::future<> remote_segment::do_hydrate_index() {
     }
 
     _index = std::move(ix);
+    _coarse_index.emplace(_index->build_coarse_index(_chunk_size));
+    co_await _chunks_api->start();
     auto buf = _index->to_iobuf();
 
     auto str = make_iobuf_input_stream(std::move(buf));
@@ -640,6 +656,8 @@ ss::future<bool> remote_segment::maybe_materialize_index() {
             });
             ix.from_iobuf(std::move(state));
             _index = std::move(ix);
+            _coarse_index.emplace(_index->build_coarse_index(_chunk_size));
+            co_await _chunks_api->start();
         } catch (...) {
             // In case of any failure during index materialization just continue
             // without the index.
@@ -844,30 +862,26 @@ ss::future<> remote_segment::hydrate() {
       .discard_result();
 }
 
-ss::future<>
-remote_segment::hydrate_segment_chunk(segment_chunk_id_t chunk_id) {
-    auto start = chunk_id * _chunk_size;
-    // The end byte position may exceed the file size. HTTP byte range downloads
-    // clamp to the file size in this case.
-    auto end = start + _chunk_size - 1;
+ss::future<> remote_segment::hydrate_chunk(
+  file_offset_t start, std::optional<file_offset_t> end) {
     retry_chain_node rtc{
       cache_hydration_timeout, cache_hydration_backoff, &_rtc};
     auto res = co_await _api.download_segment(
       _bucket,
       _path,
-      [this, chunk_id](auto size, auto stream) {
-          return put_chunk_in_cache(size, std::move(stream), chunk_id);
+      [this, start](auto size, auto stream) {
+          return put_chunk_in_cache(size, std::move(stream), start);
       },
       rtc,
-      std::make_pair(start, end));
+      std::make_pair(start, end.value_or(_size - 1)));
     if (res != download_result::success) {
         throw download_exception{res, _path};
     }
 }
 
 ss::future<ss::file>
-remote_segment::materialize_segment_chunk(segment_chunk_id_t chunk_id) {
-    auto res = co_await _cache.get(get_path_to_chunk_id(chunk_id));
+remote_segment::materialize_chunk(file_offset_t chunk_start) {
+    auto res = co_await _cache.get(get_path_to_chunk(chunk_start));
     if (!res.has_value()) {
         co_return ss::file{};
     }
@@ -907,22 +921,35 @@ uint64_t remote_segment::max_hydrated_chunks() const {
     return _max_hydrated_chunks;
 }
 
-chunk_id_and_filepos
-remote_segment::chunk_id_for_kafka_offset(kafka::offset koff) {
+file_offset_t
+remote_segment::get_chunk_start_for_kafka_offset(kafka::offset koff) const {
     vassert(
-      _index.has_value(),
-      "chunk_id_for_kafka_offset called without materialized index for segment "
-      "{}",
-      _path);
-    auto res = maybe_get_offsets(koff);
-    vassert(
-      res.has_value(),
-      "chunk_id_for_kafka_offset: index lookup returned no result for kafka "
-      "offset {} in segment {}",
-      koff,
-      _path);
-    auto chunk_id = res.value().file_pos / _chunk_size;
-    return {.chunk_id = chunk_id, .file_pos = res.value().file_pos};
+      _coarse_index.has_value(),
+      "cannot find byte range for kafka offset {} when coarse index is not "
+      "initialized.",
+      koff);
+
+    vlog(_ctxlog.trace, "get_chunk_start_for_kafka_offset {}", koff);
+
+    if (unlikely(_coarse_index->empty())) {
+        return 0;
+    }
+
+    // TODO (abhijat) assert that koff >= segment base kafka && koff <= segment
+    // end kafka
+    auto it = _coarse_index->upper_bound(koff);
+    // The kafka offset lies in the first chunk of the file.
+    if (it == _coarse_index->begin()) {
+        return 0;
+    }
+
+    it = std::prev(it);
+    return static_cast<uint64_t>(it->second);
+}
+
+const offset_index::coarse_index_t& remote_segment::get_coarse_index() const {
+    vassert(_coarse_index.has_value(), "coarse index is not initialized");
+    return _coarse_index.value();
 }
 
 /// Batch consumer that connects to remote_segment_batch_reader.

@@ -13,6 +13,7 @@
 
 #include "model/fundamental.h"
 #include "random/simple_time_jitter.h"
+#include "utils/retry_chain_node.h"
 
 #include <seastar/core/expiring_fifo.hh>
 #include <seastar/core/file.hh>
@@ -29,12 +30,7 @@ namespace cloud_storage {
 
 class remote_segment;
 
-using segment_chunk_id_t = uint64_t;
-
-struct chunk_id_and_filepos {
-    segment_chunk_id_t chunk_id;
-    int64_t file_pos;
-};
+using file_offset_t = uint64_t;
 
 enum class chunk_state {
     not_available,
@@ -77,7 +73,7 @@ struct segment_chunk {
 };
 
 class segment_chunks {
-    using chunk_map_t = absl::node_hash_map<segment_chunk_id_t, segment_chunk>;
+    using chunk_map_t = absl::btree_map<file_offset_t, segment_chunk>;
 
 public:
     explicit segment_chunks(remote_segment& segment);
@@ -94,13 +90,13 @@ public:
     // hydration. The waiters are managed per chunk in `segment_chunk::waiters`.
     // The first reader to request hydration queues the download. The next
     // readers are added to wait list.
-    ss::future<> hydrate_chunk_id(segment_chunk_id_t chunk_id);
+    ss::future<> hydrate_chunk(file_offset_t chunk_start);
 
     // Attempts to download chunk into cache and load the file handle into
     // segment_chunk. Should be retried if there is a failure due to cache
     // eviction between download and opening the file handle.
-    ss::future<bool> do_hydrate_and_materialize(
-      segment_chunk_id_t chunk_id, segment_chunk& chunk);
+    ss::future<bool>
+    do_hydrate_and_materialize(file_offset_t chunk_start, segment_chunk& chunk);
 
     // Periodically closes chunk file handles for the space to be reclaimable by
     // cache eviction. The chunks are evicted when they are no longer opened for
@@ -114,16 +110,17 @@ public:
     // required_by_readers_in_future value by one, and increment the
     // required_after_n_chunks values with progressively larger values to denote
     // how far in future the chunk will be required.
-    void
-    register_future_readers(segment_chunk_id_t first, segment_chunk_id_t last);
+    void register_future_readers(file_offset_t first, file_offset_t last);
 
     // Mark the first chunk id as read by decrementing its
     // required_by_readers_in_future count, and decrement the
     // required_after_n_chunks counts for everything from (first, last] by one.
-    void mark_chunk_read(segment_chunk_id_t first, segment_chunk_id_t last);
+    void mark_chunk_read(file_offset_t first, file_offset_t last);
 
     // Returns reference to metadata for chunk for given chunk id
-    segment_chunk& get(segment_chunk_id_t);
+    segment_chunk& get(file_offset_t);
+
+    file_offset_t get_next_chunk_start(file_offset_t f) const;
 
 private:
     chunk_map_t _chunks;
@@ -136,6 +133,11 @@ private:
 
     ss::abort_source _as;
     ss::gate _gate;
+
+    bool _started{false};
+
+    retry_chain_node _rtc;
+    retry_chain_logger _ctxlog;
 };
 
 class chunk_data_source_impl final : public ss::data_source_impl {
@@ -157,19 +159,19 @@ public:
     ss::future<> close() override;
 
 private:
-    // Acquires the file handle for the given chunk id, then opens a file stream
+    // Acquires the file handle for the given chunk, then opens a file stream
     // into it. The stream for the first chunk starts at the reader config start
     // offset, and the stream for the last chunk ends at the reader config last
     // offset.
-    ss::future<> load_stream_for_chunk(segment_chunk_id_t chunk_id);
+    ss::future<> load_stream_for_chunk(file_offset_t chunk_start);
 
     segment_chunks& _chunks;
     remote_segment& _segment;
 
-    chunk_id_and_filepos _first;
-    chunk_id_and_filepos _last;
+    file_offset_t _first_chunk_start;
+    file_offset_t _last_chunk_start;
 
-    segment_chunk_id_t _current_chunk_id;
+    file_offset_t _current_chunk_start;
     std::optional<ss::input_stream<char>> _current_stream{};
 
     ss::lw_shared_ptr<ss::file> _current_data_file;
