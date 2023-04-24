@@ -122,6 +122,7 @@ class SerdeClient:
 
         self.produced = 0
         self.acked = 0
+        self.first_ack = None
         self.consumed = 0
 
         serde_config = {}
@@ -185,7 +186,9 @@ class SerdeClient:
                 self.logger.error(f"Produce err: {err}")
                 sys.exit(err.code())
             assert msg is not None
-            assert msg.offset() == self.acked
+            if self.first_ack is None:
+                self.first_ack = msg.offset()
+            assert msg.offset() == self.first_ack + self.acked
             self.logger.debug("Acked offset %d", msg.offset())
             self.acked += 1
 
