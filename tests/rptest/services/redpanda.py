@@ -1027,7 +1027,7 @@ class RedpandaServiceK8s(RedpandaServiceBase):
         else:
             # If dir doesn't exist yet, use the parent.
             df_path = os.path.dirname(self.PERSISTENT_ROOT)
-        df_out = node.account.ssh_output(f"df --output=avail {df_path}")
+        df_out = self._kubectl.exec(f"df --output=avail {df_path}")
         avail_kb = int(df_out.strip().split(b"\n")[1].strip())
         return avail_kb * 1024
 
