@@ -986,6 +986,7 @@ class RedpandaServiceBase(Service):
 class RedpandaServiceK8s(RedpandaServiceBase):
     def __init__(self, context, num_brokers):
         super(RedpandaServiceK8s, self).__init__(context, num_brokers)
+        self._trim_logs = False
         self._helm = HelmTool(self)
         self._kubectl = KubectlTool(self)
 
