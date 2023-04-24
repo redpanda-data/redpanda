@@ -15,6 +15,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
+#include "kafka/client/utils.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
@@ -92,7 +93,8 @@ consumer::consumer(
   shared_broker_t coordinator,
   kafka::group_id group_id,
   kafka::member_id name,
-  ss::noncopyable_function<void(const kafka::member_id&)> on_stopped)
+  ss::noncopyable_function<void(const kafka::member_id&)> on_stopped,
+  ss::noncopyable_function<ss::future<>(std::exception_ptr)> mitigater)
   : _config(config)
   , _topic_cache(topic_cache)
   , _brokers(brokers)
@@ -104,7 +106,8 @@ consumer::consumer(
   , _group_id(std::move(group_id))
   , _name(std::move(name))
   , _topics()
-  , _on_stopped(std::move(on_stopped)) {}
+  , _on_stopped(std::move(on_stopped))
+  , _external_mitigate(std::move(mitigater)) {}
 
 void consumer::start() {
     vlog(kclog.info, "Consumer: {}: start", *this);
@@ -287,7 +290,7 @@ ss::future<> consumer::sync() {
               : ss::make_ready_future<std::vector<metadata_response::topic>>())
       .then([this](std::vector<metadata_response::topic> topics) {
           auto req_builder = [me{shared_from_this()},
-                              topics{std::move(topics)}]() {
+                              topics{std::move(topics)}]() mutable {
               auto assignments
                 = me->is_leader()
                     ? me->_plan->encode(me->_plan->plan(me->_members, topics))
@@ -475,6 +478,115 @@ ss::future<fetch_response> consumer::fetch(
       detail::reduce_fetch_response);
 }
 
+template<typename request_factory>
+ss::future<
+  typename std::invoke_result_t<request_factory>::api_type::response_type>
+consumer::reset_coordinator_and_retry_request(request_factory req) {
+    return find_coordinator_with_retry_and_mitigation(
+             _gate,
+             _config,
+             _brokers,
+             group_id(),
+             name(),
+             [this](std::exception_ptr ex) { return _external_mitigate(ex); })
+      .then(
+        [this, req{std::move(req)}](shared_broker_t new_coordinator) mutable {
+            _coordinator = new_coordinator;
+            // Calling req_res here will re-issue the request on the
+            // new coordinator
+            return req_res(std::move(req));
+        });
+}
+
+template<typename request_factory, typename response_t>
+ss::future<response_t>
+consumer::maybe_process_response_errors(request_factory req, response_t res) {
+    auto me = shared_from_this();
+    // By default, look at the top-level for errors
+    switch (res.data.error_code) {
+    case error_code::not_coordinator:
+        vlog(
+          kclog.debug,
+          "Wrong coordinator on consumer {}, getting new coordinator "
+          "before retry",
+          *me);
+        return reset_coordinator_and_retry_request(std::move(req));
+    default:
+        // Return the whole response otherwise
+        return ss::make_ready_future<response_t>(std::move(res));
+    }
+}
+
+template<typename request_factory>
+ss::future<metadata_response> consumer::maybe_process_response_errors(
+  request_factory req, metadata_response res) {
+    auto me = shared_from_this();
+    for (auto& topic : res.data.topics) {
+        switch (topic.error_code) {
+        case error_code::not_coordinator:
+            vlog(
+              kclog.debug,
+              "Wrong coordinator on consumer {}, topic {}, getting new "
+              "coordinator before retry",
+              *me,
+              topic.name);
+            return reset_coordinator_and_retry_request(std::move(req));
+        default:
+            continue;
+        }
+    }
+    // Return the whole response otherwise
+    return ss::make_ready_future<metadata_response>(std::move(res));
+}
+
+template<typename request_factory>
+ss::future<offset_commit_response> consumer::maybe_process_response_errors(
+  request_factory req, offset_commit_response res) {
+    auto me = shared_from_this();
+    for (auto& topic : res.data.topics) {
+        for (auto& partition : topic.partitions) {
+            switch (partition.error_code) {
+            case error_code::not_coordinator:
+                vlog(
+                  kclog.debug,
+                  "Wrong coordinator on consumer {}, tp {}, getting new "
+                  "coordinator before retry",
+                  *me,
+                  model::topic_partition{
+                    topic.name,
+                    model::partition_id{partition.partition_index}});
+                return reset_coordinator_and_retry_request(std::move(req));
+            default:
+                continue;
+            }
+        }
+    }
+    // Return the whole response otherwise
+    return ss::make_ready_future<offset_commit_response>(std::move(res));
+}
+
+template<typename request_factory>
+ss::future<describe_groups_response> consumer::maybe_process_response_errors(
+  request_factory req, describe_groups_response res) {
+    auto me = shared_from_this();
+    for (auto& group : res.data.groups) {
+        switch (group.error_code) {
+        case error_code::not_coordinator:
+            vlog(
+              kclog.debug,
+              "Wrong coordinator on consumer {}, group {}, getting new "
+              "coordinator before retry",
+              *me,
+              group);
+            return reset_coordinator_and_retry_request(std::move(req));
+        default:
+            continue;
+        }
+    }
+    // Return the whole response otherwise
+    return ss::make_ready_future<describe_groups_response>(std::move(res));
+}
+
 ss::future<shared_consumer_t> make_consumer(
   const configuration& config,
   topic_cache& topic_cache,
@@ -482,7 +594,8 @@ ss::future<shared_consumer_t> make_consumer(
   shared_broker_t coordinator,
   group_id group_id,
   member_id name,
-  ss::noncopyable_function<void(const member_id&)> on_stopped) {
+  ss::noncopyable_function<void(const member_id&)> on_stopped,
+  ss::noncopyable_function<ss::future<>(std::exception_ptr)> mitigater) {
     auto c = ss::make_lw_shared<consumer>(
       config,
       topic_cache,
@@ -490,7 +603,8 @@ ss::future<shared_consumer_t> make_consumer(
       std::move(coordinator),
       std::move(group_id),
       std::move(name),
-      std::move(on_stopped));
+      std::move(on_stopped),
+      std::move(mitigater));
     return c->initialize().then([c]() mutable { return std::move(c); });
 }
 
