@@ -418,7 +418,7 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               "cloud_storage_region cluster configs are correct.",
               bucket());
 
-            outcome = error_outcome::bucket_not_found;
+            outcome = error_outcome::fail;
         } else if (
           err.code() == s3_error_code::slow_down
           || err.code() == s3_error_code::internal_error) {

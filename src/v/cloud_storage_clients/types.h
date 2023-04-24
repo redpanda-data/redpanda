@@ -36,8 +36,6 @@ enum class error_outcome {
     fail,
     /// Missing key API error (only suitable for downloads and deletions)
     key_not_found,
-    /// The bucket couldn't be found. Indicates misconfiguration.
-    bucket_not_found
 };
 
 struct error_outcome_category final : public std::error_category {

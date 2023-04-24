@@ -507,8 +507,7 @@ SEASTAR_TEST_CASE(test_delete_bucket_not_found) {
 
         BOOST_REQUIRE(!result);
         BOOST_REQUIRE(
-          result.error()
-          == cloud_storage_clients::error_outcome::bucket_not_found);
+          result.error() == cloud_storage_clients::error_outcome::fail);
         server->stop().get();
     });
 }
