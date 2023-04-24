@@ -60,4 +60,30 @@ auto retry_with_mitigation(
       });
 }
 
+/// \brief Invoke func, on failure. Invoke errFunc on error and retry.
+template<typename Func, typename ErrFunc>
+std::invoke_result_t<Func> gated_retry_with_mitigation_impl(
+  ss::gate& retry_gate,
+  int32_t retries,
+  std::chrono::milliseconds retry_base_backoff,
+  Func func,
+  ErrFunc errFunc) {
+    return ss::try_with_gate(
+      retry_gate,
+      [retries,
+       retry_base_backoff,
+       &retry_gate,
+       func{std::move(func)},
+       errFunc{std::move(errFunc)}]() {
+          return retry_with_mitigation(
+            retries,
+            retry_base_backoff,
+            [&retry_gate, func{std::move(func)}]() {
+                retry_gate.check();
+                return func();
+            },
+            errFunc);
+      });
+}
+
 } // namespace kafka::client
