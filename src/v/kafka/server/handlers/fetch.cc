@@ -623,6 +623,13 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
       octx.request.data.max_wait_ms));
 }
 
+namespace testing {
+kafka::fetch_plan make_simple_fetch_plan(op_context& octx) {
+    auto planner = make_fetch_planner<simple_fetch_planner>();
+    return planner.create_plan(octx);
+}
+} // namespace testing
+
 template<>
 ss::future<response_ptr>
 fetch_handler::handle(request_context rctx, ss::smp_service_group ssg) {

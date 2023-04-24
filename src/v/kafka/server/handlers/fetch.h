@@ -353,4 +353,13 @@ ss::future<read_result> read_from_ntp(
   bool,
   std::optional<model::timeout_clock::time_point>);
 
+namespace testing {
+/**
+ * Create a fetch plan with the simple fetch planner.
+ *
+ * Exposed for testing/benchmarking only.
+ */
+kafka::fetch_plan make_simple_fetch_plan(op_context& octx);
+} // namespace testing
+
 } // namespace kafka
