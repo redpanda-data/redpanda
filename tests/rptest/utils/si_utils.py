@@ -505,8 +505,7 @@ class BucketView:
                 delta = seg['delta_offset_end']
                 return start_model_offset - delta
 
-        assert (
-            False,
+        assert False, (
             "'start_offset' in manifest is inconsistent with contents of 'segments'."
             "'start_offset' should match either the 'base_offset' or 'committed_offset + 1'"
             f"of a segment in 'segments': start_offset={start_model_offset}, segments={manifest['segments']}"
