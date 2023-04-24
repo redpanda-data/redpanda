@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/health_monitor_types.h"
+#include "cluster/rm_stm.h"
 #include "model/tests/randoms.h"
 #include "random/generators.h"
 #include "storage/tests/randoms.h"
@@ -141,6 +142,73 @@ inline cluster_report_filter random_cluster_report_filter() {
       {}, random_node_report_filter(), tests::random_vector([] {
           return tests::random_named_int<model::node_id>();
       })};
+}
+
+inline rm_stm::tx_snapshot::tx_data_snapshot random_tx_data_snapshot() {
+    return rm_stm::tx_snapshot::tx_data_snapshot{
+      model::random_producer_identity(),
+      tests::random_named_int<model::tx_seq>(),
+      tests::random_named_int<model::partition_id>()};
+}
+
+inline rm_stm::tx_snapshot::expiration_snapshot random_expiration_snapshot() {
+    return rm_stm::tx_snapshot::expiration_snapshot{
+      model::random_producer_identity(),
+      tests::random_duration<rm_stm::duration_type>()};
+}
+
+inline rm_stm::prepare_marker random_prepare_marker() {
+    return {
+      tests::random_named_int<model::partition_id>(),
+      tests::random_named_int<model::tx_seq>(),
+      model::random_producer_identity()};
+}
+
+inline rm_stm::abort_index random_abort_index() {
+    return {model::random_offset(), model::random_offset()};
+}
+
+inline rm_stm::seq_cache_entry random_seq_cache_entry() {
+    return {
+      random_generators::get_int<int32_t>(),
+      tests::random_named_int<kafka::offset>()};
+}
+
+inline rm_stm::seq_cache_entry_v1 random_seq_cache_entry_v1() {
+    return {
+      random_generators::get_int<int32_t>(),
+      tests::random_named_int<model::offset>()};
+}
+
+inline rm_stm::seq_entry_v0 random_seq_entry_v0() {
+    return {
+      model::random_producer_identity(),
+      random_generators::get_int<int32_t>(),
+      random_generators::get_int<int64_t>()};
+}
+
+inline rm_stm::seq_entry_v1 random_seq_entry_v1() {
+    return {
+      model::random_producer_identity(),
+      random_generators::get_int<int32_t>(),
+      tests::random_named_int<model::offset>(),
+      tests::random_circular_buffer(random_seq_cache_entry_v1),
+      random_generators::get_int<int64_t>()};
+}
+
+inline rm_stm::seq_entry random_seq_entry() {
+    return {
+      model::random_producer_identity(),
+      random_generators::get_int<int32_t>(),
+      tests::random_named_int<kafka::offset>(),
+      tests::random_circular_buffer(random_seq_cache_entry),
+      random_generators::get_int<int64_t>()};
+}
+
+inline rm_stm::tx_snapshot_v3::tx_seqs_snapshot random_tx_seqs_snapshot() {
+    return {
+      model::random_producer_identity(),
+      tests::random_named_int<model::tx_seq>()};
 }
 
 } // namespace cluster

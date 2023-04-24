@@ -9,12 +9,15 @@
 
 #include "cluster/errc.h"
 #include "cluster/rm_stm.h"
+#include "cluster/tests/randoms.h"
+#include "cluster/tx_snapshot_adl_utils.h"
 #include "features/feature_table.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/tests/random_batch.h"
+#include "model/tests/randoms.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "raft/tests/mux_state_machine_fixture.h"
@@ -24,6 +27,7 @@
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/async.h"
+#include "test_utils/randoms.h"
 #include "utils/directory_walker.h"
 
 #include <seastar/util/defer.hh>
@@ -818,4 +822,123 @@ FIXTURE_TEST(test_aborted_transactions, mux_state_machine_fixture) {
     }
 
     check_snapshot_sizes(stm, _raft.get());
+}
+
+template<class T>
+void sync_ser_verify(T type) {
+    // Serialize synchronously
+    iobuf buf;
+    reflection::adl<T>{}.to(buf, std::move(type));
+    iobuf copy = buf.copy();
+
+    // Deserialize sync/async and compare
+    iobuf_parser sync_in(std::move(buf));
+    iobuf_parser async_in(std::move(copy));
+
+    auto sync_deser_type = reflection::adl<T>{}.from(sync_in);
+    auto async_deser_type = reflection::async_adl<T>{}.from(async_in).get0();
+    BOOST_REQUIRE(sync_deser_type == async_deser_type);
+}
+
+template<class T>
+void async_ser_verify(T type) {
+    // Serialize asynchronously
+    iobuf buf;
+    reflection::async_adl<T>{}.to(buf, std::move(type)).get();
+    iobuf copy = buf.copy();
+
+    // Deserialize sync/async and compare
+    iobuf_parser sync_in(std::move(buf));
+    iobuf_parser async_in(std::move(copy));
+
+    auto sync_deser_type = reflection::adl<T>{}.from(sync_in);
+    auto async_deser_type = reflection::async_adl<T>{}.from(async_in).get0();
+    BOOST_REQUIRE(sync_deser_type == async_deser_type);
+}
+
+SEASTAR_THREAD_TEST_CASE(async_adl_snapshot_validation) {
+    // Checks equivalence of async and sync adl serialized snapshots.
+    // Serialization of snapshots is switched to async with this commit,
+    // makes sure the snapshots are compatible pre/post upgrade.
+
+    auto make_tx_snapshot = []() {
+        return reflection::tx_snapshot{
+          .fenced = tests::random_frag_vector(model::random_producer_identity),
+          .ongoing = tests::random_frag_vector(model::random_tx_range),
+          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+          .aborted = tests::random_frag_vector(model::random_tx_range),
+          .abort_indexes = tests::random_frag_vector(
+            cluster::random_abort_index),
+          .offset = model::random_offset(),
+          .seqs = tests::random_frag_vector(cluster::random_seq_entry),
+          .tx_data = tests::random_frag_vector(
+            cluster::random_tx_data_snapshot),
+          .expiration = tests::random_frag_vector(
+            cluster::random_expiration_snapshot)};
+    };
+
+    sync_ser_verify(make_tx_snapshot());
+    async_ser_verify(make_tx_snapshot());
+
+    auto make_tx_snapshot_v0 = []() {
+        return reflection::tx_snapshot_v0{
+          .fenced = tests::random_frag_vector(model::random_producer_identity),
+          .ongoing = tests::random_frag_vector(model::random_tx_range),
+          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+          .aborted = tests::random_frag_vector(model::random_tx_range),
+          .abort_indexes = tests::random_frag_vector(
+            cluster::random_abort_index),
+          .offset = model::random_offset(),
+          .seqs = tests::random_frag_vector(cluster::random_seq_entry_v0)};
+    };
+
+    sync_ser_verify(make_tx_snapshot_v0());
+    async_ser_verify(make_tx_snapshot_v0());
+
+    auto make_tx_snapshot_v1 = []() {
+        return reflection::tx_snapshot_v1{
+          .fenced = tests::random_frag_vector(model::random_producer_identity),
+          .ongoing = tests::random_frag_vector(model::random_tx_range),
+          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+          .aborted = tests::random_frag_vector(model::random_tx_range),
+          .offset = model::random_offset(),
+          .seqs = tests::random_frag_vector(cluster::random_seq_entry_v1)};
+    };
+
+    sync_ser_verify(make_tx_snapshot_v1());
+    async_ser_verify(make_tx_snapshot_v1());
+
+    auto make_tx_snapshot_v2 = []() {
+        return reflection::tx_snapshot_v2{
+          .fenced = tests::random_frag_vector(model::random_producer_identity),
+          .ongoing = tests::random_frag_vector(model::random_tx_range),
+          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+          .aborted = tests::random_frag_vector(model::random_tx_range),
+          .abort_indexes = tests::random_frag_vector(
+            cluster::random_abort_index),
+          .offset = model::random_offset(),
+          .seqs = tests::random_frag_vector(cluster::random_seq_entry)};
+    };
+
+    sync_ser_verify(make_tx_snapshot_v2());
+    async_ser_verify(make_tx_snapshot_v2());
+
+    auto make_tx_snapshot_v3 = []() {
+        return reflection::tx_snapshot_v3{
+          .fenced = tests::random_frag_vector(model::random_producer_identity),
+          .ongoing = tests::random_frag_vector(model::random_tx_range),
+          .prepared = tests::random_frag_vector(cluster::random_prepare_marker),
+          .aborted = tests::random_frag_vector(model::random_tx_range),
+          .abort_indexes = tests::random_frag_vector(
+            cluster::random_abort_index),
+          .offset = model::random_offset(),
+          .seqs = tests::random_frag_vector(cluster::random_seq_entry),
+          .tx_seqs = tests::random_frag_vector(
+            cluster::random_tx_seqs_snapshot),
+          .expiration = tests::random_frag_vector(
+            cluster::random_expiration_snapshot)};
+    };
+
+    sync_ser_verify(make_tx_snapshot_v3());
+    async_ser_verify(make_tx_snapshot_v3());
 }
