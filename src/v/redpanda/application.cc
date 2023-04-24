@@ -23,6 +23,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/cluster_uuid.h"
 #include "cluster/controller.h"
+#include "cluster/controller_snapshot.h"
 #include "cluster/ephemeral_credential_frontend.h"
 #include "cluster/ephemeral_credential_service.h"
 #include "cluster/fwd.h"
@@ -1934,7 +1935,23 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
           _log.info,
           "Registered with cluster as node ID {}",
           registration_result.assigned_node_id);
-        // Do something with the controller snapshot
+        if (registration_result.controller_snapshot.has_value()) {
+            // Do something with the controller snapshot
+            auto snap = serde::from_iobuf<cluster::controller_snapshot>(
+              std::move(registration_result.controller_snapshot.value()));
+
+            // The controller is not started yet, so write state directly into
+            // the feature table and configuration object.  We do not currently
+            // use the rest of the snapshot, but reserve the right to do so
+            // in future (e.g. to prime all the controller stms from the
+            // snapshot)
+            auto ftsnap = std::move(snap.features.snap);
+            ss::smp::invoke_on_all([ftsnap, &ft = feature_table] {
+                ftsnap.apply(ft.local());
+            }).get();
+            cluster::feature_backend::do_save_local_snapshot(storage.local(), ftsnap)
+              .get();
+        }
     }
 
     vlog(

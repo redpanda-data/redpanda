@@ -14,6 +14,7 @@
 namespace features {
 
 class feature_table;
+struct feature_table_snapshot;
 class feature_migrator;
 
 } // namespace features
