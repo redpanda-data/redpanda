@@ -144,9 +144,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
     @matrix(replication_factor=[1, 3],
             unclean_abort=[True, False],
             recovery=[NO_RECOVERY, RESTART_RECOVERY],
-            compacted=[False, True])
+            compacted=[False, True],
+            enable_controller_snapshots=[False, True])
     def test_cancelling_partition_move(self, replication_factor, unclean_abort,
-                                       recovery, compacted):
+                                       recovery, compacted,
+                                       enable_controller_snapshots):
         """
         Cancel partition moving with active consumer / producer
         """
@@ -154,12 +156,23 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
         self.start_redpanda(num_nodes=5,
                             extra_rp_conf={
                                 "default_topic_replications": 3,
-                                "compacted_log_segment_size": 1 * (2**20)
+                                "compacted_log_segment_size": 1 * (2**20),
+                                "controller_snapshot_max_age_sec": 3,
                             })
         # skip compacted topics tests in debug mode
         if compacted and self.debug_mode:
             cleanup_on_early_exit(self)
             return
+
+        if enable_controller_snapshots:
+            if recovery == RESTART_RECOVERY:
+                Admin(self.redpanda).put_feature("controller_snapshots",
+                                                 {"state": "active"})
+            else:
+                # doesn't make sense to test controller snapshots if nodes don't get
+                # restarted
+                cleanup_on_early_exit(self)
+                return
 
         spec = TopicSpec(partition_count=self.partition_count,
                          replication_factor=replication_factor,
