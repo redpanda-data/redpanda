@@ -88,16 +88,12 @@ public:
     /// \brief Invoke func, on failure, mitigate error and retry.
     template<typename Func>
     std::invoke_result_t<Func> gated_retry_with_mitigation(Func func) {
-        return ss::try_with_gate(_gate, [this, func{std::move(func)}]() {
-            return retry_with_mitigation(
-              _config.retries(),
-              _config.retry_base_backoff(),
-              [this, func{std::move(func)}]() {
-                  _gate.check();
-                  return func();
-              },
-              [this](std::exception_ptr ex) { return mitigate_error(ex); });
-        });
+        return gated_retry_with_mitigation_impl(
+          _gate,
+          _config.retries(),
+          _config.retry_base_backoff(),
+          std::move(func),
+          [this](std::exception_ptr ex) { return mitigate_error(ex); });
     }
 
     /// \brief Dispatch a request to any broker.
