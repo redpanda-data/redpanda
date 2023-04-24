@@ -11,6 +11,11 @@
 
 #pragma once
 
+#include "kafka/client/broker.h"
+#include "kafka/client/brokers.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/exceptions.h"
+#include "kafka/protocol/find_coordinator.h"
 #include "utils/retry.h"
 
 namespace kafka::client {
@@ -83,6 +88,44 @@ std::invoke_result_t<Func> gated_retry_with_mitigation_impl(
                 return func();
             },
             errFunc);
+      });
+}
+
+/// \brief Execute a find coordinator request with retry and error mitigation.
+template<typename ErrFunc>
+ss::future<shared_broker_t> find_coordinator_with_retry_and_mitigation(
+  ss::gate& retry_gate,
+  const configuration& client_config,
+  brokers& cluster_brokers,
+  const group_id& group_id,
+  member_id name,
+  ErrFunc errFunc) {
+    return gated_retry_with_mitigation_impl(
+             retry_gate,
+             client_config.retries(),
+             client_config.retry_base_backoff(),
+             [group_id, name, &cluster_brokers]() {
+                 return cluster_brokers.any()
+                   .then([group_id](shared_broker_t broker) {
+                       return broker->dispatch(
+                         find_coordinator_request(group_id));
+                   })
+                   .then([group_id, name](find_coordinator_response res) {
+                       if (res.data.error_code != error_code::none) {
+                           return ss::make_exception_future<
+                             find_coordinator_response>(consumer_error(
+                             group_id, name, res.data.error_code));
+                       };
+                       return ss::make_ready_future<find_coordinator_response>(
+                         std::move(res));
+                   });
+             },
+             errFunc)
+      .then([&client_config](find_coordinator_response res) {
+          return make_broker(
+            res.data.node_id,
+            net::unresolved_address(res.data.host, res.data.port),
+            client_config);
       });
 }
 
