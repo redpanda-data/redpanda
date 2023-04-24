@@ -633,10 +633,9 @@ private:
     ss::basic_rwlock<> _state_lock;
     bool _is_abort_idx_reduction_requested{false};
     absl::flat_hash_map<model::producer_id, ss::lw_shared_ptr<mutex>> _tx_locks;
-    absl::flat_hash_map<
-      model::producer_identity,
-      ss::lw_shared_ptr<ss::basic_rwlock<>>>
-      _idempotent_producer_locks;
+    absl::
+      btree_map<model::producer_identity, ss::lw_shared_ptr<ss::basic_rwlock<>>>
+        _idempotent_producer_locks;
     absl::flat_hash_map<
       model::producer_identity,
       ss::lw_shared_ptr<inflight_requests>>
