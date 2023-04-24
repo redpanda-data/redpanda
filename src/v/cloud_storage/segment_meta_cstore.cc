@@ -18,6 +18,7 @@
 
 #include <bitset>
 #include <functional>
+#include <limits>
 #include <tuple>
 
 namespace cloud_storage {
@@ -340,8 +341,9 @@ public:
             }
             auto candidate = _base_offset.find(offset_seg_it->first());
             if (candidate.is_end()) {
-                // replacements are append only
-                return _base_offset.size();
+                // replacements are append only, return an index that will
+                // signal this
+                return std::numeric_limits<size_t>::max();
             }
             // replacements are in the middle of current store
             return candidate.index();
