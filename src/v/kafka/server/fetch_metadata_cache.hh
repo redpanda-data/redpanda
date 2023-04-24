@@ -73,6 +73,11 @@ public:
                  : std::nullopt;
     }
 
+    /**
+     * @brief Return the number of items currently cached.
+     */
+    size_t size() const { return _cache.size(); }
+
 private:
     struct entry {
         entry(model::offset start_offset, model::offset hw, model::offset lso)
