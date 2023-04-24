@@ -73,6 +73,9 @@ upload_housekeeping_service::upload_housekeeping_service(
         _api_utilization = std::make_unique<sliding_window_t>(
           initial, _idle_timeout(), ma_resolution);
     });
+
+    _epoch_duration.watch(
+      [this] { _epoch_timer.rearm_periodic(_epoch_duration()); });
 }
 
 upload_housekeeping_service::~upload_housekeeping_service() {}
