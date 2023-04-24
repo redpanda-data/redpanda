@@ -89,9 +89,10 @@ public:
       : base_property(rhs)
       , _value(std::move(rhs._value))
       , _default(std::move(rhs._default))
-      , _validator(std::move(rhs._validator)) {
-        for (auto binding_ptr : _bindings) {
-            binding_ptr._parent = this;
+      , _validator(std::move(rhs._validator))
+      , _bindings(std::move(rhs._bindings)) {
+        for (auto& binding : _bindings) {
+            binding._parent = this;
         }
     }
 
