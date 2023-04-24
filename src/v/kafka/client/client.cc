@@ -412,7 +412,8 @@ client::create_consumer(const group_id& group_id, member_id name) {
             std::move(coordinator),
             std::move(group_id),
             std::move(name),
-            std::move(on_stopped));
+            std::move(on_stopped),
+            [this](std::exception_ptr ex) { return mitigate_error(ex); });
       })
       .then([this, group_id](shared_consumer_t c) {
           auto name = c->name();
