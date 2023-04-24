@@ -113,8 +113,8 @@ recovery_task_config recovery_task_config::make_config() {
       .operation_timeout_ms
       = config::shard_local_cfg()
           .cloud_storage_manifest_upload_timeout_ms.value(),
-      .backoff_ms = config::shard_local_cfg()
-                      .cloud_storage_upload_loop_initial_backoff_ms.value()};
+      .backoff_ms
+      = config::shard_local_cfg().cloud_storage_initial_backoff_ms.value()};
 }
 
 topic_recovery_service::topic_recovery_service(

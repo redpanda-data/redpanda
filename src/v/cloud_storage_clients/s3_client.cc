@@ -418,7 +418,7 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
               "cloud_storage_region cluster configs are correct.",
               bucket());
 
-            outcome = error_outcome::bucket_not_found;
+            outcome = error_outcome::fail;
         } else if (
           err.code() == s3_error_code::slow_down
           || err.code() == s3_error_code::internal_error) {
@@ -427,7 +427,7 @@ ss::future<result<T, error_outcome>> s3_client::send_request(
             // In principle only slow_down should occur, but in practice
             // AWS S3 does return internal_error as well sometimes.
             vlog(s3_log.warn, "{} response received {}", err.code(), bucket);
-            outcome = error_outcome::retry_slowdown;
+            outcome = error_outcome::retry;
         } else {
             // Unexpected REST API error, we can't recover from this
             // because the issue is not temporary (e.g. bucket doesn't

@@ -27,17 +27,11 @@ using ca_trust_file
   = named_type<std::filesystem::path, struct s3_ca_trust_file>;
 
 enum class error_outcome {
-    none = 0,
-    /// Error condition that could be retried
     retry,
-    /// The service asked us to retry (SlowDown response)
-    retry_slowdown,
     /// Error condition that couldn't be retried
     fail,
     /// Missing key API error (only suitable for downloads and deletions)
     key_not_found,
-    /// The bucket couldn't be found. Indicates misconfiguration.
-    bucket_not_found
 };
 
 struct error_outcome_category final : public std::error_category {
@@ -47,12 +41,8 @@ struct error_outcome_category final : public std::error_category {
 
     std::string message(int c) const final {
         switch (static_cast<error_outcome>(c)) {
-        case error_outcome::none:
-            return "No error";
         case error_outcome::retry:
             return "Retryable error";
-        case error_outcome::retry_slowdown:
-            return "Cloud service asked us to slow down";
         case error_outcome::fail:
             return "Non retriable error";
         case error_outcome::key_not_found:

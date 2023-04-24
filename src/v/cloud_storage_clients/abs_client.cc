@@ -293,7 +293,7 @@ ss::future<result<T, error_outcome>> abs_client::send_request(
               err.http_code(),
               err.code_string(),
               err.message());
-            outcome = error_outcome::retry_slowdown;
+            outcome = error_outcome::retry;
             _probe->register_retryable_failure(op_type);
         } else if (
           err.http_code() == status::forbidden
