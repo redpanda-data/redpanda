@@ -413,8 +413,11 @@ public:
                 // this could potentially be cached for the
                 // next iteration of the outer loop
                 auto to_replace = dereference(old_segments_it);
-                if (
-                  to_replace.base_offset > replacement_meta.committed_offset) {
+                // find first segment that is not completely covered by
+                // replacement_meta
+                if (!(to_replace.base_offset >= replacement_meta.base_offset
+                      && to_replace.committed_offset
+                           <= replacement_meta.committed_offset)) {
                     break;
                 }
                 details::increment_all(old_segments_it);
