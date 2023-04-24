@@ -27,8 +27,6 @@ using ca_trust_file
   = named_type<std::filesystem::path, struct s3_ca_trust_file>;
 
 enum class error_outcome {
-    none = 0,
-    /// Error condition that could be retried
     retry,
     /// Error condition that couldn't be retried
     fail,
@@ -43,8 +41,6 @@ struct error_outcome_category final : public std::error_category {
 
     std::string message(int c) const final {
         switch (static_cast<error_outcome>(c)) {
-        case error_outcome::none:
-            return "No error";
         case error_outcome::retry:
             return "Retryable error";
         case error_outcome::fail:

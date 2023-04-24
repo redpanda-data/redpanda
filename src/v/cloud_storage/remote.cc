@@ -227,9 +227,6 @@ ss::future<download_result> remote::do_download_manifest(
         lease.client->shutdown();
 
         switch (resp.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -316,9 +313,6 @@ ss::future<upload_result> remote::upload_manifest(
         lease.client->shutdown();
 
         switch (res.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -443,9 +437,6 @@ ss::future<upload_result> remote::upload_segment(
 
         lease.client->shutdown();
         switch (res.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -525,9 +516,6 @@ ss::future<download_result> remote::download_segment(
         lease.client->shutdown();
 
         switch (resp.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -601,9 +589,6 @@ ss::future<download_result> remote::download_index(
         lease.client->shutdown();
 
         switch (resp.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -672,9 +657,6 @@ ss::future<download_result> remote::segment_exists(
         // Error path
         lease.client->shutdown();
         switch (resp.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -741,9 +723,6 @@ ss::future<upload_result> remote::delete_object(
         lease.client->shutdown();
 
         switch (res.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -820,9 +799,6 @@ ss::future<upload_result> remote::delete_objects(
         lease.client->shutdown();
 
         switch (res.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -999,9 +975,6 @@ ss::future<remote::list_result> remote::list_objects(
         lease.client->shutdown();
 
         switch (res.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
@@ -1079,9 +1052,6 @@ ss::future<upload_result> remote::upload_object(
 
         lease.client->shutdown();
         switch (res.error()) {
-        case cloud_storage_clients::error_outcome::none:
-            vassert(
-              false, "s3:error_outcome::none not expected on failure path");
         case cloud_storage_clients::error_outcome::retry:
             vlog(
               ctxlog.debug,
