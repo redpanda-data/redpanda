@@ -19,6 +19,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "seastarx.h"
 #include "utils/expiring_promise.h"
 
@@ -184,6 +185,13 @@ public:
     model::shadow_indexing_mode get_default_shadow_indexing_mode() const;
     uint32_t get_default_batch_max_bytes() const;
     std::optional<std::chrono::milliseconds> get_default_segment_ms() const;
+    bool get_default_record_key_schema_id_validation() const;
+    pandaproxy::schema_registry::subject_name_strategy
+    get_default_record_key_subject_name_strategy() const;
+    bool get_default_record_value_schema_id_validation() const;
+    pandaproxy::schema_registry::subject_name_strategy
+    get_default_record_value_subject_name_strategy() const;
+
     topic_properties get_default_properties() const;
     std::optional<partition_assignment>
     get_partition_assignment(const model::ntp& ntp) const;
