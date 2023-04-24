@@ -1035,7 +1035,6 @@ public:
             in_progress_update inp_update{
               partition.replicas,
               update.target_assignment,
-              update.state,
               update.revision,
               _probe,
             };
@@ -1538,11 +1537,7 @@ void topic_table::change_partition_replicas(
     _updates_in_progress.emplace(
       ntp,
       in_progress_update(
-        current_assignment.replicas,
-        new_assignment,
-        reconfiguration_state::in_progress,
-        update_revision,
-        _probe));
+        current_assignment.replicas, new_assignment, update_revision, _probe));
     auto previous_assignment = current_assignment.replicas;
     // replace partition replica set
     current_assignment.replicas = new_assignment;
@@ -1557,7 +1552,6 @@ void topic_table::change_partition_replicas(
               in_progress_update(
                 current_assignment.replicas,
                 new_assignment,
-                reconfiguration_state::in_progress,
                 update_revision,
                 _probe));
             vassert(

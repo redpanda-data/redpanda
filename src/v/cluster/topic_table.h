@@ -101,12 +101,11 @@ public:
         explicit in_progress_update(
           std::vector<model::broker_shard> previous_replicas,
           std::vector<model::broker_shard> target_replicas,
-          reconfiguration_state state,
           model::revision_id update_revision,
           topic_table_probe& probe)
           : _previous_replicas(std::move(previous_replicas))
           , _target_replicas(std::move(target_replicas))
-          , _state(state)
+          , _state(reconfiguration_state::in_progress)
           , _update_revision(update_revision)
           , _last_cmd_revision(update_revision)
           , _probe(probe) {
