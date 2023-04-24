@@ -1949,7 +1949,17 @@ void application::wire_up_and_start(::stop_signal& app_signal, bool test_mode) {
             ss::smp::invoke_on_all([ftsnap, &ft = feature_table] {
                 ftsnap.apply(ft.local());
             }).get();
-            cluster::feature_backend::do_save_local_snapshot(storage.local(), ftsnap)
+            cluster::feature_backend::do_save_local_snapshot(
+              storage.local(), ftsnap)
+              .get();
+
+            // The preload object is usually generated from loading a local
+            // cache or from the bootstrap file.  The configuration received
+            // from the cluster during join takes precedence over either of
+            // these, and we replace it.
+            _config_preload = cluster::config_manager::preload_join(snap).get();
+            cluster::config_manager::write_local_cache(
+              _config_preload.version, _config_preload.raw_values)
               .get();
         }
     }

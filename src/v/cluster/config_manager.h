@@ -56,7 +56,13 @@ public:
       ss::sharded<cluster::members_table>&,
       ss::sharded<ss::abort_source>&);
 
+    // Preload early in startup, from bootstrap file or config cache
     static ss::future<preload_result> preload(YAML::Node const&);
+
+    // Preload while joining the cluster, from a controller snapshot sent
+    // in response to a join request.
+    static ss::future<preload_result> preload_join(const controller_snapshot&);
+
     ss::future<> start();
     ss::future<> stop();
 
@@ -87,6 +93,9 @@ public:
         }
     }
 
+    static ss::future<> write_local_cache(
+      config_version, const std::map<ss::sstring, ss::sstring>&);
+
 private:
     void merge_apply_result(
       config_status&,
@@ -96,8 +105,7 @@ private:
     bool should_send_status();
     ss::future<> reconcile_status();
     ss::future<std::error_code> apply_delta(cluster_config_delta_cmd&&);
-    ss::future<> store_delta(
-      config_version const& version, cluster_config_delta_cmd_data const& data);
+    ss::future<> store_delta(cluster_config_delta_cmd_data const& data);
 
     bool _bootstrap_complete{false};
     void start_bootstrap();
