@@ -11,7 +11,7 @@ import json
 import pprint
 import struct
 from collections import defaultdict, namedtuple
-from typing import Sequence, Optional, NewType
+from typing import Sequence, Optional, NewType, NamedTuple
 
 import xxhash
 
@@ -26,16 +26,27 @@ BLOCK_SIZE = 4096
 
 default_log_segment_size = 1048576  # 1MB
 
-NTPBase = namedtuple("NTP", ['ns', 'topic', 'partition'])
-NTPRBase = namedtuple("NTP", ['ns', 'topic', 'partition', 'revision'])
+
+class NT(NamedTuple):
+    ns: str
+    topic: str
 
 
-class NTP(NTPBase):
+class NTP(NamedTuple):
+    ns: str
+    topic: str
+    partition: int
+
     def to_ntpr(self, revision: int) -> 'NTPR':
         return NTPR(self.ns, self.topic, self.partition, revision)
 
 
-class NTPR(NTPRBase):
+class NTPR(NamedTuple):
+    ns: str
+    topic: str
+    partition: int
+    revision: int
+
     def to_ntp(self) -> NTP:
         return NTP(self.ns, self.topic, self.partition)
 
@@ -222,6 +233,14 @@ def verify_file_layout(baseline_per_host,
             f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
 
 
+def gen_topic_manifest_path(topic: NT):
+    x = xxhash.xxh32()
+    path = f"{topic.ns}/{topic.topic}"
+    x.update(path.encode('ascii'))
+    hash = x.hexdigest()[0] + '0000000'
+    return f"{hash}/meta/{path}/topic_manifest.json"
+
+
 def gen_manifest_path(ntpr: NTPR):
     x = xxhash.xxh32()
     path = f"{ntpr.ns}/{ntpr.topic}/{ntpr.partition}_{ntpr.revision}"
@@ -401,6 +420,7 @@ class BucketViewState:
         self.segment_objects = 0
         self.ignored_objects = 0
         self.partition_manifests = {}
+        self.topic_manifests = {}
 
 
 class BucketView:
@@ -591,6 +611,28 @@ class BucketView:
 
         manifest_path = gen_manifest_path(ntpr)
         return self._load_manifest(ntp, manifest_path)
+
+    def _load_topic_manifest(self, topic: NT, path: str):
+        try:
+            data = self.client.get_object_data(self.bucket, path)
+        except Exception as e:
+            self.logger.debug(f"Exception loading {path}: {e}")
+            raise KeyError(f"Manifest for topic {topic} not found")
+
+        manifest = json.loads(data)
+
+        self.logger.debug(
+            f"Loaded topic manifest {topic}: {pprint.pformat(manifest)}")
+
+        self._state.topic_manifests[topic] = manifest
+        return manifest
+
+    def get_topic_manifest(self, topic: NT) -> dict:
+        if topic in self._state.topic_manifests:
+            return self._state.topic_manifests[topic]
+
+        path = gen_topic_manifest_path(topic)
+        return self._load_topic_manifest(topic, path)
 
     def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
         """
