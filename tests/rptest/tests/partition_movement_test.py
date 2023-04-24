@@ -846,6 +846,56 @@ class PartitionMovementTest(PartitionMovementMixin, EndToEndTest):
 
         wait_until(status_done, timeout_sec=40, backoff_sec=2)
 
+    @cluster(num_nodes=7)
+    def test_movement_tracking_api(self):
+        """
+        Test verifying correctness of `/reconfigurations` endpoint
+        """
+        throughput, records, _ = self._get_scale_params()
+        partition_count = 5
+        self.start_redpanda(num_nodes=5)
+        admin = Admin(self.redpanda)
+
+        spec = TopicSpec(partition_count=partition_count, replication_factor=3)
+        self.client().create_topic(spec)
+        self.topic = spec.name
+        self.start_producer(1, throughput=throughput)
+        self.start_consumer(1)
+        self.await_startup(min_records=throughput * 10, timeout_sec=60)
+        self.redpanda.set_cluster_config({"raft_learner_recovery_rate": 1})
+        brokers = admin.get_brokers()
+        for partition in range(0, partition_count):
+            assignments = self._get_assignments(admin, self.topic, partition)
+            prev_assignments = assignments.copy()
+            replicas = set([r['node_id'] for r in prev_assignments])
+            for b in brokers:
+                if b['node_id'] not in replicas:
+                    assignments[0]['node_id'] = b['node_id']
+                    break
+
+            self.logger.info(
+                f"initial assignments for {self.topic}/{partition}: {prev_assignments}, new assignment: {assignments}"
+            )
+            admin.set_partition_replicas(self.topic, partition, assignments)
+
+        wait_until(
+            lambda: len(admin.list_reconfigurations()) == partition_count, 30)
+        reconfigurations = admin.list_reconfigurations()
+        for r in reconfigurations:
+            assert "previous_replicas" in r
+            assert "current_replicas" in r
+            assert "bytes_left_to_move" in r
+            assert "bytes_moved" in r
+            assert "partition_size" in r
+            assert "reconciliation_statuses" in r
+
+        self.run_validation(enable_idempotence=False,
+                            consumer_timeout_sec=45,
+                            min_records=records)
+        self.redpanda.set_cluster_config(
+            {"raft_learner_recovery_rate": 500 * (2**20)})
+        wait_until(lambda: len(admin.list_reconfigurations()) == 0, 120, 1)
+
 
 class SIPartitionMovementTest(PartitionMovementMixin, EndToEndTest):
     """
