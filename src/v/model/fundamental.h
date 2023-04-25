@@ -229,7 +229,7 @@ struct topic_partition {
     model::partition_id partition;
 
     bool operator==(const topic_partition& other) const {
-        return topic == other.topic && partition == other.partition;
+        return partition == other.partition && topic == other.topic;
     }
 
     bool operator!=(const topic_partition& other) const {
@@ -286,7 +286,7 @@ struct ntp {
     topic_partition tp;
 
     bool operator==(const ntp& other) const {
-        return ns == other.ns && tp == other.tp;
+        return tp == other.tp && ns == other.ns;
     }
 
     bool operator!=(const ntp& other) const { return !(*this == other); }
