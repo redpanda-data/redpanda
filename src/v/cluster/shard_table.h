@@ -27,9 +27,9 @@ namespace cluster {
 class shard_table final {
     struct shard_revision {
         ss::shard_id shard;
-        model::revision_id revision;
         /// Only used for additional sanity checks
         bool non_replicable;
+        model::revision_id revision;
     };
 
 public:
@@ -75,7 +75,7 @@ public:
           ntp,
           i,
           rev);
-        _ntp_idx.insert_or_assign(ntp, shard_revision{i, rev, true});
+        _ntp_idx.insert_or_assign(ntp, shard_revision{i, true, rev});
         return true;
     }
 
@@ -109,8 +109,8 @@ public:
           ntp,
           shard,
           rev);
-        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, rev, false});
-        _group_idx.insert_or_assign(g, shard_revision{shard, rev, false});
+        _ntp_idx.insert_or_assign(ntp, shard_revision{shard, false, rev});
+        _group_idx.insert_or_assign(g, shard_revision{shard, false, rev});
     }
 
     void
