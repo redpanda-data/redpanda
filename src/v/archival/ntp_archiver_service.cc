@@ -53,6 +53,7 @@
 #include <fmt/format.h>
 
 #include <exception>
+#include <iterator>
 #include <numeric>
 #include <stdexcept>
 
@@ -1279,7 +1280,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
           all_uploads.begin(), all_uploads.end());
         for (auto& fut : futs) {
             if (fut.failed()) {
-                vlogl(_rtclog ,level, "Upload failed: {}", fut.get_exception());
+                vlogl(_rtclog, level, "Upload failed: {}", fut.get_exception());
             }
         }
         std::rethrow_exception(ep);
@@ -1385,20 +1386,43 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
             _probe->upload_lag(ctx.last_offset - ctx.start_offset);
         }
 
-        while (uploads_remaining > 0 && may_begin_uploads()) {
-            auto scheduled = co_await schedule_single_upload(ctx);
-            ctx.start_offset = scheduled.inclusive_last_offset
-                               + model::offset(1);
-            scheduled_uploads.push_back(std::move(scheduled));
-            const auto& latest_scheduled = scheduled_uploads.back();
-            if (latest_scheduled.stop == ss::stop_iteration::yes) {
-                break;
+        std::exception_ptr ep;
+        try {
+            while (uploads_remaining > 0 && may_begin_uploads()) {
+                auto scheduled = co_await schedule_single_upload(ctx);
+                ctx.start_offset = scheduled.inclusive_last_offset
+                                   + model::offset(1);
+                scheduled_uploads.push_back(std::move(scheduled));
+                const auto& latest_scheduled = scheduled_uploads.back();
+                if (latest_scheduled.stop == ss::stop_iteration::yes) {
+                    break;
+                }
+                // Decrement remaining upload count if the last call actually
+                // scheduled an upload.
+                if (latest_scheduled.result.has_value()) {
+                    uploads_remaining -= 1;
+                }
             }
-            // Decrement remaining upload count if the last call actually
-            // scheduled an upload.
-            if (latest_scheduled.result.has_value()) {
-                uploads_remaining -= 1;
+        } catch (...) {
+            ep = std::current_exception();
+        }
+        if (ep) {
+            vlog(_rtclog.warn, "Failed to schedule upload: {}", ep);
+            std::vector<ss::future<>> inflight_uploads;
+            for (auto& scheduled : scheduled_uploads) {
+                if (scheduled.result.has_value()) {
+                    inflight_uploads.emplace_back(
+                      std::move(scheduled.result.value()).discard_result());
+                }
             }
+            auto futs = co_await ss::when_all(
+              inflight_uploads.begin(), inflight_uploads.end());
+            for (auto& f : futs) {
+                if (f.failed()) {
+                    vlog(_rtclog.warn, "Upload failed: {}", f.get_exception());
+                }
+            }
+            std::rethrow_exception(ep);
         }
 
         auto upload_segments_count = std::count_if(
