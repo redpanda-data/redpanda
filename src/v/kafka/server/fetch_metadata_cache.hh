@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "units.h"
 
 #include <seastar/core/lowres_clock.hh>
@@ -59,15 +60,15 @@ public:
     }
 
     void insert_or_assign(
-      model::ntp ntp,
+      model::ktp ktp,
       model::offset start_offset,
       model::offset hw,
       model::offset lso) {
-        _cache.insert_or_assign(std::move(ntp), entry(start_offset, hw, lso));
+        _cache.insert_or_assign(std::move(ktp), entry(start_offset, hw, lso));
     }
 
-    std::optional<partition_metadata> get(const model::ntp& ntp) {
-        auto it = _cache.find(ntp);
+    std::optional<partition_metadata> get(const model::ktp& ktp) {
+        auto it = _cache.find(ktp);
         return it != _cache.end()
                  ? std::make_optional<partition_metadata>(it->second.md)
                  : std::nullopt;
@@ -101,7 +102,7 @@ private:
 
     constexpr static std::chrono::seconds eviction_timeout{60};
     bool _stopped = false;
-    absl::node_hash_map<model::ntp, entry> _cache;
+    absl::node_hash_map<model::ktp, entry> _cache;
     ss::timer<> _eviction_timer;
 };
 } // namespace kafka
