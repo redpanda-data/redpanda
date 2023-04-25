@@ -1425,6 +1425,12 @@ ss::future<> ntp_archiver::garbage_collect() {
               _rtclog.info,
               "Failed to clean up metadata after garbage collection: {}",
               error);
+        } else {
+            // Upload the manifest to reflect removal of segments.  This
+            // eases testing, and avoids a situation where we might never
+            // update the manifest if the partition became idle right
+            // after finishing a GC.
+            co_await upload_manifest();
         }
     } else {
         vlog(
