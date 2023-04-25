@@ -934,61 +934,6 @@ members_manager::dispatch_configuration_update(model::broker broker) {
     }
 }
 
-/**
- * @brief Check that the configuration is valid, if not return a string with the
- * error cause.
- *
- * @param current_brokers current broker vector
- * @param to_update broker being added
- * @return std::optional<ss::sstring> - present if there is an error, nullopt
- * otherwise
- */
-std::optional<ss::sstring> check_result_configuration(
-  const std::vector<broker_ptr>& current_brokers,
-  const model::broker& to_update) {
-    for (auto& current : current_brokers) {
-        if (current->id() == to_update.id()) {
-            /**
-             * do no allow to decrease node core count
-             */
-            if (current->properties().cores > to_update.properties().cores) {
-                return "core count must not decrease on any broker";
-            }
-            continue;
-        }
-
-        /**
-         * validate if any two of the brokers would listen on the same addresses
-         * after applying configuration update
-         */
-        if (current->rpc_address() == to_update.rpc_address()) {
-            // error, nodes would listen on the same rpc addresses
-            return fmt::format(
-              "duplicate rpc endpoint {} with existing node {}",
-              to_update.rpc_address(),
-              current->id());
-        }
-        for (auto& current_ep : current->kafka_advertised_listeners()) {
-            auto any_is_the_same = std::any_of(
-              to_update.kafka_advertised_listeners().begin(),
-              to_update.kafka_advertised_listeners().end(),
-              [&current_ep](const model::broker_endpoint& ep) {
-                  return current_ep == ep;
-              });
-            // error, kafka endpoint would point to the same addresses
-            if (any_is_the_same) {
-                return fmt::format(
-                  "duplicate kafka advertised endpoint {} with existing node "
-                  "{}",
-                  current_ep,
-                  current->id());
-                ;
-            }
-        }
-    }
-    return {};
-}
-
 ss::future<result<configuration_update_reply>>
 members_manager::handle_configuration_update_request(
   configuration_update_request req) {
