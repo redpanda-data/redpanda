@@ -3551,6 +3551,60 @@ std::ostream& operator<<(
       with_assignment.assignments);
     return o;
 }
+
+struct acl_description
+  : serde::
+      envelope<acl_description, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    security::acl_principal principal;
+    security::acl_host host;
+    security::acl_operation operation;
+    security::acl_permission permission_type;
+
+    auto serde_fields() {
+        return std::tie(principal, host, operation, permission_type);
+    }
+};
+
+struct acl_resource
+  : serde::envelope<acl_resource, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    security::resource_type type;
+    ss::sstring name;
+    security::pattern_type pattern_type;
+    std::vector<acl_description> acls;
+
+    auto serde_fields() { return std::tie(type, name, pattern_type, acls); }
+};
+
+struct describe_acls_request
+  : serde::envelope<
+      describe_acls_request,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    security::acl_binding_filter filter;
+    model::timeout_clock::duration timeout;
+
+    auto serde_fields() { return std::tie(filter, timeout); }
+};
+
+struct describe_acls_reply
+  : serde::envelope<
+      describe_acls_reply,
+      serde::version<0>,
+      serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
+    errc error{errc::success};
+    std::vector<acl_resource> acl_resources;
+
+    auto serde_fields() { return std::tie(error, acl_resources); }
+};
+
 } // namespace cluster
 namespace std {
 template<>
