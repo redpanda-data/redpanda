@@ -8,7 +8,6 @@ rp_test(
     partition_manifest_test.cc
     topic_manifest_test.cc
     tx_range_manifest_test.cc
-    offset_translation_layer_test.cc
     remote_segment_index_test.cc
     recovery_request_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK

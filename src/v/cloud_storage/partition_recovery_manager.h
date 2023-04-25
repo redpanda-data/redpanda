@@ -15,11 +15,13 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "storage/ntp_config.h"
+#include "storage/offset_translator_state.h"
 #include "utils/retry_chain_node.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 
 #include <vector>
 
@@ -37,10 +39,12 @@ struct topic_recovery_service;
 /// download completion status and the offset of the
 /// last record batch being downloaded.
 struct log_recovery_result {
-    bool completed{false};
-    model::offset min_kafka_offset;
-    model::offset max_kafka_offset;
+    bool logs_recovered{false};
+    bool clean_download{false};
+    model::offset min_offset;
+    model::offset max_offset;
     cloud_storage::partition_manifest manifest;
+    ss::lw_shared_ptr<storage::offset_translator_state> ot_state;
 };
 
 /// Data recovery provider is used to download topic segments from S3 (or
@@ -127,26 +131,22 @@ public:
     /// \return download result struct that contains 'log_completed=true'
     ///         if actual download happened. The 'last_offset' field will
     ///         be set to max offset of the downloaded log.
-    ss::future<log_recovery_result> download_log();
+    ss::future<log_recovery_result> maybe_download_log();
 
 private:
-    /// Download full log based on manifest data
-    ss::future<log_recovery_result>
-    download_log(const remote_manifest_path& key);
+    /// Download log segments from S3 to the local storage
+    /// if required.
+    ss::future<log_recovery_result> download_log();
 
     ss::future<> download_log(
       const partition_manifest& manifest, const std::filesystem::path& prefix);
-
-    ss::future<partition_manifest>
-    download_manifest(const remote_manifest_path& path);
 
     struct recovery_material {
         partition_manifest partition_manifest;
     };
 
     /// Locate all data needed to recover single partition
-    ss::future<recovery_material>
-    find_recovery_material(const remote_manifest_path& key);
+    ss::future<recovery_material> find_recovery_material();
 
     struct offset_range {
         model::offset min_offset;
@@ -164,6 +164,11 @@ private:
         std::filesystem::path dest_prefix;
         size_t num_files;
         offset_range range;
+        ss::lw_shared_ptr<storage::offset_translator_state> ot_state;
+        // This flag is set to false when we failed to download something
+        // during recovery. Only partitions which are restored cleanly are
+        // allowed to use tiered-storage to avoid data corruption.
+        bool clean_download{false};
     };
 
     /// Sort offsets and find out the useful offset range

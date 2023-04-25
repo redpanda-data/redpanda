@@ -188,5 +188,6 @@ ss::future<> bootstrap_pre_existing_partition(
   model::offset min_rp_offset,
   model::offset max_rp_offset,
   model::term_id last_included_term,
-  std::vector<model::broker> initial_nodes);
+  std::vector<model::broker> initial_nodes,
+  ss::lw_shared_ptr<storage::offset_translator_state> ot_state);
 } // namespace raft::details
