@@ -13,6 +13,7 @@
 
 #include "cluster/logger.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "raft/types.h"
 #include "seastarx.h"
 
@@ -49,7 +50,8 @@ public:
     /**
      * \brief Lookup the owning shard for an ntp.
      */
-    std::optional<ss::shard_id> shard_for(const model::ntp& ntp) {
+    template<model::any_ntp T>
+    std::optional<ss::shard_id> shard_for(const T& ntp) {
         if (auto it = _ntp_idx.find(ntp); it != _ntp_idx.end()) {
             return it->second.shard;
         }
@@ -205,7 +207,12 @@ private:
      */
 
     // kafka index
-    absl::node_hash_map<model::ntp, shard_revision> _ntp_idx;
+    absl::node_hash_map<
+      model::ntp,
+      shard_revision,
+      model::ktp_hash_eq,
+      model::ktp_hash_eq>
+      _ntp_idx;
     // raft index
     absl::node_hash_map<raft::group_id, shard_revision> _group_idx;
 };
