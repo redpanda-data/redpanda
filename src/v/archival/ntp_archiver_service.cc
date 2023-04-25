@@ -2157,7 +2157,7 @@ ss::future<bool> ntp_archiver::do_upload_local(
 
     auto deadline = ss::lowres_clock::now() + _conf->manifest_upload_timeout;
     auto error = co_await _parent.archival_meta_stm()->add_segments(
-      {meta}, std::nullopt, deadline);
+      {meta}, std::nullopt, deadline, _as);
     if (error != cluster::errc::success && error != cluster::errc::not_leader) {
         vlog(
           _rtclog.warn,
