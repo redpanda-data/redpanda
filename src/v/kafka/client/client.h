@@ -18,10 +18,10 @@
 #include "kafka/client/consumer.h"
 #include "kafka/client/fetcher.h"
 #include "kafka/client/producer.h"
-#include "kafka/client/retry_with_mitigation.h"
 #include "kafka/client/topic_cache.h"
 #include "kafka/client/transport.h"
 #include "kafka/client/types.h"
+#include "kafka/client/utils.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/list_offsets.h"
@@ -88,16 +88,12 @@ public:
     /// \brief Invoke func, on failure, mitigate error and retry.
     template<typename Func>
     std::invoke_result_t<Func> gated_retry_with_mitigation(Func func) {
-        return ss::try_with_gate(_gate, [this, func{std::move(func)}]() {
-            return retry_with_mitigation(
-              _config.retries(),
-              _config.retry_base_backoff(),
-              [this, func{std::move(func)}]() {
-                  _gate.check();
-                  return func();
-              },
-              [this](std::exception_ptr ex) { return mitigate_error(ex); });
-        });
+        return gated_retry_with_mitigation_impl(
+          _gate,
+          _config.retries(),
+          _config.retry_base_backoff(),
+          std::move(func),
+          [this](std::exception_ptr ex) { return mitigate_error(ex); });
     }
 
     /// \brief Dispatch a request to any broker.
