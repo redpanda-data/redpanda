@@ -21,7 +21,8 @@ class RpkProducer(BackgroundThreadService):
                  quiet: bool = False,
                  produce_timeout: Optional[int] = None,
                  *,
-                 partition: Optional[int] = None):
+                 partition: Optional[int] = None,
+                 max_message_bytes: Optional[int] = None):
         super(RpkProducer, self).__init__(context, num_nodes=1)
         self._redpanda = redpanda
         self._topic = topic
@@ -33,6 +34,7 @@ class RpkProducer(BackgroundThreadService):
         self._quiet = quiet
         self._output_line_count = 0
         self._partition = partition
+        self._max_message_bytes = max_message_bytes
 
         if produce_timeout is None:
             produce_timeout = 10
@@ -62,6 +64,9 @@ class RpkProducer(BackgroundThreadService):
 
         if self._partition is not None:
             cmd += f" -p {self._partition}"
+
+        if self._max_message_bytes is not None:
+            cmd += f" --max-message-bytes {self._max_message_bytes}"
 
         self._stopping.clear()
         try:

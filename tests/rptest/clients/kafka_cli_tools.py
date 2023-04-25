@@ -63,7 +63,7 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
 
         return list(map(make_factory, cls.VERSIONS))
 
-    def create_topic(self, spec):
+    def create_topic(self, spec: TopicSpec):
         self._redpanda.logger.debug("Creating topic: %s", spec.name)
         args = ["--create"]
         args += ["--topic", spec.name]
@@ -79,6 +79,8 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             args += ["--config", f"retention.bytes={spec.retention_bytes}"]
         if spec.retention_ms:
             args += ["--config", f"retention.ms={spec.retention_ms}"]
+        if spec.max_message_bytes:
+            args += ["--config", f"max.message.bytes={spec.max_message_bytes}"]
         return self._run("kafka-topics.sh", args)
 
     def create_topic_partitions(self, topic, partitions):

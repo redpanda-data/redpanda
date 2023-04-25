@@ -61,7 +61,8 @@ class TopicSpec:
                  redpanda_remote_read=None,
                  redpanda_remote_write=None,
                  redpanda_remote_delete=None,
-                 segment_ms=None):
+                 segment_ms=None,
+                 max_message_bytes=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -76,6 +77,7 @@ class TopicSpec:
         self.redpanda_remote_write = redpanda_remote_write
         self.redpanda_remote_delete = redpanda_remote_delete
         self.segment_ms = segment_ms
+        self.max_message_bytes = max_message_bytes
 
     def __str__(self):
         return self.name
