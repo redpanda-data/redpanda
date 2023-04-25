@@ -69,7 +69,7 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
             // leader
             if (!p || !p->is_leader()) {
                 ret.push_back(response_t::make_epoch_end_offset(
-                  r.ntp.tp.partition, error_code::not_leader_for_partition));
+                  r.ntp.get_partition(), error_code::not_leader_for_partition));
                 continue;
             }
 
@@ -77,12 +77,12 @@ static ss::future<std::vector<epoch_end_offset>> fetch_offsets_from_shard(
               r.current_epoch, *p);
             if (l_epoch_error != error_code::none) {
                 ret.push_back(response_t::make_epoch_end_offset(
-                  r.ntp.tp.partition, l_epoch_error));
+                  r.ntp.get_partition(), l_epoch_error));
                 continue;
             }
 
             ret.push_back(response_t::make_epoch_end_offset(
-              r.ntp.tp.partition,
+              r.ntp.get_partition(),
               get_epoch_end_offset(r.requested_epoch, *p),
               p->leader_epoch()));
         }

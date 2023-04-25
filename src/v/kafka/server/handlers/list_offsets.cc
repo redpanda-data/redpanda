@@ -69,7 +69,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     auto kafka_partition = make_partition_proxy(ntp, mgr);
     if (!kafka_partition) {
         co_return list_offsets_response::make_partition(
-          ntp.tp.partition, error_code::unknown_topic_or_partition);
+          ntp.get_partition(), error_code::unknown_topic_or_partition);
     }
 
     // using linearizable_barrier instead of is_leader to check that
@@ -78,7 +78,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     auto err = co_await kafka_partition->linearizable_barrier();
     if (err) {
         co_return list_offsets_response::make_partition(
-          ntp.tp.partition, error_code::not_leader_for_partition);
+          ntp.get_partition(), error_code::not_leader_for_partition);
     }
 
     /**
@@ -88,7 +88,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
       current_leader_epoch, *kafka_partition);
     if (leader_epoch_err != error_code::none) {
         co_return list_offsets_response::make_partition(
-          ntp.tp.partition, leader_epoch_err);
+          ntp.get_partition(), leader_epoch_err);
     }
 
     auto offset = kafka_partition->high_watermark();
@@ -96,7 +96,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
         auto maybe_lso = kafka_partition->last_stable_offset();
         if (unlikely(!maybe_lso)) {
             co_return list_offsets_response::make_partition(
-              ntp.tp.partition, maybe_lso.error());
+              ntp.get_partition(), maybe_lso.error());
         }
         offset = maybe_lso.value();
     }
@@ -107,14 +107,14 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
      */
     if (timestamp == list_offsets_request::earliest_timestamp) {
         co_return list_offsets_response::make_partition(
-          ntp.tp.partition,
+          ntp.get_partition(),
           model::timestamp(-1),
           kafka_partition->start_offset(),
           kafka_partition->leader_epoch());
 
     } else if (timestamp == list_offsets_request::latest_timestamp) {
         co_return list_offsets_response::make_partition(
-          ntp.tp.partition,
+          ntp.get_partition(),
           model::timestamp(-1),
           offset,
           kafka_partition->leader_epoch());
@@ -124,7 +124,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
       offset,
       kafka_read_priority(),
       {model::record_batch_type::raft_data}});
-    auto id = ntp.tp.partition;
+    auto id = ntp.get_partition();
     if (res) {
         co_return list_offsets_response::make_partition(
           id, res->time, res->offset, kafka_partition->leader_epoch());
@@ -143,7 +143,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     if (!shard) {
         return ss::make_ready_future<list_offset_partition_response>(
           list_offsets_response::make_partition(
-            ntp.tp.partition, error_code::unknown_topic_or_partition));
+            ntp.get_partition(), error_code::unknown_topic_or_partition));
     }
 
     return octx.rctx.partition_manager().invoke_on(
