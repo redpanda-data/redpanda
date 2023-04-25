@@ -1806,7 +1806,7 @@ ss::future<> ntp_archiver::housekeeping() {
             co_await garbage_collect();
         }
     } catch (std::exception& e) {
-        vlog(_rtclog.warn, "Error occured during housekeeping", e.what());
+        vlog(_rtclog.warn, "Error occurred during housekeeping: {}", e.what());
     }
 }
 
