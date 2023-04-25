@@ -19,6 +19,7 @@
 #include "cluster/types.h"
 #include "features/feature_table.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_manager.h"
@@ -33,7 +34,7 @@ class partition_manager
   : public ss::peering_sharded_service<partition_manager> {
 public:
     using ntp_table_container
-      = absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>>;
+      = model::ntp_flat_map_type<ss::lw_shared_ptr<partition>>;
 
     partition_manager(
       ss::sharded<storage::api>&,
@@ -58,7 +59,8 @@ public:
     ntp_table_container
     get_topic_partition_table(const model::topic_namespace&) const;
 
-    inline ss::lw_shared_ptr<partition> get(const model::ntp& ntp) const {
+    inline ss::lw_shared_ptr<partition>
+    get(const model::any_ntp auto& ntp) const {
         if (auto it = _ntp_table.find(ntp); it != _ntp_table.end()) {
             return it->second;
         }

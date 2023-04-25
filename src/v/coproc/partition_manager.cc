@@ -25,14 +25,6 @@ partition_manager::partition_manager(
   ss::sharded<storage::api>& storage) noexcept
   : _storage(storage.local()) {}
 
-ss::lw_shared_ptr<partition>
-partition_manager::get(const model::ntp& ntp) const {
-    if (auto it = _ntp_table.find(ntp); it != _ntp_table.end()) {
-        return it->second;
-    }
-    return nullptr;
-}
-
 ss::future<> partition_manager::manage(
   storage::ntp_config ntp_cfg, ss::lw_shared_ptr<cluster::partition> src) {
     auto holder = _gate.hold();
