@@ -630,6 +630,40 @@ ss::future<topic_result> topics_frontend::do_delete_topic(
     }
     auto& topic_meta = topic_meta_opt.value().get();
 
+    // Lifecycle marker driven deletion is added alongside the v2 manifest
+    // format in Redpanda 23.2.  Before that, we write legacy one-shot
+    // deletion records.
+    if (!_features.local().is_active(
+          features::feature::cloud_storage_manifest_format_v2)) {
+        // This is not unsafe, but emit a warning in case we have some bug that
+        // causes a cluster to indefinitely use the legacy path, so that
+        // someone has a chance to notice.
+        vlog(
+          clusterlog.warn,
+          "Cluster upgrade in progress, using legacy deletion.",
+          tp_ns);
+        delete_topic_cmd cmd(tp_ns, tp_ns);
+
+        return replicate_and_wait(_stm, _features, _as, std::move(cmd), timeout)
+          .then_wrapped(
+            [tp_ns = std::move(tp_ns)](ss::future<std::error_code> f) mutable {
+                try {
+                    auto ec = f.get0();
+                    if (ec != errc::success) {
+                        return topic_result(std::move(tp_ns), map_errc(ec));
+                    }
+                    return topic_result(std::move(tp_ns), errc::success);
+                } catch (...) {
+                    vlog(
+                      clusterlog.warn,
+                      "Unable to delete topic - {}",
+                      std::current_exception());
+                    return topic_result(
+                      std::move(tp_ns), errc::replication_error);
+                }
+            });
+    }
+
     // Default to traditional deletion, without tombstones
     // Use tombstones for tiered storage topics that require remote erase
     topic_lifecycle_transition_mode mode
