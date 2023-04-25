@@ -554,6 +554,10 @@ ss::future<std::error_code> archival_metadata_stm::do_replicate_commands(
     auto applied = co_await wait_no_throw(
       result.value().last_offset, model::no_timeout, as);
     if (!applied) {
+        if (as.has_value() && as.value().get().abort_requested()) {
+            co_return errc::shutting_down;
+        }
+
         if (
           as.has_value() && !as.value().get().abort_requested()
           && _c->is_leader() && _c->term() == current_term) {
