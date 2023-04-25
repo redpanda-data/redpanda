@@ -37,6 +37,8 @@
 
 using namespace std::chrono_literals;
 
+static ss::abort_source never_abort;
+
 struct archival_metadata_stm_base_fixture
   : mux_state_machine_fixture
   , http_imposter_fixture {
@@ -156,7 +158,9 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
       == cluster::archival_metadata_stm::state_dirty::dirty);
 
     // Replicate add_segment_cmd command that adds segment with offset 0
-    archival_stm->add_segments(m, std::nullopt, ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->add_segments(
+        m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 1);
     BOOST_REQUIRE(
@@ -172,7 +176,6 @@ FIXTURE_TEST(test_archival_stm_happy_path, archival_metadata_stm_fixture) {
 
     // Mark the manifest clean (emulate an uploader completing an upload of the
     // manifest to object storage)
-    ss::abort_source never_abort;
     archival_stm
       ->mark_clean(
         ss::lowres_clock::now() + 10s,
@@ -196,7 +199,9 @@ FIXTURE_TEST(
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1),
     });
-    archival_stm->add_segments(m, std::nullopt, ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->add_segments(
+        m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 1);
     BOOST_REQUIRE_EQUAL(
@@ -221,7 +226,9 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1)});
     // Replicate add_segment_cmd command that adds segment with offset 0
-    archival_stm->add_segments(m1, std::nullopt, ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->add_segments(
+        m1, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
@@ -235,7 +242,9 @@ FIXTURE_TEST(test_archival_stm_segment_replace, archival_metadata_stm_fixture) {
       .archiver_term = model::term_id(1),
       .segment_term = model::term_id(1),
       .sname_format = cloud_storage::segment_name_format::v2});
-    archival_stm->add_segments(m2, std::nullopt, ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->add_segments(
+        m2, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     archival_stm->sync(10s).get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 2);
@@ -454,14 +463,17 @@ FIXTURE_TEST(
         pm.add(name, s);
     }
     pm.advance_insync_offset(model::offset{4});
-    archival_stm->add_segments(m, std::nullopt, ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->add_segments(
+        m, std::nullopt, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE(archival_stm->manifest().size() == 4);
     BOOST_REQUIRE(archival_stm->get_start_offset() == model::offset(0));
     BOOST_REQUIRE(archival_stm->manifest() == pm);
 
     // Truncate the STM, first segment should be added to the backlog
-    archival_stm->truncate(model::offset(101), ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->truncate(model::offset(101), ss::lowres_clock::now() + 10s, never_abort)
       .get();
 
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(100));
@@ -473,7 +485,8 @@ FIXTURE_TEST(
     BOOST_REQUIRE(backlog[0] == lw_segment_meta::convert(*pm.get(name)));
 
     // Truncate the STM, next segment should be added to the backlog
-    archival_stm->truncate(model::offset(200), ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->truncate(model::offset(200), ss::lowres_clock::now() + 10s, never_abort)
       .get();
 
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(200));
@@ -636,7 +649,8 @@ FIXTURE_TEST(test_archival_stm_batching, archival_metadata_stm_fixture) {
       .segment_term = model::term_id(1),
       .sname_format = cloud_storage::segment_name_format::v2});
     // Replicate add_segment_cmd command that adds segment with offset 0
-    auto batcher = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    auto batcher = archival_stm->batch_start(
+      ss::lowres_clock::now() + 10s, never_abort);
     batcher.add_segments(m);
     batcher.cleanup_metadata();
     batcher.replicate().get();
@@ -671,7 +685,8 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
       .segment_term = model::term_id(2)});
 
     // Replicate add_segment_cmd command that adds segment with offset 0
-    auto batcher = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    auto batcher = archival_stm->batch_start(
+      ss::lowres_clock::now() + 10s, never_abort);
     batcher.add_segments(m);
     batcher.replicate().get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 3);
@@ -681,7 +696,10 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
 
     archival_stm
       ->truncate_archive_init(
-        model::offset{0}, model::offset_delta(0), ss::lowres_clock::now() + 10s)
+        model::offset{0},
+        model::offset_delta(0),
+        ss::lowres_clock::now() + 10s,
+        never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_archive_start_offset(), model::offset(0));
@@ -689,7 +707,8 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
       archival_stm->manifest().get_archive_clean_offset(), model::offset());
 
     archival_stm
-      ->cleanup_archive(model::offset{0}, ss::lowres_clock::now() + 10s)
+      ->cleanup_archive(
+        model::offset{0}, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_archive_start_offset(), model::offset(0));
@@ -697,12 +716,14 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
       archival_stm->manifest().get_archive_clean_offset(), model::offset(0));
 
     // unaligned spillover command shouldn't remove segment
-    archival_stm->spillover(model::offset{1}, ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->spillover(model::offset{1}, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(archival_stm->get_start_offset(), model::offset(0));
 
     // aligned spillover command should remove segment
-    auto batcher2 = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    auto batcher2 = archival_stm->batch_start(
+      ss::lowres_clock::now() + 10s, never_abort);
     batcher2.spillover(model::offset(1000));
     batcher2.truncate_archive_init(model::offset(200), model::offset_delta(0));
     batcher2.cleanup_archive(model::offset(100));
@@ -715,7 +736,8 @@ FIXTURE_TEST(test_archival_stm_spillover, archival_metadata_stm_fixture) {
 
     // try to move archive_clean_offset backward
     archival_stm
-      ->cleanup_archive(model::offset{0}, ss::lowres_clock::now() + 10s)
+      ->cleanup_archive(
+        model::offset{0}, ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_archive_clean_offset(), model::offset(100));
@@ -748,7 +770,8 @@ FIXTURE_TEST(
       .segment_term = model::term_id(2)});
 
     // Replicate add_segment_cmd command that adds segment with offset 0
-    auto batcher1 = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    auto batcher1 = archival_stm->batch_start(
+      ss::lowres_clock::now() + 10s, never_abort);
     batcher1.add_segments(m);
     batcher1.replicate().get();
     BOOST_REQUIRE_EQUAL(archival_stm->manifest().size(), 3);
@@ -756,7 +779,8 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(
       archival_stm->manifest().get_archive_start_offset(), model::offset());
 
-    auto batcher2 = archival_stm->batch_start(ss::lowres_clock::now() + 10s);
+    auto batcher2 = archival_stm->batch_start(
+      ss::lowres_clock::now() + 10s, never_abort);
     batcher2.truncate_archive_init(model::offset(0), model::offset_delta(0));
     batcher2.cleanup_archive(model::offset(0));
     batcher2.replicate().get();
@@ -764,7 +788,8 @@ FIXTURE_TEST(
       archival_stm->manifest().get_archive_start_offset(), model::offset(0));
 
     // Truncate by kafka offset inside the archive
-    archival_stm->truncate(kafka::offset(200), ss::lowres_clock::now() + 10s)
+    archival_stm
+      ->truncate(kafka::offset(200), ss::lowres_clock::now() + 10s, never_abort)
       .get();
     BOOST_REQUIRE_EQUAL(
       archival_stm->get_start_kafka_offset(), kafka::offset(200));
