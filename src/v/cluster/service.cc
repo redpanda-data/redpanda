@@ -777,4 +777,13 @@ service::do_get_partition_state(partition_state_request req) {
       });
 }
 
+ss::future<describe_acls_reply>
+service::describe_acls(describe_acls_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req]() mutable {
+          return _security_frontend.local().describe_acls(
+            std::move(req.filter), req.timeout);
+      });
+}
+
 } // namespace cluster

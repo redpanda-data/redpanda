@@ -121,6 +121,9 @@ public:
     ss::future<partition_state_reply> get_partition_state(
       partition_state_request&&, rpc::streaming_context&) final;
 
+    ss::future<describe_acls_reply>
+    describe_acls(describe_acls_request&&, rpc::streaming_context&) final;
+
 private:
     static constexpr auto default_move_interruption_timeout = 10s;
     std::
