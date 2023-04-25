@@ -79,6 +79,10 @@ public:
         return _inflight_close_flush.get_units(1);
     }
 
+    ss::future<ssx::semaphore_units> get_compaction_compression_units() {
+        return _inflight_compaction_compression.get_units(1);
+    }
+
     /**
      * An adjustable_semaphore will set checkpoint_hint whenever its units
      * are exhausted, but this can happen with pathological frequency if
@@ -147,6 +151,11 @@ private:
     // How many logs may be flushed during segment close concurrently?
     // (e.g. when we shut down and ask everyone to flush)
     adjustable_semaphore _inflight_close_flush{0};
+
+    // Decompressing batches for compaction indexing may have an outsized
+    // memory footprint compared with the batch's original size, we must
+    // limit how many of these we do in parallel.
+    adjustable_semaphore _inflight_compaction_compression{1};
 };
 
 } // namespace storage
