@@ -78,10 +78,10 @@ struct service::execution_helper {
     static ss::future<netbuf> exec(
       ss::input_stream<char>& in,
       streaming_context& ctx,
-      uint32_t method_id,
+      method_info method,
       Func&& f) {
         return ctx.permanent_memory_reservation(ctx.get_header().payload_size)
-          .then([f = std::forward<Func>(f), method_id, &in, &ctx]() mutable {
+          .then([f = std::forward<Func>(f), method, &in, &ctx]() mutable {
               return parse_type<Input, Codec>(in, ctx.get_header())
                 .then_wrapped([f = std::forward<Func>(f),
                                &ctx](ss::future<Input> input_f) mutable {
@@ -93,12 +93,12 @@ struct service::execution_helper {
                     auto input = input_f.get0();
                     return f(std::move(input), ctx);
                 })
-                .then([method_id, &ctx](Output out) mutable {
+                .then([method, &ctx](Output out) mutable {
                     const auto version = Codec::response_version(
                       ctx.get_header());
                     auto b = std::make_unique<netbuf>();
                     auto raw_b = b.get();
-                    raw_b->set_service_method_id(method_id);
+                    raw_b->set_service_method(method);
                     raw_b->set_version(version);
                     return Codec::encode(
                              raw_b->buffer(), std::move(out), version)

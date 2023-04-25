@@ -18,6 +18,7 @@
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
+#include "rpc/types.h"
 #include "ssx/semaphore.h"
 
 #include <seastar/util/bool_class.hh>
@@ -29,6 +30,7 @@ namespace raft {
 prevote_stm::prevote_stm(consensus* p)
   : _ptr(p)
   , _sem{0, "raft/prevote"}
+  , _prevote_timeout(rpc::timeout_spec::none)
   , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 prevote_stm::~prevote_stm() {
@@ -39,7 +41,7 @@ prevote_stm::~prevote_stm() {
 
 ss::future<result<vote_reply>> prevote_stm::do_dispatch_prevote(vnode n) {
     auto tout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-      _prevote_timeout.time_since_epoch());
+      _prevote_timeout.timeout_at().time_since_epoch());
     vlog(
       _ctxlog.trace,
       "Sending prevote request to {} from {} with tout: {}",
@@ -60,7 +62,7 @@ prevote_stm::process_reply(vnode n, ss::future<result<vote_reply>> f) {
     auto voter_reply = _replies.find(n);
 
     try {
-        if (_prevote_timeout < clock_type::now()) {
+        if (_prevote_timeout.has_timed_out()) {
             vlog(_ctxlog.trace, "prevote ack from {} timed out", n);
             voter_reply->second._is_failed = true;
             voter_reply->second._is_pending = false;
@@ -163,7 +165,8 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
             .prev_log_term = last_entry_term,
             .leadership_transfer = leadership_transfer};
 
-          _prevote_timeout = clock_type::now() + _ptr->_jit.base_duration();
+          _prevote_timeout = rpc::timeout_spec::from_now(
+            _ptr->_jit.base_duration());
 
           auto m = _replies.find(_ptr->self());
           m->second._is_ok = true;

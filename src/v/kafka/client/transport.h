@@ -80,7 +80,7 @@ private:
         ph.write(raw_size, sizeof(be_total_size));
 
         return _out.write(iobuf_as_scattered(std::move(buf)))
-          .then([this, is_flexible] {
+          .then([this, is_flexible](bool) {
               return parse_size(_in).then([this, is_flexible](
                                             std::optional<size_t> sz) {
                   if (!sz) {

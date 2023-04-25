@@ -59,8 +59,8 @@ class {{service_name}}_service_base : public rpc::service {
 public:
     class failure_probes;
 
-    {%- for method in methods %}
-    static constexpr uint32_t {{method.name}}_method_id = {{method.id}};
+    {% for method in methods %}
+    static constexpr rpc::method_info {{method.name}}_method = {"{{service_name}}::{{method.name}}", {{method.id}}};
     {%- endfor %}
 
     {{service_name}}_service_base(ss::scheduling_group sc, ss::smp_service_group ssg)
@@ -126,7 +126,7 @@ public:
     raw_{{method.name}}(ss::input_stream<char>& in, rpc::streaming_context& ctx) {
       return execution_helper<{{method.input_type}},
                               {{method.output_type}},
-                              Codec>::exec(in, ctx, {{method.id}},
+                              Codec>::exec(in, ctx, {{method.name}}_method,
       [this](
           {{method.input_type}}&& t, rpc::streaming_context& ctx) -> ss::future<{{method.output_type}}> {
           return {{method.name}}(std::move(t), ctx);
@@ -149,6 +149,9 @@ private:
     {% raw %}}}{% endraw %};
     ss::metrics::metric_groups _metrics;
 };
+
+using {{service_name}}_service = {{service_name}}_service_base<rpc::default_message_codec>;
+
 class {{service_name}}_client_protocol {
 public:
     explicit {{service_name}}_client_protocol(rpc::transport& t)
@@ -160,7 +163,8 @@ public:
     {%- for method in methods %}
     virtual inline ss::future<result<rpc::client_context<{{method.output_type}}>>>
     {{method.name}}({{method.input_type}}&& r, rpc::client_opts opts) {
-       return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r), {{method.id}}, std::move(opts));
+       return _transport.send_typed<{{method.input_type}}, {{method.output_type}}>(std::move(r),
+              {{service_name}}_service::{{method.name}}_method, std::move(opts));
     }
     {%- endfor %}
 
@@ -223,8 +227,6 @@ private:
 
     fast_prng _prng;
 };
-
-using {{service_name}}_service = {{service_name}}_service_base<rpc::default_message_codec>;
 
 } // namespace
 """

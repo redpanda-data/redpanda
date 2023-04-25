@@ -26,6 +26,9 @@
 #include <seastar/net/api.hh>
 #include <seastar/net/socket_defs.hh>
 
+#include <fmt/core.h>
+
+#include <chrono>
 #include <memory>
 #include <type_traits>
 
@@ -71,7 +74,7 @@ void transport::fail_outstanding_futures() noexcept {
     // must close the socket
     shutdown();
     for (auto& [_, p] : _correlations) {
-        p->set_value(errc::disconnected_endpoint);
+        p->handler.set_value(errc::disconnected_endpoint);
     }
     _last_seq = sequence_t{0};
     _seq = sequence_t{0};
@@ -142,38 +145,74 @@ transport::make_response_handler(
                                  "registered correlation_id");
     }
     const uint32_t idx = ++_correlation_idx;
-    auto item = std::make_unique<internal::response_handler>();
-    auto item_raw_ptr = item.get();
+    b.set_correlation_id(idx);
+
+    auto entry = std::make_unique<response_entry>();
+
+    // set initial timing info for this request
+    entry->timing.timeout = opts.timeout;
+    entry->timing.enqueued_at = timing_info::clock_type::now();
+
+    auto handler_raw_ptr = &entry->handler;
     // capture the future _before_ inserting promise in the map
     // in case there is a concurrent error w/ the connection and it
     // fails the future before we return from this function
-    auto response_future = item_raw_ptr->get_future();
-    b.set_correlation_id(idx);
-    auto [_, success] = _correlations.emplace(idx, std::move(item));
+    auto response_future = handler_raw_ptr->get_future();
+
+    auto [_, success] = _correlations.emplace(idx, std::move(entry));
     if (unlikely(!success)) {
         throw std::logic_error(
           fmt::format("Tried to reuse correlation id: {}", idx));
     }
-    item_raw_ptr->with_timeout(opts.timeout, [this, idx, seq] {
-        /*
-         * remove pending entry from requests queue. If a timeout occurred
-         * before an entry was sent we can not keep the entry alive as it may
-         * contain caller semaphore units, the units must be released when we
-         * notify caller with the result.
-         */
-        _requests_queue.erase(seq);
-        auto it = _correlations.find(idx);
-        if (likely(it != _correlations.end())) {
-            vlog(
-              rpclog.info,
-              "Request timeout to {}, correlation id: {} ({} in flight)",
-              server_address(),
-              idx,
-              _correlations.size());
-            _probe.request_timeout();
-            _correlations.erase(it);
-        }
-    });
+    handler_raw_ptr->with_timeout(
+      opts.timeout, [this, method = b.name(), idx, seq] {
+          auto format_ms = [](clock_type::duration d) {
+              auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                d);
+              return fmt::format("{} ms", ms.count());
+          };
+
+          auto from_now =
+            [now = timing_info::clock_type::now(), format_ms](
+              timing_info::clock_type::time_point earlier) -> std::string {
+              if (earlier == timing_info::unset) {
+                  return "unset";
+              }
+              return format_ms(now - earlier);
+          };
+          /*
+           * remove pending entry from requests queue. If a timeout occurred
+           * before an entry was sent we can not keep the entry alive as it may
+           * contain caller semaphore units, the units must be released when we
+           * notify caller with the result.
+           */
+          _requests_queue.erase(seq);
+          auto it = _correlations.find(idx);
+          // The timeout may race with the completion of the request (and
+          // removal from _correlations map) in which case we treat this as a
+          // not-timed-out request.
+          if (likely(it != _correlations.end())) {
+              auto& timing = it->second->timing;
+              vlog(
+                rpclog.info,
+                "RPC timeout ({}) to {}, method: {}, correlation id: {}, {} "
+                "in flight, time since: {{init: {}, enqueue: {}, dispatch: "
+                "{}, written: {}}}, flushed: {}",
+                format_ms(timing.timeout.timeout_period),
+                server_address(),
+                method,
+                idx,
+                _correlations.size(),
+                from_now(
+                  timing.timeout.timeout_at() - timing.timeout.timeout_period),
+                from_now(timing.enqueued_at),
+                from_now(timing.dispatched_at),
+                from_now(timing.written_at),
+                timing.flushed);
+              _probe.request_timeout();
+              _correlations.erase(it);
+          }
+      });
 
     return response_future;
 }
@@ -194,6 +233,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
 
           // send
           auto sz = b.buffer().size_bytes();
+          auto corr = b.correlation_id();
           return get_units(_memory, sz)
             .then([b = std::move(b)](ssx::semaphore_units units) mutable {
                 return std::move(b).as_scattered().then(
@@ -204,7 +244,11 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                   });
             })
             .then_unpack(
-              [this, f = std::move(f), seq, u = std::move(opts.resource_units)](
+              [this,
+               f = std::move(f),
+               seq,
+               u = std::move(opts.resource_units),
+               corr](
                 ssx::semaphore_units units,
                 ss::scattered_message<char> scattered_message) mutable {
                   auto e = entry{
@@ -212,7 +256,7 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
                     = std::make_unique<ss::scattered_message<char>>(
                       std::move(scattered_message)),
                     .resource_units = std::move(u),
-                  };
+                    .correlation_id = corr};
 
                   _requests_queue.emplace(
                     seq, std::make_unique<entry>(std::move(e)));
@@ -252,6 +296,7 @@ void transport::dispatch_send() {
                   auto it = _requests_queue.begin();
                   _last_seq = it->first;
                   auto v = std::move(*it->second->scattered_message);
+                  auto corr = it->second->correlation_id;
                   // These units are released once we are out of scope here
                   // and that is intentional because the underlying write call
                   // to the batched output stream guarantees us the in-order
@@ -261,8 +306,18 @@ void transport::dispatch_send() {
                   auto msg_size = v.size();
                   _requests_queue.erase(it->first);
                   auto f = _out.write(std::move(v));
-                  return std::move(f).finally(
-                    [this, msg_size] { _probe.add_bytes_sent(msg_size); });
+                  if (auto maybe_timing = get_timing(corr)) {
+                      maybe_timing->dispatched_at = clock_type::now();
+                  }
+                  return std::move(f)
+                    .then([this, corr](bool flushed) {
+                        if (auto maybe_timing = get_timing(corr)) {
+                            maybe_timing->written_at = clock_type::now();
+                            maybe_timing->flushed = flushed;
+                        }
+                    })
+                    .finally(
+                      [this, msg_size] { _probe.add_bytes_sent(msg_size); });
               });
         }).handle_exception([this](std::exception_ptr e) {
             vlog(rpclog.info, "Error dispatching socket write:{}", e);
@@ -311,7 +366,7 @@ ss::future<> transport::dispatch(header h) {
     // of broken promises
     auto pr = std::move(it->second);
     _correlations.erase(it);
-    pr->set_value(std::move(ctx));
+    pr->handler.set_value(std::move(ctx));
     _probe.request_completed();
     return fut;
 }
@@ -320,6 +375,11 @@ void transport::setup_metrics(
   const std::optional<connection_cache_label>& label,
   const std::optional<model::node_id>& node_id) {
     _probe.setup_metrics(_metrics, label, node_id, server_address());
+}
+
+timing_info* transport::get_timing(uint32_t correlation) {
+    auto it = _correlations.find(correlation);
+    return it == _correlations.end() ? nullptr : &it->second->timing;
 }
 
 transport::~transport() {

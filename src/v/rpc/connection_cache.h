@@ -76,7 +76,7 @@ public:
       model::node_id self,
       ss::shard_id src_shard,
       model::node_id node_id,
-      clock_type::time_point connection_timeout,
+      timeout_spec connection_timeout,
       Func&& f) {
         using ret_t = result_wrap_t<std::invoke_result_t<Func, Protocol>>;
         auto shard = rpc::connection_cache::shard_for(self, src_shard, node_id);
@@ -91,7 +91,7 @@ public:
                     rpc::make_error_code(errc::missing_node_rpc_client));
               }
               return cache.get(node_id)
-                ->get_connected(connection_timeout)
+                ->get_connected(connection_timeout.timeout_at())
                 .then([f = std::forward<Func>(f)](
                         result<rpc::transport*> transport) mutable {
                     if (!transport) {
@@ -104,19 +104,19 @@ public:
           });
     }
 
-    template<typename Protocol, typename Func>
+    template<typename Protocol, typename Func, RpcDurationOrPoint Timeout>
     requires requires(Func&& f, Protocol proto) { f(proto); }
     auto with_node_client(
       model::node_id self,
       ss::shard_id src_shard,
       model::node_id node_id,
-      clock_type::duration connection_timeout,
+      Timeout connection_timeout,
       Func&& f) {
         return with_node_client<Protocol, Func>(
           self,
           src_shard,
           node_id,
-          connection_timeout + clock_type::now(),
+          timeout_spec::from_either(connection_timeout),
           std::forward<Func>(f));
     }
 

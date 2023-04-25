@@ -48,8 +48,8 @@ vote_stm::~vote_stm() {
       "Must call vote_stm::wait()");
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
-    vlog(_ctxlog.trace, "Sending vote request to {}", n);
-    auto tout = clock_type::now() + _ptr->_jit.base_duration();
+    auto tout = _ptr->_jit.base_duration();
+    vlog(_ctxlog.info, "Sending vote request to {} with timeout {}", n, tout);
 
     auto r = _req;
     _ptr->_probe.vote_request_sent();

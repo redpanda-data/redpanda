@@ -30,13 +30,13 @@ batched_output_stream::batched_output_stream(
     vassert(_cache_size > 0, "Size must be > 0");
 }
 
-[[gnu::cold]] static ss::future<>
+[[gnu::cold]] static ss::future<bool>
 already_closed_error(ss::scattered_message<char>& msg) {
-    return ss::make_exception_future<>(
+    return ss::make_exception_future<bool>(
       batched_output_stream_closed(msg.size()));
 }
 
-ss::future<> batched_output_stream::write(ss::scattered_message<char> msg) {
+ss::future<bool> batched_output_stream::write(ss::scattered_message<char> msg) {
     if (unlikely(_closed)) {
         return already_closed_error(msg);
     }
@@ -50,9 +50,9 @@ ss::future<> batched_output_stream::write(ss::scattered_message<char> msg) {
               _unflushed_bytes += vbytes;
               if (
                 _write_sem->waiters() == 0 || _unflushed_bytes >= _cache_size) {
-                  return do_flush();
+                  return do_flush().then([] { return true; });
               }
-              return ss::make_ready_future<>();
+              return ss::make_ready_future<bool>(false);
           });
       });
 }
