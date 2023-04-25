@@ -172,12 +172,12 @@ struct op_context {
 struct fetch_config {
     model::offset start_offset;
     model::offset max_offset;
-    model::isolation_level isolation_level;
     size_t max_bytes;
     model::timeout_clock::time_point timeout;
+    kafka::leader_epoch current_leader_epoch;
+    model::isolation_level isolation_level;
     bool strict_max_bytes{false};
     bool skip_read{false};
-    kafka::leader_epoch current_leader_epoch;
     bool read_from_follower{false};
     std::optional<model::rack_id> consumer_rack_id;
 
