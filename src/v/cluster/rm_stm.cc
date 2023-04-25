@@ -12,6 +12,7 @@
 #include "bytes/iostream.h"
 #include "cluster/logger.h"
 #include "cluster/tx_gateway_frontend.h"
+#include "cluster/tx_snapshot_adl_utils.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/protocol/response_writer.h"
 #include "model/fundamental.h"
@@ -2404,9 +2405,9 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     tx_snapshot data;
     iobuf_parser data_parser(std::move(tx_ss_buf));
     if (hdr.version == tx_snapshot::version) {
-        data = reflection::adl<tx_snapshot>{}.from(data_parser);
+        data = co_await reflection::async_adl<tx_snapshot>{}.from(data_parser);
     } else if (hdr.version == tx_snapshot_v2::version) {
-        auto data_v2 = reflection::adl<tx_snapshot_v2>{}.from(data_parser);
+        auto data_v2 = co_await reflection::async_adl<tx_snapshot_v2>{}.from(data_parser);
         move_snapshot_wo_seqs(data, data_v2);
         data.seqs = std::move(data_v2.seqs);
 
@@ -2421,7 +2422,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .pid = entry.pid, .tx_seq = model::tx_seq(entry.seq)});
         }
     } else if (hdr.version == tx_snapshot_v1::version) {
-        auto data_v1 = reflection::adl<tx_snapshot_v1>{}.from(data_parser);
+        auto data_v1 = co_await reflection::async_adl<tx_snapshot_v1>{}.from(data_parser);
         move_snapshot_wo_seqs(data, data_v1);
         for (auto& seq_v1 : data_v1.seqs) {
             seq_entry seq;
@@ -2452,7 +2453,7 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
     } else if (hdr.version == tx_snapshot_v0::version) {
-        auto data_v0 = reflection::adl<tx_snapshot_v0>{}.from(data_parser);
+        auto data_v0 = co_await reflection::async_adl<tx_snapshot_v0>{}.from(data_parser);
         move_snapshot_wo_seqs(data, data_v0);
         for (auto seq_v0 : data_v0.seqs) {
             auto seq = seq_entry{
@@ -2696,8 +2697,9 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     }
 
     return f.then([this]() mutable {
-        iobuf tx_ss_buf;
+	return ss::do_with(iobuf{}, [this](iobuf& tx_ss_buf) mutable {
         auto version = active_snapshot_version();
+	auto fut_serialize = ss::now();
         if (version == tx_snapshot::version) {
             tx_snapshot tx_ss;
             fill_snapshot_wo_seqs(tx_ss);
@@ -2716,7 +2718,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
                   .pid = entry.first, .timeout = entry.second.timeout});
             }
 
-            reflection::adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
+            fut_serialize = reflection::async_adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
         } else if (version == tx_snapshot_v2::version) {
             tx_snapshot_v2 tx_ss;
             fill_snapshot_wo_seqs(tx_ss);
@@ -2724,7 +2726,7 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
                 tx_ss.seqs.push_back(entry.second.entry.copy());
             }
             tx_ss.offset = _insync_offset;
-            reflection::adl<tx_snapshot_v2>{}.to(tx_ss_buf, std::move(tx_ss));
+            fut_serialize = reflection::async_adl<tx_snapshot_v2>{}.to(tx_ss_buf, std::move(tx_ss));
         } else if (version == tx_snapshot_v1::version) {
             tx_snapshot_v1 tx_ss;
             fill_snapshot_wo_seqs(tx_ss);
@@ -2754,12 +2756,15 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
                 tx_ss.seqs.push_back(std::move(seqs));
             }
             tx_ss.offset = _insync_offset;
-            reflection::adl<tx_snapshot_v1>{}.to(tx_ss_buf, std::move(tx_ss));
+            fut_serialize = reflection::async_adl<tx_snapshot_v1>{}.to(tx_ss_buf, std::move(tx_ss));
         } else {
             vassert(false, "unsupported tx_snapshot version {}", version);
         }
+	return fut_serialize.then([version, &tx_ss_buf, this]() {
         return stm_snapshot::create(
           version, _insync_offset, std::move(tx_ss_buf));
+	});
+	});
     });
 }
 
