@@ -262,33 +262,28 @@ static void fill_fetch_responses(
   op_context& octx,
   std::vector<read_result> results,
   std::vector<op_context::response_placeholder_ptr> responses,
-  std::vector<std::unique_ptr<hdr_hist::measurement>> metrics) {
+  op_context::latency_point start_time) {
     auto range = boost::irange<size_t>(0, results.size());
-    if (unlikely(
-          results.size() != responses.size()
-          || results.size() != metrics.size())) {
+    if (unlikely(results.size() != responses.size())) {
         // soft assert & recovery attempt
         vlog(
           klog.error,
-          "Results, responses, and metrics counts must be the same. "
-          "results: {}, responses: {}, metrics: {}. "
+          "Results and responses counts must be the same. "
+          "results: {}, responses: {}. "
           "Only the common subset will be processed",
           results.size(),
-          responses.size(),
-          metrics.size());
+          responses.size());
         range = boost::irange<size_t>(
-          0, std::min({results.size(), responses.size(), metrics.size()}));
+          0, std::min({results.size(), responses.size()}));
     }
     for (auto idx : range) {
         auto& res = results[idx];
         auto& resp_it = responses[idx];
-        auto& metric = metrics[idx];
 
         // error case
         if (unlikely(res.error != error_code::none)) {
             resp_it->set(
               make_partition_response_error(res.partition, res.error));
-            metric->set_trace(false);
             continue;
         }
 
@@ -347,7 +342,10 @@ static void fill_fetch_responses(
         }
 
         resp_it->set(std::move(resp));
-        metric = nullptr;
+        std::chrono::microseconds fetch_latency
+          = std::chrono::duration_cast<std::chrono::microseconds>(
+            start_time - op_context::latency_clock::now());
+        octx.rctx.probe().record_fetch_latency(fetch_latency);
     }
 }
 
@@ -408,16 +406,13 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
 }
 
 bool shard_fetch::empty() const {
-    if (unlikely(
-          requests.size() != responses.size()
-          || responses.size() != metrics.size())) {
+    if (unlikely(requests.size() != responses.size())) {
         vlog(
           klog.error,
-          "there have to be equal number of fetch requests, responses, and "
-          "metrics for single shard. requests: {}, responses: {}, metrics: {}",
+          "there have to be equal number of fetch requests and responses"
+          " for single shard. requests: {}, responses: {}",
           requests.size(),
-          responses.size(),
-          metrics.size());
+          responses.size());
     }
     return requests.empty();
 }
@@ -459,10 +454,10 @@ handle_shard_fetch(ss::shard_id shard, op_context& octx, shard_fetch fetch) {
               deadline);
         })
       .then([responses = std::move(fetch.responses),
-             metrics = std::move(fetch.metrics),
+             start_time = fetch.start_time,
              &octx](std::vector<read_result> results) mutable {
           fill_fetch_responses(
-            octx, std::move(results), std::move(responses), std::move(metrics));
+            octx, std::move(results), std::move(responses), start_time);
       });
 }
 
@@ -569,9 +564,7 @@ class simple_fetch_planner final : public fetch_planner::impl {
               };
 
               plan.fetches_per_shard[*shard].push_back(
-                make_ntp_fetch_config(ntp, config),
-                &(*resp_it),
-                octx.rctx.probe().auto_fetch_measurement());
+                {ntp, config}, &(*resp_it));
               ++resp_it;
           });
 

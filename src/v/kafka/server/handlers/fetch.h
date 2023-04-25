@@ -25,6 +25,9 @@ using fetch_handler = single_stage_handler<fetch_api, 4, 11>;
  * Fetch operation context
  */
 struct op_context {
+    using latency_clock = hdr_hist::clock_type;
+    using latency_point = latency_clock::time_point;
+
     class response_placeholder {
     public:
         response_placeholder(fetch_response::iterator, op_context* ctx);
@@ -50,6 +53,7 @@ struct op_context {
     private:
         fetch_response::iterator _it;
         op_context* _ctx;
+        op_context::latency_point _start_time;
     };
 
     using iteration_order_t
@@ -298,20 +302,20 @@ struct read_result {
 // struct aggregating fetch requests and corresponding response iterators for
 // the same shard
 struct shard_fetch {
+    explicit shard_fetch(op_context::latency_point start_time)
+      : start_time{start_time} {}
+
     void push_back(
-      ntp_fetch_config config,
-      op_context::response_placeholder_ptr r_ph,
-      std::unique_ptr<hdr_hist::measurement> m) {
+      ntp_fetch_config config, op_context::response_placeholder_ptr r_ph) {
         requests.push_back(std::move(config));
         responses.push_back(r_ph);
-        metrics.push_back(std::move(m));
     }
     bool empty() const;
 
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_placeholder_ptr> responses;
-    std::vector<std::unique_ptr<hdr_hist::measurement>> metrics;
+    op_context::latency_point start_time;
 
     friend std::ostream& operator<<(std::ostream& o, const shard_fetch& sf) {
         fmt::print(o, "{}", sf.requests);
@@ -320,8 +324,10 @@ struct shard_fetch {
 };
 
 struct fetch_plan {
-    explicit fetch_plan(size_t shards)
-      : fetches_per_shard(shards) {}
+    explicit fetch_plan(
+      size_t shards,
+      op_context::latency_point start_time = op_context::latency_clock::now())
+      : fetches_per_shard(shards, shard_fetch(start_time)) {}
 
     std::vector<shard_fetch> fetches_per_shard;
 
