@@ -110,6 +110,8 @@ public:
 
     int64_t compaction_backlog() const final;
 
+    ss::future<usage_report> disk_usage(compaction_config);
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
@@ -184,8 +186,6 @@ private:
     bool is_cloud_retention_active() const;
 
     std::optional<model::offset> retention_offset(compaction_config);
-
-    ss::future<usage_report> disk_usage(compaction_config);
 
 private:
     size_t max_segment_size() const;
