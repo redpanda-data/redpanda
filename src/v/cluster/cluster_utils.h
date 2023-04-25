@@ -14,6 +14,7 @@
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
 #include "cluster/logger.h"
+#include "cluster/members_table.h"
 #include "cluster/types.h"
 #include "config/node_config.h"
 #include "config/tls_config.h"
@@ -358,5 +359,18 @@ inline partition_allocation_domain
 get_allocation_domain(const model::ntp& ntp) {
     return get_allocation_domain(model::topic_namespace_view(ntp));
 }
+
+/**
+ * Check that the configuration is valid, if not return a string with the
+ * error cause.
+ *
+ * @param current_brokers current broker vector
+ * @param to_update broker being added
+ * @return std::optional<ss::sstring> - present if there is an error, nullopt
+ * otherwise
+ */
+std::optional<ss::sstring> check_result_configuration(
+  const members_table::broker_cache_t& current_brokers,
+  const model::broker& to_update);
 
 } // namespace cluster
