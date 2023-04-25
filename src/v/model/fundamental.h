@@ -432,6 +432,17 @@ inline constexpr model::offset offset_cast(kafka::offset k) {
 
 } // namespace kafka
 
+namespace detail {
+inline size_t ntp_hash(
+  std::string_view ns, std::string_view topic, model::partition_id partition) {
+    size_t h = 0;
+    boost::hash_combine(h, std::hash<std::string_view>()(ns));
+    boost::hash_combine(h, std::hash<std::string_view>()(topic));
+    boost::hash_combine(h, std::hash<model::partition_id>()(partition));
+    return h;
+}
+} // namespace detail
+
 namespace std {
 template<>
 struct hash<model::topic> {
@@ -453,11 +464,7 @@ struct hash<model::topic_partition> {
 template<>
 struct hash<model::ntp> {
     size_t operator()(const model::ntp& ntp) const {
-        size_t h = 0;
-        boost::hash_combine(h, hash<ss::sstring>()(ntp.ns));
-        boost::hash_combine(h, hash<ss::sstring>()(ntp.tp.topic));
-        boost::hash_combine(h, hash<model::partition_id>()(ntp.tp.partition));
-        return h;
+        return detail::ntp_hash(ntp.ns(), ntp.tp.topic(), ntp.tp.partition);
     }
 };
 
