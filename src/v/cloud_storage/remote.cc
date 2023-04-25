@@ -209,19 +209,28 @@ ss::future<download_result> remote::do_download_manifest(
 
         if (resp) {
             vlog(ctxlog.debug, "Receive OK response from {}", path);
-            co_await manifest.update(resp.value()->as_input_stream());
-            switch (manifest.get_manifest_type()) {
-            case manifest_type::partition:
-                _probe.partition_manifest_download();
-                break;
-            case manifest_type::topic:
-                _probe.topic_manifest_download();
-                break;
-            case manifest_type::tx_range:
-                _probe.txrange_manifest_download();
-                break;
+            try {
+                co_await manifest.update(resp.value()->as_input_stream());
+
+                switch (manifest.get_manifest_type()) {
+                case manifest_type::partition:
+                    _probe.partition_manifest_download();
+                    break;
+                case manifest_type::topic:
+                    _probe.topic_manifest_download();
+                    break;
+                case manifest_type::tx_range:
+                    _probe.txrange_manifest_download();
+                    break;
+                }
+                co_return download_result::success;
+            } catch (...) {
+                // Draining the response stream may throw I/O errors: convert
+                // those into an error outcome.
+                resp
+                  = cloud_storage_clients::util::handle_client_transport_error(
+                    std::current_exception(), cst_log);
             }
-            co_return download_result::success;
         }
 
         lease.client->shutdown();
