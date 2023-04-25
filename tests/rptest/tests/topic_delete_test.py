@@ -29,6 +29,7 @@ from rptest.services.redpanda import CloudStorageType, SISettings, get_cloud_sto
 from rptest.util import wait_for_local_storage_truncate, firewall_blocked
 from rptest.services.admin import Admin
 from rptest.tests.partition_movement import PartitionMovementMixin
+from rptest.utils.si_utils import BucketView
 
 
 def get_kvstore_topic_key_counts(redpanda):
@@ -369,11 +370,12 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
             # Use all nodes as brokers: enables each test to set num_nodes
             # and get a cluster of that size
             num_brokers=test_context.cluster.available().size(),
-
-            # We rely on the scrubber to delete topic manifests, and to eventually
-            # delete data if cloud storage was unavailable during initial delete.  To
-            # control test runtimes, set a short interval.
-            rp_extra_conf={'cloud_storage_housekeeping_interval_ms': 5000},
+            extra_rp_conf={
+                # We rely on the scrubber to delete topic manifests, and to eventually
+                # delete data if cloud storage was unavailable during initial delete.  To
+                # control test runtimes, set a short interval.
+                'cloud_storage_housekeeping_interval_ms': 5000
+            },
             si_settings=self.si_settings)
 
         self._s3_port = self.si_settings.cloud_storage_api_endpoint_port
@@ -611,9 +613,13 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
 
         self._populate_topic(self.topic)
 
-        keys_before = set(
-            o.key for o in self.redpanda.cloud_storage_client.list_objects(
-                self.si_settings.cloud_storage_bucket))
+        # We do not check that literally no keys are deleted, because adjacent segment
+        # compaction may delete segments (which are replaced by merged segments) at any time.
+        bucket_view = BucketView(self.redpanda)
+        size_before = sum(
+            bucket_view.cloud_log_size_for_ntp(self.topic, i)
+            for i in range(0, self.partition_count))
+        assert size_before > 0
 
         def get_nodes(partition):
             return list(r['node_id'] for r in partition['replicas'])
@@ -637,13 +643,15 @@ class TopicDeleteCloudStorageTest(RedpandaTest):
         # Some additional time in case a buggy deletion path is async
         time.sleep(5)
 
-        keys_after = set(
-            o.key for o in self.redpanda.cloud_storage_client.list_objects(
-                self.si_settings.cloud_storage_bucket))
+        # Check no remote data was lost
+        bucket_view.reset()
+        size_after = sum(
+            bucket_view.cloud_log_size_for_ntp(self.topic, i)
+            for i in range(0, self.partition_count))
+        assert size_after >= size_before
 
-        deleted = keys_before - keys_after
-        self.logger.debug(f"Objects deleted after partition move: {deleted}")
-        assert len(deleted) == 0
+        # The above check is only of metadata, but the metadata will be validated against
+        # data segments during generic test teardown checks.
 
 
 class TopicDeleteStressTest(RedpandaTest):
