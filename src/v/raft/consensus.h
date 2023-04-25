@@ -30,7 +30,6 @@
 #include "raft/prevote_stm.h"
 #include "raft/probe.h"
 #include "raft/recovery_memory_quota.h"
-#include "raft/recovery_throttle.h"
 #include "raft/replicate_batcher.h"
 #include "raft/timeout_jitter.h"
 #include "raft/types.h"

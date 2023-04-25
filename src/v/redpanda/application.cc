@@ -78,7 +78,6 @@
 #include "pandaproxy/schema_registry/api.h"
 #include "raft/coordinated_recovery_throttle.h"
 #include "raft/group_manager.h"
-#include "raft/recovery_throttle.h"
 #include "raft/service.h"
 #include "redpanda/admin_server.h"
 #include "resource_mgmt/io_priority.h"
