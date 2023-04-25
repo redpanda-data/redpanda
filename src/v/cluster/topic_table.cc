@@ -911,6 +911,10 @@ topic_table::fill_snapshot(controller_snapshot& controller_snap) const {
             .updates = std::move(updates),
           });
     }
+
+    for (const auto& [ntr, lm] : _lifecycle_markers) {
+        snap.lifecycle_markers.emplace(ntr, lm);
+    }
 }
 
 // helper class to hold context needed for adding/deleting ntps when applying a
@@ -1298,6 +1302,10 @@ ss::future<> topic_table::apply_snapshot(
 
     // 3. notify delta waiters
     notify_waiters();
+
+    // Lifecycle markers is a simple static collection without notifications
+    // etc, so we can just copy directly into place.
+    _lifecycle_markers = controller_snap.topics.lifecycle_markers;
 
     _last_applied_revision_id = snap_revision;
 }

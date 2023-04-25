@@ -175,6 +175,13 @@ struct topics_t
     absl::node_hash_map<model::topic_namespace, topic_t> topics;
     raft::group_id highest_group_id;
 
+    absl::node_hash_map<
+      nt_revision,
+      nt_lifecycle_marker,
+      nt_revision_hash,
+      nt_revision_eq>
+      lifecycle_markers;
+
     friend bool operator==(const topics_t&, const topics_t&) = default;
 
     ss::future<> serde_async_write(iobuf&);
