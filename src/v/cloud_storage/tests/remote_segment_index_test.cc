@@ -18,6 +18,7 @@
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/defer.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
@@ -150,5 +151,53 @@ SEASTAR_THREAD_TEST_CASE(test_remote_segment_index_builder) {
 
         offset += batch.num_records;
         koffset += batch.num_records;
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_remote_segment_build_coarse_index) {
+    static const model::offset base_offset{100};
+    static const kafka::offset kbase_offset{100};
+    std::vector<batch_t> batches;
+    for (int i = 0; i < 1000; i++) {
+        auto num_records = random_generators::get_int(1, 20);
+        std::vector<size_t> record_sizes;
+        record_sizes.reserve(num_records);
+        for (int i = 0; i < num_records; i++) {
+            record_sizes.push_back(random_generators::get_int(1, 100));
+        }
+        batch_t batch = {
+          .num_records = num_records,
+          .type = model::record_batch_type::raft_data,
+          .record_sizes = std::move(record_sizes),
+        };
+        batches.push_back(std::move(batch));
+    }
+    auto segment = generate_segment(base_offset, batches);
+    auto is = make_iobuf_input_stream(std::move(segment));
+    offset_index ix(base_offset, kbase_offset, 0, 0);
+    auto parser = make_remote_segment_index_builder(
+      std::move(is), ix, model::offset_delta(0), 0);
+    auto pclose = ss::defer([&parser] { parser->close().get(); });
+    auto result = parser->consume().get();
+    BOOST_REQUIRE(result.has_value());
+    BOOST_REQUIRE_NE(result.value(), 0);
+
+    auto mini_ix = ix.build_coarse_index(100_KiB);
+    absl::btree_map<int64_t, kafka::offset> file_to_koffset;
+    std::transform(
+      std::make_move_iterator(mini_ix.begin()),
+      std::make_move_iterator(mini_ix.end()),
+      std::inserter(file_to_koffset, file_to_koffset.end()),
+      [](auto pair) { return std::make_pair(pair.second, pair.first); });
+
+    // Assert that all entries in the mini-map are approximately as far away as
+    // step size. We cannot be sure that entries are exactly as far away,
+    // because of the way the entries are recorded using mod. Additionally all
+    // kafka offsets should be ascending.
+    for (auto it_a = file_to_koffset.cbegin(), it_b = std::next(it_a);
+         it_b != file_to_koffset.cend();
+         ++it_a, ++it_b) {
+        BOOST_REQUIRE_GE(it_b->first - it_a->first, 90_KiB);
+        BOOST_REQUIRE_GT(it_b->second, it_a->second);
     }
 }

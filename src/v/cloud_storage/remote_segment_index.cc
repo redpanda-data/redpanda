@@ -173,6 +173,46 @@ offset_index::find_kaf_offset(kafka::offset upper_bound) {
     return res;
 }
 
+offset_index::coarse_index_t
+offset_index::build_coarse_index(uint64_t step_size) const {
+    vassert(
+      step_size > static_cast<uint64_t>(_min_file_pos_step),
+      "step size {} cannot be less than or equal to index step size {}",
+      step_size,
+      _min_file_pos_step);
+
+    foffset_decoder_t file_dec(
+      _file_index.get_initial_value(),
+      _file_index.get_row_count(),
+      _file_index.copy(),
+      delta_delta_t(_min_file_pos_step));
+    std::array<int64_t, buffer_depth> file_row{};
+
+    decoder_t kaf_dec(
+      _kaf_index.get_initial_value(),
+      _kaf_index.get_row_count(),
+      _kaf_index.copy());
+    std::array<int64_t, buffer_depth> kafka_row{};
+
+    coarse_index_t index;
+    size_t curr_mod_step_sz{0};
+    while (file_dec.read(file_row) && kaf_dec.read(kafka_row)) {
+        for (auto it = file_row.cbegin(), kit = kafka_row.cbegin();
+             it != file_row.cend() && kit != kafka_row.cend();
+             ++it, ++kit) {
+            auto curr_fpos = *it;
+            auto crossed_step_sz = curr_fpos % step_size;
+            if (crossed_step_sz < curr_mod_step_sz) {
+                index[kafka::offset{*kit}] = curr_fpos;
+            }
+            curr_mod_step_sz = crossed_step_sz;
+        }
+        file_row = {};
+        kafka_row = {};
+    }
+    return index;
+}
+
 struct offset_index_header
   : serde::envelope<
       offset_index_header,
