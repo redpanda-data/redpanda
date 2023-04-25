@@ -4006,6 +4006,44 @@ void admin_server::register_debug_routes() {
           return ss::make_ready_future<ss::json::json_return_type>(
             ss::json::json_void());
       });
+
+    register_route<user>(
+      seastar::httpd::debug_json::get_local_storage_usage,
+      [this](std::unique_ptr<ss::http::request> req)
+        -> ss::future<ss::json::json_return_type> {
+          return get_local_storage_usage_handler(std::move(req));
+      });
+}
+
+ss::future<ss::json::json_return_type>
+admin_server::get_local_storage_usage_handler(
+  std::unique_ptr<ss::http::request>) {
+    /*
+     * In order to get an accurate view of disk usage we need to account for
+     * three things:
+     *
+     * 1. partition-based log usage (controller, kafka topics, etc...)
+     * 2. non-partition-based logs (kvstore, ...)
+     * 3. everything else (stm snapshots, etc...)
+     *
+     * The storage API disk usage interface gives is 1 and 2. But we need to
+     * access the partition abstraction to reason about the usage that state
+     * machines and raft account for.
+     *
+     * TODO: this accumulation across sub-systems will be moved up a level in
+     * short order and wont' remain here in the admin interface for long.
+     */
+    const auto other
+      = co_await _partition_manager.local().non_log_disk_size_bytes();
+
+    const auto disk = co_await _controller->get_storage().local().disk_usage();
+
+    seastar::httpd::debug_json::local_storage_usage ret;
+    ret.data = disk.usage.data + other;
+    ret.index = disk.usage.index;
+    ret.compaction = disk.usage.compaction;
+
+    co_return ret;
 }
 
 ss::future<ss::json::json_return_type>

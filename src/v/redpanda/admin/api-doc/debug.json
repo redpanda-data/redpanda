@@ -311,6 +311,20 @@
                     ]
                 }
             ]
+        },
+        {
+            "path": "/v1/debug/local_storage_usage",
+            "operations": [
+                {
+                    "method": "GET",
+                    "summary": "Get the usage report for local storage",
+                    "type": "long",
+                    "nickname": "get_local_storage_usage",
+                    "produces": [
+                        "application/json"
+                    ]
+                }
+            ]
         }
     ],
     "models": {
@@ -694,6 +708,24 @@
                         "type": "partition_replica_state"
                     },
                     "description": "All replicas of this partition"
+                }
+            }
+        },
+        "local_storage_usage": {
+            "id": "local_storage_usage",
+            "description": "Local storage disk usage",
+            "properties": {
+                "data": {
+                    "type": "long",
+                    "description": "Segment data"
+                },
+                "index": {
+                    "type": "long",
+                    "description": "Segment index"
+                },
+                "compaction": {
+                    "type": "long",
+                    "description": "Compaction index"
                 }
             }
         }
