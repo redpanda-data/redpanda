@@ -1234,6 +1234,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
           .name = std::nullopt,
           .delta = std::nullopt,
           .stop = ss::stop_iteration::yes,
+          .upload_kind = upload_ctx.upload_kind,
         };
     }
 
@@ -1308,6 +1309,7 @@ ntp_archiver::schedule_single_upload(const upload_context& upload_ctx) {
       },
       .name = upload.exposed_name, .delta = offset - base,
       .stop = ss::stop_iteration::no,
+      .upload_kind = upload_ctx.upload_kind,
     };
 }
 
@@ -1333,20 +1335,20 @@ ntp_archiver::schedule_uploads(model::offset last_stable_offset) {
 
     std::vector<upload_context> params;
 
-    params.emplace_back(
-      segment_upload_kind::non_compacted,
-      start_upload_offset,
-      last_stable_offset,
-      allow_reuploads_t::no);
+    params.push_back(
+      {.upload_kind = segment_upload_kind::non_compacted,
+       .start_offset = start_upload_offset,
+       .last_offset = last_stable_offset,
+       .allow_reuploads = allow_reuploads_t::no});
 
     if (
       config::shard_local_cfg().cloud_storage_enable_compacted_topic_reupload()
       && _parent.get_ntp_config().is_compacted()) {
-        params.emplace_back(
-          segment_upload_kind::compacted,
-          compacted_segments_upload_start,
-          model::offset::max(),
-          allow_reuploads_t::yes);
+        params.push_back(
+          {.upload_kind = segment_upload_kind::compacted,
+           .start_offset = compacted_segments_upload_start,
+           .last_offset = model::offset::max(),
+           .allow_reuploads = allow_reuploads_t::yes});
     }
 
     co_return co_await schedule_uploads(std::move(params));
@@ -1384,25 +1386,25 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
         }
 
         while (uploads_remaining > 0 && may_begin_uploads()) {
-            auto should_stop = co_await ctx.schedule_single_upload(*this);
-            if (should_stop == ss::stop_iteration::yes) {
+            auto scheduled = co_await schedule_single_upload(ctx);
+            ctx.start_offset = scheduled.inclusive_last_offset
+                               + model::offset(1);
+            scheduled_uploads.push_back(std::move(scheduled));
+            const auto& latest_scheduled = scheduled_uploads.back();
+            if (latest_scheduled.stop == ss::stop_iteration::yes) {
                 break;
             }
-
             // Decrement remaining upload count if the last call actually
             // scheduled an upload.
-            if (!ctx.uploads.empty()) {
-                const auto& last_scheduled = ctx.uploads.back();
-                if (last_scheduled.result.has_value()) {
-                    uploads_remaining -= 1;
-                }
+            if (latest_scheduled.result.has_value()) {
+                uploads_remaining -= 1;
             }
         }
 
         auto upload_segments_count = std::count_if(
-          ctx.uploads.begin(), ctx.uploads.end(), [](const auto& upload) {
-              return upload.result.has_value();
-          });
+          scheduled_uploads.begin(),
+          scheduled_uploads.end(),
+          [](const auto& upload) { return upload.result.has_value(); });
         vlog(
           _rtclog.debug,
           "scheduled {} uploads for upload kind: {}, uploads remaining: "
@@ -1410,11 +1412,6 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
           upload_segments_count,
           ctx.upload_kind,
           uploads_remaining);
-
-        scheduled_uploads.insert(
-          scheduled_uploads.end(),
-          std::make_move_iterator(ctx.uploads.begin()),
-          std::make_move_iterator(ctx.uploads.end()));
     }
 
     co_return scheduled_uploads;
@@ -1753,29 +1750,6 @@ ntp_archiver::maybe_truncate_manifest() {
     }
     co_return result;
 }
-
-ss::future<ss::stop_iteration>
-ntp_archiver::upload_context::schedule_single_upload(ntp_archiver& archiver) {
-    scheduled_upload f = co_await archiver.schedule_single_upload(*this);
-
-    start_offset = f.inclusive_last_offset + model::offset(1);
-    f.upload_kind = upload_kind;
-    auto should_stop = f.stop;
-
-    uploads.push_back(std::move(f));
-    co_return should_stop;
-}
-
-ntp_archiver::upload_context::upload_context(
-  segment_upload_kind upload_kind,
-  model::offset start_offset,
-  model::offset last_offset,
-  allow_reuploads_t allow_reuploads)
-  : upload_kind{upload_kind}
-  , start_offset{start_offset}
-  , last_offset{last_offset}
-  , allow_reuploads{allow_reuploads}
-  , uploads{} {}
 
 std::ostream& operator<<(std::ostream& os, segment_upload_kind upload_kind) {
     switch (upload_kind) {

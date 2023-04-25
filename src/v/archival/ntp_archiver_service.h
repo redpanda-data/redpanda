@@ -304,8 +304,7 @@ private:
     /// An upload context represents a range of offsets to be uploaded. It
     /// will search for segments within this range and upload them, it also
     /// carries some context information like whether re-uploads are
-    /// allowed, what is the maximum number of in-flight uploads that can be
-    /// processed etc.
+    /// allowed.
     struct upload_context {
         /// The kind of segment being uploaded
         segment_upload_kind upload_kind;
@@ -316,19 +315,6 @@ private:
         /// Controls checks for reuploads, compacted segments have this
         /// check disabled
         allow_reuploads_t allow_reuploads;
-        /// Collection of uploads scheduled so far
-        std::vector<scheduled_upload> uploads{};
-
-        /// Schedules a single upload, adds it to upload collection and
-        /// progresses the start offset
-        ss::future<ss::stop_iteration>
-        schedule_single_upload(ntp_archiver& archiver);
-
-        upload_context(
-          segment_upload_kind upload_kind,
-          model::offset start_offset,
-          model::offset last_offset,
-          allow_reuploads_t allow_reuploads);
     };
 
     /// Start upload without waiting for it to complete
