@@ -2047,7 +2047,7 @@ class RedpandaService(Service):
 
         return None
 
-    def node_storage(self, node, sizes: bool = False):
+    def node_storage(self, node, sizes: bool = False) -> NodeStorage:
         """
         Retrieve a summary of storage on a node.
 

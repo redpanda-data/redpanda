@@ -61,6 +61,8 @@ struct index_state
     fragmented_vector<uint32_t> relative_time_index;
     fragmented_vector<uint64_t> position_index;
 
+    size_t size() const { return relative_offset_index.size(); }
+
     bool empty() const { return relative_offset_index.empty(); }
 
     void
@@ -77,7 +79,7 @@ struct index_state
             non_data_timestamps = false;
         }
     }
-    std::tuple<uint32_t, uint32_t, uint64_t> get_entry(size_t i) {
+    std::tuple<uint32_t, uint32_t, uint64_t> get_entry(size_t i) const {
         return {
           relative_offset_index[i], relative_time_index[i], position_index[i]};
     }
