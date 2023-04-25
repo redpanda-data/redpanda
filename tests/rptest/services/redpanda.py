@@ -1009,7 +1009,6 @@ class RedpandaServiceK8s(RedpandaServiceBase):
 
     def clean_node(self, node, **kwargs):
         self._helm.uninstall()
-        pass
 
     def get_node_memory_mb(self):
         line = self._kubectl.exec("cat /proc/meminfo | grep MemTotal")
@@ -1059,12 +1058,11 @@ class RedpandaServiceK8s(RedpandaServiceBase):
     def node_id(self, node, force_refresh=False, timeout_sec=30):
         pass
 
-    def set_cluster_config(self,
-                           values: dict,
-                           expect_restart: bool = False,
-                           admin_client: Optional[Admin] = None,
-                           timeout: int = 10):
-        pass
+    def set_cluster_config(self, values: dict, timeout: int = 300):
+        """
+        Updates the values of the helm release
+        """
+        self._helm.upgrade_config_cluster(values)
 
 
 class RedpandaService(RedpandaServiceBase):
