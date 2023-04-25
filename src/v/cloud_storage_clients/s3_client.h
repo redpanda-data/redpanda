@@ -59,8 +59,10 @@ public:
     /// \param name is a bucket that has the object
     /// \param key is an object name
     /// \return initialized and signed http header or error
-    result<http::client::request_header>
-    make_get_object_request(bucket_name const& name, object_key const& key);
+    result<http::client::request_header> make_get_object_request(
+      bucket_name const& name,
+      object_key const& key,
+      std::optional<http_byte_range> byte_range = std::nullopt);
 
     /// \brief Create a 'HeadObject' request header
     ///
@@ -142,7 +144,8 @@ public:
       bucket_name const& name,
       object_key const& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false) override;
+      bool expect_no_such_key = false,
+      std::optional<http_byte_range> byte_range = std::nullopt) override;
 
     /// HeadObject request.
     /// \param name is a bucket name
@@ -197,7 +200,8 @@ private:
       bucket_name const& name,
       object_key const& key,
       ss::lowres_clock::duration timeout,
-      bool expect_no_such_key = false);
+      bool expect_no_such_key = false,
+      std::optional<http_byte_range> byte_range = std::nullopt);
 
     ss::future<> do_put_object(
       bucket_name const& name,

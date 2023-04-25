@@ -16,6 +16,7 @@
 #include <seastar/http/httpd.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/beast/http/field.hpp>
 
 #include <iosfwd>
 
@@ -33,12 +34,14 @@ struct request_info {
     ss::sstring content;
     size_t content_length;
 
+    absl::flat_hash_map<ss::sstring, ss::sstring> headers;
+
     /*
      * an ugly hack for cloud_storage remote_test.cc. these are cherry-picked
      * out of the request for convenience rather than copying over the entire
-     * header and query parameter data structures and search routines for those
-     * containers. if more request info was needed it might be worth copying
-     * over all the state and the accessors.
+     * header and query parameter data structures and search routines for
+     * those containers. if more request info was needed it might be worth
+     * copying over all the state and the accessors.
      */
     ss::sstring q_list_type;
     ss::sstring q_prefix;
@@ -54,6 +57,13 @@ struct request_info {
         q_prefix = req.get_query_param("prefix");
         h_prefix = req.get_header("prefix");
         has_q_delete = req.query_parameters.contains("delete");
+    }
+
+    std::optional<ss::sstring> header(const ss::sstring& key) const {
+        if (!headers.contains(key)) {
+            return std::nullopt;
+        }
+        return headers.at(key);
     }
 };
 

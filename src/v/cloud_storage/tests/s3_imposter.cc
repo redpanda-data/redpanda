@@ -161,28 +161,37 @@ s3_imposter_fixture::get_targets() const {
 }
 
 void s3_imposter_fixture::set_expectations_and_listen(
-  const std::vector<s3_imposter_fixture::expectation>& expectations) {
+  const std::vector<s3_imposter_fixture::expectation>& expectations,
+  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
     _server
-      ->set_routes([this, &expectations](ss::httpd::routes& r) {
-          set_routes(r, expectations);
-      })
+      ->set_routes(
+        [this, &expectations, headers_to_store = std::move(headers_to_store)](
+          ss::httpd::routes& r) mutable {
+            set_routes(r, expectations, std::move(headers_to_store));
+        })
       .get();
     _server->listen(_server_addr).get();
 }
 
 void s3_imposter_fixture::set_routes(
   ss::httpd::routes& r,
-  const std::vector<s3_imposter_fixture::expectation>& expectations) {
+  const std::vector<s3_imposter_fixture::expectation>& expectations,
+  std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store) {
     using namespace ss::httpd;
     using reply = ss::http::reply;
     struct content_handler {
         content_handler(
-          const std::vector<expectation>& exp, s3_imposter_fixture& imp)
-          : fixture(imp) {
+          const std::vector<expectation>& exp,
+          s3_imposter_fixture& imp,
+          std::optional<absl::flat_hash_set<ss::sstring>> headers_to_store
+          = std::nullopt)
+          : fixture(imp)
+          , headers(std::move(headers_to_store)) {
             for (const auto& e : exp) {
                 expectations[e.url] = e;
             }
         }
+
         ss::sstring handle(const_req request, reply& repl) {
             static const ss::sstring error_payload
               = R"xml(<?xml version="1.0" encoding="UTF-8"?>
@@ -193,6 +202,13 @@ void s3_imposter_fixture::set_routes(
                             <RequestId>requestid</RequestId>
                         </Error>)xml";
             http_test_utils::request_info ri(request);
+
+            if (headers) {
+                for (const auto& h : headers.value()) {
+                    ri.headers[h] = request.get_header(h);
+                }
+            }
+
             fixture._requests.push_back(ri);
             fixture._targets.insert(std::make_pair(ri.url, ri));
             vlog(
@@ -275,8 +291,10 @@ void s3_imposter_fixture::set_routes(
         }
         std::map<ss::sstring, expectation> expectations;
         s3_imposter_fixture& fixture;
+        std::optional<absl::flat_hash_set<ss::sstring>> headers = std::nullopt;
     };
-    auto hd = ss::make_shared<content_handler>(expectations, *this);
+    auto hd = ss::make_shared<content_handler>(
+      expectations, *this, std::move(headers_to_store));
     _handler = std::make_unique<function_handler>(
       [hd](const_req req, reply& repl) { return hd->handle(req, repl); },
       "txt");
