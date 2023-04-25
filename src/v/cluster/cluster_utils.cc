@@ -394,4 +394,51 @@ partition_raft_state get_partition_raft_state(consensus_ptr ptr) {
     return raft_state;
 }
 
+std::optional<ss::sstring> check_result_configuration(
+  const members_table::cache_t& current_brokers,
+  const model::broker& to_update) {
+    for (const auto& [id, current] : current_brokers) {
+        if (id == to_update.id()) {
+            /**
+             * do no allow to decrease node core count
+             */
+            if (
+              current.broker.properties().cores
+              > to_update.properties().cores) {
+                return "core count must not decrease on any broker";
+            }
+            continue;
+        }
+
+        /**
+         * validate if any two of the brokers would listen on the same addresses
+         * after applying configuration update
+         */
+        if (current.broker.rpc_address() == to_update.rpc_address()) {
+            // error, nodes would listen on the same rpc addresses
+            return fmt::format(
+              "duplicate rpc endpoint {} with existing node {}",
+              to_update.rpc_address(),
+              id);
+        }
+        for (auto& current_ep : current.broker.kafka_advertised_listeners()) {
+            auto any_is_the_same = std::any_of(
+              to_update.kafka_advertised_listeners().begin(),
+              to_update.kafka_advertised_listeners().end(),
+              [&current_ep](const model::broker_endpoint& ep) {
+                  return current_ep == ep;
+              });
+            // error, kafka endpoint would point to the same addresses
+            if (any_is_the_same) {
+                return fmt::format(
+                  "duplicate kafka advertised endpoint {} with existing node "
+                  "{}",
+                  current_ep,
+                  id);
+                ;
+            }
+        }
+    }
+    return {};
+}
 } // namespace cluster
