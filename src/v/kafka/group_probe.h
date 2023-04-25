@@ -118,7 +118,7 @@ public:
           prometheus_sanitize::metrics_name("kafka:consumer:group"),
           {sm::make_gauge(
              "consumers",
-             [this] { return _members.size() + _static_members.size(); },
+             [this] { return _members.size(); },
              sm::description("Number of consumers in a group"),
              labels)
              .aggregate({sm::shard_label}),
