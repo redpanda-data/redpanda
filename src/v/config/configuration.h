@@ -238,6 +238,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> cloud_storage_housekeeping_interval_ms;
     property<size_t> cloud_storage_max_segments_pending_deletion_per_partition;
     property<bool> cloud_storage_enable_compacted_topic_reupload;
+    property<std::optional<ss::sstring>> cloud_storage_credentials_host;
 
     // Archival upload controller
     property<std::chrono::milliseconds>

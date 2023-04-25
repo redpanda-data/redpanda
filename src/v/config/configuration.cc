@@ -1144,6 +1144,14 @@ configuration::configuration()
       "Enable re-uploading data for compacted topics",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
       true)
+  , cloud_storage_credentials_host(
+      *this,
+      "cloud_storage_credentials_host",
+      "The hostname to connect to for retrieving role based credentials. "
+      "Derived from cloud_storage_credentials_source if not set. Only required "
+      "when using IAM role based access.",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::tunable},
+      std::nullopt)
   , cloud_storage_upload_ctrl_update_interval_ms(
       *this,
       "cloud_storage_upload_ctrl_update_interval_ms",
