@@ -524,13 +524,14 @@ class BucketView:
 
         return last_model_offset - delta
 
-    def total_cloud_log_size(self) -> int:
+    def total_cloud_log_size(self,
+                             include_below_start_offset: bool = False) -> int:
         self._do_listing()
 
         total = 0
         for pm in self._state.partition_manifests.values():
             total += BucketView.cloud_log_size_from_ntp_manifest(
-                pm, include_below_start_offset=False)
+                pm, include_below_start_offset=include_below_start_offset)
 
         return total
 
