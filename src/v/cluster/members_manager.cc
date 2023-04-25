@@ -949,15 +949,15 @@ members_manager::handle_configuration_update_request(
     }
     vlog(
       clusterlog.trace, "Handling node {} configuration update", req.node.id());
-    auto all_brokers = _members_table.local().all_brokers();
-    if (auto err = check_result_configuration(all_brokers, req.node); err) {
+
+    if (auto err = check_result_configuration(
+          _members_table.local().brokers_cache(), req.node);
+        err) {
         vlog(
           clusterlog.warn,
-          "Rejecting invalid configuration update. Reason: {}, new broker: {}, "
-          "current brokers list: {}",
+          "Rejecting invalid configuration update. Reason: {}, new broker: {}",
           err.value(),
-          req.node,
-          all_brokers);
+          req.node);
         return ss::make_ready_future<ret_t>(errc::invalid_configuration_update);
     }
     auto node_ptr = ss::make_lw_shared(std::move(req.node));

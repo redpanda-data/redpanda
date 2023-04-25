@@ -30,6 +30,8 @@ public:
 
     std::vector<broker_ptr> all_brokers() const;
 
+    const broker_cache_t& brokers_cache() const { return _brokers; };
+
     size_t all_brokers_count() const;
 
     std::vector<model::node_id> all_broker_ids() const;
