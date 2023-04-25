@@ -2407,7 +2407,8 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     if (hdr.version == tx_snapshot::version) {
         data = co_await reflection::async_adl<tx_snapshot>{}.from(data_parser);
     } else if (hdr.version == tx_snapshot_v2::version) {
-        auto data_v2 = co_await reflection::async_adl<tx_snapshot_v2>{}.from(data_parser);
+        auto data_v2 = co_await reflection::async_adl<tx_snapshot_v2>{}.from(
+          data_parser);
         move_snapshot_wo_seqs(data, data_v2);
         data.seqs = std::move(data_v2.seqs);
 
@@ -2422,7 +2423,8 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .pid = entry.pid, .tx_seq = model::tx_seq(entry.seq)});
         }
     } else if (hdr.version == tx_snapshot_v1::version) {
-        auto data_v1 = co_await reflection::async_adl<tx_snapshot_v1>{}.from(data_parser);
+        auto data_v1 = co_await reflection::async_adl<tx_snapshot_v1>{}.from(
+          data_parser);
         move_snapshot_wo_seqs(data, data_v1);
         for (auto& seq_v1 : data_v1.seqs) {
             seq_entry seq;
@@ -2453,7 +2455,8 @@ rm_stm::apply_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
               .pid = entry.pid, .tx_seq = entry.tx_seq});
         }
     } else if (hdr.version == tx_snapshot_v0::version) {
-        auto data_v0 = co_await reflection::async_adl<tx_snapshot_v0>{}.from(data_parser);
+        auto data_v0 = co_await reflection::async_adl<tx_snapshot_v0>{}.from(
+          data_parser);
         move_snapshot_wo_seqs(data, data_v0);
         for (auto seq_v0 : data_v0.seqs) {
             auto seq = seq_entry{
@@ -2697,74 +2700,77 @@ ss::future<stm_snapshot> rm_stm::take_snapshot() {
     }
 
     return f.then([this]() mutable {
-	return ss::do_with(iobuf{}, [this](iobuf& tx_ss_buf) mutable {
-        auto version = active_snapshot_version();
-	auto fut_serialize = ss::now();
-        if (version == tx_snapshot::version) {
-            tx_snapshot tx_ss;
-            fill_snapshot_wo_seqs(tx_ss);
-            for (const auto& entry : _log_state.seq_table) {
-                tx_ss.seqs.push_back(entry.second.entry.copy());
-            }
-            tx_ss.offset = _insync_offset;
-
-            for (const auto& entry : _log_state.tx_seqs) {
-                tx_ss.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
-                  .pid = entry.first, .tx_seq = entry.second});
-            }
-
-            for (const auto& entry : _log_state.expiration) {
-                tx_ss.expiration.push_back(tx_snapshot::expiration_snapshot{
-                  .pid = entry.first, .timeout = entry.second.timeout});
-            }
-
-            fut_serialize = reflection::async_adl<tx_snapshot>{}.to(tx_ss_buf, std::move(tx_ss));
-        } else if (version == tx_snapshot_v2::version) {
-            tx_snapshot_v2 tx_ss;
-            fill_snapshot_wo_seqs(tx_ss);
-            for (const auto& entry : _log_state.seq_table) {
-                tx_ss.seqs.push_back(entry.second.entry.copy());
-            }
-            tx_ss.offset = _insync_offset;
-            fut_serialize = reflection::async_adl<tx_snapshot_v2>{}.to(tx_ss_buf, std::move(tx_ss));
-        } else if (version == tx_snapshot_v1::version) {
-            tx_snapshot_v1 tx_ss;
-            fill_snapshot_wo_seqs(tx_ss);
-            for (const auto& it : _log_state.seq_table) {
-                auto& entry = it.second.entry;
-                seq_entry_v1 seqs;
-                seqs.pid = entry.pid;
-                seqs.seq = entry.seq;
-                try {
-                    seqs.last_offset = to_log_offset(entry.last_offset);
-                } catch (...) {
-                    // ignoring outside the translation range errors
-                    continue;
+        return ss::do_with(iobuf{}, [this](iobuf& tx_ss_buf) mutable {
+            auto version = active_snapshot_version();
+            auto fut_serialize = ss::now();
+            if (version == tx_snapshot::version) {
+                tx_snapshot tx_ss;
+                fill_snapshot_wo_seqs(tx_ss);
+                for (const auto& entry : _log_state.seq_table) {
+                    tx_ss.seqs.push_back(entry.second.entry.copy());
                 }
-                seqs.last_write_timestamp = entry.last_write_timestamp;
-                seqs.seq_cache.reserve(seqs.seq_cache.size());
-                for (auto& item : entry.seq_cache) {
+                tx_ss.offset = _insync_offset;
+
+                for (const auto& entry : _log_state.tx_seqs) {
+                    tx_ss.tx_seqs.push_back(tx_snapshot::tx_seqs_snapshot{
+                      .pid = entry.first, .tx_seq = entry.second});
+                }
+
+                for (const auto& entry : _log_state.expiration) {
+                    tx_ss.expiration.push_back(tx_snapshot::expiration_snapshot{
+                      .pid = entry.first, .timeout = entry.second.timeout});
+                }
+
+                fut_serialize = reflection::async_adl<tx_snapshot>{}.to(
+                  tx_ss_buf, std::move(tx_ss));
+            } else if (version == tx_snapshot_v2::version) {
+                tx_snapshot_v2 tx_ss;
+                fill_snapshot_wo_seqs(tx_ss);
+                for (const auto& entry : _log_state.seq_table) {
+                    tx_ss.seqs.push_back(entry.second.entry.copy());
+                }
+                tx_ss.offset = _insync_offset;
+                fut_serialize = reflection::async_adl<tx_snapshot_v2>{}.to(
+                  tx_ss_buf, std::move(tx_ss));
+            } else if (version == tx_snapshot_v1::version) {
+                tx_snapshot_v1 tx_ss;
+                fill_snapshot_wo_seqs(tx_ss);
+                for (const auto& it : _log_state.seq_table) {
+                    auto& entry = it.second.entry;
+                    seq_entry_v1 seqs;
+                    seqs.pid = entry.pid;
+                    seqs.seq = entry.seq;
                     try {
-                        seqs.seq_cache.push_back(seq_cache_entry_v1{
-                          .seq = item.seq,
-                          .offset = to_log_offset(item.offset)});
+                        seqs.last_offset = to_log_offset(entry.last_offset);
                     } catch (...) {
                         // ignoring outside the translation range errors
                         continue;
                     }
+                    seqs.last_write_timestamp = entry.last_write_timestamp;
+                    seqs.seq_cache.reserve(seqs.seq_cache.size());
+                    for (auto& item : entry.seq_cache) {
+                        try {
+                            seqs.seq_cache.push_back(seq_cache_entry_v1{
+                              .seq = item.seq,
+                              .offset = to_log_offset(item.offset)});
+                        } catch (...) {
+                            // ignoring outside the translation range errors
+                            continue;
+                        }
+                    }
+                    tx_ss.seqs.push_back(std::move(seqs));
                 }
-                tx_ss.seqs.push_back(std::move(seqs));
+                tx_ss.offset = _insync_offset;
+                fut_serialize = reflection::async_adl<tx_snapshot_v1>{}.to(
+                  tx_ss_buf, std::move(tx_ss));
+            } else {
+                vassert(false, "unsupported tx_snapshot version {}", version);
             }
-            tx_ss.offset = _insync_offset;
-            fut_serialize = reflection::async_adl<tx_snapshot_v1>{}.to(tx_ss_buf, std::move(tx_ss));
-        } else {
-            vassert(false, "unsupported tx_snapshot version {}", version);
-        }
-	return fut_serialize.then([version, &tx_ss_buf, this]() {
-        return stm_snapshot::create(
-          version, _insync_offset, std::move(tx_ss_buf));
-	});
-	});
+            return fut_serialize.then([version, &tx_ss_buf, this]() {
+                return stm_snapshot::create(
+                  version, _insync_offset, std::move(tx_ss_buf));
+            });
+        });
     });
 }
 
