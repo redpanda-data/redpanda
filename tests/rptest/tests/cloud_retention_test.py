@@ -7,6 +7,8 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
+
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
 from ducktape.errors import TimeoutError
@@ -321,16 +323,16 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
                                timeout_sec=runtime,
                                backoff_sec=5)
 
-        def cloud_log_size() -> int:
+        def check_cloud_log_size():
             s3_snapshot = BucketView(self.redpanda, topics=self.topics)
             if not s3_snapshot.is_ntp_in_manifest(self.topic, 0):
                 self.logger.debug(f"No manifest present yet")
-                return 0
+                return
 
             if s3_snapshot.manifest_for_ntp(topic=self.topic, partition=0).get(
                     'start_offset', 0) <= 0:
                 self.logger.debug(f"Manifest not prefix-truncated yet")
-                return 0
+                return
 
             cloud_log_size = s3_snapshot.cloud_log_size_for_ntp(self.topic, 0)
             ratio = cloud_log_size / self.retention_bytes
@@ -344,23 +346,20 @@ class CloudRetentionTimelyGCTest(RedpandaTest):
                     f"Cloud log size {overshoot_percentage}% greater than configured"
                     f" retention (max allowed {max_overshoot_percentage}%)")
 
-            return cloud_log_size
-
         pkill_config = ActionConfig(cluster_start_lead_time_sec=10,
                                     min_time_between_actions_sec=10,
                                     max_time_between_actions_sec=20)
+
+        deadline = time.time() + runtime
         with random_process_kills(self.redpanda, pkill_config) as ctx:
-            try:
-                wait_until(lambda: cloud_log_size() == -1,
-                           timeout_sec=runtime,
-                           backoff_sec=5)
-            except TimeoutError as e:
-                # This is the success path. Timing out means that
-                # we've stayed below the max cloud log size threshold
-                # for the duration of the test.
-                pass
-            finally:
-                producer.wait()
-                producer.stop()
+            # This will throw if we violate size constraint
+            while time.time() < deadline:
+                time.sleep(5)
+                check_cloud_log_size()
+
+        # Dropped out without throwing: wait for producer, this includes surfacing
+        # any produce errors
+        producer.wait()
+        producer.stop()
 
         ctx.assert_actions_triggered()
