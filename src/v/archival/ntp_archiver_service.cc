@@ -25,6 +25,7 @@
 #include "cloud_storage/types.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "raft/types.h"
@@ -1390,8 +1391,8 @@ ntp_archiver::schedule_uploads(std::vector<upload_context> loop_contexts) {
         try {
             while (uploads_remaining > 0 && may_begin_uploads()) {
                 auto scheduled = co_await schedule_single_upload(ctx);
-                ctx.start_offset = scheduled.inclusive_last_offset
-                                   + model::offset(1);
+                ctx.start_offset = model::next_offset(
+                  scheduled.inclusive_last_offset);
                 scheduled_uploads.push_back(std::move(scheduled));
                 const auto& latest_scheduled = scheduled_uploads.back();
                 if (latest_scheduled.stop == ss::stop_iteration::yes) {
