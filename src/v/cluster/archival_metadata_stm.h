@@ -45,11 +45,11 @@ public:
     command_batch_builder(
       archival_metadata_stm& stm,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      ss::abort_source& as);
     command_batch_builder(const command_batch_builder&) = delete;
     command_batch_builder(command_batch_builder&&) = default;
     command_batch_builder& operator=(const command_batch_builder&) = delete;
-    command_batch_builder& operator=(command_batch_builder&&) = default;
+    // command_batch_builder& operator=(command_batch_builder&&) = default;
     ~command_batch_builder() = default;
     /// Add segments to the batch
     command_batch_builder&
@@ -75,7 +75,7 @@ private:
     std::reference_wrapper<archival_metadata_stm> _stm;
     storage::record_batch_builder _builder;
     ss::lowres_clock::time_point _deadline;
-    std::optional<std::reference_wrapper<ss::abort_source>> _as;
+    ss::abort_source& _as;
     ss::gate::holder _holder;
 };
 
@@ -103,7 +103,7 @@ public:
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      ss::abort_source&);
 
     /// Truncate local snapshot by moving start_offset forward
     ///
@@ -114,11 +114,11 @@ public:
     ss::future<std::error_code> truncate(
       model::offset start_rp_offset,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      ss::abort_source&);
     ss::future<std::error_code> truncate(
       kafka::offset start_kafka_offset,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      ss::abort_source&);
 
     /// Truncate local snapshot
     ///
@@ -128,7 +128,7 @@ public:
     ss::future<std::error_code> spillover(
       model::offset start_rp_offset,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      ss::abort_source&);
 
     /// Truncate archive area
     ///
@@ -137,18 +137,17 @@ public:
       model::offset start_rp_offset,
       model::offset_delta delta,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      ss::abort_source&);
 
     /// Removes replaced and truncated segments from the snapshot
-    ss::future<std::error_code> cleanup_metadata(
-      ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+    ss::future<std::error_code>
+    cleanup_metadata(ss::lowres_clock::time_point deadline, ss::abort_source&);
 
     /// Propagates archive_clean_offset forward
     ss::future<std::error_code> cleanup_archive(
       model::offset start_rp_offset,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+      ss::abort_source&);
 
     /// Declare that the manifest is clean as of a particular insync_offset:
     /// the insync offset should have been captured before starting the upload,
@@ -200,9 +199,8 @@ public:
 
     /// Create batch builder that can be used to combine and replicate multipe
     /// STM commands together
-    command_batch_builder batch_start(
-      ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
+    command_batch_builder
+    batch_start(ss::lowres_clock::time_point deadline, ss::abort_source&);
 
     /// Acquire the lock that prevents modification of the manifest.
     auto acquire_manifest_lock() { return _manifest_lock.get_units(); }
@@ -225,11 +223,10 @@ private:
       std::vector<cloud_storage::segment_meta>,
       std::optional<model::offset> clean_offset,
       ss::lowres_clock::time_point deadline,
-      std::optional<std::reference_wrapper<ss::abort_source>>);
+      ss::abort_source&);
 
-    ss::future<std::error_code> do_replicate_commands(
-      model::record_batch,
-      std::optional<std::reference_wrapper<ss::abort_source>>);
+    ss::future<std::error_code>
+    do_replicate_commands(model::record_batch, ss::abort_source&);
 
     ss::future<> apply(model::record_batch batch) override;
     ss::future<> handle_eviction() override;
