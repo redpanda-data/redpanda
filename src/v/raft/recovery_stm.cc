@@ -232,7 +232,7 @@ recovery_stm::read_range_for_recovery(
     vlog(_ctxlog.trace, "Reading batches, starting from: {}", start_offset);
     auto reader = co_await _ptr->_log.make_reader(cfg);
     try {
-        auto batches = co_await model::consume_reader_to_memory(
+        auto batches = co_await model::consume_reader_to_fragmented_memory(
           std::move(reader),
           _ptr->_disk_timeout() + model::timeout_clock::now());
 
@@ -249,7 +249,7 @@ recovery_stm::read_range_for_recovery(
 
         auto gap_filled_batches = details::make_ghost_batches_in_gaps(
           start_offset, std::move(batches));
-        _base_batch_offset = gap_filled_batches.begin()->base_offset();
+        _base_batch_offset = gap_filled_batches.front().base_offset();
         _last_batch_offset = gap_filled_batches.back().last_offset();
 
         const auto size = std::accumulate(
@@ -274,7 +274,7 @@ recovery_stm::read_range_for_recovery(
               });
         }
 
-        co_return model::make_foreign_memory_record_batch_reader(
+        co_return model::make_foreign_fragmented_memory_record_batch_reader(
           std::move(gap_filled_batches));
     } catch (const ss::timed_out_error& e) {
         vlog(
