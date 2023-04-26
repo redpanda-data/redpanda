@@ -176,8 +176,12 @@ remote_segment::remote_segment(
 
     vassert(
       _max_hydrated_chunks > 0 && _max_hydrated_chunks <= _chunks_in_segment,
-      "invalid max hydrated chunks: {}",
-      _max_hydrated_chunks);
+      "invalid max hydrated chunks: {}, chunks in segment: {}, chunk size: {}, "
+      "segment size: {}",
+      _max_hydrated_chunks,
+      _chunks_in_segment,
+      _chunk_size,
+      _size);
 
     vlog(
       _ctxlog.trace,
@@ -307,7 +311,12 @@ remote_segment::offset_data_stream(
                             ? _base_rp_offset - _base_offset_delta
                             : start;
         auto chunk_ds = std::make_unique<chunk_data_source_impl>(
-          _chunks_api.value(), *this, start_koff, end, std::move(options));
+          _chunks_api.value(),
+          *this,
+          start_koff,
+          end,
+          pos.file_pos,
+          std::move(options));
         data_stream = ss::input_stream<char>{
           ss::data_source{std::move(chunk_ds)}};
     }

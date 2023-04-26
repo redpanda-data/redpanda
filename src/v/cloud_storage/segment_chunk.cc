@@ -19,6 +19,10 @@ constexpr auto eviction_duration = 10s;
 
 namespace cloud_storage {
 
+void expiry_handler_impl(ss::promise<segment_chunk::handle_t>& pr) {
+    pr.set_exception(ss::timed_out_error());
+}
+
 segment_chunks::segment_chunks(remote_segment& segment)
   : _segment(segment)
   , _cache_backoff_jitter(cache_backoff_duration)
@@ -42,7 +46,7 @@ ss::future<> segment_chunks::start() {
       .handle = std::nullopt,
       .required_by_readers_in_future = 0,
       .required_after_n_chunks = 0,
-      .waiters = {}};
+      .waiters = {expiry_handler_impl}};
 
     for (const auto& [koff, file_offset] : ix) {
         vlog(
@@ -55,7 +59,7 @@ ss::future<> segment_chunks::start() {
           .handle = std::nullopt,
           .required_by_readers_in_future = 0,
           .required_after_n_chunks = 0,
-          .waiters = {}};
+          .waiters = {expiry_handler_impl}};
     }
 
     _eviction_timer.set_callback(
@@ -65,12 +69,14 @@ ss::future<> segment_chunks::start() {
 }
 
 ss::future<> segment_chunks::stop() {
+    vlog(_ctxlog.debug, "stopping segment_chunks");
     _eviction_timer.cancel();
     if (!_as.abort_requested()) {
         _as.request_abort();
     }
 
-    return _gate.close();
+    co_await _gate.close();
+    vlog(_ctxlog.debug, "stopped segment_chunks");
 }
 
 bool segment_chunks::downloads_in_progress() const {
@@ -97,13 +103,12 @@ ss::future<bool> segment_chunks::do_hydrate_and_materialize(
     }
 
     chunk.handle = ss::make_lw_shared(std::move(file_handle));
-    chunk.current_state = chunk_state::hydrated;
     co_return true;
 }
 
-static ss::future<>
+static ss::future<segment_chunk::handle_t>
 add_waiter_to_chunk(file_offset_t chunk_start, segment_chunk& chunk) {
-    ss::promise<> p;
+    ss::promise<segment_chunk::handle_t> p;
     auto f = p.get_future();
     chunk.waiters.push_back(std::move(p), ss::lowres_clock::time_point::max());
     vlog(
@@ -112,10 +117,11 @@ add_waiter_to_chunk(file_offset_t chunk_start, segment_chunk& chunk) {
       "size: {}",
       chunk_start,
       chunk.waiters.size());
-    co_return co_await f.discard_result();
+    return f;
 }
 
-ss::future<> segment_chunks::hydrate_chunk(file_offset_t chunk_start) {
+ss::future<segment_chunk::handle_t>
+segment_chunks::hydrate_chunk(file_offset_t chunk_start) {
     gate_guard g{_gate};
     vassert(_started, "chunk API is not started");
 
@@ -131,7 +137,7 @@ ss::future<> segment_chunks::hydrate_chunk(file_offset_t chunk_start) {
           chunk.handle,
           "chunk state is hydrated without data file for id {}",
           chunk_start);
-        co_return;
+        co_return chunk.handle.value();
     }
 
     // If a download is already in progress, subsequent callers to hydrate are
@@ -162,14 +168,17 @@ ss::future<> segment_chunks::hydrate_chunk(file_offset_t chunk_start) {
     }
 
     vassert(
-      chunk.handle,
+      chunk.handle.has_value(),
       "hydrate loop ended without materializing chunk handle for id {}",
       chunk_start);
+    auto handle = chunk.handle.value();
 
     while (!chunk.waiters.empty()) {
-        chunk.waiters.front().set_value();
+        chunk.waiters.front().set_value(handle);
         chunk.waiters.pop_front();
     }
+
+    co_return handle;
 }
 
 ss::future<> segment_chunks::trim_chunk_files() {
@@ -313,16 +322,26 @@ file_offset_t segment_chunks::get_next_chunk_start(file_offset_t f) const {
     return next->first;
 }
 
+void segment_chunks::mark_hydrated(file_offset_t chunk_start) {
+    vassert(
+      _chunks.contains(chunk_start),
+      "No chunk found starting at {}",
+      chunk_start);
+    _chunks[chunk_start].current_state = chunk_state::hydrated;
+}
+
 chunk_data_source_impl::chunk_data_source_impl(
   segment_chunks& chunks,
   remote_segment& segment,
   kafka::offset start,
   kafka::offset end,
+  file_offset_t begin_stream_at,
   ss::file_input_stream_options stream_options)
   : _chunks(chunks)
   , _segment(segment)
   , _first_chunk_start(_segment.get_chunk_start_for_kafka_offset(start))
   , _last_chunk_start(_segment.get_chunk_start_for_kafka_offset(end))
+  , _begin_stream_at{begin_stream_at - _first_chunk_start}
   , _current_chunk_start(_first_chunk_start)
   , _stream_options(std::move(stream_options))
   , _rtc{_as}
@@ -369,37 +388,53 @@ ss::future<>
 chunk_data_source_impl::load_stream_for_chunk(file_offset_t chunk_start) {
     vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
-    co_await _chunks.hydrate_chunk(chunk_start)
-      .handle_exception([this, chunk_start](const std::exception_ptr& ex) {
-          vlog(
-            _ctxlog.error,
-            "failed to hydrate chunk starting at {}, error: {}",
-            chunk_start,
-            ex);
-          if (_current_stream) {
-              return _current_stream->close().then(
-                [this] { _current_stream = std::nullopt; });
-          }
-          rethrow_exception(ex);
-      });
+    _current_data_file
+      = co_await _chunks.hydrate_chunk(chunk_start)
+          .handle_exception([this, chunk_start](const std::exception_ptr& ex) {
+              vlog(
+                _ctxlog.error,
+                "failed to hydrate chunk starting at {}, error: {}",
+                chunk_start,
+                ex);
 
-    auto& handle = _chunks.get(chunk_start).handle;
-    vassert(
-      handle.has_value(),
-      "chunk handle not present after hydration for chunk id {}, segment {}",
-      _current_chunk_start,
-      _segment.get_segment_path());
+              auto maybe_close_stream = ss::now();
+              if (_current_stream) {
+                  maybe_close_stream = _current_stream->close().then(
+                    [this] { _current_stream = std::nullopt; });
+              }
 
-    // Decrement the count of the file handle for chunk id we just read, while
-    // incrementing the count for the current chunk id.
-    _current_data_file = handle.value();
+              return maybe_close_stream.then([ex] {
+                  return ss::make_exception_future<segment_chunk::handle_t>(ex);
+              });
+          });
+
+    // Mark the chunk hydrated after it has been shared with the data source, so
+    // that it does not get trimmed between hydration and copying the handle.
+    // This may be called by all waiters waiting for the handle.
+    _chunks.mark_hydrated(chunk_start);
 
     if (_current_stream) {
         co_await _current_stream->close();
     }
 
+    // The first read of the data source begins at _begin_stream_at. This is
+    // necessary because the remote segment reader which uses this data source
+    // sets a delta before reading, and the remote segment consumer which
+    // consumes data from this source expects all offsets to be below the delta.
+    // Setting the appropriate start offset on the file stream makes sure that
+    // we do not break that assertion.
+    file_offset_t begin = 0;
+    if (_current_chunk_start == _first_chunk_start) {
+        begin = _begin_stream_at;
+    }
+    vlog(
+      _ctxlog.trace,
+      "creating stream for chunk at {}, begin at {}",
+      _current_chunk_start,
+      begin);
+
     _current_stream = ss::make_file_input_stream(
-      *_current_data_file, 0, _stream_options);
+      *_current_data_file, begin, _stream_options);
 }
 
 ss::future<> chunk_data_source_impl::close() {

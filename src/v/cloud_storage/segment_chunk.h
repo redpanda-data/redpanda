@@ -39,8 +39,6 @@ enum class chunk_state {
 };
 
 struct segment_chunk {
-    using expiry_handler = std::function<void(ss::promise<>&)>;
-
     chunk_state current_state;
 
     // Handle to chunk data file. Shared among all readers. Put behind an
@@ -49,7 +47,8 @@ struct segment_chunk {
     // handle is first removed from the struct before closing, so that any new
     // readers asking to hydrate the chunk at the same time do not get a closed
     // file handle due to race.
-    std::optional<ss::lw_shared_ptr<ss::file>> handle;
+    using handle_t = ss::lw_shared_ptr<ss::file>;
+    std::optional<handle_t> handle;
 
     // Keeps track of the number of readers which will require the chunk in
     // future, after they have read their current chunk. For example if a
@@ -69,7 +68,8 @@ struct segment_chunk {
 
     // List of readers waiting to hydrate this chunk. The first reader starts
     // hydration and the others wait for the hydration to finish.
-    ss::expiring_fifo<ss::promise<>, expiry_handler> waiters;
+    using expiry_handler = std::function<void(ss::promise<handle_t>&)>;
+    ss::expiring_fifo<ss::promise<handle_t>, expiry_handler> waiters;
 };
 
 class segment_chunks {
@@ -90,7 +90,8 @@ public:
     // hydration. The waiters are managed per chunk in `segment_chunk::waiters`.
     // The first reader to request hydration queues the download. The next
     // readers are added to wait list.
-    ss::future<> hydrate_chunk(file_offset_t chunk_start);
+    ss::future<segment_chunk::handle_t>
+    hydrate_chunk(file_offset_t chunk_start);
 
     // For all chunks between first and last, increment the
     // required_by_readers_in_future value by one, and increment the
@@ -107,6 +108,8 @@ public:
     segment_chunk& get(file_offset_t);
 
     file_offset_t get_next_chunk_start(file_offset_t f) const;
+
+    void mark_hydrated(file_offset_t chunk_start);
 
 private:
     // Attempts to download chunk into cache and load the file handle into
@@ -147,6 +150,7 @@ public:
       remote_segment& segment,
       kafka::offset start,
       kafka::offset end,
+      file_offset_t begin_stream_at,
       ss::file_input_stream_options stream_options);
 
     chunk_data_source_impl(const chunk_data_source_impl&) = delete;
@@ -170,6 +174,7 @@ private:
 
     file_offset_t _first_chunk_start;
     file_offset_t _last_chunk_start;
+    file_offset_t _begin_stream_at;
 
     file_offset_t _current_chunk_start;
     std::optional<ss::input_stream<char>> _current_stream{};
