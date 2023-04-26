@@ -1805,8 +1805,18 @@ ss::future<> ntp_archiver::housekeeping() {
             co_await apply_retention();
             co_await garbage_collect();
         }
+    } catch (const ss::abort_requested_exception&) {
+    } catch (const ss::sleep_aborted&) {
+    } catch (const ss::gate_closed_exception&) {
+    } catch (const ss::broken_semaphore&) {
+    } catch (const ss::semaphore_timed_out&) {
+        // Shutdown-type exceptions are thrown, to promptly drop out
+        // of the upload loop.
+        throw;
     } catch (std::exception& e) {
-        vlog(_rtclog.warn, "Error occured during housekeeping", e.what());
+        // Unexpected exceptions are logged, and suppressed: we do not
+        // want to stop who upload loop because of issues in housekeeping
+        vlog(_rtclog.warn, "Error occurred during housekeeping: {}", e.what());
     }
 }
 
