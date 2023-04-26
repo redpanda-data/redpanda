@@ -918,3 +918,10 @@ class Admin:
     def get_partition_state(self, namespace, topic, partition, node=None):
         path = f"debug/partition/{namespace}/{topic}/{partition}"
         return self._request("GET", path, node=node).json()
+
+    def get_local_storage_usage(self, node=None):
+        """
+        Get the local storage usage report.
+        """
+        return self._request("get", "debug/local_storage_usage",
+                             node=node).json()
