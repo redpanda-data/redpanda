@@ -11,6 +11,7 @@ from rptest.services.cluster import cluster
 
 from ducktape.utils.util import wait_until
 from ducktape.mark import matrix, parametrize
+from rptest.util import wait_for_recovery_throttle_rate
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
@@ -136,9 +137,11 @@ class PartitionMoveInterruption(PartitionMovementMixin, EndToEndTest):
                                   previous_assignment=prev_assignment)
         self.check_metrics()
 
-    def _throttle_recovery(self, new_value):
+    def _throttle_recovery(self, new_rate: int):
         self.redpanda.set_cluster_config(
-            {"raft_learner_recovery_rate": str(new_value)})
+            {"raft_learner_recovery_rate": str(new_rate)})
+        wait_for_recovery_throttle_rate(redpanda=self.redpanda,
+                                        new_rate=new_rate)
 
     @cluster(num_nodes=7, log_allow_list=RESTART_LOG_ALLOW_LIST)
     @matrix(replication_factor=[1, 3],
