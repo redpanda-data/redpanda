@@ -247,6 +247,11 @@ class CloudStorageTimingStressTest(RedpandaTest, PartitionMovementMixin):
         self.admin = Admin(self.redpanda)
         self.checks = []
 
+        # Fine tune the allowed overshoot for debug builds as they are
+        # significantly slower.
+        if self.debug_mode:
+            self.allow_runtime_overshoot_by = 2.5
+
     def _create_producer(self) -> KgoVerifierProducer:
         bps = self.produce_byte_rate_per_ntp * self.topics[0].partition_count
         bytes_count = bps * self.target_runtime
