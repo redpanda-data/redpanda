@@ -190,11 +190,15 @@ ss::future<> segment_chunks::trim_chunk_files() {
         }
     }
 
-    if (hydrated_chunks == 0) {
+    bool need_trim = hydrated_chunks > _segment.max_hydrated_chunks();
+    vlog(
+      _ctxlog.trace,
+      "{} hydrated chunks, need trim: {}",
+      hydrated_chunks,
+      need_trim);
+    if (!need_trim) {
         co_return;
     }
-
-    vlog(_ctxlog.trace, "{} hydrated chunks", hydrated_chunks);
 
     std::sort(
       to_release.begin(),
