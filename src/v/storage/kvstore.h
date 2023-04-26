@@ -25,7 +25,7 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/timer.hh>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace storage {
 
@@ -151,7 +151,7 @@ private:
     ssx::semaphore _sem{0, "s/kvstore"};
     ss::lw_shared_ptr<segment> _segment;
     model::offset _next_offset;
-    absl::flat_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;
+    absl::node_hash_map<bytes, iobuf, bytes_type_hash, bytes_type_eq> _db;
 
     ss::future<> put(key_space ks, bytes key, std::optional<iobuf> value);
     void apply_op(bytes key, std::optional<iobuf> value);
