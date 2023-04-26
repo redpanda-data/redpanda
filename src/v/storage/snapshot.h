@@ -120,6 +120,11 @@ public:
 
     ss::future<> remove_snapshot(ss::sstring);
 
+    /*
+     * Return the size of the snapshot on disk.
+     */
+    ss::future<std::optional<size_t>> size(ss::sstring filename) const;
+
 private:
     ss::sstring _partial_prefix;
     std::filesystem::path _dir;
@@ -283,6 +288,13 @@ public:
     }
 
     const ss::sstring& name() { return _filename; }
+
+    /*
+     * Return the size of the snapshot on disk.
+     */
+    ss::future<std::optional<size_t>> size() const {
+        return _snapshot.size(_filename);
+    }
 
 private:
     ss::sstring _filename;

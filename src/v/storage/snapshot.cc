@@ -318,4 +318,19 @@ ss::future<> snapshot_writer::close() {
     });
 }
 
+ss::future<std::optional<size_t>>
+snapshot_manager::size(ss::sstring filename) const {
+    const auto path = snapshot_path(std::move(filename)).string();
+    try {
+        co_return co_await ss::file_size(path);
+    } catch (...) {
+        vlog(
+          stlog.debug,
+          "Failed to stat snapshot file {}: {}",
+          path,
+          std::current_exception());
+        co_return std::nullopt;
+    }
+}
+
 } // namespace storage
