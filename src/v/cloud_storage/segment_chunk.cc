@@ -324,9 +324,11 @@ chunk_data_source_impl::chunk_data_source_impl(
   , _first_chunk_start(_segment.get_chunk_start_for_kafka_offset(start))
   , _last_chunk_start(_segment.get_chunk_start_for_kafka_offset(end))
   , _current_chunk_start(_first_chunk_start)
-  , _stream_options(std::move(stream_options)) {
+  , _stream_options(std::move(stream_options))
+  , _rtc{_as}
+  , _ctxlog{cst_log, _rtc, _segment.get_segment_path()().native()} {
     vlog(
-      cst_log.trace,
+      _ctxlog.trace,
       "chunk data source initialized with file position {} to {}",
       _first_chunk_start,
       _last_chunk_start);
@@ -365,15 +367,14 @@ ss::future<ss::temporary_buffer<char>> chunk_data_source_impl::get() {
 
 ss::future<>
 chunk_data_source_impl::load_stream_for_chunk(file_offset_t chunk_start) {
-    vlog(cst_log.debug, "loading stream for chunk id {}", chunk_start);
+    vlog(_ctxlog.debug, "loading stream for chunk starting at {}", chunk_start);
 
     co_await _chunks.hydrate_chunk(chunk_start)
       .handle_exception([this, chunk_start](const std::exception_ptr& ex) {
           vlog(
-            cst_log.error,
-            "failed to hydrate chunk {} for segment {}, error: {}",
+            _ctxlog.error,
+            "failed to hydrate chunk starting at {}, error: {}",
             chunk_start,
-            _segment.get_segment_path(),
             ex);
           if (_current_stream) {
               return _current_stream->close().then(

@@ -178,6 +178,10 @@ private:
     ss::file_input_stream_options _stream_options;
 
     ss::gate _gate;
+
+    ss::abort_source _as;
+    retry_chain_node _rtc;
+    retry_chain_logger _ctxlog;
 };
 
 } // namespace cloud_storage
