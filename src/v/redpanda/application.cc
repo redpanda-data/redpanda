@@ -993,7 +993,6 @@ void application::wire_up_runtime_services(model::node_id node_id) {
 void application::wire_up_redpanda_services(model::node_id node_id) {
     ss::smp::invoke_on_all([] {
         resources::available_memory::local().register_metrics();
-        return storage::internal::chunks().start();
     }).get();
 
     construct_single_service(thread_worker);
