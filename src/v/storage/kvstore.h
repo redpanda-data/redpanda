@@ -117,6 +117,14 @@ public:
         return _db.empty();
     }
 
+    /*
+     * Return disk usage information about kvstore. Size information for any
+     * segments are returned in the usage.data field. The kvstore doesn't
+     * currently use indexing, and has no reclaimable space yes, so these fields
+     * will be set to 0.
+     */
+    ss::future<usage_report> disk_usage() const;
+
 private:
     kvstore_config _conf;
     storage_resources& _resources;

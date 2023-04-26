@@ -630,4 +630,18 @@ void kvstore::replay_consumer::print(std::ostream& os) const {
     os << "storage::kvstore";
 }
 
+ss::future<usage_report> kvstore::disk_usage() const {
+    usage_report report{};
+
+    if (_segment) {
+        report.usage = co_await _segment->persistent_size();
+    }
+    report.usage.data += (co_await _snap.size()).value_or(0);
+
+    // kvstore doesn't have on-demand reclaimable data (yet) so the default
+    // reclaim limits of 0 in the report are correct.
+
+    co_return report;
+}
+
 } // namespace storage
