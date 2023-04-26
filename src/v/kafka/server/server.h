@@ -28,6 +28,7 @@
 #include "utils/ema.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/scheduling.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 
@@ -38,6 +39,7 @@ public:
     server(
       ss::sharded<net::server_configuration>*,
       ss::smp_service_group,
+      ss::scheduling_group,
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<cluster::config_frontend>&,
@@ -71,6 +73,9 @@ public:
     ss::future<> apply(ss::lw_shared_ptr<net::connection>) final;
 
     ss::smp_service_group smp_group() const { return _smp_group; }
+    ss::scheduling_group fetch_scheduling_group() const {
+        return _fetch_scheduling_group;
+    }
     cluster::topics_frontend& topics_frontend() {
         return _topics_frontend.local();
     }
@@ -157,6 +162,7 @@ public:
 
 private:
     ss::smp_service_group _smp_group;
+    ss::scheduling_group _fetch_scheduling_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
     ss::sharded<cluster::config_frontend>& _config_frontend;
     ss::sharded<features::feature_table>& _feature_table;
