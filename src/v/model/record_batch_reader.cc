@@ -9,10 +9,17 @@
 
 #include "model/record_batch_reader.h"
 
+#include "model/record.h"
+#include "model/record_batch_types.h"
+#include "utils/fragmented_vector.h"
+
+#include <seastar/core/circular_buffer.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
 
 #include <memory>
+#include <utility>
 
 namespace model {
 using data_t = record_batch_reader::data_t;
@@ -161,6 +168,60 @@ record_batch_reader make_generating_record_batch_reader(
     return make_record_batch_reader<reader>(std::move(gen));
 }
 
+record_batch_reader make_foreign_fragmented_memory_record_batch_reader(
+  fragmented_vector<model::record_batch> batches) {
+    std::vector<record_batch_reader::storage_t> data;
+    data.reserve(batches.size() / batches.elements_per_fragment());
+    record_batch_reader::data_t data_chunk;
+    data_chunk.reserve(
+      std::min(batches.elements_per_fragment(), batches.size()));
+    for (size_t i = 0; i < batches.size(); ++i) {
+        auto& b = batches[i];
+        data_chunk.push_back(std::move(b));
+        if (i % batches.elements_per_fragment() == 0) {
+            data.emplace_back(record_batch_reader::foreign_data_t{
+              .buffer = ss::make_foreign(
+                std::make_unique<record_batch_reader::data_t>(
+                  std::exchange(data_chunk, {}))),
+              .index = 0});
+        }
+    }
+    if (!data_chunk.empty()) {
+        data.emplace_back(record_batch_reader::foreign_data_t{
+          .buffer = ss::make_foreign(
+            std::make_unique<record_batch_reader::data_t>(
+              std::move(data_chunk))),
+          .index = 0});
+    }
+    class reader final : public record_batch_reader::impl {
+    public:
+        explicit reader(std::vector<storage_t> data)
+          : _data(std::move(data)) {}
+
+        bool is_end_of_stream() const final { return _index >= _data.size(); }
+
+        void print(std::ostream& os) final {
+            fmt::print(
+              os,
+              "fragmented memory reader {} batches of batches",
+              _data.size());
+        }
+
+    protected:
+        ss::future<storage_t> do_load_slice(timeout_clock::time_point) final {
+            if (is_end_of_stream()) {
+                return ss::make_ready_future<storage_t>(storage_t(data_t{}));
+            }
+            return ss::make_ready_future<storage_t>(std::move(_data[_index++]));
+        }
+
+    private:
+        std::vector<storage_t> _data;
+        size_t _index = 0;
+    };
+    return make_record_batch_reader<reader>(std::move(data));
+}
+
 ss::future<record_batch_reader::data_t> consume_reader_to_memory(
   record_batch_reader reader, timeout_clock::time_point timeout) {
     class memory_batch_consumer {
@@ -176,6 +237,27 @@ ss::future<record_batch_reader::data_t> consume_reader_to_memory(
         data_t _result;
     };
     return std::move(reader).consume(memory_batch_consumer{}, timeout);
+}
+
+ss::future<fragmented_vector<model::record_batch>>
+consume_reader_to_fragmented_memory(
+  record_batch_reader reader, timeout_clock::time_point timeout) {
+    class fragmented_memory_batch_consumer {
+    public:
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+            _result.push_back(std::move(b));
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        fragmented_vector<model::record_batch> end_of_stream() {
+            return std::move(_result);
+        }
+
+    private:
+        fragmented_vector<model::record_batch> _result;
+    };
+    return std::move(reader).consume(
+      fragmented_memory_batch_consumer{}, timeout);
 }
 
 std::ostream& operator<<(std::ostream& os, const record_batch_reader& r) {

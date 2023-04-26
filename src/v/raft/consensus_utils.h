@@ -49,6 +49,8 @@ read_bootstrap_state(storage::log, model::offset, ss::abort_source&);
 
 ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   model::offset, ss::circular_buffer<model::record_batch>&&);
+fragmented_vector<model::record_batch> make_ghost_batches_in_gaps(
+  model::offset, fragmented_vector<model::record_batch>&&);
 
 /// writes snapshot with given data to disk
 ss::future<>

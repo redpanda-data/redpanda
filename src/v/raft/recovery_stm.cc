@@ -221,7 +221,7 @@ recovery_stm::read_range_for_recovery(
 
     // TODO: add timeout of maybe 1minute?
     auto reader = co_await _ptr->_log.make_reader(cfg);
-    auto batches = co_await model::consume_reader_to_memory(
+    auto batches = co_await model::consume_reader_to_fragmented_memory(
       std::move(reader), model::no_timeout);
 
     if (batches.empty()) {
@@ -237,7 +237,7 @@ recovery_stm::read_range_for_recovery(
 
     auto gap_filled_batches = details::make_ghost_batches_in_gaps(
       start_offset, std::move(batches));
-    _base_batch_offset = gap_filled_batches.begin()->base_offset();
+    _base_batch_offset = gap_filled_batches.front().base_offset();
     _last_batch_offset = gap_filled_batches.back().last_offset();
 
     if (is_learner && _ptr->_recovery_throttle) {
@@ -255,7 +255,7 @@ recovery_stm::read_range_for_recovery(
           });
     }
 
-    co_return model::make_foreign_memory_record_batch_reader(
+    co_return model::make_foreign_fragmented_memory_record_batch_reader(
       std::move(gap_filled_batches));
 }
 
@@ -323,8 +323,8 @@ ss::future<> recovery_stm::handle_install_snapshot_reply(
   result<install_snapshot_reply> reply) {
     // snapshot delivery failed
     if (reply.has_error() || !reply.value().success) {
-        // if snapshot delivery failed, stop recovery to update follower state
-        // and retry
+        // if snapshot delivery failed, stop recovery to update follower
+        // state and retry
         _stop_requested = true;
         return close_snapshot_reader();
     }
@@ -359,8 +359,8 @@ ss::future<> recovery_stm::install_snapshot() {
     auto f = _snapshot_reader != nullptr ? ss::now() : open_snapshot_reader();
 
     return f.then([this]() mutable {
-        // we are outside of raft operation lock if snapshot isn't yet ready we
-        // have to wait for it till next recovery loop
+        // we are outside of raft operation lock if snapshot isn't yet ready
+        // we have to wait for it till next recovery loop
         if (!_snapshot_reader) {
             _stop_requested = true;
             return ss::now();
@@ -375,8 +375,8 @@ ss::future<> recovery_stm::replicate(
   append_entries_request::flush_after_append flush,
   ssx::semaphore_units mem_units) {
     // collect metadata for append entries request
-    // last persisted offset is last_offset of batch before the first one in the
-    // reader
+    // last persisted offset is last_offset of batch before the first one in
+    // the reader
     auto prev_log_idx = model::prev_offset(_base_batch_offset);
     model::term_id prev_log_term;
 
@@ -445,8 +445,8 @@ ss::future<> recovery_stm::replicate(
               _stop_requested = true;
               return;
           }
-          // If request was reordered we have to stop recovery as follower state
-          // is not known
+          // If request was reordered we have to stop recovery as follower
+          // state is not known
           if (seq < _ptr->_fstats.get(_node_id).last_received_seq) {
               _stop_requested = true;
               return;
