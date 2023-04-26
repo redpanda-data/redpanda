@@ -2074,7 +2074,15 @@ configuration::configuration()
       "kafka_schema_id_validation_cache_capacity",
       "Per-shard capacity of the cache for validating schema IDs.",
       {.needs_restart = needs_restart::no, .visibility = visibility::tunable},
-      128) {}
+      128)
+  , kafka_memory_share_for_fetch(
+      *this,
+      "kafka_memory_share_for_fetch",
+      "The share of kafka subsystem memory that can be used for fetch read "
+      "buffers, as a fraction of kafka subsystem memory amount",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      0.5,
+      {.min = 0.0, .max = 1.0}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
