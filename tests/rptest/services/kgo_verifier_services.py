@@ -619,6 +619,14 @@ class KgoVerifierProducer(KgoVerifierService):
 
         self._status_thread.raise_on_error()
 
+        if self._status.bad_offsets != 0:
+            # This either means that the test sent multiple producers' traffic to
+            # the same topic, or that Redpanda showed a buggy behavior with
+            # idempotency: producer records should always land at the next offset
+            # after the last record they wrote.
+            raise RuntimeError(
+                f"{self.who_am_i()} possible idempotency bug: {self._status}")
+
         return super().wait_node(node, timeout_sec=timeout_sec)
 
     def wait_for_acks(self, count, timeout_sec, backoff_sec):
