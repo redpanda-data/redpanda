@@ -14,6 +14,7 @@ from rptest.services.redpanda import SISettings, MetricsEndpoint
 from rptest.clients.types import TopicSpec
 from rptest.clients.rpk import RpkTool
 from rptest.utils.si_utils import BucketView
+from ducktape.mark import parametrize
 import time
 
 
@@ -47,7 +48,9 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         super().__init__(test_context, *args, **kwargs)
 
     @cluster(num_nodes=4)
-    def throughput_test(self):
+    @parametrize(restart_stress=True)
+    @parametrize(restart_stress=False)
+    def throughput_test(self, restart_stress):
         """
         Stress the tiered storage upload path on a single partition.  This
         corresponds to a workload in which the user does not create many
@@ -57,6 +60,11 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         We are looking to ensure that the uploads keep up, and that the
         manifest uploads are done efficiently (e.g. not re-uploading
         the manifest with each segment).
+
+        :param restart_stress: if true, additionally restart nodes during
+                               writes, and waive throughput success conditions:
+                               in this mode we are checking for stability and
+                               data durability.
         """
 
         rpk = RpkTool(self.redpanda)
@@ -91,7 +99,15 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         self.logger.info(f"Producing {msg_count} msgs ({write_bytes} bytes)")
         t1 = time.time()
         producer.start()
+
+        if restart_stress:
+            while producer.produce_status.acked < msg_count:
+                time.sleep(5)
+                for node in self.redpanda.nodes:
+                    self.redpanda.restart_nodes([node])
+
         producer.wait(timeout_sec=expect_duration)
+
         produce_duration = time.time() - t1
         actual_byte_rate = (write_bytes / produce_duration)
         mbps = int(actual_byte_rate / (1024 * 1024))
@@ -101,7 +117,8 @@ class TieredStorageSinglePartitionTest(RedpandaTest):
         # Producer should be within a factor of two of the intended byte rate, or something
         # is wrong with the test (running on nodes that can't keep up?) or with Redpanda
         # (some instability interrupted produce?)
-        assert actual_byte_rate > produce_byte_rate / throughput_tolerance_factor
+        if not restart_stress:
+            assert actual_byte_rate > produce_byte_rate / throughput_tolerance_factor
         # Check the workload is respecting rate limit
         assert actual_byte_rate < produce_byte_rate * throughput_tolerance_factor
 
