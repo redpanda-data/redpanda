@@ -147,14 +147,15 @@ static ss::future<read_result> read_from_partition(
  */
 static ss::future<read_result> do_read_from_ntp(
   cluster::partition_manager& cluster_pm,
-  const replica_selector& replica_selector,
+  op_context& octx,
   ntp_fetch_config ntp_config,
-  bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  bool foreign_read) {
     /*
      * lookup the ntp's partition
      */
-    auto kafka_partition = make_partition_proxy(ntp_config.ntp(), cluster_pm);
+    auto kafka_partition = make_partition_proxy(
+      ntp_config.ntp(),
+      cluster_pm);
     if (unlikely(!kafka_partition)) {
         co_return read_result(error_code::unknown_topic_or_partition);
     }
@@ -216,7 +217,7 @@ static ss::future<read_result> do_read_from_ntp(
         if (unlikely(!lso)) {
             co_return read_result(lso.error());
         }
-        auto preferred_replica = replica_selector.select_replica(
+        auto preferred_replica = octx.rctx.replica_selector().select_replica(
           consumer_info{
             .fetch_offset = ntp_config.cfg.start_offset,
             .rack_id = ntp_config.cfg.consumer_rack_id},
@@ -235,7 +236,7 @@ static ss::future<read_result> do_read_from_ntp(
         }
     }
     co_return co_await read_from_partition(
-      std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
+      std::move(*kafka_partition), ntp_config.cfg, foreign_read, octx.deadline);
 }
 
 static ntp_fetch_config
@@ -245,17 +246,12 @@ make_ntp_fetch_config(const model::ntp& ntp, const fetch_config& fetch_cfg) {
 
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
-  const replica_selector& replica_selector,
+  op_context& octx,
   const model::ntp& ntp,
   fetch_config config,
-  bool foreign_read,
-  std::optional<model::timeout_clock::time_point> deadline) {
+  bool foreign_read) {
     return do_read_from_ntp(
-      cluster_pm,
-      replica_selector,
-      make_ntp_fetch_config(ntp, config),
-      foreign_read,
-      deadline);
+      cluster_pm, octx, make_ntp_fetch_config(ntp, config), foreign_read);
 }
 
 static void fill_fetch_responses(
@@ -366,12 +362,7 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
       std::move(ntp_fetch_configs),
       [&cluster_pm, &octx, foreign_read](const ntp_fetch_config& ntp_cfg) {
           auto p_id = ntp_cfg.ntp().tp.partition;
-          return do_read_from_ntp(
-                   cluster_pm,
-                   octx.rctx.replica_selector(),
-                   ntp_cfg,
-                   foreign_read,
-                   octx.deadline)
+          return do_read_from_ntp(cluster_pm, octx, ntp_cfg, foreign_read)
             .then([p_id](read_result res) {
                 res.partition = p_id;
                 return res;
