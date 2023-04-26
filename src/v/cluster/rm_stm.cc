@@ -1103,15 +1103,7 @@ ss::future<result<kafka_result>> rm_stm::do_replicate(
 
 ss::future<> rm_stm::stop() {
     auto_abort_timer.cancel();
-    return raft::state_machine::stop().then([this] {
-        for (const auto& entry : _log_state.seq_table) {
-            _log_state.unlink_lru_pid(entry.second);
-        }
-        vassert(
-          _log_state.lru_idempotent_pids.size() == 0,
-          "Unexpected entries in the lru pid list {}",
-          _log_state.lru_idempotent_pids.size());
-    });
+    return raft::state_machine::stop();
 }
 
 ss::future<> rm_stm::start() {
@@ -2858,7 +2850,7 @@ ss::future<> rm_stm::do_remove_persistent_state() {
 ss::future<> rm_stm::handle_eviction() {
     return _state_lock.hold_write_lock().then(
       [this]([[maybe_unused]] ss::basic_rwlock<>::holder unit) {
-          _log_state = {};
+          _log_state.reset();
           _mem_state = {};
           set_next(_c->start_offset());
           _insync_offset = model::prev_offset(_raft->start_offset());
