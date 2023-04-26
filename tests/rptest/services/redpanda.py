@@ -41,7 +41,9 @@ from ducktape.errors import TimeoutError
 from ducktape.tests.test import TestContext
 
 from rptest.archival.abs_client import build_connection_string
+from rptest.clients.helm import HelmTool
 from rptest.clients.kafka_cat import KafkaCat
+from rptest.clients.kubectl import KubectlTool
 from rptest.clients.rpk import RpkTool
 from rptest.clients.rpk_remote import RpkRemoteTool
 from rptest.clients.python_librdkafka import PythonLibrdkafka
@@ -676,6 +678,74 @@ class SchemaRegistryConfig(TlsConfig):
 
 
 class RedpandaServiceBase(Service):
+    PERSISTENT_ROOT = "/var/lib/redpanda"
+    TRIM_LOGS_KEY = "trim_logs"
+    DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
+    NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
+    CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
+    TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
+    TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
+    TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
+    STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
+    BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
+    COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
+                                            "redpanda.profraw")
+    DEFAULT_NODE_READY_TIMEOUT_SEC = 20
+    DEDICATED_NODE_KEY = "dedicated_nodes"
+    RAISE_ON_ERRORS_KEY = "raise_on_error"
+    LOG_LEVEL_KEY = "redpanda_log_level"
+    DEFAULT_LOG_LEVEL = "info"
+    SUPERUSER_CREDENTIALS: SaslCredentials = SaslCredentials(
+        "admin", "admin", "SCRAM-SHA-256")
+    COV_KEY = "enable_cov"
+    DEFAULT_COV_OPT = "OFF"
+
+    # Where we put a compressed binary if saving it after failure
+    EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
+
+    # When configuring multiple listeners for testing, a secondary port to use
+    # instead of the default.
+    KAFKA_ALTERNATE_PORT = 9093
+    KAFKA_KERBEROS_PORT = 9094
+    ADMIN_ALTERNATE_PORT = 9647
+
+    CLUSTER_CONFIG_DEFAULTS = {
+        'join_retry_timeout_ms': 200,
+        'default_topic_partitions': 4,
+        'enable_metrics_reporter': False,
+        'superusers': [SUPERUSER_CREDENTIALS[0]],
+        # Disable segment size jitter to make tests more deterministic if they rely on
+        # inspecting storage internals (e.g. number of segments after writing a certain
+        # amount of data).
+        'log_segment_size_jitter_percent': 0,
+
+        # This is high enough not to interfere with the logic in any tests, while also
+        # providing some background coverage of the connection limit code (i.e. that it
+        # doesn't crash, it doesn't limit when it shouldn't)
+        'kafka_connections_max': 2048,
+        'kafka_connections_max_per_ip': 1024,
+        'kafka_connections_max_overrides': ["1.2.3.4:5"],
+    }
+
+    logs = {
+        "redpanda_start_stdout_stderr": {
+            "path": STDOUT_STDERR_CAPTURE,
+            "collect_default": True
+        },
+        "code_coverage_profraw_file": {
+            "path": COVERAGE_PROFRAW_CAPTURE,
+            "collect_default": True
+        },
+        "executable": {
+            "path": EXECUTABLE_SAVE_PATH,
+            "collect_default": False
+        },
+        "backtraces": {
+            "path": BACKTRACE_CAPTURE,
+            "collect_default": True
+        }
+    }
+
     def __init__(
         self,
         context,
@@ -697,6 +767,8 @@ class RedpandaServiceBase(Service):
         if resource_settings is None:
             resource_settings = ResourceSettings()
         self._resource_settings = resource_settings
+
+        self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
 
     def start_node(self, node, **kwargs):
         pass
@@ -868,83 +940,109 @@ class RedpandaServiceBase(Service):
     def set_resource_settings(self, rs):
         self._resource_settings = rs
 
+    @property
+    def si_settings(self):
+        return self._si_settings
+
+    def trim_logs(self):
+        if not self._trim_logs:
+            return
+
+        # Excessive logging may cause disks to fill up quickly.
+        # Call this method to removes TRACE and DEBUG log lines from redpanda logs
+        # Ensure this is only done on tests that have passed
+        def prune(node):
+            node.account.ssh(
+                f"sed -i -E -e '/TRACE|DEBUG/d' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
+            )
+
+        self._for_nodes(self.nodes, prune, parallel=True)
+
+
+class RedpandaServiceK8s(RedpandaServiceBase):
+    def __init__(self, context, num_brokers):
+        super(RedpandaServiceK8s, self).__init__(context, num_brokers)
+        self._helm = HelmTool(self)
+        self._kubectl = KubectlTool(self)
+
+    def start_node(self, node, **kwargs):
+        """
+        Install the helm chart which will launch the entire cluster. If
+        the cluster is already running, then noop. This function will not
+        return until redpanda appears to have started successfully. If
+        redpanda does not start within a timeout period the service will
+        fail to start.
+        """
+        self._helm.install()
+
+    def stop_node(self, node, **kwargs):
+        """
+        Uninstall the helm chart which will tear down the entire cluster. If
+        the cluster is already uninstalled, then noop.
+        """
+        self._helm.uninstall()
+
+    def clean_node(self, node, **kwargs):
+        self._helm.uninstall()
+        pass
+
+    def get_node_memory_mb(self):
+        line = self._kubectl.exec("cat /proc/meminfo | grep MemTotal")
+        memory_kb = int(line.strip().split()[1])
+        return memory_kb / 1024
+
+    def get_node_cpu_count(self):
+        core_count_str = self._kubectl.exec(
+            "cat /proc/cpuinfo | grep ^processor | wc -l")
+        return int(core_count_str.strip())
+
+    def get_node_disk_free(self):
+        if self._kubectl.exists(self.PERSISTENT_ROOT):
+            df_path = self.PERSISTENT_ROOT
+        else:
+            # If dir doesn't exist yet, use the parent.
+            df_path = os.path.dirname(self.PERSISTENT_ROOT)
+        df_out = node.account.ssh_output(f"df --output=avail {df_path}")
+        avail_kb = int(df_out.strip().split(b"\n")[1].strip())
+        return avail_kb * 1024
+
+    def lsof_node(self, node: ClusterNode, filter: Optional[str] = None):
+        """
+        Get the list of open files for a running node
+
+        :param filter: If given, this is a grep regex that will filter the files we list
+
+        :return: yields strings
+        """
+        first = True
+        cmd = f"lsof -nP -p {self.redpanda_pid(node)}"
+        if filter is not None:
+            cmd += f" | grep {filter}"
+        for line in self._kubectl.exec(cmd):
+            if first and not filter:
+                # First line is a header, skip it
+                first = False
+                continue
+            try:
+                filename = line.split()[-1]
+            except IndexError:
+                # Malformed line
+                pass
+            else:
+                yield filename
+
+    def node_id(self, node, force_refresh=False, timeout_sec=30):
+        pass
+
+    def set_cluster_config(self,
+                           values: dict,
+                           expect_restart: bool = False,
+                           admin_client: Optional[Admin] = None,
+                           timeout: int = 10):
+        pass
+
 
 class RedpandaService(RedpandaServiceBase):
-    PERSISTENT_ROOT = "/var/lib/redpanda"
-    DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
-    NODE_CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
-    CLUSTER_BOOTSTRAP_CONFIG_FILE = "/etc/redpanda/.bootstrap.yaml"
-    TLS_SERVER_KEY_FILE = "/etc/redpanda/server.key"
-    TLS_SERVER_CRT_FILE = "/etc/redpanda/server.crt"
-    TLS_CA_CRT_FILE = "/etc/redpanda/ca.crt"
-    STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
-    BACKTRACE_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda_backtrace.log")
-    COVERAGE_PROFRAW_CAPTURE = os.path.join(PERSISTENT_ROOT,
-                                            "redpanda.profraw")
-
-    DEFAULT_NODE_READY_TIMEOUT_SEC = 20
-
-    DEDICATED_NODE_KEY = "dedicated_nodes"
-
-    RAISE_ON_ERRORS_KEY = "raise_on_error"
-
-    TRIM_LOGS_KEY = "trim_logs"
-
-    LOG_LEVEL_KEY = "redpanda_log_level"
-    DEFAULT_LOG_LEVEL = "info"
-
-    SUPERUSER_CREDENTIALS: SaslCredentials = SaslCredentials(
-        "admin", "admin", "SCRAM-SHA-256")
-
-    COV_KEY = "enable_cov"
-    DEFAULT_COV_OPT = "OFF"
-
-    # Where we put a compressed binary if saving it after failure
-    EXECUTABLE_SAVE_PATH = "/tmp/redpanda.gz"
-
-    # When configuring multiple listeners for testing, a secondary port to use
-    # instead of the default.
-    KAFKA_ALTERNATE_PORT = 9093
-    KAFKA_KERBEROS_PORT = 9094
-    ADMIN_ALTERNATE_PORT = 9647
-
-    CLUSTER_CONFIG_DEFAULTS = {
-        'join_retry_timeout_ms': 200,
-        'default_topic_partitions': 4,
-        'enable_metrics_reporter': False,
-        'superusers': [SUPERUSER_CREDENTIALS[0]],
-        # Disable segment size jitter to make tests more deterministic if they rely on
-        # inspecting storage internals (e.g. number of segments after writing a certain
-        # amount of data).
-        'log_segment_size_jitter_percent': 0,
-
-        # This is high enough not to interfere with the logic in any tests, while also
-        # providing some background coverage of the connection limit code (i.e. that it
-        # doesn't crash, it doesn't limit when it shouldn't)
-        'kafka_connections_max': 2048,
-        'kafka_connections_max_per_ip': 1024,
-        'kafka_connections_max_overrides': ["1.2.3.4:5"],
-    }
-
-    logs = {
-        "redpanda_start_stdout_stderr": {
-            "path": STDOUT_STDERR_CAPTURE,
-            "collect_default": True
-        },
-        "code_coverage_profraw_file": {
-            "path": COVERAGE_PROFRAW_CAPTURE,
-            "collect_default": True
-        },
-        "executable": {
-            "path": EXECUTABLE_SAVE_PATH,
-            "collect_default": False
-        },
-        "backtraces": {
-            "path": BACKTRACE_CAPTURE,
-            "collect_default": True
-        }
-    }
-
     def __init__(self,
                  context,
                  num_brokers,
@@ -1015,8 +1113,6 @@ class RedpandaService(RedpandaServiceBase):
         self._dedicated_nodes = self._context.globals.get(
             self.DEDICATED_NODE_KEY, False)
 
-        self._trim_logs = self._context.globals.get(self.TRIM_LOGS_KEY, True)
-
         self.logger.info(
             f"ResourceSettings: dedicated_nodes={self._dedicated_nodes}")
 
@@ -1060,10 +1156,6 @@ class RedpandaService(RedpandaServiceBase):
 
     def set_environment(self, environment: dict[str, str]):
         self._environment.update(environment)
-
-    @property
-    def si_settings(self):
-        return self._si_settings
 
     def set_extra_node_conf(self, node, conf):
         assert node in self.nodes, f"where node is {node.name}"
@@ -2235,20 +2327,6 @@ class RedpandaService(RedpandaServiceBase):
             # installation to preserve!
             self._installer.reset_current_install([node])
 
-    def trim_logs(self):
-        if not self._trim_logs:
-            return
-
-        # Excessive logging may cause disks to fill up quickly.
-        # Call this method to removes TRACE and DEBUG log lines from redpanda logs
-        # Ensure this is only done on tests that have passed
-        def prune(node):
-            node.account.ssh(
-                f"sed -i -E -e '/TRACE|DEBUG/d' {RedpandaService.STDOUT_STDERR_CAPTURE} || true"
-            )
-
-        self._for_nodes(self.nodes, prune, parallel=True)
-
     def remove_local_data(self, node):
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/data/*")
 
@@ -3054,3 +3132,8 @@ class RedpandaService(RedpandaServiceBase):
                 raise RuntimeError(
                     f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
                 )
+
+
+def make_redpanda_service(environment):
+    """Factory function for instatiating the appropriate RedpandaServiceBase subclass."""
+    pass
