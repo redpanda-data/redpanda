@@ -115,6 +115,7 @@ public:
         proto = std::make_unique<kafka::server>(
           &configs,
           app.smp_service_groups.kafka_smp_sg(),
+          app.sched_groups.fetch_sg(),
           app.metadata_cache,
           app.controller->get_topics_frontend(),
           app.controller->get_config_frontend(),
