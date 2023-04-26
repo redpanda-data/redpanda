@@ -17,6 +17,7 @@ from threading import Thread
 from typing import Callable, NamedTuple, Optional, Sequence
 
 import requests
+from ducktape.mark import ok_to_fail
 from ducktape.cluster.cluster import ClusterNode
 from ducktape.mark import matrix
 from ducktape.tests.test import TestContext
@@ -1341,6 +1342,7 @@ class TopicRecoveryTest(RedpandaTest):
                                self.rpk_producer_maker)
         self.do_run(test_case)
 
+    @ok_to_fail  # https://github.com/redpanda-data/redpanda/issues/10219
     @cluster(num_nodes=3,
              log_allow_list=MISSING_DATA_ERRORS + TRANSIENT_ERRORS)
     @matrix(cloud_storage_type=get_cloud_storage_type())
