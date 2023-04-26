@@ -1051,6 +1051,8 @@ struct find_coordinator_reply
 ///  added to replace it)
 struct join_request
   : serde::envelope<join_request, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     join_request() noexcept = default;
 
     explicit join_request(model::broker b)
@@ -1070,6 +1072,8 @@ struct join_request
 
 struct join_reply
   : serde::envelope<join_reply, serde::version<0>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
+
     bool success;
 
     join_reply() noexcept = default;
@@ -1095,6 +1099,7 @@ struct join_reply
 struct join_node_request
   : serde::
       envelope<join_node_request, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     join_node_request() noexcept = default;
 
     explicit join_node_request(
@@ -1152,6 +1157,7 @@ struct join_node_request
 struct join_node_reply
   : serde::
       envelope<join_node_reply, serde::version<1>, serde::compat_version<0>> {
+    using rpc_adl_exempt = std::true_type;
     bool success{false};
     model::node_id id{model::unassigned_node_id};
 
@@ -3822,25 +3828,6 @@ struct adl<cluster::join_reply> {
     cluster::join_reply from(iobuf_parser& in) {
         auto success = adl<bool>{}.from(in);
         return cluster::join_reply{success};
-    }
-};
-
-template<>
-struct adl<cluster::join_node_request> {
-    void to(iobuf&, cluster::join_node_request&&);
-    cluster::join_node_request from(iobuf);
-    cluster::join_node_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::join_node_reply> {
-    void to(iobuf& out, cluster::join_node_reply&& r) {
-        serialize(out, r.success, r.id);
-    }
-    cluster::join_node_reply from(iobuf_parser& in) {
-        auto success = adl<bool>{}.from(in);
-        auto id = adl<model::node_id>{}.from(in);
-        return {success, id};
     }
 };
 
