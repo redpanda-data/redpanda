@@ -201,26 +201,28 @@ disk_log_impl::size_based_gc_max_offset(compaction_config cfg) {
         return std::nullopt;
     }
 
-    auto max_size = cfg.max_bytes.value();
+    const auto max_size = cfg.max_bytes.value();
+    const size_t partition_size = _probe.partition_size();
     vlog(
       gclog.debug,
       "[{}] retention max bytes: {}, current partition size: {}",
       config().ntp(),
       max_size,
-      _probe.partition_size());
-    if (_segs.empty() || _probe.partition_size() <= max_size) {
+      partition_size);
+    if (_segs.empty() || partition_size <= max_size) {
         return std::nullopt;
     }
 
     size_t reclaimed_size = 0;
-    model::offset ret;
+    const size_t safe_to_reclaim = partition_size - max_size;
+    std::optional<model::offset> ret;
 
     for (const auto& segment : _segs) {
         reclaimed_size += segment->size_bytes();
-        ret = segment->offsets().dirty_offset;
-        if (_probe.partition_size() - reclaimed_size <= max_size) {
+        if (reclaimed_size > safe_to_reclaim) {
             break;
         }
+        ret = segment->offsets().dirty_offset;
     }
     return ret;
 }

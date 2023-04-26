@@ -31,6 +31,7 @@ from rptest.util import Scale, wait_until_segments
 from rptest.util import (
     produce_until_segments,
     wait_for_removal_of_n_segments,
+    wait_for_local_storage_truncate,
 )
 from rptest.utils.mode_checks import skip_debug_mode
 from rptest.utils.si_utils import nodes_report_cloud_segments, BucketView
@@ -322,11 +323,10 @@ class EndToEndShadowIndexingTestWithDisruptions(EndToEndShadowIndexingBase):
 
         assert self.redpanda
         with random_process_kills(self.redpanda) as ctx:
-            wait_for_removal_of_n_segments(redpanda=self.redpanda,
-                                           topic=self.topic,
-                                           partition_idx=0,
-                                           n=6,
-                                           original_snapshot=original_snapshot)
+            wait_for_local_storage_truncate(redpanda=self.redpanda,
+                                            topic=self.topic,
+                                            target_bytes=5 * self.segment_size,
+                                            partition_idx=0)
 
             self.start_consumer()
             self.run_validation(consumer_timeout_sec=90)

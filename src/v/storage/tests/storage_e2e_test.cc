@@ -623,9 +623,27 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
     auto new_lstats = log.offsets();
     BOOST_REQUIRE_EQUAL(new_lstats.start_offset, lstats.start_offset);
 
+    // max log size
+    const auto max_size = (total_size - first_size) + 1;
+
+    /*
+     * logic for determining the cut point. same as in disk log impl. we use
+     * this here to figure out which segment we expect to get removed based on
+     * the target size, then use that to check the expected new log offsets.
+     */
+    model::offset last_offset;
+    size_t reclaimed_size = 0;
+    for (auto& seg : disk_log->segments()) {
+        reclaimed_size += seg->size_bytes();
+        if (disk_log->size_bytes() - reclaimed_size < max_size) {
+            break;
+        }
+        last_offset = seg->offsets().dirty_offset;
+    }
+
     storage::compaction_config ccfg(
       model::timestamp::min(),
-      (total_size - first_size) + 1,
+      max_size,
       model::offset::max(),
       ss::default_priority_class(),
       as);
@@ -634,7 +652,29 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
     new_lstats = log.offsets();
     info("Final offsets {}", new_lstats);
     BOOST_REQUIRE_EQUAL(
-      new_lstats.start_offset, lstats.dirty_offset + model::offset(1));
+      new_lstats.start_offset, last_offset + model::offset(1));
+
+    {
+        auto batches = read_and_validate_all_batches(log);
+        size_t size = std::accumulate(
+          batches.begin(),
+          batches.end(),
+          size_t(0),
+          [](size_t acc, model::record_batch& b) {
+              return acc + b.size_bytes();
+          });
+        /*
+         * the max size is a soft target. in practice we can't reclaim space on
+         * a per-byte granularity, and the real policy is to not violate max
+         * size target, but to get as close as possible.
+         */
+        BOOST_REQUIRE_GE(size, max_size);
+
+        /*
+         * but, we do expect to have removed some data
+         */
+        BOOST_REQUIRE_LT(size, total_size);
+    }
 };
 
 FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
@@ -3274,8 +3314,9 @@ FIXTURE_TEST(test_bytes_eviction_overrides, storage_test_fixture) {
             model::offset::max(),
             ss::default_priority_class(),
             as));
-        // make sure we retain less than expected bytes
-        BOOST_REQUIRE_LE(disk_log->size_bytes(), tc.expected_bytes_left);
+
+        // retention won't violate the target
+        BOOST_REQUIRE_GE(disk_log->size_bytes(), tc.expected_bytes_left);
         BOOST_REQUIRE_GT(
           disk_log->size_bytes(), tc.expected_bytes_left - segment_size);
     }
