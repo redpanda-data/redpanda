@@ -270,6 +270,9 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
 record_batch_reader
   make_memory_record_batch_reader(record_batch_reader::storage_t);
 
+record_batch_reader make_fragmented_memory_record_batch_reader(
+  fragmented_vector<model::record_batch>);
+
 inline record_batch_reader
 make_memory_record_batch_reader(model::record_batch b) {
     record_batch_reader::data_t batches;
