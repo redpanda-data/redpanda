@@ -78,6 +78,13 @@ public:
     /// returned.
     std::optional<find_result> find_kaf_offset(kafka::offset upper_bound);
 
+    /// Builds a coarse index mapping kafka offsets to file positions. The step
+    /// size is the resolution of the index. So given a step size of 16MiB, the
+    /// result contains mappings of kafka offset to file position from the index
+    /// where entries are _roughly_ 16MiB apart in terms of file position.
+    using coarse_index_t = absl::btree_map<kafka::offset, int64_t>;
+    coarse_index_t build_coarse_index(uint64_t step_size) const;
+
     /// Serialize offset_index
     iobuf to_iobuf();
 
