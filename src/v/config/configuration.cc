@@ -1968,7 +1968,15 @@ configuration::configuration()
       "Interval, in seconds, of how often a message informing the operator "
       "that unsafe strings are permitted",
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
-      300s) {}
+      300s) 
+  , kafka_memory_share_for_fetch(
+      *this,
+      "kafka_memory_share_for_fetch",
+      "The share of kafka subsystem memory that can be used for fetch read "
+      "buffers, as a fraction of kafka subsystem memory amount",
+      {.needs_restart = needs_restart::yes, .visibility = visibility::user},
+      0.3,
+      {.min = 0.0, .max = 1.0}) {}
 
 configuration::error_map_t configuration::load(const YAML::Node& root_node) {
     if (!root_node["redpanda"]) {
