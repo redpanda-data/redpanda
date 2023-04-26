@@ -286,24 +286,6 @@ struct instance_generator<cluster::feature_barrier_response> {
 };
 
 template<>
-struct instance_generator<cluster::join_request> {
-    static cluster::join_request random() {
-        return cluster::join_request{model::random_broker()};
-    }
-
-    static std::vector<cluster::join_request> limits() { return {}; }
-};
-
-template<>
-struct instance_generator<cluster::join_reply> {
-    static cluster::join_reply random() {
-        return cluster::join_reply{tests::random_bool()};
-    }
-
-    static std::vector<cluster::join_reply> limits() { return {}; }
-};
-
-template<>
 struct instance_generator<cluster::join_node_request> {
     static cluster::join_node_request random() {
         return cluster::join_node_request{

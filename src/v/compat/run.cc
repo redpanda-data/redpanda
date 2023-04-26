@@ -60,8 +60,6 @@ using compat_checks = type_list<
   raft::heartbeat_reply,
   raft::append_entries_request,
   raft::append_entries_reply,
-  cluster::join_request,
-  cluster::join_reply,
   cluster::join_node_request,
   cluster::join_node_reply,
   cluster::decommission_node_request,

@@ -1044,58 +1044,6 @@ struct find_coordinator_reply
     auto serde_fields() { return std::tie(coordinator, ntp, ec); }
 };
 
-/// Old-style request sent by node to join raft-0
-/// - Does not specify logical version
-/// - Always specifies node_id
-/// (remove this RPC two versions after join_node_request was
-///  added to replace it)
-struct join_request
-  : serde::envelope<join_request, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
-    join_request() noexcept = default;
-
-    explicit join_request(model::broker b)
-      : node(std::move(b)) {}
-
-    model::broker node;
-
-    friend bool operator==(const join_request&, const join_request&) = default;
-
-    friend std::ostream& operator<<(std::ostream& o, const join_request& r) {
-        fmt::print(o, "node {}", r.node);
-        return o;
-    }
-
-    auto serde_fields() { return std::tie(node); }
-};
-
-struct join_reply
-  : serde::envelope<join_reply, serde::version<0>, serde::compat_version<0>> {
-    using rpc_adl_exempt = std::true_type;
-
-    bool success;
-
-    join_reply() noexcept = default;
-
-    explicit join_reply(bool success)
-      : success(success) {}
-
-    friend bool operator==(const join_reply&, const join_reply&) = default;
-
-    friend std::ostream& operator<<(std::ostream& o, const join_reply& r) {
-        fmt::print(o, "success {}", r.success);
-        return o;
-    }
-
-    auto serde_fields() { return std::tie(success); }
-};
-
-/// Successor to join_request:
-/// - Include version metadata for joining node
-/// - Has fields for implementing auto-selection of
-///   node_id (https://github.com/redpanda-data/redpanda/issues/2793)
-///   in future.
 struct join_node_request
   : serde::
       envelope<join_node_request, serde::version<1>, serde::compat_version<0>> {
@@ -3813,22 +3761,6 @@ template<>
 struct adl<cluster::topic_configuration> {
     void to(iobuf&, cluster::topic_configuration&&);
     cluster::topic_configuration from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::join_request> {
-    void to(iobuf&, cluster::join_request&&);
-    cluster::join_request from(iobuf);
-    cluster::join_request from(iobuf_parser&);
-};
-
-template<>
-struct adl<cluster::join_reply> {
-    void to(iobuf& out, cluster::join_reply&& r) { serialize(out, r.success); }
-    cluster::join_reply from(iobuf_parser& in) {
-        auto success = adl<bool>{}.from(in);
-        return cluster::join_reply{success};
-    }
 };
 
 template<>

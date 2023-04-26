@@ -41,9 +41,6 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_manager>&);
 
-    virtual ss::future<join_reply>
-    join(join_request&&, rpc::streaming_context&) override;
-
     virtual ss::future<join_node_reply>
     join_node(join_node_request&&, rpc::streaming_context&) override;
 

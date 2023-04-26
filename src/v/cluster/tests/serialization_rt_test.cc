@@ -1304,14 +1304,6 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
         roundtrip_test(data);
     }
     {
-        cluster::join_request data{model::random_broker()};
-        roundtrip_test(data);
-    }
-    {
-        cluster::join_reply data{tests::random_bool()};
-        roundtrip_test(data);
-    }
-    {
         std::vector<uint8_t> node_uuid;
         for (int i = 0, mi = random_generators::get_int(100); i < mi; i++) {
             node_uuid.push_back(random_generators::get_int(255));
