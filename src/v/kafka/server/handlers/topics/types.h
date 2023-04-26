@@ -67,6 +67,33 @@ static constexpr std::string_view topic_property_remote_delete
   = "redpanda.remote.delete";
 static constexpr std::string_view topic_property_segment_ms = "segment.ms";
 
+// Server side schema id validation
+static constexpr std::string_view topic_property_record_key_schema_id_validation
+  = "redpanda.key.schema.id.validation";
+static constexpr std::string_view
+  topic_property_record_key_subject_name_strategy
+  = "redpanda.key.subject.name.strategy";
+static constexpr std::string_view
+  topic_property_record_value_schema_id_validation
+  = "redpanda.value.schema.id.validation";
+static constexpr std::string_view
+  topic_property_record_value_subject_name_strategy
+  = "redpanda.value.subject.name.strategy";
+
+// Server side schema id validation (compat names)
+static constexpr std::string_view
+  topic_property_record_key_schema_id_validation_compat
+  = "confluent.key.schema.validation";
+static constexpr std::string_view
+  topic_property_record_key_subject_name_strategy_compat
+  = "confluent.key.subject.name.strategy";
+static constexpr std::string_view
+  topic_property_record_value_schema_id_validation_compat
+  = "confluent.value.schema.validation";
+static constexpr std::string_view
+  topic_property_record_value_subject_name_strategy_compat
+  = "confluent.value.subject.name.strategy";
+
 // Kafka topic properties that is not relevant for Redpanda
 // Or cannot be altered with kafka alter handler
 static constexpr std::array<std::string_view, 20> allowlist_topic_noop_confs = {

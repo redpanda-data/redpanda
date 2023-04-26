@@ -12,6 +12,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "features/feature_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_configs_response.h"
@@ -23,6 +24,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "utils/string_switch.h"
 
 #include <seastar/core/coroutine.hh>
@@ -94,6 +96,26 @@ create_topic_properties_update(
       = cluster::incremental_update_operation::set;
     update.properties.cleanup_policy_bitflags.value
       = ctx.metadata_cache().get_default_cleanup_policy_bitflags();
+
+    update.properties.record_key_schema_id_validation.op
+      = cluster::incremental_update_operation::set;
+    update.properties.record_key_schema_id_validation_compat.op
+      = cluster::incremental_update_operation::set;
+    update.properties.record_key_subject_name_strategy.op
+      = cluster::incremental_update_operation::set;
+    update.properties.record_key_subject_name_strategy_compat.op
+      = cluster::incremental_update_operation::set;
+    update.properties.record_value_schema_id_validation.op
+      = cluster::incremental_update_operation::set;
+    update.properties.record_value_schema_id_validation_compat.op
+      = cluster::incremental_update_operation::set;
+    update.properties.record_value_subject_name_strategy.op
+      = cluster::incremental_update_operation::set;
+    update.properties.record_value_subject_name_strategy_compat.op
+      = cluster::incremental_update_operation::set;
+
+    schema_id_validation_config_parser schema_id_validation_config_parser{
+      update.properties};
 
     for (auto& cfg : resource.configs) {
         try {
@@ -209,6 +231,13 @@ create_topic_properties_update(
                   cfg.value,
                   kafka::config_resource_operation::set);
                 continue;
+            }
+            if (ctx.feature_table().local().is_active(
+                  features::feature::schema_id_validation)) {
+                if (schema_id_validation_config_parser(
+                      cfg, kafka::config_resource_operation::set)) {
+                    continue;
+                }
             }
             if (
               std::find(

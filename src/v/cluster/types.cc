@@ -140,7 +140,15 @@ bool topic_properties::has_overrides() const {
            || retention_local_target_bytes.is_engaged()
            || retention_local_target_ms.is_engaged()
            || remote_delete != storage::ntp_config::default_remote_delete
-           || segment_ms.is_engaged();
+           || segment_ms.is_engaged()
+           || record_key_schema_id_validation.has_value()
+           || record_key_schema_id_validation_compat.has_value()
+           || record_key_subject_name_strategy.has_value()
+           || record_key_subject_name_strategy_compat.has_value()
+           || record_value_schema_id_validation.has_value()
+           || record_value_schema_id_validation_compat.has_value()
+           || record_value_subject_name_strategy.has_value()
+           || record_value_subject_name_strategy_compat.has_value();
 }
 
 bool topic_properties::requires_remote_erase() const {
@@ -306,7 +314,15 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       "timestamp_type: {}, recovery_enabled: {}, shadow_indexing: {}, "
       "read_replica: {}, read_replica_bucket: {} remote_topic_properties: {}, "
       "batch_max_bytes: {}, retention_local_target_bytes: {}, "
-      "retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}}}",
+      "retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}, "
+      "record_key_schema_id_validation: {}, "
+      "record_key_schema_id_validation_compat: {}, "
+      "record_key_subject_name_strategy:  {}, "
+      "record_key_subject_name_strategy_compat: {}, "
+      "record_value_schema_id_validation: {},  "
+      "record_value_schema_id_validation_compat: {}, "
+      "record_value_subject_name_strategy: {}, "
+      "record_value_subject_name_strategy_compat: {}}}",
       properties.compression,
       properties.cleanup_policy_bitflags,
       properties.compaction_strategy,
@@ -323,7 +339,15 @@ std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
       properties.retention_local_target_bytes,
       properties.retention_local_target_ms,
       properties.remote_delete,
-      properties.segment_ms);
+      properties.segment_ms,
+      properties.record_key_schema_id_validation,
+      properties.record_key_schema_id_validation_compat,
+      properties.record_key_subject_name_strategy,
+      properties.record_key_subject_name_strategy_compat,
+      properties.record_value_schema_id_validation,
+      properties.record_value_schema_id_validation_compat,
+      properties.record_value_subject_name_strategy,
+      properties.record_value_subject_name_strategy_compat);
 
     return o;
 }
@@ -579,7 +603,15 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       "cleanup_policy_bitflags: {} compaction_strategy: {} timestamp_type: {} "
       "segment_size: {} retention_bytes: {} retention_duration: {} "
       "shadow_indexing: {}, batch_max_bytes: {}, retention_local_target_bytes: "
-      "{}, retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}}}",
+      "{}, retention_local_target_ms: {}, remote_delete: {}, segment_ms: {}, "
+      "record_key_schema_id_validation: {}"
+      "record_key_schema_id_validation_compat: {}"
+      "record_key_subject_name_strategy: {}"
+      "record_key_subject_name_strategy_compat: {}"
+      "record_value_schema_id_validation: {}"
+      "record_value_schema_id_validation_compat: {}"
+      "record_value_subject_name_strategy: {}"
+      "record_value_subject_name_strategy_compat: {}",
       i.compression,
       i.cleanup_policy_bitflags,
       i.compaction_strategy,
@@ -592,7 +624,15 @@ std::ostream& operator<<(std::ostream& o, const incremental_topic_updates& i) {
       i.retention_local_target_bytes,
       i.retention_local_target_ms,
       i.remote_delete,
-      i.segment_ms);
+      i.segment_ms,
+      i.record_key_schema_id_validation,
+      i.record_key_schema_id_validation_compat,
+      i.record_key_subject_name_strategy,
+      i.record_key_subject_name_strategy_compat,
+      i.record_value_schema_id_validation,
+      i.record_value_schema_id_validation_compat,
+      i.record_value_subject_name_strategy,
+      i.record_value_subject_name_strategy_compat);
     return o;
 }
 
@@ -1668,7 +1708,15 @@ void adl<cluster::incremental_topic_updates>::to(
       t.retention_local_target_bytes,
       t.retention_local_target_ms,
       t.remote_delete,
-      t.segment_ms);
+      t.segment_ms,
+      t.record_key_schema_id_validation,
+      t.record_key_schema_id_validation_compat,
+      t.record_key_subject_name_strategy,
+      t.record_key_subject_name_strategy_compat,
+      t.record_value_schema_id_validation,
+      t.record_value_schema_id_validation_compat,
+      t.record_value_subject_name_strategy,
+      t.record_value_subject_name_strategy_compat);
 }
 
 cluster::incremental_topic_updates
@@ -1751,6 +1799,35 @@ adl<cluster::incremental_topic_updates>::from(iobuf_parser& in) {
           = adl<cluster::property_update<tristate<std::chrono::milliseconds>>>{}
               .from(in);
     }
+
+    if (
+      version <= cluster::incremental_topic_updates::
+        version_with_schema_id_validation) {
+        updates.record_key_schema_id_validation
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_key_schema_id_validation_compat
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_key_subject_name_strategy = adl<cluster::property_update<
+          std::optional<pandaproxy::schema_registry::subject_name_strategy>>>{}
+                                                     .from(in);
+        updates.record_key_subject_name_strategy_compat
+          = adl<cluster::property_update<std::optional<
+            pandaproxy::schema_registry::subject_name_strategy>>>{}
+              .from(in);
+        updates.record_value_schema_id_validation
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_value_schema_id_validation_compat
+          = adl<cluster::property_update<std::optional<bool>>>{}.from(in);
+        updates.record_value_subject_name_strategy
+          = adl<cluster::property_update<std::optional<
+            pandaproxy::schema_registry::subject_name_strategy>>>{}
+              .from(in);
+        updates.record_value_subject_name_strategy_compat
+          = adl<cluster::property_update<std::optional<
+            pandaproxy::schema_registry::subject_name_strategy>>>{}
+              .from(in);
+    }
+
     return updates;
 }
 
@@ -1956,7 +2033,15 @@ void adl<cluster::topic_properties>::to(
       p.shadow_indexing,
       p.read_replica,
       p.read_replica_bucket,
-      p.remote_topic_properties);
+      p.remote_topic_properties,
+      p.record_key_schema_id_validation,
+      p.record_key_schema_id_validation_compat,
+      p.record_key_subject_name_strategy,
+      p.record_key_subject_name_strategy_compat,
+      p.record_value_schema_id_validation,
+      p.record_value_schema_id_validation_compat,
+      p.record_value_subject_name_strategy,
+      p.record_value_subject_name_strategy_compat);
 }
 
 cluster::topic_properties
@@ -2006,7 +2091,14 @@ adl<cluster::topic_properties>::from(iobuf_parser& parser) {
       // storage mode in which topic deletion does not delete objects in S3
       false,
       tristate<std::chrono::milliseconds>{std::nullopt},
-    };
+      std::nullopt,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt};
 }
 
 void adl<cluster::cluster_property_kv>::to(

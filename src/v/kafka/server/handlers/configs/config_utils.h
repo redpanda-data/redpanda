@@ -20,10 +20,12 @@
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "outcome.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "security/acl.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/util/variant_utils.hh>
 
 #include <absl/container/node_hash_set.h>
 
@@ -286,7 +288,31 @@ void parse_and_set_optional(
     }
 }
 
-static void parse_and_set_bool(
+inline void parse_and_set_optional_bool_alpha(
+  cluster::property_update<std::optional<bool>>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value if preset, otherwise do nothing
+    if (op == config_resource_operation::set && value) {
+        try {
+            property.value = string_switch<bool>(*value)
+                               .match("true", true)
+                               .match("false", false);
+        } catch (std::runtime_error const&) {
+            // Our callers expect this exception type on malformed values
+            throw boost::bad_lexical_cast();
+        }
+        property.op = cluster::incremental_update_operation::set;
+        return;
+    }
+}
+
+inline void parse_and_set_bool(
   cluster::property_update<bool>& property,
   const std::optional<ss::sstring>& value,
   config_resource_operation op,
@@ -339,7 +365,7 @@ void parse_and_set_tristate(
     }
 }
 
-static void parse_and_set_topic_replication_factor(
+inline void parse_and_set_topic_replication_factor(
   cluster::property_update<std::optional<cluster::replication_factor>>&
     property,
   const std::optional<ss::sstring>& value,
@@ -354,5 +380,85 @@ static void parse_and_set_topic_replication_factor(
     }
     return;
 }
+
+///\brief Topic property parsing for schema id validation.
+///
+/// Handles parsing properties for create, alter and incremental_alter.
+template<typename Props>
+class schema_id_validation_config_parser {
+public:
+    explicit schema_id_validation_config_parser(Props& props)
+      : props(props) {}
+
+    ///\brief Parse a topic property from the supplied cfg.
+    template<typename C>
+    bool operator()(C const& cfg, kafka::config_resource_operation op) {
+        using property_t = std::variant<
+          decltype(&props.record_key_schema_id_validation),
+          decltype(&props.record_key_subject_name_strategy)>;
+
+        auto prop
+          = string_switch<std::optional<property_t>>(cfg.name)
+              .match(
+                topic_property_record_key_schema_id_validation,
+                &props.record_key_schema_id_validation)
+              .match(
+                topic_property_record_key_schema_id_validation_compat,
+                &props.record_key_schema_id_validation_compat)
+              .match(
+                topic_property_record_key_subject_name_strategy,
+                &props.record_key_subject_name_strategy)
+              .match(
+                topic_property_record_key_subject_name_strategy_compat,
+                &props.record_key_subject_name_strategy_compat)
+              .match(
+                topic_property_record_value_schema_id_validation,
+                &props.record_value_schema_id_validation)
+              .match(
+                topic_property_record_value_schema_id_validation_compat,
+                &props.record_value_schema_id_validation_compat)
+              .match(
+                topic_property_record_value_subject_name_strategy,
+                &props.record_value_subject_name_strategy)
+              .match(
+                topic_property_record_value_subject_name_strategy_compat,
+                &props.record_value_subject_name_strategy_compat)
+              .default_match(std::nullopt);
+        if (prop.has_value()) {
+            ss::visit(
+              prop.value(), [&cfg, op](auto& p) { apply(*p, cfg.value, op); });
+        }
+        return prop.has_value();
+    }
+
+private:
+    ///\brief Parse and set a boolean from 'true' or 'false'.
+    static void apply(
+      cluster::property_update<std::optional<bool>>& prop,
+      std::optional<ss::sstring> const& value,
+      kafka::config_resource_operation op) {
+        kafka::parse_and_set_optional_bool_alpha(prop, value, op);
+    }
+    ///\brief Parse and set the Subject Name Strategy
+    static void apply(
+      cluster::property_update<std::optional<
+        pandaproxy::schema_registry::subject_name_strategy>>& prop,
+      std::optional<ss::sstring> const& value,
+      kafka::config_resource_operation op) {
+        kafka::parse_and_set_optional(prop, value, op);
+    }
+    ///\brief Parse and set properties by wrapping them a property_update.
+    template<typename T>
+    static void apply(
+      std::optional<T>& prop,
+      std::optional<ss::sstring> value,
+      kafka::config_resource_operation op) {
+        cluster::property_update<std::optional<T>> up;
+        apply(up, value, op);
+        prop = up.value;
+    }
+
+    Props& props;
+};
 
 } // namespace kafka

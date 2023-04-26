@@ -148,6 +148,60 @@ class DescribeTopicsTest(RedpandaTest):
                 value="1209600000",  # 2 weeks in ms
                 doc_string=
                 "Default log segment lifetime in ms for topics which do not set segment.ms"
+            ),
+            "redpanda.key.schema.id.validation":
+            ConfigProperty(
+                config_type="BOOLEAN",
+                value="false",
+                doc_string=
+                "Enable validation of the schema id for keys on a record"),
+            "redpanda.key.subject.name.strategy":
+            ConfigProperty(
+                config_type="STRING",
+                value="TopicNameStrategy",
+                doc_string=
+                "The subject name strategy for keys if redpanda.key.schema.id.validation is enabled"
+            ),
+            "redpanda.value.schema.id.validation":
+            ConfigProperty(
+                config_type="BOOLEAN",
+                value="false",
+                doc_string=
+                "Enable validation of the schema id for values on a record"),
+            "redpanda.value.subject.name.strategy":
+            ConfigProperty(
+                config_type="STRING",
+                value="TopicNameStrategy",
+                doc_string=
+                "The subject name strategy for values if redpanda.value.schema.id.validation is enabled"
+            ),
+            "confluent.key.schema.validation":
+            ConfigProperty(
+                config_type="BOOLEAN",
+                value="false",
+                doc_string=
+                "Enable validation of the schema id for keys on a record"),
+            "confluent.key.subject.name.strategy":
+            ConfigProperty(
+                config_type="STRING",
+                value=
+                "io.confluent.kafka.serializers.subject.TopicNameStrategy",
+                doc_string=
+                "The subject name strategy for keys if confluent.key.schema.validation is enabled"
+            ),
+            "confluent.value.schema.validation":
+            ConfigProperty(
+                config_type="BOOLEAN",
+                value="false",
+                doc_string=
+                "Enable validation of the schema id for values on a record"),
+            "confluent.value.subject.name.strategy":
+            ConfigProperty(
+                config_type="STRING",
+                value=
+                "io.confluent.kafka.serializers.subject.TopicNameStrategy",
+                doc_string=
+                "The subject name strategy for values if confluent.value.schema.validation is enabled"
             )
         }
 

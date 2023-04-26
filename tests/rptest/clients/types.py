@@ -6,6 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+from enum import Enum
 import random
 import string
 
@@ -46,6 +47,26 @@ class TopicSpec:
     TIMESTAMP_CREATE_TIME = "CreateTime"
     TIMESTAMP_LOG_APPEND_TIME = "LogAppendTime"
 
+    class SubjectNameStrategy(str, Enum):
+        TOPIC_NAME = "TopicNameStrategy"
+        RECORD_NAME = "RecordNameStrategy"
+        TOPIC_RECORD_NAME = "TopicRecordNameStrategy"
+
+    PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION = "redpanda.key.schema.id.validation"
+    PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY = "redpanda.key.subject.name.strategy"
+    PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION = "redpanda.value.schema.id.validation"
+    PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY = "redpanda.value.subject.name.strategy"
+
+    class SubjectNameStrategyCompat(str, Enum):
+        TOPIC_NAME = "io.confluent.kafka.serializers.subject.TopicNameStrategy"
+        RECORD_NAME = "io.confluent.kafka.serializers.subject.RecordNameStrategy"
+        TOPIC_RECORD_NAME = "io.confluent.kafka.serializers.subject.TopicRecordNameStrategy"
+
+    PROPERTY_RECORD_KEY_SCHEMA_ID_VALIDATION_COMPAT = "confluent.key.schema.validation"
+    PROPERTY_RECORD_KEY_SUBJECT_NAME_STRATEGY_COMPAT = "confluent.key.subject.name.strategy"
+    PROPERTY_RECORD_VALUE_SCHEMA_ID_VALIDATION_COMPAT = "confluent.value.schema.validation"
+    PROPERTY_RECORD_VALUE_SUBJECT_NAME_STRATEGY_COMPAT = "confluent.value.subject.name.strategy"
+
     def __init__(self,
                  *,
                  name=None,
@@ -62,7 +83,15 @@ class TopicSpec:
                  redpanda_remote_write=None,
                  redpanda_remote_delete=None,
                  segment_ms=None,
-                 max_message_bytes=None):
+                 max_message_bytes=None,
+                 record_key_schema_id_validation=None,
+                 record_key_schema_id_validation_compat=None,
+                 record_key_subject_name_strategy=None,
+                 record_key_subject_name_strategy_compat=None,
+                 record_value_schema_id_validation=None,
+                 record_value_schema_id_validation_compat=None,
+                 record_value_subject_name_strategy=None,
+                 record_value_subject_name_strategy_compat=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
@@ -78,6 +107,14 @@ class TopicSpec:
         self.redpanda_remote_delete = redpanda_remote_delete
         self.segment_ms = segment_ms
         self.max_message_bytes = max_message_bytes
+        self.record_key_schema_id_validation = record_key_schema_id_validation
+        self.record_key_schema_id_validation_compat = record_key_schema_id_validation_compat
+        self.record_key_subject_name_strategy = record_key_subject_name_strategy
+        self.record_key_subject_name_strategy_compat = record_key_subject_name_strategy_compat
+        self.record_value_schema_id_validation = record_value_schema_id_validation
+        self.record_value_schema_id_validation_compat = record_value_schema_id_validation_compat
+        self.record_value_subject_name_strategy = record_value_subject_name_strategy
+        self.record_value_subject_name_strategy_compat = record_value_subject_name_strategy_compat
 
     def __str__(self):
         return self.name

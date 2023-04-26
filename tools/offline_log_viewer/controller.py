@@ -59,6 +59,39 @@ def read_topic_properties_serde(rdr: Reader, version):
         topic_properties |= {
             'segment_ms': rdr.read_tristate(Reader.read_uint64)
         }
+    if version >= 5:
+        topic_properties |= {
+            'record_key_schema_id_validation':
+            rdr.read_optional(Reader.read_bool)
+        }
+        topic_properties |= {
+            'record_key_schema_id_validation_compat':
+            rdr.read_optional(Reader.read_bool)
+        }
+        topic_properties |= {
+            'record_key_subject_name_strategy':
+            rdr.read_optional(Reader.read_serde_enum)
+        }
+        topic_properties |= {
+            'record_key_subject_name_strategy_compat':
+            rdr.read_optional(Reader.read_serde_enum)
+        }
+        topic_properties |= {
+            'record_value_schema_id_validation':
+            rdr.read_optional(Reader.read_bool)
+        }
+        topic_properties |= {
+            'record_value_schema_id_validation_compat':
+            rdr.read_optional(Reader.read_bool)
+        }
+        topic_properties |= {
+            'record_value_subject_name_strategy':
+            rdr.read_optional(Reader.read_serde_enum)
+        }
+        topic_properties |= {
+            'record_value_subject_name_strategy_compat':
+            rdr.read_optional(Reader.read_serde_enum)
+        }
 
     return topic_properties
 
@@ -79,7 +112,7 @@ def read_topic_configuration_assignment_serde(rdr: Reader):
                     rdr.read_int16(),
                     'properties':
                     rdr.read_envelope(read_topic_properties_serde,
-                                      max_version=4),
+                                      max_version=5),
                 }, 1),
             'assignments':
             rdr.read_serde_vector(lambda r: r.read_envelope(
@@ -160,10 +193,43 @@ def read_incremental_topic_update_serde(rdr: Reader):
                 read_property_update_serde(
                     rdr, lambda r: r.read_tristate(Reader.read_uint64))
             }
+        if version >= 4:
+            incr_obj |= {
+                'record_key_schema_id_validation':
+                rdr.read_optional(Reader.read_bool)
+            }
+            incr_obj |= {
+                'record_key_schema_id_validation_compat':
+                rdr.read_optional(Reader.read_bool)
+            }
+            incr_obj |= {
+                'record_key_subject_name_strategy':
+                rdr.read_optional(Reader.read_serde_enum)
+            }
+            incr_obj |= {
+                'record_key_subject_name_strategy_compat':
+                rdr.read_optional(Reader.read_serde_enum)
+            }
+            incr_obj |= {
+                'record_value_schema_id_validation':
+                rdr.read_optional(Reader.read_bool)
+            }
+            incr_obj |= {
+                'record_value_schema_id_validation_compat':
+                rdr.read_optional(Reader.read_bool)
+            }
+            incr_obj |= {
+                'record_value_subject_name_strategy':
+                rdr.read_optional(Reader.read_serde_enum)
+            }
+            incr_obj |= {
+                'record_value_subject_name_strategy_compat':
+                rdr.read_optional(Reader.read_serde_enum)
+            }
 
         return incr_obj
 
-    return rdr.read_envelope(incr_topic_upd, max_version=3)
+    return rdr.read_envelope(incr_topic_upd, max_version=4)
 
 
 def read_create_partitions_serde(rdr: Reader):

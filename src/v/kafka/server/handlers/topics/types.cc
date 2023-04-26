@@ -11,10 +11,12 @@
 
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "kafka/server/handlers/configs/config_utils.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/timestamp.h"
+#include "pandaproxy/schema_registry/subject_name_strategy.h"
 #include "units.h"
 #include "utils/string_switch.h"
 
@@ -185,6 +187,14 @@ to_cluster_type(const creatable_topic& t) {
     cfg.properties.segment_ms = get_tristate_value<std::chrono::milliseconds>(
       config_entries, topic_property_segment_ms);
 
+    schema_id_validation_config_parser schema_id_validation_config_parser{
+      cfg.properties};
+
+    for (auto& p : t.configs) {
+        schema_id_validation_config_parser(
+          p, kafka::config_resource_operation::set);
+    }
+
     /// Final topic_property not decoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
 
@@ -301,6 +311,43 @@ config_map_t from_cluster_type(const cluster::topic_properties& properties) {
         config_entries[topic_property_segment_ms] = from_config_type(
           properties.segment_ms.value());
     }
+
+    if (properties.record_key_schema_id_validation) {
+        config_entries[topic_property_record_key_schema_id_validation]
+          = from_config_type(properties.record_key_schema_id_validation);
+    }
+    if (properties.record_key_schema_id_validation_compat) {
+        config_entries[topic_property_record_key_schema_id_validation_compat]
+          = from_config_type(properties.record_key_schema_id_validation_compat);
+    }
+    if (properties.record_key_subject_name_strategy) {
+        config_entries[topic_property_record_key_subject_name_strategy]
+          = from_config_type(properties.record_key_subject_name_strategy);
+    }
+    if (properties.record_key_subject_name_strategy_compat) {
+        config_entries[topic_property_record_key_subject_name_strategy_compat]
+          = from_config_type(
+            properties.record_key_subject_name_strategy_compat);
+    }
+    if (properties.record_value_schema_id_validation) {
+        config_entries[topic_property_record_value_schema_id_validation]
+          = from_config_type(properties.record_value_schema_id_validation);
+    }
+    if (properties.record_value_schema_id_validation_compat) {
+        config_entries[topic_property_record_value_schema_id_validation_compat]
+          = from_config_type(
+            properties.record_value_schema_id_validation_compat);
+    }
+    if (properties.record_value_subject_name_strategy) {
+        config_entries[topic_property_record_value_subject_name_strategy]
+          = from_config_type(properties.record_value_subject_name_strategy);
+    }
+    if (properties.record_value_subject_name_strategy_compat) {
+        config_entries[topic_property_record_value_subject_name_strategy_compat]
+          = from_config_type(
+            properties.record_value_subject_name_strategy_compat);
+    }
+
     /// Final topic_property not encoded here is \ref remote_topic_properties,
     /// is more of an implementation detail no need to ever show user
     return config_entries;

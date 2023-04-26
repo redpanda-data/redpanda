@@ -25,6 +25,19 @@ enum class subject_name_strategy : uint8_t {
 inline constexpr std::string_view to_string_view(subject_name_strategy e) {
     switch (e) {
     case subject_name_strategy::topic_name:
+        return "TopicNameStrategy";
+    case subject_name_strategy::record_name:
+        return "RecordNameStrategy";
+    case subject_name_strategy::topic_record_name:
+        return "TopicRecordNameStrategy";
+    }
+    return "{invalid}";
+}
+
+inline constexpr std::string_view
+to_string_view_compat(subject_name_strategy e) {
+    switch (e) {
+    case subject_name_strategy::topic_name:
         return "io.confluent.kafka.serializers.subject.TopicNameStrategy";
     case subject_name_strategy::record_name:
         return "io.confluent.kafka.serializers.subject.RecordNameStrategy";
@@ -43,14 +56,17 @@ inline std::istream& operator>>(std::istream& i, subject_name_strategy& e) {
     ss::sstring s;
     i >> s;
     e = string_switch<subject_name_strategy>(s)
-          .match(
+          .match_all(
             to_string_view(subject_name_strategy::topic_name),
+            to_string_view_compat(subject_name_strategy::topic_name),
             subject_name_strategy::topic_name)
-          .match(
+          .match_all(
             to_string_view(subject_name_strategy::record_name),
+            to_string_view_compat(subject_name_strategy::record_name),
             subject_name_strategy::record_name)
-          .match(
+          .match_all(
             to_string_view(subject_name_strategy::topic_record_name),
+            to_string_view_compat(subject_name_strategy::topic_record_name),
             subject_name_strategy::topic_record_name);
     return i;
 }

@@ -329,6 +329,14 @@ struct compat_check<cluster::topic_properties> {
         json_write(retention_local_target_ms);
         json_write(remote_delete);
         json_write(segment_ms);
+        json_write(record_key_schema_id_validation);
+        json_write(record_key_schema_id_validation_compat);
+        json_write(record_key_subject_name_strategy);
+        json_write(record_key_subject_name_strategy_compat);
+        json_write(record_value_schema_id_validation);
+        json_write(record_value_schema_id_validation_compat);
+        json_write(record_value_subject_name_strategy);
+        json_write(record_value_subject_name_strategy_compat);
     }
 
     static cluster::topic_properties from_json(json::Value& rd) {
@@ -350,6 +358,14 @@ struct compat_check<cluster::topic_properties> {
         json_read(retention_local_target_ms);
         json_read(remote_delete);
         json_read(segment_ms);
+        json_read(record_key_schema_id_validation);
+        json_read(record_key_schema_id_validation_compat);
+        json_read(record_key_subject_name_strategy);
+        json_read(record_key_subject_name_strategy_compat);
+        json_read(record_value_schema_id_validation);
+        json_read(record_value_schema_id_validation_compat);
+        json_read(record_value_subject_name_strategy);
+        json_read(record_value_subject_name_strategy_compat);
         return obj;
     }
 

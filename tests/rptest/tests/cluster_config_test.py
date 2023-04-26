@@ -9,6 +9,7 @@
 import json
 import logging
 import pprint
+import random
 import re
 import tempfile
 import time
@@ -618,6 +619,10 @@ class ClusterConfigTest(RedpandaTest, ClusterConfigHelpersMixin):
                 # Enabling this property requires a file be manually added
                 # to RP's data dir for it to start
                 continue
+
+            if name == 'record_key_subject_name_strategy' or name == 'record_value_subject_name_strategy':
+                valid_value = random.choice(
+                    [e for e in p['enum_values'] if e != initial_value])
 
             updates[name] = valid_value
 

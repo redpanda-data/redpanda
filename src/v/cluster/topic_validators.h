@@ -23,7 +23,8 @@ struct schema_id_validation_validator {
     template<typename T>
     static bool
     compatible(std::optional<T> const& lhs, std::optional<T> const& rhs) {
-        return !lhs.has_value() || lhs == rhs;
+        // If both are specified, they must match
+        return !lhs || !rhs || lhs == rhs;
     }
 
     static bool is_valid(cluster::topic_properties& p) {

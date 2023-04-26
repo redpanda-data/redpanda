@@ -819,6 +819,30 @@ topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
       overrides.remote_delete,
       storage::ntp_config::default_remote_delete);
     incremental_update(properties.segment_ms, overrides.segment_ms);
+    incremental_update(
+      properties.record_key_schema_id_validation,
+      overrides.record_key_schema_id_validation);
+    incremental_update(
+      properties.record_key_schema_id_validation_compat,
+      overrides.record_key_schema_id_validation_compat);
+    incremental_update(
+      properties.record_key_subject_name_strategy,
+      overrides.record_key_subject_name_strategy);
+    incremental_update(
+      properties.record_key_subject_name_strategy_compat,
+      overrides.record_key_subject_name_strategy_compat);
+    incremental_update(
+      properties.record_value_schema_id_validation,
+      overrides.record_value_schema_id_validation);
+    incremental_update(
+      properties.record_value_schema_id_validation_compat,
+      overrides.record_value_schema_id_validation_compat);
+    incremental_update(
+      properties.record_value_subject_name_strategy,
+      overrides.record_value_subject_name_strategy);
+    incremental_update(
+      properties.record_value_subject_name_strategy_compat,
+      overrides.record_value_subject_name_strategy_compat);
     // no configuration change, no need to generate delta
     if (properties == properties_snapshot) {
         co_return errc::success;
