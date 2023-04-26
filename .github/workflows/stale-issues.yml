@@ -1,0 +1,26 @@
+name: Close inactive issues
+on:
+  schedule:
+    - cron: "30 1 * * *"
+
+jobs:
+  close-issues:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@v5
+        with:
+          days-before-issue-stale: 60
+          days-before-issue-close: -1
+          stale-issue-label: "stale"
+          stale-issue-message: |
+            This issue has been marked as stale because it has been open for 60 days with no activity. Stale issues may be automatically closed in the future. Remove the stale label or comment to unmark issue.
+
+            To exempt an issue from being marked stale, apply https://github.com/redpanda-data/redpanda/labels/preserve.
+          close-issue-message: This issue was closed because it has been inactive for 7 days since being marked as stale.
+          exempt-issue-labels: "ci-failure,preserve"
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
