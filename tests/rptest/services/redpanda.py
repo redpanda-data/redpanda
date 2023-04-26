@@ -3265,7 +3265,7 @@ class RedpandaService(RedpandaServiceBase):
                     f"Object storage scrub detected fatal anomalies of type {fatal_anomalies}"
                 )
 
-    def set_expected_controller_records(self, max_records: int):
+    def set_expected_controller_records(self, max_records: Optional[int]):
         self._expect_max_controller_records = max_records
 
     def validate_controller_log(self):
