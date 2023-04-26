@@ -23,6 +23,7 @@ import collections
 import re
 import uuid
 import zipfile
+import pathlib
 from enum import Enum, IntEnum
 from typing import Mapping, Optional, Tuple, Union, Any
 
@@ -2759,6 +2760,29 @@ class RedpandaService(RedpandaServiceBase):
             tokens[1].rstrip("\x00"): (tokens[0], int(tokens[2]))
             for tokens in map(lambda l: l.split(), lines)
         }
+
+    def data_stat(self, node: ClusterNode):
+        """
+        Return a collection of (file path, file size) tuples for all files found
+        under the Redpanda data directory. File paths are normalized to be relative
+        to the data directory.
+        """
+        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec stat -c '%n %s' '{{}}' \;"
+        lines = node.account.ssh_output(cmd)
+        lines = lines.decode().split("\n")
+
+        # 1. find and stat race. skip any files that were deleted.
+        # 2. skip empty lines: find may stick one on the end of the results
+        lines = filter(lambda l: "No such file or directory" not in l, lines)
+        lines = filter(lambda l: len(l) > 0, lines)
+
+        # split into pathlib.Path / file size pairs
+        parts = map(lambda l: l.split(), lines)
+        parts = ((pathlib.Path(f), int(s)) for f, s in parts)
+
+        # return results with relative paths
+        data_path = pathlib.Path(RedpandaService.DATA_DIR)
+        return ((p.relative_to(data_path), s) for p, s in parts)
 
     def broker_address(self, node, listener: str = "dnslistener"):
         assert node in self.nodes, f"where node is {node.name}"
