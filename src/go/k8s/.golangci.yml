@@ -51,7 +51,6 @@ linters:
     - nestif
     - noctx
     - prealloc
-    - revive
     - rowserrcheck
     - staticcheck
     - structcheck
