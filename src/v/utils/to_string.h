@@ -13,8 +13,11 @@
 
 #include "seastarx.h"
 
+#include <seastar/core/chunked_fifo.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/print.hh>
+
+#include <fmt/core.h>
 
 #include <optional>
 #include <ostream>
@@ -48,3 +51,28 @@ operator<<(std::ostream& o, const ss::lowres_clock::duration& d) {
 }
 
 } // namespace std
+
+template<typename T>
+struct fmt::formatter<ss::chunked_fifo<T>> {
+    using type = ss::chunked_fifo<T>;
+
+    constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
+
+    template<typename FormatContext>
+    typename FormatContext::iterator
+    format(const type& fifo, FormatContext& ctx) const {
+        format_to(ctx.out(), "[");
+        if (!fifo.empty()) {
+            auto it = fifo.begin();
+            format_to(ctx.out(), "{}", *(it++));
+
+            for (; it != fifo.end(); ++it) {
+                format_to(ctx.out(), ", {}", *it);
+            }
+            return ctx.out();
+        }
+
+        format_to(ctx.out(), "]");
+        return ctx.out();
+    }
+};
