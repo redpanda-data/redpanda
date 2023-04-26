@@ -92,20 +92,6 @@ public:
     // readers are added to wait list.
     ss::future<> hydrate_chunk(file_offset_t chunk_start);
 
-    // Attempts to download chunk into cache and load the file handle into
-    // segment_chunk. Should be retried if there is a failure due to cache
-    // eviction between download and opening the file handle.
-    ss::future<bool>
-    do_hydrate_and_materialize(file_offset_t chunk_start, segment_chunk& chunk);
-
-    // Periodically closes chunk file handles for the space to be reclaimable by
-    // cache eviction. The chunks are evicted when they are no longer opened for
-    // reading by any readers. We also take into account any readers that may
-    // need a chunk soon when evicting, by sorting on
-    // `segment_chunk::required_by_readers_in_future` and
-    // `segment_chunk::required_after_n_chunks` values.
-    ss::future<> trim_chunk_files();
-
     // For all chunks between first and last, increment the
     // required_by_readers_in_future value by one, and increment the
     // required_after_n_chunks values with progressively larger values to denote
@@ -123,6 +109,20 @@ public:
     file_offset_t get_next_chunk_start(file_offset_t f) const;
 
 private:
+    // Attempts to download chunk into cache and load the file handle into
+    // segment_chunk. Should be retried if there is a failure due to cache
+    // eviction between download and opening the file handle.
+    ss::future<bool>
+    do_hydrate_and_materialize(file_offset_t chunk_start, segment_chunk& chunk);
+
+    // Periodically closes chunk file handles for the space to be reclaimable by
+    // cache eviction. The chunks are evicted when they are no longer opened for
+    // reading by any readers. We also take into account any readers that may
+    // need a chunk soon when evicting, by sorting on
+    // `segment_chunk::required_by_readers_in_future` and
+    // `segment_chunk::required_after_n_chunks` values.
+    ss::future<> trim_chunk_files();
+
     chunk_map_t _chunks;
     remote_segment& _segment;
 
