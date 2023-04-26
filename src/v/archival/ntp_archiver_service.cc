@@ -598,7 +598,7 @@ ss::future<cloud_storage::download_result> ntp_archiver::sync_manifest() {
             }
 
             vlog(
-              _rtclog.error,
+              _rtclog.warn,
               "Can't replicate archival_metadata_stm configuration batch: "
               "{}",
               errc.message());
