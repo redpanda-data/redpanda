@@ -12,6 +12,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/ktp.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 
@@ -23,8 +24,7 @@
 namespace kafka {
 
 struct fetch_session_partition {
-    model::topic topic;
-    model::partition_id partition;
+    model::ktp_with_hash topic_partition;
     int32_t max_bytes;
     model::offset fetch_offset;
     model::offset high_watermark;
@@ -117,15 +117,11 @@ public:
     void emplace(kafka::fetch_session_partition v) {
         auto e = std::make_unique<entry>(std::move(v));
         auto [it, success] = partitions.emplace(
-          model::topic_partition_view(
-            e->partition.topic, e->partition.partition),
-          std::move(e));
+          e->partition.topic_partition.as_tp_view(), std::move(e));
         vassert(
           success,
-          "Can not insert topic {} partition {} to partitions map as it is "
-          "already present.",
-          it->second->partition.topic,
-          it->second->partition.partition);
+          "Can not insert {} to partitions map as it is already present.",
+          it->second->partition.topic_partition);
         insertion_order.push_back(*it->second);
     }
 

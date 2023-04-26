@@ -14,8 +14,15 @@
 #include "kafka/server/handlers/fetch/replica_selector.h"
 #include "kafka/server/handlers/handler.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
+#include "model/ktp.h"
 #include "model/metadata.h"
+#include "utils/hdr_hist.h"
 #include "utils/intrusive_list_helpers.h"
+
+#include <seastar/core/smp.hh>
+
+#include <memory>
 
 namespace kafka {
 
@@ -53,7 +60,6 @@ struct op_context {
     private:
         fetch_response::iterator _it;
         op_context* _ctx;
-        op_context::latency_point _start_time;
     };
 
     using iteration_order_t
@@ -115,37 +121,17 @@ struct op_context {
     response_iterator response_begin() { return iteration_order.begin(); }
 
     response_iterator response_end() { return iteration_order.end(); }
+
+    /**
+     * @brief Get an estimate of the number of partitions in the fetch.
+     *
+     * This is only an estimate, perhaps useful to pre-size some structures
+     * and currently returns 0 for sessionless fetches.
+     */
+    size_t fetch_partition_count() const;
+
     template<typename Func>
-    void for_each_fetch_partition(Func&& f) const {
-        /**
-         * Iterate over original request only if it is sessionless or initial
-         * full fetch request. For not initial full fetch requests we may
-         * leverage the fetch session stored partitions as session was populated
-         * during initial pass. Using session stored partitions will account for
-         * the partitions already read and move to the end of iteration order
-         */
-        if (
-          session_ctx.is_sessionless()
-          || (session_ctx.is_full_fetch() && initial_fetch)) {
-            std::for_each(
-              request.cbegin(),
-              request.cend(),
-              [f = std::forward<Func>(f)](
-                const fetch_request::const_iterator::value_type& p) {
-                  f(fetch_session_partition{
-                    .topic = p.topic->name,
-                    .partition = p.partition->partition_index,
-                    .max_bytes = p.partition->max_bytes,
-                    .fetch_offset = p.partition->fetch_offset,
-                  });
-              });
-        } else {
-            std::for_each(
-              session_ctx.session()->partitions().cbegin_insertion_order(),
-              session_ctx.session()->partitions().cend_insertion_order(),
-              std::forward<Func>(f));
-        }
-    }
+    void for_each_fetch_partition(Func&& f) const;
 
     request_context rctx;
     ss::smp_service_group ssg;
@@ -199,17 +185,17 @@ struct fetch_config {
 };
 
 struct ntp_fetch_config {
-    ntp_fetch_config(model::ntp n, fetch_config cfg)
-      : _ntp(std::move(n))
+    ntp_fetch_config(model::ktp ktp, fetch_config cfg)
+      : _ktp(std::move(ktp))
       , cfg(cfg) {}
-    model::ntp _ntp;
+    model::ktp _ktp;
     fetch_config cfg;
 
-    const model::ntp& ntp() const { return _ntp; }
+    const model::ktp& ktp() const { return _ktp; }
 
     friend std::ostream&
     operator<<(std::ostream& o, const ntp_fetch_config& ntp_fetch) {
-        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ntp(), ntp_fetch.cfg);
+        fmt::print(o, R"({{"{}": {}}})", ntp_fetch.ktp(), ntp_fetch.cfg);
         return o;
     }
 };
@@ -312,6 +298,11 @@ struct shard_fetch {
     }
     bool empty() const;
 
+    void reserve(size_t n) {
+        requests.reserve(n);
+        responses.reserve(n);
+    }
+
     ss::shard_id shard;
     std::vector<ntp_fetch_config> requests;
     std::vector<op_context::response_placeholder_ptr> responses;
@@ -330,6 +321,13 @@ struct fetch_plan {
       : fetches_per_shard(shards, shard_fetch(start_time)) {}
 
     std::vector<shard_fetch> fetches_per_shard;
+
+    void reserve_from_partition_count(size_t count) {
+        size_t per_partition = count * 3 / (fetches_per_shard.size() * 2);
+        for (auto& f : fetches_per_shard) {
+            f.reserve(per_partition);
+        }
+    }
 
     friend std::ostream& operator<<(std::ostream& o, const fetch_plan& plan) {
         fmt::print(o, "{{[");
@@ -354,7 +352,7 @@ struct fetch_plan {
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager&,
   const replica_selector&,
-  const model::ntp&,
+  const model::ktp&,
   fetch_config,
   bool,
   std::optional<model::timeout_clock::time_point>);

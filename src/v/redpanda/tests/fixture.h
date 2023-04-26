@@ -32,6 +32,7 @@
 #include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/types.h"
 #include "kafka/server/connection_context.h"
+#include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/server.h"
 #include "model/fundamental.h"
@@ -605,17 +606,17 @@ public:
           });
     }
 
-    model::ntp make_data(
+    model::ktp make_data(
       model::revision_id rev,
       std::optional<model::timestamp> base_ts = std::nullopt) {
         auto topic_name = ssx::sformat("my_topic_{}", 0);
-        model::ntp ntp(
-          model::kafka_namespace,
-          model::topic(topic_name),
-          model::partition_id(0));
+        model::ktp ktp(model::topic(topic_name), model::partition_id(0));
 
         storage::ntp_config ntp_cfg(
-          ntp, config::node().data_directory().as_sstring(), nullptr, rev);
+          ktp.to_ntp(),
+          config::node().data_directory().as_sstring(),
+          nullptr,
+          rev);
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT
@@ -633,9 +634,9 @@ public:
             base_ts)
           | stop();
 
-        add_topic(model::topic_namespace_view(ntp)).get();
+        add_topic(ktp.as_tn_view()).get();
 
-        return ntp;
+        return ktp;
     }
 
     using conn_ptr = ss::lw_shared_ptr<kafka::connection_context>;
@@ -660,7 +661,8 @@ public:
             conn = make_connection_context();
         }
 
-        kafka::request_header header{.version = kafka::api_version(11)};
+        kafka::request_header header{
+          .version = kafka::fetch_handler::max_supported};
 
         iobuf buf;
         kafka::protocol::encoder writer(buf);

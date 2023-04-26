@@ -156,7 +156,7 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
 // grained tests. for now the test is coarse grained based on the random batch
 // builder.
 FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
-    auto do_read = [this](model::ntp ntp, size_t max_bytes) {
+    auto do_read = [this](model::ktp ktp, size_t max_bytes) {
         kafka::fetch_config config{
           .start_offset = model::offset(0),
           .max_offset = model::model_limits<model::offset>::max(),
@@ -167,15 +167,15 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         auto rctx = make_request_context();
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
-        auto shard = octx.rctx.shards().shard_for(ntp).value();
+        auto shard = octx.rctx.shards().shard_for(ktp).value();
         return octx.rctx.partition_manager()
           .invoke_on(
             shard,
-            [ntp, config, &octx](cluster::partition_manager& pm) {
+            [ktp, config, &octx](cluster::partition_manager& pm) {
                 return kafka::read_from_ntp(
                   pm,
                   octx.rctx.replica_selector(),
-                  ntp,
+                  ktp,
                   config,
                   true,
                   model::no_timeout);

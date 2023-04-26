@@ -17,6 +17,7 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/fetch_session.h"
+#include "kafka/server/fwd.h"
 #include "kafka/server/handlers/details/leader_epoch.h"
 #include "kafka/server/handlers/fetch/fetch_plan_executor.h"
 #include "kafka/server/handlers/fetch/fetch_planner.h"
@@ -154,7 +155,7 @@ static ss::future<read_result> do_read_from_ntp(
     /*
      * lookup the ntp's partition
      */
-    auto kafka_partition = make_partition_proxy(ntp_config.ntp(), cluster_pm);
+    auto kafka_partition = make_partition_proxy(ntp_config.ktp(), cluster_pm);
     if (unlikely(!kafka_partition)) {
         co_return read_result(error_code::unknown_topic_or_partition);
     }
@@ -193,7 +194,7 @@ static ss::future<read_result> do_read_from_ntp(
           klog.warn,
           "fetch offset out of range for {}, requested offset: {}, "
           "partition start offset: {}, high watermark: {}, ec: {}",
-          ntp_config.ntp(),
+          ntp_config.ktp(),
           ntp_config.cfg.start_offset,
           kafka_partition->start_offset(),
           kafka_partition->high_watermark(),
@@ -238,22 +239,17 @@ static ss::future<read_result> do_read_from_ntp(
       std::move(*kafka_partition), ntp_config.cfg, foreign_read, deadline);
 }
 
-static ntp_fetch_config
-make_ntp_fetch_config(const model::ntp& ntp, const fetch_config& fetch_cfg) {
-    return {ntp, fetch_cfg};
-}
-
 ss::future<read_result> read_from_ntp(
   cluster::partition_manager& cluster_pm,
   const replica_selector& replica_selector,
-  const model::ntp& ntp,
+  const model::ktp& ktp,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     return do_read_from_ntp(
       cluster_pm,
       replica_selector,
-      make_ntp_fetch_config(ntp, config),
+      {ktp, std::move(config)},
       foreign_read,
       deadline);
 }
@@ -287,13 +283,11 @@ static void fill_fetch_responses(
             continue;
         }
 
-        model::ntp ntp(
-          model::kafka_namespace, resp_it->topic(), resp_it->partition_id());
         /**
          * Cache fetch metadata
          */
         octx.rctx.get_fetch_metadata_cache().insert_or_assign(
-          std::move(ntp),
+          {resp_it->topic(), resp_it->partition_id()},
           res.start_offset,
           res.high_watermark,
           res.last_stable_offset);
@@ -380,7 +374,7 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
       std::move(ntp_fetch_configs),
       [&cluster_pm, &replica_selector, deadline, foreign_read](
         const ntp_fetch_config& ntp_cfg) {
-          auto p_id = ntp_cfg.ntp().tp.partition;
+          auto p_id = ntp_cfg.ktp().get_partition();
           return do_read_from_ntp(
                    cluster_pm,
                    replica_selector,
@@ -481,93 +475,138 @@ class parallel_fetch_plan_executor final : public fetch_plan_executor::impl {
     }
 };
 
+size_t op_context::fetch_partition_count() const {
+    if (
+      session_ctx.is_sessionless()
+      || (session_ctx.is_full_fetch() && initial_fetch)) {
+        // too hard to get the right size, this is only an estimate
+        return 0;
+    } else {
+        return session_ctx.session()->partitions().size();
+    }
+}
+
+template<typename Func>
+void op_context::for_each_fetch_partition(Func&& f) const {
+    /**
+     * Iterate over original request only if it is sessionless or initial
+     * full fetch request. For not initial full fetch requests we may
+     * leverage the fetch session stored partitions as session was populated
+     * during initial pass. Using session stored partitions will account for
+     * the partitions already read and move to the end of iteration order
+     */
+    if (
+      session_ctx.is_sessionless()
+      || (session_ctx.is_full_fetch() && initial_fetch)) {
+        std::for_each(
+          request.cbegin(),
+          request.cend(),
+          [f = std::forward<Func>(f)](
+            const fetch_request::const_iterator::value_type& p) {
+              auto& part = *p.partition;
+              f(fetch_session_partition{
+                .topic_partition = {p.topic->name, part.partition_index},
+                .max_bytes = part.max_bytes,
+                .fetch_offset = part.fetch_offset,
+              });
+          });
+    } else {
+        std::for_each(
+          session_ctx.session()->partitions().cbegin_insertion_order(),
+          session_ctx.session()->partitions().cend_insertion_order(),
+          std::forward<Func>(f));
+    }
+}
+
 class simple_fetch_planner final : public fetch_planner::impl {
     fetch_plan create_plan(op_context& octx) final {
         fetch_plan plan(ss::smp::count);
         auto resp_it = octx.response_begin();
         auto bytes_left_in_plan = octx.bytes_left;
+
+        plan.reserve_from_partition_count(octx.fetch_partition_count());
+
         /**
          * group fetch requests by shard
          */
-        octx.for_each_fetch_partition(
-          [&resp_it, &octx, &plan, &bytes_left_in_plan](
-            const fetch_session_partition& fp) {
-              // if this is not an initial fetch we are allowed to skip
-              // partions that aleready have an error or we have enough data
-              if (!octx.initial_fetch) {
-                  bool has_enough_data = !resp_it->empty()
-                                         && octx.over_min_bytes();
+        octx.for_each_fetch_partition([&resp_it,
+                                       &octx,
+                                       &plan,
+                                       &bytes_left_in_plan](
+                                        const fetch_session_partition& fp) {
+            // if this is not an initial fetch we are allowed to skip
+            // partions that aleready have an error or we have enough data
+            if (!octx.initial_fetch) {
+                bool has_enough_data = !resp_it->empty()
+                                       && octx.over_min_bytes();
 
-                  if (resp_it->has_error() || has_enough_data) {
-                      ++resp_it;
-                      return;
-                  }
-              }
-              /**
-               * if not authorized do not include into a plan
-               */
-              if (!octx.rctx.authorized(
-                    security::acl_operation::read, fp.topic)) {
-                  resp_it->set(make_partition_response_error(
-                    fp.partition, error_code::topic_authorization_failed));
-                  ++resp_it;
-                  return;
-              }
+                if (resp_it->has_error() || has_enough_data) {
+                    ++resp_it;
+                    return;
+                }
+            }
 
-              auto ntp = model::ntp(
-                model::kafka_namespace, fp.topic, fp.partition);
+            /**
+             * if not authorized do not include into a plan
+             */
+            if (!octx.rctx.authorized(
+                  security::acl_operation::read,
+                  fp.topic_partition.get_topic())) {
+                resp_it->set(make_partition_response_error(
+                  fp.topic_partition.get_partition(),
+                  error_code::topic_authorization_failed));
+                ++resp_it;
+                return;
+            }
 
-              // there is given partition in topic metadata, return
-              // unknown_topic_or_partition error
-              if (unlikely(!octx.rctx.metadata_cache().contains(ntp))) {
-                  resp_it->set(make_partition_response_error(
-                    fp.partition, error_code::unknown_topic_or_partition));
-                  ++resp_it;
-                  return;
-              }
+            auto& tp = fp.topic_partition;
 
-              auto shard = octx.rctx.shards().shard_for(ntp);
-              if (!shard) {
-                  /**
-                   * no shard is found on current node, but topic exists in
-                   * cluster metadata, this mean that the partition was moved
-                   * but consumer has not updated its metadata yet. we return
-                   * not_leader_for_partition error to force metadata update.
-                   */
-                  resp_it->set(make_partition_response_error(
-                    fp.partition, error_code::not_leader_for_partition));
-                  ++resp_it;
-                  return;
-              }
+            auto shard = octx.rctx.shards().shard_for(tp);
+            if (unlikely(!shard)) {
+                // there is given partition in topic metadata, return
+                // unknown_topic_or_partition error
 
-              auto fetch_md = octx.rctx.get_fetch_metadata_cache().get(ntp);
-              auto max_bytes = std::min(
-                bytes_left_in_plan, size_t(fp.max_bytes));
-              /**
-               * If offset is greater, assume that fetch will read max_bytes
-               */
-              if (fetch_md && fetch_md->high_watermark > fp.fetch_offset) {
-                  bytes_left_in_plan -= max_bytes;
-              }
+                /**
+                 * no shard is found on current node, but topic exists in
+                 * cluster metadata, this mean that the partition was
+                 * moved but consumer has not updated its metadata yet. we
+                 * return not_leader_for_partition error to force metadata
+                 * update.
+                 */
+                auto ec = octx.rctx.metadata_cache().contains(tp.to_ntp())
+                            ? error_code::not_leader_for_partition
+                            : error_code::unknown_topic_or_partition;
+                resp_it->set(make_partition_response_error(
+                  fp.topic_partition.get_partition(), ec));
+                ++resp_it;
+                return;
+            }
 
-              fetch_config config{
-                .start_offset = fp.fetch_offset,
-                .max_offset = model::model_limits<model::offset>::max(),
-                .isolation_level = octx.request.data.isolation_level,
-                .max_bytes = max_bytes,
-                .timeout = octx.deadline.value_or(model::no_timeout),
-                .strict_max_bytes = octx.response_size > 0,
-                .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
-                .current_leader_epoch = fp.current_leader_epoch,
-                .read_from_follower = octx.request.has_rack_id(),
-                .consumer_rack_id = octx.request.data.rack_id,
-              };
+            auto fetch_md = octx.rctx.get_fetch_metadata_cache().get(tp);
+            auto max_bytes = std::min(bytes_left_in_plan, size_t(fp.max_bytes));
+            /**
+             * If offset is greater, assume that fetch will read max_bytes
+             */
+            if (fetch_md && fetch_md->high_watermark > fp.fetch_offset) {
+                bytes_left_in_plan -= max_bytes;
+            }
 
-              plan.fetches_per_shard[*shard].push_back(
-                {ntp, config}, &(*resp_it));
-              ++resp_it;
-          });
+            fetch_config config{
+              .start_offset = fp.fetch_offset,
+              .max_offset = model::model_limits<model::offset>::max(),
+              .max_bytes = max_bytes,
+              .timeout = octx.deadline.value_or(model::no_timeout),
+              .current_leader_epoch = fp.current_leader_epoch,
+              .isolation_level = octx.request.data.isolation_level,
+              .strict_max_bytes = octx.response_size > 0,
+              .skip_read = bytes_left_in_plan == 0 && max_bytes == 0,
+              .read_from_follower = octx.request.has_rack_id(),
+              .consumer_rack_id = octx.request.data.rack_id,
+            };
 
+            plan.fetches_per_shard[*shard].push_back({tp, config}, &(*resp_it));
+            ++resp_it;
+        });
         return plan;
     }
 };
@@ -719,13 +758,14 @@ void op_context::create_response_placeholders() {
           session_ctx.session()->partitions().cbegin_insertion_order(),
           session_ctx.session()->partitions().cend_insertion_order(),
           [this, &last_topic](const fetch_session_partition& fp) {
-              if (last_topic != fp.topic) {
+              auto& topic = fp.topic_partition.get_topic();
+              if (last_topic != topic) {
                   response.data.topics.emplace_back(
-                    fetchable_topic_response{.name = fp.topic});
-                  last_topic = fp.topic;
+                    fetchable_topic_response{.name = topic});
+                  last_topic = topic;
               }
               fetch_response::partition_response p{
-                .partition_index = fp.partition,
+                .partition_index = fp.topic_partition.get_partition(),
                 .error_code = error_code::none,
                 .high_watermark = fp.high_watermark,
                 .last_stable_offset = fp.last_stable_offset,

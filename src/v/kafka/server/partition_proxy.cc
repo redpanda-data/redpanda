@@ -23,8 +23,8 @@ partition_proxy make_with_impl(Args&&... args) {
 }
 
 std::optional<partition_proxy> make_partition_proxy(
-  const model::ntp& ntp, cluster::partition_manager& cluster_pm) {
-    auto partition = cluster_pm.get(ntp);
+  const model::ktp& ktp, cluster::partition_manager& cluster_pm) {
+    auto partition = cluster_pm.get(ktp);
     if (partition) {
         return make_with_impl<replicated_partition>(partition);
     }
