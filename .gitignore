@@ -251,3 +251,8 @@ vbuild/
 
 #asdf tool version file
 .tool-versions
+
+# Devenv
+.devenv*
+devenv.local.nix
+

@@ -1,8 +1,9 @@
 project(REDPANDA VERSION "0.1.0" LANGUAGES CXX)
 # https://cmake.org/cmake/help/v3.4/policy/CMP0065.html
-cmake_policy(SET CMP0065 OLD)
+# cmake_policy(SET CMP0065 OLD)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
+set(REDPANDA_DEPS_SKIP_BUILD ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
 # CCACHE_DIR is initially provided by vtools
