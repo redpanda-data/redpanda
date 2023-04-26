@@ -135,8 +135,17 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                                 omit_seeds_on_idx_one=False)
 
     class producer_consumer:
-        def __init__(self, test_context, logger, topic_spec, redpanda, nodes,
-                     msg_size, rate_limit_bps, msg_count, consumers_count):
+        def __init__(self,
+                     test_context,
+                     logger,
+                     topic_spec,
+                     redpanda,
+                     nodes,
+                     msg_size,
+                     rate_limit_bps,
+                     msg_count,
+                     consumers_count,
+                     key_set_cardinality=None):
             self.test_context = test_context
             self.logger = logger
             self.topic = topic_spec
@@ -146,6 +155,7 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             self.rate_limit_bps = rate_limit_bps
             self.msg_count = msg_count
             self.consumer_count = consumers_count
+            self.key_set_cardinality = key_set_cardinality
 
         def _start_producer(self):
             self.producer = KgoVerifierProducer(
@@ -155,7 +165,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
                 self.msg_size,
                 self.msg_count,
                 custom_node=self.nodes,
-                rate_limit_bps=self.rate_limit_bps)
+                rate_limit_bps=self.rate_limit_bps,
+                key_set_cardinality=self.key_set_cardinality)
 
             self.producer.start(clean=False)
 
@@ -260,7 +271,8 @@ class RandomNodeOperationsTest(PreallocNodesTest):
             msg_size=self.msg_size,
             rate_limit_bps=self.rate_limit,
             msg_count=self.msg_count,
-            consumers_count=self.consumers_count)
+            consumers_count=self.consumers_count,
+            key_set_cardinality=500)
 
         regular_producer_consumer.start()
         compacted_producer_consumer.start()
