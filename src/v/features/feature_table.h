@@ -510,6 +510,9 @@ private:
     // applying raft0 log events.
     friend class cluster::feature_backend;
 
+    // for set_applied_offset when applying the bootstrap cmd
+    friend class cluster::bootstrap_backend;
+
     // Unit testing hook.
     friend class feature_table_fixture;
 
