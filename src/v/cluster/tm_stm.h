@@ -72,6 +72,23 @@ public:
       ss::sharded<features::feature_table>&,
       ss::sharded<cluster::tm_stm_cache>&);
 
+    void try_rm_lock(kafka::transactional_id tid) {
+        auto tx_opt = _cache.local().find_mem(tid);
+        if (tx_opt) {
+            return;
+        }
+        tx_opt = _cache.local().find_log(tid);
+        if (tx_opt) {
+            return;
+        }
+        if (_tx_locks.contains(tid)) {
+            auto lock = _tx_locks[tid];
+            if (lock->ready()) {
+                _tx_locks.erase(tid);
+            }
+        }
+    };
+
     ss::gate& gate() { return _gate; }
 
     ss::future<> start() override;
@@ -80,10 +97,6 @@ public:
       get_tx(kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_ongoing(model::term_id, kafka::transactional_id);
-    // mark_xxx: updates a transaction if the term matches etag
-    // reset_xxx: updates a transaction and an etag
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      reset_tx_ongoing(kafka::transactional_id, model::term_id);
     ss::future<tm_stm::op_status> add_partitions(
       model::term_id,
       kafka::transactional_id,
@@ -117,9 +130,7 @@ public:
     ss::future<ss::basic_rwlock<>::holder> prepare_transfer_leadership();
 
     ss::future<checked<tm_transaction, tm_stm::op_status>>
-      reset_tx_ready(model::term_id, kafka::transactional_id);
-    ss::future<checked<tm_transaction, tm_stm::op_status>>
-      reset_tx_ready(model::term_id, kafka::transactional_id, model::term_id);
+      reset_transferring(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
       mark_tx_preparing(model::term_id, kafka::transactional_id);
     ss::future<checked<tm_transaction, tm_stm::op_status>>
@@ -139,7 +150,8 @@ public:
       kafka::transactional_id,
       std::chrono::milliseconds,
       model::producer_identity);
-    ss::future<> expire_tx(kafka::transactional_id);
+    ss::future<tm_stm::op_status>
+      expire_tx(model::term_id, kafka::transactional_id);
 
     bool is_expired(const tm_transaction&);
 

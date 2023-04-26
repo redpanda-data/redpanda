@@ -133,56 +133,7 @@ tm_stm::get_tx(kafka::transactional_id tx_id) {
     if (!tx_opt) {
         co_return tm_stm::op_status::not_found;
     }
-
-    auto tx = tx_opt.value();
-    // Check if transferring.
-    // We have 4 combinations here for
-    // transferring and etag/term match.
-    //
-    // transferring = tx->transferring
-    // term match = tx.etag == _insync_term
-    // +-------------------------+------+-------+
-    // | transferring/term match | True | False |
-    // +-------------------------+------+-------+
-    // | True                    |    1 |     2 |
-    // | False                   |    3 |     4 |
-    // +-------------------------+------+-------+
-
-    // case 1 - Unlikely, just reset the transferring flag.
-    // case 2 - Valid, txn is getting transferred from previous term.
-    // case 3 - Valid, the current term has already reset etag, so just return.
-    // case 4 - Invalid, just return and wait for it to fail in the next term
-    // check.
-    if (tx.transferring) {
-        vlog(
-          txlog.trace,
-          "observed a transferring tx:{} pid:{} etag:{} tx_seq:{} in term:{}",
-          tx_id,
-          tx.pid,
-          tx.etag,
-          tx.tx_seq,
-          _insync_term);
-        if (tx.etag == _insync_term) {
-            // case 1
-            vlog(
-              txlog.warn,
-              "tx: {} transferring within same term: {}, resetting.",
-              tx_id,
-              tx.etag);
-        }
-        // case 2
-        tx.etag = _insync_term;
-        tx.transferring = false;
-        auto r = co_await update_tx(tx, tx.etag);
-        if (!r.has_value()) {
-            co_return r;
-        }
-        tx = r.value();
-        _cache.local().set_mem(tx.etag, tx_id, tx);
-        co_return tx;
-    }
-    // case 3, 4
-    co_return tx;
+    co_return tx_opt.value();
 }
 
 ss::future<checked<model::term_id, tm_stm::op_status>> tm_stm::barrier() {
@@ -359,6 +310,7 @@ tm_stm::do_update_tx(tm_transaction tx, model::term_id term) {
           tx.id,
           tx.pid,
           tx.tx_seq);
+        // update_tx must return conflict only in this case, see expire_tx
         co_return tm_stm::op_status::conflict;
     }
     co_return tx_opt.value();
@@ -444,28 +396,43 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_killed(
     co_return co_await update_tx(std::move(tx), expected_term);
 }
 
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
-  model::term_id expected_term, kafka::transactional_id tx_id) {
-    return reset_tx_ready(expected_term, tx_id, expected_term);
-}
-
-ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::reset_tx_ready(
-  model::term_id expected_term,
-  kafka::transactional_id tx_id,
-  model::term_id term) {
-    auto tx_opt = co_await get_tx(tx_id);
-    if (!tx_opt.has_value()) {
-        co_return tx_opt;
+ss::future<checked<tm_transaction, tm_stm::op_status>>
+tm_stm::reset_transferring(model::term_id term, kafka::transactional_id tx_id) {
+    auto ptx = co_await get_tx(tx_id);
+    if (!ptx.has_value()) {
+        co_return ptx;
     }
-    tm_transaction tx = tx_opt.value();
-    tx.status = tm_transaction::tx_status::ready;
-    tx.last_pid = model::unknown_pid;
-    tx.partitions.clear();
-    tx.groups.clear();
+    auto tx = ptx.value();
+    // Check if transferring.
+    if (!tx.transferring) {
+        co_return tm_stm::op_status::conflict;
+    }
+    vlog(
+      txlog.trace,
+      "observed a transferring tx:{} pid:{} etag:{} tx_seq:{} in term:{}",
+      tx_id,
+      tx.pid,
+      tx.etag,
+      tx.tx_seq,
+      term);
+    if (tx.etag == term) {
+        // case 1 - Unlikely, just reset the transferring flag.
+        vlog(
+          txlog.warn,
+          "tx: {} transferring within same term: {}, resetting.",
+          tx_id,
+          tx.etag);
+    }
+    // case 2 - Valid, txn is getting transferred from previous term.
     tx.etag = term;
-    tx.tx_seq += 1;
-    tx.last_update_ts = clock_type::now();
-    co_return co_await update_tx(std::move(tx), expected_term);
+    tx.transferring = false;
+    auto r = co_await update_tx(tx, tx.etag);
+    if (!r.has_value()) {
+        co_return r;
+    }
+    tx = r.value();
+    _cache.local().set_mem(tx.etag, tx_id, tx);
+    co_return tx;
 }
 
 ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
@@ -492,23 +459,6 @@ ss::future<checked<tm_transaction, tm_stm::op_status>> tm_stm::mark_tx_ongoing(
     tx.partitions.clear();
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
-    _cache.local().set_mem(tx.etag, tx_id, tx);
-    co_return tx;
-}
-
-ss::future<checked<tm_transaction, tm_stm::op_status>>
-tm_stm::reset_tx_ongoing(kafka::transactional_id tx_id, model::term_id term) {
-    auto tx_opt = co_await get_tx(tx_id);
-    if (!tx_opt.has_value()) {
-        co_return tx_opt;
-    }
-    tm_transaction tx = tx_opt.value();
-    tx.status = tm_transaction::tx_status::ongoing;
-    tx.tx_seq += 1;
-    tx.partitions.clear();
-    tx.groups.clear();
-    tx.last_update_ts = clock_type::now();
-    tx.etag = term;
     _cache.local().set_mem(tx.etag, tx_id, tx);
     co_return tx;
 }
@@ -841,7 +791,6 @@ ss::future<> tm_stm::apply(model::record_batch b) {
           tx.etag,
           _insync_term);
         _cache.local().erase_mem(tx.id);
-        _tx_locks.erase(tx.id);
         _pid_tx_id.erase(tx.pid);
         return ss::now();
     }
@@ -929,20 +878,35 @@ tm_stm::delete_partition_from_tx(
     }
 }
 
-ss::future<> tm_stm::expire_tx(kafka::transactional_id tx_id) {
+ss::future<tm_stm::op_status>
+tm_stm::expire_tx(model::term_id term, kafka::transactional_id tx_id) {
     auto tx_opt = co_await get_tx(tx_id);
     if (!tx_opt.has_value()) {
-        co_return;
+        co_return tm_stm::op_status::unknown;
     }
     tm_transaction tx = tx_opt.value();
-    tx.etag = _insync_term;
+    tx.etag = term;
     tx.status = tm_transaction::tx_status::tombstone;
     tx.last_pid = model::unknown_pid;
     tx.partitions.clear();
     tx.groups.clear();
     tx.last_update_ts = clock_type::now();
     auto etag = tx.etag;
-    co_await update_tx(std::move(tx), etag).discard_result();
+    auto r0 = co_await update_tx(std::move(tx), etag);
+    if (r0.has_value()) {
+        vlog(
+          txlog.error,
+          "written tombstone should evict tx:{} from the cache",
+          tx_id);
+        co_return tm_stm::op_status::unknown;
+    }
+    if (r0.error() == tm_stm::op_status::conflict) {
+        // update_tx returns conflict when it can't find
+        // tx after the successful update; it may happen only
+        // with the tombstone
+        co_return tm_stm::op_status::success;
+    }
+    co_return r0.error();
 }
 
 ss::future<> tm_stm::handle_eviction() {

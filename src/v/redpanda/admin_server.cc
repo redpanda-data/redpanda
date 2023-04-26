@@ -846,7 +846,7 @@ ss::future<> admin_server::throw_on_error(
         case cluster::tx_errc::leader_not_found:
             throw co_await redirect_to_leader(req, ntp);
         case cluster::tx_errc::pid_not_found:
-            throw ss::httpd::bad_request_exception(
+            throw ss::httpd::not_found_exception(
               fmt_with_ctx(fmt::format, "Can not find pid for ntp:{}", ntp));
         case cluster::tx_errc::partition_not_found: {
             ss::sstring error_msg;
