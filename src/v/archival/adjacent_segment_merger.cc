@@ -160,11 +160,13 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
                          const cloud_storage::partition_manifest& manifest) {
             return scan_manifest(local_start_offset, manifest);
         };
-        auto upl = co_await _archiver.find_reupload_candidate(scanner);
+        auto [archiver_units, upl] = co_await _archiver.find_reupload_candidate(
+          scanner);
         if (!upl.has_value()) {
             vlog(_ctxlog.debug, "No more upload candidates");
             co_return result;
         }
+        vassert(archiver_units.has_value(), "Must take archiver units");
         auto next = model::next_offset(upl->candidate.final_offset);
         vlog(
           _ctxlog.debug,
@@ -180,7 +182,7 @@ adjacent_segment_merger::run(retry_chain_node& rtc, run_quota_t quota) {
               src->size_bytes());
         }
         auto uploaded = co_await _archiver.upload(
-          std::move(*upl), std::ref(rtc));
+          std::move(*archiver_units), std::move(*upl), std::ref(rtc));
         if (uploaded) {
             _last = next;
             result.status = run_status::ok;
