@@ -39,7 +39,6 @@ linters:
     - goconst
     - gocyclo
     - goerr113
-    - goimports
     - goprintffuncname
     - gosec
     - gosimple
