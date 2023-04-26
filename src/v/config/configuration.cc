@@ -1922,6 +1922,13 @@ configuration::configuration()
       {.needs_restart = needs_restart::no, .visibility = visibility::user},
       256,
       {.min = 0})
+  , kafka_throughput_controlled_api_keys(
+      *this,
+      "kafka_throughput_controlled_api_keys",
+      "List of Kafka API keys that are subject to cluster-wide "
+      "and node-wide thoughput limit control",
+      {.needs_restart = needs_restart::no, .visibility = visibility::user},
+      {"produce", "fetch"})
   , node_isolation_heartbeat_timeout(
       *this,
       "node_isolation_heartbeat_timeout",

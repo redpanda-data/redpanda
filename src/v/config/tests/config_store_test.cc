@@ -12,13 +12,16 @@
 #include "json/stringbuffer.h"
 #include "json/writer.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/log.hh>
 
 #include <cstdint>
 #include <iostream>
+#include <iterator>
 #include <random>
+#include <string>
 #include <utility>
 
 namespace {
@@ -426,4 +429,65 @@ SEASTAR_THREAD_TEST_CASE(property_bind) {
     BOOST_TEST(bind2() == "newvalue3");
     BOOST_TEST(bind3() == "newvalue3");
     BOOST_TEST(watch_count == 4);
+
+    // Check the bindings are bound to the moved-to properties, not to the
+    // moved-from ones
+    auto cfg2 = std::move(cfg);
+    cfg2.required_string.set_value(ss::sstring("newvalue4"));
+    // NOLINTNEXTLINE
+    cfg.required_string.set_value(ss::sstring("badvalue"));
+    BOOST_TEST(bind2() == "newvalue4");
+    BOOST_TEST(bind3() == "newvalue4");
+    BOOST_TEST(watch_count == 6);
+}
+
+SEASTAR_THREAD_TEST_CASE(property_conversion_bind) {
+    auto cfg = test_config();
+    BOOST_TEST(cfg.boolean() == false);
+    auto binding = cfg.boolean.bind<ss::sstring>(
+      [](bool v) { return v ? "true" : "false"; });
+    BOOST_TEST(binding() == "false");
+    cfg.boolean.set_value(true);
+    BOOST_TEST(cfg.boolean() == true);
+    BOOST_TEST(binding() == "true");
+
+    int watch_count = 0;
+
+    BOOST_TEST(cfg.required_string() == cfg.required_string.default_value());
+    auto str_binding = cfg.required_string.bind<std::string>(
+      [](const ss::sstring& s) {
+          return std::string(
+            std::make_reverse_iterator(s.cend()),
+            std::make_reverse_iterator(s.cbegin()));
+      });
+    str_binding.watch([&watch_count]() { ++watch_count; });
+
+    cfg.required_string.set_value(ss::sstring("newvalue"));
+    BOOST_TEST(cfg.required_string() == "newvalue");
+    BOOST_TEST(str_binding() == "eulavwen");
+    BOOST_TEST(watch_count == 1);
+
+    // Check that bindings are safe to use after move
+    config::conversion_binding<std::string, ss::sstring> bind2 = std::move(
+      str_binding);
+    cfg.required_string.set_value(ss::sstring("newvalue2"));
+    BOOST_TEST(bind2() == "2eulavwen");
+    BOOST_TEST(watch_count == 2);
+
+    // Check that bindings are safe to use after copy
+    config::conversion_binding<std::string, ss::sstring> bind3 = bind2;
+    cfg.required_string.set_value(ss::sstring("newvalue3"));
+    BOOST_TEST(bind2() == "3eulavwen");
+    BOOST_TEST(bind3() == "3eulavwen");
+    BOOST_TEST(watch_count == 4);
+
+    // Check the bindings are bound to the moved-to properties, not to the
+    // moved-from ones
+    auto cfg2 = std::move(cfg);
+    cfg2.required_string.set_value(ss::sstring("newvalue4"));
+    // NOLINTNEXTLINE
+    cfg.required_string.set_value(ss::sstring("badvalue"));
+    BOOST_TEST(bind2() == "4eulavwen");
+    BOOST_TEST(bind3() == "4eulavwen");
+    BOOST_TEST(watch_count == 6);
 }

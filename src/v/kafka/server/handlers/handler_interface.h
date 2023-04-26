@@ -108,4 +108,17 @@ using handler = const handler_interface*;
  */
 std::optional<handler> handler_for_key(api_key key) noexcept;
 
+/**
+ * Map a Kafka API name to it's API key.
+ *
+ * @param name The name, taken from API schemata.
+ * @return std::optional<api_key> the key, if any.
+ */
+std::optional<api_key> api_name_to_key(std::string_view name) noexcept;
+
+/**
+ * @return The highest value of Kafka API key
+ */
+size_t max_api_key() noexcept;
+
 } // namespace kafka

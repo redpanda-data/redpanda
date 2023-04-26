@@ -24,6 +24,7 @@
 #include <boost/intrusive/list.hpp>
 
 #include <chrono>
+#include <functional>
 #include <optional>
 
 namespace config {
@@ -31,7 +32,13 @@ namespace config {
 using namespace std::chrono_literals;
 
 template<class T>
+class binding_base;
+
+template<class T>
 class binding;
+
+template<typename U, typename T>
+class conversion_binding;
 
 template<typename T>
 class mock_property;
@@ -89,9 +96,10 @@ public:
       : base_property(rhs)
       , _value(std::move(rhs._value))
       , _default(std::move(rhs._default))
-      , _validator(std::move(rhs._validator)) {
-        for (auto binding_ptr : _bindings) {
-            binding_ptr._parent = this;
+      , _validator(std::move(rhs._validator))
+      , _bindings(std::move(rhs._bindings)) {
+        for (auto& binding : _bindings) {
+            binding._parent = this;
         }
     }
 
@@ -189,6 +197,12 @@ public:
         return {*this};
     }
 
+    template<typename U>
+    auto bind(std::function<U(const T&)> conv) -> conversion_binding<U, T> {
+        assert_live_settable();
+        return {*this, std::move(conv)};
+    }
+
     std::optional<std::string_view> example() const override {
         if (_meta.example.has_value()) {
             return _meta.example;
@@ -263,61 +277,34 @@ protected:
 private:
     validator _validator;
 
-    friend class binding<T>;
+    friend class binding_base<T>;
     friend class mock_property<T>;
-    intrusive_list<binding<T>, &binding<T>::_hook> _bindings;
+    intrusive_list<binding_base<T>, &binding_base<T>::_hook> _bindings;
 };
 
-/**
- * A property binding contains a copy of the property's value, which
- * will be updated in-place whenever the property is updated in the
- * cluster configuration.
- *
- * This is useful for classes that want a copy of a property without
- * having to write their own logic for subscribing to value changes.
- */
 template<class T>
-class binding {
-private:
-    T _value;
+class binding_base {
     property<T>* _parent{nullptr};
-
+    intrusive_list_hook _hook;
     std::optional<std::function<void()>> _on_change;
 
-    void update(const T& v) {
-        oncore_debug_verify(_verify_shard);
-        auto changed = _value != v;
-        _value = v;
-        if (changed && _on_change.has_value()) {
-            _on_change.value()();
-        }
-    }
-    void detach() { _parent = nullptr; }
-
-    expression_in_debug_mode(oncore _verify_shard);
-
 protected:
-    intrusive_list_hook _hook;
+    expression_in_debug_mode(oncore _verify_shard);
 
     /**
      * This constructor is only for tests: construct a binding
      * with an arbitrary fixed value, that is not connected to any underlying
      * property.
      */
-    explicit binding(T&& value)
-      : _value(std::move(value))
-      , _parent(nullptr) {}
+    binding_base() = default;
 
-public:
-    binding(property<T>& parent)
-      : _value(parent())
-      , _parent(&parent) {
+    explicit binding_base(property<T>& parent)
+      : _parent(&parent) {
         _parent->_bindings.push_back(*this);
     }
 
-    binding(const binding<T>& rhs)
-      : _value(rhs._value)
-      , _parent(rhs._parent)
+    binding_base(const binding_base& rhs)
+      : _parent(rhs._parent)
       , _on_change(rhs._on_change) {
         if (_parent) {
             // May not copy between shards, parent is
@@ -329,8 +316,7 @@ public:
         }
     }
 
-    binding& operator=(const binding& rhs) {
-        _value = rhs._value;
+    binding_base& operator=(const binding_base& rhs) {
         _parent = rhs._parent;
         _on_change = rhs._on_change;
         _hook.unlink();
@@ -348,11 +334,9 @@ public:
      * in unit tests: in normal usage we do not move around bindings
      * after startup time.
      */
-    binding(binding<T>&& rhs) noexcept {
-        _value = std::move(rhs._value);
-        _on_change = std::move(rhs._on_change);
-        _parent = rhs._parent;
-
+    binding_base(binding_base&& rhs) noexcept
+      : _parent(rhs._parent)
+      , _on_change(std::move(rhs._on_change)) {
         if (_parent) {
             // May not move between shards, parent is
             // on the rhs instance's shard.
@@ -362,6 +346,10 @@ public:
         // Steal moved-from binding's place in the property's binding list
         _hook.swap_nodes(rhs._hook);
     }
+
+public:
+    virtual ~binding_base() = default;
+    binding_base& operator=(binding_base&&) = delete;
 
     /**
      * Register a callback on changes to the property value.  Note that you
@@ -379,16 +367,81 @@ public:
      * the callback and the binding attributes of the same object.
      */
     void watch(std::function<void()>&& f) {
-        oncore_debug_verify(_verify_shard);
+        oncore_debug_verify(binding_base<T>::_verify_shard);
         _on_change = std::move(f);
     }
 
-    const T& operator()() const {
+    // private interface for the property<T> friend
+private:
+    friend class property<T>;
+    void detach() { _parent = nullptr; }
+    void update(const T& v) {
         oncore_debug_verify(_verify_shard);
+        const bool changed = do_update(v);
+        if (changed && _on_change.has_value()) {
+            _on_change.value()();
+        }
+    }
+
+    // override interface
+protected:
+    /// Apply the updated property value to the binding, return true if
+    /// the value has changed and the base_binding should call the watcher sink
+    virtual bool do_update(const T& v) = 0;
+};
+
+/**
+ * A property binding contains a copy of the property's value, which
+ * will be updated in-place whenever the property is updated in the
+ * cluster configuration.
+ *
+ * This is useful for classes that want a copy of a property without
+ * having to write their own logic for subscribing to value changes.
+ */
+template<class T>
+class binding : public binding_base<T> {
+private:
+    T _value;
+
+    bool do_update(const T& v) override {
+        auto changed = _value != v;
+        _value = v;
+        return changed;
+    }
+
+protected:
+    /**
+     * This constructor is only for tests: construct a binding
+     * with an arbitrary fixed value, that is not connected to any underlying
+     * property.
+     */
+    explicit binding(T&& value)
+      : _value(std::move(value)) {}
+
+public:
+    binding(property<T>& parent)
+      : binding_base<T>(parent)
+      , _value(parent()) {}
+
+    binding(const binding<T>& rhs)
+      : binding_base<T>(rhs)
+      , _value(rhs._value) {}
+
+    binding& operator=(const binding& rhs) {
+        binding_base<T>::operator=(rhs);
+        _value = rhs._value;
+        return *this;
+    }
+
+    binding(binding<T>&& rhs) noexcept
+      : binding_base<T>(std::move(rhs))
+      , _value(std::move(rhs._value)) {}
+
+    const T& operator()() const {
+        oncore_debug_verify(binding_base<T>::_verify_shard);
         return _value;
     }
 
-    friend class property<T>;
     friend class mock_property<T>;
     template<typename U>
     friend inline binding<U> mock_binding(U&&);
@@ -407,6 +460,73 @@ template<typename T>
 inline binding<T> mock_binding(T&& value) {
     return binding<T>(std::forward<T>(value));
 }
+
+/**
+ * A conversion property binding contains the result of application of
+ * a conversion function to property value. The result is update in-place
+ * whenever the property is updated in the cluster configuration.
+ *
+ * This is useful when the actually useful value of the configuration property
+ * needs to be different from its representation in the cluster config.
+ *
+ * /param U The type of converted value, accessible from the binding
+ * /param T The type of the parent property
+ */
+template<typename U, typename T>
+class conversion_binding : public binding_base<T> {
+public:
+    using conversion_func = std::function<U(const T&)>;
+
+private:
+    U _value;
+    conversion_func _convert;
+
+    bool do_update(const T& v) override {
+        U converted = _convert(v);
+        const bool changed = _value != converted;
+        _value = std::move(converted);
+        return changed;
+    }
+
+protected:
+    /**
+     * This constructor is only for tests: construct a binding
+     * with an arbitrary fixed value, that is not connected to any underlying
+     * property.
+     */
+    explicit conversion_binding(U&& value)
+      : _value(std::move(value)) {}
+
+public:
+    conversion_binding(property<T>& parent, conversion_func convert)
+      : binding_base<T>(parent)
+      , _value(convert(parent()))
+      , _convert(std::move(convert)) {}
+
+    conversion_binding(const conversion_binding<U, T>& rhs)
+      : binding_base<T>(rhs)
+      , _value(rhs._value)
+      , _convert(rhs._convert) {}
+
+    conversion_binding& operator=(const conversion_binding& rhs) {
+        binding_base<T>::operator=(rhs);
+        _value = rhs._value;
+        _convert = rhs._convert;
+        return *this;
+    }
+
+    conversion_binding(conversion_binding&& rhs) noexcept
+      : binding_base<T>(std::move(rhs))
+      , _value(std::move(rhs._value))
+      , _convert(std::move(rhs._convert)) {}
+
+    conversion_binding& operator=(conversion_binding&&) = delete;
+
+    const U& operator()() const {
+        oncore_debug_verify(binding_base<T>::_verify_shard);
+        return _value;
+    }
+};
 
 namespace detail {
 

@@ -65,6 +65,22 @@ class ThroughputLimitsSnc(RedpandaTest):
         BAL_PERIOD_MS = "kafka_quota_balancer_node_period_ms"
         QUOTA_SHARD_MIN_RATIO = "kafka_quota_balancer_min_shard_throughput_ratio"
         QUOTA_SHARD_MIN_BPS = "kafka_quota_balancer_min_shard_throughput_bps"
+        CONTROLLED_API_KEYS = "kafka_throughput_controlled_api_keys"
+
+    api_names = [
+        "add_offsets_to_txn", "add_partitions_to_txn", "alter_configs",
+        "alter_partition_reassignments", "api_versions", "create_acls",
+        "create_partitions", "create_topics", "delete_acls", "delete_groups",
+        "delete_topics", "describe_acls", "describe_configs",
+        "describe_groups", "describe_log_dirs", "describe_producers",
+        "describe_transactions", "end_txn", "fetch", "find_coordinator",
+        "heartbeat", "incremental_alter_configs", "init_producer_id",
+        "join_group", "leave_group", "list_groups", "list_offsets",
+        "list_partition_reassignments", "list_transactions", "metadata",
+        "offset_commit", "offset_delete", "offset_fetch",
+        "offset_for_leader_epoch", "produce", "sasl_authenticate",
+        "sasl_handshake", "sync_group", "txn_offset_commit"
+    ]
 
     def binexp_random(self, min: int, max: int):
         min_exp = min.bit_length() - 1
@@ -120,6 +136,13 @@ class ThroughputLimitsSnc(RedpandaTest):
             if r == 0:
                 return 0
             return self.binexp_random(0, 2**22)  # up to ~1.5 months
+
+        if prop == self.ConfigProp.CONTROLLED_API_KEYS:
+            keys_num = len(self.api_names)
+            keys = set()
+            for _ in range(self.rnd.randrange(keys_num)):
+                keys.add(self.api_names[self.rnd.randrange(keys_num)])
+            return list(keys)
 
         raise Exception(f"Unsupported ConfigProp: {prop}")
 
