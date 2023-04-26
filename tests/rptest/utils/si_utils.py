@@ -11,7 +11,7 @@ import json
 import pprint
 import struct
 from collections import defaultdict, namedtuple
-from typing import Sequence, Optional
+from typing import Sequence, Optional, NewType, NamedTuple
 import xxhash
 
 from rptest.archival.s3_client import ObjectMetadata, S3Client
@@ -24,7 +24,30 @@ BLOCK_SIZE = 4096
 
 default_log_segment_size = 1048576  # 1MB
 
-NTP = namedtuple("NTP", ['ns', 'topic', 'partition'])
+
+class NT(NamedTuple):
+    ns: str
+    topic: str
+
+
+class NTP(NamedTuple):
+    ns: str
+    topic: str
+    partition: int
+
+    def to_ntpr(self, revision: int) -> 'NTPR':
+        return NTPR(self.ns, self.topic, self.partition, revision)
+
+
+class NTPR(NamedTuple):
+    ns: str
+    topic: str
+    partition: int
+    revision: int
+
+    def to_ntp(self) -> NTP:
+        return NTP(self.ns, self.topic, self.partition)
+
 
 TopicManifestMetadata = namedtuple('TopicManifestMetadata',
                                    ['ntp', 'revision'])
@@ -83,7 +106,7 @@ class SegmentReader:
             yield it
 
 
-def parse_s3_manifest_path(path):
+def parse_s3_manifest_path(path: str) -> NTPR:
     """Parse S3 manifest path. Return ntp and revision.
     Sample name: 50000000/meta/kafka/panda-topic/0_19/manifest.json
     """
@@ -93,8 +116,7 @@ def parse_s3_manifest_path(path):
     part_rev = items[4].split('_')
     partition = int(part_rev[0])
     revision = int(part_rev[1])
-    ntp = NTP(ns=ns, topic=topic, partition=partition)
-    return ManifestPathComponents(ntp=ntp, revision=revision)
+    return NTPR(ns=ns, topic=topic, partition=partition, revision=revision)
 
 
 def parse_s3_segment_path(path):
@@ -211,6 +233,14 @@ def verify_file_layout(baseline_per_host,
         assert delta <= BLOCK_SIZE, \
             f"NTP {ntp} the restored partition is too small {rest_ntp_size}." \
             f" The original is {orig_ntp_size} bytes which {delta} bytes larger."
+
+
+def gen_topic_manifest_path(topic: NT):
+    x = xxhash.xxh32()
+    path = f"{topic.ns}/{topic.topic}"
+    x.update(path.encode('ascii'))
+    hash = x.hexdigest()[0] + '0000000'
+    return f"{hash}/meta/{path}/topic_manifest.json"
 
 
 def gen_manifest_path(ntp, rev):
@@ -374,10 +404,11 @@ class S3Snapshot:
             if self.path_matcher.is_partition_manifest(o):
                 manifest_path = parse_s3_manifest_path(o.key)
                 data = self.client.get_object_data(self.bucket, o.key)
-                self.partition_manifests[manifest_path.ntp] = json.loads(data)
+                self.partition_manifests[manifest_path.to_ntp()] = json.loads(
+                    data)
                 self.logger.debug(
-                    f'registered partition manifest for {manifest_path.ntp}: '
-                    f'{pprint.pformat(self.partition_manifests[manifest_path.ntp], indent=2)}'
+                    f'registered partition manifest for {manifest_path.to_ntp()}: '
+                    f'{pprint.pformat(self.partition_manifests[manifest_path.ntp()], indent=2)}'
                 )
 
     def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
@@ -509,3 +540,394 @@ class S3Snapshot:
         assert len(
             manifest_data['replaced']
         ) > 0, f"No replaced segments after compacted segments uploaded"
+
+
+class PathMatcher:
+    def __init__(self, expected_topics: Optional[Sequence[TopicSpec]] = None):
+        self.expected_topics = expected_topics
+        if self.expected_topics is not None:
+            self.topic_names = {t.name for t in self.expected_topics}
+            self.topic_manifest_paths = {
+                f'/{t}/topic_manifest.json'
+                for t in self.topic_names
+            }
+        else:
+            self.topic_names = None
+            self.topic_manifest_paths = None
+
+    def _match_partition_manifest(self, key):
+        if self.topic_names is None:
+            return True
+        else:
+            return any(tn in key for tn in self.topic_names)
+
+    def _match_topic_manifest(self, key):
+        if self.topic_manifest_paths is None:
+            return True
+        else:
+            return any(key.endswith(t) for t in self.topic_manifest_paths)
+
+    def is_partition_manifest(self, o: ObjectMetadata) -> bool:
+        return o.key.endswith(
+            '/manifest.json') and self._match_partition_manifest(o.key)
+
+    def is_topic_manifest(self, o: ObjectMetadata) -> bool:
+        return self._match_topic_manifest(o.key)
+
+    def is_segment(self, o: ObjectMetadata) -> bool:
+        try:
+            parsed = parse_s3_segment_path(o.key)
+        except Exception:
+            return False
+        else:
+            if self.topic_names is not None:
+                return parsed.ntpr.topic in self.topic_names
+            else:
+                return True
+
+    def path_matches_any_topic(self, path: str) -> bool:
+        return self._match_partition_manifest(path)
+
+
+class BucketViewState:
+    """
+    Results of a full listing of the bucket, if listed is True, or
+    partial results if listed is False
+    """
+    def __init__(self):
+        self.listed = False
+        self.segment_objects = 0
+        self.ignored_objects = 0
+        self.partition_manifests = {}
+        self.topic_manifests = {}
+
+
+class BucketView:
+    """
+    A caching view onto an object storage bucket, that knows how to construct paths
+    for manifests, and can also scan the bucket for aggregate segment info.
+
+    For directly fetching a manifest or manifest-derived info for a partition,
+    this will avoid doing object listings.  Access to properties that require
+    object listings (like the object counts) will list the bucket and then cache
+    the result.
+    """
+    def __init__(self, redpanda, topics: Optional[Sequence[TopicSpec]] = None):
+        """
+
+        :param redpanda: a RedpandaService, whose SISettings we will use
+        :param topics: optional list of topics to filter result to
+        """
+        self.redpanda = redpanda
+        self.logger = redpanda.logger
+        self.bucket = redpanda.si_settings.cloud_storage_bucket
+        self.client = redpanda.cloud_storage_client
+        self.path_matcher = PathMatcher(topics)
+
+        # Cache built on demand from admin API
+        self._ntp_to_revision = None
+
+        self._state = BucketViewState()
+
+    def reset(self):
+        """
+        Drop all cached state, so that subsequent calls will use fresh data
+        """
+        self._state = BucketViewState()
+
+    def ntp_to_ntpr(self, ntp: NTP) -> NTPR:
+        """
+        Raises KeyError if the NTP is not found
+        """
+        if self._ntp_to_revision is None:
+            self._ntp_to_revision = {}
+            admin = Admin(self.redpanda)
+            for p in admin.get_leaders_info():
+                self._ntp_to_revision[NTP(
+                    ns=p['ns'], topic=p['topic'],
+                    partition=p['partition_id'])] = p['partition_revision']
+
+        revision = self._ntp_to_revision[ntp]
+        return ntp.to_ntpr(revision)
+
+    @property
+    def segment_objects(self) -> int:
+        self._ensure_listing()
+        return self._state.segment_objects
+
+    @property
+    def ignored_objects(self) -> int:
+        self._ensure_listing()
+        return self._state.ignored_objects
+
+    @property
+    def partition_manifests(self) -> dict[NTP, dict]:
+        self._ensure_listing()
+        return self._state.partition_manifests
+
+    @staticmethod
+    def cloud_log_size_from_ntp_manifest(manifest,
+                                         include_below_start_offset=True
+                                         ) -> int:
+        if 'segments' not in manifest:
+            return 0
+
+        start_offset = 0
+        if not include_below_start_offset:
+            start_offset = manifest['start_offset']
+
+        res = sum(seg_meta['size_bytes']
+                  for seg_meta in manifest['segments'].values()
+                  if seg_meta['base_offset'] >= start_offset)
+
+        return res
+
+    @staticmethod
+    def kafka_start_offset(manifest) -> Optional[int]:
+        if 'segments' not in manifest or len(manifest['segments']) == 0:
+            return None
+
+        start_model_offset = manifest['start_offset']
+        for seg in manifest['segments'].values():
+            if seg['base_offset'] == start_model_offset:
+                # Usually, the manifest's 'start_offset' will match the 'base_offset'
+                # of a 'segment' as retention normally advances the start offset to
+                # another segment's base offset. This branch covers this case.
+                delta = seg['delta_offset']
+                return start_model_offset - delta
+            elif start_model_offset == seg['committed_offset'] + 1:
+                # When retention decides to remove all current segments from the cloud
+                # according to the retention policy, it advances the manifest's start
+                # offset to `committed_offset + 1` of the latest segment present at the time.
+                # Since, there's no guarantee that new segments haven't been added in the
+                # meantime, we look for a match in all segments.
+                delta = seg['delta_offset_end']
+                return start_model_offset - delta
+
+        assert False, (
+            "'start_offset' in manifest is inconsistent with contents of 'segments'."
+            "'start_offset' should match either the 'base_offset' or 'committed_offset + 1'"
+            f"of a segment in 'segments': start_offset={start_model_offset}, segments={manifest['segments']}"
+        )
+
+    @staticmethod
+    def kafka_last_offset(manifest) -> Optional[int]:
+        if 'segments' not in manifest or len(manifest['segments']) == 0:
+            return None
+
+        last_model_offset = manifest['last_offset']
+        last_segment = max(manifest['segments'].values(),
+                           key=lambda seg: seg['base_offset'])
+        delta = last_segment['delta_offset_end']
+
+        return last_model_offset - delta
+
+    def total_cloud_log_size(self) -> int:
+        self._do_listing()
+
+        total = 0
+        for pm in self._state.partition_manifests.values():
+            total += BucketView.cloud_log_size_from_ntp_manifest(
+                pm, include_below_start_offset=False)
+
+        return total
+
+    def _ensure_listing(self):
+        if not self._state.listed is True:
+            self._do_listing()
+            self._state.listed = True
+
+    def _do_listing(self):
+        for o in self.client.list_objects(self.bucket):
+            if self.path_matcher.is_partition_manifest(o):
+                ntpr = parse_s3_manifest_path(o.key)
+                ntp = ntpr.to_ntp()
+                manifest = self._load_manifest(ntp, o.key)
+                self.logger.debug(f'registered partition manifest for {ntp}: '
+                                  f'{pprint.pformat(manifest, indent=2)}')
+            elif self.path_matcher.is_segment(o):
+                self._state.segment_objects += 1
+            elif self.path_matcher.is_topic_manifest(o):
+                pass
+            else:
+                self._state.ignored_objects += 1
+
+    def _load_manifest(self, ntp, path):
+        """
+        Having composed the path for a manifest, download it cache the result, and return the manifest dict
+
+        Raises KeyError if the object is not found.
+        """
+        try:
+            data = self.client.get_object_data(self.bucket, path)
+        except Exception as e:
+            # Very generic exception handling because the storage client
+            # may be one of several classes with their own exceptions
+            self.logger.debug(f"Exception loading {path}: {e}")
+            raise KeyError(f"Manifest for ntp {ntp} not found")
+
+        manifest = json.loads(data)
+
+        self.logger.debug(f"Loaded manifest {ntp}: {pprint.pformat(manifest)}")
+
+        self._state.partition_manifests[ntp] = manifest
+        return manifest
+
+    def get_partition_manifest(self, ntp: NTP | NTPR):
+        """
+        Fetch a manifest, looking up revision as needed.
+        """
+        ntpr = None
+        if isinstance(ntp, NTPR):
+            ntpr = ntp
+            ntp = ntpr.to_ntp()
+
+        if ntp in self._state.partition_manifests:
+            return self._state.partition_manifests[ntp]
+
+        if not ntpr:
+            ntpr = self.ntp_to_ntpr(ntp)
+
+        manifest_path = gen_manifest_path(ntpr)
+        return self._load_manifest(ntp, manifest_path)
+
+    def _load_topic_manifest(self, topic: NT, path: str):
+        try:
+            data = self.client.get_object_data(self.bucket, path)
+        except Exception as e:
+            self.logger.debug(f"Exception loading {path}: {e}")
+            raise KeyError(f"Manifest for topic {topic} not found")
+
+        manifest = json.loads(data)
+
+        self.logger.debug(
+            f"Loaded topic manifest {topic}: {pprint.pformat(manifest)}")
+
+        self._state.topic_manifests[topic] = manifest
+        return manifest
+
+    def get_topic_manifest(self, topic: NT) -> dict:
+        if topic in self._state.topic_manifests:
+            return self._state.topic_manifests[topic]
+
+        path = gen_topic_manifest_path(topic)
+        return self._load_topic_manifest(topic, path)
+
+    def is_segment_part_of_a_manifest(self, o: ObjectMetadata) -> bool:
+        """
+        Queries that given object is a segment, and is a part of one of the test partition manifests
+        with a matching archiver term
+        """
+        try:
+            if not self.path_matcher.is_segment(o):
+                return False
+
+            segment_path = parse_s3_segment_path(o.key)
+            partition_manifest = self.get_partition_manifest(segment_path.ntpr)
+            if not partition_manifest:
+                self.logger.warn(f'no manifest found for {segment_path.ntpr}')
+                return False
+
+            segments_in_manifest = partition_manifest['segments']
+
+            # Filename for segment contains the archiver term, eg:
+            # 4886-1-v1.log.2 -> 4886-1-v1.log and 2
+            base_name, archiver_term = segment_path.name.rsplit('.', 1)
+
+            # New segment path format is base-committed-size-term-v1.log
+            base_name_tokens = base_name.split('-')
+            manifest_key = '-'.join([base_name_tokens[i] for i in (0, -2)])
+            manifest_key = f'{manifest_key}-v1.log'
+            segment_entry = segments_in_manifest.get(manifest_key)
+            if not segment_entry:
+                self.logger.warn(
+                    f'no entry found for segment path {manifest_key} '
+                    f'in manifest: {pprint.pformat(segments_in_manifest, indent=2)}'
+                )
+                return False
+
+            # Archiver term should match the value in partition manifest
+            manifest_archiver_term = str(segment_entry['archiver_term'])
+            if archiver_term == manifest_archiver_term:
+                return True
+
+            self.logger.warn(
+                f'{segment_path} has archiver term {archiver_term} '
+                f'which does not match manifest term {manifest_archiver_term}')
+            return False
+        except Exception as e:
+            self.logger.info(f'error {e} while checking if {o} is a segment')
+            return False
+
+    def is_ntp_in_manifest(self,
+                           topic: str,
+                           partition: int,
+                           ns: str = "kafka") -> bool:
+        """
+        Whether a manifest is present for this NTP
+        """
+        ntp = NTP(ns, topic, partition)
+        try:
+            self.get_partition_manifest(ntp)
+        except KeyError:
+            return False
+        else:
+            return True
+
+    def manifest_for_ntpr(self,
+                          topic: str,
+                          partition: int,
+                          revision: int,
+                          ns: str = 'kafka') -> dict:
+        ntpr = NTPR(ns, topic, partition, revision)
+        return self.get_partition_manifest(ntpr)
+
+    def manifest_for_ntp(self,
+                         topic: str,
+                         partition: int,
+                         ns: str = 'kafka') -> dict:
+        ntp = NTP(ns, topic, partition)
+        return self.get_partition_manifest(ntp)
+
+    def cloud_log_segment_count_for_ntp(self,
+                                        topic: str,
+                                        partition: int,
+                                        ns: str = 'kafka') -> int:
+        manifest = self.manifest_for_ntp(topic, partition, ns)
+        if 'segments' not in manifest:
+            return 0
+
+        return len(manifest['segments'])
+
+    def cloud_log_size_for_ntp(self,
+                               topic: str,
+                               partition: int,
+                               ns: str = 'kafka') -> int:
+        try:
+            manifest = self.manifest_for_ntp(topic, partition, ns)
+        except KeyError:
+            return 0
+        else:
+            return BucketView.cloud_log_size_from_ntp_manifest(manifest)
+
+    def assert_at_least_n_uploaded_segments_compacted(self,
+                                                      topic: str,
+                                                      partition: int,
+                                                      revision: Optional[int],
+                                                      n=1):
+        if revision:
+            manifest_data = self.manifest_for_ntpr(topic, partition, revision)
+        else:
+            manifest_data = self.manifest_for_ntp(topic, partition)
+        segments = manifest_data['segments']
+        compacted_segments = len(
+            [meta for meta in segments.values() if meta['is_compacted']])
+        assert compacted_segments >= n, f"Could not find {n} compacted segments, " \
+                                        f"total uploaded: {len(segments)}, " \
+                                        f"total compacted: {compacted_segments}"
+
+    def assert_segments_replaced(self, topic: str, partition: int):
+        manifest_data = self.manifest_for_ntp(topic, partition)
+        assert len(manifest_data.get(
+            'replaced',
+            [])) > 0, f"No replaced segments after compacted segments uploaded"
