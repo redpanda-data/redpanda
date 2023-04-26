@@ -29,7 +29,8 @@
 #include <absl/container/flat_hash_map.h>
 
 namespace cluster {
-class partition_manager {
+class partition_manager
+  : public ss::peering_sharded_service<partition_manager> {
 public:
     using ntp_table_container
       = absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>>;
@@ -180,6 +181,15 @@ public:
     /// Report the aggregate backlog of all archivers for all managed
     /// partitions
     uint64_t upload_backlog_size() const;
+
+    /*
+     * Return disk space usage for for partitions not accounted for by the
+     * underlying logs. Examples include raft snapshots, and other snapshots and
+     * indicies used by any active state machines.
+     *
+     * The results are accumulated for all partitions, across all cores.
+     */
+    ss::future<size_t> non_log_disk_size_bytes() const;
 
 private:
     /// Download log if partition_recovery_manager is initialized.

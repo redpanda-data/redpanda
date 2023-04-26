@@ -377,4 +377,21 @@ std::ostream& operator<<(std::ostream& o, const partition_manager& pm) {
              << ", ntp_table.size:" << pm._ntp_table.size()
              << ", raft_table.size:" << pm._raft_table.size() << "}";
 }
+
+ss::future<size_t> partition_manager::non_log_disk_size_bytes() const {
+    co_return co_await container().map_reduce0(
+      [](const partition_manager& pm) {
+          const auto size = std::accumulate(
+            pm._raft_table.cbegin(),
+            pm._raft_table.cend(),
+            size_t{0},
+            [](size_t acc, const auto& elem) {
+                return acc + elem.second->non_log_disk_size_bytes();
+            });
+          return size;
+      },
+      size_t{0},
+      [](size_t acc, size_t update) { return acc + update; });
+}
+
 } // namespace cluster
