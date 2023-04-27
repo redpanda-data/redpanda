@@ -121,6 +121,7 @@ struct configuration final : public config_store {
     enum_property<model::timestamp_type> log_message_timestamp_type;
     enum_property<model::compression> log_compression_type;
     property<size_t> fetch_max_bytes;
+    property<bool> use_fetch_scheduler_group;
     property<std::chrono::milliseconds> metadata_status_wait_timeout_ms;
     bounded_property<std::optional<int64_t>> kafka_connection_rate_limit;
     property<std::vector<ss::sstring>> kafka_connection_rate_limit_overrides;

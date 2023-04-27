@@ -92,6 +92,7 @@ public:
     ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
 
     smp_groups smp_service_groups;
+    scheduling_groups sched_groups;
 
     // Sorted list of services (public members)
     ss::sharded<cloud_storage::cache> shadow_index_cache;
@@ -231,7 +232,6 @@ private:
     std::optional<pandaproxy::schema_registry::configuration>
       _schema_reg_config;
     std::optional<kafka::client::configuration> _schema_reg_client_config;
-    scheduling_groups _scheduling_groups;
     scheduling_groups_probe _scheduling_groups_probe;
     ss::logger _log;
 

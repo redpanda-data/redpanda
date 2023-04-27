@@ -80,6 +80,7 @@ namespace kafka {
 server::server(
   ss::sharded<net::server_configuration>* cfg,
   ss::smp_service_group smp,
+  ss::scheduling_group fetch_sg,
   ss::sharded<cluster::metadata_cache>& meta,
   ss::sharded<cluster::topics_frontend>& tf,
   ss::sharded<cluster::config_frontend>& cf,
@@ -102,6 +103,7 @@ server::server(
   ssx::thread_worker& tw) noexcept
   : net::server(cfg, klog)
   , _smp_group(smp)
+  , _fetch_scheduling_group(fetch_sg)
   , _topics_frontend(tf)
   , _config_frontend(cf)
   , _feature_table(ft)
@@ -135,6 +137,12 @@ server::server(
     }
     _probe.setup_metrics();
     _probe.setup_public_metrics();
+}
+
+ss::scheduling_group server::fetch_scheduling_group() const {
+    return config::shard_local_cfg().use_fetch_scheduler_group()
+             ? _fetch_scheduling_group
+             : ss::default_scheduling_group();
 }
 
 coordinator_ntp_mapper& server::coordinator_mapper() {
