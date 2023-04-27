@@ -25,11 +25,13 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "rpc/connection_cache.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
+#include <seastar/coroutine/maybe_yield.hh>
 
 #include <absl/container/node_hash_map.h>
 
@@ -176,6 +178,9 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
                 .source_shard = shard,
                 .p_as = std::move(m.delta.new_assignment),
                 .type = m.delta.type,
+                .current_retry = m.retries,
+                .last_operation_result = m.last_error,
+                .revision_of_operation = model::revision_id(m.delta.offset),
               };
           });
     }
@@ -450,6 +455,60 @@ controller_api::shard_for(const raft::group_id& group) const {
 std::optional<ss::shard_id>
 controller_api::shard_for(const model::ntp& ntp) const {
     return _shard_table.local().shard_for(ntp);
+}
+
+ss::future<global_reconciliation_state>
+controller_api::get_global_reconciliation_state(
+  std::vector<model::ntp> ntps, model::timeout_clock::time_point timeout) {
+    // step is to gather per node requests for each of the node
+    absl::node_hash_map<model::node_id, std::vector<model::ntp>> grouped_ntps;
+    const auto ntps_sz = ntps.size();
+
+    for (auto& ntp : ntps) {
+        auto it = _topics.local().updates_in_progress().find(ntp);
+        if (it == _topics.local().updates_in_progress().end()) {
+            // not longer updating
+            continue;
+        }
+        auto all_replicas = union_replica_sets(
+          it->second.get_previous_replicas(), it->second.get_target_replicas());
+        for (const auto& r : all_replicas) {
+            grouped_ntps[r.node_id].push_back(ntp);
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+
+    using ret_t = result<std::vector<ntp_reconciliation_state>>;
+
+    auto node_results = co_await ssx::parallel_transform(
+      std::move(grouped_ntps), [this, timeout](auto pair) {
+          if (pair.first == _self) {
+              return get_reconciliation_state(std::move(pair.second))
+                .then([id = pair.first](ret_t ret) {
+                    return std::make_pair(id, std::move(ret));
+                });
+          }
+          return get_reconciliation_state(
+                   pair.first, std::move(pair.second), timeout)
+            .then([id = pair.first](ret_t ret) {
+                return std::make_pair(id, std::move(ret));
+            });
+      });
+
+    global_reconciliation_state state;
+    state.ntp_backend_operations.reserve(ntps_sz);
+    for (auto& [node_id, result] : node_results) {
+        if (result.has_error()) {
+            state.node_errors.emplace_back(node_id, result.error());
+            continue;
+        }
+        for (auto& ntp_state : result.value()) {
+            state.ntp_backend_operations[ntp_state.ntp()].emplace_back(
+              node_id, std::move(ntp_state.pending_operations()));
+        }
+        co_await ss::coroutine::maybe_yield();
+    }
+    co_return state;
 }
 
 } // namespace cluster

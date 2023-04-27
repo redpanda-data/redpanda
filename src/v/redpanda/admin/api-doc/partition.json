@@ -544,6 +544,75 @@
                 "status": {
                     "type": "string",
                     "description": "Reconfiguration status"
+                },
+                "current_replicas": {
+                    "type": "array",
+                    "items": {
+                        "type": "assignment"
+                    },
+                    "description": "Current replica set"
+                },
+                "bytes_left_to_move": {
+                    "type": "long",
+                    "description": "bytes left to move to new replicas"
+                },
+                "bytes_moved": {
+                    "type": "long",
+                    "description": "bytes already moved to new replicas"
+                },
+                "partition_size": {
+                    "type": "long",
+                    "description": "current size of partition"
+                },
+                "reconciliation_statuses": {
+                    "type": "array",
+                    "items": {
+                        "type": "partition_reconciliation_status"
+                    },
+                    "description": "list of reconciliation statuses per node"
+                }
+            }
+        },
+        "partition_reconciliation_status": {
+            "id": "partition_reconciliation_status",
+            "description": "Partition reconciliation status on a node",
+            "properties": {
+                "node_id": {
+                    "type": "int",
+                    "description": "Id of a node reporting the status"
+                },
+                "operations": {
+                    "type": "array",
+                    "items": {
+                        "type": "partition_reconciliation_operation"
+                    },
+                    "description": "list of operations being executed on the node"
+                }
+            }
+        },
+        "partition_reconciliation_operation": {
+            "id": "partition_reconciliation_operation",
+            "description": "Partition reconciliation being executed by a a node on specific shard",
+            "properties": {
+                "type": {
+                    "type": "string",
+                    "description": "Type of an operation that is currently being executed"
+                },
+                "core": {
+                    "type": "int",
+                    "description": "Core that the status come from"
+                },
+                "retry_number": {
+                    "type": "int",
+                    "description": "Number of currently executed operations retry"
+                },
+                "revision": {
+                    "type": "int",
+                    "description": "Currently executed operation revision"
+                },
+                "status": {
+                    "type": "string",
+                    "description": "Result of last operation retry"
                 }
             }
         },
