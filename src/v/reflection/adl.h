@@ -21,6 +21,8 @@
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/sstring.hh>
 
+#include <absl/container/btree_set.h>
+
 #include <optional>
 #include <type_traits>
 #include <vector>
@@ -37,6 +39,7 @@ struct adl {
       = reflection::is_fragmented_vector<type>;
     static constexpr bool is_chunked_fifo
       = reflection::is_ss_chunked_fifo<type>;
+    static constexpr bool is_btree_set = is_absl_btree_set<type>;
     static constexpr bool is_named_type = is_rp_named_type<type>;
     static constexpr bool is_iobuf = std::is_same_v<type, iobuf>;
     static constexpr bool is_standard_layout = std::is_standard_layout_v<type>;
@@ -97,6 +100,14 @@ struct adl {
             type ret;
             while (n-- > 0) {
                 ret.push_back(adl<value_type>{}.from(in));
+            }
+            return ret;
+        } else if constexpr (is_btree_set) {
+            using value_type = typename type::value_type;
+            int32_t n = in.template consume_type<int32_t>();
+            absl::btree_set<value_type> ret;
+            while (n-- > 0) {
+                ret.insert(adl<value_type>{}.from(in));
             }
             return ret;
         } else if constexpr (is_circular_buffer) {
@@ -169,6 +180,19 @@ struct adl {
             }
             adl<int32_t>{}.to(out, t.size());
             for (value_type& i : t) {
+                adl<value_type>{}.to(out, std::move(i));
+            }
+            return;
+        } else if constexpr (is_btree_set) {
+            using value_type = typename type::value_type;
+            if (unlikely(t.size() > std::numeric_limits<int32_t>::max())) {
+                throw std::invalid_argument(fmt::format(
+                  "Set size {} exceeded int32_max: {}",
+                  t.size(),
+                  std::numeric_limits<int32_t>::max()));
+            }
+            adl<int32_t>{}.to(out, t.size());
+            for (const value_type& i : t) {
                 adl<value_type>{}.to(out, std::move(i));
             }
             return;
