@@ -1317,7 +1317,8 @@ SEASTAR_THREAD_TEST_CASE(serde_reflection_roundtrip) {
     }
     {
         cluster::join_node_reply data{
-          tests::random_bool(),
+          tests::random_bool() ? cluster::join_node_reply::status_code::success
+                               : cluster::join_node_reply::status_code::error,
           tests::random_named_int<model::node_id>(),
         };
         roundtrip_test(data);

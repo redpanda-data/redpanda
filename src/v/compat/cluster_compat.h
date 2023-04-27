@@ -156,10 +156,12 @@ GEN_COMPAT_CHECK_SERDE_ONLY(
   {
       json_write(success);
       json_write(id);
+      json_write(raw_status);
   },
   {
       json_read(success);
       json_read(id);
+      json_read(raw_status);
   })
 
 GEN_COMPAT_CHECK(

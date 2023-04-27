@@ -93,8 +93,8 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
           req.earliest_logical_version,
           req.latest_logical_version);
         if (!permit_join) {
-            return ss::make_ready_future<join_node_reply>(
-              join_node_reply{false, model::node_id{-1}});
+            return ss::make_ready_future<join_node_reply>(join_node_reply{
+              join_node_reply::status_code::incompatible, model::node_id{-1}});
         }
     }
 
@@ -109,7 +109,12 @@ service::join_node(join_node_request&& req, rpc::streaming_context&) {
               })
             .then([](result<join_node_reply> r) {
                 if (!r) {
-                    return join_node_reply{false, model::node_id{-1}};
+                    auto status = join_node_reply::status_code::error;
+                    if (r.error() == errc::update_in_progress) {
+                        status = join_node_reply::status_code::busy;
+                    }
+
+                    return join_node_reply{status, model::node_id{-1}};
                 }
                 return std::move(r.value());
             });
