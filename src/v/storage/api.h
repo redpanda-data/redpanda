@@ -13,6 +13,7 @@
 
 #include "features/feature_table.h"
 #include "model/fundamental.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "seastarx.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
@@ -28,17 +29,23 @@ public:
     explicit api(
       std::function<kvstore_config()> kv_conf_cb,
       std::function<log_config()> log_conf_cb,
-      ss::sharded<features::feature_table>& feature_table) noexcept
+      ss::sharded<features::feature_table>& feature_table,
+      ss::sharded<memory_sampling>& memory_sampling_service) noexcept
       : _kv_conf_cb(std::move(kv_conf_cb))
       , _log_conf_cb(std::move(log_conf_cb))
-      , _feature_table(feature_table) {}
+      , _feature_table(feature_table)
+      , _memory_sampling_service(memory_sampling_service) {}
 
     ss::future<> start() {
         _kvstore = std::make_unique<kvstore>(
           _kv_conf_cb(), _resources, _feature_table);
         return _kvstore->start().then([this] {
             _log_mgr = std::make_unique<log_manager>(
-              _log_conf_cb(), kvs(), _resources, _feature_table);
+              _log_conf_cb(),
+              kvs(),
+              _resources,
+              _feature_table,
+              _memory_sampling_service);
             return _log_mgr->start();
         });
     }
@@ -91,6 +98,7 @@ private:
     std::function<kvstore_config()> _kv_conf_cb;
     std::function<log_config()> _log_conf_cb;
     ss::sharded<features::feature_table>& _feature_table;
+    ss::sharded<memory_sampling>& _memory_sampling_service;
 
     std::unique_ptr<kvstore> _kvstore;
     std::unique_ptr<log_manager> _log_mgr;

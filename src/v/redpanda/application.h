@@ -40,6 +40,7 @@
 #include "redpanda/monitor_unsafe_log_flag.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "resource_mgmt/scheduling_groups_probe.h"
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/fwd.h"
@@ -248,6 +249,7 @@ private:
 
     std::optional<config::binding<bool>> _abort_on_oom;
 
+    ss::sharded<memory_sampling> _memory_sampling;
     ss::sharded<rpc::connection_cache> _connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::rpc_server> _rpc;

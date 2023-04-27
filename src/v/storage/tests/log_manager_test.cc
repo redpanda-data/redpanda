@@ -11,6 +11,7 @@
 #include "model/record_utils.h"
 #include "model/tests/random_batch.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "storage/api.h"
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
@@ -61,12 +62,16 @@ constexpr unsigned default_segment_readahead_count = 10;
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     auto conf = make_config();
 
+    ss::logger test_logger("test-logger");
     ss::sharded<features::feature_table> feature_table;
     feature_table.start().get();
     feature_table
       .invoke_on_all(
         [](features::feature_table& f) { f.testing_activate_all(); })
       .get();
+
+    ss::sharded<memory_sampling> memory_sampling_service;
+    memory_sampling_service.start(std::ref(test_logger)).get();
 
     storage::api store(
       [conf]() {
@@ -77,12 +82,15 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
             storage::make_sanitized_file_config());
       },
       [conf]() { return conf; },
-      feature_table);
+      feature_table,
+      memory_sampling_service);
     store.start().get();
-    auto stop_kvstore = ss::defer([&store, &feature_table] {
-        store.stop().get();
-        feature_table.stop().get();
-    });
+    auto stop_kvstore = ss::defer(
+      [&store, &feature_table, &memory_sampling_service] {
+          store.stop().get();
+          memory_sampling_service.stop().get();
+          feature_table.stop().get();
+      });
     auto& m = store.log_mgr();
     std::vector<storage::ntp_config> ntps;
     ntps.reserve(4);

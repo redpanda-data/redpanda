@@ -26,6 +26,7 @@
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
 #include "rpc/rpc_server.h"
@@ -130,7 +131,8 @@ struct raft_node {
                   ss::default_priority_class(),
                   storage::make_sanitized_file_config());
             },
-            std::ref(feature_table))
+            std::ref(feature_table),
+            std::ref(memory_sampling_service))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 
@@ -362,6 +364,7 @@ struct raft_node {
     consensus_ptr consensus;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
     ss::sharded<features::feature_table> feature_table;
+    ss::sharded<memory_sampling> memory_sampling_service;
     ss::abort_source _as;
 };
 

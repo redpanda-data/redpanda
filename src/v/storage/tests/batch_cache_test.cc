@@ -11,10 +11,15 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "random/generators.h"
+#include "resource_mgmt/memory_sampling.h"
 #include "storage/batch_cache.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/sharded.hh>
 #include <seastar/testing/thread_test_case.hh>
+#include <seastar/util/defer.hh>
+
+#include <boost/test/tools/old/interface.hpp>
 
 static storage::batch_cache::reclaim_options opts = {
   .growth_window = std::chrono::milliseconds(3000),
@@ -43,11 +48,19 @@ static model::record_batch make_random_batch(
 class batch_cache_test_fixture {
 public:
     batch_cache_test_fixture()
-      : cache(opts) {}
+      : test_logger("batch-cache-test")
+      , cache(opts, memory_sampling_service) {
+        memory_sampling_service.start(std::ref(test_logger)).get();
+    }
 
     auto& get_lru() { return cache._lru; };
-    ~batch_cache_test_fixture() { cache.stop().get(); }
+    ~batch_cache_test_fixture() {
+        cache.stop().get();
+        memory_sampling_service.stop().get();
+    }
 
+    ss::logger test_logger;
+    ss::sharded<memory_sampling> memory_sampling_service;
     storage::batch_cache cache;
 };
 
@@ -130,7 +143,13 @@ SEASTAR_THREAD_TEST_CASE(touch) {
         std::unique_ptr<storage::batch_cache_index> index_1;
         std::unique_ptr<storage::batch_cache_index> index_2;
 
-        storage::batch_cache cache(opts);
+        seastar::logger test_logger("test");
+        ss::sharded<memory_sampling> memory_sampling_service;
+        memory_sampling_service.start(std::ref(test_logger)).get();
+        auto action = ss::defer(
+          [&memory_sampling_service] { memory_sampling_service.stop().get(); });
+
+        storage::batch_cache cache(opts, memory_sampling_service);
         index_1 = std::make_unique<storage::batch_cache_index>(cache);
         index_2 = std::make_unique<storage::batch_cache_index>(cache);
         auto b0 = cache.put(*index_1, make_batch(10));
@@ -148,7 +167,13 @@ SEASTAR_THREAD_TEST_CASE(touch) {
         std::unique_ptr<storage::batch_cache_index> index_2;
 
         // build the cache the same way
-        storage::batch_cache cache(opts);
+        seastar::logger test_logger("test");
+        ss::sharded<memory_sampling> memory_sampling_service;
+        memory_sampling_service.start(std::ref(test_logger)).get();
+        auto action = ss::defer(
+          [&memory_sampling_service] { memory_sampling_service.stop().get(); });
+
+        storage::batch_cache cache(opts, memory_sampling_service);
         index_1 = std::make_unique<storage::batch_cache_index>(cache);
         index_2 = std::make_unique<storage::batch_cache_index>(cache);
         auto b0 = cache.put(*index_1, make_batch(10));

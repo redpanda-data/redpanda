@@ -32,7 +32,10 @@ disk_log_builder::disk_log_builder(storage::log_config config)
             storage::make_sanitized_file_config());
       },
       [this]() { return _log_config; },
-      _feature_table) {}
+      _feature_table,
+      _memory_sampling_service) {
+    _memory_sampling_service.start(std::ref(_test_logger)).get();
+}
 
 // Batch generation
 ss::future<> disk_log_builder::add_random_batch(
@@ -160,7 +163,9 @@ disk_log_builder::update_start_offset(model::offset start_offset) {
 }
 
 ss::future<> disk_log_builder::stop() {
-    return _storage.stop().then([this]() { return _feature_table.stop(); });
+    return _storage.stop()
+      .then([this]() { return _memory_sampling_service.stop(); })
+      .then([this]() { return _feature_table.stop(); });
 }
 
 // Low lever interface access
