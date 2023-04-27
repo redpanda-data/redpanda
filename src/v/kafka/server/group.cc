@@ -179,7 +179,7 @@ static model::record_batch make_tx_fence_batch(
       model::record_batch_type::tx_fence,
       group::fence_control_record_v0_version,
       pid,
-      cmd);
+      std::move(cmd));
 }
 
 static model::record_batch make_tx_fence_batch(
@@ -188,7 +188,7 @@ static model::record_batch make_tx_fence_batch(
       model::record_batch_type::tx_fence,
       group::fence_control_record_version,
       pid,
-      cmd);
+      std::move(cmd));
 }
 
 group_state group::set_state(group_state s) {
@@ -524,7 +524,7 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
     }
 
     // TODO: move the logic in this method up to group manager to make the
-    // handling of is_new_group etc.. clearner rather than passing these flags
+    // handling of is_new_group etc.. clearer rather than passing these flags
     // down into the group-level handler.
     if (
       !is_new_group && !_initial_join_in_progress
@@ -543,7 +543,7 @@ group::handle_join_group(join_group_request&& r, bool is_new_group) {
          * take into account was the tolerance for timeouts by clients. this
          * handles the case that all clients join after a rebalance, but the
          * last client doesn't complete the join (see the case in
-         * try_complete_join where we return immedaitely rather than completing
+         * try_complete_join where we return immediately rather than completing
          * the join if we are in the preparing rebalance state). this check
          * handles that before returning.
          */
@@ -872,7 +872,7 @@ group::join_group_known_member(join_group_request&& r) {
               leader().value_or(member_id("")),
               std::move(r.data.member_id));
 
-            vlog(_ctxlog.trace, "Handling idemponent group join {}", response);
+            vlog(_ctxlog.trace, "Handling idempotent group join {}", response);
 
             return join_group_stages(std::move(response));
         }
@@ -1391,7 +1391,7 @@ group::sync_group_stages group::handle_sync_group(sync_group_request&& r) {
         sync_group_response reply(error_code::none, member->assignment());
         vlog(
           _ctxlog.trace,
-          "Handling idemponent group sync for member {} with reply {}",
+          "Handling idempotent group sync for member {} with reply {}",
           member,
           reply);
         return sync_group_stages(sync_group_response(std::move(reply)));
@@ -1485,7 +1485,7 @@ group::sync_group_stages group::sync_group_completing_rebalance(
                          r.error());
                        // an error was encountered persisting the group state:
                        //   - clear all the member assignments
-                       //   - propogate error back to waiting clients
+                       //   - propagate error back to waiting clients
                        clear_assignments();
                        finish_syncing_members(error_code::not_coordinator);
                        try_prepare_rebalance();
@@ -1820,7 +1820,7 @@ group::begin_tx(cluster::begin_group_tx_request r) {
         //
         // at the same time it's possible that it already aborted the old
         // tx before starting this. do_abort_tx is idempotent so calling it
-        // just in case to proactivly abort the tx instead of waiting for
+        // just in case to proactively abort the tx instead of waiting for
         // the timeout
 
         auto old_pid = model::producer_identity{
@@ -2382,7 +2382,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
               .expiry_timestamp = expiry_timestamp,
             };
 
-            offset_commits.emplace_back(std::make_pair(tp, md));
+            offset_commits.emplace_back(tp, md);
 
             // record the offset commits as pending commits which will be
             // inspected after the append to catch concurrent updates.
@@ -2426,8 +2426,7 @@ group::offset_commit_stages group::store_offsets(offset_commit_request&& r) {
 
           return offset_commit_response(req, error);
       });
-    return offset_commit_stages(
-      std::move(replicate_stages.request_enqueued), std::move(f));
+    return {std::move(replicate_stages.request_enqueued), std::move(f)};
 }
 
 ss::future<cluster::commit_group_tx_reply>
@@ -2796,8 +2795,8 @@ ss::future<error_code> group::remove() {
               _id);
         } else {
             vlog(
-              klog.error,
-              "Error occured replicating group {} delete records {} ({})",
+              klog.warn,
+              "Error occurred replicating group {} delete records {} ({})",
               _id,
               result.error().message(),
               result.error());
@@ -2805,7 +2804,7 @@ ss::future<error_code> group::remove() {
     } catch (const std::exception& e) {
         vlog(
           klog.error,
-          "Exception occured replicating group {} delete records {}",
+          "Exception occurred replicating group {} delete records {}",
           _id,
           e);
     }
@@ -2882,9 +2881,10 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
               "Cannot replicate group {} cleanup records due to shutdown",
               _id);
         } else {
+            // TODO: consider adding retries in this case
             vlog(
-              klog.error,
-              "Error occured replicating group {} cleanup records {} ({})",
+              klog.warn,
+              "Error occurred replicating group {} cleanup records {} ({})",
               _id,
               result.error().message(),
               result.error());
@@ -2892,7 +2892,7 @@ group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
     } catch (const std::exception& e) {
         vlog(
           klog.error,
-          "Exception occured replicating group {} cleanup records {}",
+          "Exception occurred replicating group {} cleanup records {}",
           _id,
           e);
     }
@@ -3196,7 +3196,7 @@ ss::future<> group::do_abort_old_txes() {
     for (auto& [id, _] : _tx_seqs) {
         auto it = _fence_pid_epoch.find(id);
         if (it != _fence_pid_epoch.end()) {
-            pids.push_back(model::producer_identity(id(), it->second));
+            pids.emplace_back(id(), it->second);
         }
     }
 
